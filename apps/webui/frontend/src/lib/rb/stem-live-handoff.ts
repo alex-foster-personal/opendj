@@ -86,6 +86,9 @@ export interface StemHandoffDeps {
 	/** Silence a stem schedule that will not be used: an inactive change at the
 	 * SAME instant, which the worklet's time map lets replace the start. */
 	cancelIncoming(when: number): Promise<void>;
+	/** Disconnect and retire the stems now, with no worklet command: for a
+	 * stale upgrade whose stems may already be audible. Synchronous. */
+	retireIncoming(): void;
 	/** Stop the mix at `when`. Resolves on ack. */
 	stopOutgoing(when: number): Promise<void>;
 	/** Undo a posted mix stop: schedule the mix at `at` as the control clock
@@ -191,14 +194,11 @@ export async function handOffStemsLive(
 		// take over, so the deck itself is failed rather than left on a dead mix.
 		const reason = stopError ?? new Error('the mix did not acknowledge its stop by the handoff instant');
 		if (deps.stale()) {
-			// The stale stems are already connected and audible: cancel them
-			// before failing the deck, so the old track never plays on.
-			const at = Math.max(when, safeTransportScheduleTime(deps.now(), deps.leadSec));
-			try {
-				await deps.cancelIncoming(at);
-			} finally {
-				deps.failOutgoing(reason);
-			}
+			// The stale stems are already connected and audible: disconnect them
+			// at once, with no worklet command to wait on, so the old track never
+			// plays on behind a stalled acknowledgement.
+			deps.retireIncoming();
+			deps.failOutgoing(reason);
 			return 'moved';
 		}
 		const moved = deps.snapshot().revision !== before.revision;
@@ -367,6 +367,7 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			await port.incoming.schedule(when, port.startChange(segment));
 		},
 		cancelIncoming: (when) => port.incoming.stop(when),
+		retireIncoming: () => port.retire(port.incoming),
 		stopOutgoing: async (when) => {
 			outgoing = rt.processor;
 			if (outgoing !== null) await outgoing.stop(when);

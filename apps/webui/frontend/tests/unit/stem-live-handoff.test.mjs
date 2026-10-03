@@ -74,6 +74,9 @@ function deck(overrides = {}) {
 		cancelIncoming: async (when) => {
 			log.push(['cancelIncoming', when]);
 		},
+		retireIncoming: () => {
+			log.push(['retireIncoming']);
+		},
 		stopOutgoing: async (when) => {
 			log.push(['stopOutgoing', when]);
 		},
@@ -295,23 +298,26 @@ test('a failed stop on an upgrade that went stale fails the deck instead of leav
 	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'moved');
 	assert.deepEqual(log.at(-1), ['failOutgoing', 'stop timed out']);
 	assert.ok(!names(log).includes('commit'));
-	// The stale stems are already connected: they are canceled before the
+	// The stale stems are already connected: they are retired before the
 	// deck is failed, or the old track keeps playing through the retry delay.
-	assert.deepEqual(names(log).slice(-2), ['cancelIncoming', 'failOutgoing']);
-	assert.equal(log.at(-2)[1], log[0][1], 'the stale stems are canceled at the handoff instant while it is ahead');
+	assert.deepEqual(names(log).slice(-2), ['retireIncoming', 'failOutgoing']);
 });
 
-test('a stale stop failure whose stems cancel fails still fails the deck', async () => {
+test('a stale stop failure never waits on a worklet command to silence the stems', async () => {
+	// The stems' own stop could stall for the full command timeout: the stale
+	// path must not await one at all.
 	const { deps, log, state } = deck();
 	deps.stopOutgoing = async () => {
 		state.stale = true;
 		throw new Error('stop timed out');
 	};
-	deps.cancelIncoming = async () => {
-		throw new Error('cancel refused');
-	};
-	await assert.rejects(mod.handOffStemsLive(deps, 0.15), /cancel refused/);
-	assert.deepEqual(log.at(-1), ['failOutgoing', 'stop timed out']);
+	deps.cancelIncoming = () => new Promise(() => {});
+	const outcome = await Promise.race([
+		mod.handOffStemsLive(deps, 0.15),
+		new Promise((resolve) => setTimeout(() => resolve('hung'), 50))
+	]);
+	assert.equal(outcome, 'moved', 'the stale path waited on the stems acknowledging a command');
+	assert.ok(names(log).includes('retireIncoming'));
 });
 
 test('an attempt that went stale is not followed by a retry delay', async () => {
@@ -563,6 +569,19 @@ test('stems with a different latency than the deck are never scheduled live', as
 	assert.ok(!names(log).includes('stems.schedule') && !names(log).includes('mix.stop'));
 	assert.equal(names(log).at(-1), 'defer', 'a deferred bundle was not handed back to the deck');
 	assert.ok(!names(log).includes('retire'), 'a deferred bundle was retired: the stems are lost');
+});
+
+test('binding: a stale failed stop retires the stems at once, before any stems command', async () => {
+	let stale = false;
+	const { port, log, mix } = landing({ port: { stale: () => stale } });
+	mix.stop = async () => {
+		stale = true;
+		throw new Error('stop timed out');
+	};
+	assert.equal(await mod.landStemsOnDeck(port), 'stale');
+	const first = names(log).indexOf('retire');
+	assert.ok(first >= 0 && log[first][1] === 'stems', 'the stale stems were not retired');
+	assert.ok(!names(log).slice(0, first).includes('stems.stop'), 'the stems were silenced by an awaited command, not retired');
 });
 
 test('a landing that ends stale retires the incoming processor', async () => {
