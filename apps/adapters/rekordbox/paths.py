@@ -470,24 +470,36 @@ def _picked_from_path(path: Path, *, source: str) -> track_locations.PickedAudio
     )
 
 
-def _rekordbox_copy(stable_id: str) -> Path | None:
-    """rekordbox's own on-disk file for ``stable_id``, or None.
+def _rekordbox_copy(stable_id: str) -> Path | HTTPException | None:
+    """rekordbox's own file for ``stable_id``: its path, why it won't play, or None.
 
-    None covers every way there is no such file here: a 404 (no vendor
-    mapping, no FolderPath, a streaming row, a path that is missing or not
-    materialized) or no rekordbox install at all (``MASTER_DB_UNAVAILABLE``,
-    which the analysis route reads the same way). Anything else propagates: an
-    unsupported extension (415) because the file IS here and the deck should
-    say why it won't play, and any other server error because it means this
-    machine could not look, not that the file is absent.
+    None covers every way there is no such file here: no vendor mapping, no
+    FolderPath, a streaming row, a path this platform cannot map or that is not
+    on disk, or no rekordbox install at all (``MASTER_DB_UNAVAILABLE``, which
+    the analysis route reads the same way). A file that IS on disk but won't
+    play (a dataless iCloud stub, an unsupported extension) comes back as its
+    error, so the deck can say why once no other copy plays. Any other server
+    error propagates: it means this machine could not look, not that the file
+    is absent.
     """
     try:
-        path, _media_type = audio_file(resolve_content(stable_id))
+        content = resolve_content(stable_id)
     except HTTPException as exc:
         if exc.status_code == 404 or _error_code(exc) == "MASTER_DB_UNAVAILABLE":
             return None
         raise
+    try:
+        path, _media_type = audio_file(content)
+    except HTTPException as exc:
+        return exc if _on_disk(content.folder_path) else None
     return path
+
+
+def _on_disk(folder_path: str | None) -> bool:
+    if not folder_path or is_streaming_path(folder_path):
+        return False
+    resolved = resolve_asset_path(folder_path).resolved
+    return resolved is not None and resolved.exists()
 
 
 def _error_code(exc: HTTPException) -> str | None:
@@ -505,16 +517,19 @@ def _local_only_pick(
     Believed state reads only the first local location row, so a working
     alternate or rekordbox's own FolderPath (which the listing counts as this
     track's file) can still be on disk. The picker ranks all of them under the
-    same policy the share cap uses. When none is here the deck says so plainly.
+    same policy the share cap uses. When none plays, a rekordbox file that is
+    here but unplayable says why; otherwise the deck says plainly it is not here.
     """
     rekordbox_copy = _rekordbox_copy(stable_id)
     pick = track_locations.pick_playable(
         state,
         stable_id,
         policy=share_policy,
-        folder_path=str(rekordbox_copy) if rekordbox_copy is not None else None,
+        folder_path=str(rekordbox_copy) if isinstance(rekordbox_copy, Path) else None,
     )
     if pick is None:
+        if isinstance(rekordbox_copy, HTTPException):
+            raise rekordbox_copy
         raise not_found("AUDIO_NOT_ON_THIS_MACHINE", reason or hydration.NOT_ON_THIS_MACHINE)
     if pick.source == "folder_path":
         return dataclasses.replace(pick, source="rekordbox-folder-path")
