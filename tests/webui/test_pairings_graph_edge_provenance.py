@@ -1,4 +1,4 @@
-"""PAIR-04: deleting an HTTP pairing keeps a graph edge it did not create.
+"""PAIR-06: deleting an HTTP pairing keeps a graph edge it did not create.
 
 [if] a graph edge predates an HTTP pairing on its endpoints [then] capture and delete leave it intact, [else stop].
 
@@ -23,7 +23,7 @@ from apps.webui.server.backend import Pairing
 from apps.webui.server.etag import compute_etag
 from apps.webui.server.sqlite_backend import SqliteBackend
 
-pytestmark = pytest.mark.requirement("PAIR-04")
+pytestmark = pytest.mark.requirement("PAIR-06")
 
 
 def _route_pairing(pairing_id: str = "pair-1", notes: str | None = "from capture") -> Pairing:

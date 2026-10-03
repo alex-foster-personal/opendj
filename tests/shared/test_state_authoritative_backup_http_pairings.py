@@ -1,4 +1,4 @@
-"""Selective restore of the pairings group covers http_pairings (PAIR-04).
+"""Selective restore of the pairings group covers http_pairings (PAIR-06).
 
 Review thread PRRT_kwDOSEvNd86mix-h: /api/v1/pairings reads http_pairings, so a
 ``restore --table pairings`` that only rewrote the CAT-03 ``pairings`` graph
@@ -77,7 +77,7 @@ def new_data_dir(tmp_path: Path) -> Path:
     return data_dir
 
 
-@pytest.mark.requirement("PAIR-04")
+@pytest.mark.requirement("PAIR-06")
 @pytest.mark.requirement("LIBM-113")
 def test_restore_pairings_round_trips_both_tables(new_data_dir: Path, tmp_path: Path) -> None:
     """[if] pairings is restored [then] http_pairings and the pairings graph both return to the backup, [else stop]."""
@@ -205,7 +205,7 @@ def test_backup_missing_the_required_graph_table_still_refuses(
         restore_tables(backup.path, old_data_dir, ["pairings"])
 
 
-@pytest.mark.requirement("PAIR-04")
+@pytest.mark.requirement("PAIR-06")
 @pytest.mark.requirement("LIBM-113")
 def test_backup_from_before_graph_owner_stamp_still_restores(
     new_data_dir: Path, tmp_path: Path

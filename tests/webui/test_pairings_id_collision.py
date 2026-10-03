@@ -1,4 +1,4 @@
-"""PAIR-04: a create that reuses a pairing_id for another edge is refused (409).
+"""PAIR-06: a create that reuses a pairing_id for another edge is refused (409).
 
 [if] a create reuses a stored pairing_id for another edge [then] it is refused with 409 and nothing changes, [else stop].
 
@@ -21,7 +21,7 @@ from apps.webui.server.pairings_sqlite import PairingIdConflictError
 from apps.webui.server.playlist_add import AlreadyExistsError
 from apps.webui.server.sqlite_backend import SqliteBackend
 
-pytestmark = pytest.mark.requirement("PAIR-04")
+pytestmark = pytest.mark.requirement("PAIR-06")
 
 STAMP = "2026-10-02T00:00:00.000000Z"
 SNAPSHOT = {"captured": "original"}
