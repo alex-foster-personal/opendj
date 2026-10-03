@@ -5,7 +5,9 @@
  * Paste goes through the atomic transfer endpoint, which is a set-union on
  * the destination, so a repeated Cmd+V never stacks duplicates and a cut
  * paste removes the tracks from their source in the same transaction.
- * BrowserPanel supplies the pane, row and reload accessors it owns.
+ * BrowserPanel supplies the pane, row and reload accessors it owns. The
+ * clipboard rules load on the first shortcut press (main's #4904 payback on
+ * the /performance bundle), so only the key-to-action rule loads eagerly.
  */
 
 import type { PlaylistNode } from '$lib/rb/library-types';
@@ -16,19 +18,7 @@ import {
 } from '$lib/rb/playlist-write';
 import type { PaneStore } from './pane-contract.svelte';
 import type { RowRef } from './pane-row-selection';
-import {
-	clipboardToastMessage,
-	getTrackClipboard,
-	libraryEditShortcut,
-	partitionPaste,
-	pastedRowOrders,
-	pasteBlockReason,
-	pasteToastMessage,
-	selectAllRows,
-	selectedIdsInViewOrder,
-	selectRowOrders,
-	setTrackClipboard
-} from './track-clipboard';
+import { libraryEditShortcut } from './library-edit-shortcut';
 import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './virtual-window';
 
 export interface LibraryEditKeyDeps {
@@ -63,7 +53,12 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
 		}
 		e.preventDefault();
-		const p = deps.pane();
+		void _runLibraryEdit(action, deps.pane());
+	}
+
+	async function _runLibraryEdit(action: 'select_all' | 'copy' | 'cut' | 'paste', p: PaneStore): Promise<void> {
+		const { clipboardToastMessage, selectAllRows, selectedIdsInViewOrder, setTrackClipboard } =
+			await import('./track-clipboard');
 		if (action === 'select_all') {
 			if (selectAllRows(p, deps.renderedRows()) === 0) pushToast('no tracks to select', 'info');
 			return;
@@ -90,11 +85,12 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 			pushToast(clipboardToastMessage(ids.length, mode), 'info');
 			return;
 		}
-		void _pasteTracks();
+		await _pasteTracks(p);
 	}
 
-	async function _pasteTracks(): Promise<void> {
-		const p = deps.pane();
+	async function _pasteTracks(p: PaneStore): Promise<void> {
+		const { getTrackClipboard, partitionPaste, pasteBlockReason, pasteToastMessage, setTrackClipboard } =
+			await import('./track-clipboard');
 		const clip = getTrackClipboard();
 		const blocked = pasteBlockReason(p, deps.source(), clip);
 		if (blocked !== null || clip === null || p.playlist_id === null) {
@@ -136,7 +132,7 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 						if (node !== null) await deps.loadPane(q, node);
 					})
 			);
-			if (p.playlist_id === destId && plan.add.length > 0) _revealPasted(p, plan.add);
+			if (p.playlist_id === destId && plan.add.length > 0) await _revealPasted(p, plan.add);
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
 				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
@@ -150,7 +146,8 @@ export function createLibraryEditKeys(deps: LibraryEditKeyDeps): (e: KeyboardEve
 
 	/** Pasted rows land at the END of the playlist, below the fold in a long
 	 * one: select them and scroll the first into view so the paste is seen. */
-	function _revealPasted(p: PaneStore, pastedIds: string[]): void {
+	async function _revealPasted(p: PaneStore, pastedIds: string[]): Promise<void> {
+		const { pastedRowOrders, selectRowOrders } = await import('./track-clipboard');
 		const orders = pastedRowOrders(p.rows, pastedIds);
 		if (orders.length === 0) return;
 		selectRowOrders(p, orders);

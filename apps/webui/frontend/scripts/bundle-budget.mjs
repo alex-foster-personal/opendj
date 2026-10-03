@@ -244,6 +244,12 @@ const BUDGETS = [
   // explainer dismiss, the 3Band waveform palette with its legacy option,
   // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
   // 130 bytes over the old limit; 894 bytes of headroom remain.
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4904, V1 copy and paste between
+  // playlists): clean origin/main c8b8f5ae measures 242,439 locally (249
+  // bytes of headroom). The library browser is part of /performance, and the
+  // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
+  // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
+  // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
   // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's #4923
   // raise is kept because its features are all in the merged route; the
   // Preview's #3837 work fit the old 241,664 by deferral (+882 measured). NOT
@@ -415,7 +421,10 @@ const BUDGETS = [
   // measured size ceiled to KiB (287 KiB), no extra headroom; the MIDI split-chunk
   // payback above still stands. Second re-merge (main +59 commits, Fri 2 Oct
   // 2026 evening): measured 294,088, 200 over; raised to 288 KiB on the same rule.
-  { name: 'other-lazy', limit: 294912, measured: 294088, note: 'all other routes plus deferred shell' },
+  // Third re-merge (main +74 commits to 01d5b3520, Sat 3 Oct 2026, incl. the
+  // first-run wizard and the lazy track clipboard): measured 297,104, 2,192
+  // over; raised to 291 KiB on the same rule, no extra headroom.
+  { name: 'other-lazy', limit: 297984, measured: 297104, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

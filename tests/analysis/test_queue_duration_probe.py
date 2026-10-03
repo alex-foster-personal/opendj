@@ -114,14 +114,36 @@ def test_unreadable_file_is_still_refused_duration_unknown(tmp_path: Path) -> No
     conn.close()
 
 
-def test_no_ffmpeg_refuses_rather_than_guessing(
+def test_no_decoder_refuses_rather_than_guessing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("MDT_FFMPEG", str(tmp_path / "no-such-ffmpeg"))
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(tmp_path / "no-such-odj-audio"))
     conn = open_conn(tmp_path / "state.db")
     _track(conn, "sid_noff", _tone(tmp_path / "d.wav"), None)
     (candidate,) = candidates_from_state(
         conn, ["sid_noff"], lane="waveform", backend="own_waveform.backfill"
     )
     assert candidate.duration_s is None
+    conn.close()
+
+
+def test_the_engine_measures_the_length_with_no_ffmpeg_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The installed-app case: ``odj-audio`` is bundled, ffmpeg is not."""
+    from apps.shared.engine_decode import EngineDecoderUnavailable, resolve_engine_decoder
+
+    try:
+        exe = resolve_engine_decoder()
+    except EngineDecoderUnavailable as exc:
+        pytest.skip(f"no odj-audio build in this checkout: {exc}")
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(exe))
+    monkeypatch.setenv("MDT_FFMPEG", str(tmp_path / "no-such-ffmpeg"))
+    conn = open_conn(tmp_path / "state.db")
+    _track(conn, "sid_engine", _tone(tmp_path / "e.wav"), None)
+    (candidate,) = candidates_from_state(
+        conn, ["sid_engine"], lane="waveform", backend="own_waveform.backfill"
+    )
+    assert candidate.duration_s == pytest.approx(SECONDS, abs=0.001)
     conn.close()

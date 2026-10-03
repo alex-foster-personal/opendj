@@ -49,7 +49,7 @@ from fastapi.testclient import TestClient
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import upsert_record
-from apps.analysis_waveform.bands import PWV6_FULL_SCALE_SINE
+from apps.analysis_waveform.bands import PWV6_MUSIC_GAIN
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
@@ -216,11 +216,11 @@ def test_anlz_decodes_real_peaks_for_an_unmapped_track(client: TestClient) -> No
     low = body["waveform"]["preview"]["low"]
     assert low, "a real, loud sine must decode to a non-empty peak envelope"
     # The preview is on rekordbox's PWV6 scale (NATIVE-22), where even a
-    # full-scale sine tops out at 69/127 in the low band, and 220 Hz sits just
-    # above the 200 Hz crossover, so it measures about half that (0.28). A
+    # full-scale sine tops out at 83/127 in the low band, and 220 Hz sits just
+    # above the 200 Hz crossover, so it measures about half that (0.33). A
     # failed or silent decode reads 0, so 40% of the band's ceiling still
     # tells a real decode from a broken one.
-    low_ceiling = PWV6_FULL_SCALE_SINE[0] / 127
+    low_ceiling = PWV6_MUSIC_GAIN[0] / 127
     assert max(low) > 0.4 * low_ceiling, "a full-scale 220 Hz sine must decode loud"
 
 

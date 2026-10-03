@@ -13,34 +13,14 @@
  * network calls.
  */
 
-import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import type { RowRef, SelectionPane } from './pane-row-selection';
+import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './virtual-window';
 
-export type LibraryEditShortcut = 'select_all' | 'copy' | 'cut' | 'paste';
-
-export type ShortcutKeyEvent = {
-	key: string;
-	metaKey: boolean;
-	ctrlKey: boolean;
-	altKey: boolean;
-	shiftKey: boolean;
-	target: EventTarget | null;
-};
-
-const SHORTCUT_KEYS: Record<string, LibraryEditShortcut> = {
-	a: 'select_all',
-	c: 'copy',
-	x: 'cut',
-	v: 'paste'
-};
-
-/** The library shortcut this key press asks for, or null when it is not one
- * or belongs to a text field (where Cmd+A/C/V must keep editing text). */
-export function libraryEditShortcut(e: ShortcutKeyEvent): LibraryEditShortcut | null {
-	if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return null;
-	if (isTextEntryTarget(e.target)) return null;
-	return SHORTCUT_KEYS[e.key.toLowerCase()] ?? null;
-}
+// The key-to-action rule loads with the library page; everything below loads
+// on the first shortcut press (BrowserPanel imports this module lazily so the
+// /performance bundle budget does not pay for it).
+export { libraryEditShortcut } from './library-edit-shortcut';
+export type { LibraryEditShortcut, ShortcutKeyEvent } from './library-edit-shortcut';
 
 /** Select every rendered row, keeping the anchor when it is still on screen
  * so a following shift-click extends from where the user last clicked.
@@ -174,6 +154,17 @@ export function pastedRowOrders(rows: readonly RowRef[], pastedIds: readonly str
 		if (wanted.has(row.stable_id)) lastOrder.set(row.stable_id, row.order);
 	}
 	return [...lastOrder.values()].sort((a, b) => a - b);
+}
+
+/** Table scrollTop that puts the row at `rowIndex` (in rendered order) two
+ * rows below the top of the visible band. Row heights are TrackTable's
+ * ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT. */
+export function pasteRevealScrollTop(rowIndex: number, density: string): number {
+	return scrollTopForRowIndex({
+		rowIndex: Math.max(0, rowIndex - 2),
+		rowHeight: density === 'cosy' ? 30 : 22,
+		headerOffsetPx: TRACK_TABLE_THEAD_PX
+	});
 }
 
 /** Select exactly the given rows, anchored on the first. */

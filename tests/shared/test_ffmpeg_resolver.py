@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis.pcm_fingerprint import FingerprintUnavailable, _resolve_or_raise
 from apps.analysis_waveform.decode import LocalDecodeUnavailable
 from apps.analysis_waveform.decode import resolve_ffmpeg as decode_resolve
 from apps.shared import ffmpeg as shared_ffmpeg
@@ -98,15 +97,6 @@ def test_waveform_decode_translates_the_failure_to_its_own_type(
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     with pytest.raises(LocalDecodeUnavailable, match="MDT_FFMPEG"):
         decode_resolve()
-
-
-def test_pcm_fingerprint_translates_the_failure_to_its_own_type(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("MDT_FFMPEG", raising=False)
-    monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
-    with pytest.raises(FingerprintUnavailable, match="MDT_FFMPEG"):
-        _resolve_or_raise()
 
 
 def test_the_shared_module_is_the_only_copy_of_the_lookup() -> None:
@@ -214,13 +204,16 @@ def test_broken_bundled_raises_rather_than_using_path(
 
 
 def test_consumers_see_the_bundled_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] the bundled path is set [then] waveform and fingerprint resolve it too."""
+    """[if] the bundled path is set [then] the waveform decode resolves it too.
+
+    The decode fingerprint no longer runs ffmpeg (main #4766 moved it to
+    odj-audio), so the waveform decode is the consumer left to check.
+    """
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     bundled = _make_executable(tmp_path / "payload-ffmpeg")
     monkeypatch.setenv(shared_ffmpeg.BUNDLED_ENV, str(bundled))
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     assert decode_resolve() == str(bundled)
-    assert _resolve_or_raise() == str(bundled)
 
 
 def test_mutation_control_path_first_order_is_caught(

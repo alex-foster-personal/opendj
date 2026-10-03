@@ -112,6 +112,7 @@ def _own_key_rows(conn: Any) -> list[tuple[str, str]]:
 # the delta
 #-----------------------------------------------------------------------------
 
+@pytest.mark.requires_canonical_decode
 def test_a_key_backfill_run_writes_no_track_fields_and_no_history(
     tmp_path: Path, state_db: Path
 ) -> None:
@@ -166,6 +167,7 @@ def test_a_promotion_writes_no_track_fields_either(tmp_path: Path, state_db: Pat
 # the two readers agree
 #-----------------------------------------------------------------------------
 
+@pytest.mark.requires_canonical_decode
 def test_the_track_list_and_the_smartlist_column_agree_on_the_effective_key(
     tmp_path: Path, state_db: Path
 ) -> None:

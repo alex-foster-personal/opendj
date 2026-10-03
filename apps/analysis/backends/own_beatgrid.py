@@ -389,7 +389,7 @@ def record_from_payload(
     # The runner reports the sha256 of ITS OWN model input: Beat This's
     # `load_audio` float32 at whatever rate it chose. The record may not carry
     # that. `decode_fingerprint` is defined over the canonical decode (44100
-    # Hz, mono, s16, soxr) precisely so a second host, or the player about to
+    # Hz, mono, s16, decoded by odj-audio) precisely so a second host, or the player about to
     # use this grid, can recompute it; a model-input hash is reproducible by
     # nothing but this runner, so the comparison the field exists for would
     # fail on byte-identical audio (Codex P1 BLOCKING, PR #1587). Still
@@ -490,11 +490,11 @@ class OwnBeatgridBackfillBackend:
         except weights.WeightsError as exc:
             raise BackendNotAvailable(str(exc)) from exc
         try:
-            # Checked up front, not per track: without a working ffmpeg
-            # resampler EVERY record fails its fingerprint, and a host-wide
+            # Checked up front, not per track: without a working canonical
+            # decoder EVERY record fails its fingerprint, and a host-wide
             # gap reported once per file reads as thousands of unreadable
-            # tracks. The probe runs the real filter chain, so it fails here
-            # for a build that merely accepts the option name.
+            # tracks. The probe runs a real decode, so it fails here for a
+            # build that merely lists the subcommand.
             require_resampler()
         except FingerprintUnavailable as exc:
             raise BackendNotAvailable(

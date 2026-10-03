@@ -1,6 +1,0 @@
-# Fixture rotation map: <account> <next-account>, one row per account that has
-# a successor written. acct-hot is the only fixture lane at gate=flip (91%), so
-# it is the only account mapped here; every other account in the five-hour
-# fixture set is deliberately left unmapped (OPS-23: gate=flip must never be
-# printed for an account with no rotation entry).
-acct-hot acct-cold

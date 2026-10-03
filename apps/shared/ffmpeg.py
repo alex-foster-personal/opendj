@@ -110,6 +110,33 @@ def _executable_or_raise(env_name: str, configured: str) -> str:
     raise FfmpegUnavailable(f"{env_name}={configured!r} is not an executable file")
 
 
+#: Where Homebrew installs ffmpeg (Apple silicon, then Intel). A Finder-launched
+#: app inherits launchd's PATH (/usr/bin:/bin:/usr/sbin:/sbin), which holds
+#: neither, so a Mac with ffmpeg installed still fails the PATH lookup.
+HOMEBREW_FFMPEG_PATHS: tuple[str, ...] = ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg")
+
+
+def resolve_ffmpeg_including_homebrew() -> str:
+    """:func:`resolve_ffmpeg`, then Homebrew's prefixes when nothing overrides.
+
+    For callers that run inside the packaged app (set recording, SET-10). A
+    set-but-broken ``MDT_FFMPEG`` still raises rather than falling through.
+    """
+    try:
+        return resolve_ffmpeg()
+    except FfmpegUnavailable:
+        if os.environ.get(OVERRIDE_ENV) or os.environ.get(BUNDLED_ENV):
+            raise  # a set-but-broken override or bundled path never falls through
+        for candidate in HOMEBREW_FFMPEG_PATHS:
+            if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        raise FfmpegUnavailable(
+            "ffmpeg was not found on PATH or in "
+            f"{', '.join(HOMEBREW_FFMPEG_PATHS)} (install it with `brew install "
+            "ffmpeg`, or set MDT_FFMPEG)"
+        ) from None
+
+
 #: ``Duration: HH:MM:SS.ss`` in ffmpeg's input report; ``N/A`` does not match.
 _DURATION_LINE = re.compile(r"^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?),", re.MULTILINE)
 PROBE_TIMEOUT_S = 30
@@ -141,7 +168,9 @@ __all__ = [
     "BUNDLED_ENV",
     "FFMPEG_BINARY",
     "OVERRIDE_ENV",
+    "HOMEBREW_FFMPEG_PATHS",
     "FfmpegUnavailable",
     "probe_duration_s",
     "resolve_ffmpeg",
+    "resolve_ffmpeg_including_homebrew",
 ]
