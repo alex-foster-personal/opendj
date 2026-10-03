@@ -2847,6 +2847,8 @@ export interface paths {
          *     ``exists`` is false, and nothing changes, when the share root is not there.
          *     The call is refused with 409, and ``detail`` says why, when a directory
          *     ABOVE the share root is a symlink: only the share root itself may be one.
+         *     It is 501 on a platform with no anchored walk (Windows), where the share
+         *     root is never anchored and so there is nothing to re-trust.
          */
         post: operations["reanchor_share_root_api_v1_library_share_root_reanchor_post"];
         delete?: never;
