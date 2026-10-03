@@ -184,22 +184,17 @@ def _python_license_string(metadata: importlib_metadata.PackageMetadata) -> str:
 def python_components(payload_dir: Path) -> list[Component]:
     """Every configured Python site, required individually.
 
-    `PYTHON_SITES_RELATIVE` names every site this inventory is responsible
-    for (the main app's `pylib` AND the beatgrid runner's own venv). Accepting
-    whichever sites happen to exist, as long as at least one does, let a
-    missing or empty site silently drop that runtime's ENTIRE dependency set
-    from the inventory while the build still reported success (Sol P1,
-    PR #4853). Each site must exist and contain at least one measurable
-    distribution, or the build fails loudly naming which site is missing.
+    `PYTHON_SITES_RELATIVE` names every site this inventory is responsible for (the main app's `pylib` AND
+    the beatgrid runner's own venv). Accepting whichever sites happened to exist let a missing or empty site
+    silently drop that runtime's ENTIRE dependency set (Sol P1, PR #4853), so each must exist and hold at
+    least one measurable distribution, or the build fails naming it. A license file vendored outside
+    .dist-info also becomes its own unidentified component, so the flag report lists it for a human
+    (soundfile's BSD wrapper ships LGPL libsndfile, Codex P1, PR #4853).
     """
     components: dict[tuple[str, str], Component] = {}
     sites = [payload_dir / relative for relative in PYTHON_SITES_RELATIVE]
-    missing = [site for site in sites if not site.is_dir()]
-    if missing:
-        raise LicenseInventoryError(
-            f"Python site(s) missing under {payload_dir}: {missing}; "
-            f"expected all of {PYTHON_SITES_RELATIVE}"
-        )
+    if missing := [site for site in sites if not site.is_dir()]:
+        raise LicenseInventoryError(f"Python site(s) missing under {payload_dir}: {missing}; expected all of {PYTHON_SITES_RELATIVE}")
     for site in sites:
         site_distributions = list(importlib_metadata.distributions(path=[str(site)]))
         if not site_distributions:
@@ -213,8 +208,6 @@ def python_components(payload_dir: Path) -> list[Component]:
                 continue
             texts: list[tuple[str, str]] = []
             for file in dist.files or []:
-                # Anywhere in RECORD, not only .dist-info: a wheel may vendor a native lib with its own
-                # COPYING (soundfile's _soundfile_data/COPYING for libsndfile, Codex P1 PR #4853).
                 if LICENSE_FILE_PATTERN.search(file.name) and file.suffix not in NON_TEXT_SUFFIXES:
                     located = Path(str(dist.locate_file(file)))
                     if located.is_file():
@@ -227,6 +220,10 @@ def python_components(payload_dir: Path) -> list[Component]:
                 homepage=_meta_get(dist.metadata, "Home-page") or "",
                 texts=texts,
             )
+            for path, text in (t for t in texts if "/" in t[0]):  # vendored: not the wrapper's license
+                components[(f"{key[0]}:{path}", dist.version)] = Component(
+                    "python", f"{name} vendored {path}", dist.version, "", texts=[(path, text)],
+                    note=f"Vendored inside {name}; its license is not identified from metadata, read the text.")
     if not components:
         raise LicenseInventoryError(f"no dist-info found in {sites}")
     return sorted(components.values(), key=lambda c: c.name.lower())
