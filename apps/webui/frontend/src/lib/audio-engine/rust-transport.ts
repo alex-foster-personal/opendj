@@ -127,12 +127,7 @@ async function _join(
 	if (options.play) cmds.push({ type: 'play', deck: follower, playing: true });
 	// Sent together: the engine applies what arrives before its next block
 	// in that block, so tempo, position and start land as one.
-	try {
-		await Promise.all(cmds.map(send));
-	} catch (error) {
-		if (!current()) return;
-		throw error;
-	}
+	await Promise.all(cmds.map(send));
 	if (!current()) return;
 	st.pitch = join.tempo;
 	st.sync_error = null;
@@ -147,11 +142,16 @@ async function _reanchor(
 	masterAtSec?: number
 ): Promise<void> {
 	await Promise.all(
-		followers.map((f) =>
-			_join(master, f, { reanchor: true, masterAtSec }).catch((e: unknown) => {
-				deckStates[f].sync_error = e instanceof Error ? e.message : String(e);
-			})
-		)
+		followers.map((f) => {
+			const state = deckStates[f];
+			const generation = state.load_generation;
+			const stableId = state.stable_id;
+			return _join(master, f, { reanchor: true, masterAtSec }).catch((e: unknown) => {
+				if (state.load_generation === generation && state.stable_id === stableId) {
+					state.sync_error = e instanceof Error ? e.message : String(e);
+				}
+			});
+		})
 	);
 }
 
@@ -163,6 +163,8 @@ function _lockedFollowers(master: DeckId): DeckId[] {
 
 async function _play(deck: DeckId): Promise<void> {
 	const st = loadedDeck(deck, 'play');
+	const generation = st.load_generation;
+	const stableId = st.stable_id;
 	const syncClock = _syncMaster();
 	const syncActive = effectiveBeatSync(st);
 	if (syncClock !== null && syncClock !== deck && syncActive) {
@@ -170,7 +172,9 @@ async function _play(deck: DeckId): Promise<void> {
 			await _join(syncClock, deck, { play: true });
 		} catch (e) {
 			const detail = e instanceof Error ? e.message : String(e);
-			st.sync_error = detail;
+			if (st.load_generation === generation && st.stable_id === stableId) {
+				st.sync_error = detail;
+			}
 			throw new Error(
 				`Beat Sync: deck ${deck} could not phase-lock to deck ${syncClock} (${detail})`,
 				{ cause: e }
