@@ -178,7 +178,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
 
         with (
             patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=native),
+            patch("scripts.perf.mode_ratio_sampler.DarwinProcessMetrics", return_value=native),
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch(
                 "scripts.perf.capture_mode_ratios.time.monotonic",

@@ -218,7 +218,7 @@ def test_sample_steady_carries_engine_fields_only_with_an_engine_root() -> None:
         native = _PerPidNative({browser_child: 200.0, engine: 300.0, engine_child: 100.0})
         clock = iter(range(0, 10_000, cmr._PROBE_INTERVAL_S))
         with (
-            patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=native),
+            patch("scripts.perf.mode_ratio_sampler.DarwinProcessMetrics", return_value=native),
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch("scripts.perf.capture_mode_ratios.time.monotonic", new=lambda: float(next(clock))),
         ):
