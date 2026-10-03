@@ -136,7 +136,7 @@ import {
 	patchTrack,
 	RbApiError
 } from '$lib/rb/api-rb';
-import { awaitStemArtifact, stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-hydrate-wait';
+import { awaitStemArtifact, landHeldStemsOrSettle, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -220,7 +220,7 @@ import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/rb/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
-import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
+import type { StemControl, StemDeckState, StemFetchProgress, StemLoadPhase } from '$lib/rb/stem-types';
 import {
 	assertUnitRange,
 	AUDIO_CONTEXT_OPTIONS,
@@ -506,9 +506,9 @@ interface _DeckRuntime {
 	 * LAZY-STEMS. A fully built AlignedStemDeckProcessor waiting for the deck to
 	 * be replaceable, held here because the engine forbids swapping a deck's
 	 * processor while it is playing or audible (assertDeckReplacementAllowed).
-	 * Set by _upgradeDeckStems when the stems finish decoding mid-playback;
-	 * drained by _drainPendingStemUpgrade on the next stop. Null the rest of the
-	 * time. `token` pins it to the load that produced it so a track swap during
+	 * Set by _landStems when a live handoff (STEM-47) found the deck busy on
+	 * every attempt; drained by _drainPendingStemUpgrade on the next stop, or by
+	 * retryStems. Null the rest of the time. `token` pins it to the load that produced it so a track swap during
 	 * the fetch cannot graft one track's stems onto another's mix.
 	 */
 	pendingStemUpgrade: {
@@ -2745,6 +2745,68 @@ function _drainPendingStemUpgrade(deck: DeckId): void {
 	_adoptStemProcessor(deck, pending);
 }
 
+/** STEM-47. Land a built stem processor: the stopped swap on a deck at rest, a
+ * live handoff on a playing one (ordering and refusals: stem-live-handoff.ts).
+ * `deferred` keeps the bundle for the next stop and says so on the deck. */
+function _landStems(
+	deck: DeckId,
+	upgrade: NonNullable<_DeckRuntime['pendingStemUpgrade']>,
+	ctx: AudioContext,
+	stale: () => boolean
+): Promise<StemLandingOutcome> {
+	const rt = _rt[deck];
+	const st = deckStates[deck];
+	rt.pendingStemUpgrade = null;
+	if (!stale()) st.stems = loadingStemDeckState({ phase: 'switching', progress: null, reason: null });
+	return landStemsOnDeck({
+		runtime: rt, incoming: upgrade.processor, clock: ctx, stale,
+		leadSec: _transportLeadSec(deck),
+		serialized: (run) => _withDeckSwap(rt, run),
+		commitDue: () => _commitPendingIfDue(deck),
+		rampPending: () => _reanchorRampPending(rt),
+		launchArmed: () => _quantizedLaunchAt[deck] !== null,
+		controlSegmentAt: (when) => _controlSegmentAt(rt, when),
+		startChange: (seg) => stretchScheduleChange(seg.positionSec, true, seg.tempoRatio, seg.masterTempoEnabled, seg.keyShiftSemitones, seg.loop),
+		retire: (processor) => _retireProcessor(processor as _DeckProcessor),
+		commit: (when) => {
+			rt.processor = upgrade.processor;
+			st.stems = upgrade.state;
+			recordPerfEvent('stem-live-handoff', `deck ${deck} stems took over at ctx ${when.toFixed(3)}s without stopping`, deck);
+		},
+		defer: () => {
+			rt.pendingStemUpgrade = upgrade;
+			st.stems = loadingStemDeckState({ phase: 'waiting', progress: null, reason: STEM_HELD_BY_TRANSPORT });
+			_drainPendingStemUpgrade(deck); // the deck may have come to rest during the last attempt
+		},
+		replaceable: () => _deckIsReplaceable(deck),
+		adoptStopped: () => _adoptStemProcessor(deck, upgrade)
+	});
+}
+
+/** STEM-47. `LOAD NOW` on a bundle held for the deck's next stop. `_landStems`
+ * clears the held reference and shows `switching` before anything is awaited,
+ * so a rejected landing must settle the deck itself, as the upgrade does: the
+ * bundle is retired (unless the deck already points at it) and the deck reads
+ * a retryable error instead of `switching` until the track is reloaded. */
+function _landHeldStems(
+	deck: DeckId,
+	held: NonNullable<_DeckRuntime['pendingStemUpgrade']>,
+	ctx: AudioContext
+): Promise<void> {
+	const rt = _rt[deck];
+	const stale = () => held.token !== rt.loadToken || stemsBlockedState() !== null;
+	return landHeldStemsOrSettle({
+		land: () => _landStems(deck, held, ctx, stale),
+		adopted: () => rt.processor === held.processor,
+		retire: () => _retireProcessor(held.processor),
+		stale: () => held.token !== rt.loadToken,
+		// Stems switched off mid-landing (PERFMODE-15) settle to the block's own state.
+		fail: (message) => {
+			deckStates[deck].stems = stemsBlockedState() ?? { ...unavailableStemDeckState(message), status: 'error' };
+		}
+	});
+}
+
 /**
  * LAZY-STEMS. The whole secondary load: probe, fetch, decode, build, swap.
  * Runs AFTER the deck is playable and is never awaited by `load`.
@@ -2772,9 +2834,10 @@ async function _upgradeDeckStems(
 	const _stemDecodeBlocked = stemBlockCheck(st, () => token === rt.loadToken);
 	if (_stemDecodeBlocked()) return;
 	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
+	const phase = (name: StemLoadPhase, progress: StemFetchProgress | null = null, reason: string | null = null): void => { if (!stale()) st.stems = loadingStemDeckState({ phase: name, progress, reason }); }; // STEM-48: every stage is a NAMED on-deck state
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
-		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale }));
+		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale, onHydrating: (progress) => phase('fetching', progress) }));
 		if (probe === null || stale()) return;
 		if (probe.status !== 'ready') {
 			// A settled "this track has no bundle". Not an error, and not a
@@ -2786,13 +2849,14 @@ async function _upgradeDeckStems(
 		}
 		const layout = probe.manifest.layout;
 		const layoutParts = STEM_LAYOUT_PART_NAMES[layout];
+		phase('downloading');
 		const encodedParts = await time(
 			'fetchStems',
 			fetchStemAudioArrayBuffers(stableId, layout)
 		);
 		if (stale()) return;
 		// Q18: four workers, not four awaits on WebKit's single decode thread.
-		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts));
+		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { deck, stale, onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
 		if (stale()) return;
 		const stemBuffers = decoded.buffers;
 		const created = await time(
@@ -2826,30 +2890,12 @@ async function _upgradeDeckStems(
 			{ source: probe.manifest.source, model: probe.manifest.model, layout },
 			created.alignment
 		);
-		await _withDeckSwap(rt, async () => {
-			if (stale()) {
-				if (built !== null) _retireProcessor(built);
-				built = null;
-				return;
-			}
-			if (!_deckIsReplaceable(deck)) {
-				// Playing. The engine forbids replacing a live processor, so hold
-				// the finished bundle and land it on the next stop rather than
-				// glitching the output mid-phrase.
-				rt.pendingStemUpgrade = {
-					token,
-					processor: created.processor,
-					state: readyState
-				};
-				built = null;
-				stages.deferredToStop = 1;
-				return;
-			}
-			_adoptStemProcessor(deck, { processor: created.processor, state: readyState });
-			built = null;
-		});
+		// STEM-47: a playing deck takes the stems live instead of holding them until it stops.
+		const landed = await time('landStems', _landStems(deck, { token, processor: created.processor, state: readyState }, ctx, stale));
+		built = null; // landed, held as pendingStemUpgrade, or retired as stale: no longer this function's to free
+		if (landed === 'deferred') stages.deferredToStop = 1;
 		stages.total = Math.round(performance.now() - t0);
-		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, decoded.labels);
+		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, { ...decoded.labels, landed });
 	} catch (error) {
 		if (built !== null) _retireProcessor(built);
 		if (stale()) return;
@@ -4123,6 +4169,17 @@ class RbAudioEngine implements AudioEngine {
 
 	setStemEqMode(deck: DeckId, enabled: boolean): void {
 		applyStemEqMode(deck, enabled, (d) => mixerState.channels[d]);
+	}
+
+	/** STEM-46/47: get this deck's stems now (the decision is retryDeckStems, in stem-hydrate-wait.ts). */
+	retryStems(deck: DeckId): Promise<void> {
+		const { st, rt } = _requireLoaded(deck, 'retryStems');
+		const held = rt.pendingStemUpgrade, ctx = _ctx, mix = rt.audioBuffer, sid = st.stable_id, token = rt.loadToken;
+		return retryDeckStems(deck, sid, st.stems, {
+			landHeld: held === null || ctx === null ? null : () => _landHeldStems(deck, held, ctx),
+			reload: ctx === null || mix === null || sid === null ? null : () => { st.stems = loadingStemDeckState(); void _upgradeDeckStems(deck, sid, token, ctx, mix); },
+			current: () => rt.loadToken === token && st.stable_id === sid
+		});
 	}
 
 	captureDeckAudio(deck: DeckId): DeckAudioSnapshot {
