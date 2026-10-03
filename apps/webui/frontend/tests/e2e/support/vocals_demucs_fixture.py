@@ -161,7 +161,7 @@ def _stamp_duration_ms(state_db_path: Path, stable_id: str, audio_path: Path) ->
     """Record the clip's measured duration on the track row.
 
     PreviewStrip positions vocal bars by ``duration_ms`` and draws none when it
-    is null. Folder ingest reads duration through the optional mutagen extra,
+    is null. Folder ingest reads duration through tinytag,
     which the dev env does not install, so measure it with ffprobe and write it
     back through the production writer.
     """

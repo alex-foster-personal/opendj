@@ -8,12 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from apps.shared.tag_writer import TagRead, read_tags
+from apps.shared.tag_writer import TagRead
 from apps.tags import apply as tags_apply
-
-# tag write path needs the tags extra; skip (never fail) when absent.
-pytestmark = pytest.mark.requires_mutagen
-
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
@@ -59,19 +55,12 @@ def test_live_writes_tags_and_creates_backup(tmp_path: Path) -> None:
             title="Unified", artist="UArt", genre="Techno", bpm=128.0
         ),
     )
-    assert res["applied_count"] == 1, f"unexpected result: {res}"
-    assert not res["errors"], res["errors"]
-
-    # Re-read to confirm the write landed.
-    got = read_tags(dst)
-    assert got.title == "Unified"
-    assert got.artist == "UArt"
-    assert got.genre == "Techno"
-    assert got.bpm == 128.0
-
-    # Backup exists.
+    assert res["applied_count"] == 0, f"unexpected result: {res}"
+    assert res["errors"] and "write failed" in res["errors"][0]
+    assert "GPL" in res["errors"][0]
+    assert _sha(dst) == hashlib.sha256(src.read_bytes()).hexdigest()
     backups = list(backup_root.rglob("*.mp3"))
-    assert backups, "expected backup file"
+    assert backups, "expected backup file before the refused write"
 
 
 @pytest.mark.requirement("META-01")
@@ -92,8 +81,8 @@ def test_provenance_rows_inserted(tmp_path: Path) -> None:
         dry_run=False,
         fetch_rb=lambda p: TagRead(genre="Techno", bpm=128.0),
     )
-    assert res["applied_count"] == 1
-    # Query the tag_provenance table.
+    assert res["applied_count"] == 0
+    assert res["errors"] and "write failed" in res["errors"][0]
     conn = sqlite3.connect(dedup_db)
     try:
         count = conn.execute(
@@ -102,7 +91,7 @@ def test_provenance_rows_inserted(tmp_path: Path) -> None:
         ).fetchone()[0]
     finally:
         conn.close()
-    assert count >= 2  # at least genre + bpm + whatever else unified
+    assert count == 0
 
 
 @pytest.mark.requirement("META-01")
@@ -121,25 +110,8 @@ def test_reversal_script_restores_original(tmp_path: Path) -> None:
         dry_run=False,
         fetch_rb=lambda p: TagRead(title="Mutated", artist="Other"),
     )
-    assert res["applied_count"] == 1
-    # File now differs from original.
-    assert _sha(dst) != before
-
-    # Execute the reversal script via shell.
-    import subprocess
-
-    # Windows ships a stub System32\bash.exe that fails without WSL, so
-    # "on PATH" is not enough -- require a bash that actually runs.
-    bash = shutil.which("bash")
-    if bash is None or subprocess.run(
-        [bash, "-c", "true"], capture_output=True, check=False
-    ).returncode != 0:
-        pytest.skip("functional bash unavailable; cannot execute the reversal script")
-    rc = subprocess.run(
-        ["bash", res["reversal"]], capture_output=True, text=True, check=False
-    )
-    assert rc.returncode == 0, f"reversal failed: {rc.stderr}"
-    # File restored.
+    assert res["applied_count"] == 0
+    assert res["reversal"] is None
     assert _sha(dst) == before
 
 
@@ -220,8 +192,9 @@ def test_allow_app_running_keeps_backup_rail(tmp_path: Path) -> None:
         dry_run=False,
         fetch_rb=lambda p: TagRead(title="Unified", artist="UArt"),
     )
-    assert res.error is None, res.error
+    assert res.error and "write failed" in res.error
     assert res.backup is not None
+    assert _sha(dst) == hashlib.sha256(src.read_bytes()).hexdigest()
     assert res.backup.exists()
     assert list(backup_root.rglob("*.mp3"))
 
