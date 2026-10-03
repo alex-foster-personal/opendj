@@ -150,8 +150,8 @@ def adts_stream(path: Path | str) -> AdtsStream | None:
             hdr = fh.read(7)
             frame = _adts_frame(hdr)
             if frame is None:
-                if _sync_like(hdr):
-                    return None  # a damaged or cut-off frame header
+                if hdr and not hdr.startswith(_TRAILING_TAGS):
+                    return None  # damaged frame, not EOF or a trailing tag
                 break
             if offset + frame[1] > size or (first and frame[0] != first[0]):
                 return None
@@ -175,10 +175,9 @@ def _id3v2_end(head: bytes) -> int:
     return 10 + size + (10 if head[5] & 0x10 else 0)
 
 
-def _sync_like(hdr: bytes) -> bool:
-    """Whether bytes that are not a valid frame still begin with ADTS sync:
-    a header cut off at EOF or carrying invalid fields, so damage, not a tag."""
-    return len(hdr) > 0 and hdr[0] == 0xFF and (len(hdr) < 2 or hdr[1] & 0xF6 == 0xF0)
+# Metadata a raw AAC file may carry after its last frame: ID3v1, ID3v2
+# (appended), APEv2 and Lyrics3. Anything else after a frame is damage.
+_TRAILING_TAGS = (b"TAG", b"ID3", b"APETAGEX", b"LYRICSBEGIN")
 
 
 def _adts_frame(hdr: bytes) -> tuple[int, int, int, int] | None:

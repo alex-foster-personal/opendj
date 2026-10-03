@@ -190,6 +190,12 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     bad = tmp_path / "bad.aac"
     bad.write_bytes(_adts_frames(1) + _adts_frames(1, rate_index=15))
     assert _tagreader.adts_duration(bad) is None
+    # And a later frame whose sync byte is corrupted is damage, not a tag.
+    flipped = bytearray(_adts_frames(2))
+    flipped[1024] = 0xFE
+    corrupt = tmp_path / "corrupt.aac"
+    corrupt.write_bytes(bytes(flipped))
+    assert _tagreader.adts_duration(corrupt) is None
     # A later frame at another sample rate is not the same stream either.
     mixed = tmp_path / "mixed.aac"
     mixed.write_bytes(_adts_frames(1, rate_index=4) + _adts_frames(1, rate_index=3))
