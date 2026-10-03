@@ -175,7 +175,6 @@ def test_track_out_lyrics_available_for_asr_cache(
     assert response.json()["lyrics_available"] is True
 
 
-@pytest.mark.requires_mutagen
 def test_track_out_artwork_available_false_for_audio_without_picture(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
@@ -391,26 +390,19 @@ def _listing_row_artwork(
     raise AssertionError(f"stable_id {stable_id} missing from listing")
 
 
-@pytest.mark.requires_mutagen
 @pytest.mark.requirement("PARITY-04")
 def test_track_detail_artwork_available_agrees_with_listing_unmapped(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
     """[if] unmapped embedded art [then] list and detail agree on artwork_available, [else stop]."""
-    from mutagen.id3 import APIC
-    from mutagen.mp3 import MP3
+    from tests.support.embed_picture import with_id3_apic
 
     fixture = (
         Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
     )
     jpeg_bytes = _minimal_jpeg_bytes()
     audio_path = tmp_path / "embedded-art.mp3"
-    shutil.copy2(fixture, audio_path)
-    audio = MP3(audio_path)
-    audio.tags.add(
-        APIC(encoding=3, mime="image/jpeg", type=3, desc="cover", data=jpeg_bytes)
-    )
-    audio.save()
+    audio_path.write_bytes(with_id3_apic(fixture.read_bytes(), jpeg_bytes))
 
     stable_id = "c" * 40
     state_dir = tmp_path / "state"
