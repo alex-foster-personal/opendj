@@ -420,7 +420,6 @@ class PairingSnapshot(BaseModel):
 
 
 class PairingCreate(BaseModel):
-    # Non-empty, as PairingsRepo.add requires of the rows it shares this table with.
     from_stable_id: str = Field(min_length=1)
     to_stable_id: str = Field(min_length=1)
     direction: Literal["->", "<->"] = "->"
