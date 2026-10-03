@@ -19,11 +19,14 @@ Requirements (mini-PRD):
     [if] ``steps.analysis`` is false [then] only analysis is off
     [if] a step name is unknown or a value is not a bool [then ⛔️] raise
     [if] one key is updated [then] the others keep their stored value
+    [if] two updates overlap [then] both keys land and neither raises
 """
 from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,6 +37,9 @@ CONFIG_FILENAME: str = "coverage-drain.json"
 #: Steps a user can switch off one by one. Matches the drain's job order.
 SWITCHABLE_STEPS: tuple[str, ...] = ("vocals", "lyrics", "analysis")
 CONFIG_KEYS: frozenset[str] = frozenset({"enabled", "steps", "transient_bundle_cap"})
+#: One load-merge-write of the setting at a time, so overlapping PUTs cannot
+#: drop each other's keys or race on a temp file.
+_UPDATE_LOCK = threading.Lock()
 
 
 def config_path(data_dir: Path) -> Path:
@@ -82,17 +88,26 @@ class DrainConfig:
         transient_bundle_cap: int | None = None,
     ) -> None:
         """Change the named keys; every other stored key keeps its value."""
-        payload = self._load()
-        if enabled is not None:
-            payload["enabled"] = enabled
-        if steps is not None:
-            payload["steps"] = {**self.steps(), **_validated_steps(steps, self.path)}
-        if transient_bundle_cap is not None:
-            payload["transient_bundle_cap"] = _validated_cap(transient_bundle_cap, self.path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(payload) + "\n", encoding="utf-8")
-        os.replace(temporary, self.path)
+        with _UPDATE_LOCK:
+            payload = self._load()
+            if enabled is not None:
+                payload["enabled"] = enabled
+            if steps is not None:
+                payload["steps"] = {**self.steps(), **_validated_steps(steps, self.path)}
+            if transient_bundle_cap is not None:
+                payload["transient_bundle_cap"] = _validated_cap(transient_bundle_cap, self.path)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(
+                prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload) + "\n")
+                os.replace(temporary, self.path)
+            except BaseException:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+                raise
 
     def set_enabled(self, enabled: bool) -> None:
         self.update(enabled=enabled)

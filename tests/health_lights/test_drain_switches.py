@@ -209,3 +209,48 @@ def test_memory_pressure_does_not_stop_vocals_or_lyrics(library: Library) -> Non
 
     assert states == ["ran:vocals", "ran:lyrics", "yielding_memory_pressure"]
     assert rig.analysis_runs == []
+
+
+@pytest.mark.requirement("HEALTH-10")
+def test_overlapping_config_updates_both_land(tmp_path, monkeypatch) -> None:
+    """[if] two config updates overlap [then] both keys are stored and neither raises, [else stop].
+
+    MUTATION TARGET: drop the update lock and the slowed first read lets the
+    second writer's stale payload drop the first one's key (Codex, PR #4974).
+    """
+    import threading
+    import time
+
+    from apps.webui.server import coverage_drain_state as state
+
+    config = state.DrainConfig(state.config_path(tmp_path))
+    real_load = state.DrainConfig._load
+    first = threading.Event()
+
+    def slow_load(self):
+        payload = real_load(self)
+        if not first.is_set():
+            first.set()
+            time.sleep(0.3)  # the other update starts while this one holds the old payload
+        return payload
+
+    monkeypatch.setattr(state.DrainConfig, "_load", slow_load)
+    errors: list[BaseException] = []
+
+    def run(**kwargs) -> None:
+        try:
+            config.update(**kwargs)
+        except BaseException as exc:  # noqa: BLE001 - surfaced by the assert below
+            errors.append(exc)
+
+    a = threading.Thread(target=run, kwargs={"enabled": False})
+    a.start()
+    first.wait(5)
+    b = threading.Thread(target=run, kwargs={"transient_bundle_cap": 1})
+    b.start()
+    a.join(5)
+    b.join(5)
+    assert errors == []
+    stored = json.loads(config.path.read_text(encoding="utf-8"))
+    assert stored == {"enabled": False, "transient_bundle_cap": 1}
+    assert [p.name for p in config.path.parent.iterdir()] == [config.path.name]

@@ -195,6 +195,11 @@ class RootReanchorRefused(OSError):
     """:func:`reanchor_root` would not trust the root; ``str()`` says why."""
 
 
+class RootReanchorUnavailable(RootReanchorRefused):
+    """This platform has no descriptor-anchored walk (Windows), so there is
+    no root identity to record and nothing to re-anchor."""
+
+
 def _open_real_directory_in(parent_fd: int, part: str, walked: Path, root: Path) -> int:
     """Open ``part`` below ``parent_fd`` if it is a real directory, never a symlink."""
     try:
@@ -263,8 +268,14 @@ def reanchor_root(root: Path) -> bool:
     remembered under the old identity is forgotten (the reset hooks run).
 
     False, with nothing changed, when the root or a directory above it does
-    not exist.
+    not exist. :class:`RootReanchorUnavailable` where the platform has no
+    descriptor-anchored walk (Windows), rather than reaching POSIX-only flags.
     """
+    if not FD_ANCHORED_WALK_SUPPORTED:
+        raise RootReanchorUnavailable(
+            "re-anchoring the root needs the descriptor-anchored walk, which this "
+            f"platform ({sys.platform}) does not have; the root is not anchored here"
+        )
     try:
         parent_fd = _open_real_parent(root)
     except FileNotFoundError:

@@ -60,9 +60,13 @@ def reanchor_share_root() -> ShareRootReanchorOut:
     ``exists`` is false, and nothing changes, when the share root is not there.
     The call is refused with 409, and ``detail`` says why, when a directory
     ABOVE the share root is a symlink: only the share root itself may be one.
+    It is 501 on a platform with no anchored walk (Windows), where the share
+    root is never anchored and so there is nothing to re-trust.
     """
     try:
         exists = platform_paths.reanchor_share_root()
+    except fd_anchored_walk.RootReanchorUnavailable as unavailable:
+        raise HTTPException(status_code=501, detail=f"share root not re-anchored: {unavailable}") from unavailable
     except fd_anchored_walk.RootReanchorRefused as refusal:
         raise HTTPException(status_code=409, detail=f"share root not re-anchored: {refusal}") from refusal
     return ShareRootReanchorOut(exists=exists)
