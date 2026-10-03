@@ -21,6 +21,8 @@ tests.
 """
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -311,33 +313,62 @@ def test_upload_duration_reads_raw_aac_held_as_part(tmp_path):
     assert ingest_upload._duration_s(FIXTURE) == pytest.approx(3.06, abs=0.05)
 
 
-def test_upload_refuses_a_damaged_raw_aac(tmp_path, monkeypatch):
+def test_upload_refuses_a_damaged_raw_aac(tmp_path):
     """A truncated ADTS upload 422s and leaves no hold file, not a ``new`` stage.
 
     tinytag misreads raw ADTS as MPEG with a bogus positive duration, so a
     failed frame walk must not fall back to it (review of #4997). Control:
-    the same frames intact stage as new.
+    the same frames intact stage as new through the production duplicate
+    lookup, against a disposable real state DB (``MDT_DATA_DIR`` is read at
+    import, so the upload runs in its own interpreter).
     """
-    import io
-
-    from fastapi import HTTPException, UploadFile
-
-    from apps.webui.server.routes import ingest_upload
-
-    # No library to match against: the duplicate lookup reads the state DB.
-    monkeypatch.setattr(ingest_upload, "_best_duplicate", lambda _p, _d: (None, "duration"))
     frames = _adts_frames(8)
-    with pytest.raises(HTTPException) as err:
-        ingest_upload._stage_one_upload(
-            tmp_path, UploadFile(io.BytesIO(frames[:-100]), filename="cut.aac"), "b", False
+    (tmp_path / "cut.bin").write_bytes(frames[:-100])
+    (tmp_path / "ok.bin").write_bytes(frames)
+    dest = tmp_path / "staged"
+    dest.mkdir()
+    code = textwrap.dedent(
+        f"""
+        import io, json
+        from pathlib import Path
+        from fastapi import HTTPException, UploadFile
+        from apps.shared.state.db import open_rw
+        from apps.shared.state import paths
+        from apps.webui.server.routes import ingest_upload
+
+        open_rw(paths.STATE_DB).close()
+        src, dest = Path({str(tmp_path)!r}), Path({str(dest)!r})
+        out = {{"db": str(paths.STATE_DB)}}
+        try:
+            ingest_upload._stage_one_upload(
+                dest, UploadFile(io.BytesIO((src / "cut.bin").read_bytes()), filename="cut.aac"),
+                "b", False,
+            )
+            out["cut"] = "staged"
+        except HTTPException as exc:
+            out["cut"] = exc.status_code
+        out["left"] = sorted(p.name for p in dest.iterdir())
+        ok = ingest_upload._stage_one_upload(
+            dest, UploadFile(io.BytesIO((src / "ok.bin").read_bytes()), filename="ok.aac"),
+            "b", False,
         )
-    assert err.value.status_code == 422
-    assert not list(tmp_path.iterdir())
-    ok = ingest_upload._stage_one_upload(
-        tmp_path, UploadFile(io.BytesIO(frames), filename="ok.aac"), "b", True
+        out["ok"] = [ok.verdict, ok.duration_s, ok.fingerprint_method]
+        print(json.dumps(out))
+        """
     )
-    assert ok.verdict == "new"
-    assert ok.duration_s == pytest.approx(8 * 1024 / 44100)
+    env = {**os.environ, "MDT_DATA_DIR": str(tmp_path / "data")}
+    proc = subprocess.run(
+        [sys.executable, "-c", code], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert out["db"] == str(tmp_path / "data" / "state" / "state.db")
+    assert out["cut"] == 422
+    assert out["left"] == []
+    assert out["ok"][0] == "new"
+    assert out["ok"][1] == pytest.approx(8 * 1024 / 44100)
+    assert out["ok"][2] == "duration"
 
 
 def test_shared_read_reports_true_raw_aac_duration(tmp_path):
