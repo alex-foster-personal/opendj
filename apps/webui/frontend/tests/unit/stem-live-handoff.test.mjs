@@ -63,6 +63,9 @@ function deck(overrides = {}) {
 		cancelIncoming: async (when) => {
 			log.push(['cancelIncoming', when]);
 		},
+		connectIncoming: () => {
+			log.push(['connectIncoming']);
+		},
 		stopOutgoing: async (when) => {
 			log.push(['stopOutgoing', when]);
 		},
@@ -91,14 +94,14 @@ test('a playing idle deck hands off at one shared instant, stems first', async (
 	const { deps, log } = deck();
 	const outcome = await mod.handOffStemsLive(deps, 0.15);
 	assert.equal(outcome, 'handed_off');
-	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'stopOutgoing', 'commit']);
+	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'connectIncoming', 'stopOutgoing', 'commit']);
 	const when = log[0][1];
 	assert.ok(when >= 100 + 0.05 + 0.15, `handoff instant ${when} is inside the processor lead`);
 	// The whole point: one instant for both sides. A different stop time is a
 	// gap (later start) or a doubled deck (later stop).
 	assert.equal(log[1][1], when, 'stems are not scheduled at the handoff instant');
-	assert.equal(log[2][1], when, 'the mix does not stop at the instant the stems start');
-	assert.equal(log[3][1], when);
+	assert.equal(log[3][1], when, 'the mix does not stop at the instant the stems start');
+	assert.equal(log[4][1], when);
 	assert.equal(log[1][2], SEGMENT.positionSec, 'stems must start at the projected position');
 });
 
@@ -240,7 +243,7 @@ test('each retry gives the acknowledgement more room', () => {
 // landStemsOnDeck is what the engine calls. These drive it with a fake deck
 // runtime and fake processors on a controllable clock.
 //
-// [if] the stems are scheduled before they are connected [then ⛔️]
+// [if] the stems are connected to the deck before their schedule is acknowledged in time [then ⛔️] (a late ack would leave them audible beside the mix)
 // [if] the mix is stopped at another instant than the stems start [then ⛔️]
 // [if] the mix is retired before its stop instant has passed [then ⛔️]
 // [if] the stems' latency differs from the deck's [then] nothing is scheduled
@@ -313,7 +316,7 @@ function landing(overrides = {}) {
 	return { port, log, timers, runtime, clock, mix, stems };
 }
 
-test('a playing deck: stems connect, then start at the instant the mix stops', async () => {
+test('a playing deck: stems are scheduled, connected once acknowledged, then start as the mix stops', async () => {
 	const { port, log } = landing();
 	assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
 	const order = names(log);
@@ -322,8 +325,8 @@ test('a playing deck: stems connect, then start at the instant the mix stops', a
 	const schedule = order.indexOf('stems.schedule');
 	const stop = order.indexOf('mix.stop');
 	const commit = order.indexOf('commit');
-	assert.ok(connect >= 0 && connect < schedule, 'stems were scheduled before they were connected');
-	assert.ok(schedule < stop && stop < commit, `wrong order: ${order.join(', ')}`);
+	assert.ok(schedule >= 0 && schedule < connect, 'stems were connected before their schedule was acknowledged');
+	assert.ok(connect < stop && stop < commit, `wrong order: ${order.join(', ')}`);
 	assert.equal(log[connect][1], 'analyser', 'stems are not wired into the deck channel');
 	const when = log[schedule][1];
 	assert.equal(log[stop][1], when, 'the mix does not stop at the instant the stems start');
@@ -384,4 +387,66 @@ test('the binding reads the deck live: a command queued mid-landing blocks the h
 	assert.equal(await mod.landStemsOnDeck(port), 'deferred');
 	assert.ok(names(log).includes('stems.stop'), 'the scheduled stems start was not canceled');
 	assert.ok(!names(log).includes('mix.stop') && !names(log).includes('commit'));
+	assert.ok(!names(log).includes('stems.connect'), 'a canceled schedule was connected to the deck');
+});
+
+test('an acknowledgement that lands after the handoff instant never connects the stems', async () => {
+	// [if] the schedule is acknowledged after its instant [then] the stems are never connected to the deck, the mix is untouched, [else stop]
+	const { port, log, clock } = landing();
+	let late = 0;
+	port.incoming.schedule = async (when) => {
+		log.push(['stems.schedule', when]);
+		late += 1;
+		clock.currentTime = when + 0.01; // the ack arrives after the instant
+	};
+	assert.equal(await mod.landStemsOnDeck(port), 'deferred');
+	assert.equal(late, mod.STEM_HANDOFF_MARGINS_SEC.length, 'every attempt should have been late');
+	assert.ok(!names(log).includes('stems.connect'), 'a late schedule was connected and could play beside the mix');
+	assert.ok(!names(log).includes('mix.stop') && !names(log).includes('commit'));
+});
+
+// ------------------------------------------- LOAD NOW on a held bundle (STEM-47)
+//
+// [if] landing a held bundle rejects [then] the bundle is retired, the deck reads a retryable error, and the caller is told, [else stop]
+// [if] the deck already points at the held processor when the landing rejects [then] it is not retired
+
+function heldPort(overrides = {}) {
+	const log = [];
+	return {
+		log,
+		port: {
+			land: async () => {
+				throw new Error('schedule rejected');
+			},
+			adopted: () => false,
+			retire: () => log.push(['retire']),
+			stale: () => false,
+			fail: (message) => log.push(['fail', message]),
+			...overrides
+		}
+	};
+}
+
+test('a held landing that rejects retires the bundle and settles the deck to a retryable error', async () => {
+	const { port, log } = heldPort();
+	await assert.rejects(mod.landHeldStemsOrSettle(port), /schedule rejected/);
+	assert.deepEqual(log, [['retire'], ['fail', 'schedule rejected']]);
+});
+
+test('a held landing that rejects after the deck adopted the stems keeps them', async () => {
+	const { port, log } = heldPort({ adopted: () => true });
+	await assert.rejects(mod.landHeldStemsOrSettle(port));
+	assert.deepEqual(log, [['fail', 'schedule rejected']]);
+});
+
+test('a held landing that rejects on a stale load retires it and leaves the new load alone', async () => {
+	const { port, log } = heldPort({ stale: () => true });
+	await assert.rejects(mod.landHeldStemsOrSettle(port));
+	assert.deepEqual(log, [['retire']]);
+});
+
+test('control: a held landing that succeeds touches nothing', async () => {
+	const { port, log } = heldPort({ land: async () => 'handed_off' });
+	await mod.landHeldStemsOrSettle(port);
+	assert.deepEqual(log, []);
 });

@@ -70,8 +70,13 @@ export interface StemHandoffDeps {
 	snapshot(): StemHandoffSnapshot;
 	/** Where the deck will be at `when`. Called only on an idle, active deck. */
 	segmentAt(when: number): StemHandoffSegment;
-	/** Start the stems at `when`, at the segment's position. Resolves on ack. */
+	/** Start the stems at `when`, at the segment's position. Resolves on ack.
+	 * The stems are not connected to the deck's output yet. */
 	scheduleIncoming(when: number, segment: StemHandoffSegment): Promise<void>;
+	/** Connect the scheduled stems to the deck's output. Called only once the
+	 * acknowledgement is back and `when` is still ahead, so a late schedule is
+	 * never audible beside the mix. Synchronous. */
+	connectIncoming(): void;
 	/** Silence a stem schedule that will not be used: an inactive change at the
 	 * SAME instant, which the worklet's time map lets replace the start. */
 	cancelIncoming(when: number): Promise<void>;
@@ -138,6 +143,7 @@ export async function handOffStemsLive(
 	}
 	// From here to the end is synchronous: no command can interleave between
 	// the mix's stop being posted and the deck pointing at the stems.
+	deps.connectIncoming();
 	void deps.stopOutgoing(when).catch(() => deps.retireOutgoingNow());
 	deps.commit(when, segment);
 	return 'handed_off';
@@ -253,9 +259,14 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 		},
 		scheduleIncoming: async (when, segment) => {
 			if (rt.nodes === null) throw new Error('stem handoff: the deck audio graph is missing');
-			// Connected first, and silent until `when`: its time map is inactive.
-			port.incoming.connect(rt.nodes.analyser);
+			// Not connected yet: an acknowledgement that arrives after `when`
+			// would otherwise leave the stems playing beside the mix until the
+			// cancel lands. connectIncoming() joins them once the instant is safe.
 			await port.incoming.schedule(when, port.startChange(segment));
+		},
+		connectIncoming: () => {
+			if (rt.nodes === null) throw new Error('stem handoff: the deck audio graph is missing');
+			port.incoming.connect(rt.nodes.analyser);
 		},
 		cancelIncoming: (when) => port.incoming.stop(when),
 		stopOutgoing: async (when) => {
@@ -290,4 +301,32 @@ export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandin
 	if (outcome === 'stale') port.retire(port.incoming);
 	else if (outcome === 'deferred') port.defer();
 	return outcome;
+}
+
+/** What `LOAD NOW` on a held bundle needs to settle a failed landing. */
+export interface HeldStemLandingPort {
+	land(): Promise<unknown>;
+	/** The deck already points at the held processor. */
+	adopted(): boolean;
+	retire(): void;
+	stale(): boolean;
+	/** Publish a retryable error on the deck. */
+	fail(message: string): void;
+}
+
+/**
+ * Land a bundle held for the deck's next stop, settling the deck if the
+ * landing rejects. The landing clears the held reference and shows
+ * `switching` before anything is awaited, so without this a rejection left
+ * the deck reading `switching` with nothing to retry until the track was
+ * reloaded. The rejection still reaches the caller.
+ */
+export async function landHeldStemsOrSettle(port: HeldStemLandingPort): Promise<void> {
+	try {
+		await port.land();
+	} catch (error) {
+		if (!port.adopted()) port.retire();
+		if (!port.stale()) port.fail(error instanceof Error ? error.message : String(error));
+		throw error;
+	}
 }

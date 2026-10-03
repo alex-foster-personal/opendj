@@ -8,7 +8,7 @@ import { releaseEagerStemDecodeNow } from '$lib/rb/stem-decode-shed';
 import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { StemDeckState, StemFetchProgress } from '$lib/rb/stem-types';
-import type { StemLandingOutcome, StemLandingPort } from '$lib/rb/stem-live-handoff';
+import type { HeldStemLandingPort, StemLandingOutcome, StemLandingPort } from '$lib/rb/stem-live-handoff';
 
 // The deck engine sits at its import fan-out ceiling, so the rest of the stem
 // landing surface reaches it through this module, which it already imports.
@@ -21,6 +21,11 @@ export type { StemLandingOutcome } from '$lib/rb/stem-live-handoff';
 export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
 	const handoff = await import('$lib/rb/stem-live-handoff');
 	return handoff.landStemsOnDeck(port);
+}
+
+/** STEM-47. `LOAD NOW` on a held bundle, settling the deck if it rejects. */
+export async function landHeldStemsOrSettle(port: HeldStemLandingPort): Promise<void> {
+	return (await import('$lib/rb/stem-live-handoff')).landHeldStemsOrSettle(port);
 }
 
 /** Why a decode is held (shown on the deck while `waiting`). */
@@ -158,7 +163,25 @@ export interface StemRetryPort {
  *   error    -> clear the engine's recorded fetch failure, then load again
  *   unavailable -> load again (the answer may have changed)
  */
-export async function retryDeckStems(
+export function retryDeckStems(
+	deck: number,
+	stableId: string | null,
+	stems: StemDeckState,
+	port: StemRetryPort
+): Promise<void> {
+	// One retry per deck at a time: a double click or two agents sending
+	// `stem_load` join the retry already running instead of starting a second
+	// hydrate, reload or landing beside it.
+	const running = _retrying.get(deck);
+	if (running !== undefined) return running;
+	const retry = _retryDeckStems(deck, stableId, stems, port).finally(() => _retrying.delete(deck));
+	_retrying.set(deck, retry);
+	return retry;
+}
+
+const _retrying = new Map<number, Promise<void>>();
+
+async function _retryDeckStems(
 	deck: number,
 	stableId: string | null,
 	stems: StemDeckState,

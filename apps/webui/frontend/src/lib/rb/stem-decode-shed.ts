@@ -75,13 +75,14 @@ export function setEagerStemDecodeShed(
  * seconds almost never sees it clear; what the hold buys is distance from
  * the play-start transient. Two bounds, one number each:
  *
- *   REAL pressure (the kernel reports level 2 or above, or an xrun landed in
- *   the current window): 2 s. Long enough for the transport start and the
+ *   REAL pressure (the kernel reports level 2 or above): 2 s. Long enough for the transport start and the
  *   glitch that tripped it to pass, short enough that the stem buttons are
  *   live before a DJ who pressed play reaches for them.
  *
- *   EARLY WARNING only (churn over its threshold, no kernel signal, no xrun):
- *   500 ms. Nothing has been damaged; the hold only steps the decode off the
+ *   EARLY WARNING only (churn over its threshold, or an xrun in the current
+ *   window, with the kernel below level 2): 500 ms. PERF-STEMDEC-04 measured
+ *   the xrun signal true on 8 of 10 loads on a loaded host with no effect on
+ *   late callbacks inside the decode, so it no longer selects the 2 s bound. Nothing has been damaged; the hold only steps the decode off the
  *   play dispatch and its schedule lead.
  */
 export const EAGER_STEM_DECODE_MAX_DEFER_MS = 2000;
@@ -120,7 +121,7 @@ export async function awaitEagerStemDecodeSlot(
 	if (cause !== null) return 'immediate';
 	// Read at the moment of the hold: the grade is the pressure that caused it.
 	const boundMs =
-		_shed.xrunsInWindow === true || _kernelPressure?.() === true
+		_kernelPressure?.() === true
 			? EAGER_STEM_DECODE_MAX_DEFER_MS
 			: EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS;
 	wait.onDeferred?.();

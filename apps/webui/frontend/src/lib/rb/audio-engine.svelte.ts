@@ -135,7 +135,7 @@ import {
 	patchTrack,
 	RbApiError
 } from '$lib/rb/api-rb';
-import { awaitStemArtifact, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
+import { awaitStemArtifact, landHeldStemsOrSettle, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -2773,6 +2773,29 @@ function _landStems(
 	});
 }
 
+/** STEM-47. `LOAD NOW` on a bundle held for the deck's next stop. `_landStems`
+ * clears the held reference and shows `switching` before anything is awaited,
+ * so a rejected landing must settle the deck itself, as the upgrade does: the
+ * bundle is retired (unless the deck already points at it) and the deck reads
+ * a retryable error instead of `switching` until the track is reloaded. */
+function _landHeldStems(
+	deck: DeckId,
+	held: NonNullable<_DeckRuntime['pendingStemUpgrade']>,
+	ctx: AudioContext
+): Promise<void> {
+	const rt = _rt[deck];
+	const stale = () => held.token !== rt.loadToken || stemsBlockedState() !== null;
+	return landHeldStemsOrSettle({
+		land: () => _landStems(deck, held, ctx, stale),
+		adopted: () => rt.processor === held.processor,
+		retire: () => _retireProcessor(held.processor),
+		stale,
+		fail: (message) => {
+			deckStates[deck].stems = { ...unavailableStemDeckState(message), status: 'error' };
+		}
+	});
+}
+
 /**
  * LAZY-STEMS. The whole secondary load: probe, fetch, decode, build, swap.
  * Runs AFTER the deck is playable and is never awaited by `load`.
@@ -4137,7 +4160,7 @@ class RbAudioEngine implements AudioEngine {
 		const { st, rt } = _requireLoaded(deck, 'retryStems');
 		const held = rt.pendingStemUpgrade, ctx = _ctx, mix = rt.audioBuffer, sid = st.stable_id;
 		return retryDeckStems(deck, sid, st.stems, {
-			landHeld: held === null || ctx === null ? null : () => _landStems(deck, held, ctx, () => held.token !== rt.loadToken || stemsBlockedState() !== null),
+			landHeld: held === null || ctx === null ? null : () => _landHeldStems(deck, held, ctx),
 			reload: ctx === null || mix === null || sid === null ? null : () => { st.stems = loadingStemDeckState(); void _upgradeDeckStems(deck, sid, rt.loadToken, ctx, mix); }
 		});
 	}

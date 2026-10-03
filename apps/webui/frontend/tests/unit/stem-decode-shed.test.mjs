@@ -160,10 +160,10 @@ test('the DJ can start a held decode, and is told how many were waiting', async 
 });
 
 test('a hold nobody releases ends at the bound instead of lasting the whole track', async () => {
-	// PERFMODE-18: an xrun in the window is real pressure, which takes the
-	// longer of the two bounds (the grading itself is tested in
+	// PERFMODE-18: kernel pressure is real pressure, which takes the longer of
+	// the two bounds (the grading itself is tested in
 	// perfmode-18-stem-hold-pressure-graded.test.mjs).
-	shedModule.setEagerStemDecodeShed({ ...makeFakeShed({ deferred: true }), xrunsInWindow: true });
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }), () => true);
 	let armedMs = null;
 	let fire = null;
 	let cleared = 0;

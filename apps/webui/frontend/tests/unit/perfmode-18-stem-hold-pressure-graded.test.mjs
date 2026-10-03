@@ -15,7 +15,7 @@
  *   no pressure                              0 ms       0 ms
  *   churn early warning only             6,000 ms     500 ms
  *   kernel memory pressure level >= 2    6,000 ms   2,000 ms
- *   an xrun in the current window        6,000 ms   2,000 ms
+ *   an xrun in the current window        6,000 ms     500 ms
  *
  * The real createBackgroundDemandShed drives the real stem-decode-shed; the
  * only injected parts are the signals and the timer.
@@ -23,8 +23,9 @@
  * Regression lines:
  *   - if a decode is held with no pressure signal then broken
  *   - if a churn-only early warning holds a decode longer than 500 ms then broken
- *   - if kernel pressure or an xrun holds a decode longer than 2 s then broken
- *   - if kernel pressure or an xrun gets the short early-warning hold then broken
+ *   - if kernel pressure holds a decode longer than 2 s then broken
+ *   - if kernel pressure gets the short early-warning hold then broken
+ *   - if an xrun alone (kernel below level 2) holds a decode longer than 500 ms then broken
  *   - if a held decode is dropped rather than started at the bound then broken
  *   - if a finished cloud fetch can go unnoticed for more than 1 s in its first minute then broken
  */
@@ -97,16 +98,19 @@ test('kernel memory pressure: the hold is 2,000 ms, down from the flat 6,000 ms'
 	assert.equal(hold.heldMs, shedModule.EAGER_STEM_DECODE_MAX_DEFER_MS);
 });
 
-test('an xrun in the current window is real pressure too: 2,000 ms, with no kernel signal', async () => {
-	const hold = await measureHold({ playing: true, churn: false, kernel: false, xrunsDuringWindow: 1 });
-	assert.equal(hold.start, 'timed_out');
-	assert.equal(hold.heldMs, 2000);
+test('an xrun alone is the early warning: 500 ms, with the kernel below level 2', async () => {
+	// [if] an xrun landed in the current window with the kernel below level 2 [then] the decode starts within 500 ms, [else stop]
+	for (const churn of [false, true]) {
+		const hold = await measureHold({ playing: true, churn, kernel: false, xrunsDuringWindow: 3 });
+		assert.equal(hold.start, 'timed_out');
+		assert.equal(hold.heldMs, shedModule.EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS, `churn=${churn}`);
+	}
 });
 
 test('overshoot control: real pressure never gets the short early-warning hold', async () => {
 	for (const signals of [
 		{ churn: false, kernel: true, xrunsDuringWindow: 0 },
-		{ churn: true, kernel: false, xrunsDuringWindow: 3 }
+		{ churn: true, kernel: true, xrunsDuringWindow: 3 }
 	]) {
 		const hold = await measureHold({ playing: true, ...signals });
 		assert.ok(hold.heldMs > shedModule.EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS, JSON.stringify(signals));

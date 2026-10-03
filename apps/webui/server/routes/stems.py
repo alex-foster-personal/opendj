@@ -508,20 +508,40 @@ def _hydration_progress(stable_id: str, stems_dir: Path) -> StemHydrationProgres
         for tmp_dir in stems_dir.iterdir():
             if not tmp_dir.name.startswith(prefix) or not tmp_dir.is_dir():
                 continue
-            for child in tmp_dir.iterdir():
-                try:
-                    child_stat = child.stat()
-                except FileNotFoundError:
-                    # The fetch published (renamed) the directory mid-listing.
-                    continue
-                if stat.S_ISREG(child_stat.st_mode):
-                    files_done += 1
-                    bytes_done += child_stat.st_size
+            dir_files, dir_bytes = _written_so_far(tmp_dir)
+            files_done += dir_files
+            bytes_done += dir_bytes
     with _INFLIGHT_LOCK:
         files_total = _INFLIGHT_FILE_TOTALS.get(stable_id, 0)
     return StemHydrationProgressOut(
         files_total=files_total, files_done=files_done, bytes_done=bytes_done
     )
+
+
+def _written_so_far(tmp_dir: Path) -> tuple[int, int]:
+    """Regular files and bytes in one fetch's temp directory.
+
+    The fetch publishes (renames) or removes the directory when it finishes,
+    which can land between the caller's ``is_dir()`` and this listing, or
+    between the listing and a file's ``stat()``. Either way the directory's
+    files are no longer in flight: they count as nothing here, never as an
+    error, so a progress read racing a finished fetch cannot fail the poll.
+    """
+    files_done = 0
+    bytes_done = 0
+    try:
+        children = list(tmp_dir.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        return 0, 0
+    for child in children:
+        try:
+            child_stat = child.stat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(child_stat.st_mode):
+            files_done += 1
+            bytes_done += child_stat.st_size
+    return files_done, bytes_done
 
 
 def _hydration_in_flight(stable_id: str) -> bool:
