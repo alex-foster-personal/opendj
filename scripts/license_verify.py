@@ -25,6 +25,7 @@ ECOSYSTEMS: tuple[str, ...] = ("python", "javascript", "rust", "bundled")
 #: One `render_licenses` component line: "<name> <version> [<ecosystem>] -- <license>".
 _RECORD = re.compile(r"^(?P<label>\S.*?) \[(?P<eco>python|javascript|rust|bundled)\] -- \S.*$")
 _COUNT = re.compile(r"^Components: (\d+)$", re.MULTILINE)
+_BLOCK_HEADER = re.compile(r"^={78}\nApplies to: (.*)\n={78}\n", re.MULTILINE)
 
 
 def component_records(inventory: str) -> list[tuple[str, str]]:
@@ -40,6 +41,17 @@ def component_records(inventory: str) -> list[tuple[str, str]]:
     return records
 
 
+def attributed_member_lists(inventory: str) -> list[str]:
+    """`, `-bounded member lists of every LICENSE TEXTS block whose rendered body is non-empty.
+
+    Bounded so a label matches only as a whole member (`foo 1.0` never matches inside
+    `barfoo 1.0`); names may contain commas themselves, so members are not split.
+    """
+    section = inventory.partition("\nLICENSE TEXTS\n")[2].partition("\nNOTICES REQUIRED BY")[0]
+    parts = _BLOCK_HEADER.split(section)  # [preamble, members, body, members, body, ...]
+    return [f", {members}, " for members, body in zip(parts[1::2], parts[2::2], strict=True) if body.strip()]
+
+
 def verify_bundled_licenses(payload_dir: Path) -> None:
     """Prove the PRESENCE of the good thing: parsed component records, each with its license text."""
     for name in (LICENSES_FILE_NAME, NOTICE_FILE_NAME, ROOT_LICENSE_FILE_NAME):
@@ -53,12 +65,13 @@ def verify_bundled_licenses(payload_dir: Path) -> None:
     for ecosystem in ECOSYSTEMS:
         if not any(eco == ecosystem for _, eco in records):
             raise LicenseInventoryError(f"{LICENSES_FILE_NAME} lists no {ecosystem} component: an inventory failed silently")
-    attributed = "\n".join(line for line in inventory.splitlines() if line.startswith("Applies to: "))
+    attributed = attributed_member_lists(inventory)
     textless_names = {name for _, name in KNOWN_TEXTLESS}
     unattributed = [
         label
         for label, _ in records
-        if label.strip() not in attributed and label.rsplit(" ", 1)[0] not in textless_names
+        if not any(f", {label}, " in members for members in attributed)
+        and label.rsplit(" ", 1)[0] not in textless_names
     ]
     if unattributed:
         raise LicenseInventoryError(
