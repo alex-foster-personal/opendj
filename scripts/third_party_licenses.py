@@ -556,8 +556,8 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
     """
     components = collect_all(repo_root, payload_dir)
     require_license_texts(components)
-    (payload_dir / LICENSES_FILE_NAME).write_text(render_licenses(components), encoding="utf-8")
-    (payload_dir / REPORT_FILE_NAME).write_text(flag_report(components), encoding="utf-8")
+    (payload_dir / LICENSES_FILE_NAME).write_text(render_licenses(components), encoding="utf-8", newline="\n")
+    (payload_dir / REPORT_FILE_NAME).write_text(flag_report(components), encoding="utf-8", newline="\n")
     for name in (ROOT_LICENSE_FILE_NAME, NOTICE_FILE_NAME):
         shutil.copyfile(repo_root / name, payload_dir / name)
     return {
