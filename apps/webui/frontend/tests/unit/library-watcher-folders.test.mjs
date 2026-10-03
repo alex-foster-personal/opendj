@@ -44,4 +44,8 @@ test('relative, drive-relative and share-less forms are still rejected', () => {
 		assert.throws(() => validateWatcherFolderPathSyntax(path), /absolute path/, path);
 	}
 	assert.throws(() => validateWatcherFolderPathSyntax('C:\\a\\..\\b'), /\.\./);
+	assert.throws(() => validateWatcherFolderPathSyntax('/Music/..'), /\.\./);
+	// Codex P2 on PR #4014: two dots inside a folder name are not parent traversal.
+	assert.doesNotThrow(() => validateWatcherFolderPathSyntax('/Music/AC..DC'));
+	assert.doesNotThrow(() => validateWatcherFolderPathSyntax('D:\\Music\\AC..DC'));
 });

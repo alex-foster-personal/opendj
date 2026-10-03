@@ -37,7 +37,8 @@ export function validateWatcherFolderPathSyntax(path: string): void {
 	if (!isAbsoluteWatcherFolderPath(path)) {
 		throw new Error(`watcher folder must be an absolute path: ${path}`);
 	}
-	if (path.includes('..')) {
+	// Parent traversal is a whole `..` segment; a folder named `AC..DC` is fine.
+	if (path.split(/[\\/]/).includes('..')) {
 		throw new Error(`watcher folder must not contain ..: ${path}`);
 	}
 }

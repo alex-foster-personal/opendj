@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 from apps.shared.pairings.repo import PairingsRepo
@@ -78,6 +79,30 @@ def ensure_http_pairings_table(conn: sqlite3.Connection) -> None:
 
 def _graph_direction(http_dir: str) -> str:
     return "either" if http_dir == "<->" else "into"
+
+
+def _parse_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _http_owns_graph_edge(conn: sqlite3.Connection, pairing: Pairing) -> bool:
+    """True when the CAT-03 graph edge for ``pairing`` is absent or was created by it.
+
+    Codex P2 (BLOCKING) on PR #4014: an edge authored earlier on its own, for
+    example through the pairing CLI, must survive capturing and then deleting
+    an HTTP pairing on the same endpoints. The graph keeps ``created_at`` on
+    upsert, so an edge created before this HTTP pairing was stamped belongs to
+    someone else: the HTTP pairing neither rewrites nor removes it.
+    """
+    PairingsRepo(conn, ensure_schema=True)
+    row = conn.execute(
+        "SELECT created_at FROM pairings "
+        "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+        (pairing.from_stable_id, pairing.to_stable_id, _graph_direction(pairing.direction)),
+    ).fetchone()
+    if row is None:
+        return True
+    return _parse_utc(row[0]) >= _parse_utc(pairing.created_at)
 
 
 def _row_to_pairing(row: sqlite3.Row) -> Pairing:
@@ -174,13 +199,14 @@ def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
         ),
     )
     repo = PairingsRepo(conn, ensure_schema=True)
-    repo.add(
-        pairing.from_stable_id,
-        pairing.to_stable_id,
-        direction=_graph_direction(pairing.direction),
-        source=pairing.source,
-        notes=pairing.notes,
-    )
+    if _http_owns_graph_edge(conn, pairing):
+        repo.add(
+            pairing.from_stable_id,
+            pairing.to_stable_id,
+            direction=_graph_direction(pairing.direction),
+            source=pairing.source,
+            notes=pairing.notes,
+        )
     row = conn.execute(
         "SELECT pairing_id FROM http_pairings WHERE pairing_id=?",
         (pairing.pairing_id,),
@@ -251,13 +277,14 @@ def delete_http_pairing(
             current={"pairing_id": existing.pairing_id, "updated_at": existing.updated_at},
             etag=current,
         )
+    owns_edge = _http_owns_graph_edge(conn, existing)
     conn.execute("DELETE FROM http_pairings WHERE pairing_id=?", (pairing_id,))
-    repo = PairingsRepo(conn, ensure_schema=True)
-    repo.remove(
-        existing.from_stable_id,
-        existing.to_stable_id,
-        _graph_direction(existing.direction),
-    )
+    if owns_edge:
+        PairingsRepo(conn, ensure_schema=True).remove(
+            existing.from_stable_id,
+            existing.to_stable_id,
+            _graph_direction(existing.direction),
+        )
 
 
 __all__ = [
