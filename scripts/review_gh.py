@@ -99,9 +99,15 @@ def _run_gh(
 ) -> subprocess.CompletedProcess[str]:
     """The one process boundary for every `gh` call: tests replace ONLY this, so `_gh`'s
     error handling and the `--paginate --slurp` callers above it still run for real."""
-    return subprocess.run(
-        ["gh", *args], input=input_text, capture_output=True, text=True, check=False, env=env
-    )
+    kwargs: dict[str, object] = {
+        "input": input_text,
+        "capture_output": True,
+        "text": True,
+        "check": False,
+    }
+    if env is not None:
+        kwargs["env"] = env
+    return subprocess.run(["gh", *args], **kwargs)
 
 
 def _gh(args: list[str], payload: dict | None = None, *, as_human: bool = False) -> str:
