@@ -89,7 +89,7 @@ def test_a_policy_xattr_the_writer_may_not_set_never_blocks_the_tag_write(tmp_pa
 
 @pytest.mark.requirement("TAGIO-02")
 def test_a_user_xattr_that_cannot_be_copied_aborts_and_keeps_the_original(tmp_path: Path, monkeypatch):
-    """[if] a ``user.*`` attribute cannot be set on the new file [then ⛔️] the write aborts and the original is untouched, [else stop].
+    """[if] a ``user.*`` attribute cannot be set on the new file [then] the write aborts and the original is untouched, [else stop].
 
     Overshoot control for the test above: skipping every refused set would
     pass it and silently drop the attributes this writer promises to keep.

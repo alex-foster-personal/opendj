@@ -43,6 +43,7 @@ from rich.console import Console
 from rich.table import Table
 
 from apps.shared import flac_meta, id3v2, mp4_meta, ogg_comment
+from apps.shared.file_rewrite import copy_extended_metadata
 from apps.shared.paths import DATA_DIR
 from apps.shared.vorbis_comment import VorbisCommentError
 
@@ -319,6 +320,7 @@ def _atomic_write_tags(path: Path, new: dict[str, str]) -> None:
         _write_tags(tmp, new)
         with open(tmp, "rb") as fh:
             os.fsync(fh.fileno())
+        copy_extended_metadata(path, tmp)  # copy2 drops macOS ACLs and xattrs
         os.replace(tmp, path)
         # Best-effort directory fsync so the rename is durable.
         try:

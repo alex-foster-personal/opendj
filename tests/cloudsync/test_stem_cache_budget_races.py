@@ -241,9 +241,9 @@ def test_an_older_pass_does_not_erase_a_bundle_a_newer_pass_queued(tmp_path: Pat
 
 @pytest.mark.requirement("STEM-40")
 def test_the_merge_does_not_keep_what_a_pass_saw_or_what_is_gone(tmp_path: Path):
-    """Overshoot control: a pass that SAW the bundle decides for it, and an
-    entry whose directory is gone is dropped, so the merge cannot pin stale
-    rows forever."""
+    """[if] the pass saw the bundle, or its directory is gone [then] the merge drops the entry, [else stop].
+
+    Overshoot control: the merge cannot pin stale rows forever."""
     data_dir, stems_dir = tmp_path / "data", tmp_path / "stems"
     (stems_dir / "seen-clean").mkdir(parents=True)
     entry: dict[str, object] = {"reason": "not_in_index", "bytes": 1, "queued_at": "t"}
@@ -258,3 +258,53 @@ def test_the_merge_does_not_keep_what_a_pass_saw_or_what_is_gone(tmp_path: Path)
         data_dir, {}, {}, stems_dir=stems_dir, seen={"seen-clean"}
     )
     assert written == {} and budget.load_upload_queue(data_dir) == {}
+
+
+def _lose_the_claim_for(budget_mod, lost: str, monkeypatch) -> None:
+    """Another pass wins the claim on ``lost``: it removes the bundle, and
+    this pass's ``claim_and_remove`` reports False."""
+    import shutil
+
+    real = budget_mod.claim_and_remove
+
+    def claim(path: Path) -> bool:
+        if path.name == lost:
+            shutil.rmtree(path)
+            return False
+        return real(path)
+
+    monkeypatch.setattr(budget_mod, "claim_and_remove", claim)
+
+
+@pytest.mark.requirement("STEM-41")
+def test_a_lost_claim_counts_toward_the_shortfall(tmp_path: Path, monkeypatch):
+    """[if] two passes need one bundle and the other wins the claim on it [then] this pass evicts nothing more, [else stop].
+
+    MUTATION TARGET: credit nothing for a lost claim and this pass walks on
+    and evicts ``next``, freeing twice what the disk needed.
+    """
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {"lru": make_bundle(stems_dir, "lru", atime=100.0)}
+    index["next"] = make_bundle(stems_dir, "next", atime=200.0)
+    _lose_the_claim_for(budget, "lru", monkeypatch)
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - 1))
+    assert report.evicted_stable_ids == () and report.blocked_reason is None
+    assert (stems_dir / "next").is_dir()
+
+
+@pytest.mark.requirement("STEM-41")
+def test_a_lost_claim_smaller_than_the_shortfall_still_evicts_the_rest(tmp_path: Path, monkeypatch):
+    """[if] the bundle another pass took is not enough [then] this pass evicts the next one, [else stop].
+
+    Overshoot control: crediting a lost claim must not stop a pass that
+    still has a shortfall.
+    """
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {"lru": make_bundle(stems_dir, "lru", atime=100.0)}
+    index["next"] = make_bundle(stems_dir, "next", atime=200.0)
+    one_bundle = sum(p.stat().st_size for p in (stems_dir / "lru").rglob("*") if p.is_file())
+    _lose_the_claim_for(budget, "lru", monkeypatch)
+    report = enforce(
+        stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle - 1)
+    )
+    assert report.evicted_stable_ids == ("next",)

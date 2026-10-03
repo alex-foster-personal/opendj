@@ -326,7 +326,7 @@ class AheadDrain:
             if read:
                 self._status.tags_refreshed += 1
             else:
-                errors[sid] = "the file still reads no tags"
+                errors[sid] = "the file still reads no tags or no duration"
         self._tags_failed.update(errors)
         self._status.last_job = {"lane": TAGS_LANE, "ids": targets, "at": self._clock(), "errors": errors}
 

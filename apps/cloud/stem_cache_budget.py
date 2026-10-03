@@ -346,15 +346,17 @@ def _evict_lru(
     dry_run: bool,
     remove: Callable[[Path], bool],
     live_protected: Callable[[], frozenset[str]] | None = None,
-) -> tuple[list[str], int, set[str]]:
+) -> tuple[list[str], int, set[str], int]:
     """Remove LRU bundles until ``need_bytes`` is freed: (evicted ids, bytes
-    freed, ids skipped for differing content). A bundle is removed only when
-    it is not protected AND R2 holds it byte for byte; others are skipped."""
+    freed, ids skipped for differing content, bytes covered). A bundle is
+    removed only when it is not protected AND R2 holds it byte for byte.
+    Covered adds the bundles a concurrent pass removed first: those bytes are
+    free too, so this pass stops short instead of evicting the next one."""
     evicted: list[str] = []
     content_differs: set[str] = set()
-    freed = 0
+    freed = covered = 0
     for bundle in bundles:
-        if freed >= need_bytes:
+        if covered >= need_bytes:
             break
         if bundle.stable_id in protected:
             continue
@@ -367,11 +369,12 @@ def _evict_lru(
         # so a deck may have opened this one since: ask the live registry again.
         if live_protected is not None and bundle.stable_id in live_protected():
             continue
+        covered += bundle.size_bytes
         if not dry_run and not remove(bundle.path):
             continue  # another pass claimed it first; it freed those bytes
         evicted.append(bundle.stable_id)
         freed += bundle.size_bytes
-    return evicted, freed, content_differs
+    return evicted, freed, content_differs, covered
 
 
 def enforce(  # noqa: PLR0913 - each argument is one independent input to the decision
@@ -413,7 +416,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     content_differs: set[str] = set()
     blocked = _blocked_before_eviction(need, position.settings, can_rehydrate)
     if need > 0 and blocked is None:
-        evicted, freed, content_differs = _evict_lru(
+        evicted, freed, content_differs, covered = _evict_lru(
             bundles,
             need_bytes=need,
             index=index,
@@ -422,7 +425,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
             remove=claim_and_remove,
             live_protected=live_protected,
         )
-        if freed < need:
+        if covered < need:
             blocked = BLOCKED_NOTHING_EVICTABLE
 
     now_iso = _utc_now_iso()

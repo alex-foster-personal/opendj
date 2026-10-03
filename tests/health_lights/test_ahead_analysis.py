@@ -263,7 +263,7 @@ def test_a_still_unreadable_file_is_tried_once_not_looped() -> None:
     _run_to_green(drain)
     assert world.tag_runs == ["a"], "if an unreadable file is re-read every tick then broken"
     tags = drain.coverage()["lanes"]["tags"]
-    assert tags["failed"] == 1 and tags["failed_reasons"] == {"the file still reads no tags": 1}
+    assert tags["failed"] == 1 and tags["failed_reasons"] == {"the file still reads no tags or no duration": 1}
 
 
 def test_a_busy_state_db_defers_the_tag_read_instead_of_failing_it() -> None:

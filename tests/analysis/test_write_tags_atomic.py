@@ -135,3 +135,25 @@ def test_write_tags_failure_leaves_original_intact(
         if p.name.startswith(f".{flac_fixture.name}.")
     ]
     assert strays == []
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_the_outer_swap_carries_the_original_files_metadata(
+    flac_fixture: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a tag write swaps its temp copy over the original [then] the original's ACL and xattrs are copied onto it first, [else stop].
+
+    ``shutil.copy2`` keeps neither on macOS, so without the seam call a
+    successful write changes who can read the library file. MUTATION TARGET:
+    drop ``copy_extended_metadata`` before the ``os.replace``.
+    """
+    calls: list[tuple[Path, Path, bool]] = []
+
+    def spy(src: Path, dst: Path) -> None:
+        calls.append((Path(src), Path(dst), Path(dst).exists()))
+
+    monkeypatch.setattr(wt, "copy_extended_metadata", spy)
+    wt._atomic_write_tags(flac_fixture, wt._build_new_tags(_rec("acl")))
+    assert [(src, live) for src, _dst, live in calls] == [(flac_fixture, True)]
+    assert calls[0][1].parent == flac_fixture.parent and calls[0][1] != flac_fixture
+    assert wt._read_current_tags(flac_fixture)["INITIALKEY"] == "8A"

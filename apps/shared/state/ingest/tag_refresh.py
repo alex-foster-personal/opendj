@@ -23,6 +23,7 @@ Requirements (mini-PRD):
     [if] a row reads title=stem, artists=[], duration NULL and its file is tagged [then] the tags land
     [if] a row was renamed by the user (title != stem) [then] its title is kept
     [if] a row already has a duration [then] it is not a candidate
+    [if] the tags read but no duration does [then] what read lands and the row is reported failed
 """
 from __future__ import annotations
 
@@ -73,7 +74,9 @@ def blank_rows(conn: sqlite3.Connection, stable_ids: list[str] | None = None) ->
 
 
 def refresh_row(writer: StateWriter, row: BlankRow) -> bool:
-    """Fill ``row`` from its file's tags. False when the file still reads nothing."""
+    """Fill ``row`` from its file's tags. False when the file still reads
+    nothing, or reads tags but no duration: the row then stays a candidate,
+    so the caller must record it as failed rather than retry it every tick."""
     metadata = audio_files.read_metadata(Path(row.file_path))
     if metadata is None:
         return False
@@ -91,7 +94,7 @@ def refresh_row(writer: StateWriter, row: BlankRow) -> bool:
         audio_hash=row.audio_hash,
     )
     write_file_tag_metadata(writer, row.stable_id, metadata, FolderIngestReport(roots=[]))
-    return True
+    return bool(metadata.duration_s)
 
 
 __all__ = ["BlankRow", "blank_rows", "refresh_row"]

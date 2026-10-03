@@ -99,3 +99,32 @@ def test_a_row_with_a_duration_is_not_a_candidate(state_conn, tmp_path: Path) ->
     finally:
         writer.close()
     assert tag_refresh.blank_rows(state_conn) == []
+
+
+def test_tags_without_a_duration_land_but_report_failure(
+    state_conn, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file whose tags read but whose audio frames do not (no duration)
+    would stay a candidate forever and pin the drain on its tag phase, so the
+    read must land what it got and still answer False.
+
+    MUTATION TARGET: return True after any read and this answers True while
+    the row is still selected by ``blank_rows``.
+    """
+    from dataclasses import replace
+
+    sid, _path = _imported_blank(state_conn, tmp_path)
+    real = tag_refresh.audio_files.read_metadata
+    monkeypatch.setattr(
+        tag_refresh.audio_files, "read_metadata",
+        lambda path: (lambda md: md and replace(md, duration_s=None))(real(path)),
+    )
+    (row,) = tag_refresh.blank_rows(state_conn)
+    writer = _writer(state_conn)
+    try:
+        assert tag_refresh.refresh_row(writer, row) is False
+    finally:
+        writer.close()
+    _title, artists, _album, duration = _row(state_conn)
+    assert artists == [ta.STANDARD_TAGS["artist"]] and duration is None
+    assert [r.stable_id for r in tag_refresh.blank_rows(state_conn)] == [sid]
