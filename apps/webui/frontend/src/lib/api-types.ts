@@ -84,6 +84,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/recorder/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Recorder Devices
+         * @description List audio inputs by name for the REC picker; 503 when unmeasurable.
+         *
+         *     Sync on purpose: listing spawns ffmpeg, so it runs in the threadpool
+         *     instead of stalling the event loop.
+         */
+        get: operations["api_recorder_devices_api_sets_recorder_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sets/recorder/remembered-input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Recorder Remembered Input
+         * @description The input REC last started on, kept by the daemon (null when unknown).
+         *
+         *     Server-side because the desktop shell serves the UI from a per-launch
+         *     loopback port, and browser storage forgets across ports (SET-10).
+         */
+        get: operations["api_recorder_remembered_input_api_sets_recorder_remembered_input_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/recorder/start": {
         parameters: {
             query?: never;
@@ -1573,6 +1619,91 @@ export interface paths {
         put?: never;
         /** Suggest Next Route */
         post: operations["suggest_next_route_api_v1_copilot_suggest_next_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Drain Config */
+        put: operations["drain_config_api_v1_coverage_drain_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Retry */
+        post: operations["drain_retry_api_v1_coverage_drain_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Start */
+        post: operations["drain_start_api_v1_coverage_drain_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Drain Status */
+        get: operations["drain_status_api_v1_coverage_drain_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Stop */
+        post: operations["drain_stop_api_v1_coverage_drain_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8035,10 +8166,30 @@ export interface components {
             /** Title */
             title: string | null;
         };
-        /** CoverageOut */
+        /**
+         * CoverageOut
+         * @description Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.
+         *
+         *     ``on_disk`` is the denominator (``availability.present``). Per step,
+         *     ``done + terminal + failed + pending == on_disk``. ``missing`` and
+         *     ``corrupt`` keep their artifact meaning for the refresh job's targeting:
+         *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
+         */
         CoverageOut: {
+            /** Availability */
+            availability: {
+                [key: string]: number;
+            };
             /** Corrupt */
             corrupt: {
+                [key: string]: number;
+            };
+            /** Done */
+            done: {
+                [key: string]: number;
+            };
+            /** Failed */
+            failed: {
                 [key: string]: number;
             };
             /** Generated At */
@@ -8049,10 +8200,22 @@ export interface components {
             };
             /** On Disk */
             on_disk: number;
+            /** Pending */
+            pending: {
+                [key: string]: number;
+            };
+            /** Stems Source Refusal */
+            stems_source_refusal: string | null;
+            /** Terminal */
+            terminal: {
+                [key: string]: number;
+            };
             /** Total Tracks */
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+            /** Waiting On Stems */
+            waiting_on_stems: number;
         };
         /**
          * CoverageVerdictOut
@@ -8503,6 +8666,60 @@ export interface components {
             tables: {
                 [key: string]: string;
             };
+        };
+        /** DrainConfigIn */
+        DrainConfigIn: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** DrainRetryOut */
+        DrainRetryOut: {
+            /** Rearmed */
+            rearmed: number;
+            status: components["schemas"]["DrainStatusOut"];
+        };
+        /** DrainStatusOut */
+        DrainStatusOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Failed */
+            failed: {
+                [key: string]: number;
+            };
+            /** Jobs Failed */
+            jobs_failed: number;
+            /** Jobs Run */
+            jobs_run: number;
+            /** Last Job */
+            last_job: {
+                [key: string]: unknown;
+            } | null;
+            /** Next Retry At */
+            next_retry_at: number | null;
+            /** Pending */
+            pending: {
+                [key: string]: number;
+            };
+            /** Reason */
+            reason: string | null;
+            /** State */
+            state: string;
+            /** Stems Needing Farm */
+            stems_needing_farm: string[];
+            /** Stems Needing Farm Count */
+            stems_needing_farm_count: number;
+            /** Stop Requested */
+            stop_requested: boolean;
+            /** Ticks */
+            ticks: number;
+            /** Unavailable Steps */
+            unavailable_steps: {
+                [key: string]: string;
+            };
+            /** Updated At */
+            updated_at: number | null;
+            /** Waiting On Stems */
+            waiting_on_stems: number;
         };
         /**
          * EngineHealthOut
@@ -12358,6 +12575,10 @@ export interface components {
         };
         /** ReconcileSummary */
         ReconcileSummary: {
+            /** Availability */
+            availability?: {
+                [key: string]: number;
+            } | null;
             /** Orphan Broken */
             orphan_broken: number;
             /** Playlists */
@@ -12367,18 +12588,68 @@ export interface components {
             /** Total Tracks */
             total_tracks: number;
         };
+        /**
+         * RecorderDevicesResponse
+         * @description The audio inputs REC can record from, and the one it preselects.
+         */
+        RecorderDevicesResponse: {
+            /** Default Name */
+            default_name: string | null;
+            /** Devices */
+            devices: components["schemas"]["RecorderInputDevice"][];
+        };
+        /** RecorderInputDevice */
+        RecorderInputDevice: {
+            /** Index */
+            index: number;
+            /** Loopback */
+            loopback: boolean;
+            /** Name */
+            name: string;
+        };
         /** RecorderRecoveryRequest */
         RecorderRecoveryRequest: {
             /** Expected Pid */
             expected_pid: number;
         };
         /**
+         * RecorderRememberedInput
+         * @description The input REC last started on: a named input, or none (tracklist only).
+         */
+        RecorderRememberedInput: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "device" | "none";
+            /** Name */
+            name?: string | null;
+        };
+        /**
+         * RecorderRememberedInputResponse
+         * @description Wraps the choice so "nothing remembered yet" is a body, not a null one.
+         */
+        RecorderRememberedInputResponse: {
+            remembered: components["schemas"]["RecorderRememberedInput"] | null;
+        };
+        /**
          * RecorderStartRequest
          * @description Explicit real-capture configuration for the REC button.
+         *
+         *     Exactly one audio input: ``device_name`` (what the REC picker sends,
+         *     resolved to an index at start), or a raw ``ffmpeg_device_idx``; or
+         *     ``capture_audio: false`` for a tracklist-only recording (SET-10).
          */
         RecorderStartRequest: {
+            /**
+             * Capture Audio
+             * @default true
+             */
+            capture_audio: boolean;
+            /** Device Name */
+            device_name?: string | null;
             /** Ffmpeg Device Idx */
-            ffmpeg_device_idx: number;
+            ffmpeg_device_idx?: number | null;
             /** Session Id */
             session_id?: string | null;
             /** Sources */
@@ -13844,12 +14115,16 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /** Not Runnable Because */
+            not_runnable_because?: string | null;
             /** Overlap */
             overlap: number;
             /** Preset Tag */
             preset_tag: string;
             /** Purpose */
             purpose: string;
+            /** Runnable Here */
+            runnable_here: boolean;
             /** Shifts */
             shifts: number;
             /** Unavailable Because */
@@ -15282,6 +15557,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecorderStatus"];
+                };
+            };
+        };
+    };
+    api_recorder_devices_api_sets_recorder_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderDevicesResponse"];
+                };
+            };
+        };
+    };
+    api_recorder_remembered_input_api_sets_recorder_remembered_input_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderRememberedInputResponse"];
                 };
             };
         };
@@ -18077,6 +18392,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    drain_config_api_v1_coverage_drain_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DrainConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drain_retry_api_v1_coverage_drain_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainRetryOut"];
+                };
+            };
+        };
+    };
+    drain_start_api_v1_coverage_drain_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+        };
+    };
+    drain_status_api_v1_coverage_drain_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+        };
+    };
+    drain_stop_api_v1_coverage_drain_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
                 };
             };
         };

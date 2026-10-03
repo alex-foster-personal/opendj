@@ -51,6 +51,21 @@ function describeBrowserLiveness(
 	return 'Browser liveness is idle.';
 }
 
+/** The combined verdict is idle in three different situations, and "nothing
+ * is playing" is only true of one. Browser liveness is non-idle only while a
+ * deck plays: a live binding means the master is muted or silent (cue-only
+ * monitoring); a dead one means the browser binding is broken while the OS
+ * device still delivers, which the rebind path owns. */
+function describeIdle(browser: AudioOutputHealthSnapshot['browser']): string {
+	if (browser === null || browser.verdict === 'idle') {
+		return 'Nothing is playing right now, so there is nothing to check.';
+	}
+	if (browser.verdict === 'dead' || browser.verdict === 'dead-escalated') {
+		return describeBrowserLiveness(browser);
+	}
+	return 'A deck is playing, but the master output is muted or silent, so there is no room output to check.';
+}
+
 export function describeAudioOutputHealth(
 	snapshot: AudioOutputHealthSnapshot | null
 ): AudioOutputHealthDisplay {
@@ -66,7 +81,7 @@ export function describeAudioOutputHealth(
 	if (combined === 'idle') {
 		return {
 			cssClass: 'idle',
-			title: `${BASE_EXPLAINER} Nothing is playing right now, so there is nothing to check.`,
+			title: `${BASE_EXPLAINER} ${describeIdle(snapshot.browser)}`,
 			toast: null,
 			switchOutputAvailable: snapshot.device?.probe_available === true
 		};

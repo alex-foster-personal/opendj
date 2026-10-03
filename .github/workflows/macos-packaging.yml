@@ -1,0 +1,471 @@
+name: macOS Packaging
+
+# Makes the packaging provenance gates unskippable.
+#
+# PROVENANCE OF THIS FILE
+# Ported from the agentA rebuild lane (af--rebuild-agentA-from-cdx-handoff at
+# 5e9863a6, preserved as tag archive/rebuild-agentA-20260828) onto main's
+# tree, following the porting note the original carried. The shape -- one
+# macOS job, cost-capped by its timeout, clean-tree assertion before a strict
+# payload build, artifact verification, packaging tests -- is unchanged.
+# Everything tree-specific was repointed at main's equivalents:
+# scripts/build_engine_payload.py as the builder (its verify() runs the
+# import + route-table check under the payload's own interpreter plus both
+# library scans as part of the build), tests/scripts as the packaging suite.
+#
+# WHY THIS EXISTS
+# build_engine_payload.py fails loudly on a stale SPA, an unclassifiable
+# runtime library load, an external Mach-O link, or a git identity it cannot
+# stamp. Until now every one of those gates ran only when a local agent chose
+# to run `just dmg`, on one Mac, by hand. A gate a human elects to run is a
+# habit, not a gate. This job runs them unattended on a clean checkout, which
+# moves the claim from "gates exist" to "gates cannot be skipped".
+#
+# DIRTY-TREE POLICY (adapted, deliberately)
+# The agentA builder refused a dirty tree outright; main's builder STAMPS
+# identity.git_dirty into the manifest instead, and local ship-dmg builds
+# rely on that semantic. Changing the builder was out of scope for a salvage
+# port, so the refusal lives at this workflow's boundary instead, twice: a
+# clean-tree assertion before the build (diagnoses "a build step wrote a
+# tracked path" early) and a hard fail after it if the manifest stamped
+# git_dirty true or a sha other than HEAD. CI is precisely where that refusal
+# has to be real.
+#
+# WHY A SEPARATE WORKFLOW RATHER THAN A JOB IN ci.yml
+# Cost attribution. macOS bills at 0.062 USD per minute (scripts/ci_cost_guard.py
+# STANDARD_SKUS), around 10x Linux, so a macOS job folded into CI would bury
+# packaging spend among the other jobs. Isolated here, macOS minutes show as
+# their own workflow in ci-budget-watch.yml (per-run spike guard retired ADR-0121).
+#
+# COST CEILING IS THE JOB TIMEOUT
+# The 16-minute payload timeout is its spend bound. The month-to-date ledger in
+# ci-budget-watch.yml counts its actual runtime. Raising the timeout raises the possible bill and has to be a
+# deliberate decision, never a reflex when something is slow. Dependency
+# caches keep steady state below the bound.
+#
+# NO dmg STEP
+# The payload is the artifact whose contents these gates judge; the dmg is a
+# container around it, and an unsigned hdiutil build costs minutes for no
+# extra claim.
+#
+# WHY THE PATHS FILTER IS NARROW (packaging paths, not UI paths)
+# This workflow gates PACKAGING regressions only, so it triggers only on
+# paths that can change a packaging outcome. UI-behavior regressions belong
+# to the per-PR Linux lanes in ci.yml, which are cheap and run on everything;
+# making every UI feature PR wait on a macOS payload build buys no extra
+# claim and slows the loop that catches the most bugs. The one frontend src
+# file in the list, apps/webui/frontend/src/lib/rb/stretch-adapter.ts, earns
+# its place because it can break worklet emission, which IS a packaging
+# outcome (the builder's sole_stretch_asset gate). Anyone who wants the full
+# gate on any branch has workflow_dispatch.
+#
+# Main and pull-request pushes use the same packaging impact set. Keep both
+# copies narrow and synchronized so an irrelevant main commit cannot consume a
+# hosted macOS runner.
+
+on:
+  push:
+    branches:
+      - main
+    # Packaging-affecting paths only; keep in sync with pull_request below.
+    paths:
+      - apps/desktop/**
+      # issue #2759: the launcher-packaging job below builds this tree.
+      - apps/launcher/**
+      - apps/webui/frontend/package.json
+      - apps/webui/frontend/pnpm-lock.yaml
+      - apps/webui/frontend/vite.config.ts
+      - apps/webui/frontend/svelte.config.js
+      - apps/webui/frontend/src/lib/rb/stretch-adapter.ts
+      - apps/webui/server/native/waveform/**
+      - scripts/build_engine_payload.py
+      - scripts/desktop_lane_config.py
+      - scripts/check_waveform_native_wheel.py
+      - scripts/payload_google_oauth.py
+      - tests/scripts/test_engine_payload.py
+      - tests/scripts/test_engine_payload_extras.py
+      - tests/scripts/test_engine_payload_macho.py
+      - tests/scripts/macho_fixtures.py
+      - tests/fixtures/macho/**
+      - tests/scripts/test_engine_payload_oauth.py
+      - tests/scripts/test_engine_payload_pin.py
+      - tests/scripts/test_engine_payload_opendj_cli.py
+      - tests/scripts/test_engine_payload_pth.py
+      - tests/scripts/test_desktop_lane_config.py
+      # issue #1637: the ONLY lane that runs spctl/codesign for real. Every
+      # other CI lane is Linux, where these tests skip themselves at runtime
+      # (UNAVAILABLE, not a pass) rather than proving anything.
+      - .agents/skills/ship-dmg/scripts/ship_dmg.sh
+      - tests/scripts/test_ship_dmg_bundle_validation.py
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/macos-packaging.yml
+  pull_request:
+    # Packaging-affecting paths only; see WHY THE PATHS FILTER IS NARROW.
+    paths:
+      - apps/desktop/**
+      # issue #2759: the launcher-packaging job below builds this tree.
+      - apps/launcher/**
+      - apps/webui/frontend/package.json
+      - apps/webui/frontend/pnpm-lock.yaml
+      - apps/webui/frontend/vite.config.ts
+      - apps/webui/frontend/svelte.config.js
+      # The only frontend src file here: it can break worklet emission, so
+      # it is a packaging outcome rather than a UI behavior.
+      - apps/webui/frontend/src/lib/rb/stretch-adapter.ts
+      - apps/webui/server/native/waveform/**
+      - scripts/build_engine_payload.py
+      - scripts/desktop_lane_config.py
+      - scripts/check_waveform_native_wheel.py
+      - scripts/payload_google_oauth.py
+      - tests/scripts/test_engine_payload.py
+      - tests/scripts/test_engine_payload_extras.py
+      - tests/scripts/test_engine_payload_macho.py
+      # The macho test's own inputs: the fixture set and the verifier
+      # that gates it. Editing either changes what that test proves.
+      - tests/scripts/macho_fixtures.py
+      - tests/fixtures/macho/**
+      - tests/scripts/test_engine_payload_oauth.py
+      - tests/scripts/test_engine_payload_pin.py
+      - tests/scripts/test_engine_payload_opendj_cli.py
+      - tests/scripts/test_engine_payload_pth.py
+      - tests/scripts/test_desktop_lane_config.py
+      - .agents/skills/ship-dmg/scripts/ship_dmg.sh
+      - tests/scripts/test_ship_dmg_bundle_validation.py
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/macos-packaging.yml
+  # A RELEASE CUT MUST REACH THESE GATES, and the two triggers above cannot
+  # carry it. `push` is filtered to `branches: [main]`, so a tag push never
+  # matches it at all, which left the job condition's `refs/tags/v` clause
+  # unreachable by construction while its comment promised release cuts still
+  # ran (Codex P1 on #1014).
+  #
+  # `create` rather than the obvious `push: tags: ["v*"]`: a `paths` filter
+  # applies to every ref the same `push` key admits, and a tag creation
+  # reports no changed files, so a path-filtered `push.tags` produces a
+  # trigger that still never fires - the same unreachable promise one layer
+  # down, and harder to notice. `create` takes no filters, so a `v*` tag
+  # always produces a run and the job condition below is what decides.
+  #
+  # The cost of that is Actions-tab noise, not money: branch creations reach
+  # here too and their run skips this job at the `if` below, and a skipped
+  # job bills nothing (scripts/ci_cost_guard.py skips jobs with no elapsed
+  # time). PRs are unaffected; `create` does not attach to them.
+  create:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-packaging-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
+  # Trunk verification is never cancellable. A merge burst used to cancel each
+  # run's predecessor and leave heads whose jobs never executed (Mon 31 Aug 2026:
+  # six merges in 25s left main with no completed pytest or frontend job, while
+  # nothing reported a problem, because a cancelled job is not a failed one).
+  #
+  # This gives every trunk push its OWN group rather than making the cancellation
+  # conditional, matching ci.yml. A conditional flag was tried first (#631) and
+  # did not hold: three post-fix trunk runs were still cancelled seconds after the
+  # next push run was created. Removing the shared group removes the precondition
+  # for cancelling at all, so it does not depend on the mechanism that failed.
+  # Pull requests keep the shared group and still cancel superseded runs.
+  cancel-in-progress: true
+
+# Every tree-specific value lives here. Changing these plus the pull-request
+# path filter is the whole port to another tree.
+env:
+  # Where the SPA is built from. The payload builder hard-errors when the SPA
+  # build is absent or stale rather than rebuilding it silently.
+  FRONTEND_DIR: apps/webui/frontend
+  # Strict provenance build, exactly as `just dmg` invokes it. MDT_LANE_LABEL
+  # is unset in CI, so this builds the plain product (Open DJ,
+  # com.opendj.desktop). verify() runs inside: import + route-table check
+  # under the payload's own interpreter, linked-library scan, runtime-load
+  # scan, waveform-native backend proof.
+  PAYLOAD_BUILD_CMD: uv run --no-sync python -m scripts.build_engine_payload --out apps/desktop/src-tauri/payload
+  # Uploaded as the run's evidence: it names the commit, the dirty flag, the
+  # verification block and the contents. The payload tree itself is ~174MB
+  # and is not uploaded.
+  PAYLOAD_MANIFEST: apps/desktop/src-tauri/payload/manifest.json
+  # Packaging unit tests: SPA freshness, stretch-asset, link-scan,
+  # runtime-load, lock-closure, git-identity, launcher and lane-label gates.
+  # issue #1637: test_ship_dmg_bundle_validation.py runs the real spctl/
+  # codesign path -- it self-skips (UNAVAILABLE) on every other, Linux, lane.
+  PACKAGING_TESTS: tests/scripts/test_engine_payload.py tests/scripts/test_engine_payload_extras.py tests/scripts/test_engine_payload_macho.py tests/scripts/test_engine_payload_oauth.py tests/scripts/test_engine_payload_opendj_cli.py tests/scripts/test_engine_payload_pin.py tests/scripts/test_engine_payload_pth.py tests/scripts/test_desktop_lane_config.py tests/scripts/test_ship_dmg_bundle_validation.py
+  # default_runtime_source() reads the repo venv's sys.base_prefix and
+  # demands a relocatable uv-managed CPython to embed. only-managed makes uv
+  # provision exactly that instead of adopting a runner-image python.
+  UV_PYTHON_PREFERENCE: only-managed
+
+permissions:
+  contents: read
+
+jobs:
+  packaging:
+    name: payload provenance + artifact verification
+    runs-on: macos-14
+    timeout-minutes: 16
+    # Hosted macOS push/PR execution is controlled by CI_HOSTED_OS_JOBS.
+    # Release-tag and manual-dispatch paths retain their explicit conditions.
+    # Operator billing history is not included in public source. See
+    # "Switching CI between self-hosted and GitHub-hosted" in
+    # docs/ci-actions-cost-review-2026-08-16.md.
+    #
+    # The variable arm is CONJOINED with the events it is for, deliberately.
+    # Left bare it is true for every event this workflow subscribes to, and
+    # `create` fires on every branch creation and takes no ref filter, so
+    # flipping the variable would have put a 16-minute macOS job on every
+    # branch anyone pushed - the comment above already promised push/PR, the
+    # condition just did not implement it (Codex P2 on #1014,
+    # discussion_r3924424610). A v* release cut still reaches the gates
+    # through the ref clause, which a tag `create` does satisfy.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || startsWith(github.ref, 'refs/tags/v')
+      || (vars.CI_HOSTED_OS_JOBS == 'true'
+      && (github.event_name == 'push' || github.event_name == 'pull_request'))
+
+    steps:
+      # SHA-pinned to the v4 tag commit (matches ci.yml).
+      # fetch-depth 0 is deliberate: git_identity() reads HEAD and
+      # `git status --porcelain`, and the provenance tests resolve
+      # historical SHAs. Keep the history the gates reason about.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          clean: true
+
+      - name: Setup uv
+        # SHA-pinned to the v6 tag commit (matches ci.yml).
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          # Hosted-only, like e2e.yml: a self-hosted host's persistent ~/.cache/uv is the cache.
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Enable pinned pnpm
+        # Ordering is load-bearing (same reason as ci.yml): setup-node's
+        # `cache: pnpm` shells out to `pnpm store path`, so pnpm has to
+        # already be on PATH when that step runs.
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        # SHA-pinned to the v4 tag commit (matches ci.yml).
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          # pnpm on GitHub-hosted runners only. A self-hosted runner's store
+          # already persists at the runner user's `pnpm store path` and is
+          # SHARED by every runner service on the host; setup-node restores its
+          # cache tarball with absolute paths straight into that store,
+          # index.db included, under jobs that are reading it (trunk e14bd2f0a3,
+          # Sat 5 Sep 2026: `[ERR_PNPM_ERR_SQLITE_ERROR] disk I/O error` on a
+          # healthy disk). tests/scripts/test_ci_pnpm_cache_self_hosted.py.
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          cache-dependency-path: apps/webui/frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: ${{ env.FRONTEND_DIR }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production frontend
+        working-directory: ${{ env.FRONTEND_DIR }}
+        run: pnpm build
+
+      - name: Sync the repo venv (locked, dev extra for pytest)
+        # --frozen so the lock is the input, never rewritten by CI. The venv
+        # serves two jobs here: it donates the relocatable CPython the
+        # payload embeds (default_runtime_source), and it carries pytest for
+        # the packaging suite below.
+        # --python 3.11 pins the embedded runtime to what the ship-dmg path
+        # actually ships (the production repo venv is 3.11): the builder's
+        # runtime-load classification describes 3.11's stdlib surface, and a
+        # newer stdlib (3.13+ _pyrepl/_minimal_curses.py) fails the build,
+        # correctly, as an unclassified load site. Moving the shipped runtime
+        # is the moment to extend RUNTIME_LOAD_SITE_REASONS and bump this pin
+        # together, deliberately.
+        run: uv sync --frozen --extra dev --python 3.11
+
+      - name: Assert the tree the gates will judge is clean
+        # The manifest-provenance step below fails on a dirty stamp; checking
+        # here first means a dirty tree is diagnosed as "a build step wrote a
+        # tracked path" rather than surfacing later as a stamped git_dirty.
+        # Everything written above (node_modules, build/, .venv) is
+        # gitignored; if that ever stops being true, this step names the file.
+        run: |
+          dirty="$(git status --porcelain)"
+          if [ -n "$dirty" ]; then
+            echo "::error title=Dirty tree before packaging::A build step wrote a path git tracks, so the payload could not be reproduced from any commit."
+            echo "$dirty"
+            exit 1
+          fi
+          echo "[OK] clean tree at $(git rev-parse HEAD)"
+
+      - name: Build the daemon payload (strict provenance, verify() inside)
+        run: ${{ env.PAYLOAD_BUILD_CMD }}
+
+      - name: Assert the manifest stamps the commit CI checked out, clean
+        # The refusal the agentA builder carried, enforced at the CI
+        # boundary (see DIRTY-TREE POLICY above): a payload stamped dirty or
+        # stamped with any sha but HEAD is not evidence about this commit,
+        # so it fails the run. Also prints the verification block as the
+        # run's human-readable proof.
+        run: |
+          uv run --no-sync python - "$PAYLOAD_MANIFEST" "$(git rev-parse HEAD)" <<'EOF'
+          import json, sys
+          manifest = json.load(open(sys.argv[1]))
+          identity, head = manifest["identity"], sys.argv[2]
+          problems = []
+          if identity["git_dirty"]:
+              problems.append("manifest stamps git_dirty=true on a CI checkout")
+          if identity["git_sha_full"] != head:
+              problems.append(
+                  f"manifest sha {identity['git_sha_full']} is not HEAD {head}"
+              )
+          verification = manifest["verification"]
+          if verification["external_link_references"]:
+              problems.append(
+                  f"external links: {verification['external_link_references']}"
+              )
+          if problems:
+              sys.exit("[ERROR] " + "; ".join(problems))
+          print(f"[OK] payload built from {identity['git_sha']} clean")
+          print(
+              f"[OK] verified: {verification['routes']} routes, "
+              f"{verification['macho_files_scanned']} Mach-O files scanned, "
+              f"waveform backend {verification['waveform_backend']}, "
+              f"{len(verification['runtime_loaded_libraries'])} runtime load sites classified"
+          )
+          EOF
+
+      - name: Run the packaging test suite
+        # --no-coverage-matrix keeps the reqs plugin from writing
+        # coverage-matrix.md: this scoped run does not own it and a partial
+        # run would understate it. --collect-floor is this suite's own count,
+        # so a run that silently lost tests cannot read as a smaller green
+        # suite. Raise it when tests are added, never lower it.
+        run: |
+          uv run --no-sync pytest ${{ env.PACKAGING_TESTS }} -q --no-coverage-matrix --collect-floor 149 \
+            --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-packaging"
+
+      - name: Upload the payload manifest
+        if: always()
+        # SHA-pinned to the v4 tag commit (matches ci.yml).
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: payload-manifest
+          path: ${{ env.PAYLOAD_MANIFEST }}
+          if-no-files-found: warn
+          retention-days: 2
+
+  # issue #2759 (LAUNCH-01): before this job, apps/launcher (the Hyper-K
+  # global-search launcher) built only under `pnpm tauri dev`. There was no
+  # recipe and no CI step producing a distributable artifact -- a packaging
+  # gap of the same shape the `packaging` job above closed for the Open DJ
+  # desktop shell, just never closed here. This job runs the exact recipe a
+  # developer runs locally (`just launcher-build`), so the two paths cannot
+  # drift, matching PAYLOAD_BUILD_CMD's role above.
+  #
+  # A SEPARATE JOB, not folded into `packaging`: this app has its own
+  # pnpm-workspace.yaml and lockfile (apps/launcher/pnpm-lock.yaml, not
+  # apps/webui/frontend's), its own Rust crate graph (Tauri 2 + the
+  # drag-core crate, nothing shared with apps/desktop/src-tauri), and no
+  # Python payload at all. Sharing the `packaging` job's steps would mean
+  # threading a second frontend/lockfile pair and a second cargo target
+  # through one job's env and cache keys for no shared work.
+  #
+  # UNSIGNED ON PURPOSE. apps/launcher/src-tauri/tauri.conf.json pins
+  # `macOS.signingIdentity: null` (see apps/launcher/README.md,
+  # "Notarization / code-signing" -- left blank, out of scope for Phase 17).
+  # There is no existing signing secret for this app to reuse, so this job
+  # builds unsigned and uploads exactly that; it does not invent a secret
+  # and does not attempt notarization or stapling.
+  launcher-packaging:
+    name: launcher build + artifact upload
+    runs-on: macos-14
+    # Cold Rust deps (tauri, rusqlite bundled, objc2) plus a full pnpm
+    # install; no cache is wired in (no rust-cache/Swatinem precedent
+    # anywhere in this repo's workflows -- see WHY THE PATHS FILTER IS
+    # NARROW above for the same "match existing conventions" reasoning).
+    # Raise this deliberately, never as a reflex, per COST CEILING IS THE
+    # JOB TIMEOUT above.
+    timeout-minutes: 20
+    # Same explicit hosted-execution gate as `packaging` above.
+    # `workflow_dispatch` and a v* tag always reach this job regardless.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || startsWith(github.ref, 'refs/tags/v')
+      || (vars.CI_HOSTED_OS_JOBS == 'true'
+      && (github.event_name == 'push' || github.event_name == 'pull_request'))
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          clean: true
+          persist-credentials: false
+
+      - name: A Rust toolchain must be present
+        # This job only ever runs on a GitHub-hosted macos-14 image (same
+        # `if:` as `packaging` above never admits self-hosted), which ships
+        # rustup/cargo already. Failing loud here, rather than letting `pnpm
+        # tauri build` fail deep inside its own cargo invocation, means a
+        # runner-image regression is diagnosed as exactly that (matches
+        # ci.yml's "A Rust toolchain must be present" step).
+        run: |
+          command -v cargo >/dev/null || {
+            echo "::error::no cargo on PATH - the macos-14 runner image no longer ships a Rust toolchain"
+            exit 1
+          }
+          cargo --version
+
+      - name: Install just
+        # Not part of the macos-14 image's default toolset, and this repo's
+        # CI has only ever installed it via apt on Linux runners
+        # (scripts/ci_apt_present.sh) until now.
+        run: |
+          command -v just >/dev/null || brew install just
+          just --version
+
+      - name: Enable pinned pnpm
+        # Ordering matches `packaging` above: corepack before setup-node.
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Setup Node
+        # SHA-pinned to the same v4 tag commit as `packaging` above.
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+          # This app's OWN lockfile, not apps/webui/frontend's -- a separate
+          # pnpm workspace (apps/launcher/pnpm-workspace.yaml).
+          cache-dependency-path: apps/launcher/pnpm-lock.yaml
+
+      - name: Build the Hyper-K launcher (release, unsigned)
+        run: just launcher-build
+
+      - name: Locate the built .app bundle
+        id: bundle
+        run: |
+          app=$(find apps/launcher/src-tauri/target/release/bundle/macos -maxdepth 1 -type d -name '*.app' -print -quit)
+          if [ -z "$app" ]; then
+            echo "::error::no Hyper-K.app produced under apps/launcher/src-tauri/target/release/bundle/macos"
+            exit 1
+          fi
+          echo "[OK] built $app"
+          echo "path=$app" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the launcher bundle
+        if: always()
+        continue-on-error: true
+        # SHA-pinned to the same v4 tag commit as `packaging` above.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hyper-k-launcher-unsigned
+          path: ${{ steps.bundle.outputs.path }}
+          if-no-files-found: error
+          retention-days: 2

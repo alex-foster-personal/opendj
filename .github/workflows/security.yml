@@ -1,0 +1,222 @@
+# Security scanners, report-only. Spec: docs/security/routine-scanning.md
+#
+# ADR-0043: these jobs report and are never required checks. A red PR job means a NEW
+# finding, or a scanner that could not measure (UNKNOWN). It blocks no merge.
+# Runner: GitHub-hosted only (docs/security/ci-supply-chain.md rule 4);
+# scripts/security/scan_workflows.sh fails if any runs-on here is not ubuntu-latest.
+# The pull_request-event jobs run only while vars.CI_HOSTED_SECURITY_JOBS is 'true'
+# (a hosted billing block must read as skipped on a PR, not as a verdict); the
+# scheduled scans are not gated.
+#
+#   pull_request   one job, every area, new findings versus the PR base
+#                  + `semgrep ci` against Semgrep AppSec Platform (diff-aware, same-repo PRs only)
+#   daily 06:17    osv-scanner over every manifest, rolling issue "security: daily dependency scan"
+#   weekly Mon     trufflehog over full history + zizmor/actionlint, issue "security: weekly review"
+#                  + full `semgrep ci` scan of main, findings on the Semgrep AppSec Platform dashboard
+#                  (weekly, not daily, since ADR-NEW-semgrep-full-scan-weekly: the daily full scan
+#                  never finished inside its timeout and billed 16 hosted minutes a day for nothing)
+#
+# Local equivalent: `just security-scan [area] [pr|full]` (Semgrep CE; `semgrep ci` needs the token).
+name: security
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "17 6 * * *"
+    - cron: "37 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      cadence:
+        description: Which scheduled scan to run
+        type: choice
+        options: [daily, weekly]
+        default: daily
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}-${{ github.event.schedule || inputs.cadence || 'pr' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CADENCE: ${{ (github.event.schedule == '37 6 * * 1' || inputs.cadence == 'weekly') && 'weekly' || 'daily' }}
+
+jobs:
+  pr:
+    name: scan (pr)
+    # Hosted-runner gate, the vars.CI_HOSTED_OS_JOBS / vars.CI_INSIGHTS_ENABLED
+    # idiom, on the PULL_REQUEST-event jobs only (this one and semgrep's PR
+    # PR hosted availability is separate from a scan verdict; scheduled scans remain ungated.
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
+      vars.CI_HOSTED_SECURITY_JOBS == 'true'
+    runs-on: ubuntu-latest
+    # Timeouts total 44 minutes so this workflow's worst case, every job at its
+    # timeout plus a billed minute each, stays under $0.30 gross at Linux rates
+    # (tests/test_ci_cost_guard.py prices timeouts via ci_cost_guard_workflow_reader)
+    # per PR. This job took 34 s on its first PR run; weekly trufflehog took 166 s
+    # locally; the semgrep job gets the rest.
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Full history: the merge base, the gitleaks commit range and the Semgrep
+          # baseline all need it. A blobless clone would lazily fetch with credentials.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned scanners (sha256 verified)
+        run: scripts/security/install_scanners.sh uv osv-scanner gitleaks zizmor actionlint semgrep
+      - name: Scan (new findings versus base)
+        env:
+          SECURITY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SECURITY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/security/scan.sh all pr
+      - name: SAST scanner self-tests (fail, never skip)
+        # The scan_sast.sh end-to-end suites skip where the pinned scanners are
+        # absent. They are installed above, so SECURITY_E2E_REQUIRED turns a
+        # missing binary into a failure and a reverted control floor goes red.
+        # --noconftest: the root conftest needs the full project env, these
+        # tests need only pytest (pinned to uv.lock's version).
+        env:
+          SECURITY_E2E_REQUIRED: "1"
+        run: |
+          .tmp/security/bin/uv run --isolated --no-project --python 3.11 --with pytest==9.1.1 \
+            python -m pytest --noconftest -p no:cacheprovider \
+              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-sast-self-tests" \
+              tests/scripts/test_scan_sast_control_floor.py tests/scripts/test_scan_sast_pr_skip.py
+
+  scheduled:
+    name: scan (scheduled)
+    # Deliberately NOT behind vars.CI_HOSTED_SECURITY_JOBS: a scheduled scan
+    # that cannot start is the UNKNOWN the rolling issue exists to surface, so
+    # it must stay a visible failure rather than a skip (scanner contract in
+    # docs/security/security.md). Only the pull_request-event jobs are gated.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      summary: ${{ steps.scan.outputs.summary }}
+      report: ${{ steps.scan.outputs.report }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # trufflehog reads the whole history weekly; the daily scan needs only HEAD.
+          fetch-depth: ${{ env.CADENCE == 'weekly' && '0' || '1' }}
+          persist-credentials: false
+      - name: Install pinned scanners (sha256 verified)
+        run: scripts/security/install_scanners.sh uv osv-scanner trufflehog zizmor actionlint
+      - name: Scan
+        id: scan
+        run: |
+          if [[ "$CADENCE" == "weekly" ]]; then
+            areas="secrets,workflows"
+          elif [[ "$CADENCE" == "daily" ]]; then
+            areas="deps"
+          fi
+          rc=0
+          scripts/security/scan.sh "$areas" full || rc=$?
+          # Hand the table and details to the report job, which alone may write issues.
+          delim="EOF_$(openssl rand -hex 16)"
+          {
+            printf 'summary<<%s\n' "$delim"
+            cat .tmp/security/summary.md 2>/dev/null || true
+            printf '\n%s\n' "$delim"
+            printf 'report<<%s\n' "$delim"
+            head -c 60000 .tmp/security/report.md 2>/dev/null || true
+            printf '\n%s\n' "$delim"
+          } >>"$GITHUB_OUTPUT"
+          exit "$rc"
+
+  semgrep:
+    name: semgrep ci (AppSec Platform)
+    # Semgrep's official GitHub Actions sample, pinned. The token reaches only the weekly
+    # schedule (a full scan of main), a manual dispatch with cadence=weekly on main itself
+    # (a full scan of any other ref would bill the same 16 minutes against a branch the
+    # platform does not track), and non-draft same-repo PRs. Fork and Dependabot PRs get no secrets, so they skip this job; the pr
+    # job's Semgrep CE scan still covers them. Never pull_request_target. Report-only like
+    # the pr job: red means a blocking finding or a scan that could not run, and it is not
+    # a required check (ADR-0043).
+    #
+    # Weekly full scans bound repeated cost while retaining a baseline and diff-aware PR scans.
+    # Enabled PR scans catch new findings diff-aware. They do not refresh
+    # the platform's main baseline; that requires a completed full scan. A full re-scan of unchanged code every night is still the wasted run
+    # docs/security/routine-scanning.md names. The timeout is kept at 15 on purpose: the
+    # Per-job timeout pricing (tests/test_ci_cost_guard.py) trips when a
+    # workflow's job timeouts, plus one billed minute each, exceed $0.30 at $0.006 a
+    # minute; this file sums to 48 of those 50 minutes ($0.288), so this timeout could
+    # grow by two minutes at most, which does not make a scan that runs past 15 finish.
+    # If the weekly scan still cannot finish, the scope lever is on the Semgrep side
+    # (cross-file analysis, policy size), not a longer timeout here.
+    if: >-
+      github.event.schedule == '37 6 * * 1' ||
+      (github.event_name == 'workflow_dispatch' && inputs.cadence == 'weekly' && github.ref == 'refs/heads/main') ||
+      (vars.CI_HOSTED_SECURITY_JOBS == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    container:
+      image: semgrep/semgrep:1.176.1@sha256:34ab619bf1391a24bfda3f05debd0d8a6ce3093c2d5f9d39cfc00f83c1397823
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Shallow checkout is sufficient; Semgrep fetches the PR base/head with FETCH_TOKEN.
+          persist-credentials: false
+      - name: semgrep ci
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+          # semgrep ci shallow-fetches the PR base and head from origin even when they are
+          # already local. The read-only job token reaches git for this step only, through
+          # env config, so nothing is written to .git/config.
+          FETCH_TOKEN: ${{ github.token }}
+        run: |
+          # No token means no platform scan. Fail loudly rather than fall back to CE.
+          if [ -z "${SEMGREP_APP_TOKEN:-}" ]; then
+            echo "::error title=SEMGREP_APP_TOKEN is empty::Repo secret SEMGREP_APP_TOKEN is unset or not exposed to this event; semgrep ci cannot authenticate. Canonical copy: Doppler general/dev_personal."
+            exit 2
+          fi
+          basic="$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$basic"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $basic"
+          # --no-suppress-errors: a scan that could not run must go red, never pass as clean.
+          semgrep ci --no-suppress-errors
+
+  report:
+    name: report (rolling issue)
+    needs: scheduled
+    if: always() && needs.scheduled.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: scripts/security
+          persist-credentials: false
+      - name: Open, update or close the rolling issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SCAN_RESULT: ${{ needs.scheduled.result }}
+          SUMMARY: ${{ needs.scheduled.outputs.summary }}
+          REPORT: ${{ needs.scheduled.outputs.report }}
+        run: |
+          # No summary means the scan died before writing one: report_issue.sh reads
+          # the missing file as UNKNOWN, never as clean.
+          if [[ -n "${SUMMARY//[[:space:]]/}" ]]; then
+            printf '%s\n' "$SUMMARY" >"$RUNNER_TEMP/summary.md"
+          fi
+          printf '%s\n' "$REPORT" >"$RUNNER_TEMP/report.md"
+          scripts/security/report_issue.sh "$CADENCE" "$SCAN_RESULT" \
+            "$RUNNER_TEMP/summary.md" "$RUNNER_TEMP/report.md"

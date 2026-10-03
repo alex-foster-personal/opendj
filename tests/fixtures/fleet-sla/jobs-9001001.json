@@ -1,9 +1,0 @@
-{
-  "jobs": [
-    {
-      "name": "pytest fast lane (shard 1 of 5)",
-      "started_at": "2026-09-09T13:01:00Z",
-      "conclusion": "success"
-    }
-  ]
-}

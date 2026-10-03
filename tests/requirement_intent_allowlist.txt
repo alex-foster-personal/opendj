@@ -297,7 +297,6 @@ tests/quality/test_frontend_typing_ratchet.py
 tests/quality/test_mypy_scope.py
 tests/scripts/test_dmg_preflight.py
 tests/scripts/test_dmg_preflight_updater_key.py
-tests/scripts/test_ops_fleet_kpi.py
 tests/scripts/test_ops_skill_runners.py
 tests/scripts/test_perf_squeeze.py
 tests/scripts/test_ship_dmg_close_and_reuse.py

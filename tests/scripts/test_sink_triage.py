@@ -6,13 +6,12 @@ Regression lines:
   - if window count is 100+ then threshold fires
   - if dry-run fixture has one new flood and one existing issue then one create
     and one comment command print
-  - if kpi last_run is older than 2h then health FAIL for sink-triage freshness
   - if one ssh host is unreachable then the other sources still yield records,
     the skip is reported with host and path, and the skipped offsets are unchanged
   - if every source is unreachable then the run raises and writes no kpi file
   - if a source was reached and every other source failed then the run finishes
     (skips alone never mean a total outage) and each dead host is logged
-  - if kpi reports a skipped source then ops/fleet/lib/sink-triage-kpi.sh prints it
+  (the kpi.sh sink-triage card tests moved to fleet-af tests/kpi_rails/ with kpi.sh)
 
 [if] sink fingerprints and thresholds fire [then] triage creates or comments on issues, [else stop].
 """
@@ -20,11 +19,8 @@ Regression lines:
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -272,45 +268,6 @@ def test_dry_run_fixture_emits_one_create_and_one_comment(tmp_path: Path) -> Non
     assert any("issue create" in cmd for cmd in result.commands)
     assert any("issue comment 4242" in cmd for cmd in result.commands)
     assert fp_low not in " ".join(result.commands)
-
-
-def test_kpi_health_fails_when_last_run_stale(tmp_path: Path) -> None:
-    repo = Path(__file__).resolve().parents[2]
-    kpi = repo / "ops" / "fleet" / "kpi.sh"
-    fixture_root = tmp_path / "fixture"
-    shutil.copytree(repo / "tests/fixtures/fleet-kpi", fixture_root)
-    fixture = fixture_root / "jobs"
-    now = int(datetime.now(UTC).timestamp())
-    os.utime(fixture / "logs" / "tick-gate.log", (now - 120, now - 120))
-    stale = (datetime.now(UTC) - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    (fixture / "state" / "sink-triage-kpi.json").write_text(
-        json.dumps({"last_run": stale, "new_issues": 0, "fingerprints": 1}) + "\n",
-        encoding="utf-8",
-    )
-    home = tmp_path / "home"
-    home.mkdir()
-    (home / ".profile").write_text("export CLAUDE_CODE_OAUTH_TOKEN=x\n")
-    env = {
-        "HOME": str(home),
-        "KPI_JOBS_DIR": str(fixture),
-        "KPI_GH_FIXTURES_DIR": str(fixture_root / "gh"),
-        "KPI_PROBES_DIR": str(fixture_root / "probes"),
-        "KPI_NOW_UNIX": str(now),
-        "KPI_SKIP_REVIEW_COST": "1",
-    }
-    proc = subprocess.run(
-        ["bash", str(kpi), "1"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env=env,
-        check=False,
-    )
-    assert "sink-triage last_run=" in proc.stdout
-    # A kpi file written before skipped_sources existed must read as a clean run,
-    # not as an unmeasurable one: an absent skip list is not an absent reading.
-    assert "skipped=none" in proc.stdout
-    assert "health FAIL sink-triage last run within" in proc.stdout
 
 
 def test_build_kind_records_are_excluded_from_triage(tmp_path: Path) -> None:

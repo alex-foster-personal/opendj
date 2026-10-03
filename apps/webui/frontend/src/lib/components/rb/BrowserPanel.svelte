@@ -8,6 +8,7 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
+	import AlphaBadge from '$lib/components/AlphaBadge.svelte';
 	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
@@ -85,7 +86,9 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs
+		PlaylistSetTabs,
+		libraryEditShortcut,
+		loadTrackClipboard
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -886,6 +889,7 @@
 			else openSearchMode('filter');
 		};
 		window.addEventListener('keydown', onKey);
+		window.addEventListener('keydown', onLibraryEditKey);
 		// PERF-UI-01: first crossing into a short viewport collapses
 		// Next/Recommended so thead + one track row fit in the leftover
 		// library row. Edge-triggered so a manual chevron re-expand is
@@ -971,6 +975,7 @@
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('keydown', onLibraryEditKey);
 			shortViewportMq.removeEventListener('change', applyShortViewport);
 		};
 	});
@@ -3110,6 +3115,129 @@
 		if (node !== null) await _loadPane(p, node);
 	}
 
+	// Cmd/Ctrl+A, C, X, V on the track list (pins ce142ae7e22f, 0b1e12cc01d0).
+	// Pure rules live in ./browser/track-clipboard; this owns the key and the
+	// one write. Paste goes through the atomic transfer endpoint, which is a
+	// set-union on the destination, so a repeated Cmd+V never stacks
+	// duplicates and a cut paste removes the tracks from their source in the
+	// same transaction.
+	function onLibraryEditKey(e: KeyboardEvent): void {
+		if (e.repeat) return;
+		const action = libraryEditShortcut(e);
+		if (action === null) return;
+		// A modal dialog over the library owns the keyboard.
+		if (document.querySelector('dialog[open], [aria-modal="true"]') !== null) return;
+		if (action === 'copy' || action === 'cut') {
+			// Selected page text (a lyric line, a toast) keeps the native copy.
+			const sel = window.getSelection();
+			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
+		}
+		e.preventDefault();
+		void _runLibraryEdit(action, pane);
+	}
+
+	async function _runLibraryEdit(action: 'select_all' | 'copy' | 'cut' | 'paste', p: PaneStore): Promise<void> {
+		const { clipboardToastMessage, selectAllRows, selectedIdsInViewOrder, setTrackClipboard } =
+			await loadTrackClipboard();
+		if (action === 'select_all') {
+			if (selectAllRows(p, renderedRows) === 0) pushToast('no tracks to select', 'info');
+			return;
+		}
+		if (action === 'copy' || action === 'cut') {
+			const ids = selectedIdsInViewOrder(renderedRows, p.selected_orders, p.selected_ids);
+			if (ids.length === 0) {
+				pushToast(`select tracks to ${action} first`, 'info');
+				return;
+			}
+			const fromPlaylist =
+				source === 'collection' && p.kind === 'playlist' && p.playlist_id !== null && !p.whole_collection
+					? p.playlist_id
+					: null;
+			// Cutting from something that is not a playlist (All Tracks,
+			// search results) has nothing to remove the tracks from: copy.
+			const mode = action === 'cut' && fromPlaylist !== null ? 'cut' : 'copy';
+			setTrackClipboard({
+				stable_ids: ids,
+				mode,
+				source_playlist_id: fromPlaylist,
+				source_title: p.title
+			});
+			pushToast(clipboardToastMessage(ids.length, mode), 'info');
+			return;
+		}
+		await _pasteTracks(p);
+	}
+
+	async function _pasteTracks(p: PaneStore): Promise<void> {
+		const { getTrackClipboard, partitionPaste, pasteBlockReason, pasteToastMessage, setTrackClipboard } =
+			await loadTrackClipboard();
+		const clip = getTrackClipboard();
+		const blocked = pasteBlockReason(p, source, clip);
+		if (blocked !== null || clip === null || p.playlist_id === null) {
+			pushToast(blocked ?? 'nothing to paste', 'info');
+			return;
+		}
+		const destId = p.playlist_id;
+		const destTitle = p.title;
+		const move = clip.mode === 'cut' && clip.source_playlist_id !== null && clip.source_playlist_id !== destId;
+		try {
+			const dest = await getPlaylistTracksEtag(destId);
+			const plan = partitionPaste(
+				clip.stable_ids,
+				dest.detail.tracks.map((t) => t.stable_id)
+			);
+			if (plan.add.length > 0 || move) {
+				const src = move && clip.source_playlist_id !== null
+					? await getPlaylistTracksEtag(clip.source_playlist_id)
+					: null;
+				await transferPlaylistTracks(destId, dest.etag, {
+					stable_ids: clip.stable_ids,
+					mode: move ? 'move' : 'add',
+					...(src !== null && clip.source_playlist_id !== null
+						? { source_playlist_id: clip.source_playlist_id, source_etag: src.etag }
+						: {})
+				});
+			}
+			// A cut pastes once, like a Finder move; copy can paste again.
+			if (move) setTrackClipboard({ ...clip, mode: 'copy', source_playlist_id: null });
+			pushToast(pasteToastMessage(plan.add.length, plan.already, destTitle, move), 'info');
+			// Reload every pane showing either playlist BEFORE the tree refresh,
+			// so the pasted rows are on screen as soon as the write lands.
+			const sourceId = move ? clip.source_playlist_id : null;
+			await Promise.all(
+				panes
+					.filter((q) => q.playlist_id === destId || (sourceId !== null && q.playlist_id === sourceId))
+					.map(async (q) => {
+						const node = _currentNode(q);
+						if (node !== null) await _loadPane(q, node);
+					})
+			);
+			if (p.playlist_id === destId && plan.add.length > 0) await _revealPasted(p, plan.add);
+		} catch (exc) {
+			if (exc instanceof PlaylistConflictError) {
+				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
+			} else {
+				pushToast(`paste failed: ${String(exc)}`, 'error');
+			}
+			return;
+		}
+		await _refreshPlaylists();
+	}
+
+	/** Pasted rows land at the END of the playlist, below the fold in a long
+	 * one: select them and scroll the first into view so the paste is seen. */
+	async function _revealPasted(p: PaneStore, pastedIds: string[]): Promise<void> {
+		const { pastedRowOrders, pasteRevealScrollTop, selectRowOrders } = await loadTrackClipboard();
+		const orders = pastedRowOrders(p.rows, pastedIds);
+		if (orders.length === 0) return;
+		selectRowOrders(p, orders);
+		if (p !== pane) return;
+		const index = renderedRows.findIndex((r) => r.order === orders[0]);
+		if (index < 0) return;
+		p.rememberScroll(pasteRevealScrollTop(index, uiPrefs.library_density));
+		navEpoch += 1;
+	}
+
 	let addToPlaylistIds = $state<string[] | null>(null);
 
 	function openAddToPlaylistPicker(ids: string[]): void {
@@ -3628,6 +3756,7 @@
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
+		<AlphaBadge />
 		<LibraryJobsChrome />
 		<div class="library-health" aria-label="library processing health">
 			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}

@@ -11,7 +11,9 @@ Three seams make that work, and none of them is new machinery:
 * :func:`build_argv` -- the argv builder. The worker is a SUBPROCESS, and it
   has to be, because it needs ``modal`` and torch-adjacent imports that are
   deliberately not in the repo venv (see ``scripts/stems_modal_worker.py``).
-  So the argv is a ``uv run --with modal`` overlay, not ``sys.executable``.
+  In a checkout the argv is a ``uv run --with modal`` overlay; in the
+  installed app it is the payload's own interpreter and an absolute path
+  into the payload (``apps/stems/worker_launch.py``, issue #3421).
 * :func:`on_progress` -- how a per-track completion becomes a
   ``library.changed`` event. The worker names the finished track in its
   progress line; the engine turns that into the event the browser already
@@ -47,14 +49,13 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
 from apps.shared import events
-from apps.shared.platform_paths import PROJECT_ROOT
 from apps.shared.stable_id import is_safe_stable_id_segment
+from apps.stems import worker_launch
 from apps.stems.selection import has_bundle
 from apps.stems.tiers import DEFAULT_TIER, modal_tiers
 
@@ -77,9 +78,10 @@ def local_worker_script() -> str:
     that bet happened to win. In the installed app the engine runs from ``/``
     and the payload ships no ``scripts/`` directory at all, so the job died
     198 ms after the first-run wizard enqueued it (test Mac, Wed 16 Sep 2026):
-    ``can't open file '//scripts/stems_local_worker.py'``.
+    ``can't open file '//scripts/stems_local_worker.py'``. The payload now
+    ships it (issue #3421); this still names where it should be either way.
     """
-    return str(PROJECT_ROOT / LOCAL_WORKER_SCRIPT)
+    return str(worker_launch.worker_path(LOCAL_WORKER_SCRIPT))
 
 
 def local_worker_refusal() -> str | None:
@@ -90,13 +92,10 @@ def local_worker_refusal() -> str | None:
     sentence as its reason -- instead of a job that is accepted, reported as
     started, and fails in a subprocess nobody is watching.
     """
-    script = Path(local_worker_script())
-    if script.is_file():
+    missing = worker_launch.missing_worker(LOCAL_WORKER_SCRIPT)
+    if missing is None:
         return None
-    return (
-        "on-device stem separation is not installed in this build: "
-        f"{LOCAL_WORKER_SCRIPT} is not present at {script}"
-    )
+    return f"on-device stem separation is not installed in this build: {missing}"
 
 SCOPE_PENDING: str = "pending"
 """The only scope: every library row with audio on disk and no bundle yet.
@@ -129,11 +128,6 @@ The runner's contract is ``{"progress": <number>, "message": <string|null>}``
 and extra keys are passed through untouched, which is exactly the room a
 batch kind needs to say WHICH item finished.
 """
-
-# uv, not sys.executable: modal is not a repo dependency and must not become
-# one (heavy ML deps never enter the repo venv -- CLAUDE.md). --with overlays
-# it into an ephemeral env for this process only.
-UV_BIN: str = os.environ.get("MDT_UV_BIN", "uv")
 
 TRANSPORT_ENV: str = "MDT_STEMS_TRANSPORT"
 DEFAULT_TRANSPORT: str = "relay"
@@ -295,7 +289,18 @@ def _r2_first_argv(
     executor: str,
 ) -> list[str]:
     root = _resolve_data_dir(data_dir)
-    argv: list[str] = [sys.executable, R2_FIRST_WORKER_SCRIPT, "--data-dir", str(root)]
+    # sys.executable: this worker imports nothing heavier than the engine
+    # itself does, so the engine's own interpreter runs it, in a checkout and
+    # in the installed app alike. Only the PATH has to be anchored.
+    missing = worker_launch.missing_worker(R2_FIRST_WORKER_SCRIPT)
+    if missing is not None:
+        raise StemsJobPayloadError(missing)
+    argv: list[str] = [
+        sys.executable,
+        str(worker_launch.worker_path(R2_FIRST_WORKER_SCRIPT)),
+        "--data-dir",
+        str(root),
+    ]
     if stable_ids is None:
         argv += ["--scope", SCOPE_PENDING]
     else:
@@ -305,45 +310,42 @@ def _r2_first_argv(
     return argv
 
 
-def build_argv(payload: dict[str, Any]) -> list[str]:
-    from apps.cloud.stem_source import resolve_stem_hydration_source
-    from apps.stems.local_gate import local_stems_gate
+def compute_argv(
+    stable_ids: list[str] | None,
+    *,
+    tier: str,
+    data_dir: Path | None,
+    executor: str,
+) -> list[str]:
+    """The argv that SEPARATES (local Demucs or a Modal GPU), never hydrates.
+
+    Shared with ``scripts/stems_r2_first_worker.py``, which falls back to it
+    for tracks R2 does not hold, so the two cannot drift on how a worker is
+    found or started.
+    """
     from apps.stems.routing import EXECUTOR_LOCAL
 
-    stable_ids, tier, data_dir, executor = parse_payload(payload)
-    root = _resolve_data_dir(data_dir)
-    if resolve_stem_hydration_source(root) is not None:
-        return _r2_first_argv(stable_ids, tier=tier, data_dir=data_dir, executor=executor)
-    if shutil.which(UV_BIN) is None:
-        raise StemsJobPayloadError(
-            f"{UV_BIN!r} is not on PATH, and the stems worker needs uv. "
-            "Install uv, or set MDT_UV_BIN."
-        )
-    if executor == EXECUTOR_LOCAL:
-        refusal = local_stems_gate() or local_worker_refusal()
-        if refusal is not None:
-            raise StemsJobPayloadError(refusal)
-        argv: list[str] = [
-            UV_BIN,
-            "run",
-            "--no-sync",
-            "python",
-            local_worker_script(),
-        ]
-    else:
-        argv = [
-            UV_BIN,
-            "run",
-            "--no-sync",
-            "--with",
-            "modal",
-            "python",
-            WORKER_SCRIPT,
-            "--tier",
-            tier,
-            "--transport",
-            resolve_transport(),
-        ]
+    try:
+        if executor == EXECUTOR_LOCAL:
+            from apps.stems.local_gate import local_stems_gate
+
+            refusal = local_stems_gate() or local_worker_refusal()
+            if refusal is not None:
+                raise StemsJobPayloadError(refusal)
+            argv = worker_launch.script_argv(LOCAL_WORKER_SCRIPT)
+        else:
+            transport = resolve_transport()
+            argv = [
+                *worker_launch.script_argv(
+                    WORKER_SCRIPT, with_modal=transport == "direct"
+                ),
+                "--tier",
+                tier,
+                "--transport",
+                transport,
+            ]
+    except worker_launch.WorkerLaunchError as exc:
+        raise StemsJobPayloadError(str(exc)) from exc
     if data_dir is not None:
         argv += ["--data-dir", str(data_dir)]
     if stable_ids is None:
@@ -351,6 +353,16 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
     for stable_id in stable_ids:
         argv += ["--stable-id", stable_id]
     return argv
+
+
+def build_argv(payload: dict[str, Any]) -> list[str]:
+    from apps.cloud.stem_source import resolve_stem_hydration_source
+
+    stable_ids, tier, data_dir, executor = parse_payload(payload)
+    root = _resolve_data_dir(data_dir)
+    if resolve_stem_hydration_source(root) is not None:
+        return _r2_first_argv(stable_ids, tier=tier, data_dir=data_dir, executor=executor)
+    return compute_argv(stable_ids, tier=tier, data_dir=data_dir, executor=executor)
 
 
 def on_progress(_job: dict[str, Any], line: dict[str, Any]) -> None:
@@ -412,15 +424,16 @@ def stems_root(data_dir: Path | None) -> Path:
 
 __all__ = [
     "HYDRATE_WORKER_SCRIPT",
-    "R2_FIRST_WORKER_SCRIPT",
     "JOB_KIND",
     "LIBRARY_KIND",
     "MODAL_TIER_KEYS",
     "PROGRESS_TRACK_KEY",
+    "R2_FIRST_WORKER_SCRIPT",
     "SCOPE_PENDING",
     "StemsJobPayloadError",
     "build_argv",
     "canonical_payload",
+    "compute_argv",
     "local_worker_refusal",
     "local_worker_script",
     "on_progress",

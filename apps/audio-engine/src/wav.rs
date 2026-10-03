@@ -1,5 +1,6 @@
 //! Minimal WAV writers: 32-bit float for renders (exact, hashable), 16-bit
-//! PCM for small test fixtures.
+//! PCM for small test fixtures, and the header of a float WAV of any channel
+//! count for `odj-audio decode`, which streams its samples.
 
 use std::io::{self, Write};
 
@@ -29,6 +30,32 @@ fn data_bytes(samples: usize, bytes_per_sample: usize) -> io::Result<u32> {
         .ok()
         .filter(|&n| n <= u32::MAX - 36)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "render too long for a WAV file (4 GiB)"))
+}
+
+/// The header of an IEEE float WAV (format 3) with `channels` channels and
+/// `data_bytes` bytes of samples after it: 44 bytes, the same layout
+/// [`write_f32`] writes for stereo. A streaming writer puts a placeholder
+/// first and this over it once the length is known.
+pub fn write_f32_header(w: &mut impl Write, channels: u16, sr: u32, data_bytes: u32) -> io::Result<()> {
+    if channels == 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "a WAV file needs at least one channel"));
+    }
+    if data_bytes > u32::MAX - 36 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "audio too long for a WAV file (4 GiB)"));
+    }
+    let block_align = channels as u32 * 4;
+    w.write_all(b"RIFF")?;
+    w.write_all(&(36 + data_bytes).to_le_bytes())?;
+    w.write_all(b"WAVEfmt ")?;
+    w.write_all(&16u32.to_le_bytes())?;
+    w.write_all(&3u16.to_le_bytes())?;
+    w.write_all(&channels.to_le_bytes())?;
+    w.write_all(&sr.to_le_bytes())?;
+    w.write_all(&(sr * block_align).to_le_bytes())?;
+    w.write_all(&(block_align as u16).to_le_bytes())?;
+    w.write_all(&32u16.to_le_bytes())?;
+    w.write_all(b"data")?;
+    w.write_all(&data_bytes.to_le_bytes())
 }
 
 /// Interleaved stereo f32, IEEE float WAV (format 3).
@@ -83,5 +110,22 @@ mod tests {
         let mut out = io::BufWriter::new(Vec::new());
         write_f32(&mut out, 48000, &pcm).unwrap();
         assert_eq!(out.get_ref().len(), 44 + 64 * 4);
+    }
+
+    #[test]
+    fn the_streaming_header_is_the_stereo_writers_header() {
+        let pcm = [0.25f32; 64];
+        let mut whole = Vec::new();
+        write_f32(&mut whole, 44100, &pcm).unwrap();
+        let mut head = Vec::new();
+        write_f32_header(&mut head, 2, 44100, 64 * 4).unwrap();
+        assert_eq!(head[..], whole[..44]);
+        // Control: another channel count changes the header where it should.
+        let mut mono = Vec::new();
+        write_f32_header(&mut mono, 1, 44100, 64 * 4).unwrap();
+        assert_eq!(u16::from_le_bytes([mono[22], mono[23]]), 1);
+        assert_eq!(u16::from_le_bytes([mono[32], mono[33]]), 4);
+        assert!(write_f32_header(&mut Vec::new(), 0, 44100, 0).is_err());
+        assert!(write_f32_header(&mut Vec::new(), 2, 44100, u32::MAX - 35).is_err());
     }
 }

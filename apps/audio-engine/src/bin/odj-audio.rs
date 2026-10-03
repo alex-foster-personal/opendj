@@ -4,6 +4,9 @@
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
 //!                   [--ws 127.0.0.1:0]
 //!                   [--midi] [--midi-map MAPS.json]
+//!   odj-audio decode --in SOURCE --out OUT.wav
+//!   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
+//!   odj-audio probe PATH
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
@@ -17,6 +20,13 @@
 //! and device clocks) has the engine read the controllers its device maps
 //! match; `--midi-map` adds onboarded maps that win over the built-in ones.
 //! `midi_inject` feeds recorded MIDI bytes on any clock, with or without it.
+//! `decode` writes SOURCE (any format a deck loads: MP3, AAC, FLAC, ...) as a
+//! 32-bit float WAV at its own rate and channel count, streamed a packet at a
+//! time, and prints one JSON line naming them and the frame count. An MP4's
+//! edit list is applied (encoder priming trimmed) so it starts where ffmpeg
+//! and a deck start it. It never replaces a file: OUT must not exist. This is how the stems and vocals
+//! workers read compressed audio in the installed app, which ships no ffmpeg
+//! (`docs/decisions/*-odj-audio-decode-for-workers.md`).
 
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -37,6 +47,9 @@ const USAGE: &str = "usage:
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
+  odj-audio decode --in SOURCE --out OUT.wav   (OUT must not exist)
+  odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
+  odj-audio probe PATH
   odj-audio version";
 
 struct Args {
@@ -557,9 +570,154 @@ fn device(sr: Option<u32>, midi: serve::MidiSetup, ws: Option<serve::WsListen>) 
     serve::serve_threaded(rate, "device", midi, odj_audio::device::run_device(probed), ws).map_err(|e| e.to_string())
 }
 
+/// `odj-audio decode` has two forms: `--in SOURCE --out OUT.wav` writes a new
+/// float WAV file ([`decode_wav_cmd`], the stems and vocals workers), and a
+/// bare `PATH` streams raw PCM to stdout ([`decode_pcm_cmd`], the analysis
+/// lanes). `--in` picks the first.
+fn decode_cmd(args: Args) -> Result<(), String> {
+    if args.rest.iter().any(|a| a == "--in") {
+        decode_wav_cmd(args)
+    } else {
+        decode_pcm_cmd(args)
+    }
+}
+
+/// `odj-audio decode`: SOURCE to a new float WAV at OUT (see the module
+/// docs). OUT is created, never replaced, so neither a typo nor OUT naming
+/// SOURCE itself (or a link to it) can truncate a library file; a failed
+/// decode removes the partial OUT it created.
+fn decode_wav_cmd(mut args: Args) -> Result<(), String> {
+    let src = PathBuf::from(args.take("--in")?.ok_or("decode needs --in")?);
+    let out_path = PathBuf::from(args.take("--out")?.ok_or("decode needs --out")?);
+    args.done()?;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out_path)
+        .map_err(|e| format!("cannot create {}: {e} (decode never replaces a file)", out_path.display()))?;
+    let mut w = BufWriter::new(file);
+    let written = odj_audio::decode::decode_to_wav(&src, &mut w)
+        .and_then(|r| {
+            w.get_ref().sync_all().map_err(|e| {
+                protocol::ProtoError::new(ErrorCode::Io, format!("cannot write {}: {e}", out_path.display()))
+            })?;
+            Ok(r)
+        });
+    let written = match written {
+        Ok(r) => r,
+        Err(e) => {
+            drop(w);
+            let _ = std::fs::remove_file(&out_path);
+            return Err(format!("{}: {}", e.code.as_str(), e.message));
+        }
+    };
+    let summary = json!({
+        "type": "decode",
+        "in": src.display().to_string(),
+        "out": out_path.display().to_string(),
+        "format": "wav_f32",
+        "sample_rate": written.sample_rate,
+        "channels": written.channels,
+        "frames": written.frames,
+        "duration_s": written.frames as f64 / written.sample_rate as f64,
+        // MP4 edit list: encoder priming trimmed from the front, whole
+        // packets dropped past its end, and whether it was applied.
+        "trimmed_start_frames": written.trimmed_start,
+        "dropped_end_frames": written.dropped_end,
+        "edit_list": written.edit,
+    });
+    println!("{summary}");
+    Ok(())
+}
+
 #[cfg(not(feature = "device"))]
 fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen>) -> Result<(), String> {
     Err("this build has no device output; rebuild with --features device".into())
+}
+
+/// The one positional argument left after the flags are taken.
+fn sole_path(args: &mut Args) -> Result<PathBuf, String> {
+    if args.rest.len() != 1 || args.rest[0].starts_with("--") {
+        return Err(format!("expected exactly one PATH\n{USAGE}"));
+    }
+    Ok(PathBuf::from(args.rest.remove(0)))
+}
+
+/// Decode a file to raw PCM on stdout, the way the Python analysis lanes
+/// read `ffmpeg ... -f s16le -`: little-endian, interleaved, at the file's
+/// own rate unless `--rate` resamples it (rubato, as the engine loads it).
+/// `--mono` averages the two sides. One JSON line on stderr after the last
+/// sample names the rate, channels and frames written, so a reader can tell
+/// a complete decode from a truncated pipe.
+fn decode_pcm_cmd(mut args: Args) -> Result<(), String> {
+    use std::io::Write;
+    let rate = args.take("--rate")?.map(|r| r.parse::<u32>().map_err(|_| format!("--rate {r} is not a whole number of Hz"))).transpose()?;
+    if rate == Some(0) {
+        return Err("--rate must be above 0".into());
+    }
+    let mono = args.flag("--mono");
+    let format = args.take("--format")?.unwrap_or_else(|| "f32le".into());
+    if format != "f32le" && format != "s16le" {
+        return Err(format!("--format {format} is not f32le or s16le"));
+    }
+    let path = sole_path(&mut args)?;
+    args.done()?;
+    let d = match rate {
+        Some(r) => odj_audio::decode::decode_at(&path, r),
+        None => odj_audio::decode::decode_file(&path),
+    }
+    .map_err(|e| e.message)?;
+    let channels = if mono { 1 } else { 2 };
+    let frames = d.pcm.len() / 2;
+    let mut out = BufWriter::with_capacity(1 << 20, io::stdout().lock());
+    let s16 = format == "s16le";
+    let put = |out: &mut BufWriter<io::StdoutLock<'_>>, v: f32| -> io::Result<()> {
+        if s16 {
+            // ffmpeg's float to s16: scale by 32768, round to nearest, clip.
+            let s = (v * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+            out.write_all(&s.to_le_bytes())
+        } else {
+            out.write_all(&v.to_le_bytes())
+        }
+    };
+    let w = |e: io::Error| format!("cannot write PCM: {e}");
+    for f in d.pcm.chunks_exact(2) {
+        if mono {
+            put(&mut out, (f[0] + f[1]) * 0.5).map_err(w)?;
+        } else {
+            put(&mut out, f[0]).map_err(w)?;
+            put(&mut out, f[1]).map_err(w)?;
+        }
+    }
+    out.flush().map_err(w)?;
+    eprintln!("{}", json!({"sample_rate": d.sample_rate, "channels": channels, "frames": frames, "format": format}));
+    Ok(())
+}
+
+/// Print one JSON line with the file's rate and length. `frames` comes from
+/// the header when the container states it ("source": "header"), otherwise
+/// from a full decode ("source": "decode"); never an estimate from bitrate.
+fn probe_cmd(mut args: Args) -> Result<(), String> {
+    let path = sole_path(&mut args)?;
+    args.done()?;
+    let p = odj_audio::decode::probe_file(&path).map_err(|e| e.message)?;
+    let (rate, frames, source) = match (p.sample_rate, p.frames) {
+        (Some(r), Some(n)) => (r, n, "header"),
+        _ => {
+            let d = odj_audio::decode::decode_file(&path).map_err(|e| e.message)?;
+            (d.sample_rate, (d.pcm.len() / 2) as u64, "decode")
+        }
+    };
+    let v = json!({
+        "sample_rate": rate,
+        "frames": frames,
+        "duration_s": frames as f64 / rate as f64,
+        "delay": p.delay,
+        "padding": p.padding,
+        "source": source,
+    });
+    println!("{v}");
+    Ok(())
 }
 
 fn main() -> ExitCode {
@@ -572,6 +730,8 @@ fn main() -> ExitCode {
     let r = match sub.as_str() {
         "render" => render(args),
         "serve" => serve_cmd(args),
+        "decode" => decode_cmd(args),
+        "probe" => probe_cmd(args),
         "version" => {
             let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
             println!("{v}");
