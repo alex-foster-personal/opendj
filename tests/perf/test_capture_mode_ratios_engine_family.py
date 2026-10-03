@@ -352,7 +352,8 @@ _requires_darwin_lsof_node = pytest.mark.skipif(
 def _listener(argv0: str) -> Iterator[tuple[str, int]]:
     """A real loopback listener answering build-info with its own pid, run under `argv0`."""
     proc = subprocess.Popen(
-        ["bash", "-c", 'exec -a "$0" "$1" -c "$2"', argv0, sys.executable, _ENGINE_STANDIN],
+        [argv0, "-c", _ENGINE_STANDIN],
+        executable=sys.executable,
         stdout=subprocess.PIPE,
         text=True,
     )
