@@ -156,7 +156,7 @@ where
 /// segment. On macOS, while the microphone prompt is up (`on_waiting` runs
 /// once), the silence the input delivers is discarded and nothing is written;
 /// access turned off is an error before anything opens. `on_started` runs
-/// once audio is really being recorded. A stream error that ends the stream
+/// once, when the first frames have been written to a segment. A stream error that ends the stream
 /// (the input went away) ends the recording with an error, after closing
 /// what was written.
 pub fn record(
@@ -216,7 +216,10 @@ pub fn record(
     discard_ring(&mut cons);
     dropped.store(0, Ordering::Relaxed);
     let (channels, _) = writer.format();
-    on_started(&Started { device: name.clone(), rate, source_channels, channels });
+    let started = Started { device: name.clone(), rate, source_channels, channels };
+    // Reported once the first frames are in a segment file, not at the grant:
+    // until then nothing is recorded, and REC must not light.
+    let mut on_started = Some(on_started);
     let mut watch = StallWatch::new(Instant::now(), STALL_LIMIT);
     let mut result = Ok(());
     while !stop.load(Ordering::Relaxed) {
@@ -227,6 +230,11 @@ pub fn record(
                 break;
             }
         };
+        if moved > 0 {
+            if let Some(report) = on_started.take() {
+                report(&started);
+            }
+        }
         if failed.load(Ordering::Relaxed) {
             result = Err(format!("audio input {name:?} stopped delivering audio (disconnected?)"));
             break;

@@ -227,6 +227,8 @@ def test_odj_audio_records_wav_by_name_and_stops_when_stdin_closes(
     assert handle.argv[handle.argv.index("--device") + 1] == null_input
     assert handle.stderr_log == session / "odj-audio.stderr.log"
     assert _wait_for(lambda: handle.current_state() == "recording")
+    # "recording" is reported only once frames are in a segment file.
+    assert sets_paths.segment_files(session), "REC lit before any audio was written"
     # A header is rewritten every second, so a segment with frames proves audio is landing.
     assert _wait_for(lambda: any(p.stat().st_size > 44 for p in sets_paths.segment_files(session)))
     assert capture.stop_capture(handle) == 0
