@@ -23,6 +23,7 @@
 # USAGE
 #   sign_macos_developer_id.sh payload <staged-payload-dir>
 #   sign_macos_developer_id.sh verify-dmg-app <dmg>
+#   sign_macos_developer_id.sh verify-app-entitlements <app>
 #   sign_macos_developer_id.sh notarize-app <app>
 #   sign_macos_developer_id.sh dmg <dmg>
 #   sign_macos_developer_id.sh notarize <dmg>
@@ -61,12 +62,20 @@
 #        JIT, so all of Open DJ's own analysis, is SIGKILLed -> broken
 #   [if] `payload` reports success while a numba JIT under the SIGNED
 #        interpreter does not run [then] broken
+#   [if] `notarize-app` or `verify-dmg-app` passes an app whose signature
+#        lacks com.apple.security.device.audio-input [then] macOS refuses the
+#        microphone before any prompt and the I/O device lists cannot be
+#        named -> broken (INSTALL-34)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ENTITLEMENTS="$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
 ENGINE_JIT_ENTITLEMENT="com.apple.security.cs.allow-unsigned-executable-memory"
+# odj-audio records the REC input itself (SET-11); without this key the
+# hardened runtime hands it silence.
+ENGINE_AUDIO_INPUT_ENTITLEMENT="com.apple.security.device.audio-input"
+APP_MIC_ENTITLEMENT="com.apple.security.device.audio-input"
 
 # macho_files / macho_count. Shared with scripts/ship_appstore.sh so the two
 # signing paths cannot disagree about which files are Mach-O.
@@ -151,7 +160,7 @@ cmd_payload() {
 # pass above signs every Mach-O without entitlements, which is right for the
 # libraries; an executable is the one place macOS reads them from.
 _sign_engine_executables() {
-    local payload="$1" exe exes=0
+    local payload="$1" exe exes=0 signed_entitlements key
     [ -f "$ENGINE_ENTITLEMENTS" ] || die "no engine entitlements at $ENGINE_ENTITLEMENTS"
     while IFS= read -r -d '' exe; do
         case "$(file -b "$exe")" in
@@ -160,8 +169,12 @@ _sign_engine_executables() {
                 --entitlements "$ENGINE_ENTITLEMENTS" \
                 --sign "$MDT_MACOS_SIGNING_IDENTITY" "$exe" ||
                 die "codesign failed applying the engine entitlements to $exe"
-            codesign -d --entitlements - --xml "$exe" 2>/dev/null | grep -q "$ENGINE_JIT_ENTITLEMENT" ||
-                die "$exe was signed but does not carry $ENGINE_JIT_ENTITLEMENT"
+            signed_entitlements="$(codesign -d --entitlements - --xml "$exe" 2>/dev/null)" ||
+                die "cannot read the entitlements $exe was signed with"
+            for key in "$ENGINE_JIT_ENTITLEMENT" "$ENGINE_AUDIO_INPUT_ENTITLEMENT"; do
+                grep -q "$key" <<<"$signed_entitlements" ||
+                    die "$exe was signed but does not carry $key"
+            done
             exes=$((exes + 1))
             ;;
         esac
@@ -226,7 +239,42 @@ cmd_verify_dmg_app() {
     printf '%s\n' "$sig" | grep -q '^Timestamp=' ||
         die "$(basename "$app") carries no secure timestamp (codesign --timestamp). The notary service rejects that."
 
+    _require_app_entitlements "$app"
+
     ok "$(basename "$app") is Developer ID signed, hardened, and timestamped"
+}
+
+#----- verify-app-entitlements -------------------------------------------
+
+# Read the entitlements back out of the SIGNED app and require the microphone
+# key. Under the hardened runtime macOS refuses the microphone to a signature
+# without it, silently, before the privacy prompt: the page sees
+# NotAllowedError and the user is never asked (demon-llama, Fri 2 Oct 2026).
+# Reads the signature rather than the plist, because the plist being right says
+# nothing about whether the last `codesign --force` kept it. Needs no identity:
+# it only reads, so it also answers "is the INSTALLED app entitled?".
+_require_app_entitlements() {
+    local app="$1" ents
+    _require_tool codesign
+    [ -d "$app" ] || die "no app bundle at $app"
+    # An unsigned bundle makes `codesign -d` exit 0 with no entitlements
+    # (macOS 26), which would read as "missing key". Say what it really is.
+    local verify
+    verify=$(codesign --verify "$app" 2>&1) ||
+        die "$(basename "$app") is not validly signed, so its entitlements cannot be read: $verify"
+    ents=$(codesign -d --entitlements - --xml "$app" 2>&1) ||
+        die "could not read the entitlements of $(basename "$app"): $ents"
+    # The key must be TRUE: <false/> is a valid signature that still denies
+    # the microphone. Whitespace between key and value is dropped first.
+    printf '%s' "$ents" | tr -d ' \t\r\n' | grep -qF "<key>$APP_MIC_ENTITLEMENT</key><true/>" || die \
+        "$(basename "$app") is signed without $APP_MIC_ENTITLEMENT set to true. Under the hardened runtime macOS refuses the microphone before any prompt, so the I/O device lists stay unnamed and getUserMedia fails with NotAllowedError. Sign with apps/desktop/src-tauri/Entitlements.app.plist."
+    ok "$(basename "$app") carries $APP_MIC_ENTITLEMENT"
+}
+
+cmd_verify_app_entitlements() {
+    local app="${1:-}"
+    [ -n "$app" ] || die "usage: $0 verify-app-entitlements <app>"
+    _require_app_entitlements "$app"
 }
 
 #----- notarize-app -------------------------------------------------------
@@ -271,6 +319,9 @@ cmd_notarize_app() {
     _require_tool xcrun
     _require_tool spctl
     [ -d "$app" ] || die "no app bundle at $app"
+    # Before the submission: a notarized app without the microphone key is
+    # accepted by Apple and still cannot name a single audio device.
+    _require_app_entitlements "$app"
 
     local out started elapsed
     NOTARY_APP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/opendj-notary-app.XXXXXX")
@@ -373,11 +424,12 @@ main() {
     case "$action" in
     payload) cmd_payload "$@" ;;
     verify-dmg-app) cmd_verify_dmg_app "$@" ;;
+    verify-app-entitlements) cmd_verify_app_entitlements "$@" ;;
     notarize-app) cmd_notarize_app "$@" ;;
     dmg) cmd_dmg "$@" ;;
     notarize) cmd_notarize "$@" ;;
-    "") die "usage: $0 {payload|verify-dmg-app|notarize-app|dmg|notarize} <path>" ;;
-    *) die "unknown subcommand '$action'; expected one of payload, verify-dmg-app, notarize-app, dmg, notarize" ;;
+    "") die "usage: $0 {payload|verify-dmg-app|verify-app-entitlements|notarize-app|dmg|notarize} <path>" ;;
+    *) die "unknown subcommand '$action'; expected one of payload, verify-dmg-app, verify-app-entitlements, notarize-app, dmg, notarize" ;;
     esac
 }
 

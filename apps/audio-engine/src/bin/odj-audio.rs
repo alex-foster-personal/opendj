@@ -5,6 +5,10 @@
 //!                   [--ws 127.0.0.1:0]
 //!                   [--midi] [--midi-map MAPS.json]
 //!   odj-audio decode --in SOURCE --out OUT.wav
+//!   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
+//!   odj-audio probe PATH
+//!   odj-audio input-devices
+//!   odj-audio record --dir DIR (--device NAME | --device-index N) [--segment-seconds 300]
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
@@ -22,10 +26,18 @@
 //! 32-bit float WAV at its own rate and channel count, streamed a packet at a
 //! time, and prints one JSON line naming them and the frame count. An MP4's
 //! edit list is applied (encoder priming trimmed) so it starts where ffmpeg
-//! starts it; the deck's own decode does not do this. It never
-//! replaces a file: OUT must not exist. This is how the stems and vocals
+//! and a deck start it. It never replaces a file: OUT must not exist. This is how the stems and vocals
 //! workers read compressed audio in the installed app, which ships no ffmpeg
 //! (`docs/decisions/*-odj-audio-decode-for-workers.md`).
+//! `input-devices` (build feature `device`) prints the audio inputs as one
+//! JSON line, and `record` records one of them into DIR as rolling 16-bit WAV
+//! segments named by their UTC start (`src/record.rs`), printing a JSON line
+//! when it is recording (`{"recording":...}`, after `{"waiting":
+//! "microphone_permission"}` while macOS's first-run prompt is up) and another
+//! when it stops. It stops, closing
+//! the last segment, when stdin reaches end of file or reads `stop`. This is
+//! how REC records a set in the installed app, which ships no ffmpeg
+//! (`docs/decisions/*-set-recording-without-ffmpeg.md`).
 
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -47,6 +59,11 @@ const USAGE: &str = "usage:
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
   odj-audio decode --in SOURCE --out OUT.wav   (OUT must not exist)
+  odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
+  odj-audio probe PATH
+  odj-audio input-devices
+  odj-audio record --dir DIR (--device NAME | --device-index N) [--segment-seconds SECONDS]
+                   (stops on `stop` or end of file on stdin)
   odj-audio version";
 
 struct Args {
@@ -567,11 +584,23 @@ fn device(sr: Option<u32>, midi: serve::MidiSetup, ws: Option<serve::WsListen>) 
     serve::serve_threaded(rate, "device", midi, odj_audio::device::run_device(probed), ws).map_err(|e| e.to_string())
 }
 
+/// `odj-audio decode` has two forms: `--in SOURCE --out OUT.wav` writes a new
+/// float WAV file ([`decode_wav_cmd`], the stems and vocals workers), and a
+/// bare `PATH` streams raw PCM to stdout ([`decode_pcm_cmd`], the analysis
+/// lanes). `--in` picks the first.
+fn decode_cmd(args: Args) -> Result<(), String> {
+    if args.rest.iter().any(|a| a == "--in") {
+        decode_wav_cmd(args)
+    } else {
+        decode_pcm_cmd(args)
+    }
+}
+
 /// `odj-audio decode`: SOURCE to a new float WAV at OUT (see the module
 /// docs). OUT is created, never replaced, so neither a typo nor OUT naming
 /// SOURCE itself (or a link to it) can truncate a library file; a failed
 /// decode removes the partial OUT it created.
-fn decode_cmd(mut args: Args) -> Result<(), String> {
+fn decode_wav_cmd(mut args: Args) -> Result<(), String> {
     let src = PathBuf::from(args.take("--in")?.ok_or("decode needs --in")?);
     let out_path = PathBuf::from(args.take("--out")?.ok_or("decode needs --out")?);
     args.done()?;
@@ -620,6 +649,201 @@ fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen
     Err("this build has no device output; rebuild with --features device".into())
 }
 
+/// The one positional argument left after the flags are taken.
+fn sole_path(args: &mut Args) -> Result<PathBuf, String> {
+    if args.rest.len() != 1 || args.rest[0].starts_with("--") {
+        return Err(format!("expected exactly one PATH\n{USAGE}"));
+    }
+    Ok(PathBuf::from(args.rest.remove(0)))
+}
+
+/// Decode a file to raw PCM on stdout, the way the Python analysis lanes
+/// read `ffmpeg ... -f s16le -`: little-endian, interleaved, at the file's
+/// own rate unless `--rate` resamples it (rubato, as the engine loads it).
+/// `--mono` averages the two sides. One JSON line on stderr after the last
+/// sample names the rate, channels and frames written, so a reader can tell
+/// a complete decode from a truncated pipe.
+fn decode_pcm_cmd(mut args: Args) -> Result<(), String> {
+    use std::io::Write;
+    let rate = args.take("--rate")?.map(|r| r.parse::<u32>().map_err(|_| format!("--rate {r} is not a whole number of Hz"))).transpose()?;
+    if rate == Some(0) {
+        return Err("--rate must be above 0".into());
+    }
+    let mono = args.flag("--mono");
+    let format = args.take("--format")?.unwrap_or_else(|| "f32le".into());
+    if format != "f32le" && format != "s16le" {
+        return Err(format!("--format {format} is not f32le or s16le"));
+    }
+    let path = sole_path(&mut args)?;
+    args.done()?;
+    let d = match rate {
+        Some(r) => odj_audio::decode::decode_at(&path, r),
+        None => odj_audio::decode::decode_file(&path),
+    }
+    .map_err(|e| e.message)?;
+    let channels = if mono { 1 } else { 2 };
+    let frames = d.pcm.len() / 2;
+    let mut out = BufWriter::with_capacity(1 << 20, io::stdout().lock());
+    let s16 = format == "s16le";
+    let put = |out: &mut BufWriter<io::StdoutLock<'_>>, v: f32| -> io::Result<()> {
+        if s16 {
+            // ffmpeg's float to s16: scale by 32768, round to nearest, clip.
+            let s = (v * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+            out.write_all(&s.to_le_bytes())
+        } else {
+            out.write_all(&v.to_le_bytes())
+        }
+    };
+    let w = |e: io::Error| format!("cannot write PCM: {e}");
+    for f in d.pcm.chunks_exact(2) {
+        if mono {
+            put(&mut out, (f[0] + f[1]) * 0.5).map_err(w)?;
+        } else {
+            put(&mut out, f[0]).map_err(w)?;
+            put(&mut out, f[1]).map_err(w)?;
+        }
+    }
+    out.flush().map_err(w)?;
+    eprintln!("{}", json!({"sample_rate": d.sample_rate, "channels": channels, "frames": frames, "format": format}));
+    Ok(())
+}
+
+/// Print one JSON line with the file's rate and length. `frames` comes from
+/// the header when the container states it ("source": "header"), otherwise
+/// from a full decode ("source": "decode"); never an estimate from bitrate.
+fn probe_cmd(mut args: Args) -> Result<(), String> {
+    let path = sole_path(&mut args)?;
+    args.done()?;
+    let p = odj_audio::decode::probe_file(&path).map_err(|e| e.message)?;
+    let (rate, frames, source) = match (p.sample_rate, p.frames) {
+        (Some(r), Some(n)) => (r, n, "header"),
+        _ => {
+            let d = odj_audio::decode::decode_file(&path).map_err(|e| e.message)?;
+            (d.sample_rate, (d.pcm.len() / 2) as u64, "decode")
+        }
+    };
+    let v = json!({
+        "sample_rate": rate,
+        "frames": frames,
+        "duration_s": frames as f64 / rate as f64,
+        "delay": p.delay,
+        "padding": p.padding,
+        "source": source,
+    });
+    println!("{v}");
+    Ok(())
+}
+
+/// Where `record` writes, how long each segment is, and which input. Parsed
+/// (and its errors tested) without `device` too, where nothing reads it.
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+struct RecordArgs {
+    dir: PathBuf,
+    segment_seconds: u32,
+    select: RecordSelect,
+}
+
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+enum RecordSelect {
+    Name(String),
+    Index(usize),
+}
+
+fn parse_record(mut args: Args) -> Result<RecordArgs, String> {
+    let dir = PathBuf::from(args.take("--dir")?.ok_or("record needs --dir")?);
+    let name = args.take("--device")?;
+    let index = args.take("--device-index")?;
+    let segment_seconds = match args.take("--segment-seconds")? {
+        None => 300,
+        Some(s) => s.parse().map_err(|_| format!("--segment-seconds {s} is not a whole number"))?,
+    };
+    args.done()?;
+    let select = match (name, index) {
+        (Some(n), None) if !n.is_empty() => RecordSelect::Name(n),
+        (None, Some(i)) => RecordSelect::Index(i.parse().map_err(|_| format!("--device-index {i} is not an index"))?),
+        _ => return Err("record needs exactly one of --device NAME or --device-index N".into()),
+    };
+    Ok(RecordArgs { dir, segment_seconds, select })
+}
+
+#[cfg(feature = "device")]
+fn input_devices_cmd(args: Args) -> Result<(), String> {
+    args.done()?;
+    let devices = odj_audio::capture::input_devices()?;
+    println!("{}", json!({ "devices": devices }));
+    Ok(())
+}
+
+#[cfg(not(feature = "device"))]
+fn input_devices_cmd(args: Args) -> Result<(), String> {
+    args.done()?;
+    Err("this build has no audio input; rebuild with --features device".into())
+}
+
+/// Set `stop` when stdin reaches end of file or reads a `stop` line: the
+/// parent closing the pipe (or dying) ends the recording cleanly.
+#[cfg(feature = "device")]
+fn stop_on_stdin(stop: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    use std::io::BufRead;
+    std::thread::spawn(move || {
+        for line in io::stdin().lock().lines() {
+            match line {
+                Ok(l) if l.trim() == "stop" => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+}
+
+#[cfg(feature = "device")]
+fn record_cmd(args: Args) -> Result<(), String> {
+    use odj_audio::capture::{record, Select};
+    use std::io::Write;
+    let a = parse_record(args)?;
+    let select = match a.select {
+        RecordSelect::Name(n) => Select::Name(n),
+        RecordSelect::Index(i) => Select::Index(i),
+    };
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    stop_on_stdin(stop.clone());
+    let stopped = match record(
+        &select,
+        &a.dir,
+        a.segment_seconds,
+        stop,
+        || {
+            println!("{}", json!({ "waiting": "microphone_permission" }));
+            let _ = io::stdout().flush();
+        },
+        |started| {
+            println!("{}", json!({ "recording": started }));
+            let _ = io::stdout().flush();
+        },
+    ) {
+        Ok(stopped) => stopped,
+        Err(e) => {
+            // On stdout too, so whoever started the recording can show why
+            // it ended (a microphone denied at the prompt, an unplugged input).
+            println!("{}", json!({ "failed": e }));
+            let _ = io::stdout().flush();
+            return Err(e);
+        }
+    };
+    if stopped.dropped_samples > 0 {
+        eprintln!("odj-audio: dropped {} samples the writer could not keep up with", stopped.dropped_samples);
+    }
+    println!("{}", json!({ "stopped": stopped }));
+    Ok(())
+}
+
+#[cfg(not(feature = "device"))]
+fn record_cmd(args: Args) -> Result<(), String> {
+    parse_record(args)?;
+    Err("this build has no audio input; rebuild with --features device".into())
+}
+
 fn main() -> ExitCode {
     let mut argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.is_empty() {
@@ -631,8 +855,18 @@ fn main() -> ExitCode {
         "render" => render(args),
         "serve" => serve_cmd(args),
         "decode" => decode_cmd(args),
+        "probe" => probe_cmd(args),
+        "input-devices" => input_devices_cmd(args),
+        "record" => record_cmd(args),
         "version" => {
-            let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
+            // `capture`: whether this build can list and record audio inputs
+            // (feature `device`), which the sets recorder checks before
+            // choosing it over ffmpeg.
+            let v = json!({
+                "engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")),
+                "protocol": protocol::PROTOCOL_VERSION,
+                "capture": cfg!(feature = "device"),
+            });
             println!("{v}");
             Ok(())
         }
@@ -871,5 +1105,30 @@ mod tests {
         assert_eq!(files.len(), 3);
         assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
         assert!(d.join("n").join("deck1.wav").exists() && d.join("n").join("deck2.wav").exists());
+    }
+
+    fn args(v: &[&str]) -> Args {
+        Args { rest: v.iter().map(|s| s.to_string()).collect() }
+    }
+
+    #[test]
+    fn record_takes_exactly_one_input_and_a_whole_segment_length() {
+        let a = parse_record(args(&["--dir", "/tmp/x", "--device", "BlackHole 2ch"])).unwrap();
+        assert_eq!((a.dir, a.segment_seconds), (PathBuf::from("/tmp/x"), 300));
+        assert!(matches!(a.select, RecordSelect::Name(ref n) if n == "BlackHole 2ch"));
+        let a = parse_record(args(&["--device-index", "3", "--dir", "d", "--segment-seconds", "60"])).unwrap();
+        assert!(matches!(a.select, RecordSelect::Index(3)));
+        assert_eq!(a.segment_seconds, 60);
+        for bad in [
+            &["--dir", "d"][..],
+            &["--dir", "d", "--device", "A", "--device-index", "1"],
+            &["--dir", "d", "--device", ""],
+            &["--dir", "d", "--device-index", "x"],
+            &["--dir", "d", "--device", "A", "--segment-seconds", "1.5"],
+            &["--device", "A"],
+            &["--dir", "d", "--device", "A", "--loud"],
+        ] {
+            assert!(parse_record(args(bad)).is_err(), "{bad:?}");
+        }
     }
 }

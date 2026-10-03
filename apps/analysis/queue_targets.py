@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
-from apps.shared import platform_paths
+from apps.shared import engine_decode, platform_paths
 from apps.shared.ffmpeg import FfmpegUnavailable, probe_duration_s, resolve_ffmpeg
 from apps.shared.state import locations as track_locations
 
@@ -59,25 +59,40 @@ def _tracks_by_stable_id(
 
 
 def _measured_durations(paths: dict[str, str]) -> dict[str, float | None]:
-    """ffmpeg's stated length for each track whose row stores none.
+    """The decoder's stated length for each track whose row stores none.
 
     An installed app has no mutagen (the GPL ``tags`` extra is omitted), so a
     folder import writes ``duration_ms = NULL`` for every track and admission
-    would refuse the whole library. ffmpeg is the decoder every lane already
-    requires, so its header is the one honest source here. Without ffmpeg no
-    lane can run anyway: every such track stays ``None`` and is refused by
-    name, and the cause is logged once rather than per track.
+    would refuse the whole library. The app's own engine (``odj-audio``,
+    bundled in every payload) reads the length first; ffmpeg is asked only
+    where no engine build exists (a checkout that never ran cargo). With
+    neither, every such track stays ``None`` and is refused by name, and the
+    cause is logged once rather than per track.
     """
     if not paths:
         return {}
-    try:
-        resolve_ffmpeg()
-    except FfmpegUnavailable as exc:
-        log.warning("cannot measure %d track duration(s): %s", len(paths), exc)
+    probe = _duration_probe(len(paths))
+    if probe is None:
         return dict.fromkeys(paths)
     with ThreadPoolExecutor(max_workers=_PROBE_WORKERS) as pool:
-        lengths = pool.map(lambda path: probe_duration_s(Path(path)), paths.values())
+        lengths = pool.map(lambda path: probe(Path(path)), paths.values())
         return dict(zip(paths, lengths, strict=True))
+
+
+def _duration_probe(count: int) -> Callable[[Path], float | None] | None:
+    """The length reader to use: the engine's, else ffmpeg's, else ``None``."""
+    try:
+        exe = engine_decode.resolve_engine_decoder()
+    except engine_decode.EngineDecoderUnavailable as engine_exc:
+        try:
+            resolve_ffmpeg()
+        except FfmpegUnavailable as exc:
+            log.warning(
+                "cannot measure %d track duration(s): %s; %s", count, engine_exc, exc
+            )
+            return None
+        return probe_duration_s
+    return lambda path: engine_decode.probe_duration_s(path, exe)
 
 
 def _resolve_local_path(
@@ -96,7 +111,7 @@ def _resolve_local_path(
 def _admission_duration_s(
     resolved: str | None, duration_ms: int | None, measured_s: float | None
 ) -> float | None:
-    """The stored length wins; else ffmpeg's; a track with no local bytes has none."""
+    """The stored length wins; else the decoder's; a track with no local bytes has none."""
     if resolved is None:
         return None
     if duration_ms:

@@ -1,7 +1,7 @@
 """Audio segment path resolution helpers.
 
 Plan 12-03 Step 5. Keeps the audio-serving endpoint safe: resolves
-``<session_dir>/audio_*.mp3`` by name only (no path traversal) and
+``<session_dir>/audio_*`` segments by name only (no path traversal) and
 enumerates segments from the filesystem + cached manifest metadata.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ PathTraversalError = sets_paths.SessionPathError
 
 @dataclass
 class AudioSegmentView:
-    """Projection of a single MP3 segment for API responses."""
+    """Projection of a single audio segment for API responses."""
 
     name: str
     start_t_s: float
@@ -33,17 +33,18 @@ def resolve_segment_path(
     *,
     sets_root: Path | None = None,
 ) -> Path:
-    """Return an absolute MP3 path; reject any traversal attempt.
+    """Return an absolute segment path; reject any traversal attempt.
 
     The segment name MUST:
-      * start with ``audio_`` and end with ``.mp3`` (matches ffmpeg
-        segmenter naming from :mod:`apps.sets.capture`).
+      * start with ``audio_`` and end with a suffix in
+        :data:`apps.sets.paths.SEGMENT_MEDIA_TYPES` (``.wav`` from
+        odj-audio's capture, ``.mp3`` from ffmpeg's; :mod:`apps.sets.capture`).
       * contain no path separators or ``..`` sequences.
       * resolve inside ``<SETS_DIR>/<session_id>/``.
     """
     if "/" in segment_name or "\\" in segment_name or ".." in segment_name:
         raise PathTraversalError(f"disallowed chars in segment name {segment_name!r}")
-    if not (segment_name.startswith("audio_") and segment_name.endswith(".mp3")):
+    if not sets_paths.is_segment_name(segment_name):
         raise PathTraversalError(f"unexpected segment name {segment_name!r}")
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
     session_dir = sets_paths.session_dir(session_id, root=root)
@@ -60,7 +61,7 @@ def list_segments(
     *,
     sets_root: Path | None = None,
 ) -> list[AudioSegmentView]:
-    """Return one :class:`AudioSegmentView` per MP3 in the session.
+    """Return one :class:`AudioSegmentView` per audio segment in the session.
 
     Durations come from the manifest (written at stop time) when
     available; otherwise they are ``None`` and callers must not rely
@@ -80,13 +81,13 @@ def list_segments(
     except FileNotFoundError:
         pass
     out: list[AudioSegmentView] = []
-    for mp3 in sorted(session_dir.glob("audio_*.mp3")):
+    for seg_path in sets_paths.segment_files(session_dir):
         out.append(
             AudioSegmentView(
-                name=mp3.name,
-                start_t_s=manifest_starts.get(mp3.name, 0.0),
-                duration_s=manifest_durations.get(mp3.name),
-                size_bytes=mp3.stat().st_size,
+                name=seg_path.name,
+                start_t_s=manifest_starts.get(seg_path.name, 0.0),
+                duration_s=manifest_durations.get(seg_path.name),
+                size_bytes=seg_path.stat().st_size,
             )
         )
     return out

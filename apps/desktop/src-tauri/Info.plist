@@ -14,17 +14,20 @@
   `navigator.mediaDevices`. Confirmed live on silver Mon 14 Sep 2026:
   every attempt logged
   "headphone output unsupported: navigator.mediaDevices is unavailable"
-  in webui-client-errors-2026-09-14.log, and `codesign -d --entitlements`
-  on the installed app returned nothing at all.
+  in webui-client-errors-2026-09-14.log, and codesign's display-entitlements
+  read of the installed app returned nothing at all.
 
-  The mic is never actually recorded to disk or sent anywhere; it is
-  read locally in-process for two things: enumerating output devices
+  An input is read for three things: enumerating output devices
   (enumerateDevices requires a granted input permission before device
-  labels are populated) and the short calibration click-train capture.
+  labels are populated), the short calibration click-train capture, and
+  set recording (SET-10), which records the input the DJ picks on the REC
+  button to the set's folder on this Mac. Nothing is sent anywhere. The
+  hardened runtime also needs the audio-input entitlement
+  (Entitlements.app.plist) before any of these can hear anything.
 -->
 <plist version="1.0">
 <dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Open DJ enumerates audio devices and briefly listens on the microphone to auto-calibrate headphone cue latency. Audio is processed locally and never recorded or sent anywhere.</string>
+    <string>Open DJ lists your audio devices, briefly listens to auto-calibrate headphone cue latency, and records your set from the input you pick when you press Record. Audio stays on this Mac and is never sent anywhere.</string>
 </dict>
 </plist>

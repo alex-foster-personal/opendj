@@ -45,6 +45,24 @@ if importlib.util.find_spec("starlette") is not None:
     install_loopback_testclient_default()
 
 
+@pytest.fixture(autouse=True)
+def _reopen_ingest_cli_registry():
+    """Hand every test the CLI registry a freshly started engine would have.
+
+    A lifespan shutdown closes ``ingest_cli_procs`` for the rest of the
+    process, as a real shutdown should, and only a lifespan START reopens it.
+    A test that runs a lifespan therefore left every later test that drives a
+    refresh job through a plain ``TestClient(app)`` (no lifespan) with each
+    pipeline step stopped the moment it registered (#4992, pytest shard 3).
+    Only reached when the module is already loaded, so suites that never touch
+    the webui pay nothing.
+    """
+    yield
+    procs = sys.modules.get("apps.webui.server.routes.ingest_cli_procs")
+    if procs is not None:
+        procs.reopen()
+
+
 def _can_import(module_name: str) -> bool:
     """Return whether an optional dependency is actually importable."""
     try:
@@ -69,22 +87,19 @@ _HAS_FPCALC: bool = shutil.which("fpcalc") is not None
 _HAS_FFMPEG: bool = shutil.which("ffmpeg") is not None
 
 
-def _ffmpeg_can_resample() -> bool:
-    """True when this host's ffmpeg can actually run the pinned soxr chain."""
+def _can_take_canonical_fingerprint() -> bool:
+    """True when this host can run the canonical decode the fingerprint is over."""
     try:
         from apps.analysis.pcm_fingerprint import (
             FingerprintUnavailable,
             require_resampler,
         )
     except ImportError:
-        # apps.analysis.pcm_fingerprint pulls in numpy through
-        # apps.analysis_waveform.decode. Some CI lanes (e.g. the frontend
-        # typing gate) run pytest against a deliberately minimal, isolated
-        # env with none of that installed, and this conftest is the root one
-        # every pytest invocation in the repo collects. A host missing the
-        # stack this probe needs genuinely cannot run the canonical soxr
-        # decode either, so that is the correct, honest answer here -- not a
-        # collection-time crash for suites nowhere near this lane.
+        # Some CI lanes (e.g. the frontend typing gate) run pytest against a
+        # deliberately minimal, isolated env, and this conftest is the root
+        # one every pytest invocation in the repo collects. A host that cannot
+        # import the module cannot take the fingerprint either, so that is the
+        # honest answer here, not a collection-time crash.
         return False
 
     try:
@@ -94,25 +109,13 @@ def _ffmpeg_can_resample() -> bool:
     return True
 
 
-# soxr is a BUILD option of ffmpeg, not a runtime flag: every build accepts
-# `resampler=soxr` as an option value and a build without libsoxr then fails
-# at filter-configure time. decode_fingerprint is defined over that
-# resampler, so the probe RUNS the filter chain rather than reading a
-# version string (Homebrew ffmpeg 9.0.1 on macOS passes the first check and
-# fails the second, measured Wed 9 Sep 2026).
-#
-# Called UNCONDITIONALLY, not gated behind `_HAS_FFMPEG`: that gate is a bare
-# PATH lookup, but `_ffmpeg_can_resample` resolves through the production
-# `resolve_ffmpeg` (MDT_FFMPEG override first, else PATH) via
-# `require_resampler`. Gating this call behind `_HAS_FFMPEG` meant a host with
-# ffmpeg available ONLY through `MDT_FFMPEG` - as a packaged or GUI-launched
-# app without Homebrew on PATH is expected to be - never ran the probe at
-# all, so `_HAS_SOXR` stayed False and every `requires_soxr` test was skipped
-# despite the capability being present (Codex P2 BLOCKING, PR #1587).
-# `_ffmpeg_can_resample` already catches an absent/broken ffmpeg (ImportError,
-# `FingerprintUnavailable`) and returns False, so calling it with no ffmpeg at
-# all anywhere is safe.
-_HAS_SOXR: bool = _ffmpeg_can_resample()
+# decode_fingerprint v2 is defined over `odj-audio decode` (the app's own
+# engine), so the gate is the engine: ODJ_AUDIO_BIN, else a local cargo build
+# that has the decode subcommand. The probe RUNS the canonical decode on a
+# 48 kHz tone and checks the byte count, rather than looking for a binary,
+# because a stale build answers to its name and cannot decode (seen on the
+# nucbox runner, Thu 1 Oct 2026). v1 needed an ffmpeg built with libsoxr.
+_HAS_CANONICAL_DECODE: bool = _can_take_canonical_fingerprint()
 # madmom is not installable from PyPI on Python 3.10+ (0.16.1 imports the
 # long-removed collections.MutableSequence), so requirements.txt pulls the
 # git HEAD with --no-build-isolation and no pyproject extra can supply it.
@@ -285,10 +288,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     )
     skip_fpcalc = pytest.mark.skip(reason="needs chromaprint's fpcalc on PATH")
     skip_ffmpeg = pytest.mark.skip(reason="needs ffmpeg on PATH")
-    skip_soxr = pytest.mark.skip(
-        reason="UNAVAILABLE: this host's ffmpeg has no libsoxr, so the "
-               "canonical decode fingerprint is unmeasured here. This is a "
-               "capability report, not a pass."
+    skip_canonical_decode = pytest.mark.skip(
+        reason="UNAVAILABLE: no odj-audio build with the decode subcommand "
+               "(ODJ_AUDIO_BIN or apps/audio-engine/target), so the canonical "
+               "decode fingerprint is unmeasured here. This is a capability "
+               "report, not a pass."
     )
     for item in items:
         if sys.platform != "darwin" and "requires_darwin" in item.keywords:
@@ -305,5 +309,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_fpcalc)
         if not _HAS_FFMPEG and "requires_ffmpeg" in item.keywords:
             item.add_marker(skip_ffmpeg)
-        if not _HAS_SOXR and "requires_soxr" in item.keywords:
-            item.add_marker(skip_soxr)
+        if (
+            not _HAS_CANONICAL_DECODE
+            and "requires_canonical_decode" in item.keywords
+            # The job that just built odj-audio sets this: there, a missing
+            # engine is a failure the test reports, not a skip.
+            and os.environ.get("MDT_REQUIRE_AUDIO_ENGINE_BUILD") != "1"
+        ):
+            item.add_marker(skip_canonical_decode)

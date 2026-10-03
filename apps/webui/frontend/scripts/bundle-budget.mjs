@@ -188,7 +188,14 @@ const BUDGETS = [
   // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
   // of its own and raises once more. Payback, not yet measured: find what pulls
   // headphones.ts into the "/" closure and defer it.
-  { name: 'library', limit: 262144, measured: 261193, note: 'initial load of "/"' },
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #5086, CLOUDSYNC-33 "This file isn't on this
+  // computer"): audio-engine and performance-ipc are in the first-paint closure, and
+  // the deck-load failure wording (deck-load-context.ts: the plain-reason map, the
+  // error-keyed WeakMap the banner and toast read, the title fallback) adds +270
+  // bytes. Clean origin/main 01d5b3520 measured 262,071 locally (73 bytes of
+  // headroom); main + this PR 262,341. Trunk's queue removed it at 178 over on CI.
+  // Payback: the headphones.ts deferral above retires this KiB too.
+  { name: 'library', limit: 263168, measured: 262341, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -205,7 +212,22 @@ const BUDGETS = [
   // explainer dismiss, the 3Band waveform palette with its legacy option,
   // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
   // 130 bytes over the old limit; 894 bytes of headroom remain.
-  { name: 'performance', limit: 242688, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4904, V1 copy and paste between
+  // playlists): clean origin/main c8b8f5ae measures 242,439 locally (249
+  // bytes of headroom). The library browser is part of /performance, and the
+  // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
+  // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
+  // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, SET-11 set recording without ffmpeg, V1): REC now
+  // lights only once audio is really written, and shows "Waiting for microphone
+  // permission" while macOS's first-run prompt is up (Silver lost 42 s of a set to a
+  // REC that looked live during it). recordRailState, its tooltips and the 1 s status
+  // poll sit on the REC rail, which is first paint. Main measured 243,599 on Sat 3 Oct
+  // (ci/2026-10-03-quality-ratchets.md); this branch 243,933, +334 of its own and 221
+  // over the old limit. #4906 raises to the same 244,736 for its own +1,319: if it
+  // lands first, the merged tree needs one more KiB. Payback, not yet measured: load
+  // the REC tooltips with the lazy RecordInputPicker.
+  { name: 'performance', limit: 244736, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

@@ -44,6 +44,9 @@ EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
 EXIT_REFUSED: int = 2
 HUB_MACHINE_NAME_ENV: str = "MDT_HUB_MACHINE_NAME"
+#: Seconds uvicorn waits for open requests on SIGTERM before it closes them
+#: and runs the lifespan shutdown. See the uvicorn.run call below.
+GRACEFUL_SHUTDOWN_S: int = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -316,6 +319,14 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
             log_level=log_level,
             log_config=None,
             workers=1,
+            # Bounded, so the lifespan shutdown (which stops the job runner
+            # and reaps its worker groups) always gets to run. Unbounded,
+            # uvicorn waits for every open request first, and a long-lived
+            # stream never finishes: the shell's SIGKILL then lands first
+            # and the job workers, which lead their own sessions, outlive
+            # the app. The shell's grace for all of this is SHUTDOWN_GRACE
+            # in apps/desktop/src-tauri/src/engine.rs.
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
         )
     finally:
         lock.release()

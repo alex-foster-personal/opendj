@@ -25,7 +25,13 @@ from typing import Any
 from apps.shared.paths import DJAY_WORKING_DB, REKORDBOX_WORKING_DB
 
 from . import paths as sets_paths
-from .capture import DEFAULT_DEVICE_NAME, CaptureHandle, start_capture
+from .capture import (
+    CAPTURE_STARTUP_CHECK_S,
+    DEFAULT_DEVICE_NAME,
+    CaptureBackend,
+    CaptureHandle,
+    start_capture,
+)
 from .manifest import AudioSegment, Manifest, write_manifest
 from .state import Event, SetsState
 
@@ -135,6 +141,11 @@ class RecorderConfig:
     heartbeat_interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S
     capture_device_name: str = DEFAULT_DEVICE_NAME
     ffmpeg_device_idx: int | None = None
+    # The input's exact name when REC picked it by name: odj-audio opens it
+    # by that name rather than by an index that can move (SET-11).
+    capture_input_name: str | None = None
+    # The backend REC resolved at start; None lets start_capture pick (SET-11).
+    capture_backend: CaptureBackend | None = None
     # When True we skip the ffmpeg subprocess entirely (test mode).
     capture_disabled: bool = False
     djay_db_path: Path | None = None
@@ -209,7 +220,22 @@ class Recorder:
         self._capture = start_capture_fn(
             self.session_dir,
             self.config.ffmpeg_device_idx,
+            startup_check_s=CAPTURE_STARTUP_CHECK_S,
+            device_name=self.config.capture_input_name,
+            backend=self.config.capture_backend,
         )
+
+    def capture_state(self) -> str:
+        """``none`` without audio capture, else the capture's own state."""
+        if self._capture is None:
+            return "none"
+        return self._capture.current_state()
+
+    def capture_error(self) -> str | None:
+        """Why the capture failed, as the engine said it, when it failed and said."""
+        if self._capture is None or self._capture.current_state() != "failed":
+            return None
+        return self._capture.state.error
 
     def attach_source(self, name: str, source_obj: Any) -> None:
         """Register a deck-state source that exposes ``poll_once()``."""
@@ -287,19 +313,19 @@ class Recorder:
     # ------------------------------------------------------------------
 
     def list_segments(self) -> list[AudioSegment]:
-        """Return one :class:`AudioSegment` per ``audio_*.mp3`` on disk.
+        """Return one :class:`AudioSegment` per audio segment on disk.
 
         Duration is cached (None) here; a follow-up step (Plan 12-03
         audio helper) can ffprobe if we need precise values. For the
         manifest it's enough to have the size + wall-clock start.
         """
         out: list[AudioSegment] = []
-        for mp3 in sorted(self.session_dir.glob("audio_*.mp3")):
-            stat = mp3.stat()
-            start_t = _segment_start_from_name(mp3.name, self.session_started_at)
+        for seg_path in sets_paths.segment_files(self.session_dir):
+            stat = seg_path.stat()
+            start_t = _segment_start_from_name(seg_path.name, self.session_started_at)
             out.append(
                 AudioSegment(
-                    name=mp3.name,
+                    name=seg_path.name,
                     start_t_s=start_t,
                     duration_s=None,
                     size_bytes=stat.st_size,
@@ -312,7 +338,7 @@ def _segment_start_from_name(
     name: str,
     session_started_at: datetime,
 ) -> float:
-    """Extract the audio_<iso>.mp3 wall timestamp and return rel seconds."""
+    """Extract the audio_<iso>.(wav|mp3) UTC timestamp and return rel seconds."""
     stem = Path(name).stem
     prefix = "audio_"
     if not stem.startswith(prefix):

@@ -10,6 +10,7 @@ v1, so it now has its own v1 id rather than moving out with NATIVE-13.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import struct
 import unicodedata
@@ -45,6 +46,29 @@ def _write_wav(path: Path, seconds: float = 0.05) -> Path:
     return path
 
 
+def _write_colliding_spellings(root: Path, name_a: str, name_b: str) -> tuple[Path, Path]:
+    """Write two colliding-spelling files, or skip if this filesystem folds them into one.
+
+    A case-insensitive and/or normalization-insensitive filesystem (default macOS
+    APFS) can collapse two distinct spellings (e.g. "Song.wav"/"song.wav", NFC/NFD
+    "café.wav") into a single directory entry before the code under test ever
+    sees two paths, which would make the collision-refusal assertion vacuous. Skip
+    explicitly with a clear reason rather than silently passing or failing; a
+    case-sensitive filesystem (see test_same_physical_file_two_spellings_allowed's
+    companion control) exercises the real check.
+    """
+    path_a = _write_wav(root / name_a)
+    path_b = root / name_b
+    if path_b.exists() and os.path.samefile(path_a, path_b):
+        pytest.skip(
+            f"filesystem folds {name_a!r} and {name_b!r} into one entry "
+            "(case-insensitive and/or normalization-insensitive); "
+            "needs a case-sensitive filesystem to exercise this collision"
+        )
+    path_b = _write_wav(path_b)
+    return path_a, path_b
+
+
 def _track_count(conn) -> int:
     return conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
 
@@ -68,8 +92,7 @@ def test_nfc_nfd_collision_refuses_with_both_raw_paths(
     root = tmp_path / "library"
     nfc_name = unicodedata.normalize("NFC", "caf\u00e9.wav")
     nfd_name = unicodedata.normalize("NFD", "caf\u00e9.wav")
-    nfc_path = _write_wav(root / nfc_name)
-    nfd_path = _write_wav(root / nfd_name)
+    nfc_path, nfd_path = _write_colliding_spellings(root, nfc_name, nfd_name)
 
     with pytest.raises(PathCollisionError) as excinfo:
         folder_ingest.ingest_folder(writer, [root], dry_run=False)
@@ -85,8 +108,7 @@ def test_case_only_collision_refuses_with_both_raw_paths(
     writer: StateWriter, state_conn, tmp_path: Path
 ) -> None:
     root = tmp_path / "library"
-    upper = _write_wav(root / "Song.wav")
-    lower = _write_wav(root / "song.wav")
+    upper, lower = _write_colliding_spellings(root, "Song.wav", "song.wav")
 
     with pytest.raises(PathCollisionError) as excinfo:
         folder_ingest.ingest_folder(writer, [root], dry_run=False)
@@ -116,8 +138,7 @@ def test_dry_run_collision_refuses_without_writing_state(
     writer: StateWriter, state_conn, tmp_path: Path
 ) -> None:
     root = tmp_path / "library"
-    _write_wav(root / "Song.wav")
-    _write_wav(root / "song.wav")
+    _write_colliding_spellings(root, "Song.wav", "song.wav")
 
     with pytest.raises(PathCollisionError):
         folder_ingest.ingest_folder(writer, [root], dry_run=True)
@@ -130,8 +151,7 @@ def test_collision_checked_before_limit_slice(
     writer: StateWriter, tmp_path: Path
 ) -> None:
     root = tmp_path / "library"
-    _write_wav(root / "Song.wav")
-    _write_wav(root / "song.wav")
+    _write_colliding_spellings(root, "Song.wav", "song.wav")
     _write_wav(root / "other.wav")
 
     with pytest.raises(PathCollisionError):
@@ -145,13 +165,13 @@ def test_same_physical_file_two_spellings_allowed(
     root = tmp_path / "library"
     path = _write_wav(root / "Only.wav")
     alias = path.parent / "only.wav"
-    if alias.exists() and alias.resolve() != path.resolve():
+    # Compare inodes, not resolve(): on macOS APFS resolve() keeps the spelling
+    # it was given, so a same-file case alias resolves to a different path.
+    if not (alias.exists() and os.path.samefile(alias, path)):
         pytest.skip(
-            "platform can create two distinct case-only files; "
-            "same-inode test needs a case-insensitive filesystem"
+            "filesystem keeps case-only spellings distinct, so there is no "
+            "second spelling of one file; needs a case-insensitive filesystem"
         )
-    if not alias.exists():
-        alias = path
 
     from apps.shared.state.ingest.path_collisions import assert_no_path_collisions
 
@@ -162,8 +182,7 @@ def test_setup_folder_import_surfaces_collision(
     data_dir: Path, tmp_path: Path
 ) -> None:
     root = tmp_path / "library"
-    _write_wav(root / "Song.wav")
-    _write_wav(root / "song.wav")
+    _write_colliding_spellings(root, "Song.wav", "song.wav")
     (data_dir / "state").mkdir(parents=True, exist_ok=True)
 
     def emit(_progress: float, _message: str) -> None:

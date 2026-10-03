@@ -316,6 +316,7 @@ def test_a_failed_lane_records_no_key_scalars() -> None:
 # real audio, real chroma, real store
 #-----------------------------------------------------------------------------
 
+@pytest.mark.requires_canonical_decode
 def test_real_audio_is_analyzed_on_this_cpu_only_host(tmp_path: Path, state_db: Path) -> None:
     """The acceptance line, measured rather than asserted: a real decode, a
     real chroma_cqt, a real estimate, on a host with no GPU and no MPS."""
@@ -332,6 +333,7 @@ def test_real_audio_is_analyzed_on_this_cpu_only_host(tmp_path: Path, state_db: 
     upsert_record(record, db_path=state_db)
 
 
+@pytest.mark.requires_canonical_decode
 def test_the_segments_block_is_present_and_missing_without_own_downbeats(
     tmp_path: Path, state_db: Path
 ) -> None:
@@ -346,6 +348,7 @@ def test_the_segments_block_is_present_and_missing_without_own_downbeats(
     assert block["segments"] == []
 
 
+@pytest.mark.requires_canonical_decode
 def test_two_segments_reach_the_projection_as_key_change_count(
     tmp_path: Path, state_db: Path
 ) -> None:
@@ -401,6 +404,7 @@ def test_two_segments_reach_the_projection_as_key_change_count(
     assert fields[stable_id]["key_change_count"].value == len(block["segments"]) - 1
 
 
+@pytest.mark.requires_canonical_decode
 def test_the_record_is_idempotent_across_two_runs(tmp_path: Path, state_db: Path) -> None:
     """Same bytes, same producer version: the second write is `unchanged`
     rather than a second canonical row (determinism, spec section 4)."""
