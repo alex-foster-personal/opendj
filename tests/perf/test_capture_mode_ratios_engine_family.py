@@ -25,7 +25,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import psutil
@@ -103,7 +103,7 @@ _requires_darwin_native = pytest.mark.skipif(
 def _sampler(launcher: int, engine_root: int | None) -> tuple[cmr._ProcessTreeSampler, _RecordingNative]:
     native = _RecordingNative(DarwinProcessMetrics())
     return (
-        cmr._ProcessTreeSampler(launcher, engine_root_pid=engine_root, native=native),
+        cmr._ProcessTreeSampler(launcher, engine_root_pid=engine_root, native=cast(DarwinProcessMetrics, native)),
         native,
     )
 
