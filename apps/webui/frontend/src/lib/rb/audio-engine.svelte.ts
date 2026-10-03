@@ -85,7 +85,6 @@ import {
 
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
-import { waitForAdvancingContextTime } from '$lib/player/transport/context-time-wait';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import {
 	registerAudioContext,
@@ -131,7 +130,7 @@ import {
 	saveTrackRating,
 	RbApiError
 } from '$lib/rb/api-rb';
-import { awaitStemArtifact, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
+import { awaitStemArtifact, landHeldStemsOrSettle, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -213,6 +212,7 @@ import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
+import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/rb/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState, StemFetchProgress, StemLoadPhase } from '$lib/rb/stem-types';
 import {
@@ -390,6 +390,7 @@ export {
 	supersedingScheduleTime
 };
 export { pausedSeekClock };
+export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock };
 // The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
 // its device boundary and its algebra. Deliberately NOT re-exported here: no
 // module in src ever reached its pure surface through this barrel, and a
@@ -2800,9 +2801,8 @@ function _landStems(
 		rampPending: () => _reanchorRampPending(rt),
 		launchArmed: () => _quantizedLaunchAt[deck] !== null,
 		controlSegmentAt: (when) => _controlSegmentAt(rt, when),
-		startChange: (seg) => stretchScheduleChange(seg.positionSec, seg.active, seg.tempoRatio, seg.masterTempoEnabled, seg.keyShiftSemitones, seg.loop),
+		startChange: (seg) => stretchScheduleChange(seg.positionSec, true, seg.tempoRatio, seg.masterTempoEnabled, seg.keyShiftSemitones, seg.loop),
 		retire: (processor) => _retireProcessor(processor as _DeckProcessor),
-		outgoingFailed: (error, terminal) => terminal ? _recordProcessorFailure(deck, error) : recordPerfEvent('stem-live-handoff', `deck ${deck} mix stop failed, stems took over: ${error instanceof Error ? error.message : String(error)}`, deck),
 		commit: (when) => {
 			rt.processor = upgrade.processor;
 			st.stems = upgrade.state;
@@ -2817,6 +2817,31 @@ function _landStems(
 		adoptStopped: () => _adoptStemProcessor(deck, upgrade)
 	});
 }
+
+/** STEM-47. `LOAD NOW` on a bundle held for the deck's next stop. `_landStems`
+ * clears the held reference and shows `switching` before anything is awaited,
+ * so a rejected landing must settle the deck itself, as the upgrade does: the
+ * bundle is retired (unless the deck already points at it) and the deck reads
+ * a retryable error instead of `switching` until the track is reloaded. */
+function _landHeldStems(
+	deck: DeckId,
+	held: NonNullable<_DeckRuntime['pendingStemUpgrade']>,
+	ctx: AudioContext
+): Promise<void> {
+	const rt = _rt[deck];
+	const stale = () => held.token !== rt.loadToken || stemsBlockedState() !== null;
+	return landHeldStemsOrSettle({
+		land: () => _landStems(deck, held, ctx, stale),
+		adopted: () => rt.processor === held.processor,
+		retire: () => _retireProcessor(held.processor),
+		stale: () => held.token !== rt.loadToken,
+		// Stems switched off mid-landing (PERFMODE-15) settle to the block's own state.
+		fail: (message) => {
+			deckStates[deck].stems = stemsBlockedState() ?? { ...unavailableStemDeckState(message), status: 'error' };
+		}
+	});
+}
+
 
 /**
  * LAZY-STEMS. The whole secondary load: probe, fetch, decode, build, swap.
@@ -2867,7 +2892,7 @@ async function _upgradeDeckStems(
 		);
 		if (stale()) return;
 		// Q18: four workers, not four awaits on WebKit's single decode thread.
-		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
+		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { deck, stale, onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
 		if (stale()) return;
 		const stemBuffers = decoded.buffers;
 		const created = await time(
@@ -4179,10 +4204,11 @@ class RbAudioEngine implements AudioEngine {
 	/** STEM-46/47: get this deck's stems now (the decision is retryDeckStems, in stem-hydrate-wait.ts). */
 	retryStems(deck: DeckId): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'retryStems');
-		const held = rt.pendingStemUpgrade, ctx = _ctx, mix = rt.audioBuffer, sid = st.stable_id;
+		const held = rt.pendingStemUpgrade, ctx = _ctx, mix = rt.audioBuffer, sid = st.stable_id, token = rt.loadToken;
 		return retryDeckStems(deck, sid, st.stems, {
-			landHeld: held === null || ctx === null ? null : () => _landStems(deck, held, ctx, () => held.token !== rt.loadToken || stemsBlockedState() !== null),
-			reload: ctx === null || mix === null || sid === null ? null : () => { st.stems = loadingStemDeckState(); void _upgradeDeckStems(deck, sid, rt.loadToken, ctx, mix); }
+			landHeld: held === null || ctx === null ? null : () => _landHeldStems(deck, held, ctx),
+			reload: ctx === null || mix === null || sid === null ? null : () => { st.stems = loadingStemDeckState(); void _upgradeDeckStems(deck, sid, token, ctx, mix); },
+			current: () => rt.loadToken === token && st.stable_id === sid
 		});
 	}
 

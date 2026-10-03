@@ -102,16 +102,21 @@ export async function decodeStemBuffers(
 	ctx: BaseAudioContext,
 	encoded: Partial<Record<StemPart, ArrayBuffer>>,
 	parts: readonly StemPart[],
-	hooks: { onDeferred?: () => void; onStart?: () => void } = {}
+	hooks: { deck?: number; stale?: () => boolean; onDeferred?: () => void; onStart?: () => void } = {}
 ): Promise<{ buffers: StemBuffers; labels: Record<string, string> }> {
 	// PERFMODE-04 (eager-stem-decode): the deck is already playable on its mix
 	// buffer at this point, so yielding here under pressure never blocks audio.
 	// STEM-47: the hold is bounded and named on the deck (`onDeferred`).
 	const waitStartedMs = performance.now();
-	const decodeStart = await awaitEagerStemDecodeSlot(
-		hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred }
-	);
+	const decodeStart = await awaitEagerStemDecodeSlot({
+		...(hooks.deck === undefined ? {} : { deck: hooks.deck }),
+		...(hooks.stale === undefined ? {} : { stale: hooks.stale }),
+		...(hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred })
+	});
 	const decodeWaitMs = Math.round(performance.now() - waitStartedMs);
+	// A hold can outlive its load (the deck loaded another track): the bound or
+	// the shed still ends the wait, and the decode must not run for nothing.
+	if (hooks.stale?.() === true) throw new Error('stem decode: the load it belongs to is gone');
 	hooks.onStart?.();
 	// PERF-STEMDEC-04: one part at a time while a deck is audible, read per part.
 	const decoded = await decodeStemParts(ctx, encoded, parts, {

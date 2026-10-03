@@ -2,18 +2,32 @@
  *
  * Its own module, imported only by the deck engine, so the wait loop stays out
  * of the library's initial-load bundle (scripts/check-bundle-size.sh). */
-import { probeStemArtifact, RB_API_BASE } from '$lib/rb/api-rb';
+import { probeStemArtifact } from '$lib/rb/api-rb';
 import type { StemArtifactProbe } from '$lib/rb/api-rb';
-import { releaseEagerStemDecodeNow } from '$lib/rb/stem-decode-shed';
 import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { StemDeckState, StemFetchProgress } from '$lib/rb/stem-types';
-import { refuseStickRead } from '$lib/rb/track-source';
+import type { HeldStemLandingPort, StemLandingOutcome, StemLandingPort } from '$lib/rb/stem-live-handoff';
+import type { StemRetryPort } from '$lib/rb/stem-retry';
 
 // The deck engine sits at its import fan-out ceiling, so the rest of the stem
 // landing surface reaches it through this module, which it already imports.
-export { landStemsOnDeck } from '$lib/rb/stem-live-handoff';
 export type { StemLandingOutcome } from '$lib/rb/stem-live-handoff';
+export type { StemRetryPort } from '$lib/rb/stem-retry';
+
+/** STEM-47. Land built stems on a deck (stem-live-handoff.ts). The handoff is
+ * imported on first use, not statically: the engine is in the library page's
+ * first paint, and a landing only ever follows a stem decode of seconds, so
+ * one local chunk fetch there costs the deck nothing it would notice. */
+export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
+	const handoff = await import('$lib/rb/stem-live-handoff');
+	return handoff.landStemsOnDeck(port);
+}
+
+/** STEM-47. `LOAD NOW` on a held bundle, settling the deck if it rejects. */
+export async function landHeldStemsOrSettle(port: HeldStemLandingPort): Promise<void> {
+	return (await import('$lib/rb/stem-live-handoff')).landHeldStemsOrSettle(port);
+}
 
 /** Why a decode is held (shown on the deck while `waiting`). */
 export const STEM_HELD_BY_PRESSURE = 'this machine is under pressure while a deck is playing';
@@ -75,21 +89,6 @@ export type AwaitStemArtifactOptions = {
 	onHydrating?: (progress: StemFetchProgress | null) => void;
 };
 
-/** STEM-46: ask the engine to fetch (or re-fetch) this track's cloud bundle,
- * clearing a recorded failure first. The manifest GET alone cannot do that: a
- * failed fetch answers 502 there until something asks again. Rejects on any
- * non-2xx, naming the status; never silent. */
-export async function requestStemHydration(
-	stableId: string,
-	fetcher: typeof fetch = fetch
-): Promise<void> {
-	// Spec 4b: stick tracks have no stem bundle and no stems route.
-	refuseStickRead(stableId, 'stem hydrate');
-	const path = `/api/v1/tracks/${encodeURIComponent(stableId)}/stems/hydrate`;
-	const response = await fetcher(`${RB_API_BASE}${path}`, { method: 'POST' });
-	if (!response.ok) throw new Error(`stem hydrate request failed: HTTP ${response.status} ${path}`);
-}
-
 export type SettledStemArtifactProbe = Exclude<StemArtifactProbe, { status: 'hydrating' }>;
 
 /** Probe the stem bundle, and keep re-probing while the server reports it is
@@ -131,44 +130,13 @@ export async function awaitStemArtifact(
 	}
 }
 
-/** What the deck engine hands a stem retry (STEM-46/47). */
-export interface StemRetryPort {
-	/** Land a bundle held behind transport commands; null when none is held. */
-	landHeld: (() => Promise<unknown>) | null;
-	/** Re-run the whole stem load from the probe; null when the deck has no
-	 * decoded mix to align stems to. */
-	reload: (() => void) | null;
-	releaseDecode?: () => number;
-	requestHydration?: (stableId: string) => Promise<void>;
-}
-
-/**
- * "Get this deck's stems now." One decision for the deck button, the
- * `stem_load` command and an agent:
- *
- *   ready    -> nothing to do
- *   loading  -> land a held bundle, else start a decode held by pressure; a
- *               load that is already running by itself rejects, naming its phase
- *   error    -> clear the engine's recorded fetch failure, then load again
- *   unavailable -> load again (the answer may have changed)
- */
+/** STEM-46/47. "Get this deck's stems now" (stem-retry.ts). Imported on first
+ * use, like the landing above: it only ever runs from a click or a command. */
 export async function retryDeckStems(
 	deck: number,
 	stableId: string | null,
 	stems: StemDeckState,
 	port: StemRetryPort
 ): Promise<void> {
-	if (stems.status === 'ready') return;
-	else if (stems.status === 'loading') {
-		if (port.landHeld !== null) await port.landHeld();
-		else if ((port.releaseDecode ?? releaseEagerStemDecodeNow)() === 0) {
-			throw new Error(`deck ${deck} stems are already loading (${stems.load?.phase ?? 'probing'})`);
-		}
-		return;
-	}
-	if (port.reload === null || stableId === null) {
-		throw new Error(`retryStems: deck ${deck} has no decoded mix to align stems to`);
-	}
-	if (stems.status === 'error') await (port.requestHydration ?? requestStemHydration)(stableId);
-	port.reload();
+	return (await import('$lib/rb/stem-retry')).retryDeckStems(deck, stableId, stems, port);
 }

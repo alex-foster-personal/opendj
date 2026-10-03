@@ -219,7 +219,15 @@ const BUDGETS = [
   // bytes. Clean origin/main 01d5b3520 measured 262,071 locally (73 bytes of
   // headroom); main + this PR 262,341. Trunk's queue removed it at 178 over on CI.
   // Payback: the headphones.ts deferral above retires this KiB too.
-  { name: 'library', limit: 263168, measured: 262341, note: 'initial load of "/"' },
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4906, STEM-44..48): the deck's named stem
+  // states (stem-status.ts, StemRow) render on "/" and are first-paint weight. Clean
+  // origin/main measured 262,071 locally before #5086; main + this PR 263,325, +1,254.
+  // Already paid back inside this PR: the retry decision and the live handoff load on
+  // first use (stem-retry.ts, stem-live-handoff.ts), -232 measured. On main 423376f7d
+  // with #5086's own +1 KiB, main + this PR measures 263,784 locally (CI read within
+  // 20 bytes of local on this PR's last head).
+  // Payback, not yet measured: the label table in stem-status.ts.
+  { name: 'library', limit: 264192, measured: 263784, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -257,6 +265,11 @@ const BUDGETS = [
   // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
   // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
   // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4906, STEM-44..48 / PERFMODE-18): the live stem
+  // handoff and the graded decode hold are genuine route weight. Clean origin/main
+  // c8b8f5aeb measured 242,439 locally; main + this PR 243,377, 689 bytes over.
+  // Re-measured after #4904 landed on main (b6c894194) with its own +1 KiB raise:
+  // both together measure 244,434, so this PR keeps its +1 KiB on top; 302 bytes remain.
   // RAISED Sat 3 Oct 2026 (+1 KiB, SET-11 set recording without ffmpeg, V1): REC now
   // lights only once audio is really written, and shows "Waiting for microphone
   // permission" while macOS's first-run prompt is up (Silver lost 42 s of a set to a
@@ -286,8 +299,7 @@ const BUDGETS = [
   // hover rides the /performance FeedbackWidget. Main 5504f60e7 + this PR
   // measured 243,886 locally, 174 bytes over 243,712 (CI measured 243,884); 850
   // bytes remain. Payback, not yet measured: load the summary popover lazily.
-  // The merged tree also carries the Preview route (measured 251,283), so the
-  // ceiling stays at that measurement ceiled to KiB rather than #4094's 244,736.
+  // Merge with #4906: keep the larger Preview ceiling (251,904), not #4906's 245,760.
   { name: 'performance', limit: 251904, measured: 251283, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
@@ -447,7 +459,11 @@ const BUDGETS = [
   // Third re-merge (main +74 commits to 01d5b3520, Sat 3 Oct 2026, incl. the
   // first-run wizard and the lazy track clipboard): measured 297,104, 2,192
   // over; raised to 291 KiB on the same rule, no extra headroom.
-  { name: 'other-lazy', limit: 297984, measured: 297104, note: 'all other routes plus deferred shell' },
+  // Merge with #4906: keep the larger Preview ceiling (297,984), not #4906's 282,624.
+  // MEASURED Sat 3 Oct 2026 on the merged tree (main #4906 into the Preview port):
+  // 302,097, 4,113 over 297,984. Reviewed raise to the measured size ceiled to KiB
+  // (296 KiB), no extra headroom.
+  { name: 'other-lazy', limit: 303104, measured: 302097, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

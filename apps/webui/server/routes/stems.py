@@ -504,25 +504,47 @@ def _hydration_progress(stable_id: str, stems_dir: Path) -> StemHydrationProgres
     """
     files_done = 0
     bytes_done = 0
-    prefix = f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}"
+    prefix = f"{stable_id}{stem_hydration.IN_FLIGHT_MARKER}"
     if stems_dir.is_dir():
         for tmp_dir in stems_dir.iterdir():
             if not tmp_dir.name.startswith(prefix) or not tmp_dir.is_dir():
                 continue
-            for child in tmp_dir.iterdir():
-                try:
-                    child_stat = child.stat()
-                except FileNotFoundError:
-                    # The fetch published (renamed) the directory mid-listing.
-                    continue
-                if stat.S_ISREG(child_stat.st_mode):
-                    files_done += 1
-                    bytes_done += child_stat.st_size
+            dir_files, dir_bytes = _written_so_far(tmp_dir)
+            files_done += dir_files
+            bytes_done += dir_bytes
     with _INFLIGHT_LOCK:
         files_total = _INFLIGHT_FILE_TOTALS.get(stable_id, 0)
     return StemHydrationProgressOut(
         files_total=files_total, files_done=files_done, bytes_done=bytes_done
     )
+
+
+def _written_so_far(tmp_dir: Path) -> tuple[int, int]:
+    """Regular files and bytes in one fetch's temp directory.
+
+    The fetch publishes (renames) or removes the directory when it finishes,
+    which can land between the caller's ``is_dir()`` and this listing, or
+    between the listing and a file's ``stat()``. Either way the directory's
+    files are no longer in flight: they count as nothing here, never as an
+    error, so a progress read racing a finished fetch cannot fail the poll.
+    """
+    files_done = 0
+    bytes_done = 0
+    # PermissionError: Windows refuses access to a directory mid-rename or
+    # mid-delete instead of reporting it gone.
+    try:
+        children = list(tmp_dir.iterdir())
+    except (FileNotFoundError, NotADirectoryError, PermissionError):
+        return 0, 0
+    for child in children:
+        try:
+            child_stat = child.stat()
+        except (FileNotFoundError, PermissionError):
+            continue
+        if stat.S_ISREG(child_stat.st_mode):
+            files_done += 1
+            bytes_done += child_stat.st_size
+    return files_done, bytes_done
 
 
 def _hydration_in_flight(stable_id: str) -> bool:
@@ -531,28 +553,63 @@ def _hydration_in_flight(stable_id: str) -> bool:
         return future is not None and not future.done()
 
 
-def _hydration_arming(request: Request) -> tuple[str | None, Path | None]:
-    """(why hydration is not armed, the armed data dir) read from ``app.state``.
+def _hydration_arming(state: Any) -> tuple[str | None, Any, bool]:
+    """Read, never change, whether cloud stem hydration is armed on ``app.state``.
 
-    The data dir is returned only when hydration is armed: no recorded
-    unarmed reason, a source (or a config plus a client) and a data dir.
+    Returns the recorded reason it is not armed (or None), its data directory,
+    and whether a fetch could run now: no unarmed reason, a source, and a data
+    directory.
     """
-    state = request.app.state
-    unarmed_reason: str | None = getattr(state, "stem_hydration_unarmed_reason", None)
+    unarmed_reason = getattr(state, "stem_hydration_unarmed_reason", None)
     data_dir = getattr(state, "stem_hydration_data_dir", None)
-    has_source = (
-        getattr(state, "stem_hydration_source", None) is not None
-        or (
-            getattr(state, "stem_hydration_cfg", None) is not None
-            and getattr(state, "stem_hydration_s3", None) is not None
-        )
+    has_source = getattr(state, "stem_hydration_source", None) is not None or (
+        getattr(state, "stem_hydration_cfg", None) is not None
+        and getattr(state, "stem_hydration_s3", None) is not None
     )
-    if unarmed_reason is None and has_source and data_dir is not None:
-        return unarmed_reason, Path(data_dir)
-    return unarmed_reason, None
+    return unarmed_reason, data_dir, unarmed_reason is None and has_source and data_dir is not None
 
 
-def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
+def _bundle_landed(stable_id: str, stems_dir: Path, request: Request) -> bool:
+    """Whether a valid bundle for ``stable_id`` is on this machine now."""
+    try:
+        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
+    except (StemBundleNotFoundError, StemArtifactError):
+        return False
+    return True
+
+
+def _index_proves_absent(stable_id: str, data_dir: Path | str | None) -> bool:
+    """Whether a cached cloud index exists, reads cleanly and lacks ``stable_id``.
+
+    A missing cache proves nothing (it was never fetched), and an unreadable
+    one is not evidence either, so both answer ``False``.
+    """
+    if data_dir is None:
+        return False
+    if not stem_index.local_index_cache_path(Path(data_dir)).is_file():
+        return False
+    try:
+        return stable_id not in stem_index.load_cached_index(Path(data_dir))
+    except stem_index.StemIndexError:
+        return False
+
+
+def _local_bundle_read(stable_id: str, stems_dir: Path, request: Request) -> str | None:
+    """Read the bundle on this machine: ``"local"`` when it loads, the reason
+    when it is invalid and no fetch is replacing it, else ``None``.
+
+    An invalid bundle a fetch is replacing reads as that fetch, not an error.
+    """
+    try:
+        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
+    except StemBundleNotFoundError:
+        return None
+    except StemArtifactError as exc:
+        return None if _hydration_in_flight(stable_id) else str(exc)
+    return "local"
+
+
+def _stem_state(stable_id: str, request: Request) -> StemStateOut:
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
     Deliberately reads ``app.state`` directly instead of calling
@@ -560,9 +617,8 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     read that changes the state it reports is not a read.
     """
     stems_dir = _stems_dir(request)
-    deck_open = stable_id in stem_hydration.OPEN_DECKS.open_ids()
-    unarmed_reason, data_dir = _hydration_arming(request)
-    armed = data_dir is not None
+    deck_open = stem_hydration.OPEN_DECKS.is_open(stable_id)
+    unarmed_reason, data_dir, armed = _hydration_arming(request.app.state)
 
     def _out(
         name: StemTrackState,
@@ -581,14 +637,11 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
             deck_open=deck_open,
         )
 
-    try:
-        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
-    except StemBundleNotFoundError:
-        pass
-    except StemArtifactError as exc:
-        return _out("error", str(exc), error_code="STEM_ARTIFACT_INVALID")
-    else:
+    local = _local_bundle_read(stable_id, stems_dir, request)
+    if local == "local":
         return _out("local", "stem bundle is on this machine")
+    if local is not None:
+        return _out("error", local, error_code="STEM_ARTIFACT_INVALID")
 
     if _hydration_in_flight(stable_id):
         return _out(
@@ -600,19 +653,39 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     if recorded is not None:
         return _out("error", recorded.message, error_code=recorded.code)
     if unarmed_reason is not None:
+        if _index_proves_absent(stable_id, data_dir):
+            return _out("none", "no stem bundle on this machine or in the cloud")
         return _out("error", unarmed_reason, error_code="STEM_HYDRATION_NOT_ARMED")
-    if data_dir is None:
+    if not armed:
         return _out(
             "none",
             "no stem bundle on this machine, and cloud stems are not configured here",
         )
+    name, message, code = _armed_index_state(stable_id, Path(data_dir), stems_dir, request)
+    return _out(name, message, error_code=code)
+
+
+def _armed_index_state(
+    stable_id: str, data_dir: Path, stems_dir: Path, request: Request
+) -> tuple[StemTrackState, str, str | None]:
+    """Name an armed engine's state for a track that is neither local nor
+    being fetched, from the cached cloud index: cloud, local, none or error."""
+    if not stem_index.local_index_cache_path(data_dir).is_file():
+        # load_cached_index reads a missing cache as empty; that is "not
+        # fetched yet", never proof the track has no cloud bundle.
+        return "error", "the cloud stem index has not been fetched yet", "STEM_INDEX_NOT_FETCHED"
     try:
         index = stem_index.load_cached_index(data_dir)
     except stem_index.StemIndexError as exc:
-        return _out("error", str(exc), error_code="STEM_INDEX_CORRUPT")
-    if stable_id in index:
-        return _out("cloud", "stem bundle is in the cloud and is fetched on demand")
-    return _out("none", "no stem bundle on this machine or in the cloud")
+        return "error", str(exc), "STEM_INDEX_CORRUPT"
+    if stable_id not in index:
+        return "none", "no stem bundle on this machine or in the cloud", None
+    # A fetch that finished between the local read and the in-flight check has
+    # already landed the bundle; read again before calling it cloud-only, so a
+    # just-landed retry never reads as "cloud".
+    if _bundle_landed(stable_id, stems_dir, request):
+        return "local", "stem bundle is on this machine", None
+    return "cloud", "stem bundle is in the cloud and is fetched on demand", None
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:
@@ -744,10 +817,23 @@ def hydrate_stem_bundle(stable_id: str, request: Request) -> StemStateOut:
             _LAST_HYDRATE_ERROR.pop(stable_id, None)
         _enqueue_hydration(stable_id, request)
     except StemArtifactError as exc:
-        raise HTTPException(
+        # An invalid bundle on disk is repaired by fetching the cloud copy,
+        # which replaces it; with no cloud copy there is nothing to retry.
+        invalid = HTTPException(
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
-        ) from exc
+        )
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR.pop(stable_id, None)
+        try:
+            enqueued = _enqueue_hydration(stable_id, request)
+        except HTTPException as not_indexed:
+            detail = not_indexed.detail
+            if not isinstance(detail, dict) or detail.get("code") != STEM_BUNDLE_NOT_INDEXED:
+                raise
+            raise invalid from exc
+        if enqueued is None:
+            raise invalid from exc
     return _stem_state(stable_id, request)
 
 

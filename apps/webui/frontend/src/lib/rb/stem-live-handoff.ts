@@ -25,19 +25,13 @@
  *       [if] the schedule revision moved during the ack and it commits [then ⛔️]
  *       [if] a command is still queued and it commits [then ⛔️]
  *       [if] a canceled handoff stops the mix [then ⛔️]
+ *       [if] a command sent between the commit and the handoff instant reaches the stems before the mix has stopped [then ⛔️]
  *   ✔︎ ✅ 🎯 A failed or late handoff never disturbs the playing mix.
  *       [if] a rejected stem schedule stops or retires the mix [then ⛔️]
  *       [if] a late acknowledgement commits [then ⛔️]
- *       [if] the deck commits before the mix acknowledged its stop [then ⛔️]
- *       [if] a refused or timed-out mix stop (which poisons the mix, so it
- *            cannot be put back) leaves the deck on the dead mix, or is
- *            swallowed [then ⛔️]
- *       [if] a mix stop still unacknowledged at the handoff instant leaves the
- *            mix playing under the stems [then ⛔️]
- *       [if] a rollback whose stems cancel fails skips putting the mix back
- *            [then ⛔️]
- *       [if] the stopped mix's retirement is armed before its stop is
- *            acknowledged [then ⛔️]
+ *       [if] a mix that refuses its stop keeps playing under the stems [then ⛔️]
+ *       [if] a mix that refuses its stop is retired before the stems start [then ⛔️]
+ *       [if] a mix whose stop is still unacknowledged when the stems start keeps playing under them [then ⛔️]
  */
 import { _positionForSegment, safeTransportScheduleTime } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
@@ -46,8 +40,6 @@ import type { StretchScheduleChange } from '$lib/rb/stretch-adapter';
 
 /** The transport segment the deck will be in at the handoff instant. */
 export interface StemHandoffSegment {
-	/** The control clock says the deck is running at this instant. */
-	active: boolean;
 	positionSec: number;
 	tempoRatio: number;
 	masterTempoEnabled: boolean;
@@ -81,36 +73,28 @@ export interface StemHandoffDeps {
 	snapshot(): StemHandoffSnapshot;
 	/** Where the deck will be at `when`. Called only on an idle, active deck. */
 	segmentAt(when: number): StemHandoffSegment;
-	/** Start the stems at `when`, at the segment's position. Resolves on ack. */
+	/** Start the stems at `when`, at the segment's position. Resolves on ack.
+	 * The stems are not connected to the deck's output yet. */
 	scheduleIncoming(when: number, segment: StemHandoffSegment): Promise<void>;
+	/** Connect the scheduled stems to the deck's output. Called only once the
+	 * acknowledgement is back and `when` is still ahead, so a late schedule is
+	 * never audible beside the mix. Synchronous. */
+	connectIncoming(): void;
 	/** Silence a stem schedule that will not be used: an inactive change at the
 	 * SAME instant, which the worklet's time map lets replace the start. */
 	cancelIncoming(when: number): Promise<void>;
-	/** Disconnect and retire the stems now, with no worklet command: for a
-	 * stale upgrade whose stems may already be audible. Synchronous. */
-	retireIncoming(): void;
-	/** Stop the mix at `when`. Resolves on ack. */
+	/** Stop the mix at `when`. */
 	stopOutgoing(when: number): Promise<void>;
-	/** Undo a posted mix stop: schedule the mix at `at` as the control clock
-	 * says the deck is then, which replaces a stop at the same instant. */
-	restoreOutgoing(at: number, segment: StemHandoffSegment): Promise<void>;
-	/** Retire the stopped mix `tailSec` after `when`. */
-	retireOutgoingAfter(when: number, tailSec: number): void;
-	/** Cut the mix at `when` if `stillPending()` then says its stop has not
-	 * settled. Resolves when that cut happens; never resolves otherwise. */
-	cutOutgoingAt(when: number, stillPending: () => boolean): Promise<void>;
-	/** Re-point the committed stems at the control clock from `at` (a command
-	 * landed on the dead mix while its stop was failing). */
-	resyncIncoming(at: number, segment: StemHandoffSegment): Promise<void>;
-	/** The deck's processor is unusable: fail the deck. */
-	failDeck(error: unknown): void;
-	/** The mix refused its stop or never acknowledged it; the stems took over. */
-	reportOutgoingFailure(error: unknown): void;
-	/** The mix is dead (poisoned or cut) and the deck still points at it, with
-	 * no stems to take over: fail the deck so it can be stopped and unloaded. */
-	failOutgoing(error: unknown): void;
+	/** The mix refused its stop: keep it audible until `when`, the instant the
+	 * stems take over, then retire it, and report `error`. Retiring it at once
+	 * would leave the deck silent until `when`. */
+	retireRefusedOutgoing(when: number, error: unknown): void;
 	/** Make the stems the deck's processor and publish `ready`. Synchronous. */
 	commit(when: number, segment: StemHandoffSegment): void;
+	/** Queue the deck's transport commands behind `when`. Until then the mix is
+	 * still the audible processor and only its scheduled stop reaches it, so a
+	 * command sent to the stems alone would double or outlive the mix. */
+	holdCommandsUntil(when: number): void;
 	/** The load this upgrade belongs to is gone (track swapped, graph rebuilt). */
 	stale(): boolean;
 	/** The deck is at rest, so the plain stopped swap applies. */
@@ -145,10 +129,9 @@ function _idle(snap: StemHandoffSnapshot): boolean {
  * One live handoff attempt on a playing deck.
  *
  * `busy`: the deck was not idle, nothing was scheduled. `moved`: the deck
- * changed, or an acknowledgement came too late, after the stems were
- * scheduled; that schedule is canceled and the mix is put back as it was.
- * Either way the caller may try again. A rejected stem schedule, or a failed
- * rollback, propagates.
+ * changed, or the acknowledgement came too late, after the stems were
+ * scheduled; that schedule is canceled and the mix is untouched. Either way
+ * the caller may try again. A rejected stem schedule propagates.
  */
 export async function handOffStemsLive(
 	deps: StemHandoffDeps,
@@ -163,96 +146,16 @@ export async function handOffStemsLive(
 	const stillSchedulable = safeTransportScheduleTime(deps.now(), deps.leadSec) <= when;
 	// `stale` is re-read here, not only between attempts: the track can be
 	// unloaded, or stems switched off, while the acknowledgement is in flight.
-	if (deps.stale()) {
-		// A stale upgrade's stems are disconnected at once: an awaited cancel
-		// that stalls would let the old track's stems start at `when`.
-		deps.retireIncoming();
-		return 'moved';
-	}
-	if (after.revision !== before.revision || !_idle(after) || !stillSchedulable) {
+	if (deps.stale() || after.revision !== before.revision || !_idle(after) || !stillSchedulable) {
 		await deps.cancelIncoming(when);
 		return 'moved';
 	}
-	// The mix's stop is acknowledged BEFORE the deck points at the stems, and
-	// the ack is a second await, so the deck is checked again after it. The
-	// stems are already audible from `when`, so a stop still unsettled then is
-	// cut at that instant on its own timer: a stalled ack never doubles them.
-	const stop: { state: 'pending' | 'acked' | 'failed' } = { state: 'pending' };
-	let stopError: unknown = null;
-	const stopSettled = deps.stopOutgoing(when).then(
-		() => {
-			stop.state = 'acked';
-		},
-		(error: unknown) => {
-			stop.state = 'failed';
-			stopError = error;
-		}
-	);
-	// A cut does not wait for the stalled stop to time out: the deck must
-	// point at the audible stems at once, or commands go to the dead mix.
-	await Promise.race([stopSettled, deps.cutOutgoingAt(when, () => stop.state === 'pending')]);
-	const cut = stop.state === 'pending';
-	if (stop.state === 'failed' || cut) {
-		// A refused or timed-out command poisons the mix's processor, and a cut
-		// one is disconnected: either way it cannot be put back. The stems'
-		// start is acknowledged, so they take the deck and the failure is
-		// reported. If the upgrade went stale meanwhile there are no stems to
-		// take over, so the deck itself is failed rather than left on a dead mix.
-		const reason = stopError ?? new Error('the mix did not acknowledge its stop by the handoff instant');
-		if (deps.stale()) {
-			// The stale stems are already connected and audible: disconnect them
-			// at once, with no worklet command to wait on, so the old track never
-			// plays on behind a stalled acknowledgement.
-			deps.retireIncoming();
-			deps.failOutgoing(reason);
-			return 'moved';
-		}
-		const moved = deps.snapshot().revision !== before.revision;
-		deps.commit(when, segment);
-		if (!cut) deps.retireOutgoingAfter(when, 0);
-		deps.reportOutgoingFailure(reason);
-		if (moved) {
-			// A command landed on the dying mix: the stems still run the segment
-			// scheduled before it, so bring them to the control clock now.
-			const at = Math.max(when, safeTransportScheduleTime(deps.now(), deps.leadSec));
-			try {
-				await deps.resyncIncoming(at, deps.segmentAt(at));
-			} catch (error) {
-				deps.failDeck(error);
-			}
-		}
-		return 'handed_off';
-	}
-	const settled = deps.snapshot();
-	const earliest = safeTransportScheduleTime(deps.now(), deps.leadSec);
-	if (deps.stale() || settled.revision !== before.revision || !_idle(settled) || earliest > when) {
-		// Undo at `when` while that is still ahead (an exact replacement of
-		// both scheduled changes); once it has passed, at the first instant
-		// the processors can still take, where the deck then is. The mix is put
-		// back even when the stems' cancel fails.
-		const at = earliest > when ? earliest : when;
-		let rollbackError: unknown = null;
-		if (deps.stale()) {
-			deps.retireIncoming();
-		} else {
-			try {
-				await deps.cancelIncoming(at);
-			} catch (error) {
-				rollbackError = error;
-			}
-		}
-		try {
-			await deps.restoreOutgoing(at, deps.segmentAt(at));
-		} catch (error) {
-			rollbackError ??= error;
-		}
-		if (rollbackError !== null) throw rollbackError;
-		return 'moved';
-	}
 	// From here to the end is synchronous: no command can interleave between
-	// the check above and the deck pointing at the stems.
+	// the mix's stop being posted and the deck pointing at the stems.
+	deps.connectIncoming();
+	void deps.stopOutgoing(when).catch((error: unknown) => deps.retireRefusedOutgoing(when, error));
 	deps.commit(when, segment);
-	deps.retireOutgoingAfter(when, STEM_HANDOFF_RETIRE_AFTER_SEC);
+	deps.holdCommandsUntil(when);
 	return 'handed_off';
 }
 
@@ -272,7 +175,6 @@ export async function landStemUpgrade(deps: StemHandoffDeps): Promise<StemLandin
 		}
 		const outcome = await handOffStemsLive(deps, STEM_HANDOFF_MARGINS_SEC[attempt]);
 		if (outcome === 'handed_off') return 'handed_off';
-		if (deps.stale()) return 'stale';
 		if (attempt < STEM_HANDOFF_MARGINS_SEC.length - 1) await deps.sleep(STEM_HANDOFF_RETRY_MS);
 	}
 	return deps.stale() ? 'stale' : 'deferred';
@@ -298,6 +200,9 @@ export interface StemLandingRuntime {
 	readonly nextScheduleRevision: number;
 	readonly scheduleIntentCount: number;
 	readonly pending: readonly unknown[];
+	/** The deck's transport command queue: every play, pause, seek or tempo
+	 * command waits on it before reaching the processor. */
+	scheduleTail: Promise<void>;
 }
 
 /**
@@ -319,13 +224,9 @@ export interface StemLandingPort {
 	rampPending(): boolean;
 	launchArmed(): boolean;
 	controlSegmentAt(when: number): _ClockSegment;
-	/** The engine's own stretch change for this segment: a start when it is
-	 * active, a hold at its position when it is not. */
+	/** The engine's own stretch change for a start at this segment. */
 	startChange(segment: StemHandoffSegment): StretchScheduleChange;
 	retire(processor: StemLandingProcessor): void;
-	/** The mix refused or never acknowledged its stop. `terminal`: no stems took
-	 * over and the deck still points at the dead mix, so fail the deck. */
-	outgoingFailed(error: unknown, terminal: boolean): void;
 	/** Point the deck at the stems and publish `ready`. */
 	commit(when: number): void;
 	/** Keep the bundle for the deck's next stop, and say so on the deck. */
@@ -344,6 +245,12 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 	const setTimer = port.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms));
 	const rt = port.runtime;
 	let outgoing: StemLandingProcessor | null = null;
+	let outgoingRetired = false;
+	const retireOutgoingOnce = (): void => {
+		if (outgoing === null || outgoingRetired) return;
+		outgoingRetired = true;
+		port.retire(outgoing);
+	};
 	return {
 		now: () => port.clock.currentTime,
 		leadSec: port.leadSec,
@@ -362,7 +269,6 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 		segmentAt: (when) => {
 			const segment = port.controlSegmentAt(when);
 			return {
-				active: segment.active,
 				positionSec: _positionForSegment(segment, when, rt.durationSec),
 				tempoRatio: segment.tempoRatio,
 				masterTempoEnabled: segment.masterTempoEnabled ?? true,
@@ -372,43 +278,42 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 		},
 		scheduleIncoming: async (when, segment) => {
 			if (rt.nodes === null) throw new Error('stem handoff: the deck audio graph is missing');
-			// Connected first, and silent until `when`: its time map is inactive.
-			port.incoming.connect(rt.nodes.analyser);
+			// Not connected yet: an acknowledgement that arrives after `when`
+			// would otherwise leave the stems playing beside the mix until the
+			// cancel lands. connectIncoming() joins them once the instant is safe.
 			await port.incoming.schedule(when, port.startChange(segment));
 		},
+		connectIncoming: () => {
+			if (rt.nodes === null) throw new Error('stem handoff: the deck audio graph is missing');
+			port.incoming.connect(rt.nodes.analyser);
+		},
 		cancelIncoming: (when) => port.incoming.stop(when),
-		retireIncoming: () => port.retire(port.incoming),
 		stopOutgoing: async (when) => {
 			outgoing = rt.processor;
-			if (outgoing !== null) await outgoing.stop(when);
-		},
-		restoreOutgoing: async (at, segment) => {
-			if (outgoing !== null) await outgoing.schedule(at, port.startChange(segment));
-		},
-		retireOutgoingAfter: (when, tailSec) => {
+			if (outgoing === null) return;
 			const retiring = outgoing;
-			if (retiring === null) return;
 			// Retired once its stop has rendered, never while it is the audible tail.
-			const delaySec = Math.max(0, when - port.clock.currentTime) + tailSec;
-			setTimer(() => port.retire(retiring), delaySec * 1000);
+			const untilWhenSec = Math.max(0, when - port.clock.currentTime);
+			// A stop still unacknowledged when the stems start (a slow or timed-out
+			// command) must not leave the mix under them: retire it then.
+			let stopAcknowledged = false;
+			setTimer(() => {
+				if (!stopAcknowledged) retireOutgoingOnce();
+			}, untilWhenSec * 1000);
+			setTimer(retireOutgoingOnce, (untilWhenSec + STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000);
+			await retiring.stop(when);
+			stopAcknowledged = true;
 		},
-		cutOutgoingAt: (when, stillPending) =>
-			new Promise<void>((resolve) => {
-				const cutting = outgoing;
-				if (cutting === null) return;
-				setTimer(() => {
-					if (!stillPending()) return;
-					port.retire(cutting);
-					resolve();
-				}, Math.max(0, when - port.clock.currentTime) * 1000);
-			}),
-		resyncIncoming: (at, segment) => port.incoming.schedule(at, port.startChange(segment)),
-		failDeck: (error) => port.outgoingFailed(error, true),
-		reportOutgoingFailure: (error) => port.outgoingFailed(error, false),
-		failOutgoing: (error) => {
-			if (outgoing !== null && rt.processor === outgoing) port.outgoingFailed(error, true);
+		retireRefusedOutgoing: (when, error) => {
+			console.error('stem handoff: the mix refused its stop; retiring it at the handoff instant', error);
+			setTimer(retireOutgoingOnce, Math.max(0, when - port.clock.currentTime) * 1000);
 		},
 		commit: (when) => port.commit(when),
+		holdCommandsUntil: (when) => {
+			const queued = rt.scheduleTail;
+			const untilMs = Math.max(0, when - port.clock.currentTime) * 1000;
+			rt.scheduleTail = queued.then(() => new Promise<void>((resolve) => setTimer(resolve, untilMs)));
+		},
 		stale: () => port.stale(),
 		replaceable: () => port.replaceable(),
 		adoptStopped: () => port.adoptStopped(),
@@ -428,4 +333,32 @@ export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandin
 	if (outcome === 'stale') port.retire(port.incoming);
 	else if (outcome === 'deferred') port.defer();
 	return outcome;
+}
+
+/** What `LOAD NOW` on a held bundle needs to settle a failed landing. */
+export interface HeldStemLandingPort {
+	land(): Promise<unknown>;
+	/** The deck already points at the held processor. */
+	adopted(): boolean;
+	retire(): void;
+	stale(): boolean;
+	/** Publish a retryable error on the deck. */
+	fail(message: string): void;
+}
+
+/**
+ * Land a bundle held for the deck's next stop, settling the deck if the
+ * landing rejects. The landing clears the held reference and shows
+ * `switching` before anything is awaited, so without this a rejection left
+ * the deck reading `switching` with nothing to retry until the track was
+ * reloaded. The rejection still reaches the caller.
+ */
+export async function landHeldStemsOrSettle(port: HeldStemLandingPort): Promise<void> {
+	try {
+		await port.land();
+	} catch (error) {
+		if (!port.adopted()) port.retire();
+		if (!port.stale()) port.fail(error instanceof Error ? error.message : String(error));
+		throw error;
+	}
 }

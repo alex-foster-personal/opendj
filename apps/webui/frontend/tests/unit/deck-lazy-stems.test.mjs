@@ -221,7 +221,7 @@ test('the landing goes through the tested handoff module with live deck reads', 
 	// st.transport_pending stays true for the whole play and the handoff never ran.
 	assert.match(landing, /rampPending: \(\) => _reanchorRampPending\(rt\)/);
 	assert.ok(!landing.includes('st.transport_pending'), 'the handoff waits on a flag only the rAF loop clears');
-	assert.match(landing, /startChange: \(seg\) => stretchScheduleChange\(seg\.positionSec, seg\.active,/);
+	assert.match(landing, /startChange: \(seg\) => stretchScheduleChange\(seg\.positionSec, true,/);
 	assert.match(landing, /commit: \(when\) => \{\s*rt\.processor = upgrade\.processor;\s*st\.stems = upgrade\.state;/);
 	assert.match(
 		landing,

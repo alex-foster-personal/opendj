@@ -9,6 +9,10 @@
 // [if] the last load failed [then] the engine's recorded fetch failure is
 //   cleared BEFORE the load is run again
 // [if] the deck has no decoded mix [then] the call rejects by name
+// [if] a second retry arrives for a deck while one is running [then] it joins
+//   that retry: one hydrate, one reload
+// [if] the deck loads another track while the hydrate request is out [then]
+//   the old track is never reloaded onto it
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -18,7 +22,7 @@ let mod;
 let graph;
 
 before(async () => {
-	mod = await loadTypeScriptModule('src/lib/rb/stem-hydrate-wait.ts');
+	mod = await loadTypeScriptModule('src/lib/rb/stem-retry.ts');
 	graph = await loadTypeScriptModule('src/lib/rb/stem-graph.ts');
 });
 
@@ -29,6 +33,7 @@ function port(overrides = {}) {
 		port: {
 			landHeld: null,
 			reload: () => log.push('reload'),
+			current: () => true,
 			releaseDecode: () => {
 				log.push('releaseDecode');
 				return 0;
@@ -84,6 +89,20 @@ test('a failed load clears the recorded fetch failure before loading again', asy
 	assert.deepEqual(log, ['hydrate:sid', 'reload']);
 });
 
+test('a track loaded while the hydrate request is out never gets the old track\'s stems', async () => {
+	let loadedSince = false;
+	const { port: p, log } = port({
+		requestHydration: async (stableId) => {
+			log.push(`hydrate:${stableId}`);
+			loadedSince = true;
+		},
+		current: () => !loadedSince
+	});
+	const failed = { ...graph.unavailableStemDeckState('hub answered HTTP 503'), status: 'error' };
+	await mod.retryDeckStems(2, 'track-a', failed, p);
+	assert.deepEqual(log, ['hydrate:track-a'], 'track A was reloaded onto the deck now holding track B');
+});
+
 test('a failed hydrate request is reported, and no reload hides it', async () => {
 	const { port: p, log } = port({
 		requestHydration: async () => {
@@ -112,4 +131,39 @@ test('a deck with no decoded mix rejects by name', async () => {
 		/no decoded mix/
 	);
 	assert.deepEqual(log, []);
+});
+
+test('a second retry on the same deck joins the running one: one hydrate, one reload', async () => {
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	const { port: p, log } = port({
+		requestHydration: async (stableId) => {
+			log.push(`hydrate:${stableId}`);
+			await gate;
+		}
+	});
+	const failed = { ...graph.unavailableStemDeckState('boom'), status: 'error' };
+	const first = mod.retryDeckStems(4, 'sid', failed, p);
+	const second = mod.retryDeckStems(4, 'sid', failed, p);
+	assert.equal(second, first, 'the second retry started its own run');
+	release();
+	await Promise.all([first, second]);
+	assert.deepEqual(log, ['hydrate:sid', 'reload']);
+	// A track loaded since is its own retry, never the old track's.
+	let releaseA;
+	const gateA = new Promise((resolve) => (releaseA = resolve));
+	const a = port({ requestHydration: async (sid) => { a.log.push(`hydrate:${sid}`); await gateA; } });
+	const b = port();
+	const forA = mod.retryDeckStems(4, 'track-a', failed, a.port);
+	const forB = mod.retryDeckStems(4, 'track-b', failed, b.port);
+	assert.notEqual(forB, forA, 'a retry for a newly loaded track joined the old track\'s retry');
+	await forB;
+	assert.deepEqual(b.log, ['hydrate:track-b', 'reload']);
+	releaseA();
+	await forA;
+	// Control: once settled, the deck can be retried again, and another deck never waits on it.
+	await mod.retryDeckStems(4, 'sid', failed, port().port);
+	const other = port();
+	await mod.retryDeckStems(1, 'sid', failed, other.port);
+	assert.deepEqual(other.log, ['hydrate:sid', 'reload']);
 });

@@ -159,9 +159,55 @@ test('the DJ can start a held decode, and is told how many were waiting', async 
 	shedModule.setEagerStemDecodeShed(null);
 });
 
+test('LOAD NOW on one deck starts only that deck\'s held decode', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	const timer = { setTimer: () => null, clearTimer: () => {} };
+	let otherStarted = false;
+	const mine = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1 });
+	const other = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 2 });
+	void other.then(() => (otherStarted = true));
+	assert.equal(shedModule.releaseEagerStemDecodeNow(1), 1);
+	assert.equal(await mine, 'forced');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(otherStarted, false, 'another deck\'s decode started under the same pressure');
+	// The other deck's hold still ends the ordinary way.
+	await shedModule.resumeEagerStemDecodeOwedJob();
+	assert.equal(await other, 'released');
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('LOAD NOW for a deck\'s new track never starts its old track\'s held decode', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	const timer = { setTimer: () => null, clearTimer: () => {} };
+	let token = 1;
+	let oldStarted = false;
+	const old = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1, stale: () => token !== 1 });
+	void old.then(() => (oldStarted = true));
+	token = 2;
+	const current = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1, stale: () => token !== 2 });
+	assert.equal(shedModule.releaseEagerStemDecodeNow(1), 1);
+	assert.equal(await current, 'forced');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(oldStarted, false, 'the old track\'s decode started beside the new one');
+	await shedModule.resumeEagerStemDecodeOwedJob();
+	assert.equal(await old, 'released');
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('a held decode whose load went stale never starts decoding', async () => {
+	const graph = await loadTypeScriptModule('src/lib/rb/stem-graph.ts');
+	shedModule.setEagerStemDecodeShed(null);
+	let started = false;
+	await assert.rejects(
+		graph.decodeStemBuffers({}, {}, [], { stale: () => true, onStart: () => (started = true) }),
+		/the load it belongs to is gone/
+	);
+	assert.equal(started, false, 'a stale load was shown decoding');
+});
+
 test('a hold nobody releases ends at the bound instead of lasting the whole track', async () => {
-	// PERFMODE-18: kernel memory pressure takes the longer of the two bounds
-	// (the grading itself is tested in
+	// PERFMODE-18: kernel pressure is real pressure, which takes the longer of
+	// the two bounds (the grading itself is tested in
 	// perfmode-18-stem-hold-pressure-graded.test.mjs).
 	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }), () => true);
 	let armedMs = null;
@@ -187,7 +233,28 @@ test('a hold nobody releases ends at the bound instead of lasting the whole trac
 	fire();
 	assert.equal(await pending, 'timed_out');
 	assert.equal(cleared, 1);
-	// The stale resolver left behind must not break a later release.
-	assert.equal(shedModule.releaseEagerStemDecodeNow(), 1);
+	// A timed-out decode is running, not held: a later release counts nothing,
+	// so a retry reads "already loading" instead of claiming a release.
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 0);
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('a timed-out hold leaves other decodes held and countable', async () => {
+	// [if] one hold times out while another is still held [then] a release counts and starts only the held one, [else stop]
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	let fire = null;
+	const timedOut = shedModule.awaitEagerStemDecodeSlot({
+		setTimer: (run) => {
+			fire = run;
+			return 'a';
+		},
+		clearTimer: () => {}
+	});
+	const held = shedModule.awaitEagerStemDecodeSlot({ setTimer: () => 'b', clearTimer: () => {} });
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	fire();
+	assert.equal(await timedOut, 'timed_out');
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 1, 'only the decode still held is counted');
+	assert.equal(await held, 'forced');
 	shedModule.setEagerStemDecodeShed(null);
 });
