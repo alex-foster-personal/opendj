@@ -51,17 +51,26 @@ def keep_ownership(original: os.stat_result, tmp: Path) -> None:
     """Give ``tmp`` the original file's owner and group.
 
     ``mkstemp`` creates the inode as this process's user, and ``os.replace``
-    keeps that inode, so without this a tag edit on a file another user or
-    group owns would silently hand it to the writer. When the owner cannot be
-    kept (a non-root writer may not give a file away) this raises, which
-    aborts the rewrite. Platform seam: Windows has no ``os.chown``, and its
-    owner comes from the directory, so nothing is done there.
+    keeps that inode, so without this a tag edit on a file another user owns
+    would silently hand it to the writer. When that owner cannot be kept (a
+    non-root writer may not give a file away) this raises, which aborts the
+    rewrite. When only the group differs (a setgid directory, or macOS, which
+    always takes the directory's group) and the writer is not in the
+    original group, the write proceeds with the directory's group, as every
+    rewrite did before ownership was kept: refusing would block ordinary tag
+    edits on the writer's own files. Platform seam: Windows has no
+    ``os.chown``, and its owner comes from the directory, so nothing is done.
     """
     if not hasattr(os, "chown"):
         return
     current = tmp.stat()
-    if (current.st_uid, current.st_gid) != (original.st_uid, original.st_gid):
+    if current.st_uid != original.st_uid:
         os.chown(tmp, original.st_uid, original.st_gid)
+    elif current.st_gid != original.st_gid:
+        try:
+            os.chown(tmp, -1, original.st_gid)
+        except PermissionError:
+            pass  # the writer's own file; the group is the directory's, as before
 
 
 # copyfile(3) flags, <copyfile.h>: COPYFILE_ACL | COPYFILE_XATTR.

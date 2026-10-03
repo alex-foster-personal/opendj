@@ -70,6 +70,46 @@ def test_a_replacement_already_owned_right_is_left_alone(tmp_path: Path, monkeyp
     keep_ownership(tmp.stat(), tmp)  # does not raise
 
 
+@needs_chown
+def test_a_group_the_writer_may_not_set_does_not_block_its_own_file(tmp_path: Path, monkeypatch):
+    """[if] only the group differs and the writer may not set it [then] the group change is skipped and the write proceeds, [else stop].
+
+    Overshoot control: aborting here would block every tag edit on the
+    writer's own files in a setgid directory, or on macOS, where a new file
+    always takes the directory's group.
+    """
+    tmp = tmp_path / "tmp.mp3"
+    tmp.write_bytes(b"x")
+    calls: list[tuple[int, int]] = []
+
+    def chown(_path: object, uid: int, gid: int) -> None:
+        calls.append((uid, gid))
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "chown", chown)
+    mine = tmp.stat()
+
+    keep_ownership(_stat_owned_by(tmp, mine.st_uid, mine.st_gid + 1), tmp)  # does not raise
+
+    assert calls == [(-1, mine.st_gid + 1)], "the group change is still attempted"
+
+
+@needs_chown
+def test_a_file_another_user_owns_still_aborts_when_it_cannot_be_given_back(tmp_path: Path, monkeypatch):
+    """[if] the owner differs and cannot be kept [then] ``keep_ownership`` raises, [else stop].
+
+    Control for the test above: tolerating every refused chown would let a
+    rewrite hand another user's file to the writer again.
+    """
+    tmp = tmp_path / "tmp.mp3"
+    tmp.write_bytes(b"x")
+    monkeypatch.setattr(os, "chown", _refuse)
+    mine = tmp.stat()
+
+    with pytest.raises(PermissionError):
+        keep_ownership(_stat_owned_by(tmp, mine.st_uid + 1, mine.st_gid), tmp)
+
+
 def test_a_rewrite_that_cannot_keep_the_owner_aborts_and_keeps_the_original(tmp_path: Path, monkeypatch):
     """[if] the owner cannot be kept [then] ``rewrite_atomic`` raises, the original is untouched and no temp file is left, [else stop].
 
