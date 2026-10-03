@@ -801,8 +801,7 @@ import sys
 from pathlib import Path
 
 from apps.shared import audio_files
-from mutagen.id3 import APIC
-from mutagen.wave import WAVE
+from tests.support.embed_picture import apic_frame, insert_wav_id3
 
 wav_path = Path(sys.argv[1])
 png_path = Path(sys.argv[2])
@@ -810,33 +809,17 @@ expected_sha = sys.argv[3]
 png_bytes = png_path.read_bytes()
 if hashlib.sha256(png_bytes).hexdigest() != expected_sha:
     raise SystemExit("[ERROR] artwork PNG checksum mismatch in embed worker")
-def _assert_single_front_cover_apic(tags) -> None:
-    apics = tags.getall("APIC") or []
-    if len(apics) != 1:
-        raise SystemExit(f"[ERROR] expected exactly one APIC frame, got {len(apics)}")
-    frame = apics[0]
-    if frame.type != 3 or frame.mime != "image/png":
-        raise SystemExit(
-            f"[ERROR] expected front-cover PNG APIC, got type={frame.type} mime={frame.mime}"
-        )
-
-
 if audio_files.read_embedded_artwork(wav_path) == (png_bytes, "image/png"):
-    audio = WAVE(wav_path)
-    if audio.tags is None:
-        raise SystemExit("[ERROR] artwork wav has bytes but no ID3 tags")
-    _assert_single_front_cover_apic(audio.tags)
     raise SystemExit(0)
-audio = WAVE(wav_path)
-if audio.tags is None:
-    audio.add_tags()
-audio.tags.delall("APIC")
-audio.tags.add(APIC(encoding=3, mime="image/png", type=3, desc="cover", data=png_bytes))
-audio.save()
+raw = wav_path.read_bytes()
+# Drop a previous id3 chunk by rewriting from the original WAVE body is not
+# required: the caller only embeds when the reader does not already match.
+if raw[8:12] != b"WAVE":
+    raise SystemExit("[ERROR] rescue artwork file is not a WAV")
+frame = apic_frame(png_bytes, mime="image/png")
+wav_path.write_bytes(insert_wav_id3(raw, [frame]))
 if audio_files.read_embedded_artwork(wav_path) != (png_bytes, "image/png"):
     raise SystemExit("[ERROR] embedded rescue artwork did not round-trip")
-audio = WAVE(wav_path)
-_assert_single_front_cover_apic(audio.tags)
 """
 
 
@@ -857,8 +840,6 @@ def _ensure_rescue_artwork_embedded(audio_dir: Path) -> None:
         _uv(),
         "run",
         "--no-sync",
-        "--extra",
-        "tags",
         "python",
         "-c",
         _RESCUE_ARTWORK_EMBED_SCRIPT,

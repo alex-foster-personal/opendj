@@ -10,10 +10,9 @@ genre, upload duration) reported "reader unavailable". Since Thu 1 Oct 2026
 every READ goes through ``tinytag`` (MIT, pure Python), a core dependency.
 Research: ``research/tag-reading/2026-10-01-mutagen-replacement.md``.
 
-mutagen remains only behind the opt-in ``[tags]`` extra for the tag WRITE
-family (``apps.shared.tag_writer``, ``apps.analysis.write_tags``, the Serato
-GEOB codec), guarded by :mod:`apps.shared._mutagen`. Nothing that reads tags
-for the library, ingest, artwork or reconcile surfaces may import mutagen.
+Nothing in the product writes tags into audio files: that path needed
+mutagen (GPL-2.0-or-later), which this Apache-2.0 package does not depend
+on. Nothing that reads tags may import mutagen.
 
 Every callsite imports from this module, so:
 

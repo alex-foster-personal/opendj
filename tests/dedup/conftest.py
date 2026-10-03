@@ -32,10 +32,9 @@ class _FakeAcoustid:
     def fingerprint_file(self, path: str):  # type: ignore[no-untyped-def]
         data = Path(path).read_bytes()
         try:
-            import mutagen
+            from tinytag import TinyTag
 
-            meta = mutagen.File(path)
-            duration = meta.info.length if meta and meta.info else 0.0
+            duration = TinyTag.get(path).duration or 0.0
         except Exception:
             duration = 0.0
         dur_bucket = round(duration)

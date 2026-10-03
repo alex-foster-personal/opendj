@@ -60,12 +60,11 @@ class _FakeAcoustid:
         # 192 kbps yields distinct byte content, so we DO differ. To
         # simulate real chromaprint behaviour (stable first 64 chars on
         # cross-bitrate twins) we include the file extension-independent
-        # ``audio_prefix`` derived from mutagen duration/format.
+        # ``audio_prefix`` derived from tinytag duration.
         try:
-            import mutagen
+            from tinytag import TinyTag
 
-            meta = mutagen.File(path)
-            duration = meta.info.length if meta and meta.info else 0.0
+            duration = TinyTag.get(path).duration or 0.0
         except Exception:
             duration = 0.0
         # Bucket the duration so round-off does not break same-source ids.
