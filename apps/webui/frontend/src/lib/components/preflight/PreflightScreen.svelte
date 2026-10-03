@@ -38,6 +38,7 @@
 	 * SvelteKit runtime. Both call sites already import `goto` for their own
 	 * use and pass it straight through to PreflightCheckRow.
 	 */
+	import AlphaBadge from '$lib/components/AlphaBadge.svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { OVERLAY_Z } from '$lib/overlays/stack';
 	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
@@ -175,7 +176,7 @@
 		<header class="preflight-brand" aria-label="Open DJ">
 			<div class="preflight-mark" aria-hidden="true"></div>
 			<div class="preflight-lockup">
-				<span class="preflight-name">Open DJ</span>
+				<span class="preflight-name">Open DJ<AlphaBadge /></span>
 				<p class="preflight-welcome">
 					Welcome. Import your music to start DJing, or keep going once setup finishes.
 				</p>
