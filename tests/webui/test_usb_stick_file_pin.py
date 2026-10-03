@@ -77,3 +77,38 @@ def test_a_pinned_file_keeps_serving_the_checked_bytes_after_a_later_swap(tmp_pa
     assert pinned.fd is not None
     with pytest.raises(OSError):
         os.fstat(pinned.fd)
+
+
+@pytest.mark.parametrize(
+    ("range_header", "status"),
+    [(None, 200), ("bytes=0-3", 206), ("bytes=500-600", 416), ("garbage", 400)],
+)
+def test_the_pinned_descriptor_is_released_whatever_the_response(tmp_path: Path, range_header, status):
+    """[if] a stick file response ends, a 416 or a malformed Range included [then] its descriptor is closed, [else stop].
+
+    MUTATION TARGET: close the fd in a background task instead of a
+    ``finally`` and the 416 and 400 rows leak one fd per request.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from apps.webui.server.routes.usb_tracks_files import _PinnedFileResponse
+
+    music, _outside = _stick_and_outside(tmp_path)
+    pins = []
+    app = FastAPI()
+
+    @app.get("/f")
+    def serve() -> _PinnedFileResponse:
+        pinned = pin_stick_file(UUID, (music / "track.mp3").resolve())
+        pins.append(pinned)
+        return _PinnedFileResponse(pinned, media_type="audio/mpeg")
+
+    headers = {} if range_header is None else {"Range": range_header}
+    with TestClient(app) as client:
+        response = client.get("/f", headers=headers)
+
+    assert response.status_code == status
+    assert pins and pins[0].fd is not None
+    with pytest.raises(OSError):
+        os.fstat(pins[0].fd)

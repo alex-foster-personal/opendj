@@ -6,11 +6,11 @@ import errno
 
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
+from starlette.types import Receive, Scope, Send
 
 from apps.shared import audio_quality
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S, probe_readable_byte
-from apps.sync.usb.stick_file_pin import pin_stick_file
+from apps.sync.usb.stick_file_pin import PinnedStickFile, pin_stick_file
 from apps.sync.usb.stick_library import (
     ArtworkSize,
     StickError,
@@ -28,6 +28,25 @@ from .usb_tracks import (
     _stick_errors,
     router,
 )
+
+
+class _PinnedFileResponse(FileResponse):
+    """A FileResponse that always releases its pinned descriptor.
+
+    A background task is not enough: Starlette returns early for a 416 or a
+    malformed Range header, and a client disconnect raises out of ``send``,
+    and neither runs the background task, so each would leak one fd.
+    """
+
+    def __init__(self, pinned: PinnedStickFile, **kwargs: object) -> None:
+        super().__init__(pinned.serve_path, **kwargs)  # type: ignore[arg-type]
+        self._pinned = pinned
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._pinned.close()
 
 
 @router.get(
@@ -82,8 +101,8 @@ def get_usb_track_audio(track_id: str, request: Request) -> FileResponse:
     quality = audio_quality.classify(str(audio.path), _duration_ms(resolved.track.duration_s))
     with _stick_errors():
         pinned = pin_stick_file(resolved.stick.volume_uuid, audio.path)
-    return FileResponse(
-        pinned.serve_path,
+    return _PinnedFileResponse(
+        pinned,
         media_type=audio.media_type,
         headers={
             "Cache-Control": _CACHE_AUDIO,
@@ -91,7 +110,6 @@ def get_usb_track_audio(track_id: str, request: Request) -> FileResponse:
             "X-Audio-Venue": quality.venue.key if quality.venue else "",
             "X-Audio-Source": "usb-stick",
         },
-        background=BackgroundTask(pinned.close),
     )
 
 
@@ -113,9 +131,8 @@ def get_usb_track_artwork(
     with _stick_errors():
         resolved = _resolve_track(request, track_id)
         pinned = pin_stick_file(resolved.stick.volume_uuid, stick_artwork_file(resolved, size))
-    return FileResponse(
-        pinned.serve_path,
+    return _PinnedFileResponse(
+        pinned,
         media_type="image/jpeg",
         headers={"Cache-Control": _CACHE_ARTWORK},
-        background=BackgroundTask(pinned.close),
     )
