@@ -336,10 +336,13 @@ def list_tracks(
             stems_available=_stems_available(track.stable_id, row["stems"], request),
             artwork_available=row["artwork_available"],
         ).model_dump()
+        # TrackOut already carries play_count (default 0). The listing value is
+        # the vendor row's, so it replaces the dumped field instead of being
+        # passed twice.
+        base["play_count"] = int(row.get("play_count") or 0)
         items.append(
             TrackListItemOut(
                 **base,
-                play_count=int(row.get("play_count") or 0),
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
                 file_availability=row["file_availability"],

@@ -80,9 +80,14 @@ test('the row is allowlisted and reads ask on a fresh profile', () => {
 });
 
 test('a panel write goes through the mapper into the confirm pref', () => {
+	// Ask is a disk delete (clearConfirmPref): setConfirmPref's value type
+	// excludes undefined, so a remembered add/move is the only setConfirmPref
+	// write, and it still goes through dropModePrefFromSetting.
+	assert.match(APPLY_SRC, /case 'confirm\.playlist_drop_mode':/);
+	assert.match(APPLY_SRC, /clearConfirmPref\('playlist_drop_mode'\)/);
 	assert.match(
 		APPLY_SRC,
-		/case 'confirm\.playlist_drop_mode':\s*setConfirmPref\('playlist_drop_mode', dropModePrefFromSetting\(value\)\);/
+		/const remembered = dropModePrefFromSetting\(value\);[\s\S]*?setConfirmPref\('playlist_drop_mode', remembered\);/
 	);
 });
 
