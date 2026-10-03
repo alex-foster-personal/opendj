@@ -20,6 +20,10 @@
 //   deck, the mix is cut at the handoff instant, and the refusal is reported
 // [if] the stems' cancel fails during a rollback [then] the mix is still put
 //   back, and the cancel's error propagates
+// [if] the mix's stop is still unacknowledged at the handoff instant [then] it
+//   is cut there on its own timer, and the stems take the deck
+// [if] the stop fails while the upgrade went stale [then] the deck is failed,
+//   never left pointing at the dead mix
 // [if] the deck commits before the mix acknowledged its stop [then ⛔️]
 // [if] the mix's stop is acknowledged too late [then] both are rolled back at
 //   the first instant still ahead, and nothing is committed
@@ -53,7 +57,9 @@ function deck(overrides = {}) {
 			latencyMatches: true
 		},
 		replaceable: false,
-		stale: false
+		stale: false,
+		cut: false,
+		cutChecks: []
 	};
 	const deps = {
 		now: () => state.now,
@@ -80,6 +86,13 @@ function deck(overrides = {}) {
 		},
 		reportOutgoingFailure: (error) => {
 			log.push(['reportOutgoingFailure', error.message]);
+		},
+		cutOutgoingAt: (when, stillPending) => {
+			state.cutChecks.push({ when, stillPending });
+			return () => state.cut;
+		},
+		failOutgoing: (error) => {
+			log.push(['failOutgoing', error.message]);
 		},
 		commit: (when, segment) => {
 			log.push(['commit', when, segment.positionSec]);
@@ -200,6 +213,47 @@ test('a mix that refuses its stop is cut at the handoff instant and the stems ta
 	assert.deepEqual(log[4], ['retireOutgoingAfter', when, 0], 'the dead mix must be cut at the handoff instant, with no tail');
 	assert.deepEqual(log[5], ['reportOutgoingFailure', 'stop refused'], 'the refusal was swallowed');
 	assert.ok(!names(log).includes('cancelIncoming') && !names(log).includes('restoreOutgoing'));
+});
+
+test('a stop still unacknowledged at the handoff instant is cut there, never doubled', async () => {
+	const { deps, log, state } = deck();
+	let ack;
+	deps.stopOutgoing = (when) => {
+		log.push(['stopOutgoing', when]);
+		return new Promise((resolve) => {
+			ack = resolve;
+		});
+	};
+	const outcome = mod.handOffStemsLive(deps, 0.15);
+	await new Promise((resolve) => setImmediate(resolve));
+	const when = log[1][1];
+	assert.equal(state.cutChecks.length, 1, 'no independent cut was armed for the mix');
+	assert.equal(state.cutChecks[0].when, when, 'the cut is not at the handoff instant');
+	assert.equal(state.cutChecks[0].stillPending(), true, 'the cut must fire while the stop is unsettled');
+	state.cut = true; // the timer fired at `when`
+	ack(); // the ack lands after the cut
+	assert.equal(await outcome, 'handed_off');
+	assert.ok(!names(log).includes('restoreOutgoing'), 'a cut mix was "restored"');
+	assert.ok(!names(log).includes('retireOutgoingAfter'), 'the cut mix was retired twice');
+	assert.deepEqual(names(log).slice(-2), ['commit', 'reportOutgoingFailure']);
+});
+
+test('control: a stop acknowledged in time disarms the cut', async () => {
+	const { deps, state } = deck();
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
+	assert.equal(state.cutChecks[0].stillPending(), false, 'the cut would fire after an acknowledged stop');
+});
+
+test('a failed stop on an upgrade that went stale fails the deck instead of leaving the dead mix', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async (when) => {
+		log.push(['stopOutgoing', when]);
+		state.stale = true;
+		throw new Error('stop timed out');
+	};
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'moved');
+	assert.deepEqual(log.at(-1), ['failOutgoing', 'stop timed out']);
+	assert.ok(!names(log).includes('commit'));
 });
 
 test('a rollback whose stems cancel fails still puts the mix back', async () => {
@@ -373,7 +427,7 @@ function landing(overrides = {}) {
 		}),
 		startChange: (segment) => ({ start: segment.positionSec }),
 		retire: (target) => log.push(['retire', target.name]),
-		reportOutgoingFailure: () => {},
+		outgoingFailed: () => {},
 		commit: (when) => {
 			log.push(['commit', when]);
 			runtime.processor = stems;
@@ -384,7 +438,8 @@ function landing(overrides = {}) {
 		adoptStopped: () => log.push(['adoptStopped']),
 		setTimer: (run, ms) => {
 			timers.push({ run, ms });
-			if (overrides.autoTimers !== false) queueMicrotask(run);
+			// After pending acks settle, as a real timer would for any delay > 0.
+			if (overrides.autoTimers !== false) setImmediate(run);
 		},
 		...overrides.port
 	};
@@ -416,10 +471,13 @@ test('the stopped mix is retired only after its stop instant has passed', async 
 	assert.equal(await done, 'handed_off');
 	assert.ok(!names(log).includes('retire'), 'the mix was retired while it could still be the audible tail');
 	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
-	assert.equal(timers.length, 1);
-	const expectedMs = (when - 100 + mod.STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000;
-	assert.ok(Math.abs(timers[0].ms - expectedMs) < 1e-6, `retire timer ${timers[0].ms}ms, expected ${expectedMs}ms`);
+	assert.equal(timers.length, 2, 'expected the cut timer and the retire timer');
+	assert.ok(Math.abs(timers[0].ms - (when - 100) * 1000) < 1e-6, 'the cut timer is not at the handoff instant');
 	timers[0].run();
+	assert.ok(!names(log).includes('retire'), 'an acknowledged stop was cut at the handoff instant, losing its tail');
+	const expectedMs = (when - 100 + mod.STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000;
+	assert.ok(Math.abs(timers[1].ms - expectedMs) < 1e-6, `retire timer ${timers[1].ms}ms, expected ${expectedMs}ms`);
+	timers[1].run();
 	assert.deepEqual(log.at(-1), ['retire', 'mix']);
 });
 
@@ -463,16 +521,16 @@ test('the binding puts the mix back as the control clock says when a command lan
 
 test('the binding cuts a mix that refused its stop at the handoff instant and reports it', async () => {
 	const reported = [];
-	const { port, log, mix, timers } = landing({ autoTimers: false, port: { reportOutgoingFailure: (error) => reported.push(error.message) } });
+	const { port, log, mix, timers } = landing({ autoTimers: false, port: { outgoingFailed: (error, terminal) => reported.push([error.message, terminal]) } });
 	mix.stop = async (when) => {
 		log.push(['mix.stop', when]);
 		throw new Error('stop refused');
 	};
 	assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
 	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
-	assert.deepEqual(reported, ['stop refused']);
-	assert.equal(timers.length, 1);
-	assert.ok(Math.abs(timers[0].ms - (when - 100) * 1000) < 1e-6, 'the dead mix is not cut at the handoff instant');
+	assert.deepEqual(reported, [['stop refused', false]]);
+	const retireAt = timers.at(-1);
+	assert.ok(Math.abs(retireAt.ms - (when - 100) * 1000) < 1e-6, 'the dead mix is not cut at the handoff instant');
 });
 
 test('a deck with no audio graph rejects and leaves the mix alone', async () => {
