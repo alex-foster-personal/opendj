@@ -25,6 +25,8 @@ import {
 	type WheelSensitivityDisk
 } from './wheel-adjust';
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
+import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
+import type { DiskConfirmPatch } from './verified-pref-writes';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
@@ -68,12 +70,16 @@ export function setTopbarDiskPref(
 	void sync({ [key]: next });
 }
 
+/** Live confirm map: missing keys mean "ask"; no null members. */
+export type LiveConfirmPrefs = {
+	delete_playlist?: boolean;
+	playlist_drop_mode?: 'add' | 'move';
+	dblclick_load_play?: boolean;
+};
+
+
 export type DiskPrefsPatch = {
-	confirm?: {
-		delete_playlist?: boolean;
-		playlist_drop_mode?: 'add' | 'move';
-		dblclick_load_play?: boolean;
-	};
+	confirm?: DiskConfirmPatch;
 	theme?: UiTheme;
 	hide_todo_settings?: boolean;
 	auto_sync?: AutoSyncPrefs;
@@ -110,6 +116,8 @@ export type DiskPrefsPatch = {
 	deck_right_mirror?: boolean;
 	playlist_tree_view?: 'tree' | 'column';
 	app_mode?: DiskAppModePatch;
+	compatible_filter?: CompatibleFilterPrefs;
+	library_watcher_folders?: string[];
 };
 
 function _diskPrefsToWirePatch(patch: DiskPrefsPatch): components['schemas']['UiPrefsPatch'] {
@@ -142,6 +150,13 @@ async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 	}
 }
 
+/** Like `_putDiskPrefs` but fails loud: a transport error or a non-2xx
+ * (the client middleware throws ApiError) rejects, so a caller that reports
+ * "saved" can await this first (LIBM-129 watcher folders, PR #4014). */
+export async function putDiskPrefsVerified(patch: DiskPrefsPatch): Promise<void> {
+	await api.PUT('/api/v1/ui-prefs', { body: _diskPrefsToWirePatch(patch) });
+}
+
 export function createDiskPrefsSync() {
 	return makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
 }
@@ -150,7 +165,7 @@ export function createDiskPrefsSync() {
 export const syncDiskPrefs = createDiskPrefsSync();
 
 export interface PrefsHydrateTarget {
-	confirm: DiskPrefsPatch['confirm'] & Record<string, unknown>;
+	confirm: LiveConfirmPrefs & Record<string, unknown>;
 	theme: UiTheme;
 	hide_todo_settings: boolean;
 	auto_sync: AutoSyncPrefs;
@@ -185,6 +200,8 @@ export interface PrefsHydrateTarget {
 	remixes_filter: boolean;
 	vocals_filter: boolean;
 	available_offline_filter: boolean;
+	library_watcher_folders: string[];
+	compatible_filter: CompatibleFilterPrefs;
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -205,16 +222,23 @@ export interface PrefsHydrateDeps {
 	applyThemeDom: (theme: UiTheme) => void;
 	storageKey: string;
 	defaults: Pick<PrefsHydrateTarget, 'auto_sync' | 'level_calibration'>;
+	/** Confirm keys with a local write disk has not acknowledged yet. */
+	isConfirmUnsaved?: (key: string) => boolean;
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
 export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 	const { uiPrefs, persist, applyThemeDom, storageKey, defaults } = deps;
+	const isConfirmUnsaved = deps.isConfirmUnsaved ?? (() => false);
 	return async function hydrateConfirmPrefsFromDisk(): Promise<void> {
+		// This PR's confirm and compatible-filter hydration loads with the GET, not
+		// at first paint (library bundle budget, PR #4014).
+		const late = import('./verified-pref-writes');
 		try {
 			const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
-			if (body.confirm !== undefined) {
-				uiPrefs.confirm = { ...uiPrefs.confirm, ...body.confirm };
+			const { hydrateConfirmFromDisk, hydrateCompatibleFilter } = await late;
+			if (body.confirm !== undefined && typeof body.confirm === 'object') {
+				hydrateConfirmFromDisk(uiPrefs, body.confirm, isConfirmUnsaved);
 			}
 			if (body.theme === 'dark' || body.theme === 'light') {
 				uiPrefs.theme = body.theme;
@@ -326,6 +350,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			if (typeof body.master_muted === 'boolean') {
 				hydrateMasterMutedFromDisk(body.master_muted);
 			}
+			if (Array.isArray(body.library_watcher_folders)) {
+				uiPrefs.library_watcher_folders = body.library_watcher_folders.filter(
+					(p): p is string => typeof p === 'string'
+				);
+			}
+			hydrateCompatibleFilter(uiPrefs, body);
 			persist();
 		} catch {
 			/* ignore */

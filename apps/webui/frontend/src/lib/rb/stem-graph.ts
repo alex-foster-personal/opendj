@@ -27,6 +27,7 @@ import type {
 	StemControl,
 	StemControlState,
 	StemDeckState,
+	StemLoadDetail,
 	StemLayout
 } from '$lib/rb/stem-types';
 
@@ -94,13 +95,32 @@ function _exactKeys(name: string, value: object, keys: readonly string[]): void 
 export async function decodeStemBuffers(
 	ctx: BaseAudioContext,
 	encoded: Partial<Record<StemPart, ArrayBuffer>>,
-	parts: readonly StemPart[]
+	parts: readonly StemPart[],
+	hooks: { deck?: number; stale?: () => boolean; onDeferred?: () => void; onStart?: () => void } = {}
 ): Promise<{ buffers: StemBuffers; labels: Record<string, string> }> {
 	// PERFMODE-04 (eager-stem-decode): the deck is already playable on its mix
 	// buffer at this point, so yielding here under pressure never blocks audio.
-	await awaitEagerStemDecodeSlot();
+	// STEM-47: the hold is bounded and named on the deck (`onDeferred`).
+	const waitStartedMs = performance.now();
+	const decodeStart = await awaitEagerStemDecodeSlot({
+		...(hooks.deck === undefined ? {} : { deck: hooks.deck }),
+		...(hooks.stale === undefined ? {} : { stale: hooks.stale }),
+		...(hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred })
+	});
+	const decodeWaitMs = Math.round(performance.now() - waitStartedMs);
+	// A hold can outlive its load (the deck loaded another track): the bound or
+	// the shed still ends the wait, and the decode must not run for nothing.
+	if (hooks.stale?.() === true) throw new Error('stem decode: the load it belongs to is gone');
+	hooks.onStart?.();
 	const decoded = await decodeStemParts(ctx, encoded, parts);
-	return { buffers: decoded.buffers, labels: stemDecodeLabels(decoded.reports) };
+	return {
+		buffers: decoded.buffers,
+		labels: {
+			...stemDecodeLabels(decoded.reports),
+			decode_start: decodeStart,
+			decode_wait_ms: String(decodeWaitMs)
+		}
+	};
 }
 
 export function createDefaultStemControls(): StemControls {
@@ -120,7 +140,8 @@ export function unavailableStemDeckState(error: string | null = null): StemDeckS
 		available_controls: [],
 		alignment: null,
 		controls: createDefaultStemControls(),
-		error
+		error,
+		load: null
 	};
 }
 
@@ -129,7 +150,9 @@ export function unavailableStemDeckState(error: string | null = null): StemDeckS
  * answer (this track has no bundle), `loading` is "not settled yet", and only
  * the second one justifies an on-deck spinner. Controls stay empty so a stem
  * button cannot be armed against a processor that has not arrived. */
-export function loadingStemDeckState(): StemDeckState {
+export function loadingStemDeckState(
+	load: StemLoadDetail = { phase: 'probing', progress: null, reason: null }
+): StemDeckState {
 	return {
 		status: 'loading',
 		source: null,
@@ -138,7 +161,8 @@ export function loadingStemDeckState(): StemDeckState {
 		available_controls: [],
 		alignment: null,
 		controls: createDefaultStemControls(),
-		error: null
+		error: null,
+		load: { ...load, progress: load.progress === null ? null : { ...load.progress } }
 	};
 }
 
@@ -154,7 +178,8 @@ export function readyStemDeckState(
 		available_controls: [...STEM_LAYOUT_CONTROLS[identity.layout]],
 		alignment: { ...alignment },
 		controls: createDefaultStemControls(),
-		error: null
+		error: null,
+		load: null
 	};
 }
 

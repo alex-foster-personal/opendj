@@ -59,6 +59,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.sync.usb.pioneer.rbox_runtime import ensure_rbox
+
 __all__ = [
     "OneLibraryTableStats",
     "OneLibrarySchemaSnapshot",
@@ -176,7 +178,7 @@ def snapshot_onelibrary(path: Path) -> OneLibrarySchemaSnapshot:
     are empty, so callers can still render a partial report.
     """
     try:
-        from rbox import OneLibrary  # type: ignore[import-not-found]
+        OneLibrary = ensure_rbox().OneLibrary
     except Exception as exc:  # noqa: BLE001
         return OneLibrarySchemaSnapshot(
             path=path,
@@ -454,9 +456,7 @@ def round_trip_via_writer(
     # copy forces SQLite's normal WAL-checkpoint on close, which
     # rewrites the main file to contain everything.
     try:
-        from rbox import OneLibrary as _OL  # type: ignore[import-not-found]
-
-        _h = _OL(str(template_copy))
+        _h = ensure_rbox().OneLibrary(str(template_copy))
         del _h
     except Exception:  # noqa: BLE001
         # If rbox isn't importable we'll fail later with a clearer
@@ -813,7 +813,7 @@ def _overlay_spec_for_fixture(pioneer: Path, workdir: Path) -> list[tuple[str, l
     empty overlay spec as "identity" effectively and will skip).
     """
     try:
-        from rbox import OneLibrary  # type: ignore[import-not-found]
+        OneLibrary = ensure_rbox().OneLibrary
     except Exception:  # noqa: BLE001
         return []
     # Read IDs from a safe copy of the DB so we don't mutate the fixture.

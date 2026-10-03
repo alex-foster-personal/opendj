@@ -107,6 +107,7 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'safety_loop_save',
 	'safety_loop_arm',
 	'safety_loop_clear',
+	'stem_load',
 	'headphone_outputs_refresh',
 	'headphone_output_acquire',
 	'headphone_input_select',
