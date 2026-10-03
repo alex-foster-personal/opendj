@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,9 @@ const DROP_FIXTURE = path.resolve(
 	fileURLToPath(new URL('.', import.meta.url)),
 	'../../../../../tests/fixtures/phase7-dedup/src-128.mp3'
 );
+// Digest of src-128.mp3 as committed in bf001438d; a changed file fails the
+// spec rather than uploading whatever bytes are present.
+const DROP_FIXTURE_SHA256 = '922d6cfa0886ef5a6ae195af01d992782d2680bc40244940254934c9aee7c4d0';
 
 // E2E for the ingest feature pair (real backend on the claimed worktree
 // port, isolated MDT_DATA_DIR - see PR notes):
@@ -88,7 +92,11 @@ test.describe('ingest drop modal', () => {
 		// Synthesize an external file drag: DataTransfer with a File holding a
 		// real mp3's bytes.
 		if (!fs.existsSync(DROP_FIXTURE)) throw new Error(`locked fixture missing: ${DROP_FIXTURE}`);
-		const b64 = fs.readFileSync(DROP_FIXTURE).toString('base64');
+		const raw = fs.readFileSync(DROP_FIXTURE);
+		expect(createHash('sha256').update(raw).digest('hex'), 'src-128.mp3 changed').toBe(
+			DROP_FIXTURE_SHA256
+		);
+		const b64 = raw.toString('base64');
 		await page.evaluate((data) => {
 			const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
 			const dt = new DataTransfer();
