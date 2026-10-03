@@ -9,7 +9,7 @@ Cheapness rests on one fact about the folder-tier id: :func:`state_ids.stable_id
 mints a folder-imported track's id from ``(abs_path, mtime)`` alone (tier
 ``"inferred"``, ``isrc`` and ``fingerprint`` both absent) -- it never reads
 tags. So "did anything change" is answerable from a stat-only walk
-(:func:`folder.collect_audio`, no ``mutagen`` call) plus a pure hash, with a
+(:func:`folder.collect_audio`, no tag-reader call) plus a pure hash, with a
 tag read only for the files that actually turn out new or changed.
 
 Diffing happens in STABLE-ID SPACE, never in raw-path-string space. A tier-3

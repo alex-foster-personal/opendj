@@ -12494,7 +12494,7 @@ export interface components {
          *     :func:`_local_rb_meta`.
          *
          *     ``artwork_available`` is tri-state (``bool | None``) rather than a plain
-         *     bool: for a local-vendor row it is ``None`` when the optional ``mutagen``
+         *     bool: for a local-vendor row it is ``None`` when the tinytag
          *     tag reader was never available to check with, distinct from a checked
          *     ``False`` (no embedded picture). A rekordbox-vendor row never needs the
          *     reader, so it is always a definite ``True``/``False`` there. See
@@ -19719,7 +19719,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Optional mutagen tag reader ([tags] extra) is not installed. */
+            /** @description The tinytag tag reader is not importable. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -19729,7 +19729,7 @@ export interface operations {
                      * @example {
                      *       "detail": {
                      *         "code": "TAG_READER_UNAVAILABLE",
-                     *         "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                     *         "message": "ingest upload requires the 'tinytag' tag reader (a core dependency) for duration-based duplicate detection; reinstall the environment (uv sync)"
                      *       }
                      *     }
                      */
