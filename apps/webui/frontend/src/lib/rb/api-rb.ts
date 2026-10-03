@@ -402,6 +402,8 @@ export interface PlaylistTrackRowWire {
 	genre: string | null;
 	/** When genre is null, names why (missing tags extra, no file tag, etc.). */
 	genre_reason?: string | null;
+	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
+	genre_guess?: GenreGuess | null;
 	comments: string | null;
 	etag: string;
 	preview_b64: string | null;
@@ -606,9 +608,14 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
  * adds inline genre/genre_reason; is_streaming is not on the wire: the row
  * mapper settles it from `file_availability === 'streaming'` (issue #3934)
  * and otherwise leaves it lazy via rb-meta. */
+/** GENRE-02 guess: never a tag, never written anywhere. */
+export type GenreGuess = { family: string; confidence: number; source: 'jev' };
+
 export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;
+	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
+	genre_guess?: GenreGuess | null;
 	duration_ms?: number | null;
 	bpm_source?: string | null;
 	bpm_method?: string | null;

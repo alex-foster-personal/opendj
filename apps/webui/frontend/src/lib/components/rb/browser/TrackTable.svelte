@@ -2089,6 +2089,12 @@
 										{/each}
 									</button>
 								{/each}
+							{:else if row.genre_guess}
+								<span
+									class="genre-guess"
+									title={`JEV guess, ${Math.round(row.genre_guess.confidence * 100)}% sure; not a file tag`}
+									>{row.genre_guess.family}?</span
+								>
 							{:else if row.genre_reason}
 								<span class="genre-reason" title={row.genre_reason}>{row.genre_reason}</span>
 							{/if}
@@ -2939,6 +2945,10 @@
 	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
 	 * fixed-height row (22.5px -> 25px), which the virtualization math and
 	 * right-click anchored popovers both assume never happens. */
+	.genre-guess {
+		color: var(--text-muted, #8b949e);
+		font-style: italic;
+	}
 	.genre-reason {
 		color: var(--text-muted, #8b949e);
 		font-size: 0.85em;

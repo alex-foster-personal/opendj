@@ -188,14 +188,22 @@ const BUDGETS = [
   // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
   // of its own and raises once more. Payback, not yet measured: find what pulls
   // headphones.ts into the "/" closure and defer it.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #5086, CLOUDSYNC-33 "This file isn't on this
+  // computer"): audio-engine and performance-ipc are in the first-paint closure, and
+  // the deck-load failure wording (deck-load-context.ts: the plain-reason map, the
+  // error-keyed WeakMap the banner and toast read, the title fallback) adds +270
+  // bytes. Clean origin/main 01d5b3520 measured 262,071 locally (73 bytes of
+  // headroom); main + this PR 262,341. Trunk's queue removed it at 178 over on CI.
+  // Payback: the headphones.ts deferral above retires this KiB too.
   // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins; JIK's V1
   // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin batch's
   // compatible filter, pairing underline and confirm-pref plumbing reach the "/"
   // first-paint closure through the shared library browser. Clean origin/main
   // b6c894194 measured 261,672 locally; main + this PR at the merge of Sat 3 Oct
   // measured 262,967 (823 OVER). Payback, not yet measured: move the compatible-filter
-  // and pairing derivation behind the /performance-only lazy imports.
-  { name: 'library', limit: 263168, measured: 262967, note: 'initial load of "/"' },
+  // and pairing derivation behind the /performance-only lazy imports. Re-merged with
+  // main 5504f60e7 (which carries #5086's KiB): 263,265 measured, 927 under.
+  { name: 'library', limit: 264192, measured: 263265, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -230,7 +238,12 @@ const BUDGETS = [
   // ceiling (244,736) is the larger of the two independent ratchets but does
   // not include #4904's clipboard handlers stacked on the #3986 work. Limit
   // raised to 245,760 (240 KiB) until the merged head is re-measured in CI.
-  { name: 'performance', limit: 245760, measured: 229639, note: '/performance and children' },
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): re-merged with main
+  // 5504f60e7, /performance measured 245,836, 76 bytes over 245,760: main's own
+  // growth since the last merge plus this PR's two-track pairing readiness check in
+  // the top bar. 948 bytes remain. Payback: the same compatible-filter deferral as the library entry.
+  { name: 'performance', limit: 246784, measured: 245836, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
