@@ -41,12 +41,17 @@ _requires_reference_mac = pytest.mark.skipif(
 
 def _node() -> str:
     node = shutil.which("node")
-    if node is None or not (_FRONTEND / "node_modules" / "@playwright" / "test").is_dir():
+    if node is None:
         raise RuntimeError(
-            "network_buffer_probe needs node and the frontend's node_modules "
+            "network_buffer_probe needs node on PATH "
             "(pnpm install in apps/webui/frontend, then pnpm exec playwright install chromium)"
         )
-    return node
+    if not (_FRONTEND / "node_modules" / "@playwright" / "test").is_dir():
+        raise RuntimeError(
+            "network_buffer_probe needs the frontend's node_modules "
+            "(pnpm install in apps/webui/frontend, then pnpm exec playwright install chromium)"
+        )
+    return str(Path(node).resolve())
 
 
 def _probe(page_kind: str) -> dict[str, float]:

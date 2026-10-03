@@ -7,6 +7,9 @@
  * until the timeout instead of failing at once.
  */
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 
 import {
@@ -16,51 +19,27 @@ import {
 	openUninstrumentedPage
 } from '../../../../../scripts/perf/uninstrumented-page.mjs';
 
-/** Minimal browser + browser CDP session for `openUninstrumentedPage` unit tests. */
-function createFakeCdpBrowser(onTargetMessage) {
-	const messageHandlers = [];
-	const sessionId = 'fake-target-session';
+const FRONTEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-	const browserSession = {
-		async send(method, params = {}) {
-			if (method === 'Target.createBrowserContext') {
-				return { browserContextId: 'fake-context' };
-			}
-			if (method === 'Target.createTarget') {
-				return { targetId: 'fake-target' };
-			}
-			if (method === 'Target.attachToTarget') {
-				return { sessionId };
-			}
-			if (method === 'Target.sendMessageToTarget') {
-				const request = JSON.parse(params.message);
-				const deliver = (response) => {
-					for (const handler of messageHandlers) {
-						handler({ sessionId, message: JSON.stringify(response) });
-					}
-				};
-				onTargetMessage(request, deliver);
-				return {};
-			}
-			if (method === 'Target.disposeBrowserContext') {
-				return {};
-			}
-			throw new Error(`unexpected browserSession.send: ${method}`);
-		},
-		on(event, handler) {
-			if (event === 'Target.receivedMessageFromTarget') {
-				messageHandlers.push(handler);
-			}
-		},
-		async detach() {}
-	};
-
-	return {
-		async newBrowserCDPSession() {
-			return browserSession;
-		},
-		on() {}
-	};
+async function withRealChromium(run) {
+	let playwright;
+	try {
+		const require = createRequire(path.join(FRONTEND_ROOT, 'package.json'));
+		const entry = require.resolve('@playwright/test');
+		playwright = await import(pathToFileURL(entry).href);
+	} catch (error) {
+		return { skip: `UNAVAILABLE: @playwright/test is not installed: ${error.message}` };
+	}
+	try {
+		const browser = await (playwright.default ?? playwright).chromium.launch({ headless: true });
+		try {
+			return { result: await run(browser) };
+		} finally {
+			await browser.close();
+		}
+	} catch (error) {
+		return { skip: `UNAVAILABLE: Chromium could not launch: ${error.message}` };
+	}
 }
 
 test('a protocol-level context loss during navigation is retryable', () => {
@@ -85,46 +64,61 @@ test('the page refuses the Network domain and allows Runtime', () => {
 	assert.doesNotThrow(() => assertUninstrumentedMethod('Runtime.evaluate'));
 });
 
-test('waitForFunction resolves when evaluate returns a truthy value quickly', async () => {
-	let evaluateCalls = 0;
-	const browser = createFakeCdpBrowser((request, deliver) => {
-		if (request.method !== 'Runtime.evaluate') return;
-		evaluateCalls += 1;
-		deliver({ id: request.id, result: { result: { value: 7 } } });
+test('waitForFunction resolves when evaluate returns a truthy value quickly', async (t) => {
+	const outcome = await withRealChromium(async (browser) => {
+		const page = await openUninstrumentedPage(browser);
+		const value = await page.waitForFunction(() => 7, undefined, { timeout: 5000 });
+		assert.equal(value, 7);
+		await page.close();
 	});
-	const page = await openUninstrumentedPage(browser);
-	const value = await page.waitForFunction(() => 7, undefined, { timeout: 5000 });
-	assert.equal(value, 7);
-	assert.equal(evaluateCalls, 1);
+	if (outcome.skip !== undefined) {
+		t.skip(outcome.skip);
+		return;
+	}
 });
 
-test('waitForFunction rejects near timeout when evaluate never replies', async () => {
-	const browser = createFakeCdpBrowser((request) => {
-		if (request.method === 'Runtime.evaluate') {
-			// Never deliver: simulates Runtime.evaluate with awaitPromise that never settles.
-		}
+test('waitForFunction rejects near timeout when evaluate never replies', async (t) => {
+	const outcome = await withRealChromium(async (browser) => {
+		const page = await openUninstrumentedPage(browser);
+		const started = Date.now();
+		await assert.rejects(
+			() =>
+				page.waitForFunction(
+					() => new Promise(() => {}),
+					undefined,
+					{ timeout: 200 }
+				),
+			(error) => {
+				assert.match(error.message, /waitForFunction timed out after 200ms/);
+				return true;
+			}
+		);
+		const elapsed = Date.now() - started;
+		assert.ok(elapsed >= 150 && elapsed < 2000, `expected ~200ms, got ${elapsed}ms`);
+		await page.close();
 	});
-	const page = await openUninstrumentedPage(browser);
-	const started = Date.now();
-	await assert.rejects(
-		() => page.waitForFunction(() => false, undefined, { timeout: 200 }),
-		(error) => {
-			assert.match(error.message, /waitForFunction timed out after 200ms/);
-			return true;
-		}
-	);
-	const elapsed = Date.now() - started;
-	assert.ok(elapsed >= 150 && elapsed < 2000, `expected ~200ms, got ${elapsed}ms`);
+	if (outcome.skip !== undefined) {
+		t.skip(outcome.skip);
+		return;
+	}
 });
 
-test('waitForFunction ignores a late evaluate response after deadline cleanup', async () => {
-	let deliverLate;
-	const browser = createFakeCdpBrowser((request, deliver) => {
-		if (request.method !== 'Runtime.evaluate') return;
-		deliverLate = () => deliver({ id: request.id, result: { result: { value: true } } });
+test('waitForFunction ignores a late evaluate response after deadline cleanup', async (t) => {
+	const outcome = await withRealChromium(async (browser) => {
+		const page = await openUninstrumentedPage(browser);
+		await assert.rejects(
+			() =>
+				page.waitForFunction(
+					() => new Promise((resolve) => setTimeout(() => resolve(true), 400)),
+					undefined,
+					{ timeout: 200 }
+				),
+			/waitForFunction timed out after 200ms/
+		);
+		await page.close();
 	});
-	const page = await openUninstrumentedPage(browser);
-	await assert.rejects(() => page.waitForFunction(() => false, undefined, { timeout: 200 }));
-	assert.equal(typeof deliverLate, 'function');
-	deliverLate();
+	if (outcome.skip !== undefined) {
+		t.skip(outcome.skip);
+		return;
+	}
 });

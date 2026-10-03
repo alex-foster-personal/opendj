@@ -28,6 +28,7 @@ import platform
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,52 @@ _MIN_SAMPLE_S = 60
 _PROBE_INTERVAL_S = 10
 _BROWSER_EXIT_TIMEOUT_S = 30
 _BROWSER_SERVICE_ID = "com.af.music-dj-tools.mode-ratio-browser"
+_PS_BIN = "/bin/ps"
+
+
+@dataclass(frozen=True)
+class _PsRow:
+    pid: int
+    ppid: int
+    rss_kb: int
+    cpu_percent: float
+
+
+def _parse_ps_table(output: str) -> list[_PsRow]:
+    """Parse `ps -Ao pid=,ppid=,rss=,%cpu=`; a malformed line raises, never drops."""
+    rows: list[_PsRow] = []
+    for line in output.split("\n"):
+        text = line.strip()
+        if not text:
+            continue
+        fields = text.split()
+        if len(fields) != 4:
+            raise RuntimeError(f"ps returned an unparseable row: {text!r}")
+        try:
+            pid = int(fields[0])
+            ppid = int(fields[1])
+            rss_kb = int(fields[2])
+            cpu_percent = float(fields[3])
+        except ValueError as exc:
+            raise RuntimeError(f"ps returned an unparseable row: {text!r}") from exc
+        rows.append(_PsRow(pid, ppid, rss_kb, cpu_percent))
+    if not rows:
+        raise RuntimeError("ps returned no rows")
+    return rows
+
+
+def _read_ps_by_pid() -> dict[int, _PsRow]:
+    """One `%cpu` table from `/bin/ps`, keyed by pid (PERFMODE-14 `readPsTable`)."""
+    try:
+        completed = subprocess.run(
+            [_PS_BIN, "-Ao", "pid=,ppid=,rss=,%cpu="],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"failed to run {_PS_BIN} for %cpu sampling: {exc}") from exc
+    return {row.pid: row for row in _parse_ps_table(completed.stdout)}
 
 
 def _require_macos() -> None:
@@ -92,12 +139,10 @@ class _ProcessTreeSampler:
     AudioContexts, decoded PCM and waveform work this KPI is about actually
     live.
 
-    `psutil.Process.cpu_percent(interval=None)` reports the delta since the
-    PREVIOUS call on that SAME Process object and returns 0.0 on a
-    process's first call, so this class keeps one persistent
-    `psutil.Process` per pid across samples rather than constructing a
-    fresh one each time; a process that appears mid-capture (a new Chromium
-    renderer) reads 0.0 CPU for its own first sample only, never after.
+    CPU is the sum of each family member's `%cpu` from `/bin/ps -Ao
+    pid=,ppid=,rss=,%cpu=`, the same instantaneous column PERFMODE-14's
+    `sampleProcessFamilyFootprint` reads via `readPsTable()` (not psutil's
+    delta `cpu_percent`, which would disagree with scorer=perfmode14 rows).
 
     Footprint is read via `DarwinProcessMetrics.read(pid).phys_footprint`,
     the same `proc_pid_rusage` counter Activity Monitor shows and the
@@ -155,11 +200,20 @@ class _ProcessTreeSampler:
         family = [self._engine_root, *self._engine_root.children(recursive=True)]
         return _track(self._engine_tracked, family)
 
-    def _read(self, proc: psutil.Process) -> tuple[float, float]:
-        footprint_mb = self._native.read(proc.pid).phys_footprint / (1024 * 1024)
-        return footprint_mb, proc.cpu_percent(interval=None)
+    def _read_footprint_mb(self, proc: psutil.Process) -> float:
+        return self._native.read(proc.pid).phys_footprint / (1024 * 1024)
 
-    def _sum_live(self, procs: list[psutil.Process]) -> tuple[float, float, int]:
+    def _cpu_percent(self, proc: psutil.Process, by_pid: dict[int, _PsRow]) -> float:
+        row = by_pid.get(proc.pid)
+        if row is not None:
+            return row.cpu_percent
+        if proc.is_running():
+            raise RuntimeError(f"pid {proc.pid} exited mid-sample")
+        raise psutil.NoSuchProcess(proc.pid)
+
+    def _sum_live(
+        self, procs: list[psutil.Process], by_pid: dict[int, _PsRow]
+    ) -> tuple[float, float, int]:
         """Footprint and CPU of every process in `procs`; only one that has exited is skipped.
 
         A live process that cannot be read raises (Sol P1/BLOCKING, PR #4888):
@@ -172,7 +226,8 @@ class _ProcessTreeSampler:
         live = 0
         for proc in procs:
             try:
-                proc_footprint, proc_cpu = self._read(proc)
+                proc_footprint = self._read_footprint_mb(proc)
+                proc_cpu = self._cpu_percent(proc, by_pid)
             except (psutil.NoSuchProcess, ProcessLookupError) as exc:
                 if proc.is_running():
                     raise RuntimeError(
@@ -185,6 +240,7 @@ class _ProcessTreeSampler:
         return footprint_mb, cpu_percent, live
 
     def sample(self) -> dict[str, float]:
+        by_pid = _read_ps_by_pid()
         # `root` is the Node `mode_ratio_browser.mjs` launcher that SPAWNS
         # Chromium via Playwright, not a member of the Chromium family. Its
         # own fixed footprint and CPU would dilute both savings ratios with a
@@ -195,7 +251,7 @@ class _ProcessTreeSampler:
         overlap = {proc.pid for proc in browser} & {proc.pid for proc in engine}
         if overlap:
             raise RuntimeError(f"pids counted in both the browser and engine family: {sorted(overlap)}")
-        browser_footprint, browser_cpu, live = self._sum_live(browser)
+        browser_footprint, browser_cpu, live = self._sum_live(browser, by_pid)
         if live == 0:
             raise RuntimeError(
                 f"mode_ratio_browser process tree rooted at {self._root_pid} "
@@ -204,8 +260,9 @@ class _ProcessTreeSampler:
         engine_footprint = engine_cpu = 0.0
         if engine:
             # The root must read: a family whose root is unreadable is unmeasured, not small.
-            engine_footprint, engine_cpu = self._read(engine[0])
-            rest_footprint, rest_cpu, _ = self._sum_live(engine[1:])
+            engine_footprint = self._read_footprint_mb(engine[0])
+            engine_cpu = self._cpu_percent(engine[0], by_pid)
+            rest_footprint, rest_cpu, _ = self._sum_live(engine[1:], by_pid)
             engine_footprint += rest_footprint
             engine_cpu += rest_cpu
         return {
@@ -229,7 +286,7 @@ def _pinned_engine_root(pid: int | None) -> psutil.Process | None:
 
 
 def _track(cache: dict[int, psutil.Process], tree: list[psutil.Process]) -> list[psutil.Process]:
-    """Keep one psutil.Process per live pid so cpu_percent reads a delta, not 0.0."""
+    """Keep one psutil.Process per live pid for stable tree walks across samples."""
     seen_pids = {proc.pid for proc in tree}
     for pid in list(cache):
         if pid not in seen_pids:
@@ -237,10 +294,6 @@ def _track(cache: dict[int, psutil.Process], tree: list[psutil.Process]) -> list
     for proc in tree:
         if proc.pid not in cache:
             cache[proc.pid] = proc
-            try:
-                proc.cpu_percent(interval=None)  # prime the delta baseline
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
     return [cache[proc.pid] for proc in tree]
 
 
@@ -257,14 +310,13 @@ _STEADY_MEANS = (
 def _sample_steady(root_pid: int, duration_s: int, engine_root_pid: int | None) -> dict[str, float]:
     """Median of every `_PROBE_INTERVAL_S` sample over `duration_s` (PERFMODE-14 scorer).
 
-    Footprint uses phys_footprint; CPU is psutil's per-process delta summed over
-    the process family. The engine fields appear only when an engine root is given.
+    Footprint uses phys_footprint; CPU is `/bin/ps` `%cpu` summed over the
+    process family (PERFMODE-14). The engine fields appear only when an engine root is given.
     """
     min_duration = max(_MIN_SAMPLE_S, _MIN_SCORED_SAMPLES * _PROBE_INTERVAL_S)
     if duration_s < min_duration:
         raise ValueError(f"duration must be at least {min_duration}s, got {duration_s}")
     sampler = _ProcessTreeSampler(root_pid, engine_root_pid=engine_root_pid)
-    sampler.sample()  # discard the primed-CPU first reading
     samples: list[dict[str, float]] = []
     deadline = time.monotonic() + duration_s
     while time.monotonic() < deadline:
@@ -323,7 +375,6 @@ def _sample_leak(proc: subprocess.Popen[str], duration_s: int) -> LeakSeries:
             f"'1 h unattended' window), got {duration_s}s"
         )
     sampler = _ProcessTreeSampler(proc.pid)
-    sampler.sample()  # discard the primed-CPU first reading
     series = LeakSeries(duration_s=float(duration_s))
     start = time.monotonic()
     next_due = 0.0

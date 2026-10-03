@@ -21,6 +21,8 @@
  */
 
 const POLL_MS = 100;
+/** Default finite deadline for one `Runtime.evaluate` / protocol round-trip (matches waitForFunction). */
+const DEFAULT_PROTOCOL_MS = 30_000;
 
 /** Internal sentinel: an in-flight `Runtime.evaluate` lost the race to `waitForFunction`'s deadline. */
 const _EVALUATION_DEADLINE = 'uninstrumented-page evaluation deadline';
@@ -190,8 +192,12 @@ export async function openUninstrumentedPage(browser) {
 		}
 	}
 
-	async function evaluate(fn, arg) {
-		const { result, exceptionDetails } = await send('Runtime.evaluate', _runtimeEvaluateParams(fn, arg));
+	async function evaluate(fn, arg, remainingMs = DEFAULT_PROTOCOL_MS) {
+		const { result, exceptionDetails } = await sendWithDeadline(
+			'Runtime.evaluate',
+			_runtimeEvaluateParams(fn, arg),
+			remainingMs
+		);
 		if (exceptionDetails !== undefined) throw new Error(_exceptionText(exceptionDetails));
 		return result.value;
 	}
@@ -240,7 +246,7 @@ export async function openUninstrumentedPage(browser) {
 		waitForTimeout: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 		/** Navigates and waits for the document to finish parsing (`domcontentloaded`). */
 		async goto(url) {
-			const { errorText } = await send('Page.navigate', { url });
+			const { errorText } = await sendWithDeadline('Page.navigate', { url }, 60_000);
 			if (errorText !== undefined) throw new Error(`navigation to ${url} failed: ${errorText}`);
 			const target = new URL(url);
 			await waitForFunction(
