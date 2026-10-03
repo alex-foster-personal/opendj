@@ -124,9 +124,11 @@ def _shipped_sha(app: Path) -> str | None:
     return sha
 
 
-def _reference_app(sync_ref: str, app: Path, preview_app: Path) -> Path:
-    """The installed build this loop previews: the plain app on main, the Preview app otherwise."""
-    return app if sync_ref == MAIN_REF else preview_app
+def _reference_app(sync_ref: str, app: Path, preview_app: Path) -> tuple[Path, list[str]]:
+    """(the installed build this loop previews, log parts naming it): plain app on main, else Preview."""
+    if sync_ref == MAIN_REF:
+        return app, []
+    return preview_app, [f"follows {sync_ref}, judged against {preview_app.name}"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -159,13 +161,11 @@ def main(argv: list[str] | None = None) -> int:
         subprocess.run(["git", "fetch", "-q", "origin", "main"], check=True)
     main_sha = _git("rev-parse", "origin/main")
 
-    parts = [f"HEAD {head[:8]} ({branch})"]
+    reference_app, channel_parts = _reference_app(args.sync_ref, args.app, args.preview_app)
+    parts = [f"HEAD {head[:8]} ({branch})", *channel_parts]
     verdict = "OK"
     code = 0
 
-    reference_app = _reference_app(args.sync_ref, args.app, args.preview_app)
-    if args.sync_ref != MAIN_REF:
-        parts.append(f"follows {args.sync_ref}, judged against {reference_app.name}")
     shipped = _shipped_sha(reference_app)
     if shipped is None:
         parts.append("shipped n/a (no app installed)")
