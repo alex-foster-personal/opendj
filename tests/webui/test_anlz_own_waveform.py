@@ -114,6 +114,7 @@ def test_unset_toggle_leaves_rekordbox_waveform_byte_identical(state_db: Path) -
 
 
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_own_ok_record_serves_tri_from_the_store(
     tmp_path: Path, state_db: Path
 ) -> None:
@@ -141,6 +142,7 @@ def test_own_ok_record_serves_tri_from_the_store(
 
 
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_own_failed_record_serves_not_decoded_without_synthesized_peaks(
     tmp_path: Path, state_db: Path
 ) -> None:
@@ -174,6 +176,7 @@ def test_own_without_a_row_stays_missing(state_db: Path) -> None:
 
 
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_pssi_phrases_survive_own_ok_record_from_the_producer(
     tmp_path: Path, state_db: Path
 ) -> None:
