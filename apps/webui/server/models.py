@@ -127,6 +127,14 @@ class QualityRungOut(BaseModel):
     blurb: str
 
 
+class GenreGuessOut(BaseModel):
+    """GENRE-02: a JEV genre-family GUESS, served only while ``genre`` is empty; never a tag."""
+
+    family: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    source: Literal["jev"]
+
+
 class LyricsRowSummaryOut(BaseModel):
     """Per-row karaoke verdict summary for library listings."""
 
@@ -206,6 +214,7 @@ class TrackListItemOut(TrackOut):
     # the cell is empty (missing tags extra vs no file tag vs no rekordbox genre).
     genre: str | None = None
     genre_reason: str | None = None
+    genre_guess: GenreGuessOut | None = None
 
 
 class LyricLineOut(BaseModel):
@@ -307,6 +316,7 @@ class TrackRowOut(BaseModel):
     duration_ms: int | None
     genre: str | None
     genre_reason: str | None = None
+    genre_guess: GenreGuessOut | None = None
     comments: str | None
     etag: str
     preview_b64: str | None
