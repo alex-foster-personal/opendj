@@ -20,6 +20,7 @@ than imported by value, because they are rebindable overrides -- see
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import sqlite3
@@ -493,20 +494,31 @@ def _error_code(exc: HTTPException) -> str | None:
     return exc.detail.get("code") if isinstance(exc.detail, dict) else None
 
 
-def _local_only_fallback(stable_id: str, reason: str | None) -> track_locations.PickedAudio:
-    """CLOUDSYNC-33: a local-only machine with no copy in its own locations.
+def _local_only_pick(
+    state: sqlite3.Connection,
+    stable_id: str,
+    share_policy: track_locations.PickPolicy | None,
+    reason: str | None,
+) -> track_locations.PickedAudio:
+    """CLOUDSYNC-33: what a local-only machine plays when believed state has no copy.
 
-    The listing counts rekordbox's FolderPath as this track's file, so
-    playback does too; only when that is gone as well does the deck say,
-    plainly, that the file is not here.
+    Believed state reads only the first local location row, so a working
+    alternate or rekordbox's own FolderPath (which the listing counts as this
+    track's file) can still be on disk. The picker ranks all of them under the
+    same policy the share cap uses. When none is here the deck says so plainly.
     """
     rekordbox_copy = _rekordbox_copy(stable_id)
-    if rekordbox_copy is not None:
-        return _picked_from_path(rekordbox_copy, source="rekordbox-folder-path")
-    raise not_found(
-        "AUDIO_NOT_ON_THIS_MACHINE",
-        reason or hydration.NOT_ON_THIS_MACHINE,
+    pick = track_locations.pick_playable(
+        state,
+        stable_id,
+        policy=share_policy,
+        folder_path=str(rekordbox_copy) if rekordbox_copy is not None else None,
     )
+    if pick is None:
+        raise not_found("AUDIO_NOT_ON_THIS_MACHINE", reason or hydration.NOT_ON_THIS_MACHINE)
+    if pick.source == "folder_path":
+        return dataclasses.replace(pick, source="rekordbox-folder-path")
+    return pick
 
 
 def resolve_playable_audio(
@@ -563,6 +575,11 @@ def resolve_playable_audio(
             if share_policy is not None and source.origin == "local"
             else None
         )
+        local_only = (
+            _local_only_pick(state, stable_id, share_policy, source.reason)
+            if source.origin == "unavailable" and source.policy_source == "unconfigured"
+            else None
+        )
     finally:
         state.close()
 
@@ -587,8 +604,8 @@ def resolve_playable_audio(
         )
 
     if source.origin == "unavailable":
-        if source.policy_source == "unconfigured":
-            return _local_only_fallback(stable_id, source.reason)
+        if local_only is not None:
+            return local_only
         raise not_found(
             "CLOUD_ASSET_UNAVAILABLE",
             source.reason

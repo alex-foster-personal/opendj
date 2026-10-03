@@ -335,3 +335,30 @@ def test_rekordbox_lookup_failure_is_not_reported_as_absence(
         rb_paths._rekordbox_copy(UNAVAILABLE_SID)
     assert excinfo.value.status_code == 500
     assert excinfo.value.detail["code"] == "STATE_DB_UNAVAILABLE"
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_plays_a_working_alternate_location(
+    unconfigured_client: TestClient,
+) -> None:
+    """[if] a local-only machine's primary location is gone but another
+    location row for the track is on disk [then] the deck plays that copy,
+    chosen by the same picker the share cap uses, [else stop]."""
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        machine_id = sync_stamp.ensure_local_machine(state)
+        state.execute(
+            "INSERT INTO track_locations(stable_id, machine_id, kind, role, file_path, "
+            "available, created_at, updated_at) "
+            "VALUES (?, ?, 'local', 'alternate', ?, 1, '2026-01-02', '2026-01-02')",
+            (UNAVAILABLE_SID, machine_id, str(REAL_AUDIO)),
+        )
+        state.commit()
+    finally:
+        state.close()
+
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
+    assert played.headers.get("x-audio-source", "").startswith("location:")
