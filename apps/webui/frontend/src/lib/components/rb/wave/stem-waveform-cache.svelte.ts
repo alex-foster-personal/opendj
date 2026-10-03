@@ -3,7 +3,7 @@
  *
  * Fetches server-produced mono peaks only - never stem PCM or decodeAudioData.
  */
-import { fetchRbJson, RbApiError } from '$lib/rb/api-rb';
+import { fetchRbJson, RbApiError } from '$lib/rb/api-rb-json';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import { refuseStickRead } from '$lib/rb/track-source';
 import {

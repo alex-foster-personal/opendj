@@ -6,6 +6,8 @@ ships ``apps/shared/_mutagen.py`` and the ``[tags]`` extra
 this branch do not import it. A mutagen line in the locked payload export
 still fails the build.
 
+[if] a shipped reader or the payload depends on GPL mutagen [then] fail, [else stop].
+
 Regression one-liners:
   - if any module under apps/ or scripts/ other than the opt-in gate imports mutagen then broken
   - if mutagen is declared anywhere except the ``[tags]`` extra then broken

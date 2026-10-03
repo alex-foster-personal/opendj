@@ -32,6 +32,7 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
+	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		coverageDot as _coverageDot,
@@ -538,25 +539,9 @@
 			cachedAnlzEntry: (stable_id: string) => getAnlzEntry(stable_id)
 		})
 	);
-	/** Reactively copies a decoded local waveform strip into the selected
-	 * row(s), across every pane and every row loaded there. Reads the shared
-	 * anlz cache (same pattern as `vocalsById` above) instead of fetching
-	 * directly, so a decode that only resolves after `ensureAnlz`'s ambient
-	 * retry (issue #735 follow-up) still reaches the row. The old one-shot
-	 * fetch-and-adopt stopped watching the moment its OWN fetch settled
-	 * retryable, so a track needing a second or third retry never got its
-	 * strip until the row was reselected or the page reloaded (Codex
-	 * finding, issue #735 follow-up, discussion_r3908286630). Applies to
-	 * EVERY row matching a selected stable_id in EVERY pane, not just the
-	 * pane whose own selection triggered the decode: the same track can be
-	 * loaded as a row in more than one pane, and a copy that isn't the
-	 * active selection still shares the one cache entry
-	 * (discussion_r3908503574, discussion_r3909752654). Watches each pane's
-	 * full `selected_ids` multi-selection, not just its singular
-	 * `selected_id` (the last-clicked anchor): a Cmd/Ctrl-click adds to
-	 * `selected_ids` without moving `selected_id` off the new anchor, so an
-	 * earlier multi-selected row's still-pending decode needs its own id
-	 * watched too (discussion_r3910053530). */
+	/** Copies a decoded local waveform strip onto every selected row in every
+	 * pane from the shared anlz cache, including a later ambient retry
+	 * (issue #735). Watches `selected_ids`, not only `selected_id`. */
 	$effect(() => {
 		const selectedIds = new Set<string>();
 		for (const p of panes) {
@@ -2924,31 +2909,17 @@
 	}
 
 	function _moveMidiSelection(delta: number): void {
-		// A context menu has its own arrow/Enter model. MIDI remains the usual
-		// owner regardless of prior mouse or keyboard focus, but never steals
-		// navigation while that menu is open (IOPIN-01).
-		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
-		if (visibleRows.length === 0 || delta === 0) return;
+		const row = nextMidiSelection(visibleRows, panes[activePane].selected_id, delta);
+		if (row === null) return;
 		browserKeys.tracksMoved();
-		const selected = panes[activePane].selected_id;
-		const current = selected === null
-			? -1
-			: visibleRows.findIndex((row) => row.stable_id === selected);
-		const next = current === -1
-			? (delta > 0 ? 0 : visibleRows.length - 1)
-			: Math.max(0, Math.min(visibleRows.length - 1, current + delta));
-		const row = visibleRows[next];
 		selectRow(row);
 		browseScrollRevision += 1;
 		browseScroll = { order: row.order, direction: delta > 0 ? 1 : -1, revision: browseScrollRevision };
 	}
 
 	function _loadMidiSelection(deck: DeckId): void {
-		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
-		const selected = panes[activePane].selected_id;
-		const row = selected === null
-			? null
-			: visibleRows.find((candidate) => candidate.stable_id === selected) ?? null;
+		const row = midiLoadRow(visibleRows, panes[activePane].selected_id);
+		if (row === undefined) return;
 		if (row === null) {
 			pushToast(`Deck ${deck}: select a track before pressing LOAD`, 'error');
 			return;

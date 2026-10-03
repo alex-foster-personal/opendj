@@ -178,16 +178,15 @@ import {
 	hasTrustedBeatGrid
 } from '$lib/player/grid-features';
 import {
-	beatFourLeadInSec,
 	beatSyncMaxFollowers,
 	planSeekSync,
 	seekSyncMaster,
 	syncChangeRequiresReschedule,
 	syncMayWriteTempo,
 	syncModeForBeatSyncMax,
-	syncSeekBlendDurationSec,
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
+import { scheduleFollowerBackwardBlend } from '$lib/rb/follower-backward-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	StretchDeckProcessor,
@@ -212,7 +211,7 @@ import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
-import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/rb/context-time-wait';
+import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/player/transport/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState, StemFetchProgress, StemLoadPhase } from '$lib/rb/stem-types';
 import {
@@ -2168,7 +2167,7 @@ function _scheduleSyncDeck(
 	);
 }
 
-async function _scheduleFollowerBackwardBlend(
+function _scheduleFollowerBackwardBlend(
 	deck: DeckId,
 	syncAt: number,
 	landingSec: number,
@@ -2182,94 +2181,16 @@ async function _scheduleFollowerBackwardBlend(
 		throw new Error(`sync seek blend: engine session changed before deck ${deck} scheduled`);
 	}
 	const { st, rt } = _requireLoaded(deck, 'sync seek blend');
-	const ctx = _ctx;
-	const buffer = rt.audioBuffer;
-	const nodes = rt.nodes;
-	const processor = rt.processor;
-	if (
-		ctx === null ||
-		buffer === null ||
-		nodes === null ||
-		processor === null ||
-		processor instanceof AlignedStemDeckProcessor || masterTempoEnabled ||
-		landingSec >= currentSec - 0.08
-	) {
-		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
-	}
-
-	const beats = st.anlz?.beatgrid.beats ?? null;
-	const beat4 =
-		beats !== null && beats.length >= 2 ? beatFourLeadInSec(beats, landingSec) : null;
-	const incomingSec =
-		beat4 !== null && beat4 < landingSec - 0.05 && landingSec - beat4 <= 2.2
-			? beat4
-			: landingSec;
-	const blendDur = syncSeekBlendDurationSec(incomingSec, landingSec, tempoRatio);
-	const t0 = Math.max(ctx.currentTime + 0.02, syncAt - blendDur);
-	const tEnd = t0 + blendDur;
-
-	processor.disconnect();
-	const mainGain = ctx.createGain();
-	const outGain = ctx.createGain();
-	processor.connect(mainGain);
-	mainGain.connect(nodes.analyser);
-	outGain.connect(nodes.analyser);
-
-	const outSrc = ctx.createBufferSource();
-	outSrc.buffer = buffer;
-	outSrc.playbackRate.value = tempoRatio;
-	outSrc.connect(outGain);
-
-	mainGain.gain.setValueAtTime(0.0001, t0);
-	mainGain.gain.linearRampToValueAtTime(1, tEnd);
-	outGain.gain.setValueAtTime(1, t0);
-	outGain.gain.linearRampToValueAtTime(0.0001, tEnd);
-
-	const startOffset = Math.min(Math.max(0, currentSec), Math.max(0, buffer.duration - 0.01));
-	try {
-		outSrc.start(t0, startOffset);
-	} catch {
-		try {
-			mainGain.disconnect();
-			outGain.disconnect();
-		} catch {
-			/* ignore */
-		}
-		try {
-			processor.connect(nodes.analyser);
-		} catch {
-			/* ignore */
-		}
-		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
-	}
-
-	const scheduled = await _scheduleSyncDeck(deck, t0, incomingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
-
-	const token = rt.loadToken;
-	const delayMs = Math.max(0, (tEnd - ctx.currentTime) * 1000) + 50;
-	window.setTimeout(() => {
-		try {
-			outSrc.stop();
-		} catch {
-			/* already ended */
-		}
-		try {
-			outSrc.disconnect();
-			outGain.disconnect();
-			mainGain.disconnect();
-		} catch {
-			/* ignore */
-		}
-		if (rt.loadToken !== token || rt.processor !== processor || rt.nodes === null) return;
-		try {
-			processor.disconnect();
-			processor.connect(rt.nodes.analyser);
-		} catch {
-			/* ignore */
-		}
-	}, delayMs);
-
-	return scheduled;
+	return scheduleFollowerBackwardBlend(
+		{
+			context: _ctx,
+			state: st,
+			runtime: rt,
+			scheduleSync: (when, inputSec) =>
+				_scheduleSyncDeck(deck, when, inputSec, tempoRatio, masterTempoEnabled, pressT0Ms)
+		},
+		{ syncAt, landingSec, tempoRatio, masterTempoEnabled, currentSec }
+	);
 }
 
 /**

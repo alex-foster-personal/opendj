@@ -30,7 +30,7 @@
 import { untrack } from 'svelte';
 import { pruneSelection } from '$lib/components/rb/browser/pane-row-selection';
 import type { BrowserRow, PaneStore } from '$lib/components/rb/browser/pane-contract.svelte';
-import { fetchRbJson, RbApiError } from './api-rb';
+import { fetchRbJson, RbApiError } from './api-rb-json';
 import type { PlaylistNode } from './library-types';
 import { usbTracker, type UsbVolumeKnown } from './usb-tracker.svelte';
 import {
