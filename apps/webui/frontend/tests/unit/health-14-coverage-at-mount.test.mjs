@@ -81,7 +81,17 @@ test('with no listing in flight the wording is the earlier one', () => {
 
 test('overshoot control: load progress never replaces a verdict, an unknown or an error', () => {
 	const progress = { loaded: 3000, total: 8355 };
-	assert.equal(dots.libraryHealthDot(null, 10, 2, AVAILABILITY, null, progress).state, 'complete');
-	assert.equal(dots.libraryHealthDot('engine down', 10, 2, null, null, progress).state, 'error');
-	assert.equal(dots.libraryHealthDot(null, 10, 2, null, 'summary timed out', progress).state, 'unavailable');
+	const settled = dots.libraryHealthDot(null, 10, 2, AVAILABILITY, null, progress);
+	assert.equal(settled.state, 'complete');
+	assert.doesNotMatch(settled.detail, /loading 3000/);
+	// HEALTH-01: a failed library read is grey unknown, never a red verdict,
+	// and the in-flight listing must not replace that wording.
+	const failed = dots.libraryHealthDot('engine down', 10, 2, null, null, progress);
+	assert.equal(failed.state, 'unavailable');
+	assert.match(failed.detail, /engine down/);
+	assert.doesNotMatch(failed.detail, /loading 3000/);
+	const unknown = dots.libraryHealthDot(null, 10, 2, null, 'summary timed out', progress);
+	assert.equal(unknown.state, 'unavailable');
+	assert.match(unknown.detail, /summary timed out/);
+	assert.doesNotMatch(unknown.detail, /loading 3000/);
 });
