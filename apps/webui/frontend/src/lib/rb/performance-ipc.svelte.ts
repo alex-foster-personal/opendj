@@ -1602,37 +1602,40 @@ function _quantizedLaunchArmedSnapshot(
 }
 
 function _openPairingSnapshot(): PairingSnapshot {
-	const unit: 'beats' | 'time' = uiPrefs.beat_sync_max ? 'beats' : 'time';
-	const decks = DECK_IDS.flatMap((deckId) => {
+	const loaded = DECK_IDS.flatMap((deckId) => {
 		const deck = getDeckState(deckId);
 		if (deck.stable_id === null) return [];
-		const channel = mixerState.channels[deckId];
 		const positionBeat = [...(deck.anlz?.beatgrid.beats ?? [])]
 			.reverse()
 			.find((beat) => beat.t * 1000 <= deck.position_ms);
-		let timestampValue = deck.position_ms;
-		if (unit === 'beats') {
-			if (positionBeat === undefined) {
-				throw new Error(`CH${deckId} has no beatgrid timestamp for pairing capture`);
-			}
-			timestampValue = positionBeat.n;
-		}
+		return [{ deckId, deck, positionBeat }];
+	});
+	// Beat timestamps only when EVERY loaded deck has a beat at or before its
+	// position. A deck with no beatgrid yet, or one parked before its first
+	// beat (a fresh load sits at 0 ms), used to throw here and leave the sheet
+	// unopenable; it now captures every deck in real time instead, and the
+	// snapshot says so (beat_sync_max false = time units), so nothing is faked.
+	const beats = uiPrefs.beat_sync_max && loaded.every((item) => item.positionBeat !== undefined);
+	const unit: 'beats' | 'time' = beats ? 'beats' : 'time';
+	const decks = loaded.map(({ deckId, deck, positionBeat }) => {
+		const channel = mixerState.channels[deckId];
+		const timestampValue = beats && positionBeat !== undefined ? positionBeat.n : deck.position_ms;
 		const adjustments: Array<{ band: EqBand; value: number }> = [
 			{ band: 'low', value: channel.eq_low },
 			{ band: 'mid', value: channel.eq_mid },
 			{ band: 'high', value: channel.eq_high }
 		];
 		const eq_adjusts = adjustments.filter((adjust) => adjust.value !== 0.5);
-		return [{
+		return {
 			deck_id: deckId,
-			stable_id: deck.stable_id,
-			title: deck.title ?? deck.stable_id,
+			stable_id: deck.stable_id as string,
+			title: deck.title ?? (deck.stable_id as string),
 			position_ms: deck.position_ms,
 			timestamp: { unit, value: timestampValue },
 			eq_adjusts
-		}];
+		};
 	});
-	return { version: 1, beat_sync_max: uiPrefs.beat_sync_max, decks };
+	return { version: 1, beat_sync_max: beats, decks };
 }
 
 function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {

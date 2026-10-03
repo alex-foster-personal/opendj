@@ -81,7 +81,10 @@ from functools import cache
 
 from apps.analysis.queue_stale import STALE_TABLES_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
-from apps.shared.pairings.schema_sql import migrate_smartlists_deleted_at
+from apps.shared.pairings.schema_sql import (
+    migrate_pairings_snapshot_json,
+    migrate_smartlists_deleted_at,
+)
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -763,6 +766,7 @@ _CURATION: tuple[str, ...] = (
                                    (confidence BETWEEN 0 AND 1)),
         created_at     TEXT NOT NULL,
         modified_at    TEXT NOT NULL,
+        snapshot_json  TEXT,
         PRIMARY KEY (from_stable_id, to_stable_id, direction)
     )
     """,
@@ -1828,6 +1832,12 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     """
     conn.execute(f"PRAGMA busy_timeout = {int(BUSY_TIMEOUT_MS)}")
     _ensure_meta(conn)
+    # Before the version gate, not after it: a database already stamped at
+    # SCHEMA_VERSION never reaches the ladder below, so a column added to a
+    # foreign-authority table without a rung would otherwise never land there.
+    # Idempotent (one PRAGMA when the column is present), so it is safe on
+    # every open.
+    migrate_pairings_snapshot_json(conn)
     current = consolidated_version(conn)
     if current >= SCHEMA_VERSION:
         return current
