@@ -59,7 +59,10 @@ def test_title_bar_shows_engine_dead() -> None:
 def test_restart_logs_exit_code_with_utc_timestamp() -> None:
     """[if] restart omits the audit line [then] silver incident is unprovable, [else stop]."""
     supervisor = SUPERVISOR_RS.read_text(encoding="utf-8")
-    assert "engine restarted after exit code" in supervisor
+    # The line is "<utc> engine restarted after {reason}", where the reason is
+    # "exit code N" for an exit (or names the health-check silence instead).
+    assert "engine restarted after {reason}" in supervisor
+    assert 'format!("exit code {}"' in supervisor
     assert "+00:00" in supervisor or "format_utc" in supervisor or "utc_timestamp" in supervisor
 
 
