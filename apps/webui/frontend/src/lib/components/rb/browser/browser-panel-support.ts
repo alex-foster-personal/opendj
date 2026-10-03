@@ -5,6 +5,8 @@ export { libraryEditShortcut } from './library-edit-shortcut';
 // The clipboard rules load on the first shortcut press, outside the
 // /performance static bundle (scripts/bundle-budget.mjs).
 export const loadTrackClipboard = () => import('./track-clipboard');
+// The delete/drop confirm dialog loads on first use, for the same reason.
+export const loadBrowserConfirmDialog = () => import('./BrowserConfirmDialog.svelte');
 export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
@@ -64,7 +66,9 @@ export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
+export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';
 export { setTabLabel } from './playlist-set-tabs';
+export { PairingIndex } from '$lib/rb/pairing-index.svelte';
 // Through here, not imported directly, to keep BrowserPanel's import fan-out
 // (frontend.max_fan_out quality ratchet) at main's figure.
 export {

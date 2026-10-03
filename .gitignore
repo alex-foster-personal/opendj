@@ -1,0 +1,362 @@
+# Python
+__pycache__/
+*.pyc
+.mypy_cache/
+.venv/
+
+# pnpm content-addressable store (accidentally committed at repo root; never track)
+.pnpm-store/
+# corepack/pnpm local cache (accidentally committed in a sweep round; never track)
+.xdg-cache/
+.tmp/
+.env
+*.egg-info/
+
+# Python build artefacts (setuptools / build)
+/dist/
+/build/
+
+# Data artifacts (DBs, CSVs, XML exports can be huge / sensitive)
+data/*
+!data/.gitkeep
+
+# Working copies of live DBs
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.xml
+
+# Test fixtures MUST be committed (they're tiny, stripped-down, safe).
+!tests/fixtures/**/*.db
+!tests/fixtures/**/*.db-wal
+!tests/fixtures/**/*.db-shm
+!tests/fixtures/**/*.sqlite
+!tests/fixtures/**/*.sqlite-wal
+!tests/fixtures/**/*.sqlite-shm
+# But ignore the temp decrypted file the fixture builder leaves around.
+tests/fixtures/rekordbox/_tmp_plain.db
+# Defense-in-depth for the coming history rewrite (rekordbox.extern, PR #718):
+# once tests/fixtures/rekordbox/ is stripped from history, a locally
+# regenerated master.plain.db (scripts/make_rb_fixture.py --force) must not
+# be picked up by a routine `git add -A` and recommit real track titles,
+# Spotify IDs and filesystem paths. This override has NO effect on the
+# currently tracked copy (gitignore never hides an already-tracked path); it
+# only takes effect once that path stops being tracked.
+tests/fixtures/rekordbox/master.plain.db
+
+# Defense-in-depth: the real USB fixture must never include the 2.9 GB of
+# audio under Contents/. We never rsync it in, but guard against accidents.
+tests/fixtures/rb-usb-export/Contents/
+# Also guard against re-adding the credential token we strip during copy.
+tests/fixtures/rb-usb-export/PIONEER/extracted/
+# Defense-in-depth for the coming history rewrite (rb-usb-export.extern,
+# rb-usb-export-onetera-20260805.extern, PR #718): once these directories are
+# stripped from history, restoring either one to its old in-repo location
+# must not be picked up by a routine `git add -A` and recommit the real
+# PIONEER metadata and artwork they carry. Has NO effect on the currently
+# tracked copies (gitignore never hides an already-tracked path); only takes
+# effect once each path stops being tracked.
+tests/fixtures/rb-usb-export/
+tests/fixtures/rb-usb-export-onetera-20260805/
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Test + coverage artifacts (regenerated every run)
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+# coverage-matrix.md is a build artifact, fully derived from reqs.json x
+# @pytest.mark.requirement markers. It was committed once (19d91fed) before
+# this rule existed (80bb80a5); a tracked file ignores .gitignore, so the
+# rule sat inert and every partial pytest run left the tree dirty with
+# figures scoped to that run. Untracked now -- CI publishes the full-run
+# copy as the `coverage-matrix` artifact (.github/workflows/ci.yml).
+coverage-matrix.md
+
+# Phase 9 -- Spotify API cache + per-import artifacts (may contain user
+# playlist metadata). The OAuth token lives outside the repo at
+# ~/.music-dj-tools/ (not here) per convention. These patterns are
+# already caught by the blanket ``data/*`` rule above but we list them
+# explicitly for clarity.
+data/spotify/
+
+# Baked Desktop-app Google OAuth client. The payload builder writes this
+# next to google_oauth_client.py inside the staged payload only. Never
+# commit a copy that landed in the repo checkout by accident.
+apps/shared/bundled_google_oauth.json
+
+# --- Phase 14 -- voice commands ---
+apps/voice/models/*.bin
+apps/voice/models/*.onnx
+apps/voice/models/*.mlmodelc/
+apps/voice/models/*.ppn
+vendor/whisper.cpp/
+
+# --- Prototype C (CAT-06) -- Rekordbox computer-use agent traces ---
+# Every run writes screenshots + action JSON under this directory. Can
+# include screen contents with user library metadata; never commit.
+apps/sync/usb/pioneer/traces/
+# Voice daemon runtime logs (all gitignored under data/voice/.gitkeep).
+data/voice/*.log
+data/voice/*.jsonl
+data/voice/settings.sqlite*
+
+# --- Phase 10 -- USB sync ---
+# Local-only drive profiles (they contain user volume labels / UUIDs).
+usb-profiles/local/
+# Hash cache + reversal scripts + verify JSON dumps.
+data/usb/
+
+# Root npm install (@trunkio/launcher for `npm run lint` / `npm run fmt`).
+/node_modules/
+
+# Dependency trees the persistent CI runners keep between jobs, at ANY depth:
+# scripts/ci_clean_untracked.sh keeps every node_modules and target dir, ignored
+# or not. One the rules here miss stays on disk for every later job on that
+# runner, and every tool that honors .gitignore scans it. Tue 29 Sep 2026: a
+# branch that built apps/audio-engine left its cargo target/ behind, and jscpd
+# read its dep-info .d files as 13 duplicated-code clones, failing the quality
+# ratchet on every PR those runners took. Pinned by
+# tests/scripts/test_ci_workspace_reuse.py.
+node_modules/
+target/
+
+# --- Phase 11: SvelteKit frontend build artefacts ---
+apps/webui/frontend/node_modules/
+apps/webui/frontend/build/
+apps/webui/frontend/.svelte-kit/
+apps/webui/frontend/.vite/
+
+# Tauri build artifact - platform-specific, do not commit
+apps/launcher/src-tauri/Cargo.lock
+
+# --- Agent orchestration churn (never commit) ---
+# Mux / GSD sub-agent bookkeeping: CI-watcher snapshots, tmp scratch
+# files, heartbeat directives and lock files. Transient per-run state;
+# not useful in history and tends to collide across parallel agents.
+.planning/ci-watcher-*.txt
+.planning/ci-watcher-*.log
+.planning/.tmp-*
+.planning/.lock-*
+.planning/heartbeats/
+
+# ci-fixer lane (issue #1017): dedupe ledger + KPI event log are runtime
+# state written by the lane (fleet-af ci_fixer/ since Thu 1 Oct 2026, run against
+# this checkout), not source of truth for anything.
+.planning/ci-fixer/
+
+# --- Agent tool dirs (.claude / .codex / .agents / .cursor) ---
+# Skills, rules, shared settings, and project agent docs ARE tracked so
+# they sync across devices. Only per-machine / per-run runtime state is
+# ignored below. Do not add blanket ignores for these top-level dirs.
+.claude/worktrees/
+.claude/checkpoints/
+.claude/mailbox/
+.claude/routines/.state/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
+.claude/agent-registry.json
+.claude/agent-memory-local
+.claude/first-run
+.claude/assistant-daemon-state.json
+# Machine-local Claude output-style prefs (global gitignore also covers this).
+.claude/settings.local.json
+.codex/**/cache/
+.codex/**/*.log
+.cursor/**/cache/
+.cursor/**/*.log
+
+# Session scratch + local backups (added 2026-06-05)
+.tmp/
+/blog/
+maintainer/
+/refs/
+/Music/Recovered/
+
+# Vocal quality-ladder audio clips (regenerated by scripts/modal_vocal_ladder.py;
+# the ladder.json manifest IS committed, the .flac audio is not).
+scripts/bench/clips/
+# Same rule for the MUSDB18-HQ absolute ladder (scripts/modal_musdb_ladder.py):
+# ladder_musdb.json is committed, its ~555MB of clips are not.
+scripts/bench/clips-musdb/
+# Same rule for the four-stem ladder (scripts/bench/four_stem_clips.py): the
+# ladder_4stem*.json manifests are committed, their 54MB of m4a is not.
+scripts/bench/clips-4stem/
+# Same rule for the Mel-Band RoFormer spike (scripts/modal_roformer_spike.py):
+# roformer_ledger.json is committed, its vocals/instrumental FLAC output is
+# not -- durable copies live on the "roformer-spike" Modal Volume instead.
+scripts/bench/clips-roformer-spike/
+# Worktree-local orchestration state
+/wt/
+/zTasks.md
+/.cccron/
+docs/threads/.provenance-watermark.json
+docs/threads/.provenance-lock
+docs/threads/*.tmp
+
+# Quality-gate run artifacts. The baseline is committed; the reports are not.
+ops/quality/report.md
+ops/quality/metrics.json
+
+# /ship-dmg per-phase timing log (OPS-06): machine-local run history, not code.
+ops/logs/
+
+# Per-sha stable-channel evidence (OPS-18). Writers merge-append on the
+# runner; the files describe a sha that cannot contain them, so they stay
+# out of git. Keep ops/stable/.gitkeep tracked.
+ops/stable/*.json
+
+# Stretch-quality run artifacts. The report and results ARE committed (they are
+# the deliverable that gates the STRETCH_BLOCK_MS flip); the audio is not.
+# Renders alone are ~730MB per grid. Every PCM file's sha256 lives in
+# results.json, so the committed artifacts still pin exactly what was measured.
+ops/quality/stretch/work/
+
+# WebKit performance-suite fixture library: generated audio + a state.db built
+# by the real folder ingest at test setup (support/deckload_fixture.py). It is
+# reproducible in seconds and is never shared with any other data dir.
+apps/webui/frontend/tests/e2e/fixtures/deckload-data/
+# Same builder, its own data dir (the engine takes a singleton lock on one),
+# for the PERF-R6 boot-burst bench, plus the samples that bench writes.
+apps/webui/frontend/tests/e2e/fixtures/boot-burst-data/
+apps/webui/frontend/tests/e2e/fixtures/boot-burst*.json
+# stem-decode and waveform-render periodic benches (#1509)
+apps/webui/frontend/tests/e2e/fixtures/stem-decode-data/
+apps/webui/frontend/tests/e2e/fixtures/playlist-switch-latency-data/
+apps/webui/frontend/tests/e2e/fixtures/stem-decode-bench.json
+apps/webui/frontend/tests/e2e/fixtures/waveform-render.json
+# Same builder again, its own data dir, for the hot-cue mapping gate (#736):
+# both fixture tracks have no rekordbox mapping by construction.
+apps/webui/frontend/tests/e2e/fixtures/hotcue-mapping-gate-data/
+# Vocals demucs overlay e2e (#274): a clip of real vocal audio, its demucs
+# vocal-cache entry and a folder-ingested state.db, rebuilt per revision.
+apps/webui/frontend/tests/e2e/fixtures/vocals-demucs-data/
+# Two throwaway data dirs for the PREFLIGHT-01 boot gate suite (#771): one
+# healthy (real generated audio, real folder ingest), one a freshly
+# `state.cli init`-ed empty state.db (nothing imported yet).
+apps/webui/frontend/tests/e2e/fixtures/preflight-gate-healthy-data/
+apps/webui/frontend/tests/e2e/fixtures/preflight-gate-broken-data/
+apps/webui/frontend/tests/e2e/fixtures/cloudsync-ui-hub-data/
+apps/webui/frontend/tests/e2e/fixtures/cloudsync-ui-spoke-data/
+# Root Playwright suite: generated audio and state served by its real engine.
+apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/
+# Performance Playwright suite: generated audio, state and its manifest.
+apps/webui/frontend/tests/e2e/fixtures/performance-playwright-data/
+# Empty throwaway data dir for the comment-hotkey gate (r3918992947): the
+# feedback routes only ever write <data-dir>/feedback/*.json, no library.
+apps/webui/frontend/tests/e2e/fixtures/comment-hotkey-gate-data/
+# Throwaway library for the PLAY-08 stall-banner browser gate (#1640): the
+# preflight library-attached check keeps /performance on "Starting up"
+# without one, so the route that mounts the banner never renders.
+apps/webui/frontend/tests/e2e/fixtures/autoplay-stall-gate-data/
+# Throwaway 6-track library for the AutoPlay/mixing error hunt (#1853).
+apps/webui/frontend/tests/e2e/fixtures/autoplay-error-hunt-data/
+# Same builder again, its own data dir, for the karaoke lyrics suite (#2079,
+# #2082): one track seeded with a real karaoke_words artifact, one left with
+# no verdict row and a " (Remix)" title. Its manifest is rewritten on every
+# run and names content-hash stable ids, so it is generated output, never a
+# committed fixture.
+apps/webui/frontend/tests/e2e/fixtures/lyrics-words-data/
+apps/webui/frontend/tests/e2e/fixtures/lyrics-words-manifest.json
+apps/webui/frontend/test-results/
+apps/desktop/mcp/.smoke-data/
+# Runtime artifact `analysis_source_anlz_server.py` writes into its own data
+# dir when uv's platformdirs cache lands inside the tree; the file itself
+# carries no fixture data, just a generated id.
+apps/webui/frontend/tests/unit/fixtures/machine-id
+
+# Ableton Link spike dependencies, downloaded toolchains and build output.
+# Keep authored spike source and evidence visible; only these reproducible
+# machine-local trees are excluded.
+/spikes/aalink-js-link/node_modules/
+/spikes/carabiner-link/.tools/
+/spikes/carabiner-link/build/
+/spikes/carabiner-link/upstream/
+/spikes/rusty-link/.cargo-home/
+/spikes/rusty-link/.rustup-home/
+/spikes/rusty-link/.tool-venv/
+/spikes/rusty-link/target/
+
+# Editable setuptools-rust builds drop the waveform extension in the repo
+# root (see tests/webui/test_waveform_native.py); never commit the binary.
+/_rb_waveform_native*.so
+
+# --- odj-private sidecar (local acquisition runners; not product) ---
+# Checkout/symlink of the private repo next to this tree.
+/odj-private
+
+# Cloudflare Pages deploy scratch (wrangler)
+.wrangler/
+
+# autoreposync daemon runtime state (pidfile + per-machine log). The engine
+# moved to fleet-af (repos--autoreposync/, skill skills/autoreposync/) on
+# Thu 1 Oct 2026, but the music-dj-tools job still writes its runtime files here.
+ops/autoreposync/
+
+# --- personal agent toolkit must never enter this repo (going-public audit) ---
+# Personal agent homes and messaging/identity workflows remain private.
+# Ignore their handoff copies to prevent accidental reintroduction.
+.planning/bifrost2-handoff/
+**/sync-kit/
+.codex/skills/
+# NOT .claude/skills/ -- that is a tracked relative symlink to this repo's own
+# .agents/skills and is legitimate. Listing it would imply the project's skills
+# are a leak risk, and gitignore cannot affect a tracked path anyway.
+
+# --- vendor controller documentation is never redistributed (going-public) ---
+# Pioneer DJ / AlphaTheta / Reloop MIDI Message Lists are manufacturer
+# copyright. Keep local copies here freely; they must not be committed.
+# See docs/controller/reference/README.md.
+docs/controller/reference/*.pdf
+docs/controller/reference/*_MIDI_Message_List_*.txt
+
+# Same vendor-copyright rule applies to the source PDFs, text extractions,
+# and full-page renders the deck-diagram skill archives per device -- a
+# rasterized manual page is still the manual's content, same as the text
+# extraction. Only the derived midi.json/footnotes.md/layout.json/HTML and
+# the CROPPED plate photo (source/plate-*.png) are ours to commit. See
+# .agents/skills/deck-diagram-recreate/SKILL.md. 94 tracked full-page
+# renders were removed as vendor copyright (PR #718, following the same
+# BLOCKER 3 cleanup as the PDFs -- docs/oss-going-public-checklist.md).
+tools/deck-diagrams/devices/*/source/*.pdf
+tools/deck-diagrams/devices/*/source/*.txt
+tools/deck-diagrams/devices/*/source/midi-list-page-*.png
+
+# Rendered from fleet-af's com.af.autoreposync.plist.template at install time;
+# it holds this machine absolute paths, which is exactly what must not be tracked.
+ops/autoreposync/com.af.autoreposync.plist
+
+# sssf runtime
+adws/adw_data/sessions/
+adws/adw_data/sssf.db*
+
+# Local agentic testing run bundles
+/runs/
+
+# nucbox sweeper handoff scratch (fix-pr.sh / resolve-pr.sh); never product state
+/.sweep-*
+
+# Key material never enters git (docs/security/secret-scanning.md); scan_secrets.sh
+# probes these patterns. The one committed certificate is Apple's public Developer ID
+# intermediate, re-included below.
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+credentials.json
+service-account*.json
+!.agents/skills/ship-dmg/assets/DeveloperIDG2CA.pem
+
+# Claude Design bundle output + staged validator (generated; see apps/webui/frontend/scripts/build-design-system.mjs)
+/ds-bundle/
+/.ds-sync/
+# JUnit reports the pytest fast lane writes for CI test health (Trunk Flaky Tests, per shard).
+junit-shard-*.xml

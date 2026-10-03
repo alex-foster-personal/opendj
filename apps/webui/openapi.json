@@ -5221,6 +5221,50 @@
         "title": "CommitIn",
         "type": "object"
       },
+      "CompatibleFilterOut": {
+        "description": "Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.",
+        "properties": {
+          "allow_half_double": {
+            "default": true,
+            "title": "Allow Half Double",
+            "type": "boolean"
+          },
+          "bpm_direction": {
+            "default": "both",
+            "enum": [
+              "both",
+              "above",
+              "below",
+              "same"
+            ],
+            "title": "Bpm Direction",
+            "type": "string"
+          },
+          "bpm_enabled": {
+            "default": true,
+            "title": "Bpm Enabled",
+            "type": "boolean"
+          },
+          "bpm_window_bpm": {
+            "default": 20.0,
+            "minimum": 0.0,
+            "title": "Bpm Window Bpm",
+            "type": "number"
+          },
+          "camelot_steps": {
+            "default": 1,
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "title": "Camelot Steps",
+            "type": "integer"
+          }
+        },
+        "title": "CompatibleFilterOut",
+        "type": "object"
+      },
       "ConfigIn": {
         "properties": {
           "enabled": {
@@ -17750,6 +17794,39 @@
             ],
             "title": "Bpm"
           },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
           "bpm_reason": {
             "anyOf": [
               {
@@ -17760,6 +17837,17 @@
               }
             ],
             "title": "Bpm Reason"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
           },
           "bpm_status": {
             "enum": [
@@ -21124,6 +21212,50 @@
             ],
             "title": "Bpm"
           },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
+          },
           "cloud_transfer": {
             "anyOf": [
               {
@@ -21844,6 +21976,39 @@
             ],
             "title": "Bpm"
           },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
           "bpm_reason": {
             "anyOf": [
               {
@@ -21854,6 +22019,17 @@
               }
             ],
             "title": "Bpm Reason"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
           },
           "bpm_status": {
             "enum": [
@@ -22327,6 +22503,9 @@
             "title": "Beat Sync Max",
             "type": "boolean"
           },
+          "compatible_filter": {
+            "$ref": "#/components/schemas/CompatibleFilterOut"
+          },
           "confirm": {
             "additionalProperties": true,
             "title": "Confirm",
@@ -22373,6 +22552,13 @@
             ],
             "title": "Library Density",
             "type": "string"
+          },
+          "library_watcher_folders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Library Watcher Folders",
+            "type": "array"
           },
           "lyrics_deck_line": {
             "default": true,
@@ -22577,6 +22763,16 @@
             ],
             "title": "Beat Sync Max"
           },
+          "compatible_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompatibleFilterOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "confirm": {
             "anyOf": [
               {
@@ -22673,6 +22869,20 @@
               }
             ],
             "title": "Library Density"
+          },
+          "library_watcher_folders": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Watcher Folders"
           },
           "lyrics_deck_line": {
             "anyOf": [
@@ -23864,6 +24074,19 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WatcherFoldersValidateIn": {
+        "properties": {
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "title": "WatcherFoldersValidateIn",
         "type": "object"
       },
       "WheelSensitivityOut": {
@@ -39461,6 +39684,52 @@
           }
         },
         "summary": "Put Ui Prefs",
+        "tags": [
+          "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/ui-prefs/watcher-folders:validate": {
+      "post": {
+        "description": "LIBM-129 v1: existence check only; no watcher daemon.",
+        "operationId": "validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatcherFoldersValidateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Validate Watcher Folders Api V1 Ui Prefs Watcher Folders Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Watcher Folders",
         "tags": [
           "ui-prefs"
         ]

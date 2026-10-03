@@ -6070,6 +6070,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ui-prefs/watcher-folders:validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Watcher Folders
+         * @description LIBM-129 v1: existence check only; no watcher daemon.
+         */
+        post: operations["validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/update/apply": {
         parameters: {
             query?: never;
@@ -8171,6 +8191,39 @@ export interface components {
             note: string;
             /** Sha */
             sha: string;
+        };
+        /**
+         * CompatibleFilterOut
+         * @description Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.
+         */
+        CompatibleFilterOut: {
+            /**
+             * Allow Half Double
+             * @default true
+             */
+            allow_half_double: boolean;
+            /**
+             * Bpm Direction
+             * @default both
+             * @enum {string}
+             */
+            bpm_direction: "both" | "above" | "below" | "same";
+            /**
+             * Bpm Enabled
+             * @default true
+             */
+            bpm_enabled: boolean;
+            /**
+             * Bpm Window Bpm
+             * @default 20
+             */
+            bpm_window_bpm: number;
+            /**
+             * Camelot Steps
+             * @default 1
+             * @enum {integer}
+             */
+            camelot_steps: 0 | 1 | 2;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -13105,8 +13158,16 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
             /** Bpm Reason */
             bpm_reason?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             /**
              * Bpm Status
              * @enum {string}
@@ -14421,6 +14482,14 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;
@@ -14642,8 +14711,16 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
             /** Bpm Reason */
             bpm_reason?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             /**
              * Bpm Status
              * @enum {string}
@@ -14801,6 +14878,7 @@ export interface components {
              * @default true
              */
             beat_sync_max: boolean;
+            compatible_filter?: components["schemas"]["CompatibleFilterOut"];
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -14838,6 +14916,8 @@ export interface components {
              * @enum {string}
              */
             library_density: "compact" | "cosy";
+            /** Library Watcher Folders */
+            library_watcher_folders?: string[];
             /**
              * Lyrics Deck Line
              * @default true
@@ -14945,6 +15025,7 @@ export interface components {
             available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
+            compatible_filter?: components["schemas"]["CompatibleFilterOut"] | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -14962,6 +15043,8 @@ export interface components {
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Library Density */
             library_density?: ("compact" | "cosy") | null;
+            /** Library Watcher Folders */
+            library_watcher_folders?: string[] | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */
@@ -15353,6 +15436,11 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WatcherFoldersValidateIn */
+        WatcherFoldersValidateIn: {
+            /** Paths */
+            paths?: string[];
         };
         /** WheelSensitivityOut */
         WheelSensitivityOut: {
@@ -26355,6 +26443,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UiPrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatcherFoldersValidateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */
