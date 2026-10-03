@@ -1,4 +1,4 @@
-"""INSTALL-33: the signed desktop app may use the microphone.
+"""INSTALL-34: the signed desktop app may use the microphone.
 
 Hit live on demon-llama, Fri 2 Oct 2026, desktop app 0.1.5: clicking I/O raised
 "headphone output acquisition failed: The request is not allowed by the user
@@ -78,7 +78,7 @@ def _app(tmp_path: Path, entitlements: dict[str, bool] | None) -> Path:
     return app
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 def test_app_entitlements_grant_exactly_the_microphone() -> None:
     """[if] Entitlements.app.plist is anything but the microphone key [then] fail, [else stop].
 
@@ -86,7 +86,7 @@ def test_app_entitlements_grant_exactly_the_microphone() -> None:
     assert plistlib.loads(APP_ENTITLEMENTS.read_bytes()) == {MIC: True}
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 def test_the_bundler_signs_the_app_with_those_entitlements() -> None:
     """[if] tauri.conf.json stops pointing the bundler at Entitlements.app.plist [then] fail, [else stop]."""
     conf = json.loads((TAURI_DIR / "tauri.conf.json").read_text())
@@ -94,7 +94,7 @@ def test_the_bundler_signs_the_app_with_those_entitlements() -> None:
     assert (TAURI_DIR / named).resolve() == APP_ENTITLEMENTS.resolve()
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 def test_the_app_store_build_also_asks_for_the_microphone() -> None:
     """[if] the App Store template lacks the microphone key [then] fail, [else stop].
 
@@ -104,7 +104,7 @@ def test_the_app_store_build_also_asks_for_the_microphone() -> None:
     assert data.get(MIC) is True
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 @needs_codesign
 def test_an_entitled_signature_passes(tmp_path: Path) -> None:
     """[if] an entitled signature is refused [then] fail, [else stop].
@@ -115,7 +115,7 @@ def test_an_entitled_signature_passes(tmp_path: Path) -> None:
     assert f"[OK] Open DJ.app carries {MIC}" in result.stdout
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 @needs_codesign
 @pytest.mark.parametrize(
     "entitlements",
@@ -139,7 +139,7 @@ def test_a_signature_without_the_microphone_is_refused(tmp_path: Path, entitleme
     assert "[OK]" not in combined
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 @needs_codesign
 def test_an_unsigned_app_is_not_read_as_missing_the_key(tmp_path: Path) -> None:
     """[if] an unsigned app passes, or is reported as merely missing the key [then] fail, [else stop].
@@ -154,7 +154,7 @@ def test_an_unsigned_app_is_not_read_as_missing_the_key(tmp_path: Path) -> None:
     assert "[OK]" not in combined
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 @needs_codesign
 def test_notarize_app_refuses_an_unentitled_app_before_submitting(tmp_path: Path) -> None:
     """[if] notarize-app gets past an unentitled app [then] fail, [else stop].
@@ -172,7 +172,7 @@ def test_notarize_app_refuses_an_unentitled_app_before_submitting(tmp_path: Path
     assert "notarytool" not in combined
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 @needs_codesign
 def test_notarize_app_lets_an_entitled_app_past_the_gate(tmp_path: Path) -> None:
     """[if] notarize-app refuses an entitled app at the entitlement gate [then] fail, [else stop].
@@ -190,7 +190,7 @@ def test_notarize_app_lets_an_entitled_app_past_the_gate(tmp_path: Path) -> None
     assert f"is signed without {MIC}" not in combined
 
 
-@pytest.mark.requirement("INSTALL-33")
+@pytest.mark.requirement("INSTALL-34")
 def test_verify_dmg_app_checks_the_entitlements_too() -> None:
     """[if] verify-dmg-app stops checking the entitlements [then] fail, [else stop].
 

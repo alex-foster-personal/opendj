@@ -65,7 +65,7 @@
 #   [if] `notarize-app` or `verify-dmg-app` passes an app whose signature
 #        lacks com.apple.security.device.audio-input [then] macOS refuses the
 #        microphone before any prompt and the I/O device lists cannot be
-#        named -> broken (INSTALL-33)
+#        named -> broken (INSTALL-34)
 
 set -euo pipefail
 
