@@ -374,7 +374,17 @@ const BUDGETS = [
   // deadline with its did-not-finish states and the Welcome retry. None of it
   // is first-paint weight (library stayed within its own limit). The ceiling
   // follows the +5% ceil-to-KiB rule on 267,629.
-  { name: 'other-lazy', limit: 281600, measured: 267629, note: 'all other routes plus deferred shell' },
+  // RAISED Sat 3 Oct 2026: 275 -> 290 KiB for PR #4014 (issue #3986 pins).
+  // Local `pnpm build` measured 282,803, 1,203 over the 281,600 ceiling.
+  // The new weight is three deferred chunks, not first paint: the watcher
+  // folder editor (dynamic import from SettingsOverlay), the compatible-filter
+  // range panel (dynamic import on hover) and the browser confirm dialog
+  // (dynamic import on first confirm). library stayed 263,433 of 264,192 and
+  // performance 246,699 of 246,784, so neither ceiling moves. Nothing is
+  // mis-attributed, and the three panels are already behind dynamic imports,
+  // so there is no eager import left to demote. The ceiling follows the +5%
+  // ceil-to-KiB rule on 282,803.
+  { name: 'other-lazy', limit: 296960, measured: 282803, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
