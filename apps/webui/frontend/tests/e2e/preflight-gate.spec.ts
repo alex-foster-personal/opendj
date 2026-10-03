@@ -10,6 +10,7 @@
  */
 import { expect, test } from '@playwright/test';
 
+import { expectFirstRunSetup } from './support/expect-first-run-setup';
 import {
 	PREFLIGHT_GATE_BROKEN_ORIGIN,
 	PREFLIGHT_GATE_HEALTHY_ORIGIN
@@ -37,9 +38,7 @@ test.describe('preflight boot gate', () => {
 
 		// P0-1 (#2722): the setup wizard owns the empty-library ask; the boot
 		// gate must not be the only interactive surface.
-		const setupDialog = page.getByRole('dialog', { name: 'First-run setup' });
-		await expect(setupDialog).toBeVisible({ timeout: 10_000 });
-		await expect(page.locator('[data-preflight-blocking="true"]')).toHaveCount(0);
+		await expectFirstRunSetup(page);
 
 		// Preflight still reports the honest fail -- never a fabricated pass.
 		const preflight = await page.request.get(

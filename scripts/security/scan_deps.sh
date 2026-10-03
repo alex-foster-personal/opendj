@@ -23,11 +23,9 @@ MANIFESTS=(
   requirements-docs.txt
   ops/quality/requirements.txt
   ops/quality/mypy-requirements.txt
-  ops/fleet/requirements-duplicate-writer.txt
   pylock.ci.toml
   pylock.release-check.toml
   pylock.docs.toml
-  ops/fleet/pylock.duplicate-writer.toml
   scripts/security/semgrep-requirements.txt
   apps/webui/frontend/pnpm-lock.yaml
   apps/desktop/pnpm-lock.yaml

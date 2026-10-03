@@ -152,7 +152,7 @@ def test_materialize_mixed_new_and_exact_duplicate(client, app):
 
 def _write_header_only_wav(path: Path) -> None:
     """A RIFF/WAVE file with no PCM frames: an allowlisted extension over an
-    unplayable payload, which upload stages and the folder adapter rejects."""
+    unplayable payload, which upload refuses and the folder adapter rejects."""
     with wave.open(str(path), "wb") as handle:
         handle.setnchannels(2)
         handle.setsampwidth(2)
@@ -168,11 +168,22 @@ def test_materialize_commits_nothing_when_a_staged_file_is_unplayable(
     broken = tmp_path / "broken.wav"
     _write_header_only_wav(broken)
 
-    up = _upload(client, "mixed-broken", [(good.name, good), (broken.name, broken)])
-    assert up.status_code == 200
+    # Upload refuses a file with no audio frames before it is staged (LIBMX-15).
+    refused = _upload(client, "header-only", [(broken.name, broken)])
+    assert refused.status_code == 422, refused.text
+
+    # A file can still turn unplayable after it staged (damaged or replaced on
+    # disk before materialize), so stage a real wav and then damage it there.
+    up = _upload(
+        client, "mixed-broken", [(good.name, good), (broken.name, FIXTURES / "src.wav")]
+    )
+    assert up.status_code == 200, up.text
     verdicts = {r["filename"]: r["verdict"] for r in up.json()["results"]}
     assert verdicts == {good.name: "new", broken.name: "new"}
     dest = Path(up.json()["dest_dir"])
+    staged = dest / broken.name
+    assert staged.is_file()
+    _write_header_only_wav(staged)
 
     mat = client.post("/api/v1/ingest/batch/mixed-broken/materialize")
     assert mat.status_code == 422

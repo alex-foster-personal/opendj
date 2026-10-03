@@ -463,7 +463,7 @@ jobs:
         # against an unpopulated one it resolves somewhere else entirely and
         # reports success while binding the wrong thing. Populating the venv
         # here is what makes that command mean what it says.
-        run: uv sync --extra tags --extra analysis
+        run: uv sync --extra analysis
 
       - name: Prove the venv is populated and is this checkout's
         # Fail fast and loudly rather than letting the engine boot fail 180s

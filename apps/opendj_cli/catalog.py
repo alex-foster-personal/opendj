@@ -203,6 +203,8 @@ _VERBS: tuple[Verb, ...] = (
     Verb("master_tempo", "master_tempo", (_DECK, _ENABLED), quick_draws=("master_tempo.toggle",)),
     Verb("stem_mute", "stem_mute", (_DECK, _STEM, arg("muted", "bool", bool_value, "true|false"))),
     Verb("stem_solo", "stem_solo", (_DECK, _STEM, arg("solo", "bool", bool_value, "true|false"))),
+    Verb("stem_load", "stem_load", (_DECK,),
+         note="STEM-46/47: get the deck's stems now (retry a failed load, start a held one)."),
     Verb("stem_eq_mode", "stem_eq_mode", (_DECK, _ENABLED),
          observes=(Observe(("mixer", "channels", "{deck}", "stem_eq_mode"), "enabled"),)),
     Verb("stem_gain", "stem_gain", (_DECK, _STEM, _UNIT),
@@ -301,6 +303,9 @@ _VERBS: tuple[Verb, ...] = (
     #   opendj audio_switch_output --confirm
     #   opendj api GET /api/v1/audio/output-health
     #   opendj api POST /api/v1/audio/switch-output
+    # FB-20 HTTP parity (issue #4085, not command-bus verbs):
+    #   opendj feedback comments summary
+    #   opendj api GET /api/v1/feedback/comments/summary
     # ----- safety loop and hot cues -------------------------------------
     Verb("safety_loop_save", "safety_loop_save", (_DECK,)),
     Verb("safety_loop_arm", "safety_loop_arm",

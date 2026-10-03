@@ -3,6 +3,7 @@
  * Unknown keys throw (fail-loud).
  */
 import { parseWaveformDesign } from '$lib/rb/waveform-design';
+import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { parseWavePalette } from '$lib/rb/wave-palette';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
@@ -12,6 +13,7 @@ import {
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setPreviewBeatSync,
+	clearConfirmPref,
 	setConfirmPref,
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
@@ -102,6 +104,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_sync.open_dj',
 	'confirm.delete_playlist',
 	'confirm.dblclick_load_play',
+	'confirm.playlist_drop_mode',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
 	'crossfade_curve',
@@ -190,6 +193,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.confirm.delete_playlist !== false;
 		case 'confirm.dblclick_load_play':
 			return uiPrefs.confirm.dblclick_load_play !== false;
+		case 'confirm.playlist_drop_mode':
+			return uiPrefs.confirm.playlist_drop_mode ?? 'ask';
 		case 'wheel_sensitivity.mouse':
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
@@ -356,6 +361,20 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'confirm.dblclick_load_play':
 			setConfirmPref('dblclick_load_play', _asBool(value, key));
+			return;
+		case 'confirm.playlist_drop_mode':
+			if (value === 'ask') {
+				// Verified (PR #4014, Sol P1): the reset commits only after the disk
+				// delete lands, and a failure is shown rather than left for the next
+				// hydration to quietly restore Add or Move.
+				clearConfirmPref('playlist_drop_mode').catch((err: unknown) =>
+					reportSettingSaveError(`Could not reset playlist drop to Ask: ${err}`, err)
+				);
+			} else if (value === 'add' || value === 'move') {
+				setConfirmPref('playlist_drop_mode', value);
+			} else {
+				throw new Error(`confirm.playlist_drop_mode must be ask|add|move, got ${String(value)}`);
+			}
 			return;
 		case 'wheel_sensitivity.mouse':
 		case 'wheel_sensitivity.trackpad': {

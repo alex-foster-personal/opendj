@@ -29,6 +29,7 @@ from apps.webui.server.backend import ConflictError
 from apps.webui.server.playlist_store import PlaylistStore
 from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.waits import THREAD_HANG_GUARD_S
 
 TRACK_IDS: list[str] = ["t-001", "t-002", "t-003", "t-004"]
 
@@ -432,7 +433,9 @@ def test_rename_cannot_precheck_while_membership_replace_holds_lock(
 
     def pause_a_validation(stable_ids: list[str]) -> None:
         a_at_validation.set()
-        assert release_a.wait(timeout=5), "test did not release membership replace"
+        assert release_a.wait(timeout=THREAD_HANG_GUARD_S), (
+            f"test did not release membership replace within {THREAD_HANG_GUARD_S}s"
+        )
         original_a_validation(stable_ids)
 
     def record_b_write(**kwargs: str) -> bool:
@@ -462,14 +465,20 @@ def test_rename_cannot_precheck_while_membership_replace_holds_lock(
     b_thread = threading.Thread(target=rename_b)
     try:
         a_thread.start()
-        assert a_at_validation.wait(timeout=5), "membership replace did not acquire its lock"
+        assert a_at_validation.wait(timeout=THREAD_HANG_GUARD_S), (
+            f"HANG: membership replace did not acquire its lock within {THREAD_HANG_GUARD_S}s"
+        )
         b_thread.start()
         assert not b_at_write.wait(timeout=0.5), "rename prechecked before the lock"
         release_a.set()
-        a_thread.join(timeout=5)
-        b_thread.join(timeout=5)
-        assert not a_thread.is_alive()
-        assert not b_thread.is_alive()
+        a_thread.join(timeout=THREAD_HANG_GUARD_S)
+        b_thread.join(timeout=THREAD_HANG_GUARD_S)
+        assert not a_thread.is_alive(), (
+            f"HANG: membership-replace thread still alive after {THREAD_HANG_GUARD_S}s"
+        )
+        assert not b_thread.is_alive(), (
+            f"HANG: rename contender thread still alive after {THREAD_HANG_GUARD_S}s"
+        )
         assert not isinstance(a_result[0], Exception)
         assert isinstance(b_result[0], ConflictError)
         current = store_a.get_playlist_row(playlist_id)

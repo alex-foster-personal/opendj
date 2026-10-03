@@ -1,19 +1,16 @@
 """What the going-public audit LOOKS FOR, separate from how it walks a tree.
 
-Split out of scripts/oss_tip_audit.py at the 600-line file limit, along a seam
-that was already there: this module is the rule set and its exceptions, that one
-is the git plumbing, the line accounting and the CLI. They change for different
-reasons -- a new identity shape edits this file, a new source of bytes edits that
-one -- and the history audit under `odj-private` consumes THIS half alone.
+Split out of scripts/oss_tip_audit.py at the 600-line file limit, along a seam that was already there:
+this module is the rule set and its exceptions, that one is the git plumbing, the line accounting and
+the CLI. They change for different reasons -- a new identity shape edits this file, a new source of
+bytes edits that one -- and the history audit under `odj-private` consumes THIS half alone.
 
-Every exception here is enumerated with its reason rather than shape-matched, so
-the whole exception surface is reviewable on one screen. Shape rules were tried
-repeatedly for the mailbox cases and were wrong in one direction or the other
-every time (#1440).
+Every exception here is enumerated with its reason rather than shape-matched, so the whole exception
+surface is reviewable on one screen. Shape rules were tried repeatedly for the mailbox cases and were
+wrong in one direction or the other every time (#1440).
 
-NOTE: this file is scanned by the gate it defines. Write patterns and describe
-shapes; never spell out an example address, home path or CGNAT address here. Four
-review round-trips were spent relearning that.
+NOTE: this file is scanned by the gate it defines. Write patterns and describe shapes; never spell out
+an example address, home path or CGNAT address here. Four review round-trips were spent relearning that.
 """
 
 from __future__ import annotations
@@ -242,7 +239,10 @@ _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
     ("service", "timer", "socket", "mount", "automount", "path", "slice", "scope", "swap", "device")
 )
 
-MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
+# bzip2 and zlib verbatim upstream license texts name their authors by email; per file, never per dir (#4853).
+MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"}) | {
+    f"docs/legal/python-build-standalone/LICENSE.{lib}.txt" for lib in ("bzip2", "zlib")
+}
 GENERATED_TEST_ID_PATHS = frozenset({".test_durations"})  # pytest-split cache, not a mailbox
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
 # synthetic label this repo standardized on for MagicDNS fixtures in tests, the

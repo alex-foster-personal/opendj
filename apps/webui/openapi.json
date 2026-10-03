@@ -5118,6 +5118,32 @@
         "title": "CommentReplyOut",
         "type": "object"
       },
+      "CommentSummaryOut": {
+        "properties": {
+          "fleet_correlation": {
+            "enum": [
+              "ok",
+              "ledger_missing",
+              "ledger_unreadable"
+            ],
+            "title": "Fleet Correlation",
+            "type": "string"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/PinStatusSummaryOut"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/PinOperatorBreakdownOut"
+          }
+        },
+        "required": [
+          "operator",
+          "lifecycle",
+          "fleet_correlation"
+        ],
+        "title": "CommentSummaryOut",
+        "type": "object"
+      },
       "CommentUpdateIn": {
         "properties": {
           "agent_note": {
@@ -5193,6 +5219,50 @@
           "note"
         ],
         "title": "CommitIn",
+        "type": "object"
+      },
+      "CompatibleFilterOut": {
+        "description": "Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.",
+        "properties": {
+          "allow_half_double": {
+            "default": true,
+            "title": "Allow Half Double",
+            "type": "boolean"
+          },
+          "bpm_direction": {
+            "default": "both",
+            "enum": [
+              "both",
+              "above",
+              "below",
+              "same"
+            ],
+            "title": "Bpm Direction",
+            "type": "string"
+          },
+          "bpm_enabled": {
+            "default": true,
+            "title": "Bpm Enabled",
+            "type": "boolean"
+          },
+          "bpm_window_bpm": {
+            "default": 20.0,
+            "minimum": 0.0,
+            "title": "Bpm Window Bpm",
+            "type": "number"
+          },
+          "camelot_steps": {
+            "default": 1,
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "title": "Camelot Steps",
+            "type": "integer"
+          }
+        },
+        "title": "CompatibleFilterOut",
         "type": "object"
       },
       "ConfigIn": {
@@ -13899,6 +13969,118 @@
         "title": "PinKeyIn",
         "type": "object"
       },
+      "PinOperatorBreakdownOut": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "delegated": {
+            "minimum": 0.0,
+            "title": "Delegated",
+            "type": "integer"
+          },
+          "fixed": {
+            "minimum": 0.0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "harvested": {
+            "minimum": 0.0,
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "in_progress": {
+            "minimum": 0.0,
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "merged": {
+            "minimum": 0.0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "sent_to_queue": {
+            "minimum": 0.0,
+            "title": "Sent To Queue",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "sent_to_queue",
+          "in_progress",
+          "delegated",
+          "fixed",
+          "merged",
+          "blocked",
+          "harvested"
+        ],
+        "title": "PinOperatorBreakdownOut",
+        "type": "object"
+      },
+      "PinStatusSummaryOut": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "fixed": {
+            "minimum": 0.0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "harvested": {
+            "minimum": 0.0,
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "issued": {
+            "minimum": 0.0,
+            "title": "Issued",
+            "type": "integer"
+          },
+          "merged": {
+            "minimum": 0.0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "open": {
+            "minimum": 0.0,
+            "title": "Open",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "untriaged": {
+            "minimum": 0.0,
+            "title": "Untriaged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "untriaged",
+          "open",
+          "issued",
+          "blocked",
+          "fixed",
+          "merged",
+          "harvested"
+        ],
+        "title": "PinStatusSummaryOut",
+        "type": "object"
+      },
       "PinSyncOut": {
         "description": "Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:\nthe screenshot's metadata synced here but its bytes did not.",
         "properties": {
@@ -16222,7 +16404,7 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False and no cues). Genre and comment instead come from the\nstate layer's import-time file tags, alongside ``folder_path``,\n``file_exists`` and ``quality``.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the optional ``mutagen``\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False and no cues). Genre and comment instead come from the\nstate layer's import-time file tags, alongside ``folder_path``,\n``file_exists`` and ``quality``.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the tinytag\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
@@ -17612,6 +17794,39 @@
             ],
             "title": "Bpm"
           },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
           "bpm_reason": {
             "anyOf": [
               {
@@ -17622,6 +17837,17 @@
               }
             ],
             "title": "Bpm Reason"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
           },
           "bpm_status": {
             "enum": [
@@ -19063,6 +19289,30 @@
         "title": "StemHydrateIn",
         "type": "object"
       },
+      "StemHydrationProgressOut": {
+        "description": "How far an in-flight cloud fetch has got, read from its temp directory.",
+        "properties": {
+          "bytes_done": {
+            "title": "Bytes Done",
+            "type": "integer"
+          },
+          "files_done": {
+            "title": "Files Done",
+            "type": "integer"
+          },
+          "files_total": {
+            "title": "Files Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files_total",
+          "files_done",
+          "bytes_done"
+        ],
+        "title": "StemHydrationProgressOut",
+        "type": "object"
+      },
       "StemIndexBuildIn": {
         "properties": {
           "data_dir": {
@@ -19259,6 +19509,68 @@
         "title": "StemPushMissingIn",
         "type": "object"
       },
+      "StemStateOut": {
+        "description": "One track's stem bundle, named: where it is and what is happening to it.\n\n``local`` is on this machine and playable; ``cloud`` is only in the R2\nindex and a hydrate will fetch it; ``fetching`` is being downloaded now;\n``error`` is a bundle that should exist and could not be produced;\n``none`` is no bundle anywhere this engine can see.",
+        "properties": {
+          "deck_open": {
+            "default": false,
+            "title": "Deck Open",
+            "type": "boolean"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "hydration_armed": {
+            "title": "Hydration Armed",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemHydrationProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "local",
+              "cloud",
+              "fetching",
+              "error",
+              "none"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "state",
+          "message",
+          "hydration_armed"
+        ],
+        "title": "StemStateOut",
+        "type": "object"
+      },
       "StemTierOut": {
         "description": "One real separation rung, straight out of apps.stems.tiers.",
         "properties": {
@@ -19313,6 +19625,16 @@
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemHydrationProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "stable_id": {
             "title": "Stable Id",
@@ -20890,6 +21212,50 @@
             ],
             "title": "Bpm"
           },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
+          },
           "cloud_transfer": {
             "anyOf": [
               {
@@ -21610,6 +21976,39 @@
             ],
             "title": "Bpm"
           },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
           "bpm_reason": {
             "anyOf": [
               {
@@ -21620,6 +22019,17 @@
               }
             ],
             "title": "Bpm Reason"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
           },
           "bpm_status": {
             "enum": [
@@ -22093,6 +22503,9 @@
             "title": "Beat Sync Max",
             "type": "boolean"
           },
+          "compatible_filter": {
+            "$ref": "#/components/schemas/CompatibleFilterOut"
+          },
           "confirm": {
             "additionalProperties": true,
             "title": "Confirm",
@@ -22139,6 +22552,13 @@
             ],
             "title": "Library Density",
             "type": "string"
+          },
+          "library_watcher_folders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Library Watcher Folders",
+            "type": "array"
           },
           "lyrics_deck_line": {
             "default": true,
@@ -22343,6 +22763,16 @@
             ],
             "title": "Beat Sync Max"
           },
+          "compatible_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompatibleFilterOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "confirm": {
             "anyOf": [
               {
@@ -22439,6 +22869,20 @@
               }
             ],
             "title": "Library Density"
+          },
+          "library_watcher_folders": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Watcher Folders"
           },
           "lyrics_deck_line": {
             "anyOf": [
@@ -23630,6 +24074,19 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WatcherFoldersValidateIn": {
+        "properties": {
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "title": "WatcherFoldersValidateIn",
         "type": "object"
       },
       "WheelSensitivityOut": {
@@ -28551,6 +29008,27 @@
         ]
       }
     },
+    "/api/v1/feedback/comments/summary": {
+      "get": {
+        "operationId": "comments_summary_api_v1_feedback_comments_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Comments Summary",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
         "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. ``blocked`` is deliberately narrow: use it only when the maintainer\nmust supply credentials/auth, make a destructive-action decision, or choose\na genuine product fork. \"I could not work out what you meant\" is a question\nin the note, never blocked. A blocked pin's note starts with one sentence\nsaying exactly what the maintainer needs, before any supporting detail. Its first\nsentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or\n`product-fork: the maintainer must ...`. Every write is a partial update; unset fields\nare untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
@@ -29553,12 +30031,12 @@
                 "example": {
                   "detail": {
                     "code": "TAG_READER_UNAVAILABLE",
-                    "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                    "message": "ingest upload requires the 'tinytag' tag reader (a core dependency) for duration-based duplicate detection; reinstall the environment (uv sync)"
                   }
                 }
               }
             },
-            "description": "Optional mutagen tag reader ([tags] extra) is not installed."
+            "description": "The tinytag tag reader is not importable."
           }
         },
         "summary": "Upload",
@@ -38828,6 +39306,98 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/stems/hydrate": {
+      "post": {
+        "description": "Fetch this track's stem bundle from the cloud now, and retry a failure.\n\nThe manifest route records a failed fetch and answers 502 from then on so\na hot loop cannot hammer R2 with the same doomed request. This is the\nexplicit way back: it drops that record and starts a fresh fetch through\nthe same single-flight path, so the cache floor and the evictor apply\nexactly as they do for a deck load. A bundle already on disk is a no-op.\nReturns at once with the resulting state; poll ``.../stems/state``.",
+        "operationId": "hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
+          },
+          "503": {
+            "description": "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error)"
+          }
+        },
+        "summary": "Hydrate Stem Bundle",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/state": {
+      "get": {
+        "description": "Name this track's stem state. Read-only: never starts a download.\n\nAgent-native parity for what the deck's stem row shows. Registered BEFORE\nthe ``{part}`` route on purpose, which would otherwise read ``state`` as a\nstem part name.",
+        "operationId": "get_stem_state_api_v1_tracks__stable_id__stems_state_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stem State",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/stems/{part}": {
       "get": {
         "description": "Stream one validated stem part using the bundle's container media type.\n\nUnlike the manifest route, this one DOES wait (bounded) for an in-flight\nhydration: a part request means the caller already decided it wants\nthese bytes. A prior failure is surfaced immediately as HTTP 502; a\nfresh attempt that does not finish within\n:data:`STEM_PART_HYDRATE_WAIT_S` answers HTTP 503 so the caller can\nretry rather than hang forever on this one request.",
@@ -39114,6 +39684,52 @@
           }
         },
         "summary": "Put Ui Prefs",
+        "tags": [
+          "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/ui-prefs/watcher-folders:validate": {
+      "post": {
+        "description": "LIBM-129 v1: existence check only; no watcher daemon.",
+        "operationId": "validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatcherFoldersValidateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Validate Watcher Folders Api V1 Ui Prefs Watcher Folders Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Watcher Folders",
         "tags": [
           "ui-prefs"
         ]

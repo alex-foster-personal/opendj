@@ -1784,12 +1784,6 @@ wheels = [
 ]
 
 [[packages]]
-name = "mutagen"
-version = "1.48.1"
-sdist = { url = "https://files.pythonhosted.org/packages/df/70/1675da133ea92227da41bf5b24e1c66be597ff736a1533ade41da986852f/mutagen-1.48.1.tar.gz", upload-time = 2026-06-25T09:47:32Z, size = 1276978, hashes = { sha256 = "8f95637ab9f6f305cec6bd1294e197debe207998e3e068596563c74f86b0a173" } }
-wheels = [{ url = "https://files.pythonhosted.org/packages/47/d8/a29e4e3991765e7ce4ed1f7e4074fe1ba9da03e0048639734de60f9cadb9/mutagen-1.48.1-py3-none-any.whl", upload-time = 2026-06-25T09:47:30Z, size = 195706, hashes = { sha256 = "4f077fe87d3fc7fba259aa63d8c026b18382ca6a42ef37c61e16f1b1b5b82fe7" } }]
-
-[[packages]]
 name = "mypy"
 version = "2.3.1"
 sdist = { url = "https://files.pythonhosted.org/packages/82/6a/878cc1097d4035f82bd516658d0c528d2a9955bc7b363afcbd0b07fea11b/mypy-2.3.1.tar.gz", upload-time = 2026-08-15T03:03:38Z, size = 3992554, hashes = { sha256 = "47c1b1207258513a9d93495f69c8be9de73916186f0e52703e8c461b7a623419" } }
@@ -3858,4 +3852,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "ba904a2408b0091d5485f16c66538c2a3533defc52019b0e10a01bee9a51ca84"
+source-sha256 = "74d141dbbe25b1894deae211b64c75041718d0ed6fcfe98a109f772b15019191"

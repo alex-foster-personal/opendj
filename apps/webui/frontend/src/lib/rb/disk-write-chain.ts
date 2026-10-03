@@ -14,10 +14,15 @@
  */
 export function makeDiskWriteChain<Patch>(
 	put: (patch: Patch) => Promise<void>
-): (patch: Patch) => Promise<void> {
+): (patch: Patch, putOverride?: (patch: Patch) => Promise<void>) => Promise<void> {
 	let chain: Promise<void> = Promise.resolve();
-	return function syncDiskPrefs(patch: Patch): Promise<void> {
-		chain = chain.then(() => put(patch));
-		return chain;
+	// `putOverride` lets one caller that must know the write landed (LIBM-129
+	// watcher folders, PR #4014) queue a put that rejects on failure. Its
+	// rejection reaches only that caller: the chain itself swallows it so a
+	// failed verified write never wedges the writes queued behind it.
+	return function syncDiskPrefs(patch, putOverride = put): Promise<void> {
+		const next = chain.then(() => putOverride(patch));
+		chain = next.catch(() => undefined);
+		return next;
 	};
 }

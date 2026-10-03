@@ -478,8 +478,8 @@ def test_upload_stages_new_file(client, app):
 @pytest.mark.requires_fpcalc
 def test_upload_skips_exact_duplicate_unless_forced(client, app):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    from tinytag import TinyTag
+    dur_ms = int(TinyTag.get(src).duration * 1000)
     _seed_track(app, "dup01", src, duration_ms=dur_ms)
 
     r = client.post(

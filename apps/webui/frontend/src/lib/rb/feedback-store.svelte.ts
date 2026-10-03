@@ -43,9 +43,10 @@
  */
 
 import type { components } from "../api-types";
-import { API_BASE, ApiError, api } from "../api/client";
+import { API_BASE, ApiError, api, unwrap } from "../api/client";
 import { writePinsVisible } from "./feedback-pin-visibility";
-import { makeDebounce, type Debounced, type PinDraft } from "./feedback";
+import { describeFleetCorrelation, describePinOperatorSummary, type CommentSummary } from "./feedback-pin-operator-summary";
+import { describePinStatusSummary, makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
 export type FeedbackPin = components["schemas"]["CommentOut"];
@@ -64,6 +65,14 @@ interface FeedbackState {
   availability: FeedbackAvailability;
   todos: FeedbackTodo[];
   pins: FeedbackPin[];
+  /** Last GET /comments/summary body (FB-20). Null until one succeeds, and
+   * again once the daemon answers 404 for the route, so the widget keeps the
+   * legacy lifecycle line and its honest "not tracked" stub. */
+  pinSummary: CommentSummary | null;
+  /** Why the last summary failed for a reason a retry will not fix (see
+   * classifySummaryFailure). While set, `pinSummary` is null and the comment-pin
+   * controls say the summary failed instead of showing unvouched counts. */
+  pinSummaryError: string | null;
   general: FeedbackGeneralNote | null;
   panelOpen: boolean;
   placementArmed: boolean;
@@ -77,12 +86,41 @@ export const feedbackState: FeedbackState = $state({
   availability: "unknown",
   todos: [],
   pins: [],
+  pinSummary: null,
+  pinSummaryError: null,
   general: null,
   panelOpen: false,
   placementArmed: false,
   pendingDraft: null,
   error: null,
 });
+
+/** Total + breakdown for the comment-pin controls (FB-20): the daemon's operator
+ * buckets when it serves /comments/summary, else lifecycle counts from `pins`. */
+export function commentPinSummaryTitle(pins: readonly FeedbackPin[]): string {
+  if (feedbackState.pinSummaryError !== null) {
+    return `Comment pin summary failed: ${feedbackState.pinSummaryError}`;
+  }
+  const summary = feedbackState.pinSummary;
+  return summary ? describePinOperatorSummary(summary.operator) : describePinStatusSummary(pins);
+}
+
+/** Hover/focus explainer bullets for the comment-pin controls. */
+export function commentPinSummaryBullets(pins: readonly FeedbackPin[]): string[] {
+  const bullets = [
+    commentPinSummaryTitle(pins),
+    "Press M to arm comment placement (or Cmd+Shift+M from a text field).",
+  ];
+  if (feedbackState.pinSummaryError !== null) return bullets;
+  const summary = feedbackState.pinSummary;
+  if (!summary) {
+    bullets.push("Delegated / in-progress / queued are not tracked by the comment API yet.");
+  } else {
+    const fleet = describeFleetCorrelation(summary.fleet_correlation);
+    if (fleet) bullets.push(fleet);
+  }
+  return bullets;
+}
 
 // ----- hydrate ------------------------------------------------------------
 let hydrating: Promise<void> | null = null;
@@ -107,6 +145,7 @@ async function _hydrate(): Promise<void> {
     feedbackState.general = general.data ?? null;
     feedbackState.availability = "ok";
     feedbackState.error = null;
+    await _refreshPinSummary();
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       // The daemon answered and does not serve feedback: settled fact.
@@ -269,7 +308,7 @@ export async function addPin(
   try {
     const { data } = await api.POST("/api/v1/feedback/comments", { body: pin });
     if (data) {
-      _pinGeneration++;
+      _notePinMutation();
       _upsertPin(data);
     }
     feedbackState.error = null;
@@ -327,7 +366,7 @@ async function _uploadPinAttachment(
     return { ok: false, message };
   }
   const updated = (await response.json()) as FeedbackPin;
-  _pinGeneration++;
+  _notePinMutation();
   _upsertPin(updated);
   feedbackState.error = null;
   return { ok: true };
@@ -376,7 +415,7 @@ export async function archivePin(pinId: string): Promise<boolean> {
     await api.POST("/api/v1/feedback/comments/{comment_id}/archive", {
       params: { path: { comment_id: pinId } },
     });
-    _pinGeneration++;
+    _notePinMutation();
     feedbackState.pins = feedbackState.pins.filter((p) => p.id !== pinId);
     feedbackState.error = null;
     return true;
@@ -406,7 +445,7 @@ async function _submitFollowOnPin(
       },
     );
     if (data) {
-      _pinGeneration++;
+      _notePinMutation();
       _upsertPin(data);
     }
     feedbackState.error = null;
@@ -435,7 +474,7 @@ export async function addReply(pinId: string, text: string): Promise<FeedbackPin
       body: { text, author: "operator" },
     });
     if (data) {
-      _pinGeneration++;
+      _notePinMutation();
       _upsertPin(data);
     }
     feedbackState.error = null;
@@ -471,6 +510,52 @@ export async function submitFollowOnWithAttachment(
 // ----- pin polling (same-tab live refresh, issue #914 review) -------------
 let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
 
+let _summarySeq = 0;
+
+/* The summary check loads on the first refresh, off the "/" and /performance
+ * bundles (PR #4094). A failed chunk load drops the counts and names a reload
+ * as the fix, since a browser keeps a failed module fetch; the next poll still
+ * retries. `classifySummaryFailure` decides a request failure: 404 clears, a
+ * transient miss keeps the last counts, a persistent error drops them and sets
+ * `pinSummaryError`. Only the newest request may write (FB-20). */
+type SummaryCheckModule = typeof import("./feedback-pin-summary-check");
+let _summaryCheck: Promise<SummaryCheckModule> | null = null;
+
+async function _refreshPinSummary(): Promise<void> {
+  const seq = ++_summarySeq;
+  let mod: SummaryCheckModule;
+  try {
+    mod = await (_summaryCheck ??= import("./feedback-pin-summary-check"));
+  } catch (err) {
+    _summaryCheck = null;
+    if (seq !== _summarySeq) return;
+    feedbackState.pinSummary = null;
+    const why = err instanceof Error ? err.message : String(err);
+    feedbackState.pinSummaryError = `summary code failed to load (${why}); reload the page to retry`;
+    return;
+  }
+  try {
+    // A stream body: a rejected request is transport; decode fails in the module.
+    const stream = await unwrap(api.GET("/api/v1/feedback/comments/summary", { parseAs: "stream" }));
+    const summary = mod.parseCommentSummary(await mod.decodeSummaryBody(stream));
+    if (seq !== _summarySeq) return;
+    feedbackState.pinSummary = summary;
+    feedbackState.pinSummaryError = null;
+  } catch (err) {
+    if (seq !== _summarySeq) return;
+    const outcome = mod.classifySummaryFailure(err);
+    if (outcome.kind === "transient") return;
+    feedbackState.pinSummary = null;
+    feedbackState.pinSummaryError = outcome.kind === "error" ? outcome.message : null;
+  }
+}
+
+/** After a successful local pin mutation: outrank in-flight polls and refresh the summary now. */
+function _notePinMutation(): void {
+  _pinGeneration++;
+  if (feedbackState.availability === "ok") void _refreshPinSummary();
+}
+
 /** Re-GET pins and re-render. A transient miss leaves the board as it was;
  * the next tick retries, so one bad poll is silent rather than an error. A
  * 404 means the daemon no longer serves feedback at all (an older backend
@@ -480,18 +565,20 @@ export async function refreshPins(): Promise<void> {
   if (feedbackState.availability !== "ok") return;
   const generation = _pinGeneration;
   try {
-    const { data } = await api.GET("/api/v1/feedback/comments");
+    const body = await unwrap(api.GET("/api/v1/feedback/comments"));
     // A mutation landed while this GET was in flight: its response is newer
     // than what this GET started from, so applying this snapshot now would
     // roll the board back.
-    if (data && generation === _pinGeneration) feedbackState.pins = data.comments;
+    if (generation === _pinGeneration) feedbackState.pins = body.comments;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       feedbackState.availability = "missing";
       return;
     }
     // stays on the last-known board; polling itself never surfaces an error
+    return;
   }
+  if (generation === _pinGeneration) await _refreshPinSummary();
 }
 
 export function startPinWatch(): void {
