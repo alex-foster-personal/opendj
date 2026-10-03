@@ -105,11 +105,12 @@ JUST_INTERP_RE = re.compile(r"\{\{.*?\}\}", re.S)
 
 @dataclass
 class Usage:
-    """Every external name CI reaches, keyed by name, with where it was seen."""
+    """Discovered names and unresolved program references, with source provenance."""
 
     executables: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     apt_packages: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     playwright_browsers: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    unresolved_python_programs: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     scanned_files: set[str] = field(default_factory=set)
 
 
@@ -318,6 +319,10 @@ def _args_inline_program(name: str, args: list[str], where: str, ctx: _Ctx) -> N
     if "-c" not in args or args.index("-c") + 1 >= len(args):
         return
     program, (source, line) = args[args.index("-c") + 1], where.rsplit(":", 1)
+    # A whole shell parameter is an argv reference, not embedded Python source.
+    if name not in {"bash", "sh"} and re.fullmatch(r"\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})", program):
+        ctx.usage.unresolved_python_programs[program].add(where)
+        return
     scan = scan_shell if name in {"bash", "sh"} else scan_python_source
     scan(program, source, int(line) - 1, ctx)
 
@@ -553,7 +558,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
     usage = scan_repo()
-    kinds = ("executables", "apt_packages", "playwright_browsers")
+    kinds = ("executables", "apt_packages", "playwright_browsers", "unresolved_python_programs")
     report = {
         kind: {name: sorted(srcs)[0] for name, srcs in sorted(getattr(usage, kind).items())}
         for kind in kinds

@@ -192,10 +192,7 @@ class _Flow:
 
 
 def commands(text: str) -> list[Command]:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return []
+    tree = ast.parse(text)
     flow = _Flow(tree)
     direct: list[Command] = []
     for node in ast.walk(tree):
