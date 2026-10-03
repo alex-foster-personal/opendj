@@ -128,6 +128,11 @@ class OpenDeckRegistry:
         self._lock = threading.Lock()
         self._open: dict[str, int] = {}
         self._served_at: dict[str, float] = {}
+        #: True only in the process that serves decks (the engine, set when it
+        #: arms hydration). Any other process (a hydrate worker, a CLI) sees an
+        #: empty registry, so it must never evict: its post-hydrate pass only
+        #: refreshes the upload queue and leaves eviction to the engine.
+        self.holds_decks: bool = False
 
     def mark_open(self, stable_id: str) -> None:
         with self._lock:
@@ -238,8 +243,16 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
     protects, not something to skip.
     """
     root = stems_dir or DEFAULT_STEMS_DIR
-    if _is_local(stable_id, root):
+
+    def already_local() -> HydrationOutcome:
+        # Another hydrator (maybe another process) published it: the deck that
+        # asked still needs the served lease before that hydrator's pin drops.
+        if hand_off_to_deck:
+            OPEN_DECKS.mark_served(stable_id)
         return HydrationOutcome(stable_id, "already_local")
+
+    if _is_local(stable_id, root):
+        return already_local()
 
     if skip_reserved:
         reserved = (
@@ -279,7 +292,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         # Double-checked: another in-process call may have just published
         # this bundle while we were waiting for the lock.
         if _is_local(stable_id, root):
-            return HydrationOutcome(stable_id, "already_local")
+            return already_local()
         root.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(
             tempfile.mkdtemp(dir=root, prefix=f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}")
@@ -303,8 +316,9 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 # discard our own copy rather than clobbering it.
                 if _is_local(stable_id, root):
                     shutil.rmtree(tmp_dir, ignore_errors=True)
+                    outcome = already_local()
                     unpin_hydrate(pin)
-                    return HydrationOutcome(stable_id, "already_local")
+                    return outcome
                 shutil.rmtree(bundle_dir)
             bundle_dir.parent.mkdir(parents=True, exist_ok=True)
             tmp_dir.rename(bundle_dir)
@@ -353,7 +367,9 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             # Give back only what this hydrate took. A deck is waiting on this
             # call, and confirming a bundle against R2 means hashing it; the
             # engine timer clears any larger backlog off the request path.
-            max_evict_bytes=total,
+            # Outside the engine nothing is evicted: this process cannot see
+            # which bundles the engine's decks hold.
+            max_evict_bytes=total if OPEN_DECKS.holds_decks else 0,
             live_protected=lambda: OPEN_DECKS.open_ids() | {stable_id},
         )
         if hand_off_to_deck:

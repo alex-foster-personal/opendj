@@ -6,9 +6,11 @@ import errno
 
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from apps.shared import audio_quality
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S, probe_readable_byte
+from apps.sync.usb.stick_file_pin import pin_stick_file
 from apps.sync.usb.stick_library import (
     ArtworkSize,
     StickError,
@@ -78,8 +80,10 @@ def get_usb_track_audio(track_id: str, request: Request) -> FileResponse:
     if probe.outcome == "error":
         raise OSError(probe.errno or 0, f"probing {audio.path} failed: {probe.message}")
     quality = audio_quality.classify(str(audio.path), _duration_ms(resolved.track.duration_s))
+    with _stick_errors():
+        pinned = pin_stick_file(resolved.stick.volume_uuid, audio.path)
     return FileResponse(
-        audio.path,
+        pinned.serve_path,
         media_type=audio.media_type,
         headers={
             "Cache-Control": _CACHE_AUDIO,
@@ -87,6 +91,7 @@ def get_usb_track_audio(track_id: str, request: Request) -> FileResponse:
             "X-Audio-Venue": quality.venue.key if quality.venue else "",
             "X-Audio-Source": "usb-stick",
         },
+        background=BackgroundTask(pinned.close),
     )
 
 
@@ -106,5 +111,11 @@ def get_usb_track_artwork(
     """The pdb's pre-rendered jpg: ``s`` as named, ``m``/``orig`` its ``_m``
     sibling (the largest rendering rekordbox writes to a stick)."""
     with _stick_errors():
-        path = stick_artwork_file(_resolve_track(request, track_id), size)
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": _CACHE_ARTWORK})
+        resolved = _resolve_track(request, track_id)
+        pinned = pin_stick_file(resolved.stick.volume_uuid, stick_artwork_file(resolved, size))
+    return FileResponse(
+        pinned.serve_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": _CACHE_ARTWORK},
+        background=BackgroundTask(pinned.close),
+    )

@@ -201,3 +201,61 @@ def test_a_save_in_another_process_waits_for_the_queue_file_lock(tmp_path: Path)
     assert child.wait(timeout=60) == 0
     assert still_waiting, "the child saved while another process held the lock"
     assert set(budget.load_upload_queue(data_dir)) == {"child", "holder"}
+
+
+@pytest.mark.requirement("STEM-42")
+def test_a_deck_load_that_finds_the_bundle_already_local_still_takes_the_lease(tmp_path: Path):
+    """[if] a deck-load hydrate finds another hydrator already published the bundle [then] it is marked served, [else stop].
+
+    MUTATION TARGET: return ``already_local`` without the handoff and the
+    bundle is unprotected once the publishing hydrator drops its pin.
+    """
+    from apps.cloud import stem_hydration
+
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {"raced": make_bundle(stems_dir, "raced", atime=100.0)}
+    registry = OpenDeckRegistry()
+    original = stem_hydration.OPEN_DECKS
+    stem_hydration.OPEN_DECKS = registry
+    try:
+        deck = stem_hydration.hydrate_one(
+            "raced", data_dir=data_dir, source=_CopySource(tmp_path), index=index,  # type: ignore[arg-type]
+            stems_dir=stems_dir, hand_off_to_deck=True,
+        )
+        assert deck.status == "already_local"
+        assert "raced" in registry.open_ids()
+        # Control: a bulk caller finding it local takes no lease.
+        fresh = OpenDeckRegistry()
+        stem_hydration.OPEN_DECKS = fresh
+        bulk = stem_hydration.hydrate_one(
+            "raced", data_dir=data_dir, source=_CopySource(tmp_path), index=index,  # type: ignore[arg-type]
+            stems_dir=stems_dir,
+        )
+        assert bulk.status == "already_local"
+        assert "raced" not in fresh.open_ids()
+    finally:
+        stem_hydration.OPEN_DECKS = original
+
+
+@pytest.mark.requirement("STEM-42")
+def test_arming_hydration_in_the_engine_marks_it_the_deck_holder(tmp_path: Path, monkeypatch):
+    """[if] the engine arms stem hydration [then] its registry is the one eviction trusts, [else stop].
+
+    MUTATION TARGET: drop the ``holds_decks`` line in
+    ``_install_armed_stem_hydration`` and the engine's own post-hydrate pass
+    never frees space.
+    """
+    from fastapi import FastAPI
+
+    from apps.cloud import stem_hydration
+    from apps.webui.server import app_wiring
+
+    registry = OpenDeckRegistry()
+    monkeypatch.setattr(stem_hydration, "OPEN_DECKS", registry)
+    assert registry.holds_decks is False, "control: a fresh process (a worker) holds no decks"
+
+    app_wiring._install_armed_stem_hydration(
+        FastAPI(), data_dir=tmp_path, source=object(), start_refresh_thread=False
+    )
+
+    assert registry.holds_decks is True

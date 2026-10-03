@@ -440,10 +440,13 @@ def _install_armed_stem_hydration(
     source,
     start_refresh_thread: bool = True,
 ) -> None:
+    from apps.cloud import stem_hydration
     from apps.cloud.stem_source import DirectR2Source
 
     app.state.stem_hydration_source = source
     app.state.stem_hydration_data_dir = data_dir
+    # This process serves decks, so its registry is the one eviction may trust.
+    stem_hydration.OPEN_DECKS.holds_decks = True
     app.state.stem_hydration_unarmed_reason = None
     app.state.stem_hydration_unarmed_kind = None
     app.state.stem_hydration_cfg = None
