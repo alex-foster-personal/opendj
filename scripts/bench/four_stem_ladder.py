@@ -48,6 +48,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -239,6 +240,22 @@ def _load_truth_stems(window_dir: Path, mix: torch.Tensor, sr: int) -> dict[str,
     return truth
 
 
+def _model_sha256(path: Path) -> str:
+    """Content identity of a user-supplied model: one file, or every file under a directory.
+
+    The optional arms no longer use a fixed model, so the basename alone cannot tell two
+    same-named model directories, or weights replaced in place, apart (Codex P2, PR #4861).
+    """
+    digest = hashlib.sha256()
+    files = [path] if path.is_file() else sorted(f for f in path.rglob("*") if f.is_file())
+    if not files:
+        raise RuntimeError(f"model path has no files to identify: {path}")
+    for f in files:
+        digest.update(str(f.relative_to(path) if f != path else f.name).encode() + b"\0")
+        digest.update(f.read_bytes())
+    return digest.hexdigest()
+
+
 def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any]]:
     arms: list[dict[str, Any]] = []
     for spec in DEMUCS_ARMS:
@@ -252,6 +269,7 @@ def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any
         stems, infer_s, overlap = run_rb7_arm(args.rb7_model, mix, sr)
         arms.append({
             **RB7_ARM, "engine": "user-supplied-onnx", "model": args.rb7_model.name,
+            "model_sha256": _model_sha256(args.rb7_model),
             "overlap": overlap, "sep_rate": sr,
             "infer_s": round(infer_s, 2), "_audio": stems,
         })
@@ -261,6 +279,7 @@ def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any
             args.window_dir / "mixture.wav", args.out_dir / "_rb6-work", sr, args.rb6_model)
         arms.append({
             **RB6_ARM, "engine": "user-supplied-spleeter", "model": args.rb6_model.name,
+            "model_sha256": _model_sha256(args.rb6_model),
             "overlap": 0.0, "sep_rate": sr, "infer_s": round(infer_s, 2), "_audio": stems,
         })
     return arms
