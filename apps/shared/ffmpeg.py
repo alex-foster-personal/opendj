@@ -91,6 +91,33 @@ def resolve_ffmpeg() -> str:
     return exe
 
 
+#: Where Homebrew installs ffmpeg (Apple silicon, then Intel). A Finder-launched
+#: app inherits launchd's PATH (/usr/bin:/bin:/usr/sbin:/sbin), which holds
+#: neither, so a Mac with ffmpeg installed still fails the PATH lookup.
+HOMEBREW_FFMPEG_PATHS: tuple[str, ...] = ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg")
+
+
+def resolve_ffmpeg_including_homebrew() -> str:
+    """:func:`resolve_ffmpeg`, then Homebrew's prefixes when nothing overrides.
+
+    For callers that run inside the packaged app (set recording, SET-10). A
+    set-but-broken ``MDT_FFMPEG`` still raises rather than falling through.
+    """
+    try:
+        return resolve_ffmpeg()
+    except FfmpegUnavailable:
+        if os.environ.get("MDT_FFMPEG"):
+            raise
+        for candidate in HOMEBREW_FFMPEG_PATHS:
+            if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        raise FfmpegUnavailable(
+            "ffmpeg was not found on PATH or in "
+            f"{', '.join(HOMEBREW_FFMPEG_PATHS)} (install it with `brew install "
+            "ffmpeg`, or set MDT_FFMPEG)"
+        ) from None
+
+
 #: ``Duration: HH:MM:SS.ss`` in ffmpeg's input report; ``N/A`` does not match.
 _DURATION_LINE = re.compile(r"^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?),", re.MULTILINE)
 PROBE_TIMEOUT_S = 30
@@ -120,7 +147,9 @@ def probe_duration_s(path: Path) -> float | None:
 
 __all__ = [
     "FFMPEG_BINARY",
+    "HOMEBREW_FFMPEG_PATHS",
     "FfmpegUnavailable",
     "probe_duration_s",
     "resolve_ffmpeg",
+    "resolve_ffmpeg_including_homebrew",
 ]

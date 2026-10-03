@@ -213,7 +213,17 @@ const BUDGETS = [
   // range panel load with a dynamic import on first use. Clean origin/main
   // c8b8f5aeb measured 242,422 locally (266 bytes of headroom); main + this PR
   // measured 244,327, +1,905, leaving 409 bytes under the new limit.
-  { name: 'performance', limit: 244736, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4904, V1 copy and paste between
+  // playlists): clean origin/main c8b8f5ae measures 242,439 locally (249
+  // bytes of headroom). The library browser is part of /performance, and the
+  // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
+  // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
+  // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
+  // Merge note (PR #4014 x #4904): both diffs land on this head; #4014's
+  // ceiling (244,736) is the larger of the two independent ratchets but does
+  // not include #4904's clipboard handlers stacked on the #3986 work. Limit
+  // raised to 245,760 (240 KiB) until the merged head is re-measured in CI.
+  { name: 'performance', limit: 245760, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

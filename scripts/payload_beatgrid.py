@@ -76,6 +76,7 @@ import urllib.request
 from pathlib import Path
 
 from apps.analysis_beatgrid import weights
+from scripts.payload_launchers import write_payload_launcher
 
 RUNNER_SCRIPT_RELATIVE = Path("apps/analysis_beatgrid/beat_this_runner.py")
 RUNNER_SITE_RELATIVE = Path("runners/beatgrid/site")
@@ -332,11 +333,9 @@ def stage_checkpoint(payload_dir: Path, cached: Path) -> Path:
 #-----------------------------------------------------------------------------
 
 def write_runner_launcher(payload_dir: Path) -> Path:
-    launcher = payload_dir / RUNNER_LAUNCHER_RELATIVE
-    launcher.parent.mkdir(parents=True, exist_ok=True)
-    launcher.write_text(RUNNER_LAUNCHER_TEMPLATE, encoding="utf-8")
-    launcher.chmod(0o755)
-    return launcher
+    return write_payload_launcher(
+        payload_dir, RUNNER_LAUNCHER_RELATIVE, RUNNER_LAUNCHER_TEMPLATE
+    )
 
 
 #-----------------------------------------------------------------------------
