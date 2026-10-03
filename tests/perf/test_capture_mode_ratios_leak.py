@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
+from typing import cast
 
 import psutil
 import pytest
@@ -158,7 +159,7 @@ def test_quiescent_baselines_read_chromium_footprint_never_the_launcher(
     subject itself: Chromium descendants of the launcher, never the launcher.
     """
     native = _RecordingNative(DarwinProcessMetrics())
-    sampler = cmr._ProcessTreeSampler(leak_session.pid, native=native)
+    sampler = cmr._ProcessTreeSampler(leak_session.pid, native=cast(DarwinProcessMetrics, native))
     chromium = _chromium_pids(leak_session.pid)
     baselines = [cmr._quiescent_baseline_mb(leak_session, sampler) for _ in range(_CHECKPOINTS)]
     chromium |= _chromium_pids(leak_session.pid)
