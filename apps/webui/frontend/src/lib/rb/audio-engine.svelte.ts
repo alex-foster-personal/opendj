@@ -2846,7 +2846,7 @@ async function _upgradeDeckStems(
 		);
 		if (stale()) return;
 		// Q18: four workers, not four awaits on WebKit's single decode thread.
-		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { deck, onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
+		const decoded = await time('decodeStems', decodeStemBuffers(ctx, encodedParts, layoutParts, { deck, stale, onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE), onStart: () => phase('decoding') }));
 		if (stale()) return;
 		const stemBuffers = decoded.buffers;
 		const created = await time(

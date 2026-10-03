@@ -21,11 +21,15 @@ import type { BackgroundDemandShed } from '$lib/rb/playing-gate';
 /** How a held decode came to start: the shed released it, or the DJ did. */
 type _ReleaseCause = 'released' | 'forced';
 type _Release = (cause: _ReleaseCause) => void;
-let _pendingReleases: Array<{ deck: number | undefined; release: _Release }> = [];
+let _pendingReleases: Array<{ deck: number | undefined; stale: (() => boolean) | undefined; release: _Release }> = [];
 
-/** Release the held decodes of one deck, or every deck when `deck` is undefined. */
+/** Release the held decodes of one deck, or every deck when `deck` is undefined.
+ * A deck's release skips holds whose load is stale (the deck has loaded another
+ * track since): those wait for the shed or their bound like before. */
 function _releaseAll(cause: _ReleaseCause, deck?: number): number {
-	const releasing = _pendingReleases.filter((held) => deck === undefined || held.deck === deck);
+	const releasing = _pendingReleases.filter(
+		(held) => deck === undefined || (held.deck === deck && held.stale?.() !== true)
+	);
 	_pendingReleases = _pendingReleases.filter((held) => !releasing.includes(held));
 	for (const held of releasing) held.release(cause);
 	return releasing.length;
@@ -99,6 +103,9 @@ export type EagerStemDecodeStart = 'immediate' | 'released' | 'forced' | 'timed_
 export interface EagerStemDecodeWait {
 	/** The deck whose stems these are, so `LOAD NOW` releases only that deck. */
 	deck?: number;
+	/** True once the load this decode belongs to is gone, so `LOAD NOW` for the
+	 * deck's new track never starts the old track's decode too. */
+	stale?: () => boolean;
 	/** Called once, synchronously, if the decode is held back. */
 	onDeferred?: () => void;
 	maxDeferMs?: number;
@@ -119,7 +126,7 @@ export async function awaitEagerStemDecodeSlot(
 			cause = released;
 			resolve(released);
 		};
-		_pendingReleases.push({ deck: wait.deck, release });
+		_pendingReleases.push({ deck: wait.deck, stale: wait.stale, release });
 	});
 	// A shed that does not defer runs the resumer inside request(), so `cause`
 	// is already set when request() returns; anything else is a real hold.

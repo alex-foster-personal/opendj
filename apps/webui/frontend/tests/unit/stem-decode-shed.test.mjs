@@ -176,6 +176,24 @@ test('LOAD NOW on one deck starts only that deck\'s held decode', async () => {
 	shedModule.setEagerStemDecodeShed(null);
 });
 
+test('LOAD NOW for a deck\'s new track never starts its old track\'s held decode', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	const timer = { setTimer: () => null, clearTimer: () => {} };
+	let token = 1;
+	let oldStarted = false;
+	const old = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1, stale: () => token !== 1 });
+	void old.then(() => (oldStarted = true));
+	token = 2;
+	const current = shedModule.awaitEagerStemDecodeSlot({ ...timer, deck: 1, stale: () => token !== 2 });
+	assert.equal(shedModule.releaseEagerStemDecodeNow(1), 1);
+	assert.equal(await current, 'forced');
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(oldStarted, false, 'the old track\'s decode started beside the new one');
+	await shedModule.resumeEagerStemDecodeOwedJob();
+	assert.equal(await old, 'released');
+	shedModule.setEagerStemDecodeShed(null);
+});
+
 test('a hold nobody releases ends at the bound instead of lasting the whole track', async () => {
 	// PERFMODE-18: kernel pressure is real pressure, which takes the longer of
 	// the two bounds (the grading itself is tested in
