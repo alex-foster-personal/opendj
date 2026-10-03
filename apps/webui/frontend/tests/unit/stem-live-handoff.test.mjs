@@ -175,7 +175,7 @@ test('a deck that goes stale during the acknowledgement lands nothing', async ()
 		state.stale = true;
 	};
 	assert.equal(await mod.landStemUpgrade(deps), 'stale');
-	assert.deepEqual(names(log), ['segmentAt', 'cancelIncoming', 'sleep']);
+	assert.deepEqual(names(log), ['segmentAt', 'cancelIncoming'], 'a stale landing returns at once, with no retry delay');
 	assert.ok(!names(log).includes('commit') && !names(log).includes('stopOutgoing'));
 });
 
@@ -295,6 +295,40 @@ test('a failed stop on an upgrade that went stale fails the deck instead of leav
 	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'moved');
 	assert.deepEqual(log.at(-1), ['failOutgoing', 'stop timed out']);
 	assert.ok(!names(log).includes('commit'));
+	// The stale stems are already connected: they are canceled before the
+	// deck is failed, or the old track keeps playing through the retry delay.
+	assert.deepEqual(names(log).slice(-2), ['cancelIncoming', 'failOutgoing']);
+	assert.equal(log.at(-2)[1], log[0][1], 'the stale stems are canceled at the handoff instant while it is ahead');
+});
+
+test('a stale stop failure whose stems cancel fails still fails the deck', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async () => {
+		state.stale = true;
+		throw new Error('stop timed out');
+	};
+	deps.cancelIncoming = async () => {
+		throw new Error('cancel refused');
+	};
+	await assert.rejects(mod.handOffStemsLive(deps, 0.15), /cancel refused/);
+	assert.deepEqual(log.at(-1), ['failOutgoing', 'stop timed out']);
+});
+
+test('an attempt that went stale is not followed by a retry delay', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async () => {
+		state.stale = true;
+		throw new Error('stop timed out');
+	};
+	assert.equal(await mod.landStemUpgrade(deps), 'stale');
+	assert.ok(!names(log).includes('sleep'), 'the stale landing waited out a retry delay first');
+});
+
+test('control: a busy attempt that is not stale still waits before retrying', async () => {
+	const { deps, log, state } = deck();
+	state.snap.intents = 1;
+	assert.equal(await mod.landStemUpgrade(deps), 'deferred');
+	assert.ok(names(log).includes('sleep'));
 });
 
 test('a rollback whose stems cancel fails still puts the mix back', async () => {

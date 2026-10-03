@@ -191,7 +191,14 @@ export async function handOffStemsLive(
 		// take over, so the deck itself is failed rather than left on a dead mix.
 		const reason = stopError ?? new Error('the mix did not acknowledge its stop by the handoff instant');
 		if (deps.stale()) {
-			deps.failOutgoing(reason);
+			// The stale stems are already connected and audible: cancel them
+			// before failing the deck, so the old track never plays on.
+			const at = Math.max(when, safeTransportScheduleTime(deps.now(), deps.leadSec));
+			try {
+				await deps.cancelIncoming(at);
+			} finally {
+				deps.failOutgoing(reason);
+			}
 			return 'moved';
 		}
 		const moved = deps.snapshot().revision !== before.revision;
@@ -255,6 +262,7 @@ export async function landStemUpgrade(deps: StemHandoffDeps): Promise<StemLandin
 		}
 		const outcome = await handOffStemsLive(deps, STEM_HANDOFF_MARGINS_SEC[attempt]);
 		if (outcome === 'handed_off') return 'handed_off';
+		if (deps.stale()) return 'stale';
 		if (attempt < STEM_HANDOFF_MARGINS_SEC.length - 1) await deps.sleep(STEM_HANDOFF_RETRY_MS);
 	}
 	return deps.stale() ? 'stale' : 'deferred';
