@@ -1,11 +1,9 @@
-"""The cost guard's pricing, and the workflow readers it is checked with.
+"""Unit tests for scripts/ci_cost_guard.py pricing and workflow expression readers.
 
 Everything here runs on hand-written input: synthetic job payloads shaped like
 the ones the GitHub API returns, and `runs-on` / `if` expressions written out
 in the test. Nothing reads `.github/workflows`, so a failure names a defect in
-the arithmetic or the parser rather than a workflow someone edited. The
-assertions that DO run over the workflows on disk live in
-tests/test_ci_cost_guard_workflow_coverage.py.
+the arithmetic or the parser rather than a workflow someone edited.
 """
 
 from __future__ import annotations

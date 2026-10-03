@@ -1,8 +1,0 @@
-# Fixture lane -> account map. One lane per gate outcome, so every branch of the
-# five-hour rail is exercised by a lane a reader can point at.
-frontend-hotspots acct-green
-backend acct-warm
-ci-infra acct-hot
-docs-reqs acct-stale
-probe acct-noread
-workers acct-nomeasure

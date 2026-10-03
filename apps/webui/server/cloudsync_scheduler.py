@@ -30,6 +30,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from apps.shared.events import publish
 from apps.sync_hub import status as sync_status
 from apps.sync_hub.scheduler import next_delay_s
 from apps.sync_hub.transport import classify_transport_failure
@@ -58,6 +59,20 @@ HUB_ERROR_MAX_BACKOFF_S: float = 3600.0
 
 #: The only values the switch admits; anything else is a misconfiguration.
 _SWITCH_VALUES: tuple[str, ...] = ("", "0", "1")
+
+
+def announce_pull(app: FastAPI, result: FeedbackSyncOut) -> None:
+    """Tell clients and the coverage drain that a sync brought rows in.
+
+    A pull can add tracks and locations, which moves the health lights'
+    denominator. Nothing is announced for a round that pulled nothing.
+    """
+    if result.pulled <= 0:
+        return
+    publish("library.changed", {"kind": "tracks", "ids": []})
+    drain = getattr(app.state, "coverage_drain", None)
+    if drain is not None:
+        drain.wake()
 
 
 class CloudSyncScheduler:
@@ -162,6 +177,7 @@ class CloudSyncScheduler:
         self._last_ok_at = _now()
         self._wire_mismatch_failures = 0
         self._hub_error_failures = 0
+        announce_pull(self._app, result)
         return result
 
     def stop(self) -> None:

@@ -164,10 +164,19 @@ READ_ONLY_DB_HANDLES: dict[str, str] = {
     "apps/sync/playlist_diff.py": "rb_open_db(path) for a read-only diff",
     "apps/sync/usb/state.py": "open_db() no-arg working copy",
     "apps/tags/collect.py": "open_db() no-arg working copy, collects tags",
+    "apps/analysis/backends/genre_hint.py": (
+        "sqlite3.connect(<master.plain.db URI>?mode=ro, uri=True), one genre SELECT; "
+        "the regex stops at the .resolve() paren before it sees mode=ro"
+    ),
     "apps/sync/djay_sync_service.py": (
         "open_db() no-arg working copy in run_metadata_plan/run_cues_plan for audit "
         "diffs/plans; compare/plan only, writes CSVs under data/sync; live rekordbox "
         "writes are HTTP-guarded in routes/rb_djay_sync.py and guard_site on this module"
+    ),
+    "apps/webui/frontend/tests/e2e/support/vocals_demucs_fixture.py": (
+        "e2e fixture builder: writes one vendor row only into its own disposable "
+        "fixture dir's master.plain.db and refuses the canonical data/ copy or any "
+        "path under ~/Library/Pioneer (_refuse_canonical_master); never a live handle"
     ),
 }
 

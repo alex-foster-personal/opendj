@@ -19,6 +19,7 @@ from typing import Any
 from apps.adapters.rekordbox.writer import restore_content_field, snapshot_content_field
 from apps.analysis_key import canon
 from apps.shared.harmonic import key_to_camelot
+from apps.shared.mp3_lead_in import rekordbox_lead_in_s, to_rekordbox_s
 from apps.shared.state.db import open_ro
 from apps.sync.analysis_writeback_diff import (
     WritebackPlan,
@@ -228,6 +229,34 @@ def undo_writeback(conn: sqlite3.Connection, snapshots: Sequence[Mapping[str, An
             _maybe_delete_created_key(conn, str(created))
 
 
+def _beats_on_rekordbox_timeline(
+    rb_conn: sqlite3.Connection, content_id: str, beats: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Our grid with the file's MP3 lead-in put back, the time base PQTZ is read in.
+
+    Our beat times start after the lead-in our decoders trim; rekordbox's start
+    at the first sample of a raw decode (``apps.shared.mp3_lead_in``). Unlike a
+    reader, this refuses when the file cannot be read: a grid written without
+    knowing the lead-in would land in rekordbox up to ~25 ms early.
+    """
+    row = rb_conn.execute(
+        "SELECT FolderPath FROM djmdContent WHERE ID = ?", (content_id,)
+    ).fetchone()
+    lead_in_s = rekordbox_lead_in_s(row[0] if row else None)
+    if lead_in_s is None:
+        raise SafetyAbort(
+            f"pqtz write-back for content {content_id}: no local audio file to read "
+            "its MP3 lead-in from, so the grid's rekordbox time base is unknown"
+        )
+    shifted: list[dict[str, object]] = []
+    for beat in beats:
+        t = beat["t"]
+        if not isinstance(t, (int, float)):
+            raise SafetyAbort(f"pqtz own beat for content {content_id} has no numeric t: {beat!r}")
+        shifted.append({**beat, "t": to_rekordbox_s(float(t), lead_in_s)})
+    return shifted
+
+
 def _parse_own_value(field: str, own_value: str) -> object:
     if field == "bpm":
         return float(own_value)
@@ -335,7 +364,9 @@ def live_writeback(
                 raise SafetyAbort(
                     f"pqtz own beatgrid missing for {row.stable_id}"
                 )
-            beats = list(payload["beats"])
+            beats = _beats_on_rekordbox_timeline(
+                rb_conn, content_id, list(payload["beats"])
+            )
             pqtz_beats[content_id] = beats
             tag = f"{content_id}:{row.field}"
             expected[tag] = (content_id, row.field, beats)

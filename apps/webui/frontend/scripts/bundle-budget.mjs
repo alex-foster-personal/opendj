@@ -180,7 +180,15 @@ const BUDGETS = [
   // #4928 (failed-import sentence) about 259,380. Each PR passed alone. Payback, not
   // yet measured: find which of this PR's setup modules the first-paint closure
   // reaches and move the wizard-only copy behind the lazy SetupOverlay import.
-  { name: 'library', limit: 260096, measured: 259214, note: 'initial load of "/"' },
+  // RAISED Fri 2 Oct 2026 (+2 KiB, PR #4908, CUEOUT-22 two-device headphone cue in the
+  // Mac app): headphones.ts is in the first-paint closure, and its native-sink
+  // branch adds +1,250 bytes even with the socket client and worker split behind a
+  // dynamic import. Clean origin/main c8b8f5aeb measured
+  // 259,943 locally (153 bytes of headroom); main + this PR 261,193. The second KiB is
+  // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
+  // of its own and raises once more. Payback, not yet measured: find what pulls
+  // headphones.ts into the "/" closure and defer it.
+  { name: 'library', limit: 262144, measured: 261193, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -197,7 +205,13 @@ const BUDGETS = [
   // explainer dismiss, the 3Band waveform palette with its legacy option,
   // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
   // 130 bytes over the old limit; 894 bytes of headroom remain.
-  { name: 'performance', limit: 242688, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4904, V1 copy and paste between
+  // playlists): clean origin/main c8b8f5ae measures 242,439 locally (249
+  // bytes of headroom). The library browser is part of /performance, and the
+  // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
+  // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
+  // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
+  { name: 'performance', limit: 243712, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

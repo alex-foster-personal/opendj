@@ -67,6 +67,13 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
     ".github/workflows/e2e.yml",
     "tests/perf/**",
     "tests/docs/**",
+    # Generated ledgers no Playwright run reads (TEST-CUT, Fri 2 Oct 2026): the
+    # requirements index (`python -m scripts.build_reqs_json`), the pytest-split
+    # durations ledger, and the write-once app docs. 45 of 55 PRs that ran the PR-head
+    # e2e gate 11:00-17:45Z touched reqs.json, which kept a pytest-only PR in scope.
+    "reqs.json",
+    ".test_durations",
+    "app_docs/**",
 )
 
 #: Workflow file -> (`paths`, `paths-ignore`) its in-run scope job evaluates for a

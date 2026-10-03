@@ -174,9 +174,16 @@ export function installUiMirror(): () => void {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(buildUiMirror())
-		}).then((response) => {
-			registered = response.ok;
-		});
+		})
+			.then((response) => {
+				registered = response.ok;
+			})
+			.catch(() => {
+				// Engine down / WebKit `Load failed`: do not become an
+				// unhandledrejection (Sentry OPEN-DJ-FE-F). Forget registration
+				// until a later PUT is accepted.
+				registered = false;
+			});
 	};
 	publish();
 	const interval = window.setInterval(publish, 1000);
@@ -196,6 +203,6 @@ export function installUiMirror(): () => void {
 		registered = false;
 		uninstallOrderPoll();
 		window.clearInterval(interval);
-		void fetch(MIRROR_PATH, { method: 'DELETE', keepalive: true });
+		void fetch(MIRROR_PATH, { method: 'DELETE', keepalive: true }).catch(() => {});
 	};
 }

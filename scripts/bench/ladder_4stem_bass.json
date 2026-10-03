@@ -59,7 +59,7 @@
       "id": "rb7-stems",
       "file": "clips-4stem/aljames-schoolboy-rb7-stems-bass.m4a",
       "inst_file": null,
-      "params": "rekordbox 7 STEMS, its own hdemucs.onnx, overlap 0.25, 44.1 kHz [10.51 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "params": "user-supplied ONNX 4-stem model, overlap 0.25, 44.1 kHz [10.51 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
       "separate_s": 10.51,
       "si_sdr": 8.376,
       "s_per_stem_minute": 10.51,

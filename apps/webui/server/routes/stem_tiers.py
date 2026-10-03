@@ -53,6 +53,11 @@ class TierOut(BaseModel):
     availability: str
     unavailable_because: str
     is_default: bool
+    #: False when THIS engine refuses to spawn the tier's process (INSTALL-32):
+    #: a Modal tier in the installed app, which ships no uv and no modal. The
+    #: UI hides such a tier; ``generate`` refuses it with the same sentence.
+    runnable_here: bool
+    not_runnable_because: str | None = None
 
 
 class TierEstimateOut(BaseModel):
@@ -90,28 +95,58 @@ def _ensure_loaded() -> None:
         tiercfg.load_measured_throughput(DATA_DIR.parent)
 
 
+def _spawn_refusal(tier: tiercfg.Tier) -> str | None:
+    """Why this engine cannot spawn ``tier``'s process, or None if it can.
+
+    One predicate for both ``GET /tiers`` (the UI hides a refused tier) and
+    ``_generate_command`` (the 503 backstop), so the two cannot disagree. A
+    Modal tier runs scripts/modal_vocal_farm.py through ``uv --with modal``;
+    the installed app ships none of the three (INSTALL-31).
+    """
+    if tier.where == "local":
+        return None
+    from apps.shared.source_tree import is_repo_checkout
+    from apps.stems.worker_launch import packaged_python
+
+    if packaged_python() or not is_repo_checkout(_repo_root()):
+        return (
+            f"tier {tier.key} separates on Modal through uv, which needs a "
+            "development checkout with uv and modal; this installed app "
+            "ships neither. Choose a local tier, or run the engine from a "
+            "checkout of the repo."
+        )
+    return None
+
+
 @router.get("/tiers", response_model=list[TierOut])
 def list_tiers() -> list[TierOut]:
     return [
-        TierOut(
-            key=t.key,
-            name=t.name,
-            where=t.where,
-            preset_tag=t.preset_tag,
-            model=t.model,
-            overlap=t.overlap,
-            shifts=t.shifts,
-            gpu=t.gpu,
-            codec=t.codec,
-            purpose=t.purpose,
-            evidence=t.evidence,
-            evidence_strength=t.evidence_strength,
-            availability=t.availability,
-            unavailable_because=t.unavailable_because,
-            is_default=(t.key == tiercfg.DEFAULT_TIER),
-        )
+        _tier_out(t)
         for t in tiercfg.ladder()  # ladder order, NOT_APPLICABLE rungs included
     ]
+
+
+def _tier_out(t: tiercfg.Tier) -> TierOut:
+    refusal = _spawn_refusal(t)
+    return TierOut(
+        key=t.key,
+        name=t.name,
+        where=t.where,
+        preset_tag=t.preset_tag,
+        model=t.model,
+        overlap=t.overlap,
+        shifts=t.shifts,
+        gpu=t.gpu,
+        codec=t.codec,
+        purpose=t.purpose,
+        evidence=t.evidence,
+        evidence_strength=t.evidence_strength,
+        availability=t.availability,
+        unavailable_because=t.unavailable_because,
+        is_default=(t.key == tiercfg.DEFAULT_TIER),
+        runnable_here=refusal is None,
+        not_runnable_because=refusal,
+    )
 
 
 @router.get("/estimate", response_model=EstimateOut)
@@ -207,7 +242,29 @@ def _running_count(where: str) -> int:
 
 
 def _repo_root() -> Path:
+    """The source tree: read-only in the installed app (``payload/app`` inside
+    the signed bundle). Workers are FOUND here; nothing is WRITTEN here."""
     return Path(__file__).resolve().parents[4]
+
+
+JOB_LOG_SUBDIR: str = "logs/stem-jobs"
+
+
+def _job_log_dir() -> Path:
+    """Where a generate job's log goes: the data dir's ``logs/``, the same
+    writable, per-engine place as the engine's own logs (``EngineConfig``'s
+    ``logs_dir``), never the source tree.
+
+    It used to be ``_repo_root() / ".tmp/stem-jobs"``. In the installed app
+    that is inside ``Open DJ.app``, so one LOCAL job added a file to the
+    sealed bundle and ``codesign --verify --deep --strict`` failed with "a
+    sealed resource is missing or invalid" (packaged check of 316572f5,
+    Fri 2 Oct 2026, finding 2; STEM-49). Read at call time so a test that
+    repoints the data dir measures it.
+    """
+    from apps.shared import paths
+
+    return Path(paths.DATA_DIR) / JOB_LOG_SUBDIR
 
 
 def _generate_command(
@@ -216,12 +273,28 @@ def _generate_command(
     """The exact argv for this tier. One place, so CLI and UI cannot diverge."""
     root = _repo_root()
     if tier.where == "local":
+        # The installed app ships no uv; its launcher names the payload
+        # interpreter instead (apps/stems/worker_launch.py, issue #3421).
+        from apps.stems.worker_launch import packaged_python
+
+        packaged = packaged_python()
+        prefix = [packaged] if packaged else ["uv", "run", "--no-sync"]
         return [
-            "uv", "run", "--no-sync", str(root / "scripts/stem_bundle_worker.py"),
+            *prefix, str(root / "scripts/stem_bundle_worker.py"),
             "--audio", audio_path,
             "--stable-id", stable_id,
             "--out-dir", str(stems_dir / stable_id),
         ]
+    # `uv run --no-sync` outside a project dies with an opaque error, so the
+    # installed app refuses before spawning (INSTALL-31); the UI already hides
+    # the tier from the same predicate (INSTALL-32).
+    refusal = _spawn_refusal(tier)
+    if refusal is not None:
+        from apps.shared.source_tree import DEV_ONLY_CODE
+
+        raise HTTPException(
+            status_code=503, detail={"code": DEV_ONLY_CODE, "message": refusal}
+        )
     return [
         "uv", "run", "--no-sync", "--with", "modal", "python", "-m",
         "scripts.modal_vocal_farm",
@@ -309,7 +382,7 @@ def _generate_impl(body: GenerateIn, request: Request) -> dict:
         stems_dir=storage.write_root,
     )
     job_id = uuid.uuid4().hex[:12]
-    log = _repo_root() / ".tmp/stem-jobs" / f"{job_id}.log"
+    log = _job_log_dir() / f"{job_id}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     # The parent closes its copy as soon as the child owns one: leaving it open
     # leaks a descriptor per job, and job_status reads the file by path anyway.

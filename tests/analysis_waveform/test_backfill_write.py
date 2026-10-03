@@ -167,6 +167,7 @@ def test_build_waveform_payload_never_duplicates_one_band_across_three() -> None
 #-----------------------------------------------------------------------------
 
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_real_audio_produces_tri_bands(tmp_path: Path, state_db: Path) -> None:
     audio = tmp_path / "low-tone.wav"
     _write_sine_wav(audio, seconds=2.0)
@@ -187,6 +188,7 @@ def test_real_audio_produces_tri_bands(tmp_path: Path, state_db: Path) -> None:
 
 
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_the_record_is_idempotent_across_two_runs(tmp_path: Path, state_db: Path) -> None:
     audio = tmp_path / "low-tone.wav"
     _write_sine_wav(audio, seconds=2.0)
@@ -205,6 +207,7 @@ def test_a_vanished_path_raises_track_vanished(tmp_path: Path) -> None:
 
 
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_a_garbage_file_writes_failed_not_decoded(tmp_path: Path, state_db: Path) -> None:
     source = tmp_path / "not really audio.wav"
     source.write_bytes(b"this is not a RIFF header" * 4096)

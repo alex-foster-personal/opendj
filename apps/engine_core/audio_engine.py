@@ -49,7 +49,6 @@ import collections
 import contextlib
 import json
 import logging
-import os
 import queue
 import secrets
 import subprocess
@@ -60,9 +59,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Literal
 
+from apps.shared.odj_audio_binary import (
+    BIN_ENV,
+    EXE_NAME,
+    REPO_TARGET,
+    Binary,
+    OdjAudioUnavailable,
+    find_binary,
+)
+
 log = logging.getLogger(__name__)
 
-BIN_ENV: str = "ODJ_AUDIO_BIN"
 TOKEN_ENV: str = "ODJ_AUDIO_WS_TOKEN"
 AUTOSTART_ENV: str = "ODJ_AUDIO_ENGINE"
 
@@ -78,9 +85,6 @@ State = Literal[
     "off", "starting", "running", "restarting", "stopped", "failed", "unavailable"
 ]
 
-#: Relative to the repo root: where ``cargo build`` puts the binary.
-REPO_TARGET: Path = Path("apps/audio-engine/target")
-EXE_NAME: str = "odj-audio.exe" if os.name == "nt" else "odj-audio"
 
 
 class AudioEngineError(RuntimeError):
@@ -89,14 +93,6 @@ class AudioEngineError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
-
-
-@dataclass(frozen=True)
-class Binary:
-    path: Path
-    #: ``env`` (ODJ_AUDIO_BIN, the packaged app) or ``repo-release`` /
-    #: ``repo-debug`` (a local cargo build in a checkout).
-    source: str
 
 
 def autostart_from_environ(environ: Mapping[str, str]) -> str:
@@ -112,31 +108,15 @@ def autostart_from_environ(environ: Mapping[str, str]) -> str:
 def resolve_binary(environ: Mapping[str, str], repo_root: Path) -> Binary:
     """Find the engine binary, or raise ``AudioEngineError('unavailable')``.
 
-    ``ODJ_AUDIO_BIN`` wins and is never second-guessed: when it is set but
-    wrong, that is the answer, because a packaged app must never fall back to
-    a repo build. Without it, the newest of the release and debug cargo builds
-    is used, so a fresh debug build is not shadowed by a stale release one.
+    The rule lives in :func:`apps.shared.odj_audio_binary.find_binary`, shared
+    with the workers' decoder: ``ODJ_AUDIO_BIN`` wins and is never
+    second-guessed, because a packaged app must never fall back to a repo
+    build; without it, the newest of the release and debug cargo builds.
     """
-    raw = environ.get(BIN_ENV, "").strip()
-    if raw:
-        p = Path(raw)
-        if not p.is_file():
-            raise AudioEngineError("unavailable", f"{BIN_ENV}={raw} is not a file")
-        if not os.access(p, os.X_OK):
-            raise AudioEngineError("unavailable", f"{BIN_ENV}={raw} is not executable")
-        return Binary(p, "env")
-    found: list[tuple[float, Binary]] = []
-    for profile in ("release", "debug"):
-        p = repo_root / REPO_TARGET / profile / EXE_NAME
-        if p.is_file() and os.access(p, os.X_OK):
-            found.append((p.stat().st_mtime, Binary(p, f"repo-{profile}")))
-    if not found:
-        raise AudioEngineError(
-            "unavailable",
-            f"no {BIN_ENV} and no local build; run "
-            "`cargo build --release --manifest-path apps/audio-engine/Cargo.toml`",
-        )
-    return max(found, key=lambda t: t[0])[1]
+    try:
+        return find_binary(environ, repo_root)
+    except OdjAudioUnavailable as exc:
+        raise AudioEngineError("unavailable", str(exc)) from exc
 
 
 Popen = Callable[..., "subprocess.Popen[str]"]
@@ -566,6 +546,8 @@ def _close_quietly(stream: IO[str] | None) -> None:
 __all__ = [
     "AUTOSTART_ENV",
     "BIN_ENV",
+    "EXE_NAME",
+    "REPO_TARGET",
     "TOKEN_ENV",
     "AudioEngineError",
     "AudioEngineSupervisor",

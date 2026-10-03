@@ -27,6 +27,7 @@ from apps.sets.share_page import router as set_share_page_router
 from . import (
     analysis_autostart,
     analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
+    coverage_drain,
     library_jobs_autostart,
     lyric_index_autostart,
 )
@@ -80,6 +81,7 @@ def create_app(  # noqa: PLR0913
     auto_analyze: bool = False,
     lyric_index: bool = False,
     auto_user_jobs: bool = False,
+    auto_coverage_drain: bool = False,
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
     stem_hydration: bool = False,
@@ -156,6 +158,7 @@ def create_app(  # noqa: PLR0913
     )
     app.state.cloudsync_scheduler_armed = cloudsync_scheduler
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
+    app.state.coverage_drain_armed = auto_coverage_drain
     _install_exception_handlers(app)
     install_request_guard(
         app,
@@ -414,6 +417,7 @@ def _build_default_app() -> FastAPI:
         lyric_index=lyric_index_autostart.enabled_from_environ(os.environ),
         cloudsync_scheduler=True,
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
+        auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
         stem_hydration=True,
     )
 

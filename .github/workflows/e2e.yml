@@ -19,8 +19,7 @@ name: E2E
 #   3. E2E can be sized, scheduled and reasoned about without perturbing the
 #      fast lane's latency budget.
 #
-# It is registered in ci-cost-guard.yml's workflow list so its runs get priced
-# like every other workflow.
+# Spend is attributed in ci-budget-watch.yml (ADR-0121 retired per-run spike guard).
 
 on:
   pull_request:
@@ -49,6 +48,9 @@ on:
       - ".github/workflows/e2e.yml"
       - "tests/perf/**"
       - "tests/docs/**"
+      - "reqs.json"
+      - ".test_durations"
+      - "app_docs/**"
   schedule:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.
@@ -69,9 +71,23 @@ on:
 # replaced it with the per-SHA group below, which removes the PRECONDITION for
 # cancelling instead of making the cancellation conditional, and therefore does
 # not depend on the mechanism that was in dispute.
+#
+# MAIN PUSHES ARE TIP-ONLY (TEST-CUT, Fri 2 Oct 2026, specs/ci-test-cut.md). Every
+# push to main is a tree a Trunk queue draft already ran this gate on (the draft is
+# the merge result; `e2e verdict` is a required status of the draft), so a per-SHA
+# push run tested each merge a second time on the same four `e2e` runners the
+# drafts and PR heads wait for. Measured 11:00-17:45Z Fri 2 Oct: 14 main push gates
+# waited a median 79 min (p90 157) for a runner, 8 queued at once, while drafts
+# waited 13 min (p90 36). Push runs now share ONE group with cancel-in-progress
+# off: the running push gate always finishes, and a newer merge replaces only the
+# PENDING one (GitHub cancels a pending run when a newer one joins its group, which
+# is also what the #631 measurement above saw). main's newest tip still gets a
+# verdict, so trunk-red-alarm and scripts/ci_main_red.py (which reads a cancelled
+# run as no verdict and looks at the next) keep a measurement. PR and dispatch runs
+# keep one group per ref with cancel-in-progress on, as before.
 concurrency:
-  group: e2e-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'shared' }}
-  cancel-in-progress: true
+  group: e2e-${{ github.ref }}-${{ github.event_name == 'push' && 'push-tip' || 'shared' }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read

@@ -139,6 +139,7 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "scripts/worker_worktree_guard.py",
     "scripts/worktree_census.py",
     "scripts/worktree_lifecycle.py",
+    "scripts/worktree_tools.py",
     "tests/scripts/test_enqueue_gate*.py",
     "tests/scripts/enqueue_gate_*.py",
     "tests/scripts/test_review_submitted_state.py",
@@ -220,6 +221,13 @@ _LAST_FAILURE: list[str] = []
 
 def last_failure() -> str | None:
     return _LAST_FAILURE[-1] if _LAST_FAILURE else None
+
+
+def verdict_line(ok: bool, head_sha: str, detail: str) -> str:
+    """REVIEW-13's verdict line. It names the head because on a FAIL triage exits
+    before its own `PR #N @ head` header, and review_chain reads the head from here."""
+    outcome = "ok" if ok else "FAIL"
+    return f"[review-coverage] {outcome}: control-plane dual review (REVIEW-13) @ head {head_sha}: {detail}"
 
 
 @dataclass(frozen=True)
@@ -572,10 +580,10 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         return 0
     rc._require_head_unchanged(head_sha, rc._head_sha(pr))
     if verdict.ok:
-        print(f"[review-coverage] control-plane dual review (REVIEW-13) ok: {verdict.detail}")
+        print(verdict_line(True, head_sha, verdict.detail))
         print_carry_proofs(verdict.carried, head_sha)
         return 0
     _LAST_FAILURE.append(verdict.detail)
-    print(f"[review-coverage] FAIL: control-plane dual review (REVIEW-13): {verdict.detail}")
+    print(verdict_line(False, head_sha, verdict.detail))
     print_carry_proofs(verdict.carried, head_sha)
     return 1
