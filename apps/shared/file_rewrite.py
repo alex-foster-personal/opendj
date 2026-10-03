@@ -24,12 +24,13 @@ def rewrite_atomic(path: Path, build: Callable[[BinaryIO, BinaryIO], None]) -> N
     """Rebuild ``path`` by calling ``build(src, out)`` and swap the result in.
 
     The new file is built beside the original, fsynced, given the original's
-    permission bits, extended attributes and ACL (``copy_extended_metadata``),
-    then swapped in with ``os.replace``: a crash leaves the old
-    file or the new one, never a half-written mix. A failure removes the temp
-    file and re-raises.
+    owner and group (``keep_ownership``), permission bits, extended attributes
+    and ACL (``copy_extended_metadata``), then swapped in with ``os.replace``:
+    a crash leaves the old file or the new one, never a half-written mix. A
+    failure removes the temp file and re-raises, leaving the original as it was.
     """
-    mode = path.stat().st_mode
+    original = path.stat()
+    mode = original.st_mode
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.tag-", dir=str(path.parent))
     tmp = Path(tmp_name)
     try:
@@ -37,12 +38,30 @@ def rewrite_atomic(path: Path, build: Callable[[BinaryIO, BinaryIO], None]) -> N
             build(src, out)
             out.flush()
             os.fsync(out.fileno())
+        keep_ownership(original, tmp)  # before chmod: a chown may clear set-id bits
         os.chmod(tmp, mode & 0o7777)
         copy_extended_metadata(path, tmp)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def keep_ownership(original: os.stat_result, tmp: Path) -> None:
+    """Give ``tmp`` the original file's owner and group.
+
+    ``mkstemp`` creates the inode as this process's user, and ``os.replace``
+    keeps that inode, so without this a tag edit on a file another user or
+    group owns would silently hand it to the writer. When the owner cannot be
+    kept (a non-root writer may not give a file away) this raises, which
+    aborts the rewrite. Platform seam: Windows has no ``os.chown``, and its
+    owner comes from the directory, so nothing is done there.
+    """
+    if not hasattr(os, "chown"):
+        return
+    current = tmp.stat()
+    if (current.st_uid, current.st_gid) != (original.st_uid, original.st_gid):
+        os.chown(tmp, original.st_uid, original.st_gid)
 
 
 # copyfile(3) flags, <copyfile.h>: COPYFILE_ACL | COPYFILE_XATTR.
@@ -134,4 +153,11 @@ def replace_head(path: Path, head: bytes, audio_offset: int) -> None:
     replace_range(path, 0, audio_offset, head)
 
 
-__all__ = ["copy_range", "copy_rest", "replace_head", "replace_range", "rewrite_atomic"]
+__all__ = [
+    "copy_range",
+    "copy_rest",
+    "keep_ownership",
+    "replace_head",
+    "replace_range",
+    "rewrite_atomic",
+]

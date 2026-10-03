@@ -43,7 +43,7 @@ from rich.console import Console
 from rich.table import Table
 
 from apps.shared import flac_meta, id3v2, mp4_meta, ogg_comment
-from apps.shared.file_rewrite import copy_extended_metadata
+from apps.shared.file_rewrite import copy_extended_metadata, keep_ownership
 from apps.shared.paths import DATA_DIR
 from apps.shared.vorbis_comment import VorbisCommentError
 
@@ -310,6 +310,7 @@ def _atomic_write_tags(path: Path, new: dict[str, str]) -> None:
     the original is untouched. (META-02 / P06-F01.)
     """
     parent = path.parent
+    original = path.stat()
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.opendj-", suffix=path.suffix, dir=str(parent)
     )
@@ -320,6 +321,9 @@ def _atomic_write_tags(path: Path, new: dict[str, str]) -> None:
         _write_tags(tmp, new)
         with open(tmp, "rb") as fh:
             os.fsync(fh.fileno())
+        # mkstemp made the copy ours; a file we cannot hand back aborts here.
+        keep_ownership(original, tmp)
+        os.chmod(tmp, original.st_mode & 0o7777)  # a chown may clear set-id bits
         copy_extended_metadata(path, tmp)  # copy2 drops macOS ACLs and xattrs
         os.replace(tmp, path)
         # Best-effort directory fsync so the rename is durable.
@@ -359,11 +363,16 @@ def _restore_from_snapshot(snapshot: Path, target: Path) -> None:
     try:
         shutil.copy2(snapshot, tmp)
         try:
+            live = target.stat()
+            keep_ownership(live, tmp)
+            os.chmod(tmp, live.st_mode & 0o7777)
             copy_extended_metadata(target, tmp)  # the snapshot's copy2 kept no ACL
         except OSError as exc:
-            # A rollback that refuses to restore the audio over lost Finder
-            # tags would leave the user with the half-written file instead.
-            log.warning("restore of %s keeps its bytes but not its xattrs/ACL: %s", target, exc)
+            # A rollback that refuses to restore the audio over a lost owner
+            # or Finder tags would leave the user with the half-written file.
+            log.warning(
+                "restore of %s keeps its bytes but not its owner/xattrs/ACL: %s", target, exc
+            )
         os.replace(tmp, target)
     except Exception:
         try:
@@ -419,11 +428,19 @@ AUDIO = Path({str(delta.path)!r})
 
 
 def keep_metadata(src: str, dst: str) -> None:
-    """Carry the live file's ACL and xattrs onto the restored copy, best
+    """Carry the live file's owner, ACL and xattrs onto the restored copy, best
     effort: an attribute this filesystem or user cannot set is reported on
     stderr and skipped, so it never blocks restoring the audio itself."""
     if not os.path.exists(src):
         return
+    try:
+        live = os.stat(src)
+        mine = os.stat(dst)
+        if hasattr(os, "chown") and (mine.st_uid, mine.st_gid) != (live.st_uid, live.st_gid):
+            os.chown(dst, live.st_uid, live.st_gid)
+            os.chmod(dst, live.st_mode & 0o7777)
+    except OSError as exc:
+        print(f"warning: owner not kept: {{exc}}", file=sys.stderr)
     try:
         if sys.platform == "darwin":
             libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)

@@ -1,7 +1,8 @@
 """Stem cache disk budget: status, enforce-now and settings (STEM-43).
 
-Agent-native parity for the low-disk indicator in the UI health area and for
-``python -m apps.stems cache-status | cache-enforce | cache-settings``. Its
+Agent-native parity for the low-disk indicator in the UI health area (the
+``python -m apps.stems cache-*`` verbs that call these routes follow in a
+separate PR, split out of #4974 by the perf-batch gate). Its
 own module rather than more routes on ``routes/stems.py`` (the track-scoped
 loader) or ``routes/stems_assets.py`` (the migration rail).
 
