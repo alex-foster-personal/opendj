@@ -65,8 +65,49 @@ def _body_is_at_head(body: str, head_sha: str) -> bool:
     return False
 
 
+#: The bot login each expected reviewer posts under. A reviewer's STATUS is not
+#: evidence it reviewed; #682 carried CodeRabbit "Review completed" with zero
+#: submitted reviews and zero inline comments (Tue 1 Sep 2026). Only an ARTIFACT
+#: -- a submitted review, an inline comment, or a review summary comment -- shows
+#: that something actually looked at the diff.
+REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
+    "Codex": ("chatgpt-codex-connector",),
+}
+
+
+def _matches(login: str, name: str) -> bool:
+    """Exact match on the normalized login, never a substring test.
+
+    issue #1016 P1 BLOCKING, thread r3929765931 (PR #1053, Thu 3 Sep 2026): a
+    substring check accepted `chatgpt-codex-connector-attacker` as Codex,
+    because `"chatgpt-codex-connector" in login.lower()` is true for any
+    login merely CONTAINING the trusted stem. On a public repo any commenter
+    could post a current-head `Completed` line under that name and pass
+    coverage without a real Codex review. Normalize the `[bot]` suffix and
+    require full equality, the same rule `review_thread_parse._is_bot` already
+    applies to its own bot-identity check.
+    """
+    return login.removesuffix("[bot]").lower() in REVIEWER_LOGINS.get(name, ())
+
+
 class TriageError(RuntimeError):
     """Measurement failed. Never rendered as a verdict."""
+
+
+def _run_gh(
+    args: list[str], input_text: str | None, env: dict[str, str] | None
+) -> subprocess.CompletedProcess[str]:
+    """The one process boundary for every `gh` call: tests replace ONLY this, so `_gh`'s
+    error handling and the `--paginate --slurp` callers above it still run for real."""
+    kwargs: dict[str, object] = {
+        "input": input_text,
+        "capture_output": True,
+        "text": True,
+        "check": False,
+    }
+    if env is not None:
+        kwargs["env"] = env
+    return subprocess.run(["gh", *args], **kwargs)
 
 
 def _gh(args: list[str], payload: dict | None = None, *, as_human: bool = False) -> str:
@@ -92,26 +133,12 @@ def _gh(args: list[str], payload: dict | None = None, *, as_human: bool = False)
     covers both call sites.
     """
     require_gh_min_version()
+    env: dict[str, str] | None = None
     if as_human:
         env = dict(os.environ)
         env.pop("GH_APP", None)
         env["GH_ALLOW_HUMAN"] = "1"
-        proc = subprocess.run(
-            ["gh", *args],
-            input=json.dumps(payload) if payload is not None else None,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
-    else:
-        proc = subprocess.run(
-            ["gh", *args],
-            input=json.dumps(payload) if payload is not None else None,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    proc = _run_gh(args, json.dumps(payload) if payload is not None else None, env)
     if proc.returncode != 0:
         raise TriageError(
             f"gh {' '.join(args)} failed ({proc.returncode}): "
