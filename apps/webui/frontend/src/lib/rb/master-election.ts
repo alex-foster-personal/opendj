@@ -111,3 +111,19 @@ export function installAutomaticRejoinRunner(runner: AutomaticRejoinRunner): () 
 export function runAutomaticRejoin(work: () => Promise<void>): Promise<void> {
 	return _automaticRejoinRunner(work);
 }
+
+/** Automatic election runs under the dispatcher's all-deck plus sync claim. */
+export type AutomaticMasterElectionRunner = (work: () => Promise<void>) => Promise<void>;
+let automaticMasterElectionRunner: AutomaticMasterElectionRunner = (work) => work();
+
+export function installAutomaticMasterElectionRunner(runner: AutomaticMasterElectionRunner): () => void {
+	const previous = automaticMasterElectionRunner;
+	automaticMasterElectionRunner = runner;
+	return () => {
+		automaticMasterElectionRunner = previous;
+	};
+}
+
+export function runAutomaticMasterElection(work: () => Promise<void>): Promise<void> {
+	return automaticMasterElectionRunner(work);
+}

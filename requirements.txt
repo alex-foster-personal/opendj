@@ -228,4 +228,4 @@ httpx2>=2.12.0,<3
 # dependency in pyproject since then, and CI installs this file only.
 mcp>=2.0,<3
 # Google id_token verification for POST /api/v1/sync/enroll (ADR 12 B).
-pyjwt[crypto]>=2.9,<3
+pyjwt[crypto]>=2.15.1,<3

@@ -76,7 +76,6 @@ import argparse
 import json
 import os
 import platform
-import re
 import sys
 import time
 from collections.abc import Callable
@@ -98,6 +97,8 @@ from apps.engine_core.build_info import (
 )
 from apps.engine_core.origin import EngineNotRunning, resolve_origin
 from apps.shared import platform_paths
+from apps.shared.semver import Semver as _Version
+from apps.shared.semver import parse_semver as _parse_semver
 from apps.webui.server.shell_commands import ShellCommandConflictError, shell_broker
 
 #: THE update endpoint. One string, read by this module and compiled into the
@@ -147,10 +148,7 @@ _ARCH_KEYS: dict[str, str] = {
     "amd64": "x86_64",
 }
 
-_SEMVER = re.compile(
-    r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
-    r"(?:-(?P<pre>[0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
-)
+
 
 UpdateStatus = Literal[
     "update-available",
@@ -282,35 +280,16 @@ def platform_key(system: str | None = None, machine: str | None = None) -> str:
 
 
 # ----- semver -------------------------------------------------------------
-@dataclass(frozen=True, order=True)
-class _Version:
-    major: int
-    minor: int
-    patch: int
-
-
 def parse_version(raw: str, source: str) -> _Version:
-    """Strict semver, or a fault naming the string and where it came from.
-
-    A leading ``v`` is accepted because git tags carry one and release
-    manifests are written by hand often enough that refusing it would be
-    pedantry rather than safety. Anything else unparseable is refused: a
-    version this code cannot order is a version it must not silently treat
-    as older or newer.
-    """
-    candidate = raw.strip()
-    if candidate.startswith("v"):
-        candidate = candidate[1:]
-    matched = _SEMVER.match(candidate)
-    if matched is None:
+    """Strict SemVer precedence, or the existing named malformed-version fault."""
+    try:
+        return _parse_semver(raw)
+    except ValueError as exc:
         raise UpdateCheckError(
             "manifest-malformed",
             f"{source} is {raw!r}, which is not a semver version, so this "
             "build cannot be ordered against the channel",
-        )
-    return _Version(
-        int(matched["major"]), int(matched["minor"]), int(matched["patch"])
-    )
+        ) from exc
 
 
 def compare_versions(current: str, available: str) -> UpdateStatus:

@@ -1,4 +1,3 @@
-import { runAutomaticRejoin } from '$lib/rb/master-election';
 /**
  * Rust engine mode's connection to `odj-audio`: start and connect, load a
  * library track with its beatgrid, forward the commands the engine plays as
@@ -6,6 +5,7 @@ import { runAutomaticRejoin } from '$lib/rb/master-election';
  * with the mode (see `rust-mode.svelte.ts`).
  */
 import { API_BASE } from '$lib/api/base';
+import { runAutomaticMasterElection, runAutomaticRejoin } from '$lib/rb/master-election';
 import { getTrack } from '$lib/api';
 import { fetchAnlzForDeckLoad } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
@@ -329,14 +329,16 @@ export function applyLoadFailed(e: EngineLoadFailed): void {
 /** Transport truth from the engine: play state, tempo, loop, length, key. */
 export function mirrorEngineState(s: EngineState): void {
 	link.lastState = s;
-	let masterStopped = false;
+	let masterStopped: { deck: DeckId; stableId: string; generation: number } | null = null;
 	for (const d of s.decks) {
 		const deck = d.deck as DeckId;
 		const st = deckStates[deck];
 		if (st === undefined || st.stable_id === null) continue;
 		if (s.frame <= (loadFences[deck] ?? -1)) continue;
 		// A track that plays out stops in the engine, not on a command.
-		if (st.playing && !d.playing && rustMaster.deck === deck) masterStopped = true;
+		if (st.playing && !d.playing && rustMaster.deck === deck) {
+			masterStopped = { deck, stableId: st.stable_id, generation: st.load_generation };
+		}
 		st.playing = d.playing;
 		st.audible = d.playing;
 		st.transport_pending = false;
@@ -360,12 +362,34 @@ export function mirrorEngineState(s: EngineState): void {
 			: (displayLoops[d.deck as DeckId] ?? null);
 		if (!d.playing) st.position_ms = d.position_ms;
 	}
-	// Not awaited: a state frame must not wait on a re-join; `_reanchor`
-	// reports a follower that cannot lock in its own sync_error.
-	if (masterStopped) void runAutomaticRejoin(() => electAndRejoin()).catch((error: unknown) => {
-		const master = rustMaster.deck;
-		if (master !== null) deckStates[master].sync_error = `Beat Sync re-join failed: ${error instanceof Error ? error.message : String(error)}`;
-	});
+	// Not awaited: a state frame must not wait on a re-join. Main's election
+	// runner owns this path (staleness guards skip a handoff whose deck
+	// reloaded, resumed, or is mid-load). Load failure uses the counted
+	// re-join runner instead; nesting both on one turn deadlocks the scheduler.
+	// `_reanchor` reports a follower that cannot lock in its own sync_error.
+	if (masterStopped !== null) {
+		const ended = masterStopped;
+		void runAutomaticMasterElection(async () => {
+			const st = deckStates[ended.deck];
+			if (
+				rustMaster.deck !== ended.deck ||
+				st.playing ||
+				st.stable_id !== ended.stableId ||
+				st.load_generation !== ended.generation ||
+				loadFences[ended.deck] === Infinity
+			) {
+				return;
+			}
+			await electAndRejoin();
+		}).catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			rustMode.error = message;
+			const master = rustMaster.deck;
+			if (master !== null) {
+				deckStates[master].sync_error = `Beat Sync re-join failed: ${message}`;
+			}
+		});
+	}
 	// Each frame is a fresh playhead for both decks: keep followers on phase.
 	phaseLockTick();
 }

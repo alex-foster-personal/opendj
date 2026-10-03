@@ -4,7 +4,7 @@ Three rules, and the seams that enforce them:
 
 - **Kill switch.** ``~/jobs/state/REDTEAM_STOP`` is read before every spawn.
   Its first line is the reason. ``redteam_trigger`` refuses at its attack
-  spawn, ``ops/fleet/redteam-trigger.sh`` refuses at the tick, and
+  spawn, fleet-af ``tenants/open-dj/redteam/redteam-trigger.sh`` refuses at the tick, and
   :func:`build_pod_spawn` refuses for any caller that goes through this module.
 - **Injection guard.** App content and issue bodies are data, never
   instructions. :func:`render_pod_prompt` fences them and marks them;

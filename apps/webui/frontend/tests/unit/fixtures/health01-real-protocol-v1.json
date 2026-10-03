@@ -1,0 +1,100 @@
+{
+  "version": "health01-real-protocol-v1",
+  "captured_at_utc": "2026-10-03T21:17:20.390Z",
+  "source_head": "33fbc4ea4724ddf1c233ceda4d54e399906e165c",
+  "source_fixture_manifest_sha256": "539801490aac8b6a27a140c0265c66f3f6bbb00a0c229e08fdb1ea9dd4def18d",
+  "source_fixture_version": "silver-chrome-loop-fourtracks-20261003-v1",
+  "health_row_count": 4,
+  "playlist_count": 0,
+  "ownership_provenance": "real file stats through apps.shared.state.locations.sync_primary_local in a disposable hydrated copy",
+  "outcomes": {
+    "green": {
+      "status": 200,
+      "response": {
+        "total_tracks": 4,
+        "total_broken": 0,
+        "orphan_broken": 0,
+        "playlists": [],
+        "availability": {
+          "total": 4,
+          "present": 4,
+          "broken_here": 0,
+          "off_machine": 0,
+          "awaiting_volume": 0,
+          "streaming": 0,
+          "pathless": 0
+        }
+      },
+      "ui": {
+        "label": "Library health: no playlists found; 4 of 4 tracks expected on this machine resolve (denominator: present + broken here), no broken links here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.",
+        "detail": "no playlists found; 4 of 4 tracks expected on this machine resolve (denominator: present + broken here), no broken links here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.",
+        "class": "health-dot svelte-tahwuv complete"
+      },
+      "hover": "Frontend\ndev server online\n\nBackend\nengine online\n\nLibrary health\nno playlists found; 4 of 4 tracks expected on this machine resolve (denominator: present + broken here), no broken links here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.\n\nVocals completion\n0/4 playable complete, 4 missing, 0 broken links\n\nStems completion\n0/4 playable complete, 4 missing, 0 broken links\n\nLyrics completion\n0/4 playable complete, 4 missing, 0 broken links"
+    },
+    "owned_missing": {
+      "status": 200,
+      "response": {
+        "total_tracks": 4,
+        "total_broken": 0,
+        "orphan_broken": 0,
+        "playlists": [],
+        "availability": {
+          "total": 4,
+          "present": 3,
+          "broken_here": 1,
+          "off_machine": 0,
+          "awaiting_volume": 0,
+          "streaming": 0,
+          "pathless": 0
+        }
+      },
+      "ui": {
+        "label": "Library health: no playlists found; 3 of 4 tracks expected on this machine resolve (denominator: present + broken here), 1 broken link here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.",
+        "detail": "no playlists found; 3 of 4 tracks expected on this machine resolve (denominator: present + broken here), 1 broken link here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.",
+        "class": "health-dot svelte-tahwuv incomplete"
+      },
+      "mutation": {
+        "stable_id": "17ef1bca202d9b2d56555291e1cbd65f7e1189e2",
+        "original_audio_sha256": "e4ba6efe526921ba2ff208856c5237c87314be2c0dd53f8c09d1a2786596bce3",
+        "operation": "temporarily rename existing real media in disposable copy; original ownership recorded by actual production file probe"
+      },
+      "hover": "Frontend\ndev server online\n\nBackend\nengine online\n\nLibrary health\nno playlists found; 3 of 4 tracks expected on this machine resolve (denominator: present + broken here), 1 broken link here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.\n\nVocals completion\n0/3 playable complete, 3 missing, 1 broken link\n\nStems completion\n0/3 playable complete, 3 missing, 1 broken link\n\nLyrics completion\n0/3 playable complete, 3 missing, 1 broken link"
+    },
+    "restored": {
+      "status": 200,
+      "response": {
+        "total_tracks": 4,
+        "total_broken": 0,
+        "orphan_broken": 0,
+        "playlists": [],
+        "availability": {
+          "total": 4,
+          "present": 4,
+          "broken_here": 0,
+          "off_machine": 0,
+          "awaiting_volume": 0,
+          "streaming": 0,
+          "pathless": 0
+        }
+      },
+      "ui": {
+        "label": "Library health: no playlists found; 4 of 4 tracks expected on this machine resolve (denominator: present + broken here), no broken links here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.",
+        "detail": "no playlists found; 4 of 4 tracks expected on this machine resolve (denominator: present + broken here), no broken links here. Not counted: 0 on other machines, 0 awaiting a volume, 0 streaming, 0 without a path.",
+        "class": "health-dot svelte-tahwuv complete"
+      }
+    },
+    "endpoint_failure": {
+      "transport_error": "Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:8719\nCall log:\n  - \u2192 GET http://127.0.0.1:8719/api/v1/reconcile/summary\n    - user-agent: Playwright/1.61.1 (x64; ubuntu 24.04) node/22.23\n    - accept: */*\n    - accept-encoding: gzip,deflate,br\n",
+      "ui": {
+        "label": "Library health: unknown - Failed to fetch",
+        "detail": "unknown - Failed to fetch",
+        "class": "health-dot svelte-tahwuv unavailable"
+      },
+      "measurement_error": "Failed to fetch",
+      "hover": "Frontend\ndev server not answering - Failed to fetch\n\nBackend\nengine not answering - Failed to fetch\n\nLibrary health\nunknown - Failed to fetch\n\nVocals completion\nFailed to fetch\n\nStems completion\nFailed to fetch\n\nLyrics completion\nFailed to fetch",
+      "initial_shutdown_probe": "Received an HTTP response during graceful shutdown; no transport-failure assertion is based on that raced probe.",
+      "transport_probe_at_utc": "2026-10-03T21:20:46.253Z"
+    }
+  }
+}

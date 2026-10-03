@@ -44,6 +44,7 @@
  */
 
 import { assertHeadDelayMs } from '$lib/player/constants';
+import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
 	copyToast,
 	dismissToast,
@@ -944,6 +945,7 @@ installAutomaticRejoinRunner((work) => {
 			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
 		});
 });
+installAutomaticMasterElectionRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
