@@ -54,19 +54,19 @@ function _proposedPosition(
 	}
 }
 
+/** Overflow along the placement's OWN axis. The cross axis never decides a
+ * flip: the clamp fixes it by sliding, without moving the box onto its trigger. */
 function _overflows(
-	x: number,
-	y: number,
+	pos: FloatingBox,
 	size: Size,
 	viewport: ViewportSize,
-	margin: number
+	margin: number,
+	placement: FloatingPlacement
 ): boolean {
-	return (
-		x < margin ||
-		y < margin ||
-		x + size.width > viewport.width - margin ||
-		y + size.height > viewport.height - margin
-	);
+	if (placement === 'below' || placement === 'above') {
+		return pos.y < margin || pos.y + size.height > viewport.height - margin;
+	}
+	return pos.x < margin || pos.x + size.width > viewport.width - margin;
 }
 
 /** Shift a proposed top-left so the full box stays inside the viewport inset by margin. */
@@ -104,9 +104,9 @@ export function placeFloating(input: {
 	} = input;
 
 	let pos = _proposedPosition(trigger, size, preferred, gap);
-	if (_overflows(pos.x, pos.y, size, viewport, margin)) {
+	if (_overflows(pos, size, viewport, margin, preferred)) {
 		const flipped = _proposedPosition(trigger, size, OPPOSITE[preferred], gap);
-		if (!_overflows(flipped.x, flipped.y, size, viewport, margin)) {
+		if (!_overflows(flipped, size, viewport, margin, OPPOSITE[preferred])) {
 			pos = flipped;
 		}
 	}

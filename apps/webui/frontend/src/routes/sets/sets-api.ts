@@ -15,9 +15,16 @@ export type RecorderSourceName = NonNullable<
 	components['schemas']['RecorderStartRequest']['sources']
 >[number];
 
+export type RecorderDevices = components['schemas']['RecorderDevicesResponse'];
+
+/** One audio input by raw ffmpeg index or by name with `capture_audio: true`,
+ *  or `capture_audio: false` and no input for a tracklist-only set (SET-10);
+ *  the daemon 422s anything else. */
 export interface RecorderStartInput {
 	session_id: string | null;
-	ffmpeg_device_idx: number;
+	ffmpeg_device_idx?: number;
+	device_name?: string;
+	capture_audio: boolean;
 	sources: RecorderSourceName[];
 }
 
@@ -73,7 +80,7 @@ export interface TimelineEvent {
 }
 
 /** Preserve the pre-client Error(detail) contract for non-2xx responses. */
-function rethrowSetsError(error: unknown): never {
+export function rethrowSetsError(error: unknown): never {
 	if (error instanceof ApiError) {
 		const d = (error.body as { detail?: unknown } | null)?.detail;
 		throw new Error(typeof d === 'string' ? d : `${error.status} ${error.response.statusText}`);
