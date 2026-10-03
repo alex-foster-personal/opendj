@@ -90,6 +90,11 @@ def _kill_tree(pid: int) -> None:
         root.kill()
 
 
+# Same fake-monotonic semantics as test_capture_mode_ratios_engine_family: each
+# `monotonic()` advances by `_PROBE_INTERVAL_S`, so 60s yields 5 probes, not 6.
+_FAKE_CLOCK_STEADY_DURATION_S = 120
+
+
 def _fake_monotonic_ticking(step: float) -> Any:
     """A `time.monotonic` stand-in that advances by `step` every call.
 
@@ -181,7 +186,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
             ),
         ):
             gig, trackify, gig_stable_ids = cmr._capture_gig_then_trackify(
-                "http://127.0.0.1:5273", cmr._MIN_SAMPLE_S, engine.pid
+                "http://127.0.0.1:5273", _FAKE_CLOCK_STEADY_DURATION_S, engine.pid
             )
 
         assert gig_stable_ids == ["a", "b", "c", "d"]

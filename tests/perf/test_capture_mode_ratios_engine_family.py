@@ -206,6 +206,11 @@ def test_sample_skips_a_descendant_that_exits_mid_sample() -> None:
     assert reading["browser_footprint_mb"] == pytest.approx(222.0)
 
 
+# Fake `iter(range(0, ..., _PROBE_INTERVAL_S))` monotonic advances on every call
+# (deadline + each loop check), so duration 60 yields 5 probes, not 6; 120 yields 11.
+_FAKE_CLOCK_STEADY_DURATION_S = 120
+
+
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_steady_carries_engine_fields_only_with_an_engine_root() -> None:
     """[if] _sample_steady runs with and without an engine root [then] engine fields appear only with one, [else stop]."""
@@ -217,8 +222,8 @@ def test_sample_steady_carries_engine_fields_only_with_an_engine_root() -> None:
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch("scripts.perf.capture_mode_ratios.time.monotonic", new=lambda: float(next(clock))),
         ):
-            with_engine = cmr._sample_steady(launcher, cmr._MIN_SAMPLE_S, engine)
-            browser_only = cmr._sample_steady(launcher, cmr._MIN_SAMPLE_S, None)
+            with_engine = cmr._sample_steady(launcher, _FAKE_CLOCK_STEADY_DURATION_S, engine)
+            browser_only = cmr._sample_steady(launcher, _FAKE_CLOCK_STEADY_DURATION_S, None)
     assert with_engine["footprint_mb"] == pytest.approx(600.0)
     assert with_engine["browser_footprint_mb"] == pytest.approx(200.0)
     assert with_engine["engine_footprint_mb"] == pytest.approx(400.0)
