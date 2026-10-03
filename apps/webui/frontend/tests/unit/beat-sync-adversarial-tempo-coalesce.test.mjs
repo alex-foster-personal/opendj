@@ -13,11 +13,13 @@
  * tempo keeps moving for seconds after the fader has stopped. Measured in the
  * real engine by performance-beat-sync-adversarial.spec.ts (S1): 25.4 s.
  *
- * Fix (performance-ipc.svelte.ts `_latestTempoTicket`): every queued tempo
- * takes a ticket, and a queued tempo that a newer tempo for the same deck has
- * overtaken runs as a no-op. These tests drive the REAL ScopedCommandScheduler
- * with the dispatcher's OWN ticket statements, extracted from its source and
- * evaluated here, so a mutation of the dispatcher reaches them.
+ * Fix (tempo-coalesce.ts `TempoCoalescer`, used by the dispatcher in
+ * performance-ipc.svelte.ts): every queued tempo takes a ticket, and a queued
+ * tempo that a newer tempo for the same deck has overtaken runs as a no-op.
+ * Only a contiguous run coalesces: a command queued between two tempos whose
+ * scopes overlap theirs is a barrier, and the tempo before it still runs.
+ * These tests drive the REAL ScopedCommandScheduler and the REAL coalescer, and
+ * pin that the dispatcher calls the coalescer on its queued path.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -30,43 +32,16 @@ const DISPATCHER = readFileSync(
 	fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
 	'utf8'
 );
-// Loose on purpose: whatever the dispatcher's ticket statements say is what runs
-// below, so a mutation there changes behavior here instead of a regex miss.
-const MARK = DISPATCHER.match(/const tempoTicket = [^\n]*\n\t[^\n]*_latestTempoTicket\.set\([^\n]*/);
-const RUNS = DISPATCHER.match(/\n\t\t\tif \((.*)\) \{\s*await _execute\(command, pressT0Ms\);/);
 
 let ScopedCommandScheduler;
+let TempoCoalescer;
 
 before(async () => {
 	({ ScopedCommandScheduler } = await loadTypeScriptModule(
 		'src/lib/rb/performance-command-scheduler.ts'
 	));
+	({ TempoCoalescer } = await loadTypeScriptModule('src/lib/rb/tempo-coalesce.ts'));
 });
-
-/** The dispatcher's ticket state and its two statements, as written there. */
-function dispatcherTickets() {
-	assert.ok(MARK, 'the dispatcher no longer marks queued tempos as pinned here');
-	assert.ok(RUNS, 'the dispatcher no longer gates _execute on the tempo ticket as pinned here');
-	const state = { _latestTempoTicket: new Map(), _tempoTickets: 0 };
-	const mark = new Function(
-		'state',
-		'command',
-		'deck',
-		`const { _latestTempoTicket } = state; let _tempoTickets = state._tempoTickets;
-		${MARK[0]}
-		state._tempoTickets = _tempoTickets; return tempoTicket;`
-	);
-	const runs = new Function(
-		'state',
-		'deck',
-		'tempoTicket',
-		`const { _latestTempoTicket } = state; return ${RUNS[1]};`
-	);
-	return {
-		mark: (command, deck) => mark(state, command, deck),
-		runs: (deck, ticket) => runs(state, deck, ticket)
-	};
-}
 
 function deferred() {
 	let resolve;
@@ -81,11 +56,11 @@ function deferred() {
  * for the previous group schedule. `executed` lists what reached the engine. */
 function harness() {
 	const scheduler = new ScopedCommandScheduler();
-	const tickets = dispatcherTickets();
+	const tickets = new TempoCoalescer();
 	const executed = [];
 	const gates = [];
 	const submit = (command, deck, scopes, label) => {
-		const tempoTicket = tickets.mark(command, deck);
+		const tempoTicket = tickets.mark(command.type === 'tempo', deck, scopes, 'sync');
 		return scheduler.run(scopes, async () => {
 			if (!tickets.runs(deck, tempoTicket)) return 'skipped';
 			executed.push(label);
@@ -108,7 +83,7 @@ function harness() {
 			for (const gate of gates.splice(0)) gate.resolve();
 		}
 	};
-	return { tempo, other, executed, drain, tick };
+	return { tempo, other, executed, drain, tick, tickets };
 }
 
 test('S1: 30 fader messages on a busy master reach the engine twice, ending on the last value', async () => {
@@ -136,16 +111,33 @@ test('S1 control: the last tempo always executes, even with nothing to supersede
 	assert.deepEqual(executed, ['tempo1=1.05']);
 });
 
-test('S1 control: nothing is reordered - a command between two tempos runs before the later one', async () => {
-	const { tempo, other, executed, drain, tick } = harness();
+test('S1: a command between two tempos is a barrier - it runs at the pitch set before it', async () => {
+	const { tempo, other, executed, drain, tick, tickets } = harness();
 	const first = tempo(1, 1.01); // starts at once, holds the scopes
 	await tick();
-	const queued = tempo(1, 1.02); // overtaken below, becomes a no-op
+	const queued = tempo(1, 1.02); // the pitch the DJ had when pressing play
 	const play = other('play', 1, [1, 'sync']);
 	const later = tempo(1, 1.03);
 	await drain();
 	await Promise.all([first, queued, play, later]);
-	assert.deepEqual(executed, ['tempo1=1.01', 'play', 'tempo1=1.03']);
+	assert.deepEqual(executed, ['tempo1=1.01', 'tempo1=1.02', 'play', 'tempo1=1.03']);
+	assert.equal(tickets.held, 0, 'no ticket outlives its command');
+});
+
+test('S1: a sync command on another deck is a barrier too; a command on an unrelated scope is not', async () => {
+	const { tempo, other, executed, drain, tick } = harness();
+	const first = tempo(1, 1.01);
+	await tick();
+	const pinned = tempo(1, 1.02);
+	const master = other('master', 2, [2, 'sync']);
+	const overtaken = tempo(1, 1.03);
+	const eqOther = other('eq2', 2, [2]);
+	const last = tempo(1, 1.04);
+	await drain();
+	assert.deepEqual(await Promise.all([first, pinned, master, overtaken, eqOther, last]), [
+		1.01, 1.02, 'master', 'skipped', 'eq2', 1.04
+	]);
+	assert.deepEqual(executed, ['tempo1=1.01', 'tempo1=1.02', 'master', 'eq2', 'tempo1=1.04']);
 });
 
 test('S1: two faders moving at once each drop their own overtaken steps and end on their own last value', async () => {
@@ -188,8 +180,13 @@ test('S1 control: a non-tempo command on the same deck is never skipped', async 
 	assert.deepEqual(executed, ['tempo1=1.01', 'eq', 'tempo1=1.02']);
 });
 
+test('S1 source pin: the dispatcher gates _execute on the coalescer', () => {
+	assert.match(DISPATCHER, /if \(_tempoCoalescer\.runs\(deck, tempoTicket\)\) \{\s*await _execute\(command, pressT0Ms\);/);
+});
+
 test('S1 source pin: the ticket is taken on the queued path, after the unqueued branches', () => {
-	const mark = DISPATCHER.indexOf('? ++_tempoTickets : 0;');
+	const mark = DISPATCHER.indexOf("_tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');");
+	assert.ok(mark > 0, 'the dispatcher marks every queued command with the coalescer');
 	assert.ok(mark > DISPATCHER.indexOf('if (scopes === null) {'), 'mark after the unqueued branch');
 	assert.ok(mark < DISPATCHER.indexOf('_commandScheduler.run(scopes, run)'), 'mark before queuing');
 });

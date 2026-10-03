@@ -147,6 +147,7 @@ export {
 	uninstallRescueRingWriterHooks
 } from '$lib/rb/rescue-ring-writer.svelte';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
+import { TempoCoalescer } from '$lib/rb/tempo-coalesce';
 import {
 	hoveredEdgeList,
 	isEqRaised,
@@ -801,11 +802,10 @@ let _presetClaim: { id: string } | null = null;
 type PersistenceScope = `persistence-${DeckId}`;
 type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
-// S1 (round 2): the newest queued tempo ticket per deck. A queued fader step
-// that a newer one has overtaken is a no-op when its turn comes, so a sweep
-// costs one group re-lock, not one per message, and nothing is reordered.
-const _latestTempoTicket = new Map<DeckId | null, number>();
-let _tempoTickets = 0;
+// S1 (round 2): a queued fader step that a newer one has overtaken is a no-op
+// when its turn comes, so a sweep costs one group re-lock, not one per message.
+// A command queued between two tempos is a barrier (tempo-coalesce.ts).
+const _tempoCoalescer = new TempoCoalescer<DeckId | null, CommandScope>();
 // PARITY-10: the only module that owns the scoped command scheduler, so a
 // beatgrid-landed resync fired long after its load() command released [deck]
 // reclaims scope here rather than racing whatever now holds it. The
@@ -2930,8 +2930,7 @@ async function _dispatchUnknown(
 			throw error;
 		}
 	}
-	const tempoTicket = command.type === 'tempo' ? ++_tempoTickets : 0;
-	if (tempoTicket) _latestTempoTicket.set(deck, tempoTicket);
+	const tempoTicket = _tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
 	let started = false;
@@ -2946,7 +2945,7 @@ async function _dispatchUnknown(
 		try {
 			// Q1: this body starts only AFTER the scope wait above, which is
 			// exactly the gap press_to_schedule_ms exists to expose.
-			if (!tempoTicket || _latestTempoTicket.get(deck) === tempoTicket) {
+			if (_tempoCoalescer.runs(deck, tempoTicket)) {
 				await _execute(command, pressT0Ms);
 			}
 			_assertCommandSession(commandGeneration);
