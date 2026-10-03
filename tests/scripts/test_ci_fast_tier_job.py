@@ -337,8 +337,10 @@ def test_every_leg_label_names_the_real_leg_count() -> None:
     TIMEOUT annotation and the cancel decision all misname the leg"""
     job = _jobs()["fast"]
     legs = len(job["strategy"]["matrix"]["leg"])
-    text = yaml.safe_dump(job, width=10_000)
-    labels = re.findall(r"\bof (\d+)\)|\bof (\d+)\b(?=[:\"])", text)
-    counts = {int(a or b) for a, b in labels}
+    texts = [job["name"]] + [s.get("run") or "" for s in job["steps"]]
+    # A leg label is the leg's number, `${{ matrix.leg }}` or a printf `%s`, then "of N".
+    labels = [int(n) for t in texts for n in re.findall(r"(?:\}\}|%s) of (\d+)\b", t)]
     assert job["name"] == f"pytest fast tier (leg ${{{{ matrix.leg }}}} of {legs})"
-    assert counts == {legs}, f"leg labels name {sorted(counts)}, the matrix has {legs} legs"
+    # Name, run summary line, summary heading, TIMEOUT title, cancel --leg: five today.
+    assert len(labels) >= 5, f"the probe found only {len(labels)} leg labels; it is not reading them"
+    assert set(labels) == {legs}, f"leg labels name {sorted(set(labels))}, the matrix has {legs} legs"
