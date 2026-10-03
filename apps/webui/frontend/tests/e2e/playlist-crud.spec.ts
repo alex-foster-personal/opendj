@@ -42,19 +42,16 @@ function _playlistRow(page: Page, name: string) {
 
 async function _deleteViaUi(page: Page, name: string): Promise<void> {
 	await _playlistRow(page, name).getByTitle('Delete playlist').click();
+	const dialog = page.getByRole('dialog', { name: 'Delete playlist' });
+	await expect(dialog).toBeVisible();
+	await expect(dialog).toContainText(`Delete playlist "${name}"?`);
+	await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+	await expect(dialog).toBeHidden();
 }
 
 test('playlist tree: create, duplicate, reload persistence, and delete', async ({ page }) => {
 	const baseName = `Playlist CRUD ${Date.now()}`;
 	const copyName = `${baseName} (copy)`;
-
-	page.on('dialog', async (dialog) => {
-		if (dialog.message().toLowerCase().includes('skip delete confirm')) {
-			await dialog.dismiss();
-			return;
-		}
-		await dialog.accept();
-	});
 
 	try {
 		await page.goto('/performance');

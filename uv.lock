@@ -1810,7 +1810,6 @@ dependencies = [
     { name = "pyrekordbox" },
     { name = "python-multipart" },
     { name = "pyyaml" },
-    { name = "rbox" },
     { name = "regex" },
     { name = "rfc8785" },
     { name = "rich" },
@@ -1861,12 +1860,16 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "python-rtmidi", marker = "sys_platform != 'win32'" },
+    { name = "rbox" },
 ]
 observability = [
     { name = "sentry-sdk" },
 ]
 spotify = [
     { name = "spotipy" },
+]
+usb-export = [
+    { name = "rbox" },
 ]
 vocals = [
     { name = "demucs" },
@@ -1921,7 +1924,8 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "python-rtmidi", marker = "sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.5,<2" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "rbox", specifier = "==0.1.7" },
+    { name = "rbox", marker = "extra == 'dev'", specifier = "==0.1.7" },
+    { name = "rbox", marker = "extra == 'usb-export'", specifier = "==0.1.7" },
     { name = "regex", specifier = "==2026.7.19" },
     { name = "rfc8785", specifier = ">=0.1.4,<1" },
     { name = "rich", specifier = ">=13.0" },
@@ -1940,7 +1944,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "webrtcvad", marker = "extra == 'voice'", specifier = ">=2.0.10" },
 ]
-provides-extras = ["analysis", "voice", "cloud", "spotify", "ai", "vocals", "dev", "observability", "all"]
+provides-extras = ["usb-export", "analysis", "voice", "cloud", "spotify", "ai", "vocals", "dev", "observability", "all"]
 
 [[package]]
 name = "mypy"

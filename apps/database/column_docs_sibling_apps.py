@@ -34,6 +34,40 @@ descriptions are in :mod:`apps.database.table_docs`.
 from __future__ import annotations
 
 SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
+    "http_pairings": {
+        "pairing_id": (
+            "Primary key. Client- or server-minted UUID for the PAIR-04 HTTP "
+            "pairing entity (apps.webui.server.pairings_sqlite)."
+        ),
+        "from_stable_id": (
+            "The from-side track. NOT FK-declared despite pointing at "
+            "tracks(stable_id); the HTTP layer enforces both sides exist."
+        ),
+        "to_stable_id": "The to-side track, under the same rules as from_stable_id.",
+        "direction": (
+            "CHECK IN ('->', '<->'). One-way mix into the to-side, or "
+            "bidirectional. Mirrored into the CAT-03 pairings graph as "
+            "into/either."
+        ),
+        "source": (
+            "CHECK IN ('manual', 'learned', 'ai'). How the pairing was "
+            "captured: explicit Capture, learned from play, or suggested."
+        ),
+        "notes": "Optional free-text note on the pairing. NULL when unset.",
+        "snapshot_json": (
+            "Optional JSON snapshot of open-time deck state at capture. "
+            "NULL when the client sent none."
+        ),
+        "created_at": "RFC 3339 UTC timestamp the HTTP pairing row was created.",
+        "updated_at": "RFC 3339 UTC timestamp the HTTP pairing row was last written.",
+        "graph_owner_stamp": (
+            "Ownership marker for the CAT-03 pairings edge this HTTP pairing "
+            "mirrors: that edge's created_at|modified_at as this row last wrote "
+            "it. The pairing updates or deletes the edge only while the edge "
+            "still carries this exact stamp. NULL when it owns no edge (the "
+            "edge predates it, or other tooling rewrote it since)."
+        ),
+    },
     "launcher_meta": {
         "key": (
             "Setting name. Primary key. The only key in use today is "

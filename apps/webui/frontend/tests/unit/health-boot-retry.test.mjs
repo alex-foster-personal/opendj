@@ -282,9 +282,18 @@ test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps only it
 	);
 	assert.match(
 		source,
-		/const healthRes = await getHealthFreshWithRetry\(getHealth\);\s*allTracksCount = healthRes\.health\.state_db\.tracks;\s*_healthWriteEpoch \+= 1;/,
+		/const healthRes = await getHealthFreshWithRetry\(getHealth\);(?:\s*\/\/[^\n]*)*\s*allTracksCount = healthRes\.health\.state_db\.tracks;\s*_healthWriteEpoch \+= 1;/,
 		'the fresh repair read must assign allTracksCount and bump the HEALTH epoch, not the playlists one, in the same block'
 	);
+	// Sol P1 on PR #4014: allTracksCount is the RAW row total (the boot path
+	// writes the same population above), so it must never be mixed with the
+	// non-broken reconcile count in either direction. A mixed variable quoted a
+	// raw total exactly when the non-broken count was unavailable.
+	const assignments = [...source.matchAll(/\ballTracksCount = ([^;]*);/g)].map((m) => m[1]);
+	assert.ok(assignments.length >= 3, `expected the boot and refresh writes, found ${assignments.length}`);
+	for (const rhs of assignments) {
+		assert.doesNotMatch(rhs, /allTracksNonBrokenCount/, `allTracksCount mixes populations: ${rhs}`);
+	}
 	assert.match(
 		source,
 		/playlists = await listPlaylistsHydrated\(\);\s*_playlistsWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,

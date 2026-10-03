@@ -341,6 +341,7 @@ describe('every stem decode entry point goes through the gated engine functions 
 	const engineSource = readFileSync(ENGINE, 'utf8');
 	const upgrade = functionBody(engineSource, 'async function _upgradeDeckStems(');
 	const drain = functionBody(engineSource, 'function _drainPendingStemUpgrade(');
+	const landing = functionBody(engineSource, 'function _landStems(');
 
 	it('outside the engine, only the stem API helpers themselves reach a stem probe, fetch or decode', () => {
 		const callers = new Map();
@@ -418,7 +419,20 @@ describe('every stem decode entry point goes through the gated engine functions 
 		for (const at of sites) {
 			const inUpgrade = at > upgrade.start && at < upgrade.end;
 			const inDrain = at > drain.start && at < drain.end;
-			assert.ok(inUpgrade || inDrain, '_adoptStemProcessor called outside the gated functions');
+			const inLanding = at > landing.start && at < landing.end;
+			assert.ok(inUpgrade || inDrain || inLanding, '_adoptStemProcessor called outside the gated functions');
+		}
+		// STEM-47: _landStems adopts (stopped swap) or commits (live handoff) only
+		// through landStemsOnDeck, which reads `stale` before either; so the gate
+		// is the `stale` its callers hand it, and every caller's must read the policy.
+		assert.match(landing.text, /clock: ctx, stale,\n/, '_landStems never hands its stale check to the landing');
+		const landingCalls = [...engineSource.matchAll(/_landStems\(deck, [^\n]*/g)].map((match) => match[0]);
+		assert.equal(landingCalls.length, 2, `expected the upgrade and the retry to call _landStems, found ${landingCalls.length}`);
+		for (const call of landingCalls) {
+			assert.ok(
+				/ctx, stale\)/.test(call) || /stemsBlockedState\(\) !== null\)/.test(call),
+				`a _landStems caller does not gate on the stem policy: ${call}`
+			);
 		}
 		const policyRead = drain.text.indexOf('stemsBlockedState()');
 		const adopt = drain.text.indexOf('_adoptStemProcessor(');

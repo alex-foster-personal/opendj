@@ -39,10 +39,11 @@ def _now() -> str:
 def _pairing(
     from_id: str = "a", to_id: str = "b", *, direction: str = "->",
     notes: str | None = None, snapshot: dict | None = None,
+    pairing_id: str = "client-side-id",
 ) -> Pairing:
     now = _now()
     return Pairing(
-        pairing_id="client-side-id", from_stable_id=from_id,
+        pairing_id=pairing_id, from_stable_id=from_id,
         to_stable_id=to_id, direction=direction, source="manual",  # type: ignore[arg-type]
         notes=notes, snapshot=snapshot, created_at=now, updated_at=now,
     )
@@ -147,7 +148,7 @@ def test_snapshot_fills_an_edge_that_had_none(db_path: Path) -> None:
 def test_filters(db_path: Path) -> None:
     backend = SqliteBackend(db_path)
     backend.create_pairing(_pairing("a", "b"))
-    backend.create_pairing(_pairing("b", "c"))
+    backend.create_pairing(_pairing("b", "c", pairing_id="client-side-id-2"))
     assert [p.to_stable_id for p in backend.list_pairings(from_stable_id="b")] == ["c"]
     assert [p.from_stable_id for p in backend.list_pairings(to_stable_id="b")] == ["a"]
     assert backend.list_pairings(source="ai") == []
@@ -175,7 +176,7 @@ def test_list_on_a_db_without_the_table_is_empty(db_path: Path) -> None:
 def test_stats_counts_stored_pairings(db_path: Path) -> None:
     backend = SqliteBackend(db_path)
     backend.create_pairing(_pairing("a", "b"))
-    backend.create_pairing(_pairing("b", "c"))
+    backend.create_pairing(_pairing("b", "c", pairing_id="client-side-id-2"))
     assert backend.stats()["pairings"] == 2
 
 

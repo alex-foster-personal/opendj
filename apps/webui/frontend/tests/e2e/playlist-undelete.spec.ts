@@ -18,6 +18,19 @@ async function _playlistNames(page: Page): Promise<string[]> {
 		.filter((name): name is string => name !== null);
 }
 
+async function _deleteViaUi(page: Page, name: string): Promise<void> {
+	await page
+		.locator(ROW)
+		.filter({ hasText: name })
+		.getByTitle('Delete playlist')
+		.click();
+	const dialog = page.getByRole('dialog', { name: 'Delete playlist' });
+	await expect(dialog).toBeVisible();
+	await expect(dialog).toContainText(`Delete playlist "${name}"?`);
+	await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+	await expect(dialog).toBeHidden();
+}
+
 async function _hardDeleteByName(page: Page, name: string): Promise<void> {
 	const response = await page.request.get('/api/v1/playlists');
 	if (!response.ok()) return;
@@ -35,14 +48,6 @@ async function _hardDeleteByName(page: Page, name: string): Promise<void> {
 
 test('playlist tree: delete then restore from Recently deleted', async ({ page }) => {
 	const playlistName = `Playlist undelete ${Date.now()}`;
-
-	page.on('dialog', async (dialog) => {
-		if (dialog.message().toLowerCase().includes('skip delete confirm')) {
-			await dialog.dismiss();
-			return;
-		}
-		await dialog.accept();
-	});
 
 	try {
 		await page.goto('/performance');
@@ -91,11 +96,7 @@ test('playlist tree: delete then restore from Recently deleted', async ({ page }
 		expect(snapshot.ok()).toBeTruthy();
 		const itemsBefore = ((await snapshot.json()) as { items?: unknown }).items;
 
-		await page
-			.locator(ROW)
-			.filter({ hasText: playlistName })
-			.getByTitle('Delete playlist')
-			.click();
+		await _deleteViaUi(page, playlistName);
 		await expect(page.locator(ROW).filter({ hasText: playlistName })).toHaveCount(0);
 		expect(await _playlistNames(page)).not.toContain(playlistName);
 
