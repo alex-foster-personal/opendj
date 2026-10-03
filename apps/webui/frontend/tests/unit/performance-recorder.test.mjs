@@ -130,24 +130,31 @@ test('REC lights only once audio is written, not while the macOS microphone prom
 	const waiting = recorder.recordRailState({ ...base, capture: 'waiting_permission' });
 	assert.equal(waiting.recording, false);
 	assert.equal(waiting.waiting, true);
-	assert.equal(waiting.poll, true);
+	assert.equal(waiting.poll, 1000);
 	assert.match(waiting.tip, /Waiting for microphone permission/);
 	assert.equal(recorder.recordRailState({ ...base, capture: 'starting' }).recording, false);
 	const failed = recorder.recordRailState({ ...base, capture: 'failed' });
 	assert.equal(failed.recording, false);
-	assert.equal(failed.poll, false);
+	assert.equal(failed.poll, null);
 	assert.match(failed.tip, /stopped recording/);
 	// Controls: audio being written, and a tracklist-only recording, light REC.
 	for (const capture of ['recording', 'none', 'unknown']) {
 		const state = recorder.recordRailState({ ...base, capture });
 		assert.deepEqual([state.recording, state.waiting, state.tip], [true, false, null], capture);
 	}
+	// Codex P1 (PR #5164): a capture that is recording is still watched, so an
+	// input unplugged mid-set reaches 'failed' and unlights REC; one with no
+	// capture of ours (tracklist only, another process) is not polled.
+	assert.equal(recorder.recordRailState({ ...base, capture: 'recording' }).poll, 3000);
+	assert.equal(recorder.recordRailState({ ...base, capture: 'none' }).poll, null);
+	assert.equal(recorder.recordRailState({ ...base, capture: 'unknown' }).poll, null);
 	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).recording, false);
 });
 
 test('the rail lights REC from the capture state and polls while it is waiting', () => {
 	assert.match(performanceRecorderRail, /recording=\{rail\.recording\}/);
 	assert.match(performanceRecorderRail, /recordingWaiting=\{rail\.waiting\}/);
-	assert.match(performanceRecorderRail, /if \(!rail\.poll\) return;/);
+	assert.match(performanceRecorderRail, /const after = rail\.poll;\s*if \(after === null\) return;/);
+	assert.match(performanceRecorderRail, /setTimeout\(\(\) => void refreshRecorderStatus\(\), after\)/);
 	assert.match(iconRail, /class:waiting=\{isRecord && recordingWaiting\}/);
 });

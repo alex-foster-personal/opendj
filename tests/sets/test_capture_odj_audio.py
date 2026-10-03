@@ -29,10 +29,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from apps.sets import audio as sets_audio
 from apps.sets import capture, retention
 from apps.sets import paths as sets_paths
+from apps.sets.api import router
 from apps.sets.capture_odj_audio import (
     _parse_odj_audio_devices,
     follow_record_output,
@@ -40,6 +43,7 @@ from apps.sets.capture_odj_audio import (
 )
 from apps.sets.capture_types import CaptureState
 from apps.sets.record import _segment_start_from_name
+from apps.sets.recorder_service import RecorderService
 from apps.shared import platform_paths
 from apps.shared.odj_audio_binary import EXE_NAME, REPO_TARGET
 from tests.rust_build_env import build_audio_engine
@@ -276,6 +280,24 @@ def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, capture_engin
     assert capture.stop_capture(handle, timeout=0.3) != 0
     assert handle.proc.poll() is not None
     assert handle.log_fh.closed
+
+
+def test_rec_by_ffmpeg_index_is_refused_when_odj_audio_records(
+    tmp_path: Path, capture_engine: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """[if] a start names an ffmpeg input index but odj-audio is the recorder [then] 503, nothing starts:
+    the two number inputs differently, so the index could record the room microphone."""
+    # The installed app's own configuration: its engine, which can capture.
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(capture_engine))
+    service = RecorderService(sets_root=tmp_path / "sets", db_path=tmp_path / "sets" / "sets.db")
+    app = FastAPI()
+    app.state.sets_recorder_service = service
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.post("/api/sets/recorder/start", json={"session_id": None, "ffmpeg_device_idx": 1})
+        assert response.status_code == 503, response.text
+        assert "start it by device_name" in response.json()["detail"]
+        assert client.get("/api/sets/recorder").json()["active"] is False
 
 
 #: `odj-audio record` stdout during a first-run macOS microphone prompt, as

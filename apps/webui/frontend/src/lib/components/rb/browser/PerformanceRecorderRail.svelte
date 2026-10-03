@@ -33,10 +33,12 @@
 	});
 
 	// SET-11: while the capture is starting or waiting on the macOS microphone
-	// prompt, re-read it so REC lights the moment audio is really written.
+	// prompt, re-read it so REC lights the moment audio is really written; and
+	// while it records, so an input that stops mid-set unlights REC.
 	$effect(() => {
-		if (!rail.poll) return;
-		const timer = setTimeout(() => void refreshRecorderStatus(), 1000);
+		const after = rail.poll;
+		if (after === null) return;
+		const timer = setTimeout(() => void refreshRecorderStatus(), after);
 		return () => clearTimeout(timer);
 	});
 

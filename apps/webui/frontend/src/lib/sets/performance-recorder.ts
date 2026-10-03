@@ -13,13 +13,15 @@ export interface RecordRailState {
 	waiting: boolean;
 	/** Tooltip replacing the default, or null for the default. */
 	tip: string | null;
-	/** Poll the status again soon: the capture state is still moving. */
-	poll: boolean;
+	/** Read the status again after this many ms, or null not to: fast while
+	 * the capture is starting or waiting, slower while it records, so a
+	 * capture that fails mid-set (input unplugged) still unlights REC. */
+	poll: number | null;
 }
 
 export function recordRailState(status: RecorderStatus): RecordRailState {
 	if (!status.active) {
-		return { recording: false, waiting: false, tip: null, poll: false };
+		return { recording: false, waiting: false, tip: null, poll: null };
 	}
 	switch (status.capture) {
 		case 'waiting_permission':
@@ -27,21 +29,24 @@ export function recordRailState(status: RecorderStatus): RecordRailState {
 				recording: false,
 				waiting: true,
 				tip: 'Waiting for microphone permission: answer the macOS prompt to start recording (click to cancel)',
-				poll: true
+				poll: 1000
 			};
 		case 'starting':
-			return { recording: false, waiting: true, tip: 'Starting the audio input (click to cancel)', poll: true };
+			return { recording: false, waiting: true, tip: 'Starting the audio input (click to cancel)', poll: 1000 };
 		case 'failed':
 		case 'stopped':
 			return {
 				recording: false,
 				waiting: false,
 				tip: 'The audio input stopped recording; click to stop and keep what was recorded',
-				poll: false
+				poll: null
 			};
+		case 'recording':
+			return { recording: true, waiting: false, tip: null, poll: 3000 };
 		default:
-			// recording, none (tracklist only) and unknown (another process owns it).
-			return { recording: true, waiting: false, tip: null, poll: false };
+			// none (tracklist only) and unknown (another process owns it): no
+			// capture of ours whose state can change.
+			return { recording: true, waiting: false, tip: null, poll: null };
 	}
 }
 

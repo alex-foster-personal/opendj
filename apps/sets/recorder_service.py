@@ -178,10 +178,16 @@ class RecorderService:
             raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
         if not capture_audio:
             return None, NO_AUDIO_DEVICE_LABEL
-        if self.capture_enabled:
-            capture_mod.capture_backend()
+        backend = capture_mod.capture_backend() if self.capture_enabled else None
         if device_name is not None:
             return self._index_of(device_name), device_name
+        if backend is not None and backend.kind != "ffmpeg":
+            # An ffmpeg index numbers AVFoundation's inputs; odj-audio lists
+            # them in its own order, so the same number can be the room mic.
+            raise capture_mod.CaptureUnavailable(
+                f"ffmpeg_device_idx {ffmpeg_device_idx} numbers ffmpeg's inputs, but REC records "
+                f"through {backend.kind} here; start it by device_name instead"
+            )
         return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
 
     def remembered_input(self) -> dict[str, str] | None:
