@@ -16,36 +16,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
-from dataclasses import dataclass
 
-_SEMVER = re.compile(
-    r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
-    r"(?:-(?P<pre>[0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
-)
+from apps.shared.semver import Semver
+from apps.shared.semver import parse_semver as _parse_semver
 
 DEFAULT_PUBLIC_REPO = "maintainer/issue-assets"
 
 
-@dataclass(frozen=True, order=True)
-class Semver:
-    major: int
-    minor: int
-    patch: int
-
-
 def parse_semver(raw: str, *, source: str) -> Semver:
+    """Parse a manifest version or the accepted app-v release-tag namespace."""
     candidate = raw.strip()
-    if candidate.startswith("v"):
-        candidate = candidate[1:]
-    matched = _SEMVER.match(candidate)
-    if matched is None:
-        raise ValueError(f"{source} is {raw!r}, which is not a semver version")
-    return Semver(
-        int(matched["major"]), int(matched["minor"]), int(matched["patch"])
-    )
+    if candidate.startswith("app-v"):
+        candidate = candidate[4:]
+    try:
+        return _parse_semver(candidate)
+    except ValueError as exc:
+        raise ValueError(f"{source} is {raw!r}, which is not a semver version") from exc
 
 
 def require_semver_bump(configured: str, published: str | None) -> None:
@@ -91,9 +79,7 @@ def latest_published_version(public_repo: str) -> str | None:
     )
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or "unknown gh error"
-        raise RuntimeError(
-            f"could not read releases from {public_repo}: {detail}"
-        )
+        raise RuntimeError(f"could not read releases from {public_repo}: {detail}")
     rows = json.loads(proc.stdout or "[]")
     if not rows:
         return None
@@ -141,11 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    configured = (
-        args.configured
-        if args.configured is not None
-        else read_configured_version(args.config)
-    )
+    configured = args.configured if args.configured is not None else read_configured_version(args.config)
     if args.published is None:
         published = latest_published_version(args.repo)
     elif args.published == "":
@@ -162,9 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     if published is None:
         print(f"[OK] first release: configured version is {configured!r}")
     else:
-        print(
-            f"[OK] semver bump: configured {configured!r} > published {published!r}"
-        )
+        print(f"[OK] semver bump: configured {configured!r} > published {published!r}")
     return 0
 
 
