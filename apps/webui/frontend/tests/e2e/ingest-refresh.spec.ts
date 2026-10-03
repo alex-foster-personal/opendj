@@ -1,4 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
+
+// Real audio from the locked phase7 corpus: upload refuses a file it cannot
+// read a duration from (LIBMX-15), so the drop needs real bytes to stage.
+const DROP_FIXTURE = path.resolve(
+	fileURLToPath(new URL('.', import.meta.url)),
+	'../../../../../tests/fixtures/phase7-dedup/src-128.mp3'
+);
 
 // E2E for the ingest feature pair (real backend on the claimed worktree
 // port, isolated MDT_DATA_DIR - see PR notes):
@@ -75,15 +85,19 @@ test.describe('ingest drop modal', () => {
 		// Hydration gate: window drag listeners attach with the component tree.
 		await expect(page.getByTestId('refresh-analysis')).toBeVisible();
 
-		// Synthesize an external file drag: DataTransfer with a File. The
-		// bytes are junk mp3 (no parsable duration) - upload still stages it,
-		// which is the honest v1 contract for unparsable audio.
-		await page.evaluate(() => {
+		// Synthesize an external file drag: DataTransfer with a File holding a
+		// real mp3's bytes.
+		if (!fs.existsSync(DROP_FIXTURE)) throw new Error(`locked fixture missing: ${DROP_FIXTURE}`);
+		const b64 = fs.readFileSync(DROP_FIXTURE).toString('base64');
+		await page.evaluate((data) => {
+			const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
 			const dt = new DataTransfer();
-			dt.items.add(new File([new Uint8Array(4096).fill(65)], 'e2e-junk.mp3', { type: 'audio/mpeg' }));
+			dt.items.add(new File([bytes], 'e2e-drop.mp3', { type: 'audio/mpeg' }));
 			window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
-			window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-		});
+			window.dispatchEvent(
+				new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })
+			);
+		}, b64);
 
 		const modal = page.getByTestId('ingest-modal');
 		await expect(modal).toBeVisible();
@@ -95,7 +109,7 @@ test.describe('ingest drop modal', () => {
 
 		await page.getByTestId('ingest-run').click();
 		await expect(modal).toContainText('Staged to', { timeout: 20_000 });
-		await expect(modal).toContainText('e2e-junk.mp3');
+		await expect(modal).toContainText('e2e-drop.mp3');
 
 		await page.getByRole('button', { name: 'Close' }).click();
 		await expect(modal).not.toBeVisible();
