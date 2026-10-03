@@ -126,7 +126,12 @@
 		pairingUnavailableReason(
 			DECK_IDS.map((deckId) => {
 				const deck = getDeckState(deckId);
-				return { deckId, loaded: deck.stable_id !== null, beatCount: deck.anlz?.beatgrid.beats.length ?? 0 };
+				return {
+					deckId,
+					loaded: deck.stable_id !== null,
+					beatCount: deck.anlz?.beatgrid.beats.length ?? 0,
+					stableId: deck.stable_id
+				};
 			}),
 			uiPrefs.beat_sync_max
 		)

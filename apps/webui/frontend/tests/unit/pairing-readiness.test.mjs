@@ -70,3 +70,26 @@ test('control: two loaded gridded decks enable the button with BeatSyncMax on', 
 		null
 	);
 });
+
+// PR #4014 review (Sat 3 Oct 2026): one track on two decks enabled the button,
+// and capture then refused the snapshot for holding one distinct track.
+const track = (deckId, stableId) => ({ deckId, loaded: true, beatCount: 8, stableId });
+
+test('one track loaded on two decks disables the button and says why', () => {
+	assert.match(
+		mod.pairingUnavailableReason([track(1, 'sid-a'), track(2, 'sid-a')], true),
+		/two different tracks/
+	);
+	assert.match(
+		mod.pairingUnavailableReason([track(1, 'sid-a'), track(2, 'sid-a'), track(3, 'sid-a')], false),
+		/two different tracks/
+	);
+});
+
+test('control: two different tracks enable it, even with a duplicate on a third deck', () => {
+	assert.equal(mod.pairingUnavailableReason([track(1, 'sid-a'), track(2, 'sid-b')], true), null);
+	assert.equal(
+		mod.pairingUnavailableReason([track(1, 'sid-a'), track(2, 'sid-a'), track(3, 'sid-b')], true),
+		null
+	);
+});

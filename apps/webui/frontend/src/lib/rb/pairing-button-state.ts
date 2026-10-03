@@ -9,6 +9,8 @@ interface PairingDeckReadiness {
 	deckId: number;
 	loaded: boolean;
 	beatCount: number;
+	/** The loaded track, so one track on two decks is not read as a pair. */
+	stableId?: string | null;
 }
 
 /**
@@ -24,6 +26,10 @@ export function pairingUnavailableReason(
 ): string | null {
 	const loaded = decks.filter((deck) => deck.loaded);
 	if (loaded.length < 2) return 'Load a track on two decks to create a pairing';
+	// Capture refuses a snapshot with one distinct track, so say so up front.
+	if (new Set(loaded.map((deck) => deck.stableId ?? `deck-${deck.deckId}`)).size < 2) {
+		return 'Load two different tracks to create a pairing';
+	}
 	if (!beatSyncMax) return null;
 	const gridless = loaded.filter((deck) => deck.beatCount === 0).map((deck) => `CH${deck.deckId}`);
 	if (gridless.length === 0) return null;
