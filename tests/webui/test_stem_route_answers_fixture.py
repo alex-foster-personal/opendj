@@ -73,7 +73,15 @@ def test_hydrating_then_ready_match_the_live_route(tmp_path: Path) -> None:
         tmp_path / "stems", data_dir=tmp_path / "data", hydration_cfg=cfg, hydration_s3=s3
     ) as client:
         first = client.get(f"/api/v1/tracks/{SID}/stems")
-        assert (first.status_code, first.json()) == (
+        first_body = first.json()
+        # The fetch races this read, so the two live counters are whatever the
+        # worker has written so far. Their presence and type are the contract;
+        # files_total is fixed by the index and is compared exactly.
+        live = first_body["progress"]
+        assert isinstance(live["files_done"], int) and live["files_done"] >= 0
+        assert isinstance(live["bytes_done"], int) and live["bytes_done"] >= 0
+        first_body["progress"] = {**live, "files_done": 0, "bytes_done": 0}
+        assert (first.status_code, first_body) == (
             fixture["hydrating"]["status"],
             fixture["hydrating"]["body"],
         )
