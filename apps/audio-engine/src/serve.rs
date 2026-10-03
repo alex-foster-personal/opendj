@@ -245,6 +245,13 @@ const NOBODY: ClientId = ClientId::MAX;
 /// deck started at load reaches the head's end.
 pub const HEAD_MS: u64 = 8000;
 
+/// Decodes one deck may have running at once: its current load, and the
+/// rest of the file of one earlier load whose head already went out. A
+/// further load on the deck waits for that rest to finish, so loads in quick
+/// succession never pile up decoder threads and whole-track buffers that no
+/// budget counts.
+const DECODES_PER_DECK: u8 = 2;
+
 /// Lines queued for one socket client before it counts as stalled. At 30 state
 /// messages a second this is several seconds of backlog.
 pub const CLIENT_QUEUE: usize = 256;
@@ -734,6 +741,8 @@ struct Control {
     /// Per deck: the seq of the load whose head went out while the rest of
     /// its file still decodes.
     tailing: [Option<u64>; MAX_DECKS],
+    /// Per deck: decodes started and not yet finished (`DECODES_PER_DECK`).
+    decodes: [u8; MAX_DECKS],
     /// Frames of a load's head at the engine's rate (`HEAD_MS`); 0 decodes
     /// every load whole before the deck gets it.
     head_frames: usize,
@@ -961,6 +970,7 @@ impl Control {
         }
         self.waiting[deck as usize - 1] = Some(behind);
         self.loading[deck as usize - 1] = Some(seq);
+        self.decodes[deck as usize - 1] += 1;
         let tx = self.msg_tx.clone();
         let tracks = self.tracks.clone();
         let head_frames = self.head_frames;
@@ -985,6 +995,20 @@ impl Control {
         }
         self.tailing[deck as usize - 1] = Some(seq);
         self.finish_load(seq, deck, Ok(track));
+    }
+
+    /// A decode thread is done, with its whole track or its error. A load
+    /// that waited for the deck's decodes to drop below `DECODES_PER_DECK`
+    /// starts now.
+    fn decoded(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
+        let n = &mut self.decodes[deck as usize - 1];
+        *n = n.saturating_sub(1);
+        self.finish_load(seq, deck, result);
+        if self.loading[deck as usize - 1].is_none() {
+            if let Some(q) = self.waiting[deck as usize - 1].take() {
+                self.release(deck, q);
+            }
+        }
     }
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
@@ -1025,8 +1049,15 @@ impl Control {
                 self.reply(&origin, Err(e));
                 // The work queued behind it would run against the previous
                 // track. Fail it instead: every command after the failed load
-                // is refused.
-                self.refuse_queued(q);
+                // is refused. A tail parked behind it is not that work: it
+                // ends the earlier load whose head is still on the deck, since
+                // this one never replaced it, so it still lands there.
+                let (tails, refused): (VecDeque<Queued>, VecDeque<Queued>) =
+                    q.into_iter().partition(|i| matches!(i, Queued::Tail(..)));
+                self.refuse_queued(refused);
+                if !tails.is_empty() {
+                    self.release(deck, tails);
+                }
             }
         }
     }
@@ -1075,7 +1106,7 @@ impl Control {
                 }
                 // Decoded audio waits on the output: the load starts once
                 // results flow and give it room.
-                Queued::Load(..) if self.pcm_full() => {
+                Queued::Load(..) if self.pcm_full() || self.decodes[deck as usize - 1] >= DECODES_PER_DECK => {
                     q.push_front(item);
                     break;
                 }
@@ -1101,7 +1132,14 @@ impl Control {
 
     /// Whether any deck's decoded work waits for room in the mailbox.
     fn staged(&self) -> bool {
-        (0..MAX_DECKS).any(|d| self.loading[d].is_none() && self.waiting[d].is_some())
+        // A load held only by the deck's running decodes starts when one
+        // ends (`decoded`), not on a poll.
+        (0..MAX_DECKS).any(|d| {
+            self.loading[d].is_none()
+                && self.waiting[d].as_ref().is_some_and(|q| {
+                    !(matches!(q.front(), Some(Queued::Load(..))) && self.decodes[d] >= DECODES_PER_DECK && !self.pcm_full())
+                })
+        })
     }
 
     /// Send on what waits for room, now that the audio side may have drained.
@@ -1183,7 +1221,8 @@ impl Control {
                     self.fence_passed(f);
                     continue;
                 }
-                // Nobody waits on a tail's result.
+                // Nobody waits on a tail's result; only shutdown drops one
+                // here (a failed load hands its parked tails on).
                 Queued::Tail(..) => continue,
             };
             self.reply(
@@ -1480,6 +1519,7 @@ fn serve_threaded_with(
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
         tailing: [None; MAX_DECKS],
+        decodes: [0; MAX_DECKS],
         head_frames: (sample_rate as u64 * HEAD_MS / 1000) as usize,
         state_req,
         router: midi.router,
@@ -1543,7 +1583,7 @@ fn serve_threaded_with(
                 control.reply(&(STDIO, None), Err(e));
                 in_flight.give_back(0);
             }
-            Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
+            Msg::Decoded { seq, deck, result } => control.decoded(seq, deck, result),
             Msg::Head { seq, deck, track } => control.head_loaded(seq, deck, track),
             Msg::Midi { port, bytes } => control.midi(&port, &bytes),
             // Supervisor gone: the engine has no reason to outlive it.
@@ -1584,7 +1624,7 @@ fn serve_threaded_with(
             }
             let wait = deadline.saturating_duration_since(Instant::now());
             match msg_rx.recv_timeout(if control.staged() { wait.min(Duration::from_millis(1)) } else { wait }) {
-                Ok(Msg::Decoded { seq, deck, result }) => control.finish_load(seq, deck, result),
+                Ok(Msg::Decoded { seq, deck, result }) => control.decoded(seq, deck, result),
                 Ok(Msg::Head { seq, deck, track }) => control.head_loaded(seq, deck, track),
                 Ok(Msg::AudioExited) => {
                     audio_failed = true;
@@ -1994,6 +2034,7 @@ mod tests {
             waiting: Default::default(),
             loading: [None; MAX_DECKS],
             tailing: [None; MAX_DECKS],
+            decodes: [0; MAX_DECKS],
             head_frames: 0,
             state_req: Arc::new(AtomicBool::new(false)),
             router: MidiSetup::inject_only().router,
@@ -2030,7 +2071,7 @@ mod tests {
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
         assert!(!c.state_req.load(Ordering::Acquire), "the state was asked for ahead of the parked play");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 0, "numbered ahead of the parked play");
-        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        c.decoded(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 1, "asked for without its number");
         assert_eq!(c.state_fence.load(Ordering::Acquire), 2, "fenced on other than the load and the play before it");
@@ -2044,11 +2085,11 @@ mod tests {
         line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-3.wav"}}));
         line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 3, "path": "nope-4.wav"}}));
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
-        c.finish_load(c.loading[2].unwrap(), 3, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        c.decoded(c.loading[2].unwrap(), 3, Err(ProtoError::new(ErrorCode::Decode, "bad")));
         assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's loads still ahead of it");
-        c.finish_load(c.loading[1].unwrap(), 2, silent_track());
+        c.decoded(c.loading[1].unwrap(), 2, silent_track());
         assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's second load still ahead of it");
-        c.finish_load(c.loading[1].unwrap(), 2, silent_track());
+        c.decoded(c.loading[1].unwrap(), 2, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 2);
         // Control: with nothing pending it is asked for at once.
@@ -2079,7 +2120,7 @@ mod tests {
         for i in 0..=QUEUE_SLOTS {
             line(&mut c, serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}));
         }
-        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        c.decoded(c.loading[0].unwrap(), 1, silent_track());
         let sent = std::iter::from_fn(|| cmd_rx.pop().ok()).count();
         // The load and every parked command fill the mailbox, to the slot:
         // one fewer would refuse a command the mailbox had room for.
@@ -2120,7 +2161,7 @@ mod tests {
         let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
         whole.load_id = a;
         let whole = Arc::new(whole);
-        c.finish_load(a, 1, Ok(whole.clone()));
+        c.decoded(a, 1, Ok(whole.clone()));
         let Ok((x, EngineCmd::Extend { deck: 1, track })) = cmd_rx.pop() else { panic!("the whole track was not sent") };
         assert!(Arc::ptr_eq(&track.pcm, &whole.pcm), "the whole track's samples were copied");
         assert_eq!(track.beats, grid, "the whole track lost the grid set since the head");
@@ -2140,8 +2181,8 @@ mod tests {
         let cs = c.loading[1].unwrap();
         let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
         rest.load_id = b;
-        c.finish_load(b, 2, Ok(Arc::new(rest)));
-        c.finish_load(cs, 2, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
+        c.decoded(b, 2, Ok(Arc::new(rest)));
+        c.decoded(cs, 2, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
         assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == cs));
         assert!(cmd_rx.pop().is_err(), "a replaced head's rest reached the deck");
 
@@ -2151,16 +2192,83 @@ mod tests {
         let d = c.loading[2].unwrap();
         c.head_loaded(d, 3, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)));
         assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == d));
-        c.finish_load(d, 3, Err(ProtoError::new(ErrorCode::Decode, "decode error in late.mp3: bad frame")));
+        c.decoded(d, 3, Err(ProtoError::new(ErrorCode::Decode, "decode error in late.mp3: bad frame")));
         assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Unload { deck: 3 }))), "the cut-short track stayed on the deck");
         let t = text(&out);
         assert!(t.contains(r#""type":"load_failed""#) && t.contains("late.mp3"), "{t}");
         // Control: a load that was never progressive still finishes as before.
         c.load((STDIO, Some("e".into())), spec(4));
         let e = c.loading[3].unwrap();
-        c.finish_load(e, 4, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
+        c.decoded(e, 4, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
         assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. })) if seq == e && !track.decoding));
         assert!(cmd_rx.pop().is_err());
+    }
+
+    #[test]
+    fn a_failed_replacement_still_lands_the_earlier_loads_tail_on_its_head() {
+        // Codex on 2c3ed9bde: A's tail, parked behind replacement B, was
+        // dropped when B failed, leaving A's head to run into silence.
+        let (mut c, mut cmd_rx, _out) = control();
+        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None };
+        c.load((STDIO, Some("a".into())), spec());
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a));
+        c.load((STDIO, Some("b".into())), spec());
+        let b = c.loading[0].unwrap();
+        let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
+        whole.load_id = a;
+        c.decoded(a, 1, Ok(Arc::new(whole)));
+        assert!(cmd_rx.pop().is_err(), "A's tail went ahead of B");
+        c.decoded(b, 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        let Ok((_, EngineCmd::Extend { deck: 1, track })) = cmd_rx.pop() else { panic!("A's tail was dropped with B") };
+        assert!(track.load_id == a && !track.decoding);
+        assert!(cmd_rx.pop().is_err());
+
+        // Control: when B lands, A's parked tail finds B on the deck and is
+        // dropped, never sent onto B.
+        c.load((STDIO, Some("c".into())), spec());
+        let cs = c.loading[0].unwrap();
+        c.head_loaded(cs, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, cs)));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == cs));
+        c.load((STDIO, Some("d".into())), spec());
+        let d = c.loading[0].unwrap();
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = cs;
+        c.decoded(cs, 1, Ok(Arc::new(rest)));
+        c.decoded(d, 1, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == d));
+        assert!(cmd_rx.pop().is_err(), "C's rest reached D");
+    }
+
+    #[test]
+    fn a_deck_runs_at_most_one_earlier_tail_beside_its_load() {
+        // Codex on 2c3ed9bde: each head released the next load at once, so
+        // rapid loads piled up decoder threads and whole-track buffers.
+        let (mut c, mut cmd_rx, _out) = control();
+        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let head = |seq| Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, seq));
+        c.load((STDIO, Some("a".into())), spec());
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, head(a));
+        // One load beside A's tail starts at once: the cap is not one decode.
+        c.load((STDIO, Some("b".into())), spec());
+        let b = c.loading[0].expect("a load beside one tail must start at once");
+        assert_eq!(c.decodes[0], 2);
+        c.head_loaded(b, 1, head(b));
+        // A third waits: A's tail and B's are both still decoding.
+        c.load((STDIO, Some("c".into())), spec());
+        assert_eq!(c.loading[0], None, "a third decode started on the deck");
+        assert!(!c.staged(), "a load held by the decode cap must not be polled");
+        while cmd_rx.pop().is_ok() {}
+        // A's tail ends: C starts, and A's rest never reaches the deck.
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = a;
+        c.decoded(a, 1, Ok(Arc::new(rest)));
+        let cs = c.loading[0].expect("the held load did not start when a decode ended");
+        assert!(cs > b);
+        assert_eq!(c.decodes[0], 2);
+        assert!(cmd_rx.pop().is_err(), "A's rest reached the deck");
     }
 
     #[test]
@@ -2179,7 +2287,7 @@ mod tests {
         c.load((STDIO, Some("a".into())), spec(1));
         c.load((STDIO, Some("b".into())), spec(1));
         let a = c.loading[0].unwrap();
-        c.finish_load(a, 1, track(1002));
+        c.decoded(a, 1, track(1002));
         assert_eq!(used(&c), 1002 * 4, "the decoded samples are not held against the budget");
         assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a), "the decoded load did not go");
         // Its result is not out, so b, queued behind it, waits to decode,
@@ -2199,10 +2307,10 @@ mod tests {
         // Control: a decode within the budget holds nothing back.
         let (b, d) = (c.loading[0].unwrap(), c.loading[1].unwrap());
         c.load((STDIO, Some("e".into())), spec(1));
-        c.finish_load(b, 1, track(1000));
+        c.decoded(b, 1, track(1000));
         assert_eq!(used(&c), 4000);
         assert!(c.loading[0].is_some(), "a decode within the budget held the next one back");
-        c.finish_load(d, 2, track(10));
+        c.decoded(d, 2, track(10));
         let _ = take_id(&c.ids, b);
     }
 
@@ -2253,13 +2361,13 @@ mod tests {
         // A decoded load holds its payload until its result is out, not
         // just until it is in the mailbox.
         let first = c.loading[0].unwrap();
-        c.finish_load(first, 1, silent_track());
+        c.decoded(first, 1, silent_track());
         assert_eq!(used(&c), LOAD_BYTES, "given back before the audio side took it");
         assert!(take_id(&c.ids, first).is_some());
         assert_eq!(used(&c), LOAD_BYTES - each);
         // A failed decode gives back its own and what was parked behind it,
         // and at shutdown the rest; nothing is held for good.
-        c.finish_load(c.loading[0].unwrap(), 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        c.decoded(c.loading[0].unwrap(), 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
         assert_eq!(used(&c), room);
         c.refuse_pending();
         while let Ok((seq, _)) = cmd_rx.pop() {
@@ -2294,7 +2402,7 @@ mod tests {
         for _ in 0..CMD_SLOTS {
             line(&mut c, serde_json::json!({"cmd": {"type": "crossfader", "value": 0.5}}));
         }
-        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        c.decoded(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.staged(), "the decoded load did not wait for room");
         // Sent while the deck's work waits: it goes after that work, and an
         // `engine_state` waits for all of it.
