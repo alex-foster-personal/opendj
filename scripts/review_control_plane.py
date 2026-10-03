@@ -56,6 +56,8 @@ Requirements (mini-PRD):
     [if] two reviews at R and a debt-only commit for this PR's file fail [then] broken
     [if] another path, another PR's debt file or a force-push still carries [then] broken
     [if] a carried review of the author's own family counts [then] broken
+  / Codex issue-comment evidence requires a completed Code Review table row at head.
+    [if] Security Review completed at head with Code Review queued still passes [then] broken
 """
 
 from __future__ import annotations
