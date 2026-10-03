@@ -1,81 +1,32 @@
-"""OneLibrary (``exportLibrary.db``) writer via the ``rbox`` Rust crate.
+"""OneLibrary (``exportLibrary.db``) overlay writer.
 
-This module is CAT-06 Prototype B: prove that we can produce a valid
-Rekordbox 7 **One Library** (aka *Device Library Plus*) SQLCipher file
-that round-trips through the same reader without data loss.
+CAT-06 Prototype B: produce a valid Rekordbox 7 **One Library** (aka
+*Device Library Plus*) SQLCipher file that round-trips through the same
+reader without data loss.
 
 This writer does **not** produce a gig stick: it cannot write ``export.pdb``,
 ``USBANLZ/``, or audio. It overlays OneLibrary only. Gig-stick value
 verification after a rekordbox export is
 ``python -m apps.sync.usb.verify --pioneer-export``.
 
-Background
-----------
+The database handle is our own (:mod:`apps.sync.usb.pioneer.onelibrary`,
+SQLCipher via ``sqlcipher3``). It replaced the ``rbox`` wheel on Thu 1 Oct
+2026 because rbox 0.1.6+ is GPL-3.0-only; see
+``research/licensing/2026-10-01-rbox-replacement.md``.
 
-The OneLibrary ``exportLibrary.db`` is a SQLCipher-encrypted SQLite
-database shipped on Pioneer USB/SD exports for CDJ-3000X, OPUS-QUAD,
-OMNIS-DUO, and XDJ-AZ players (see Rekordbox 6.8.1 *Device Library Plus
-User's Guide*).  The encryption key is a fixed per-feature constant that
-is only known to reimplementations of the format, notably Dylan Jones'
-`rbox` Rust crate (PyPI ``rbox`` / ``crates.io``) which unlocks the DB
-transparently.
-
-rbox-0.1.7 capability matrix (discovered empirically, see tests)
-----------------------------------------------------------------
-
-What works (✅)
-~~~~~~~~~~~~~~
-
-* Opening an existing ``exportLibrary.db`` via
-  :class:`rbox.OneLibrary(path)` — SQLCipher key is resolved internally.
-* Reading every top-level table via ``get_contents()``,
-  ``get_playlists()``, ``get_artists()`` etc.
-* Creating playlists: ``create_playlist(name, parent_id, seq)``.
-* Adding existing contents to a playlist:
-  ``create_playlist_content(playlist_id, content_id, seq)``.
-* Creating artists: ``create_artist(name)``.
-* Updating existing content metadata (title, rating, bpmx100, …) via
-  ``update_content(content)``. UTF-8 (日本語 / é / emoji 🎧) round-trips
-  cleanly.
-
-What does NOT work (❌) in rbox-0.1.7
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* ``OneLibrary.create(path, my_tag_master_dbid)`` — builds a fresh DB
-  whose schema uses camelCase FK column names
-  (``artist_id_originalArtist``) that do not match the crate's own
-  Diesel models (``original_artist_id``). Any subsequent write or a
-  plain ``get_contents()`` raises:
-
-        OneLibraryError: Diesel error: no such column:
-        content.artist_id_originalArtist
-
-* ``create_content(path)`` — inserts a row that leaves non-null
-  columns NULL, so the same INSERT ... RETURNING query raises:
-
-        OneLibraryError: Diesel error: Unexpected null for non-null column
-
-  The crate also exposes :class:`one_library.NewContent` as a Rust
-  builder, but it is not instantiable from Python
-  (``TypeError: cannot create 'builtins.NewContent' instances``).
-
-Consequence
-~~~~~~~~~~~
-
-For sync purposes we **never** need to build a OneLibrary from scratch:
-users always have a Rekordbox-produced ``exportLibrary.db`` that we can
-copy as a scaffold and then mutate.  This writer therefore takes a
-*template* DB as input (typically the user's last export), overlays
-playlists + content updates, and writes the result to the target path.
+We never build a OneLibrary from scratch: users always have a
+Rekordbox-produced ``exportLibrary.db`` that we copy as a scaffold and then
+mutate. The writer therefore takes a *template* DB as input (typically the
+user's last export), overlays playlists + content updates, and writes the
+result to the target path.
 
 Public API
 ----------
 
-:func:`write_onelibrary` — copy a template OneLibrary, overlay
-tracks+playlists, and write to the target path.  Returns the output
-path.
+:func:`write_onelibrary` -- copy a template OneLibrary, overlay
+tracks+playlists, and write to the target path.
 
-:class:`OneLibraryWriteResult` — summary of the write (tracks written,
+:class:`OneLibraryWriteResult` -- summary of the write (tracks written,
 playlists written, etc.).
 
 All functions raise :class:`OneLibraryWriteError` on failure.
@@ -89,28 +40,20 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-try:  # pragma: no cover - optional dep; tests skip when missing.
-    from apps.sync.usb.pioneer.rbox_runtime import ensure_rbox
+from .onelibrary import BACKEND, SQLCIPHER_AVAILABLE, SQLCIPHER_IMPORT_ERROR, OneLibrary
 
-    rbox = ensure_rbox()
-    OneLibrary = rbox.OneLibrary
-
-    RBOX_AVAILABLE = True
-    RBOX_IMPORT_ERROR: str | None = None
-except Exception as exc:  # noqa: BLE001 — rbox import is brittle on Windows.
-    rbox = None  # type: ignore[assignment]
-    OneLibrary = None  # type: ignore[assignment, misc]
-    RBOX_AVAILABLE = False
-    RBOX_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+WRITER_AVAILABLE = SQLCIPHER_AVAILABLE
+WRITER_IMPORT_ERROR: str | None = SQLCIPHER_IMPORT_ERROR
 
 
 __all__ = [
+    "BACKEND",
+    "WRITER_AVAILABLE",
+    "WRITER_IMPORT_ERROR",
     "OneLibraryWriteError",
     "OneLibraryWriteResult",
-    "TrackUpdate",
     "PlaylistSpec",
-    "RBOX_AVAILABLE",
-    "RBOX_IMPORT_ERROR",
+    "TrackUpdate",
     "write_onelibrary",
 ]
 
@@ -169,21 +112,7 @@ class OneLibraryWriteResult:
     playlists_written: int
     playlist_ids: tuple[int, ...]
     output_size_bytes: int
-    rbox_version: str
-
-
-def _rbox_version() -> str:
-    if not RBOX_AVAILABLE:
-        return "unavailable"
-    # rbox does not expose ``__version__``; use installed-dist metadata.
-    try:
-        from importlib.metadata import PackageNotFoundError, version
-
-        return version("rbox")
-    except PackageNotFoundError:  # pragma: no cover
-        return "unknown"
-    except Exception:  # pragma: no cover
-        return "unknown"
+    backend: str
 
 
 def _ensure_parent(path: Path) -> None:
@@ -249,7 +178,7 @@ def write_onelibrary(
     template_path:
         Path to an existing Rekordbox-produced ``exportLibrary.db``
         (typically a fixture or the user's last real export).  Must be
-        a valid SQLCipher OneLibrary file readable by rbox.
+        a valid SQLCipher OneLibrary file.
     output_path:
         Destination path (will be overwritten if ``overwrite`` is True).
         The directory is created if missing.
@@ -271,13 +200,13 @@ def write_onelibrary(
     Raises
     ------
     OneLibraryWriteError
-        On any of: rbox unavailable; template missing; output exists +
-        no overwrite; rbox raises while applying overlays.
+        On any of: sqlcipher3 unavailable; template missing; output exists +
+        no overwrite; the database rejects an overlay.
     """
-    if not RBOX_AVAILABLE:
+    if not WRITER_AVAILABLE:
         raise OneLibraryWriteError(
-            f"rbox is not installed ({RBOX_IMPORT_ERROR}). "
-            "Install with `pip install rbox`."
+            f"OneLibrary writer unavailable ({WRITER_IMPORT_ERROR}). "
+            "Install the repository dependencies (sqlcipher3 via pyrekordbox)."
         )
 
     template = Path(template_path).resolve()
@@ -294,14 +223,14 @@ def write_onelibrary(
         )
 
     # --- Fixture-safety guards (defense-in-depth) --------------------
-    # rbox's OneLibrary(path) has no read-only mode: every open may write
-    # to the DB and materialise -shm/-wal sidecars next to it. If the
+    # The writer opens read/write: every open may write to the DB and
+    # materialize -shm/-wal sidecars next to it. If the
     # caller accidentally points template_path at the committed fixture
     # (or passes the same path as template and output), that will mutate
     # files under tests/fixtures/ on every run. Catch both cases loudly.
     if template == output:
         raise OneLibraryWriteError(
-            "template_path must not equal output_path: rbox would open "
+            "template_path must not equal output_path: the writer would open "
             "the template in-place and corrupt it "
             f"(got {template})"
         )
@@ -321,9 +250,21 @@ def write_onelibrary(
     # Use shutil.copyfile (not copy2) so we inherit a clean mtime and
     # don't carry UNIX permissions from the fixture.
     shutil.copyfile(template, output)
+    # Carry an un-checkpointed -wal along with the main file: copying the
+    # main file alone silently drops the pending pages (76 rows on the big
+    # fixture; docs/solutions/database-issues/
+    # wal-checkpoint-missing-rows-pioneer-usb-writer-20260417.md). The
+    # checkpoint after the overlays folds them into the output.
+    for suffix in ("-wal", "-shm"):
+        side = output.with_name(output.name + suffix)
+        if side.exists():
+            side.unlink()
+        src_side = template.with_name(template.name + suffix)
+        if src_side.is_file():
+            shutil.copyfile(src_side, side)
 
     try:
-        db = OneLibrary(str(output))  # type: ignore[misc]
+        db = OneLibrary(output)
     except Exception as exc:
         raise OneLibraryWriteError(
             f"Failed to open template copy at {output}: {exc}"
@@ -332,68 +273,54 @@ def write_onelibrary(
     tracks_updated = 0
     playlist_ids: list[int] = []
 
-    # --- Track metadata overlays --------------------------------------
-    for update in track_updates or ():
-        overlay = update.to_overlay()
-        if not overlay:
-            continue
-        try:
-            content = db.get_content_by_id(update.id)
-        except Exception as exc:
-            raise OneLibraryWriteError(
-                f"Unable to read content id={update.id} from template: {exc}"
-            ) from exc
-        if content is None:
-            raise OneLibraryWriteError(
-                f"Content id={update.id} not present in template DB"
-            )
-        for key, value in overlay.items():
-            # _RustMutableMapping supports __setitem__ semantics.
-            content[key] = value
-        try:
-            db.update_content(content)
-        except Exception as exc:
-            raise OneLibraryWriteError(
-                f"rbox update_content(id={update.id}) failed: {exc}"
-            ) from exc
-        tracks_updated += 1
-
-    # --- New playlists -----------------------------------------------
-    if playlists:
-        # Compute next-available seq after the existing max so we never
-        # hit rbox's "Invalid sequence number" uniqueness check.
-        existing = db.get_playlists()
-        existing_seqs = [int(p["seq"]) for p in existing if p["seq"] is not None]
-        next_seq = max(existing_seqs) + 1 if existing_seqs else 0
-
-        for spec in playlists:
+    try:
+        # --- Track metadata overlays --------------------------------------
+        for update in track_updates or ():
+            overlay = update.to_overlay()
+            if not overlay:
+                continue
             try:
-                playlist = db.create_playlist(
-                    spec.name, spec.parent_id, next_seq
-                )
+                content = db.get_content_by_id(update.id)
             except Exception as exc:
                 raise OneLibraryWriteError(
-                    f"rbox create_playlist(name={spec.name!r}, "
-                    f"seq={next_seq}) failed: {exc}"
+                    f"Unable to read content id={update.id} from template: {exc}"
+                ) from exc
+            if content is None:
+                raise OneLibraryWriteError(
+                    f"Content id={update.id} not present in template DB"
+                )
+            for key, value in overlay.items():
+                content[key] = value
+            try:
+                db.update_content(content)
+            except Exception as exc:
+                raise OneLibraryWriteError(
+                    f"update_content(id={update.id}) failed: {exc}"
+                ) from exc
+            tracks_updated += 1
+
+        # --- New playlists -----------------------------------------------
+        # Each spec is appended after its siblings, and its tracks are appended
+        # in spec order (seq=None asks the handle for max + 1 each time).
+        for spec in playlists or ():
+            try:
+                playlist = db.create_playlist(spec.name, spec.parent_id)
+            except Exception as exc:
+                raise OneLibraryWriteError(
+                    f"create_playlist(name={spec.name!r}) failed: {exc}"
                 ) from exc
             playlist_ids.append(int(playlist["id"]))
-            for idx, track_id in enumerate(spec.track_ids):
+            for track_id in spec.track_ids:
                 try:
-                    db.create_playlist_content(
-                        int(playlist["id"]), int(track_id), idx
-                    )
+                    db.create_playlist_content(int(playlist["id"]), int(track_id))
                 except Exception as exc:
                     raise OneLibraryWriteError(
-                        f"rbox create_playlist_content(pl={playlist['id']}, "
-                        f"content={track_id}, seq={idx}) failed: {exc}"
+                        f"create_playlist_content(pl={playlist['id']}, "
+                        f"content={track_id}) failed: {exc}"
                     ) from exc
-            next_seq += 1
-
-    # --- Flush + size -------------------------------------------------
-    # rbox has no explicit commit/close API — dropping the handle
-    # releases the SQLite connection in Rust.  Force that by deleting
-    # the local binding.
-    del db
+        db.checkpoint()
+    finally:
+        db.close()
 
     size_bytes = output.stat().st_size
     return OneLibraryWriteResult(
@@ -402,7 +329,7 @@ def write_onelibrary(
         playlists_written=len(playlist_ids),
         playlist_ids=tuple(playlist_ids),
         output_size_bytes=size_bytes,
-        rbox_version=_rbox_version(),
+        backend=BACKEND,
     )
 
 
@@ -427,30 +354,28 @@ def read_playlist_roundtrip(
             ],
         }
     """
-    if not RBOX_AVAILABLE:
+    if not WRITER_AVAILABLE:
         raise OneLibraryWriteError(
-            f"rbox is not installed ({RBOX_IMPORT_ERROR})."
+            f"OneLibrary reader unavailable ({WRITER_IMPORT_ERROR})."
         )
-    db = OneLibrary(str(onelibrary_path))  # type: ignore[misc]
-    playlist = db.get_playlist_by_id(int(playlist_id))
-    if playlist is None:
-        raise OneLibraryWriteError(
-            f"playlist id={playlist_id} not found in {onelibrary_path}"
-        )
-    contents = db.get_playlist_contents(int(playlist_id))
+    with OneLibrary(onelibrary_path) as db:
+        playlist = db.get_playlist_by_id(int(playlist_id))
+        if playlist is None:
+            raise OneLibraryWriteError(
+                f"playlist id={playlist_id} not found in {onelibrary_path}"
+            )
+        contents = db.get_playlist_contents(int(playlist_id))
     return {
         "id": int(playlist["id"]),
         "name": str(playlist["name"]),
         "seq": int(playlist["seq"]),
-        # NOTE: rbox's _RustMutableMapping.get() requires an explicit
-        # default argument (unlike Python's dict.get). Pass None explicitly.
         "tracks": [
             {
                 "id": int(c["id"]),
-                "title": c.get("title", None),
-                "bpmx100": c.get("bpmx100", None),
-                "rating": c.get("rating", None),
-                "path": c.get("path", None),
+                "title": c.get("title"),
+                "bpmx100": c.get("bpmx100"),
+                "rating": c.get("rating"),
+                "path": c.get("path"),
             }
             for c in contents
         ],

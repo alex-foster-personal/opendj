@@ -1,0 +1,144 @@
+name: License gate
+
+# Every locked dependency, in every ecosystem that ships (uv.lock, the payload
+# runner's script lock, the CI pylocks, every pnpm/npm lock, every Cargo.lock),
+# must be declared in licenses/register.json with a license that
+# licenses/policy.json allows, or carry a reasoned exception there. rbox went
+# GPL-3.0-only at 0.1.6 and jsonschema[format] pulled GPL rfc3987 into the
+# payload without anyone noticing (Wed 1 Oct 2026); this is the gate that
+# notices. Weights files the payload builders ship must be declared in
+# licenses/models.json. Docs: docs/security/licenses.md.
+#
+# Fix a red run with `python -m scripts.license_gate update` (network: reads
+# PyPI, npm and cargo metadata for new name@version entries), review the
+# register diff, and add a reasoned exception for anything it still flags.
+#
+# Self-hosted on purpose, like lock-metadata in lockfile-check.yml: the check
+# is stdlib-only over committed files. No network, no resolution, no package
+# code, about a second.
+on:
+  pull_request:
+    paths:
+      - "**/uv.lock"
+      - "**/*.py.lock"
+      - "**/pylock*.toml"
+      - "**/pnpm-lock.yaml"
+      - "**/package-lock.json"
+      - "**/Cargo.lock"
+      - licenses/**
+      - scripts/license_gate.py
+      - scripts/build_engine_payload.py
+      - scripts/payload_*.py
+      - .github/workflows/license-gate.yml
+  push:
+    branches: [main]
+    paths:
+      - "**/uv.lock"
+      - "**/*.py.lock"
+      - "**/pylock*.toml"
+      - "**/pnpm-lock.yaml"
+      - "**/package-lock.json"
+      - "**/Cargo.lock"
+      - licenses/**
+      - scripts/license_gate.py
+      - scripts/build_engine_payload.py
+      - scripts/payload_*.py
+
+permissions:
+  contents: read
+
+env:
+  # Keep .pyc out of the persistent self-hosted workspace (#1338).
+  PYTHONDONTWRITEBYTECODE: "1"
+
+concurrency:
+  group: license-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  license-gate:
+    name: Dependency licenses are declared and allowed
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # Full history so origin/main is current enough for the ancestry guard
+      # (issue #3513). edited below re-runs body declarations; ancestry catches
+      # stale synthetic merge refs that predate trunk ADR fixes.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        timeout-minutes: 2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: Every locked dependency declares an allowed or excepted license
+        # Exit 1 = findings (each named with its fix). Exit 2 = could not
+        # measure (a listed lockfile missing, unparseable or empty), never a pass.
+        timeout-minutes: 1
+        run: python -m scripts.license_gate check

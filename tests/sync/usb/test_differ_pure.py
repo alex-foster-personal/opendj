@@ -1,7 +1,7 @@
 """Pure-function tests for :mod:`apps.sync.usb.pioneer.differ`.
 
 The full round-trip matrix in ``test_diff_matrix.py`` only runs when
-rbox is installed and at least one fixture resolves. These tests
+sqlcipher3 is installed and at least one fixture resolves. These tests
 exercise the *pure* logic paths that can run cheaply anywhere:
 
 * ``diff_snapshots`` — every verdict branch under both modes,
@@ -14,12 +14,12 @@ exercise the *pure* logic paths that can run cheaply anywhere:
 * ``_fmt_set_delta`` — truncation at the ``limit`` threshold.
 * ``_head_hex`` / ``_sha256`` / ``_relative_files`` file helpers.
 * ``build_report`` fallback when ``exportLibrary.db`` is absent
-  (exercises the legacy markdown path without touching rbox).
+  (exercises the legacy markdown path without opening a database).
 * ``diff_pair_cli`` (stdout + file output flow).
 * ``discover_fixtures`` + ``run_matrix`` error rows for unavailable
-  and malformed fixtures (no rbox required for either path).
+  and malformed fixtures (no database reader required for either path).
 * ``round_trip_via_writer`` missing-template error.
-* ``snapshot_onelibrary`` handles the absent-rbox module gracefully.
+* ``snapshot_onelibrary`` handles an absent reader module gracefully.
 
 Requirement: CAT-06.
 """
@@ -142,7 +142,7 @@ def test_identity_detects_playlist_set_drift() -> None:
 
 
 def test_diff_propagates_snapshot_error() -> None:
-    left = _snap(error="rbox unavailable")
+    left = _snap(error="reader unavailable")
     right = _snap(rows={"content": 1})
     diff = differ.diff_snapshots(left, right, mode="identity")
     assert diff.verdict == "unexpected_divergence"
@@ -664,26 +664,26 @@ def test_round_trip_via_writer_requires_exportlibrary_db(tmp_path: Path) -> None
 
 
 # --------------------------------------------------------------------------- #
-# snapshot_onelibrary when rbox is absent
+# snapshot_onelibrary when the OneLibrary reader is absent
 # --------------------------------------------------------------------------- #
 
 
-def test_snapshot_onelibrary_returns_error_when_rbox_import_fails(
+def test_snapshot_onelibrary_returns_error_when_reader_import_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If ``import rbox`` raises, we get back an error-carrying snapshot."""
+    """If the reader import raises, we get back an error-carrying snapshot."""
     # Force the import to fail by stubbing sys.modules before the local import.
-    monkeypatch.setitem(sys.modules, "rbox", None)
+    monkeypatch.setitem(sys.modules, "apps.sync.usb.pioneer.onelibrary", None)
     db = tmp_path / "exportLibrary.db"
     db.write_bytes(b"placeholder")
     snap = differ.snapshot_onelibrary(db)
-    assert snap.error is not None
+    assert snap.error is not None and "not importable" in snap.error
     assert snap.tables == ()
     assert snap.playlist_names == ()
 
 
 # --------------------------------------------------------------------------- #
-# _overlay_spec_for_fixture when rbox absent / DB missing
+# _overlay_spec_for_fixture when the reader is absent / DB missing
 # --------------------------------------------------------------------------- #
 
 
@@ -692,15 +692,15 @@ def test_overlay_spec_for_fixture_handles_missing_db(
 ) -> None:
     pioneer = tmp_path / "PIONEER"
     (pioneer / "rekordbox").mkdir(parents=True)
-    # Force rbox import inside helper to succeed at top but fail on open.
+    # The reader import succeeds; the missing DB short-circuits first.
     spec = differ._overlay_spec_for_fixture(pioneer, tmp_path / "wk")
     assert spec == []
 
 
-def test_overlay_spec_for_fixture_returns_empty_when_rbox_unavailable(
+def test_overlay_spec_for_fixture_returns_empty_when_reader_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setitem(sys.modules, "rbox", None)
+    monkeypatch.setitem(sys.modules, "apps.sync.usb.pioneer.onelibrary", None)
     pioneer = tmp_path / "PIONEER"
     (pioneer / "rekordbox").mkdir(parents=True)
     (pioneer / "rekordbox" / "exportLibrary.db").write_bytes(b"x")

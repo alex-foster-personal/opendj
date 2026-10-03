@@ -10,17 +10,12 @@
 	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
 	// dropdown selector below-left is visual-only (inert).
 	//
-	// A locally imported track has no djmdContent row for djmdCue to key
-	// off, so SAVE has nowhere to write (PARITY-TODO v1 blocker, issue
-	// #736): every slot on such a deck (deck.has_rb_mapping false) always
-	// reads empty from the server and goes inert-with-tooltip rather than
-	// firing a write that would 404.
+	// Cues live in Open DJ's own cue store (CUES-01), so every loaded track
+	// can SAVE, rekordbox-mapped or not; the #736 mapping gate is gone.
 	//
 	// An empty deck (deck.stable_id null - nothing loaded, or momentarily
-	// mid-reload) has no track to save onto either, and its has_rb_mapping
-	// defaults true (deck-state-types.ts), so that flag alone cannot gate
-	// this case. Same inert-with-tooltip treatment, gated on stable_id
-	// instead (issue #804).
+	// mid-reload) has no track to save onto, so its slots go
+	// inert-with-tooltip, gated on stable_id (issue #804).
 	import { fetchTrackLyrics, type HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -31,7 +26,6 @@
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
 	import { createLyricsFetchState } from '../wave/lyrics-fetch.svelte';
 
-	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
 
 	let {
@@ -124,11 +118,9 @@
 			await onJump(entry.slot, pressT0Ms);
 			return;
 		}
-		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping
-		// defaults true on an empty deck (deck-state-types.ts), so it alone
-		// cannot gate the save - stable_id is the real "is there a deck to
-		// save onto" signal (#804).
-		if (deck.stable_id === null || !deck.has_rb_mapping) return;
+		// Empty deck rows are inert (WaveRow.svelte precedent): stable_id is
+		// the "is there a deck to save onto" signal (#804).
+		if (deck.stable_id === null) return;
 		await beginRename(entry.slot, deck.position_ms, deck.stable_id);
 	}
 
@@ -266,8 +258,7 @@
 							class:filled={entry.cue !== null}
 							class:proposal={entry.cue === null && visible !== null}
 							class:loop={entry.cue !== null && entry.cue.is_loop}
-							class:inert-mapping={entry.cue === null &&
-								(deck.stable_id === null || !deck.has_rb_mapping)}
+							class:inert-mapping={entry.cue === null && deck.stable_id === null}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
 							aria-busy={pending}
 							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
@@ -277,11 +268,9 @@
 							title={entry.cue === null
 								? deck.stable_id === null
 									? NOT_LOADED_TIP
-									: deck.has_rb_mapping
-										? visible !== null
-											? `${proposalTitle(visible.kind, visible.time_s)} - click to save the current position`
-											: 'empty hot cue slot - click to save the current position'
-										: MAPPING_TIP
+									: visible !== null
+										? `${proposalTitle(visible.kind, visible.time_s)} - click to save the current position`
+										: 'empty hot cue slot - click to save the current position'
 								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [], lyricsState.lyrics?.lines ?? [])}
 							onclick={(e) => onSlotClick(entry, e.timeStamp)}
 						>

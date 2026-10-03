@@ -95,6 +95,7 @@ def test_a_kernel_launch_failure_becomes_local_decode_unavailable(
         unlaunchable.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
     )
     monkeypatch.setenv("MDT_FFMPEG", str(unlaunchable))
+    monkeypatch.setenv("MDT_WAVEFORM_DECODER", "ffmpeg")
 
     with pytest.raises(decode.LocalDecodeUnavailable, match="could not be launched"):
         decode.decode_peaks(tmp_path / "irrelevant.wav")

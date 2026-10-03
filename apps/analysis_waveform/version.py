@@ -15,9 +15,15 @@ columns/s detail, 1200-column preview. Model-free: no third-party weights, so
 WHAT 1.2.0 IS. The same peaks; the 1200-column preview is now encoded on
 rekordbox PWV6's per-band scale (`bands.pwv6_scale`), so it draws with the
 balance JIK approved (specs/ui-contracts/library-preview-waveform). MINOR,
-because emitted preview values change. The detail lane is unchanged. 1.1.0
-is skipped here on purpose: on main-electron-rust it names the Rust engine
-decoder (NATIVE-21), which this branch does not carry.
+because emitted preview values change. The detail lane is unchanged.
+
+WHAT 1.3.0 IS. Both: the 1.2.0 PWV6-scaled preview, produced by the engine's
+own decoder (`odj-audio waveform`, symphonia) when it is available and by
+ffmpeg otherwise (`decode.select_decoder`), as 1.1.0 did on main-electron-rust.
+MINOR, because the engine filters at the file's own rate: a 48 kHz file's high
+band keeps its 22-24 kHz content, and `sample_rate` on the record is now the
+rate actually filtered at. On 44.1 kHz FLAC/MP3/WAV the engine's
+peaks match the ffmpeg decode's to within 1 of 255 (measured for 1.1.0).
 
 WHAT 1.4.0 IS. The same peaks; the preview's per-band gains are re-fitted on
 real music (`bands.PWV6_MUSIC_GAIN`, 83/56/176) because the sine-derived ones

@@ -133,7 +133,7 @@ const TRANSPORT_ANCHORS = [
 	'	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {',
 	'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 	'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-	'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {',
+	'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {',
 	'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 ];
 
@@ -152,7 +152,7 @@ test('every transport quantize site reads the grid through the never-throwing he
 	for (const anchor of [
 		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {',
+		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {',
 		'	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);

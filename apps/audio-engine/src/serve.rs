@@ -94,6 +94,12 @@ const LOAD_BYTES: usize = 64 << 20;
 /// one decode per deck may already be running when it is reached.
 const PCM_BYTES: usize = 1 << 30;
 
+/// The length a progressive load's rest is charged at least, from its head
+/// on, when its file states none: ten minutes. The rest grows to the whole
+/// track off this thread, so it is charged up front, at the length the file
+/// states when it states one; past that, it is charged as it grows (`Meter`).
+const UNSTATED_TAIL_S: usize = 600;
+
 /// What `LOAD_BYTES` counts for one load: its path, its grid, and the
 /// decoded track's copy of the grid with its downbeat index (at most one
 /// entry a beat).
@@ -112,6 +118,35 @@ struct Charge {
 impl Drop for Charge {
     fn drop(&mut self) {
         self.used.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
+
+/// A decode's share of `PCM_BYTES` while its buffer fills: never less than
+/// what that buffer has allocated (the decode thread raises it as it grows)
+/// or than what the whole track is expected to take once its head is out,
+/// and given back when the last holder drops it.
+struct Meter {
+    charged: AtomicUsize,
+    used: Arc<AtomicUsize>,
+}
+
+impl Meter {
+    fn new(used: Arc<AtomicUsize>) -> Meter {
+        Meter { charged: AtomicUsize::new(0), used }
+    }
+
+    /// Hold at least `bytes`.
+    fn at_least(&self, bytes: usize) {
+        let before = self.charged.fetch_max(bytes, Ordering::AcqRel);
+        if bytes > before {
+            self.used.fetch_add(bytes - before, Ordering::AcqRel);
+        }
+    }
+}
+
+impl Drop for Meter {
+    fn drop(&mut self) {
+        self.used.fetch_sub(*self.charged.get_mut(), Ordering::AcqRel);
     }
 }
 
@@ -232,6 +267,25 @@ pub type ClientId = u32;
 
 /// The supervisor's stdio line. Always connected while the engine runs.
 pub const STDIO: ClientId = 0;
+
+/// No client: the engine's own commands (a progressive load's swap to the
+/// whole track) are sent for this id, whose results go nowhere.
+const NOBODY: ClientId = ClientId::MAX;
+
+/// How much of a track, at least, a load decodes before the deck gets it:
+/// the deck can play this head at once while the rest decodes behind it,
+/// hundreds of times faster than real time, and swaps the whole track in
+/// when it is done (`decode_progressive`, `Deck::extend`). A long track's
+/// head is longer (`decode::HEAD_SHARE`), so the rest is decoded before a
+/// deck started at load reaches the head's end.
+pub const HEAD_MS: u64 = 8000;
+
+/// Decodes one deck may have running at once: its current load, and the
+/// rest of the file of one earlier load whose head already went out. A
+/// further load on the deck waits for that rest to finish, so loads in quick
+/// succession never pile up decoder threads and whole-track buffers that no
+/// budget counts.
+const DECODES_PER_DECK: u8 = 2;
 
 /// Lines queued for one socket client before it counts as stalled. At 30 state
 /// messages a second this is several seconds of backlog.
@@ -671,6 +725,8 @@ pub(crate) enum Msg {
     /// A line the reader skipped (too long, or not UTF-8), with its refusal.
     Skipped(ProtoError),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
+    /// The head of a load whose decode is still running (`HEAD_MS`).
+    Head { seq: u64, deck: DeckId, track: Arc<Track> },
     Eof,
     /// Reading stdin failed: the session ends as at EOF, and then fails.
     InputFailed(io::Error),
@@ -697,6 +753,10 @@ enum Queued {
     /// The deck's decoded load, by its seq, waiting for room in the mailbox
     /// that other decks' traffic has taken.
     Ready(u64, EngineCmd),
+    /// The end of a progressive load, by the load's seq: its whole track, or
+    /// why the rest of the file failed to decode. Waits behind the deck's
+    /// work like any command, so it lands on whatever that work left.
+    Tail(u64, Result<Arc<Track>, ProtoError>),
 }
 
 /// The control half: owns the command ring's producer, the per-deck load
@@ -713,6 +773,14 @@ struct Control {
     waiting: [Option<VecDeque<Queued>>; MAX_DECKS],
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
+    /// Per deck: the seq of the load whose head went out while the rest of
+    /// its file still decodes.
+    tailing: [Option<u64>; MAX_DECKS],
+    /// Per deck: decodes started and not yet finished (`DECODES_PER_DECK`).
+    decodes: [u8; MAX_DECKS],
+    /// Frames of a load's head at the engine's rate (`HEAD_MS`); 0 decodes
+    /// every load whole before the deck gets it.
+    head_frames: usize,
     state_req: Arc<AtomicBool>,
     router: Router,
     routed: Vec<Routed>,
@@ -742,6 +810,13 @@ struct Control {
     /// and the most there may be before another decode starts.
     pcm_used: Arc<AtomicUsize>,
     pcm_budget: usize,
+    /// By load seq: the share of `pcm_used` a decode holds while its buffer
+    /// fills and, for a progressive load, its rest until that is sent to its
+    /// deck or dropped (`Meter`).
+    meters: HashMap<u64, Arc<Meter>>,
+    /// By load seq: the file a load decodes, kept past its head while its
+    /// rest may still fail, so `load_failed` names the load it ends.
+    load_paths: HashMap<u64, String>,
     /// Set by whichever write to the output fails first.
     closed: Arc<AtomicBool>,
 }
@@ -805,7 +880,9 @@ impl Control {
     /// mailbox is full and the command was dropped.
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
         let holds = match &cmd {
-            EngineCmd::Load { deck, track } | EngineCmd::Regrid { deck, track } => Some((*deck, Some(track.clone()))),
+            EngineCmd::Load { deck, track } | EngineCmd::Regrid { deck, track } | EngineCmd::Extend { deck, track } => {
+                Some((*deck, Some(track.clone())))
+            }
             EngineCmd::Unload { deck } => Some((*deck, None)),
             _ => None,
         };
@@ -824,7 +901,7 @@ impl Control {
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, .. } | Regrid { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
+            Load { deck, .. } | Regrid { deck, .. } | Extend { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
             | Seek { deck, .. } | TempoFader { deck, .. } | Quantize { deck, .. } | QuantizeGrid { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
             | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. }
@@ -838,7 +915,9 @@ impl Control {
     /// the item back when the deck has no load pending, so it runs now.
     fn park(&mut self, deck: DeckId, item: Queued) -> Option<Queued> {
         let Some(q) = self.waiting[deck as usize - 1].as_mut() else { return Some(item) };
-        if q.len() < QUEUE_SLOTS {
+        // A tail is never dropped for room: it ends a load already running,
+        // so the queue may run past its bound by one for it.
+        if q.len() < QUEUE_SLOTS || matches!(item, Queued::Tail(..)) {
             q.push_back(item);
         } else {
             let (Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _)) = item else {
@@ -927,24 +1006,105 @@ impl Control {
     fn start_load(&mut self, id: Origin, spec: LoadSpec, charge: Charge, behind: VecDeque<Queued>) {
         let deck = spec.deck;
         let seq = self.seq(id);
+        self.load_paths.insert(seq, spec.path.clone());
         // Held until the load's result is out, decoded or not.
         if let Some(p) = self.ids.lock().unwrap().get_mut(&seq) {
             p.hold = Some(charge);
         }
         self.waiting[deck as usize - 1] = Some(behind);
         self.loading[deck as usize - 1] = Some(seq);
+        self.decodes[deck as usize - 1] += 1;
         let tx = self.msg_tx.clone();
         let tracks = self.tracks.clone();
+        let head_frames = self.head_frames;
+        let meter = Arc::new(Meter::new(self.pcm_used.clone()));
+        self.meters.insert(seq, meter.clone());
         std::thread::spawn(move || {
             // Decks on one file share its samples, and a load of a file
-            // another deck is still decoding waits for that decode.
-            let result = tracks.load(std::path::Path::new(&spec.path), &spec);
+            // another deck is still decoding waits for that decode. The deck
+            // gets the head as soon as it is decoded; the whole track follows.
+            let head_tx = tx.clone();
+            // A panicking decode still ends in `Decoded`: the deck's decode
+            // count (`DECODES_PER_DECK`) and the load's result depend on it.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                tracks.load_progressive_metered(
+                    std::path::Path::new(&spec.path),
+                    &spec,
+                    seq,
+                    head_frames,
+                    |track| {
+                        let _ = head_tx.send(Msg::Head { seq, deck, track });
+                    },
+                    |bytes| meter.at_least(bytes),
+                )
+            }))
+            .unwrap_or_else(|_| Err(ProtoError::new(ErrorCode::Decode, format!("decoding {} failed unexpectedly (panic)", spec.path))));
+            // The control side holds the meter from here on, for as long as
+            // the decoded samples wait to reach the deck.
+            drop(meter);
             let _ = tx.send(Msg::Decoded { seq, deck, result });
         });
     }
 
+    /// A load's head is decoded: it goes to the deck as the load (its
+    /// result is the load's result) with the work parked behind it, while the
+    /// rest of the file decodes. A later load on this deck starts at once.
+    fn head_loaded(&mut self, seq: u64, deck: DeckId, track: Arc<Track>) {
+        if self.loading[deck as usize - 1] != Some(seq) {
+            return;
+        }
+        self.tailing[deck as usize - 1] = Some(seq);
+        // The rest decodes into a buffer that grows to the whole track
+        // before anything here sees it: charge it now, or rapid loads on
+        // every deck grow whole-track buffers no budget stops.
+        let frames = if track.frames > track.available() { track.frames } else { track.sample_rate as usize * UNSTATED_TAIL_S };
+        if let Some(meter) = self.meters.get(&seq) {
+            meter.at_least(frames.saturating_mul(2 * std::mem::size_of::<f32>()));
+        }
+        self.finish_load(seq, deck, Ok(track));
+    }
+
+    /// A decode thread is done, with its whole track or its error. A load
+    /// that waited for the deck's decodes to drop below `DECODES_PER_DECK`
+    /// starts now.
+    fn decoded(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
+        let n = &mut self.decodes[deck as usize - 1];
+        *n = n.saturating_sub(1);
+        self.finish_load(seq, deck, result);
+        if self.loading[deck as usize - 1].is_none() {
+            if let Some(q) = self.waiting[deck as usize - 1].take() {
+                self.release(deck, q);
+            }
+        }
+    }
+
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
+        if self.tailing[deck as usize - 1] == Some(seq) && self.loading[deck as usize - 1] != Some(seq) {
+            // The rest of a load whose head is out.
+            self.tailing[deck as usize - 1] = None;
+            if let Some(Queued::Tail(seq, result)) = self.park(deck, Queued::Tail(seq, result)) {
+                if self.cmd_tx.slots() == 0 {
+                    self.waiting[deck as usize - 1] = Some(VecDeque::from([Queued::Tail(seq, result)]));
+                } else {
+                    self.send_tail(deck, seq, result);
+                }
+            }
+            return;
+        }
+        if self.loading[deck as usize - 1] != Some(seq) {
+            // A load whose head went out and which a later load on the deck
+            // has since replaced.
+            self.meters.remove(&seq);
+            self.load_paths.remove(&seq);
+            return;
+        }
         self.loading[deck as usize - 1] = None;
+        if self.tailing[deck as usize - 1] != Some(seq) {
+            // Whole or failed: no rest follows that could fail later, and a
+            // whole track is charged below as the load's own.
+            self.load_paths.remove(&seq);
+            self.meters.remove(&seq);
+        }
         let mut q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         match result {
             Ok(track) => {
@@ -964,8 +1124,48 @@ impl Control {
                 self.reply(&origin, Err(e));
                 // The work queued behind it would run against the previous
                 // track. Fail it instead: every command after the failed load
-                // is refused.
-                self.refuse_queued(q);
+                // is refused. A tail parked behind it is not that work: it
+                // ends the earlier load whose head is still on the deck, since
+                // this one never replaced it, so it still lands there.
+                let (tails, refused): (VecDeque<Queued>, VecDeque<Queued>) =
+                    q.into_iter().partition(|i| matches!(i, Queued::Tail(..)));
+                self.refuse_queued(refused);
+                if !tails.is_empty() {
+                    self.release(deck, tails);
+                }
+            }
+        }
+    }
+
+    /// Finish a progressive load on the audio side: the whole track in place
+    /// of its head, built here with the grid the deck has now (a
+    /// `set_beatgrid` may have come since), or, when the rest of the file
+    /// failed to decode, the deck emptied and every client told: a load that
+    /// played its head is never left silently cut short. Nothing is done
+    /// when the deck no longer holds that load's head.
+    fn send_tail(&mut self, deck: DeckId, seq: u64, result: Result<Arc<Track>, ProtoError>) {
+        // Sent or dropped, the rest is charged below as the deck's track.
+        let _held = self.meters.remove(&seq);
+        let path = self.load_paths.remove(&seq).unwrap_or_default();
+        let Some(head) = self.on_deck[deck as usize - 1].clone().filter(|t| t.decoding && t.load_id == seq) else {
+            return;
+        };
+        let internal = self.seq((NOBODY, None));
+        match result {
+            Ok(whole) => {
+                let mut track = Track::new(whole.sample_rate, whole.pcm.clone(), head.beats.clone(), head.bpm)
+                    .with_source(whole.source.clone());
+                track.load_id = seq;
+                let bytes = track.pcm.capacity() * std::mem::size_of::<f32>();
+                self.pcm_used.fetch_add(bytes, Ordering::AcqRel);
+                if let Some(p) = self.ids.lock().unwrap().get_mut(&internal) {
+                    p.pcm = Some(Charge { bytes, used: self.pcm_used.clone() });
+                }
+                let _ = self.push_seq(internal, EngineCmd::Extend { deck, track: Arc::new(track) });
+            }
+            Err(e) => {
+                let _ = self.push_seq(internal, EngineCmd::Unload { deck });
+                self.broadcast(&protocol::load_failed_json(deck, &path, &e));
             }
         }
     }
@@ -978,13 +1178,13 @@ impl Control {
     fn release(&mut self, deck: DeckId, mut q: VecDeque<Queued>) {
         while let Some(item) = q.pop_front() {
             match item {
-                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) if self.cmd_tx.slots() == 0 => {
+                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) | Queued::Tail(..) if self.cmd_tx.slots() == 0 => {
                     q.push_front(item);
                     break;
                 }
                 // Decoded audio waits on the output: the load starts once
                 // results flow and give it room.
-                Queued::Load(..) if self.pcm_full() => {
+                Queued::Load(..) if self.pcm_full() || self.decodes[deck as usize - 1] >= DECODES_PER_DECK => {
                     q.push_front(item);
                     break;
                 }
@@ -996,6 +1196,7 @@ impl Control {
                     let _ = self.push_seq(seq, cmd);
                 }
                 Queued::Regrid(id, spec) => self.send_regrid(id, spec),
+                Queued::Tail(seq, result) => self.send_tail(deck, seq, result),
                 Queued::Load(id, spec, charge) => {
                     self.start_load(id, spec, charge, q);
                     return;
@@ -1009,7 +1210,14 @@ impl Control {
 
     /// Whether any deck's decoded work waits for room in the mailbox.
     fn staged(&self) -> bool {
-        (0..MAX_DECKS).any(|d| self.loading[d].is_none() && self.waiting[d].is_some())
+        // A load held only by the deck's running decodes starts when one
+        // ends (`decoded`), not on a poll.
+        (0..MAX_DECKS).any(|d| {
+            self.loading[d].is_none()
+                && self.waiting[d].as_ref().is_some_and(|q| {
+                    !(matches!(q.front(), Some(Queued::Load(..))) && self.decodes[d] >= DECODES_PER_DECK && !self.pcm_full())
+                })
+        })
     }
 
     /// Send on what waits for room, now that the audio side may have drained.
@@ -1091,6 +1299,9 @@ impl Control {
                     self.fence_passed(f);
                     continue;
                 }
+                // Nobody waits on a tail's result; only shutdown drops one
+                // here (a failed load hands its parked tails on).
+                Queued::Tail(..) => continue,
             };
             self.reply(
                 &id,
@@ -1385,6 +1596,9 @@ fn serve_threaded_with(
         next_seq: 0,
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
+        tailing: [None; MAX_DECKS],
+        decodes: [0; MAX_DECKS],
+        head_frames: (sample_rate as u64 * HEAD_MS / 1000) as usize,
         state_req,
         router: midi.router,
         routed: Vec::new(),
@@ -1400,6 +1614,8 @@ fn serve_threaded_with(
         load_used: Arc::default(),
         pcm_used: Arc::default(),
         pcm_budget: PCM_BYTES,
+        meters: HashMap::new(),
+        load_paths: HashMap::new(),
         closed,
     };
     let mut audio_failed = false;
@@ -1447,7 +1663,8 @@ fn serve_threaded_with(
                 control.reply(&(STDIO, None), Err(e));
                 in_flight.give_back(0);
             }
-            Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
+            Msg::Decoded { seq, deck, result } => control.decoded(seq, deck, result),
+            Msg::Head { seq, deck, track } => control.head_loaded(seq, deck, track),
             Msg::Midi { port, bytes } => control.midi(&port, &bytes),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
@@ -1487,7 +1704,8 @@ fn serve_threaded_with(
             }
             let wait = deadline.saturating_duration_since(Instant::now());
             match msg_rx.recv_timeout(if control.staged() { wait.min(Duration::from_millis(1)) } else { wait }) {
-                Ok(Msg::Decoded { seq, deck, result }) => control.finish_load(seq, deck, result),
+                Ok(Msg::Decoded { seq, deck, result }) => control.decoded(seq, deck, result),
+                Ok(Msg::Head { seq, deck, track }) => control.head_loaded(seq, deck, track),
                 Ok(Msg::AudioExited) => {
                     audio_failed = true;
                     break;
@@ -1895,6 +2113,9 @@ mod tests {
             next_seq: 0,
             waiting: Default::default(),
             loading: [None; MAX_DECKS],
+            tailing: [None; MAX_DECKS],
+            decodes: [0; MAX_DECKS],
+            head_frames: 0,
             state_req: Arc::new(AtomicBool::new(false)),
             router: MidiSetup::inject_only().router,
             routed: Vec::new(),
@@ -1910,8 +2131,20 @@ mod tests {
             load_used: Arc::default(),
             pcm_used: Arc::default(),
             pcm_budget: PCM_BYTES,
+            meters: HashMap::new(),
+            load_paths: HashMap::new(),
         };
         (control, cmd_rx, out)
+    }
+
+    /// Wait for the decode threads `control` started to let go of their
+    /// meters: in these tests each fails at once on its missing file.
+    fn decode_threads_done(c: &Control) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while c.meters.values().any(|m| Arc::strong_count(m) > 1) {
+            assert!(std::time::Instant::now() < deadline, "a decode thread kept its meter");
+            std::thread::yield_now();
+        }
     }
 
     fn silent_track() -> Result<Arc<Track>, ProtoError> {
@@ -1930,7 +2163,7 @@ mod tests {
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
         assert!(!c.state_req.load(Ordering::Acquire), "the state was asked for ahead of the parked play");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 0, "numbered ahead of the parked play");
-        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        c.decoded(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 1, "asked for without its number");
         assert_eq!(c.state_fence.load(Ordering::Acquire), 2, "fenced on other than the load and the play before it");
@@ -1944,11 +2177,11 @@ mod tests {
         line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-3.wav"}}));
         line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 3, "path": "nope-4.wav"}}));
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
-        c.finish_load(c.loading[2].unwrap(), 3, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        c.decoded(c.loading[2].unwrap(), 3, Err(ProtoError::new(ErrorCode::Decode, "bad")));
         assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's loads still ahead of it");
-        c.finish_load(c.loading[1].unwrap(), 2, silent_track());
+        c.decoded(c.loading[1].unwrap(), 2, silent_track());
         assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's second load still ahead of it");
-        c.finish_load(c.loading[1].unwrap(), 2, silent_track());
+        c.decoded(c.loading[1].unwrap(), 2, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 2);
         // Control: with nothing pending it is asked for at once.
@@ -1979,7 +2212,7 @@ mod tests {
         for i in 0..=QUEUE_SLOTS {
             line(&mut c, serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}));
         }
-        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        c.decoded(c.loading[0].unwrap(), 1, silent_track());
         let sent = std::iter::from_fn(|| cmd_rx.pop().ok()).count();
         // The load and every parked command fill the mailbox, to the slot:
         // one fewer would refuse a command the mailbox had room for.
@@ -1993,6 +2226,145 @@ mod tests {
         // Control: the one past the bound is still refused, at once.
         assert_eq!(full.len(), 1, "{full:?}");
         assert_eq!(full[0]["id"], QUEUE_SLOTS);
+    }
+
+    #[test]
+    fn a_progressive_load_answers_on_its_head_and_swaps_in_the_whole_track_with_the_deck_grid() {
+        let (mut c, mut cmd_rx, out) = control();
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let text = |out: &Captured| String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        c.load((STDIO, Some("a".into())), spec(1));
+        let a = c.loading[0].unwrap();
+        // Work sent while the head decodes waits behind the load.
+        c.dispatch((STDIO, Some("p".into())), EngineCmd::Play { deck: 1, playing: true });
+        assert!(cmd_rx.pop().is_err(), "the play went ahead of the load");
+        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], Some(4800), vec![], None, a)));
+        // The head goes as the load, by the load's own seq (so its result is
+        // the load's result), and the play right behind it: neither waits
+        // for the rest of the file.
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. })) if seq == a && track.decoding));
+        assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Play { playing: true, .. }))));
+        assert_eq!((c.loading[0], c.tailing[0]), (None, Some(a)));
+        // A grid set while the rest decodes is the one the whole track gets.
+        use crate::deck::Beat;
+        let grid: Vec<Beat> = (0..4).map(|i| Beat { time_ms: i as f64 * 25.0, downbeat: i == 0, bpm: None }).collect();
+        c.regrid((STDIO, Some("g".into())), RegridSpec { deck: 1, beats: grid.clone(), bpm: Some(120.0) });
+        assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Regrid { .. }))));
+        let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
+        whole.load_id = a;
+        let whole = Arc::new(whole);
+        c.decoded(a, 1, Ok(whole.clone()));
+        let Ok((x, EngineCmd::Extend { deck: 1, track })) = cmd_rx.pop() else { panic!("the whole track was not sent") };
+        assert!(Arc::ptr_eq(&track.pcm, &whole.pcm), "the whole track's samples were copied");
+        assert_eq!(track.beats, grid, "the whole track lost the grid set since the head");
+        assert!(!track.decoding && track.load_id == a && track.frames == 4800);
+        // Its result goes nowhere: no client sent it.
+        assert_eq!(c.ids.lock().unwrap().get(&x).map(|p| p.client), Some(NOBODY));
+        assert_eq!(c.tailing[0], None);
+        assert!(!text(&out).contains("error"), "{}", text(&out));
+
+        // A later load replaces the head before the rest of its file lands:
+        // that rest is dropped, never sent onto the new track.
+        c.load((STDIO, Some("b".into())), spec(2));
+        let b = c.loading[1].unwrap();
+        c.head_loaded(b, 2, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, b)));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == b));
+        c.load((STDIO, Some("c".into())), spec(2));
+        let cs = c.loading[1].unwrap();
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = b;
+        c.decoded(b, 2, Ok(Arc::new(rest)));
+        c.decoded(cs, 2, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == cs));
+        assert!(cmd_rx.pop().is_err(), "a replaced head's rest reached the deck");
+
+        // The rest of a file that fails to decode after its head played
+        // empties the deck and says so to every client.
+        c.load((STDIO, Some("d".into())), spec(3));
+        let d = c.loading[2].unwrap();
+        c.head_loaded(d, 3, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == d));
+        c.decoded(d, 3, Err(ProtoError::new(ErrorCode::Decode, "decode error in late.mp3: bad frame")));
+        assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Unload { deck: 3 }))), "the cut-short track stayed on the deck");
+        let t = text(&out);
+        assert!(t.contains(r#""type":"load_failed""#) && t.contains("late.mp3"), "{t}");
+        // It names the load it ends by that load's file, so a page with a
+        // newer load still in flight can tell it is not that one's.
+        assert!(t.contains(r#""path":"nope.wav""#), "{t}");
+        // Control: a load that was never progressive still finishes as before.
+        c.load((STDIO, Some("e".into())), spec(4));
+        let e = c.loading[3].unwrap();
+        c.decoded(e, 4, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. })) if seq == e && !track.decoding));
+        assert!(cmd_rx.pop().is_err());
+        assert!(c.load_paths.is_empty(), "a finished load kept its path: {:?}", c.load_paths);
+    }
+
+    #[test]
+    fn a_failed_replacement_still_lands_the_earlier_loads_tail_on_its_head() {
+        // Codex on 2c3ed9bde: A's tail, parked behind replacement B, was
+        // dropped when B failed, leaving A's head to run into silence.
+        let (mut c, mut cmd_rx, _out) = control();
+        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None };
+        c.load((STDIO, Some("a".into())), spec());
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a));
+        c.load((STDIO, Some("b".into())), spec());
+        let b = c.loading[0].unwrap();
+        let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
+        whole.load_id = a;
+        c.decoded(a, 1, Ok(Arc::new(whole)));
+        assert!(cmd_rx.pop().is_err(), "A's tail went ahead of B");
+        c.decoded(b, 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        let Ok((_, EngineCmd::Extend { deck: 1, track })) = cmd_rx.pop() else { panic!("A's tail was dropped with B") };
+        assert!(track.load_id == a && !track.decoding);
+        assert!(cmd_rx.pop().is_err());
+
+        // Control: when B lands, A's parked tail finds B on the deck and is
+        // dropped, never sent onto B.
+        c.load((STDIO, Some("c".into())), spec());
+        let cs = c.loading[0].unwrap();
+        c.head_loaded(cs, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, cs)));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == cs));
+        c.load((STDIO, Some("d".into())), spec());
+        let d = c.loading[0].unwrap();
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = cs;
+        c.decoded(cs, 1, Ok(Arc::new(rest)));
+        c.decoded(d, 1, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == d));
+        assert!(cmd_rx.pop().is_err(), "C's rest reached D");
+    }
+
+    #[test]
+    fn a_deck_runs_at_most_one_earlier_tail_beside_its_load() {
+        // Codex on 2c3ed9bde: each head released the next load at once, so
+        // rapid loads piled up decoder threads and whole-track buffers.
+        let (mut c, mut cmd_rx, _out) = control();
+        let spec = || LoadSpec { deck: 1, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let head = |seq| Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, seq));
+        c.load((STDIO, Some("a".into())), spec());
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, head(a));
+        // One load beside A's tail starts at once: the cap is not one decode.
+        c.load((STDIO, Some("b".into())), spec());
+        let b = c.loading[0].expect("a load beside one tail must start at once");
+        assert_eq!(c.decodes[0], 2);
+        c.head_loaded(b, 1, head(b));
+        // A third waits: A's tail and B's are both still decoding.
+        c.load((STDIO, Some("c".into())), spec());
+        assert_eq!(c.loading[0], None, "a third decode started on the deck");
+        assert!(!c.staged(), "a load held by the decode cap must not be polled");
+        while cmd_rx.pop().is_ok() {}
+        // A's tail ends: C starts, and A's rest never reaches the deck.
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = a;
+        c.decoded(a, 1, Ok(Arc::new(rest)));
+        let cs = c.loading[0].expect("the held load did not start when a decode ended");
+        assert!(cs > b);
+        assert_eq!(c.decodes[0], 2);
+        assert!(cmd_rx.pop().is_err(), "A's rest reached the deck");
     }
 
     #[test]
@@ -2011,7 +2383,7 @@ mod tests {
         c.load((STDIO, Some("a".into())), spec(1));
         c.load((STDIO, Some("b".into())), spec(1));
         let a = c.loading[0].unwrap();
-        c.finish_load(a, 1, track(1002));
+        c.decoded(a, 1, track(1002));
         assert_eq!(used(&c), 1002 * 4, "the decoded samples are not held against the budget");
         assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a), "the decoded load did not go");
         // Its result is not out, so b, queued behind it, waits to decode,
@@ -2031,11 +2403,163 @@ mod tests {
         // Control: a decode within the budget holds nothing back.
         let (b, d) = (c.loading[0].unwrap(), c.loading[1].unwrap());
         c.load((STDIO, Some("e".into())), spec(1));
-        c.finish_load(b, 1, track(1000));
+        c.decoded(b, 1, track(1000));
         assert_eq!(used(&c), 4000);
         assert!(c.loading[0].is_some(), "a decode within the budget held the next one back");
-        c.finish_load(d, 2, track(10));
+        c.decoded(d, 2, track(10));
         let _ = take_id(&c.ids, b);
+    }
+
+    #[test]
+    fn a_progressive_loads_rest_is_charged_from_its_head_until_it_reaches_the_deck() {
+        // Codex on 9d393baf0: the rest of a progressive load grows to the
+        // whole track off this thread, but only its head was charged, so two
+        // rapid loads on each of four decks grew eight whole-track buffers
+        // past `PCM_BYTES`. The rest is now charged from the head on, at the
+        // length its file states.
+        let (mut c, mut cmd_rx, _out) = control();
+        let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let f32s = std::mem::size_of::<f32>();
+        c.pcm_budget = 2 * 48000 * 2 * f32s;
+        c.load((STDIO, Some("a".into())), spec(1));
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, a)));
+        let head = 960 * f32s;
+        assert_eq!(used(&c), head + 48000 * 2 * f32s, "the rest is not charged at the file's stated length");
+        // A second deck's rest passes the budget: no third decode starts,
+        // on its deck or any other, while both rests decode.
+        c.load((STDIO, Some("b".into())), spec(2));
+        let b = c.loading[1].unwrap();
+        c.head_loaded(b, 2, Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, b)));
+        c.load((STDIO, Some("c".into())), spec(3));
+        assert_eq!(c.loading[2], None, "a decode started while the rests already filled the budget");
+        while cmd_rx.pop().is_ok() {}
+        for seq in [a, b] {
+            drop(take_id(&c.ids, seq));
+        }
+        assert_eq!(used(&c), 2 * 48000 * 2 * f32s, "the rests stopped being charged when the heads' results went out");
+        // A's rest decodes at its real size and goes to the deck, where its
+        // track holds it until that result is out.
+        let mut whole = Track::new(48000, vec![0.5; 4000], vec![], None);
+        whole.load_id = a;
+        c.on_deck[0] = Some(Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, a)));
+        decode_threads_done(&c);
+        c.decoded(a, 1, Ok(Arc::new(whole)));
+        let Ok((x, EngineCmd::Extend { deck: 1, .. })) = cmd_rx.pop() else { panic!("A's rest was not sent") };
+        assert_eq!(used(&c), 4000 * f32s + 48000 * 2 * f32s, "A's rest is not held once, at its real size");
+        drop(take_id(&c.ids, x));
+        // B's rest fails: its charge is given back and C starts.
+        decode_threads_done(&c);
+        c.decoded(b, 2, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        assert_eq!(used(&c), 0, "a failed rest kept its charge");
+        c.release_staged();
+        let cs = c.loading[2].expect("the held load never started once the rests were done");
+        // A file that states no length is charged at `UNSTATED_TAIL_S`, and a
+        // rest a later load replaced on its deck gives its charge back.
+        c.pcm_budget = PCM_BYTES;
+        decode_threads_done(&c);
+        c.decoded(cs, 3, silent_track());
+        while cmd_rx.pop().is_ok() {}
+        drop(take_id(&c.ids, cs));
+        c.load((STDIO, Some("d".into())), spec(4));
+        let d = c.loading[3].unwrap();
+        c.head_loaded(d, 4, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, d)));
+        drop(take_id(&c.ids, d));
+        assert_eq!(used(&c), 48000 * UNSTATED_TAIL_S * 2 * f32s);
+        c.load((STDIO, Some("e".into())), spec(4));
+        let e = c.loading[3].unwrap();
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = d;
+        decode_threads_done(&c);
+        c.decoded(d, 4, Ok(Arc::new(rest)));
+        // Parked behind E, it still holds its samples, so it stays charged
+        // (at its estimate, which is above its real size here).
+        assert_eq!(used(&c), 48000 * UNSTATED_TAIL_S * 2 * f32s, "a rest parked behind a later load is not charged");
+        decode_threads_done(&c);
+        c.decoded(e, 4, silent_track());
+        while cmd_rx.pop().is_ok() {}
+        drop(take_id(&c.ids, e));
+        assert_eq!(used(&c), 0, "a replaced head's rest kept its charge");
+        // When the later load's head is already out, the earlier rest is
+        // dropped as it decodes, and gives its charge back then.
+        c.load((STDIO, Some("f".into())), spec(4));
+        let f = c.loading[3].unwrap();
+        c.head_loaded(f, 4, Arc::new(Track::head(48000, vec![0.0; 960], Some(4800), vec![], None, f)));
+        c.load((STDIO, Some("g".into())), spec(4));
+        let g = c.loading[3].unwrap();
+        c.head_loaded(g, 4, Arc::new(Track::head(48000, vec![0.0; 960], Some(4800), vec![], None, g)));
+        while cmd_rx.pop().is_ok() {}
+        for seq in [f, g] {
+            drop(take_id(&c.ids, seq));
+        }
+        let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
+        rest.load_id = f;
+        decode_threads_done(&c);
+        c.decoded(f, 4, Ok(Arc::new(rest)));
+        assert_eq!(used(&c), 4800 * 2 * f32s, "a rest dropped behind a newer head kept its charge");
+    }
+
+    #[test]
+    fn a_rest_that_outgrows_its_estimate_is_charged_as_it_grows() {
+        // Codex on 89606daec: a file that states no length (a CBR MP3 with no
+        // Xing or VBRI header) was charged ten minutes while its buffer grew
+        // without bound, so hour-long mixes passed `PCM_BYTES` before their
+        // decodes ended. The decode thread now raises the charge as its buffer
+        // grows (`Meter`), so the budget sees it and holds the next decode.
+        let (mut c, mut cmd_rx, _out) = control();
+        let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let estimate = 48000 * UNSTATED_TAIL_S * 2 * std::mem::size_of::<f32>();
+        c.pcm_budget = 2 * estimate;
+        c.load((STDIO, Some("a".into())), spec(1));
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
+        while cmd_rx.pop().is_ok() {}
+        drop(take_id(&c.ids, a));
+        decode_threads_done(&c);
+        assert_eq!(used(&c), estimate);
+        // Control: within the budget, a second deck's load still starts.
+        c.load((STDIO, Some("b".into())), spec(2));
+        let b = c.loading[1].expect("a load within the budget was held");
+        c.decoded(b, 2, silent_track());
+        while cmd_rx.pop().is_ok() {}
+        drop(take_id(&c.ids, b));
+        // A's buffer grows past its estimate, as the decode thread reports.
+        let meter = c.meters.get(&a).expect("A's rest has no meter").clone();
+        meter.at_least(estimate / 2);
+        assert_eq!(used(&c), estimate, "a smaller report lowered or added to the charge");
+        meter.at_least(3 * estimate);
+        assert_eq!(used(&c), 3 * estimate, "growth past the estimate is not charged");
+        c.load((STDIO, Some("c".into())), spec(3));
+        assert_eq!(c.loading[2], None, "a decode started while a growing rest passed the budget");
+        // The rest reaches the deck: everything it held is given back.
+        drop(meter);
+        let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
+        whole.load_id = a;
+        c.decoded(a, 1, Ok(Arc::new(whole)));
+        let Ok((x, EngineCmd::Extend { deck: 1, .. })) = cmd_rx.pop() else { panic!("A's rest was not sent") };
+        assert_eq!(used(&c), 9600 * std::mem::size_of::<f32>(), "the rest's meter outlived it");
+        drop(take_id(&c.ids, x));
+        assert_eq!(used(&c), 0);
+        c.release_staged();
+        assert!(c.loading[2].is_some(), "the held load never started");
+    }
+
+    #[test]
+    fn a_decode_thread_charges_its_buffer_as_it_fills() {
+        // The wiring the growth charge depends on: a real file's decode
+        // raises its load's meter while it runs, before any result is seen.
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-meter-").tempdir().unwrap();
+        let path = tmp.path().join("a.wav");
+        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&path).unwrap()), 48000, &vec![0.1; 96000]).unwrap();
+        let (mut c, _cmd_rx, _out) = control();
+        c.load((STDIO, Some("a".into())), LoadSpec { deck: 1, path: path.display().to_string(), beats: vec![], bpm: None });
+        let a = c.loading[0].unwrap();
+        decode_threads_done(&c);
+        let charged = c.meters[&a].charged.load(Ordering::Acquire);
+        assert!(charged >= 96000 * std::mem::size_of::<f32>(), "the decode charged {charged} bytes for 96000 samples");
+        assert_eq!(c.pcm_used.load(Ordering::Acquire), charged);
     }
 
     #[test]
@@ -2085,13 +2609,13 @@ mod tests {
         // A decoded load holds its payload until its result is out, not
         // just until it is in the mailbox.
         let first = c.loading[0].unwrap();
-        c.finish_load(first, 1, silent_track());
+        c.decoded(first, 1, silent_track());
         assert_eq!(used(&c), LOAD_BYTES, "given back before the audio side took it");
         assert!(take_id(&c.ids, first).is_some());
         assert_eq!(used(&c), LOAD_BYTES - each);
         // A failed decode gives back its own and what was parked behind it,
         // and at shutdown the rest; nothing is held for good.
-        c.finish_load(c.loading[0].unwrap(), 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        c.decoded(c.loading[0].unwrap(), 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
         assert_eq!(used(&c), room);
         c.refuse_pending();
         while let Ok((seq, _)) = cmd_rx.pop() {
@@ -2126,7 +2650,7 @@ mod tests {
         for _ in 0..CMD_SLOTS {
             line(&mut c, serde_json::json!({"cmd": {"type": "crossfader", "value": 0.5}}));
         }
-        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        c.decoded(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.staged(), "the decoded load did not wait for room");
         // Sent while the deck's work waits: it goes after that work, and an
         // `engine_state` waits for all of it.

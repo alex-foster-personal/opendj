@@ -14,6 +14,7 @@ pub mod edit_list;
 pub mod device;
 pub mod dsp;
 pub mod engine;
+pub mod fingerprint;
 pub mod midi;
 pub mod mic_permission;
 #[cfg(feature = "midi")]
@@ -26,5 +27,6 @@ pub mod protocol;
 pub mod record;
 pub mod serve;
 pub mod stretch;
+pub mod waveform;
 pub mod wav;
 pub mod ws;

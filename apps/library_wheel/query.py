@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.state import play_log
+
 from .genre_families import simple_genre_family
 
 _SQL_CHUNK = 500
@@ -196,6 +198,8 @@ class _LoadedLibrary:
     playlist_count_by_stable_id: dict[str, int]
     genre_and_plays: dict[str, tuple[str | None, int]]
     local_genre_by_stable_id: dict[str, str]
+    # PLAYS-01: Open DJ's own plays, added to DJPlayCount.
+    own_plays_by_stable_id: dict[str, int]
 
 
 def _load_library(state_db: Path, master_db: Path) -> _LoadedLibrary:
@@ -205,6 +209,9 @@ def _load_library(state_db: Path, master_db: Path) -> _LoadedLibrary:
         vendor_id_by_stable_id = _load_vendor_ids(state)
         playlist_count_by_stable_id = _load_playlist_counts(state)
         local_genre_by_stable_id = _load_local_genres(state)
+        own_plays = {
+            sid: plays.count for sid, plays in play_log.bulk_own_plays(state, list(tracks)).items()
+        }
     except sqlite3.Error as exc:
         raise LibraryWheelError(f"state.db query failed: {exc}") from exc
     finally:
@@ -228,6 +235,7 @@ def _load_library(state_db: Path, master_db: Path) -> _LoadedLibrary:
         playlist_count_by_stable_id=playlist_count_by_stable_id,
         genre_and_plays=genre_and_plays,
         local_genre_by_stable_id=local_genre_by_stable_id,
+        own_plays_by_stable_id=own_plays,
     )
 
 
@@ -244,15 +252,20 @@ def genre_tags_by_stable_id(state_db: Path, master_db: Path) -> dict[str, str | 
 
 
 def _resolve_genre(library: _LoadedLibrary, stable_id: str) -> tuple[str | None, int, str]:
-    """(genre tag, play count, play-count source) for one track."""
+    """(genre tag, play count, play-count source) for one track.
+
+    The count is rekordbox ``DJPlayCount`` plus Open DJ's own plays (PLAYS-01);
+    the source names where the genre and the imported count came from.
+    """
+    own = library.own_plays_by_stable_id.get(stable_id, 0)
     vendor_id = library.vendor_id_by_stable_id.get(stable_id)
     content = library.genre_and_plays.get(vendor_id) if vendor_id is not None else None
     if content is not None:
         # Live rekordbox content wins over any local track_fields genre.
-        return content[0], content[1], "rekordbox"
+        return content[0], content[1] + own, "rekordbox"
     # No mapping, or a mapping whose djmdContent row is gone/deleted:
     # bulk_rb_meta treats that as unmapped, so the wheel does too.
-    return library.local_genre_by_stable_id.get(stable_id), 0, "local"
+    return library.local_genre_by_stable_id.get(stable_id), own, "local"
 
 
 @dataclass(frozen=True)
@@ -427,8 +440,8 @@ def _axis_value_and_title(
     if axis.key == "play_count":
         value = row["play_count"]
         if row.get("play_count_source") == "rekordbox":
-            return value, f"{value} plays (rekordbox DJPlayCount)"
-        return value, f"{value} plays (local, no rekordbox mapping)"
+            return value, f"{value} plays (rekordbox DJPlayCount + Open DJ plays)"
+        return value, f"{value} plays (Open DJ plays; no rekordbox mapping)"
     if axis.key == "popularity":
         assert percentile is not None
         return (

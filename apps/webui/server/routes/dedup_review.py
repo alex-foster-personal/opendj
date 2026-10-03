@@ -10,14 +10,20 @@ or delete an audio file.
 The numeric SQLite cluster id is display-only. Decisions are keyed by a stable
 SHA-256 digest of the cluster member stable ids. Every write requires
 ``If-Match`` and is a locked read-modify-replace cycle.
+
+``POST /dedup/scan`` fingerprints the library on this device with the engine
+(``apps.dedup.library_scan``) and rebuilds the clusters in the background;
+``GET /dedup/scan`` reports its progress. Scanning only reads audio files.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
+from apps.dedup import library_scan
 from apps.shared import paths as dedup_paths
 from apps.shared.events import publish
 
@@ -89,6 +95,54 @@ _IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
     "description": "Decision-store ETag returned by GET /api/v1/dedup/clusters",
     "schema": {"type": "string"},
 }
+
+
+class ScanStatusOut(BaseModel):
+    """Progress of the on-device library fingerprint scan."""
+
+    state: Literal["idle", "running", "done", "failed"]
+    total: int
+    done: int
+    computed: int
+    cache_hits: int
+    not_local: int
+    errors: int
+    clusters: int | None
+    error: str | None
+    started_at: str | None
+    finished_at: str | None
+    error_samples: list[str]
+
+
+@router.get("/scan", response_model=ScanStatusOut)
+def get_dedup_scan() -> ScanStatusOut:
+    """Where the library fingerprint scan is (idle until first started)."""
+    return ScanStatusOut(**library_scan.JOB.status())
+
+
+@router.post(
+    "/scan",
+    response_model=ScanStatusOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={409: {"description": "A scan is already running"}},
+)
+def post_dedup_scan(request: Request) -> ScanStatusOut:
+    """Start fingerprinting the library and rebuilding duplicate clusters.
+
+    Local only: the engine fingerprints each track's own file, nothing is
+    looked up online, and no audio file is written, moved or deleted.
+    """
+    # The scan reads THIS app's state database (an alternate library or
+    # fixture passes its own to ``create_app``), not the process-global
+    # default, and writes clusters where the review routes read them.
+    configured = getattr(request.app.state, "state_db_path", None)
+    state_db = Path(configured) if configured is not None else None
+    if not library_scan.JOB.start(state_db=state_db, db_path=dedup_db_path()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "scan_running", "message": "a duplicate scan is already running"},
+        )
+    return ScanStatusOut(**library_scan.JOB.status())
 
 
 class MemberOut(BaseModel):
@@ -226,9 +280,8 @@ def get_dedup_clusters(
             clusters=[],
             revision=revision,
             note=(
-                f"no dedup fingerprint database found at {db_path}; run "
-                "`python -m apps.dedup.scan` then "
-                "`python -m apps.dedup.find_clusters` first"
+                "No duplicate scan has run yet. Find duplicates fingerprints "
+                f"the library on this device (database: {db_path})."
             ),
         )
 

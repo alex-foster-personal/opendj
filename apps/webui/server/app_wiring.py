@@ -143,6 +143,7 @@ from .routes import stems as stems_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
+from .routes import track_plays as track_plays_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
@@ -561,6 +562,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         rb_assets_routes.router,
         search_routes.router,
         rb_hot_cues_routes.router,
+        track_plays_routes.router,
         progress_routes.router,
         quality_routes.router,
         worktree_ports_routes.router,

@@ -175,7 +175,7 @@ def test_clusters_skip_cleanly_without_db(app_client) -> None:
     body = r.json()
     assert body["clusters"] == []
     assert body["note"] is not None
-    assert "apps.dedup.scan" in body["note"]
+    assert "Find duplicates" in body["note"]
 
 
 def test_clusters_empty_db_is_200(app_client, dedup_db: Path) -> None:

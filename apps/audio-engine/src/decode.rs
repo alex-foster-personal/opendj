@@ -91,12 +91,7 @@ fn check_room(held: usize, more: usize, max_frames: u64, path: &Path) -> Result<
 /// given and differs from the file's, resample it; the resampled track must
 /// fit `max_frames` too.
 pub fn decode_open_at(file: File, path: &Path, sample_rate: Option<u32>, max_frames: u64) -> Result<Decoded, ProtoError> {
-    let d = decode_open_within(file, path, max_frames)?;
-    let Some(to) = sample_rate else { return Ok(d) };
-    let d = resample(d, to)
-        .map_err(|e| ProtoError::new(ErrorCode::Decode, format!("cannot resample {}: {e}", path.display())))?;
-    check_room(d.pcm.len(), 0, max_frames, path)?;
-    Ok(d)
+    decode_progressive(file, path, sample_rate, max_frames, 0, |_| {})
 }
 
 /// Decode `path` and resample it to `sample_rate` when the file's rate differs.
@@ -119,36 +114,96 @@ pub fn resample(d: Decoded, to: u32) -> Result<Decoded, String> {
     if d.sample_rate == to {
         return Ok(d);
     }
-    let from = d.sample_rate;
-    let n = d.pcm.len() / 2;
-    let want = ((n as u128 * to as u128 + from as u128 / 2) / from as u128) as usize;
-    let mut r = FftFixedIn::<f32>::new(from as usize, to as usize, RESAMPLE_CHUNK, 2, 2).map_err(|e| e.to_string())?;
-    let delay = r.output_delay();
-    let mut inp = [vec![0f32; RESAMPLE_CHUNK], vec![0f32; RESAMPLE_CHUNK]];
-    let mut out = [vec![0f32; r.output_frames_max()], vec![0f32; r.output_frames_max()]];
-    let mut pcm = Vec::with_capacity(want * 2);
-    let mut skip = delay;
-    let mut pos = 0;
-    while pcm.len() < want * 2 {
-        let take = RESAMPLE_CHUNK.min(n.saturating_sub(pos));
-        for (c, ch) in inp.iter_mut().enumerate() {
-            for (i, s) in ch.iter_mut().enumerate() {
-                *s = if i < take { d.pcm[(pos + i) * 2 + c] } else { 0.0 };
+    let mut r = StreamResampler::new(d.sample_rate, to)?;
+    let mut pcm = Vec::with_capacity(r.frames_for(d.pcm.len() as u64 / 2) as usize * 2);
+    r.push(&d.pcm, &mut pcm)?;
+    r.finish(&mut pcm)?;
+    Ok(Decoded { sample_rate: to, pcm, source: d.source })
+}
+
+/// `resample` fed a block at a time, as a decode produces them. Its output
+/// is `resample`'s sample for sample (it is what `resample` runs), and every
+/// frame it has appended is final: later input only appends, so the start
+/// of a track can be played while the rest is still being converted.
+pub struct StreamResampler {
+    r: FftFixedIn<f32>,
+    from: u32,
+    to: u32,
+    inp: [Vec<f32>; 2],
+    /// Frames of `inp` filled.
+    fill: usize,
+    out: [Vec<f32>; 2],
+    /// Output frames of the resampler's own delay still to drop.
+    skip: usize,
+    /// Input frames pushed so far.
+    frames_in: u64,
+}
+
+impl StreamResampler {
+    pub fn new(from: u32, to: u32) -> Result<StreamResampler, String> {
+        let r = FftFixedIn::<f32>::new(from as usize, to as usize, RESAMPLE_CHUNK, 2, 2).map_err(|e| e.to_string())?;
+        let skip = r.output_delay();
+        let out_max = r.output_frames_max();
+        Ok(StreamResampler {
+            r,
+            from,
+            to,
+            inp: [vec![0.0; RESAMPLE_CHUNK], vec![0.0; RESAMPLE_CHUNK]],
+            fill: 0,
+            out: [vec![0.0; out_max], vec![0.0; out_max]],
+            skip,
+            frames_in: 0,
+        })
+    }
+
+    /// Output frames for `frames` input frames: `round(frames * to / from)`.
+    pub fn frames_for(&self, frames: u64) -> u64 {
+        ((frames as u128 * self.to as u128 + self.from as u128 / 2) / self.from as u128) as u64
+    }
+
+    /// Feed interleaved stereo, appending what is ready to `pcm`.
+    pub fn push(&mut self, block: &[f32], pcm: &mut Vec<f32>) -> Result<(), String> {
+        for f in block.chunks_exact(2) {
+            self.inp[0][self.fill] = f[0];
+            self.inp[1][self.fill] = f[1];
+            self.fill += 1;
+            if self.fill == RESAMPLE_CHUNK {
+                self.chunk(pcm, usize::MAX)?;
             }
         }
-        pos += RESAMPLE_CHUNK;
-        let (_, got) = r.process_into_buffer(&inp, &mut out, None).map_err(|e| e.to_string())?;
-        let from_i = skip.min(got);
-        skip -= from_i;
-        for (l, r) in out[0][from_i..got].iter().zip(&out[1][from_i..got]) {
-            if pcm.len() == want * 2 {
+        self.frames_in += (block.len() / 2) as u64;
+        Ok(())
+    }
+
+    /// Flush the tail: zero-pad the last chunk and run on until the output
+    /// holds exactly `frames_for` every frame pushed.
+    pub fn finish(mut self, pcm: &mut Vec<f32>) -> Result<(), String> {
+        let want = self.frames_for(self.frames_in) as usize * 2;
+        while pcm.len() < want {
+            for ch in self.inp.iter_mut() {
+                ch[self.fill..].fill(0.0);
+            }
+            self.chunk(pcm, want)?;
+        }
+        pcm.truncate(want);
+        Ok(())
+    }
+
+    /// Convert the input chunk, appending at most up to `limit` samples.
+    fn chunk(&mut self, pcm: &mut Vec<f32>, limit: usize) -> Result<(), String> {
+        let (_, got) = self.r.process_into_buffer(&self.inp, &mut self.out, None).map_err(|e| e.to_string())?;
+        self.fill = 0;
+        let from = self.skip.min(got);
+        self.skip -= from;
+        for (l, r) in self.out[0][from..got].iter().zip(&self.out[1][from..got]) {
+            if pcm.len() >= limit {
                 break;
             }
             pcm.push(*l);
             pcm.push(*r);
         }
+        Ok(())
     }
-    Ok(Decoded { sample_rate: to, pcm, source: d.source })
 }
 
 /// Decode `path` at its own rate. Mono is duplicated to both sides; files with more than two
@@ -173,15 +228,182 @@ pub fn open(path: &Path) -> Result<File, ProtoError> {
 /// gives the format hint), as `decode_file_within` does: a caller that keyed
 /// the file by its open handle decodes exactly the file it keyed.
 pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
-    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, source, edit, .. } = open_decoder(file, path)?;
-    let dec_err = |what: &str, e: &dyn std::fmt::Display| {
-        ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
-    };
-
     let mut pcm: Vec<f32> = Vec::new();
     // What the budget allows the samples to hold, spare capacity included.
     let limit = usize::try_from(max_frames.saturating_mul(2)).unwrap_or(usize::MAX);
+    let (sample_rate, source) = decode_stream(file, path, |_, _, block| {
+        check_room(pcm.len(), block.len() / 2, max_frames, path)?;
+        reserve_within(&mut pcm, block.len(), limit);
+        pcm.extend_from_slice(block);
+        Ok(())
+    })?;
+    if pcm.is_empty() {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
+    }
+    Ok(Decoded { sample_rate, pcm, source })
+}
+
+/// The first part of a track, decoded and converted while the rest still is
+/// (`decode_progressive`).
+pub struct Head {
+    pub sample_rate: u32,
+    /// Interleaved stereo: exactly the first frames of the whole decode.
+    pub pcm: Vec<f32>,
+    /// The track's length in frames at `sample_rate` as its container states
+    /// it, when it does: exact for WAV, FLAC, MP4 and an MP3 with a Xing/Info
+    /// or VBRI header, estimated from the file size for a CBR MP3 without
+    /// one. The whole decode is the truth; this only bounds seeks meanwhile.
+    pub frames: Option<u64>,
+}
+
+/// Share of a track its head holds at least: `1 / HEAD_SHARE` of the length
+/// the container states. The rest of the file must be decoded before a deck
+/// started at load plays the head out, at up to double speed; the decode
+/// runs 300-600x real time on the machines measured, so a head of 1/40 of
+/// the track leaves it several times the room it needs. For a 6-minute track
+/// this is 9 s; for a 1-hour mix, 90 s (about 0.2 s of decoding).
+pub const HEAD_SHARE: u64 = 40;
+
+/// Decode as `decode_open_at` does, handing `on_head` a copy of the head (at
+/// least `head_frames` frames at the output rate, and at least `1 /
+/// HEAD_SHARE` of the stated length) as soon as it is decoded and
+/// converted, then returning the whole track. A `head_frames` of 0 hands
+/// over no head. One pass: the head is a prefix
+/// of the result, sample for sample, so a deck can start on the head and
+/// swap to the whole track without a seam. A track shorter than the head
+/// never calls `on_head`; it is decoded whole by then anyway.
+///
+/// The conversion runs packet by packet behind the decoder, so the file's own
+/// rate is never held whole beside the converted copy, as it was when the
+/// whole file was decoded first and then converted.
+pub fn decode_progressive(
+    file: File,
+    path: &Path,
+    sample_rate: Option<u32>,
+    max_frames: u64,
+    head_frames: usize,
+    on_head: impl FnMut(Head),
+) -> Result<Decoded, ProtoError> {
+    decode_progressive_metered(file, path, sample_rate, max_frames, head_frames, on_head, |_| {})
+}
+
+/// As `decode_progressive`, also telling `on_grow` the bytes the decode
+/// buffer has allocated each time that grows, so a caller can count a
+/// buffer whose final size the file does not state while it is filled.
+pub fn decode_progressive_metered(
+    file: File,
+    path: &Path,
+    sample_rate: Option<u32>,
+    max_frames: u64,
+    head_frames: usize,
+    mut on_head: impl FnMut(Head),
+    mut on_grow: impl FnMut(usize),
+) -> Result<Decoded, ProtoError> {
+    let mut grown = 0usize;
+    let mut grew = |pcm: &Vec<f32>| {
+        let bytes = pcm.capacity() * std::mem::size_of::<f32>();
+        if bytes > grown {
+            grown = bytes;
+            on_grow(bytes);
+        }
+    };
+    let limit = usize::try_from(max_frames.saturating_mul(2)).unwrap_or(usize::MAX);
+    let resample_err = |e: String| ProtoError::new(ErrorCode::Decode, format!("cannot resample {}: {e}", path.display()));
+    let mut pcm: Vec<f32> = Vec::new();
+    let mut conv: Option<StreamResampler> = None;
+    let stated: std::cell::Cell<Option<u64>> = std::cell::Cell::new(None);
+    let mut out_rate = 0u32;
+    let mut head_sent = false;
+    let (rate, source) = decode_stream_with(
+        file,
+        path,
+        |frames| stated.set(frames),
+        |rate, _, block| {
+            if out_rate == 0 {
+                out_rate = sample_rate.unwrap_or(rate);
+                if out_rate != rate {
+                    conv = Some(StreamResampler::new(rate, out_rate).map_err(resample_err)?);
+                }
+            }
+            match conv.as_mut() {
+                Some(c) => {
+                    // At most this much output can follow the block (the
+                    // converter lags its input), bounded before it is held.
+                    let more = (c.frames_for(c.frames_in + (block.len() / 2) as u64) as usize).saturating_sub(pcm.len() / 2);
+                    check_room(pcm.len(), more, max_frames, path)?;
+                    reserve_within(&mut pcm, more * 2, limit);
+                    c.push(block, &mut pcm).map_err(resample_err)?;
+                }
+                None => {
+                    check_room(pcm.len(), block.len() / 2, max_frames, path)?;
+                    reserve_within(&mut pcm, block.len(), limit);
+                    pcm.extend_from_slice(block);
+                }
+            }
+            grew(&pcm);
+            let frames = || {
+                stated.get().map(|n| match conv.as_ref() {
+                    Some(c) => c.frames_for(n),
+                    None => n,
+                })
+            };
+            let head = head_frames.max(frames().map_or(0, |n| usize::try_from(n / HEAD_SHARE).unwrap_or(usize::MAX)));
+            if !head_sent && head_frames > 0 && pcm.len() >= head * 2 {
+                head_sent = true;
+                on_head(Head { sample_rate: out_rate, pcm: pcm[..head * 2].to_vec(), frames: frames() });
+            }
+            Ok(())
+        },
+    )?;
+    if let Some(c) = conv {
+        c.finish(&mut pcm).map_err(resample_err)?;
+        grew(&pcm);
+        check_room(pcm.len(), 0, max_frames, path)?;
+    }
+    if pcm.is_empty() {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
+    }
+    Ok(Decoded { sample_rate: if out_rate == 0 { rate } else { out_rate }, pcm, source })
+}
+
+/// Decode `file` one packet at a time, handing `sink` each packet's frames
+/// as interleaved stereo at the track's own rate (with the channel count the
+/// file itself has, 0 for a corrupt packet's silence), and return that rate. Mono
+/// is duplicated to both sides; files with more than two channels keep their
+/// first two (front left and right). Nothing is held past one packet, so a
+/// caller that only reduces the audio (the waveform peaks) never holds the
+/// track whole. `decode_open_within` is this with a sink that keeps it all.
+pub fn decode_stream(
+    file: File,
+    path: &Path,
+    sink: impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+) -> Result<(u32, Option<SourceId>), ProtoError> {
+    decode_stream_with(file, path, |_| {}, sink)
+}
+
+/// `decode_stream`, telling `on_track` the track's length in frames at its
+/// own rate as the container states it (see `Head::frames`) before the first
+/// packet is decoded.
+fn decode_stream_with(
+    file: File,
+    path: &Path,
+    on_track: impl FnOnce(Option<u64>),
+    mut sink: impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+) -> Result<(u32, Option<SourceId>), ProtoError> {
+    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, frames, source, edit, .. } = open_decoder(file, path)?;
+    let dec_err = |what: &str, e: &dyn std::fmt::Display| {
+        ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
+    };
+    // The stated length is the playable one: the edit's, when it states it.
+    let stated = match edit.zip(codec_rate).and_then(|(e, r)| e.at(r)) {
+        Some(e) => e.keep.filter(|&k| k > 0).or(frames.map(|n| n.saturating_sub(e.skip))),
+        None => frames,
+    };
+    on_track(stated);
+    let mut trim = StreamTrim::new(edit);
+
     let mut scratch: Vec<f32> = Vec::new();
+    let mut block: Vec<f32> = Vec::new();
     let mut sample_rate = 0u32;
     // Silence stands in for a corrupt packet only around real audio: a file
     // none of whose packets decode is undecodable, not a silent track.
@@ -206,12 +428,12 @@ pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<De
                 let frames = packet_frames(packet.dur.get(), time_base, rate).ok_or_else(|| {
                     dec_err("corrupt packet of unknown length in", &e)
                 })?;
-                check_room(pcm.len(), frames, max_frames, path)?;
-                reserve_within(&mut pcm, frames * 2, limit);
-                pcm.resize(pcm.len() + frames * 2, 0.0);
                 if sample_rate == 0 {
                     sample_rate = rate.unwrap_or(0);
                 }
+                block.clear();
+                block.resize(frames * 2, 0.0);
+                trim.feed(sample_rate, 0, &block, &mut sink)?;
                 continue;
             }
             Err(e) => return Err(dec_err("decode error in", &e)),
@@ -225,25 +447,98 @@ pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<De
         }
         scratch.resize(buf.samples_interleaved(), 0.0);
         buf.copy_to_slice_interleaved(&mut scratch[..]);
-        check_room(pcm.len(), buf.frames(), max_frames, path)?;
-        reserve_within(&mut pcm, buf.frames() * 2, limit);
+        block.clear();
+        block.reserve(buf.frames() * 2);
         for frame in scratch.chunks_exact(ch) {
             let l = frame[0];
             let r = if ch == 1 { frame[0] } else { frame[1] };
-            pcm.push(l);
-            pcm.push(r);
+            block.push(l);
+            block.push(r);
         }
+        trim.feed(sample_rate, ch, &block, &mut sink)?;
     }
     if !decoded_any {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
     }
-    if sample_rate == 0 || pcm.is_empty() {
+    if sample_rate == 0 {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
-    if let Some(e) = edit.and_then(|e| e.at(sample_rate)) {
-        crate::mp4edit::apply_stereo(&mut pcm, e);
+    trim.finish(sample_rate, &mut sink)?;
+    Ok((sample_rate, source))
+}
+
+/// An MP4 edit ([`crate::mp4edit`]) applied packet by packet at the track's
+/// own rate, cut exactly where [`crate::mp4edit::apply_stereo`] cuts a whole
+/// decode, so every streamed decode (deck load, head, waveform) keeps the
+/// same frames ffmpeg starts the file on. The skipped priming frames are held
+/// until the skip is passed: a file that ends inside them is handed over
+/// untrimmed, as `apply_stereo` ignores an edit that would leave nothing.
+struct StreamTrim {
+    raw: Option<crate::mp4edit::RawEdit>,
+    /// The edit in frames, resolved once the decoded rate is known.
+    edit: Option<Option<crate::mp4edit::Edit>>,
+    /// Frames decoded so far, before trimming.
+    pos: u64,
+    /// Frames handed over so far, after trimming.
+    passed: u64,
+    held: Vec<f32>,
+    held_channels: usize,
+}
+
+impl StreamTrim {
+    fn new(raw: Option<crate::mp4edit::RawEdit>) -> Self {
+        StreamTrim { raw, edit: None, pos: 0, passed: 0, held: Vec::new(), held_channels: 0 }
     }
-    Ok(Decoded { sample_rate, pcm, source })
+
+    fn feed(
+        &mut self,
+        rate: u32,
+        channels: usize,
+        block: &[f32],
+        sink: &mut impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+    ) -> Result<(), ProtoError> {
+        if self.edit.is_none() && rate != 0 {
+            let raw = self.raw;
+            self.edit = Some(raw.and_then(|e| e.at(rate)));
+        }
+        let Some(Some(crate::mp4edit::Edit { skip, keep })) = self.edit else {
+            return sink(rate, channels, block);
+        };
+        let n = (block.len() / 2) as u64;
+        let at = self.pos;
+        self.pos += n;
+        let mut rest = block;
+        if at < skip {
+            let k = (skip - at).min(n) as usize;
+            self.held.extend_from_slice(&block[..k * 2]);
+            self.held_channels = self.held_channels.max(channels);
+            rest = &block[k * 2..];
+        }
+        if self.pos > skip && !self.held.is_empty() {
+            self.held = Vec::new();
+        }
+        if let Some(keep) = keep.filter(|&k| k > 0) {
+            let room = keep.saturating_sub(self.passed) as usize;
+            rest = &rest[..rest.len().min(room * 2)];
+        }
+        if rest.is_empty() {
+            return Ok(());
+        }
+        self.passed += (rest.len() / 2) as u64;
+        sink(rate, channels, rest)
+    }
+
+    /// Hand over the held priming frames when the file ended inside them.
+    fn finish(
+        self,
+        rate: u32,
+        sink: &mut impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+    ) -> Result<(), ProtoError> {
+        if self.held.is_empty() {
+            return Ok(());
+        }
+        sink(rate, self.held_channels, &self.held)
+    }
 }
 
 /// The MP4 edit of `file`, leaving it positioned at its start for the decoder.
@@ -270,7 +565,7 @@ const PROBE_DEPTH: u64 = 1 << 20;
 /// failed to open with "no suitable format reader found" while ffmpeg read it
 /// (found by the Platinum Notes thread on a real 320k MP3, Thu 1 Oct 2026).
 /// Best effort, like the MP4 edit: anything unreadable is no tag.
-fn leading_tag_bytes(file: &mut File, path: &Path) -> Result<u64, ProtoError> {
+pub(crate) fn leading_tag_bytes(file: &mut File, path: &Path) -> Result<u64, ProtoError> {
     use std::io::{Read, Seek, SeekFrom};
     if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
         return Ok(0);
@@ -304,7 +599,7 @@ fn id3v2_tag_len(h: &[u8; 10]) -> Option<u64> {
 /// A probe that scans past `lead` bytes of leading tag plus its usual depth.
 /// The shared default probe is used when the tag is small, so a file that is
 /// not audio costs no deeper a scan than before.
-enum ProbeFor {
+pub(crate) enum ProbeFor {
     Default(&'static symphonia::core::formats::probe::Probe),
     Deep(Box<symphonia::core::formats::probe::Probe>),
 }
@@ -319,7 +614,7 @@ impl std::ops::Deref for ProbeFor {
     }
 }
 
-fn probe_for(lead: u64) -> ProbeFor {
+pub(crate) fn probe_for(lead: u64) -> ProbeFor {
     use symphonia::core::formats::probe::{Probe, ProbeOptions};
     // Under half the default depth, the tag leaves the default scan room.
     if lead <= PROBE_DEPTH / 2 {
@@ -385,6 +680,9 @@ pub(crate) struct Opened {
     pub(crate) time_base: Option<TimeBase>,
     pub(crate) codec_rate: Option<u32>,
     pub(crate) codec_channels: Option<usize>,
+    /// The track's length in frames at its own rate as the container states
+    /// it, when it does (see `Head::frames`).
+    pub(crate) frames: Option<u64>,
     pub(crate) source: Option<SourceId>,
     /// The MP4 edit list as the file states it ([`crate::mp4edit`]), read
     /// before the probe because symphonia does not apply it.
@@ -418,6 +716,7 @@ pub(crate) fn open_decoder(mut file: File, path: &Path) -> Result<Opened, ProtoE
         .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio track in {}", path.display())))?;
     let track_id = track.id;
     let time_base = track.time_base;
+    let frames = track.num_frames.filter(|&n| n > 0);
     let params = track
         .codec_params
         .as_ref()
@@ -428,7 +727,7 @@ pub(crate) fn open_decoder(mut file: File, path: &Path) -> Result<Opened, ProtoE
     let decoder = symphonia::default::get_codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|e| dec_err("unsupported codec in", &e))?;
-    Ok(Opened { format, decoder, track_id, time_base, codec_rate, codec_channels, source, edit })
+    Ok(Opened { format, decoder, track_id, time_base, codec_rate, codec_channels, frames, source, edit })
 }
 
 /// What [`decode_to_wav`] wrote: the source's own rate and channel count,
@@ -704,6 +1003,66 @@ mod tests {
         assert_eq!(rate, 44100, "a refused rate must not relabel the track");
     }
 
+    /// `StreamTrim` over `pcm` in blocks of `sizes` (cycled), collected.
+    fn streamed(pcm: &[f32], edit: crate::mp4edit::Edit, sizes: &[usize]) -> Vec<f32> {
+        let mut t = StreamTrim::new(None);
+        t.edit = Some(Some(edit));
+        let mut out = Vec::new();
+        let mut sink = |_: u32, _: usize, b: &[f32]| -> Result<(), ProtoError> {
+            out.extend_from_slice(b);
+            Ok(())
+        };
+        let mut at = 0;
+        for &n in sizes.iter().cycle() {
+            if at >= pcm.len() {
+                break;
+            }
+            let end = (at + n * 2).min(pcm.len());
+            t.feed(44100, 2, &pcm[at..end], &mut sink).unwrap();
+            at = end;
+        }
+        t.finish(44100, &mut sink).unwrap();
+        out
+    }
+
+    #[test]
+    fn a_streamed_edit_keeps_exactly_what_a_whole_decode_keeps() {
+        use crate::mp4edit::{apply_stereo, Edit};
+        let pcm: Vec<f32> = (0..2 * 5000).map(|i| i as f32).collect();
+        let edits = [
+            Edit { skip: 1024, keep: Some(3000) },
+            Edit { skip: 1024, keep: None },
+            Edit { skip: 0, keep: Some(10) },
+            Edit { skip: 4999, keep: Some(1) },
+            // Nothing left after the skip: the edit is ignored.
+            Edit { skip: 5000, keep: None },
+            Edit { skip: 9000, keep: Some(5) },
+            // keep 0 or past the end trims nothing at the end.
+            Edit { skip: 100, keep: Some(0) },
+            Edit { skip: 100, keep: Some(99_999) },
+        ];
+        for e in edits {
+            let mut whole = pcm.clone();
+            apply_stereo(&mut whole, e);
+            for sizes in [&[1024usize][..], &[1][..], &[7, 1500, 3][..], &[5000][..], &[6000][..]] {
+                assert_eq!(streamed(&pcm, e, sizes), whole, "edit {e:?}, blocks {sizes:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_progressive_load_of_an_m4a_is_trimmed_like_the_whole_decode() {
+        let path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms-aac.m4a"));
+        let whole = decode_at(path, 48000).unwrap();
+        let mut head = None;
+        let d = decode_progressive(open(path).unwrap(), path, Some(48000), u64::MAX, 4800, |h| head = Some(h)).unwrap();
+        assert_eq!(d.pcm.len(), 48000 * 2, "the edit's one playable second at 48 kHz");
+        assert_eq!(d.pcm, whole.pcm);
+        let head = head.expect("a head");
+        assert_eq!(head.frames, Some(48000), "the stated length is the edit's");
+        assert_eq!(head.pcm[..], d.pcm[..head.pcm.len()]);
+    }
+
     /// The windows `decode_to_wav` keeps for 1024-frame packets under `edit`.
     fn windows(edit: Option<crate::mp4edit::Edit>, packets: usize) -> (Vec<(u64, u64)>, Trim) {
         let mut t = Trim::new(None);
@@ -807,5 +1166,129 @@ mod tests {
         // Control: a different rate is converted.
         let out = resample(Decoded { sample_rate: 44100, pcm: sine(44100, 1000.0, 4410), source: None }, 48000).unwrap();
         assert_eq!(out.pcm.len(), 4800 * 2);
+    }
+
+    /// `resample` as it was before it streamed (before
+    /// `StreamResampler`), kept verbatim as the reference the streaming form
+    /// must equal sample for sample.
+    fn resample_whole_reference(d: &Decoded, to: u32) -> Vec<f32> {
+        let from = d.sample_rate;
+        let n = d.pcm.len() / 2;
+        let want = ((n as u128 * to as u128 + from as u128 / 2) / from as u128) as usize;
+        let mut r = FftFixedIn::<f32>::new(from as usize, to as usize, RESAMPLE_CHUNK, 2, 2).unwrap();
+        let delay = r.output_delay();
+        let mut inp = [vec![0f32; RESAMPLE_CHUNK], vec![0f32; RESAMPLE_CHUNK]];
+        let mut out = [vec![0f32; r.output_frames_max()], vec![0f32; r.output_frames_max()]];
+        let mut pcm = Vec::with_capacity(want * 2);
+        let mut skip = delay;
+        let mut pos = 0;
+        while pcm.len() < want * 2 {
+            let take = RESAMPLE_CHUNK.min(n.saturating_sub(pos));
+            for (c, ch) in inp.iter_mut().enumerate() {
+                for (i, s) in ch.iter_mut().enumerate() {
+                    *s = if i < take { d.pcm[(pos + i) * 2 + c] } else { 0.0 };
+                }
+            }
+            pos += RESAMPLE_CHUNK;
+            let (_, got) = r.process_into_buffer(&inp, &mut out, None).unwrap();
+            let from_i = skip.min(got);
+            skip -= from_i;
+            for (l, r) in out[0][from_i..got].iter().zip(&out[1][from_i..got]) {
+                if pcm.len() == want * 2 {
+                    break;
+                }
+                pcm.push(*l);
+                pcm.push(*r);
+            }
+        }
+        pcm
+    }
+
+    fn noise(frames: usize) -> Vec<f32> {
+        let mut x: u64 = 0x2545F4914F6CDD1D;
+        (0..frames * 2)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 40) as f32 / (1u64 << 24) as f32 - 0.5
+            })
+            .collect()
+    }
+
+    #[test]
+    fn streamed_resampling_equals_the_whole_file_form_whatever_the_blocks() {
+        // Lengths around chunk edges, including shorter than one chunk.
+        for frames in [100, RESAMPLE_CHUNK, RESAMPLE_CHUNK + 1, 3 * RESAMPLE_CHUNK - 7, 44100] {
+            let d = Decoded { sample_rate: 44100, pcm: noise(frames), source: None };
+            let want = resample_whole_reference(&d, 48000);
+            for block in [1usize, 1152, 4096, 10000] {
+                let mut r = StreamResampler::new(44100, 48000).unwrap();
+                let mut got = Vec::new();
+                for b in d.pcm.chunks(block * 2) {
+                    r.push(b, &mut got).unwrap();
+                }
+                r.finish(&mut got).unwrap();
+                assert!(got == want, "{frames} frames in blocks of {block}: the streamed output differs");
+            }
+            assert!(resample(d, 48000).unwrap().pcm == want, "{frames} frames: resample changed");
+        }
+    }
+
+    fn wav(dir: &Path, name: &str, sr: u32, pcm: &[f32]) -> std::path::PathBuf {
+        let p = dir.join(name);
+        crate::wav::write_f32(&mut std::io::BufWriter::new(File::create(&p).unwrap()), sr, pcm).unwrap();
+        p
+    }
+
+    #[test]
+    fn a_progressive_decode_hands_over_the_exact_head_then_the_whole_track() {
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-progressive-").tempdir().unwrap();
+        let src = noise(3 * 44100);
+        let p = wav(tmp.path(), "a.wav", 44100, &src);
+        let whole = resample_whole_reference(&Decoded { sample_rate: 44100, pcm: src.clone(), source: None }, 48000);
+        let mut heads = Vec::new();
+        let d = decode_progressive(open(&p).unwrap(), &p, Some(48000), u64::MAX, 48000, |h| heads.push(h)).unwrap();
+        assert_eq!(d.sample_rate, 48000);
+        assert!(d.pcm == whole, "the whole track is not the whole-file decode and resample");
+        assert_eq!(heads.len(), 1, "the head was not handed over exactly once");
+        let h = &heads[0];
+        assert_eq!(h.sample_rate, 48000);
+        assert!(h.pcm == whole[..48000 * 2], "the head is not the first second of the whole track");
+        // A WAV states its length; scaled to the output rate it is the
+        // whole track's.
+        assert_eq!(h.frames, Some((whole.len() / 2) as u64));
+        // At the file's own rate there is nothing to convert. A head asked
+        // shorter than 1/HEAD_SHARE of the stated length is that share.
+        let mut heads = Vec::new();
+        let d = decode_progressive(open(&p).unwrap(), &p, None, u64::MAX, 1000, |h| heads.push(h)).unwrap();
+        let share = (3 * 44100 / HEAD_SHARE) as usize;
+        assert!(share > 1000);
+        assert!(d.pcm == src && heads[0].frames == Some(3 * 44100));
+        assert!(heads[0].pcm == src[..share * 2], "the head is {} frames, not {share}", heads[0].pcm.len() / 2);
+        // A track shorter than the head is handed over only whole.
+        let mut called = false;
+        let d = decode_progressive(open(&p).unwrap(), &p, Some(48000), u64::MAX, 4 * 48000, |_| called = true).unwrap();
+        assert!(!called, "a head longer than the track was handed over");
+        assert!(d.pcm == whole);
+        // The budget still holds the converted track to `max_frames`.
+        let e = decode_progressive(open(&p).unwrap(), &p, Some(48000), 2 * 48000, 48000, |_| {}).err().expect("over budget");
+        assert!(e.message.contains("memory budget"), "{}", e.message);
+    }
+
+    #[test]
+    fn a_metered_decode_reports_its_buffer_as_it_grows_up_to_what_it_returns() {
+        // The engine charges a rest whose length the file does not state by
+        // these reports (serve.rs `Meter`), so they must rise while the
+        // buffer fills and end at exactly what the decode hands back.
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-metered-").tempdir().unwrap();
+        let p = wav(tmp.path(), "a.wav", 44100, &noise(3 * 44100));
+        for rate in [Some(48000), None] {
+            let mut grown = Vec::new();
+            let d = decode_progressive_metered(open(&p).unwrap(), &p, rate, u64::MAX, 4800, |_| {}, |b| grown.push(b)).unwrap();
+            assert!(grown.len() > 1, "{rate:?}: the growth was reported once, not as it filled: {grown:?}");
+            assert!(grown.windows(2).all(|w| w[0] < w[1]), "{rate:?}: reports did not rise: {grown:?}");
+            assert_eq!(grown.last().copied(), Some(d.pcm.capacity() * std::mem::size_of::<f32>()), "{rate:?}");
+        }
     }
 }

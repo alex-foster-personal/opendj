@@ -751,6 +751,20 @@ pub fn result_json(id: Option<&Value>, res: &Result<(), ProtoError>) -> Value {
     }
 }
 
+/// Sent to every client when the rest of a progressive load's file fails to
+/// decode after its head was loaded (and its `load` answered ok): the deck
+/// has been emptied rather than left playing a track cut short. `path` is
+/// that load's file, as its `load` gave it, so a client with a newer load
+/// in flight on the deck can tell this one ends an earlier load.
+pub fn load_failed_json(deck: u8, path: &str, e: &ProtoError) -> Value {
+    json!({
+        "type": "load_failed",
+        "deck": deck,
+        "path": path,
+        "error": {"code": e.code.as_str(), "message": e.message},
+    })
+}
+
 /// When a threaded engine's snapshot is heard, on the engine's own monotonic
 /// clock. That clock's origin is private to the engine process, so the feed
 /// also carries `sent_ns`, the same clock read as the line is written: a
@@ -789,6 +803,7 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value
                 "playing": d.playing,
                 "position_ms": d.position_ms,
                 "duration_ms": d.duration_ms,
+                "decoded_ms": d.decoded_ms,
                 "rate": if d.playing { d.tempo } else { 0.0 },
                 "tempo": d.tempo,
                 "master_tempo": d.master_tempo,
