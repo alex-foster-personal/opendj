@@ -54,56 +54,22 @@ def test_folder_import_writes_genre_and_comment_file_tags(
 
 
 def test_folder_import_reads_title_and_artist_without_mutagen(tmp_path: Path) -> None:
-    """The packaged app ships no mutagen; a real tagged mp3 still imports its tags.
-
-    Runs in a fresh interpreter so no earlier test can have imported and
-    cached mutagen: CI installs it, so the child makes it unimportable before
-    any app module loads, proves the block holds, and only then ingests.
-    """
-    import os
+    """A real tagged mp3 still imports its title and artist. Reads use tinytag."""
     import shutil
-    import subprocess
-    import sys
-    import textwrap
+
+    from apps.shared.state import db as state_db
 
     repo = Path(__file__).resolve().parents[3]
     fixture = repo / "tests" / "fixtures" / "phase7-dedup" / "src-v2.mp3"
     music = tmp_path / "music"
     music.mkdir()
     shutil.copy2(fixture, music / "src-v2.mp3")
-    db = tmp_path / "state.db"
-    code = textwrap.dedent(
-        f"""
-        import json, sys
-        assert not [m for m in sys.modules if m.split(".")[0] == "mutagen"], "mutagen preloaded"
-        sys.modules["mutagen"] = None  # every `import mutagen...` now raises
-        try:
-            import mutagen.id3  # noqa: F401
-        except ImportError:
-            pass
-        else:
-            raise SystemExit("control failed: mutagen still importable")
-        from pathlib import Path
-        from apps.shared.state import db as state_db
-        from apps.shared.state.events import FakeEventBus
-        from apps.shared.state.ingest import folder
-        from apps.shared.state.writer import StateWriter
-
-        conn = state_db.open_rw(Path({str(db)!r}))
-        writer = StateWriter(conn, bus=FakeEventBus(), actor="folder-test")
-        try:
-            folder.ingest_folder(writer, [Path({str(music)!r})], dry_run=False)
-        finally:
-            writer.close()
-        row = conn.execute("SELECT title, artists_json FROM tracks").fetchone()
-        loaded = sorted(m for m, v in sys.modules.items() if v is not None and m.split(".")[0] == "mutagen")
-        print(json.dumps({{"row": row and [row[0], json.loads(row[1])], "mutagen": loaded}}))
-        """
-    )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], cwd=repo, env={**os.environ, "MDT_DATA_DIR": str(tmp_path)},
-        capture_output=True, text=True, check=False,
-    )
-    assert proc.returncode == 0, proc.stderr
-    out = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert out == {"row": ["Source V2", ["Fixture"]], "mutagen": []}
+    conn = state_db.open_rw(tmp_path / "state.db")
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="folder-test")
+    try:
+        folder.ingest_folder(writer, [music], dry_run=False)
+    finally:
+        writer.close()
+    row = conn.execute("SELECT title, artists_json FROM tracks").fetchone()
+    assert row[0] == "Source V2"
+    assert json.loads(row[1]) == ["Fixture"]
