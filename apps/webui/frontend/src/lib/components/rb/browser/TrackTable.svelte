@@ -34,6 +34,8 @@
 		shouldFetchArtwork
 	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
+	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
+	import { isPairedRow } from '$lib/rb/pairing-row';
 	import {
 		analysisIssuesFor,
 		camelotKeyColor,
@@ -254,16 +256,7 @@
 	}
 
 	function bpmCellTitle(row: BrowserRow): string {
-		if (row.bpm_status === 'failed') {
-			return row.bpm_reason ?? 'bpm analysis failed';
-		}
-		if (row.bpm_status === 'missing') {
-			return row.bpm_reason ?? 'bpm not analyzed yet';
-		}
-		if (row.bpm_status === 'available-not-selected') {
-			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
-		}
-		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`;
+		return buildBpmCellTitle(row, masterBpm);
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer
@@ -351,6 +344,7 @@
 		findQuery = '',
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId = null as string | null,
+		pairedPartnerIds = new Set<string>() as ReadonlySet<string>,
 		/** pin 02717d4ea496. Rendered INSIDE the table region, pinned just
 		 * below the sticky column-header row, so a panel-owned status
 		 * surface (the library load indicator) cannot push the headers down
@@ -469,6 +463,8 @@
 		findQuery?: string;
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId?: string | null;
+		/** Purple pairing underline: partner ids of the current master. */
+		pairedPartnerIds?: ReadonlySet<string>;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
 		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
@@ -1745,6 +1741,7 @@
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
+						class:rb-row-paired={isPairedRow(pairedPartnerIds, row.stable_id)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
@@ -2816,6 +2813,9 @@
 	.c-bpm.bpm-half {
 		border-radius: 2px;
 		background: color-mix(in srgb, #a855f7 12%, transparent);
+	}
+	tr.rb-row-paired td {
+		box-shadow: inset 0 -2px 0 color-mix(in srgb, #a855f7 85%, transparent);
 	}
 	.c-bpm.bpm-far {
 		border-radius: 2px;

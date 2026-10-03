@@ -366,6 +366,7 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # and no docs run had heard of it.
         "apps/launcher/src-tauri/src/state.rs": "launcher_meta",
         "apps/sync_hub/engine_identity_map.py": "sync_identity_remap",
+        "apps/webui/server/pairings_sqlite.py": "http_pairings",
     }
     assert {a.name for a in subject.STATE_AUTHORITIES} == set(per_authority)
     for authority, table in per_authority.items():

@@ -82,6 +82,7 @@
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
+	import { pairingUnavailableReason } from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -120,6 +121,21 @@
 
 	let pairingOpen = $state(false);
 	let pairingSnapshot = $state<PairingSnapshot | null>(null);
+	// Disabled with the reason as its tooltip, never a failure after the click.
+	const pairingBlocked = $derived(
+		pairingUnavailableReason(
+			DECK_IDS.map((deckId) => {
+				const deck = getDeckState(deckId);
+				return {
+					deckId,
+					loaded: deck.stable_id !== null,
+					beatCount: deck.anlz?.beatgrid.beats.length ?? 0,
+					stableId: deck.stable_id
+				};
+			}),
+			uiPrefs.beat_sync_max
+		)
+	);
 	/** The capture sheet loads on its first open, so it stays out of the
 	 * /performance route's initial bundle (budget in scripts/bundle-budget.mjs). */
 	let PairingSheet = $state<typeof import('./CreatePairingSheet.svelte').default | null>(null);
@@ -537,11 +553,12 @@
 	<button
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
-		title="Create pairing from two decks"
 		aria-label="Create pairing"
+		title={pairingBlocked ?? 'Create pairing from two decks'}
+		disabled={pairingBlocked !== null}
 		onclick={() => void _openPairing()}
 	>
-		Create pairing
+		<span class="pair-long">Create pairing</span><span class="pair-short" aria-hidden="true">Pair</span>
 	</button>
 
 	<button
@@ -1086,10 +1103,11 @@
 	   What pays, in the order it yields. Read-only STATUS yields before any
 	   control, which is the same ranking the 1530px note above states: the
 	   live perf readout, the Gig/Prep posture chip and the CloudSync status
-	   chip REPORT state and operate nothing, so the 1125px tier is where they
+	   chip REPORT state and operate nothing, so the 1160px tier is where they
 	   go. Below that the inert/duplicated chrome goes, then the clock, then
 	   the free badge and the utility icons, then - only on a window too narrow
-	   for the row to be honest about it - pairing and the vibe meter.
+	   for the row to be honest about it - the vibe meter (Create pairing
+	   shortens to "Pair" at that tier instead, see below).
 
 	   Deliberately NOT evicted, because each is the only door to something:
 	   the compact lyric chip (the one surface that says the word lane is
@@ -1115,10 +1133,14 @@
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
-	@media (max-width: 1125px) {
+	@media (max-width: 1160px) {
 		/* New tier. Status first (see the note above), and the chrome the 825px
 		   tier used to evict, which now has to go 300px earlier because the label
-		   is still in the row at those widths. */
+		   is still in the row at those widths. Was 1125px: keeping Create pairing
+		   in the row at every width (PR #4014, as "Pair" below 1740px) crushed
+		   the command entry across [1126px, 1133px] in a 1px elementFromPoint
+		   sweep (tests/e2e/topbar-source-toggle.spec.ts failed at 1130px), so
+		   1160px is that last failing width plus the same ~25px margin. */
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.posture-chip),
 		.rb-topbar :global(.cloudsync-status),
@@ -1139,22 +1161,27 @@
 	   its label at every width; tests/e2e/performance-topbar-responsive.spec.ts
 	   asserts it visible, labelled and hittable at 800x600. */
 
+	/* The vibe meter is decoration and yields at 1740px. Create pairing is a
+	   real control (the only door to DECKUX-12), so it shortens to the Pair
+	   span instead of leaving with the vibe meter. It leaves the row only at
+	   1160px, where that short label still crushed the command input. */
+	.rb-topbar .topbar-slot-pairing {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+	.rb-topbar .pair-short { display: none; }
 	@media (max-width: 1740px) {
 		.rb-topbar .topbar-slot-vibe { display: none; }
-		/* Create pairing is the ONLY door to the pairing capture sheet, not
-		   read-only status, so it shrinks to a PAIR label (same idiom as STG,
-		   BSM and AP) instead of leaving with the vibe meter. Hiding it here
-		   hid it on every Mac laptop window (1470-1728px). Measured Fri 2 Oct
-		   2026 (playwright, chromium, fixture library, 10px sweep 780-1780px
-		   plus 2px across 1100-1260px): 34px wide, no row overflow at any
-		   width, and the command input stays hittable everywhere except
-		   1126-1136px, which the tier below covers. */
-		.rb-topbar .topbar-slot-pairing { font-size: 0; }
-		.rb-topbar .topbar-slot-pairing::after { content: 'PAIR'; font-size: 9px; }
+		/* Shorten in the DOM (pair-long / pair-short) rather than a ::after
+		   label. Hiding the control at this width hid it on every Mac laptop
+		   window (1470-1728px). */
+		.rb-topbar .pair-long { display: none; }
+		.rb-topbar .pair-short { display: inline; }
 	}
 	@media (max-width: 1160px) {
-		/* 1136px (the last width where PAIR crushed the command input) + the
-		   same 25px margin the other tiers use. */
+		/* 1136px (the last width where the short label crushed the command
+		   input; playwright, chromium, fixture library, Fri 2 Oct 2026) plus
+		   the same 25px margin the other tiers use. */
 		.rb-topbar .topbar-slot-pairing { display: none; }
 	}
 

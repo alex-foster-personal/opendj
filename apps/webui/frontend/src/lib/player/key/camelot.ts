@@ -175,14 +175,22 @@ function _camelotCircularDistance(left: number, right: number): number {
  * are compatible at the same Camelot number and one step either direction.
  * That makes the six named relationships (A/A and A/B, each same/+1/-1)
  * symmetric and preserves 1 <-> 12 wraparound. */
-export function camelotKeysAreCompatible(
+export function camelotKeysWithinSteps(
 	deckKey: string | null,
-	masterKey: string | null
+	masterKey: string | null,
+	maxSteps: number
 ): boolean {
 	const deck = parseCamelotKey(deckKey);
 	const master = parseCamelotKey(masterKey);
 	if (deck === null || master === null) return false;
-	return _camelotCircularDistance(deck.number, master.number) <= 1;
+	return _camelotCircularDistance(deck.number, master.number) <= maxSteps;
+}
+
+export function camelotKeysAreCompatible(
+	deckKey: string | null,
+	masterKey: string | null
+): boolean {
+	return camelotKeysWithinSteps(deckKey, masterKey, 1);
 }
 
 function _assertEffectiveAudibleSemitones(name: string, value: number): void {

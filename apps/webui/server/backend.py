@@ -642,7 +642,10 @@ class InMemoryBackend:
             return len(updates)
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
+        from .pairings_sqlite import raise_on_pairing_id_collision
         with self._mutex:
+            # Id check first, before the same-edge merge (mirrors SqliteBackend).
+            raise_on_pairing_id_collision(self._pairings.get(pairing.pairing_id), pairing)
             for existing in self._pairings.values():
                 if (existing.from_stable_id == pairing.from_stable_id
                         and existing.to_stable_id == pairing.to_stable_id
