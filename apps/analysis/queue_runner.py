@@ -29,7 +29,6 @@ zero workers runs nothing rather than defaulting to one.
 from __future__ import annotations
 
 import logging
-import multiprocessing
 import os
 import sqlite3
 from collections.abc import Callable, Sequence
@@ -41,12 +40,15 @@ from . import queue_store
 from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends.base import AnalyzerBackend, TrackVanished
 from .jit_warmup import warm_backend_jit
-from .pool import analyze_one
+from .pool import analyze_one, spawn_pool
 from .queue import CascadeOutcome, QueueError, enqueue
 from .queue_effects import cascade_if_canonical
 from .record import AnalysisRecord
 from .store import upsert_record
-from .worker_diagnostics import init_worker, pool_death_message, worker_exit_signals
+from .worker_diagnostics import (
+    pool_death_message,
+    worker_exit_signals,
+)
 
 log = logging.getLogger("apps.analysis.queue_runner")
 
@@ -416,11 +418,7 @@ def run_batch(
         purge_stale=owned_cache is not None,
     )
 
-    pool = ProcessPoolExecutor(
-        max_workers=batch.workers,
-        mp_context=multiprocessing.get_context("spawn"),
-        initializer=init_worker,
-    )
+    pool = spawn_pool(batch.workers)
     ctx = _RunContext(
         conn=conn,
         batch_id=batch_id,
