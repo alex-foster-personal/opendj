@@ -216,6 +216,10 @@ def test_consumers_see_the_bundled_binary(tmp_path: Path, monkeypatch: pytest.Mo
     assert decode_resolve() == str(bundled)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: the PATH fake is an extensionless shell script that Windows which() skips via PATHEXT",
+)
 def test_mutation_control_path_first_order_is_caught(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -54,6 +54,10 @@ def test_a_missing_tool_resolves_to_none(tmp_path: Path) -> None:
     assert macos_diskutil.resolve_diskutil(tmp_path / "diskutil") is None
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits: Windows os.access ignores X_OK, so chmod 0o644 cannot make a file non-executable",
+)
 def test_a_non_executable_file_resolves_to_none(tmp_path: Path) -> None:
     tool = tmp_path / "diskutil"
     tool.write_text("not a program")
