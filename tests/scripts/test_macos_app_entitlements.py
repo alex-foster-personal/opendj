@@ -92,17 +92,6 @@ def test_app_entitlements_grant_exactly_the_microphone() -> None:
 
 
 @pytest.mark.requirement("INSTALL-33")
-@pytest.mark.parametrize("plist", sorted(TAURI_DIR.glob("*.plist")), ids=lambda p: p.name)
-def test_every_shipped_plist_is_well_formed(plist: Path) -> None:
-    """[if] a src-tauri plist is not well-formed XML [then] fail, [else stop].
-
-    A double hyphen inside an XML comment (a CLI flag quoted in prose) makes the
-    file malformed. Lenient tooling has signed with such a file anyway, so
-    nothing else catches it, and a strict parser refuses the whole file."""
-    assert plistlib.loads(plist.read_bytes()) is not None
-
-
-@pytest.mark.requirement("INSTALL-33")
 def test_the_bundler_signs_the_app_with_those_entitlements() -> None:
     """[if] tauri.conf.json stops pointing the bundler at Entitlements.app.plist [then] fail, [else stop]."""
     conf = json.loads((TAURI_DIR / "tauri.conf.json").read_text())

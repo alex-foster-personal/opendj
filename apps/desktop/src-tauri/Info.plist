@@ -14,9 +14,8 @@
   `navigator.mediaDevices`. Confirmed live on silver Mon 14 Sep 2026:
   every attempt logged
   "headphone output unsupported: navigator.mediaDevices is unavailable"
-  in webui-client-errors-2026-09-14.log, and codesign's entitlements dump
-  (`codesign -d` with its entitlements option) on the installed app returned
-  nothing at all. No double hyphen in this comment: XML forbids it there.
+  in webui-client-errors-2026-09-14.log, and codesign's display-entitlements
+  read of the installed app returned nothing at all.
 
   An input is read for three things: enumerating output devices
   (enumerateDevices requires a granted input permission before device
