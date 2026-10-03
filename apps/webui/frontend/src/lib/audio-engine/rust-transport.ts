@@ -21,7 +21,7 @@ import { electMaster } from '$lib/rb/master-election';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
-import { DECKS, type DeckId, displayLoops, notify, playheadMs, send } from './rust-link';
+import { DECKS, type DeckId, displayLoops, loadFences, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
 	lateJumpPositionMs,
@@ -101,6 +101,18 @@ async function _join(
 	} = {}
 ): Promise<void> {
 	const st = deckStates[follower];
+	const masterState = deckStates[master];
+	if (loadFences[follower] === Infinity || loadFences[master] === Infinity) {
+		throw new Error('Beat Sync: cannot join while either deck is loading');
+	}
+	const followerGeneration = st.load_generation;
+	const masterGeneration = masterState.load_generation;
+	const followerId = st.stable_id;
+	const masterId = masterState.stable_id;
+	const current = () => st.load_generation === followerGeneration &&
+		masterState.load_generation === masterGeneration &&
+		st.stable_id === followerId && masterState.stable_id === masterId &&
+		loadFences[follower] !== Infinity && loadFences[master] !== Infinity;
 	const fv = _view(follower);
 	const join = planRustFollowerJoin(_view(master, options.masterAtSec), fv, {
 		leadSec: SYNC_LEAD_SEC,
@@ -115,7 +127,13 @@ async function _join(
 	if (options.play) cmds.push({ type: 'play', deck: follower, playing: true });
 	// Sent together: the engine applies what arrives before its next block
 	// in that block, so tempo, position and start land as one.
-	await Promise.all(cmds.map(send));
+	try {
+		await Promise.all(cmds.map(send));
+	} catch (error) {
+		if (!current()) return;
+		throw error;
+	}
+	if (!current()) return;
 	st.pitch = join.tempo;
 	st.sync_error = null;
 	if (options.play) _setPlaying(follower, true);

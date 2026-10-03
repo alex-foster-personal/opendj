@@ -76,3 +76,15 @@ export function lowestPlayingMaster(input: MasterElectionInput): DeckId | null {
 	const playingIds = input.decks.filter(_isEligible).map((deck) => deck.id);
 	return nextPlayingMaster(playingIds);
 }
+
+/** Automatic election runs under the dispatcher's all-deck plus sync claim. */
+export type AutomaticMasterElectionRunner = (work: () => Promise<void>) => Promise<void>;
+let automaticMasterElectionRunner: AutomaticMasterElectionRunner = (work) => work();
+export function installAutomaticMasterElectionRunner(runner: AutomaticMasterElectionRunner): () => void {
+ const previous = automaticMasterElectionRunner;
+ automaticMasterElectionRunner = runner;
+ return () => { automaticMasterElectionRunner = previous; };
+}
+export function runAutomaticMasterElection(work: () => Promise<void>): Promise<void> {
+ return automaticMasterElectionRunner(work);
+}
