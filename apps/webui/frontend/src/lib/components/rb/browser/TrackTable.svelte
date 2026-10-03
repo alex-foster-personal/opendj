@@ -2095,7 +2095,7 @@
 							{:else if row.genre_guess}
 								<span
 									class="genre-guess"
-									title={`Guess, not a tag: JEV thinks this is ${row.genre_guess.family} (${Math.round(row.genre_guess.confidence * 100)}% confident) from the artist, title and other text the library holds. Nothing is written to the file.`}
+									title={`JEV guess, ${Math.round(row.genre_guess.confidence * 100)}% sure; not a file tag`}
 									>{row.genre_guess.family}?</span
 								>
 							{:else if row.genre_reason}
