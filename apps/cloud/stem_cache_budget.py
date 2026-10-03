@@ -364,6 +364,8 @@ def _evict_lru(
         if reason is not None:
             if reason == REASON_CONTENT_DIFFERS:
                 content_differs.add(bundle.stable_id)
+            elif reason == REASON_GONE:  # removed under us: those bytes are free too
+                covered += bundle.size_bytes
             continue
         # ``protected`` predates the scan and the hash (seconds on a big bundle),
         # so a deck may have opened this one since: ask the live registry again.

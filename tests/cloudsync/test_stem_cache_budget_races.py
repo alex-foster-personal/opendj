@@ -308,3 +308,27 @@ def test_a_lost_claim_smaller_than_the_shortfall_still_evicts_the_rest(tmp_path:
         stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - one_bundle - 1)
     )
     assert report.evicted_stable_ids == ("next",)
+
+
+@pytest.mark.requirement("STEM-41")
+def test_a_bundle_removed_before_it_was_hashed_counts_toward_the_shortfall(tmp_path: Path, monkeypatch):
+    """[if] another pass removes the LRU bundle before this pass hashes it [then] this pass evicts nothing more, [else stop].
+
+    The early window of the lost-claim race. MUTATION TARGET: skip a
+    ``REASON_GONE`` bundle without credit and ``next`` is evicted too.
+    """
+    import shutil
+
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {"lru": make_bundle(stems_dir, "lru", atime=100.0)}
+    index["next"] = make_bundle(stems_dir, "next", atime=200.0)
+    real = budget.unconfirmed_reason
+
+    def removed_first(bundle, idx):
+        if bundle.stable_id == "lru":
+            shutil.rmtree(bundle.path, ignore_errors=True)
+        return real(bundle, idx)
+
+    monkeypatch.setattr(budget, "unconfirmed_reason", removed_first)
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - 1))
+    assert report.evicted_stable_ids == () and (stems_dir / "next").is_dir()
