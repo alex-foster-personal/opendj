@@ -169,17 +169,19 @@ export function retryDeckStems(
 	stems: StemDeckState,
 	port: StemRetryPort
 ): Promise<void> {
-	// One retry per deck at a time: a double click or two agents sending
-	// `stem_load` join the retry already running instead of starting a second
-	// hydrate, reload or landing beside it.
-	const running = _retrying.get(deck);
+	// One retry per deck and track at a time: a double click or two agents
+	// sending `stem_load` join the retry already running instead of starting a
+	// second hydrate, reload or landing beside it. A retry for a track loaded
+	// since is its own retry, never the old track's.
+	const key = `${deck} ${stableId}`;
+	const running = _retrying.get(key);
 	if (running !== undefined) return running;
-	const retry = _retryDeckStems(deck, stableId, stems, port).finally(() => _retrying.delete(deck));
-	_retrying.set(deck, retry);
+	const retry = _retryDeckStems(deck, stableId, stems, port).finally(() => _retrying.delete(key));
+	_retrying.set(key, retry);
 	return retry;
 }
 
-const _retrying = new Map<number, Promise<void>>();
+const _retrying = new Map<string, Promise<void>>();
 
 async function _retryDeckStems(
 	deck: number,

@@ -2789,9 +2789,10 @@ function _landHeldStems(
 		land: () => _landStems(deck, held, ctx, stale),
 		adopted: () => rt.processor === held.processor,
 		retire: () => _retireProcessor(held.processor),
-		stale,
+		stale: () => held.token !== rt.loadToken,
+		// Stems switched off mid-landing (PERFMODE-15) settle to the block's own state.
 		fail: (message) => {
-			deckStates[deck].stems = { ...unavailableStemDeckState(message), status: 'error' };
+			deckStates[deck].stems = stemsBlockedState() ?? { ...unavailableStemDeckState(message), status: 'error' };
 		}
 	});
 }

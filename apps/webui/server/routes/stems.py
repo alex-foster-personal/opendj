@@ -529,14 +529,16 @@ def _written_so_far(tmp_dir: Path) -> tuple[int, int]:
     """
     files_done = 0
     bytes_done = 0
+    # PermissionError: Windows refuses access to a directory mid-rename or
+    # mid-delete instead of reporting it gone.
     try:
         children = list(tmp_dir.iterdir())
-    except (FileNotFoundError, NotADirectoryError):
+    except (FileNotFoundError, NotADirectoryError, PermissionError):
         return 0, 0
     for child in children:
         try:
             child_stat = child.stat()
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):
             continue
         if stat.S_ISREG(child_stat.st_mode):
             files_done += 1

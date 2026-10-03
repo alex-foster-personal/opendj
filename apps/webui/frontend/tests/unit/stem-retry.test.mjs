@@ -132,6 +132,18 @@ test('a second retry on the same deck joins the running one: one hydrate, one re
 	release();
 	await Promise.all([first, second]);
 	assert.deepEqual(log, ['hydrate:sid', 'reload']);
+	// A track loaded since is its own retry, never the old track's.
+	let releaseA;
+	const gateA = new Promise((resolve) => (releaseA = resolve));
+	const a = port({ requestHydration: async (sid) => { a.log.push(`hydrate:${sid}`); await gateA; } });
+	const b = port();
+	const forA = mod.retryDeckStems(4, 'track-a', failed, a.port);
+	const forB = mod.retryDeckStems(4, 'track-b', failed, b.port);
+	assert.notEqual(forB, forA, 'a retry for a newly loaded track joined the old track\'s retry');
+	await forB;
+	assert.deepEqual(b.log, ['hydrate:track-b', 'reload']);
+	releaseA();
+	await forA;
 	// Control: once settled, the deck can be retried again, and another deck never waits on it.
 	await mod.retryDeckStems(4, 'sid', failed, port().port);
 	const other = port();
