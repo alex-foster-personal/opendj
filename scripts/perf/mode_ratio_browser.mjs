@@ -45,6 +45,12 @@ function emitSettleS() {
   console.log(`SETTLE_S ${SETTLE_S}`);
 }
 
+function settleDone() {
+  return new Promise((resolve) => {
+    setTimeout(resolve, SETTLE_MS);
+  });
+}
+
 if (!frontend || (mode !== "gig-trackify" && mode !== "trackify-leak")) {
   console.error(
     "usage: node mode_ratio_browser.mjs --frontend <origin> --mode <gig-trackify|trackify-leak>"
@@ -163,11 +169,12 @@ async function loadGigSteadyState(page) {
     );
     await waitForQueueIdle(page);
   }
-  await page.waitForTimeout(SETTLE_MS);
-  // Queue-idle and HEAD 200 do not prove a load landed, so before GIG_READY
-  // require each deck to hold exactly its picked track with a positive
-  // duration and be playing (Sol P1/BLOCKING, PR #4540). The whole-window
-  // watch after GIG_READY then keeps that true while the sampler runs.
+  // Queue-idle and HEAD 200 do not prove a load landed, so before the settle
+  // watch require each deck to hold exactly its picked track with a positive
+  // duration and be playing (Sol P1/BLOCKING, PR #4540). The settle watch
+  // then keeps all four playing through SETTLE_MS; a stall here aborts
+  // before SETTLE_S. The whole-window watch after GIG_READY keeps that true
+  // while the sampler runs.
   const decks = await page.evaluate((count) => {
     const ipc = window.musicDjToolsPerformance;
     if (ipc === undefined) throw new Error("performance IPC is not installed");
@@ -186,6 +193,7 @@ async function loadGigSteadyState(page) {
   if (deckFaults.length > 0) {
     throw new Error(`Gig baseline is not four loaded, playing decks: ${deckFaults.join("; ")}`);
   }
+  await watchGigDecksPlayingUntil(page, settleDone(), [1, 2, 3, 4]);
   return stableIds;
 }
 
@@ -212,7 +220,7 @@ async function openFreshTrackifyBrowser() {
   await page.goto(`${frontend}/music-player?muted=1`);
   await waitForTrackifyIpc(page);
   await waitForTrackifyPlaying(page);
-  await page.waitForTimeout(SETTLE_MS);
+  await watchContinuousPlaybackUntil(page, settleDone());
   return { browser, page };
 }
 

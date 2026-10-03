@@ -208,23 +208,40 @@ def test_sample_skips_a_descendant_that_exits_mid_sample() -> None:
     assert after["engine_footprint_mb"] <= before["engine_footprint_mb"]
 
 
-# Fake `iter(range(0, ..., _PROBE_INTERVAL_S))` monotonic advances on every call
-# (deadline + each loop check), so duration 60 yields 12 probes at 5 s; 120 yields 24.
-_FAKE_CLOCK_STEADY_DURATION_S = 120
+# Fake monotonic advances 5 s on every call (deadline + each loop check).
+# Duration 60 with a 5 s cadence: first call is 0 (deadline 60), then 5..55
+# enter the loop (11 probes), then 60 exits. Literals so a constant drift fails.
 
 
 @_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_steady_carries_engine_fields_only_with_an_engine_root() -> None:
     """[if] _sample_steady runs with and without an engine root [then] engine fields appear only with one, [else stop]."""
+    assert cmr._PROBE_INTERVAL_S == 5
+    assert cmr._MIN_SAMPLE_S == 60
+    slept: list[float] = []
+    stamps: list[float] = []
+    clock: dict[str, Iterator[int]] = {"it": iter(range(0, 10_000, 5))}
+
+    def _monotonic() -> float:
+        value = float(next(clock["it"]))
+        stamps.append(value)
+        return value
+
+    def _sleep(seconds: float) -> None:
+        slept.append(seconds)
+
     with _tree() as (launcher, _browser_child), _tree() as (engine, _engine_child):
-        clock = iter(range(0, 10_000, cmr._PROBE_INTERVAL_S))
         with (
-            patch("scripts.perf.capture_mode_ratios.time.sleep"),
-            patch("scripts.perf.capture_mode_ratios.time.monotonic", new=lambda: float(next(clock))),
+            patch("scripts.perf.capture_mode_ratios.time.sleep", new=_sleep),
+            patch("scripts.perf.capture_mode_ratios.time.monotonic", new=_monotonic),
         ):
-            with_engine = cmr._sample_steady(launcher, _FAKE_CLOCK_STEADY_DURATION_S, engine)
-            browser_only = cmr._sample_steady(launcher, _FAKE_CLOCK_STEADY_DURATION_S, None)
+            with_engine = cmr._sample_steady(launcher, 60, engine)
+            clock["it"] = iter(range(0, 10_000, 5))
+            browser_only = cmr._sample_steady(launcher, 60, None)
+    assert slept == [5] * 22
+    assert stamps[:12] == [float(n) for n in range(0, 61, 5)]
+    assert stamps[12:24] == [float(n) for n in range(0, 61, 5)]
     assert with_engine["footprint_mb"] > 0.0
     assert with_engine["browser_footprint_mb"] > 0.0
     assert with_engine["engine_footprint_mb"] > 0.0
