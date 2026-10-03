@@ -37,7 +37,7 @@
  * module, one import, both halves of a load's telemetry.
  */
 
-import { ApiError } from '$lib/api/client';
+import { ApiError } from '$lib/api/errors';
 import { reportClientError, type ClientErrorContext } from '$lib/client-error-reporting';
 import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';

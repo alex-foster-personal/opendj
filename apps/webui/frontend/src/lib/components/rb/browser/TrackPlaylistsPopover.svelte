@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { pointFloatingAction } from '$lib/ui/clamp-to-viewport';
-	import { ApiError, readApiErrorStatus } from '$lib/api/client';
+	import { ApiError, readApiErrorStatus } from '$lib/api/errors';
 	import { listTrackPlaylists, type TrackPlaylistHit } from '$lib/rb/track-playlists';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
