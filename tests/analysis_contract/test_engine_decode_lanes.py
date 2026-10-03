@@ -1,4 +1,4 @@
-"""The beatgrid and key lanes read an m4a through the engine (NAE-22).
+"""The beatgrid and key lanes read an m4a through the engine (NAE-23).
 
 Neither lane's own reader opens an m4a without ffmpeg (Beat This! reads via
 torchaudio, soundfile and madmom; the key lane via librosa and audioread), and

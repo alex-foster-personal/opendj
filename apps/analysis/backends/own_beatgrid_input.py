@@ -1,4 +1,4 @@
-"""The file Beat This! reads for one track: the track, or the engine's decode of it (NAE-22).
+"""The file Beat This! reads for one track: the track, or the engine's decode of it (NAE-23).
 
 Split from :mod:`apps.analysis.backends.own_beatgrid`, which calls
 :func:`runner_input` around every runner invocation.
@@ -74,7 +74,7 @@ def runner_input(audio_path: Path, *, decode_dir: Path | None = None) -> Iterato
 
     The runner reads audio through torchaudio, soundfile and madmom, none of
     which opens an m4a without ffmpeg, and the shipped app has no ffmpeg
-    (NAE-22). For a container libsndfile cannot read, the engine decodes it
+    (NAE-23). For a container libsndfile cannot read, the engine decodes it
     into a float WAV first, at a path fixed per track so the activation file
     is the same on every run of it. A lock beside it keeps two runs of one
     track from writing the WAV under each other; the WAV goes on exit.

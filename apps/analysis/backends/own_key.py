@@ -334,7 +334,7 @@ def _engine_decode(audio_path: Path) -> tuple[Any, int]:
     """Mono float samples from the engine, for a container librosa reads only via ffmpeg.
 
     librosa opens m4a through audioread, which needs ffmpeg, and the shipped
-    app has none (NAE-22). The engine's mono mix is (L+R)/2, the same as
+    app has none (NAE-23). The engine's mono mix is (L+R)/2, the same as
     librosa's.
     """
     import numpy as np
