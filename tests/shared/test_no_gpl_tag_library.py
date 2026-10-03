@@ -47,19 +47,17 @@ def _imports_mutagen(path: Path) -> bool:
 
 
 # Main's optional write gate. Nothing else may import the GPL library.
-_MUTAGEN_IMPORT_ALLOWLIST = {"apps/shared/_mutagen.py"}
 
 
 def test_no_shipped_or_script_module_imports_mutagen() -> None:
-    """[if] any apps/ or scripts/ module besides the opt-in gate imports mutagen [then] this fails, [else stop]."""
+    """[if] any apps/ or scripts/ module imports mutagen (removed by ADR-0122) [then] this fails, [else stop]."""
     offenders = [
         str(path.relative_to(REPO_ROOT))
         for root in ("apps", "scripts")
         for path in (REPO_ROOT / root).rglob("*.py")
         if "node_modules" not in path.parts and _imports_mutagen(path)
     ]
-    assert [path for path in offenders if path not in _MUTAGEN_IMPORT_ALLOWLIST] == []
-    assert _MUTAGEN_IMPORT_ALLOWLIST <= set(offenders)
+    assert offenders == []
 
 
 def test_the_import_scan_detects_a_mutagen_import(tmp_path: Path) -> None:
@@ -70,14 +68,12 @@ def test_the_import_scan_detects_a_mutagen_import(tmp_path: Path) -> None:
 
 
 def test_pyproject_declares_no_mutagen_anywhere() -> None:
-    """[if] mutagen is a core dep or sits in an extra other than ``[tags]`` [then] fail, [else stop]."""
+    """[if] mutagen is a core dep or sits in any extra (removed by ADR-0122) [then] fail, [else stop]."""
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]
     assert [req for req in project["dependencies"] if req.lower().startswith("mutagen")] == []
     extras = project.get("optional-dependencies", {})
-    assert [req for req in extras.get("tags", []) if req.lower().startswith("mutagen")] == ["mutagen>=1.47,<2"]
+    assert "tags" not in extras
     for name, extra in extras.items():
-        if name == "tags":
-            continue
         assert [req for req in extra if req.lower().startswith("mutagen")] == [], name
     assert any(req.startswith("tinytag") for req in project["dependencies"])
 

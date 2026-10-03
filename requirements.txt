@@ -6,8 +6,10 @@ kaitaistruct>=0.11
 tinytag>=2.3.2,<3
 rich>=13.0
 
-# Pioneer OneLibrary USB export and mounted-target readback.  Keep this
-# exact: the writer capability contract is validated against rbox 0.1.7.
+# Pioneer OneLibrary USB export. Not a core dependency: GPL-3.0, optional
+# extra usb-export, repeated on the dev extra. Keep this exact: the writer
+# capability contract is validated against rbox 0.1.7. CI installs this file,
+# so the pin stays here even though the desktop payload must not ship it.
 rbox==0.1.7
 
 # Phase 7 -- chromaprint fingerprinting. The fpcalc CLI is an external
