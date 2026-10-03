@@ -178,10 +178,17 @@ def adts_stream(path: Path | str) -> AdtsStream | None:
 
 
 def starts_with_adts(path: Path | str) -> bool:
-    """True when the first header past any leading ID3v2 tag is an ADTS frame."""
+    """True when the bytes past any leading ID3v2 tag carry the ADTS sync word.
+
+    Only the sync word and the zero layer bits are checked, not a whole valid
+    header, so a damaged first frame still reads as ADTS (and is refused)
+    rather than falling back to tinytag. MPEG audio sets nonzero layer bits,
+    so an mp3 never matches.
+    """
     with open(path, "rb") as fh:
         fh.seek(_id3v2_end(fh.read(10)))
-        return _adts_frame(fh.read(7)) is not None
+        head = fh.read(2)
+    return len(head) == 2 and head[0] == 0xFF and (head[1] & 0xF6) == 0xF0
 
 
 def _id3v2_end(head: bytes) -> int:

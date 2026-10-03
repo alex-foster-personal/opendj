@@ -405,5 +405,13 @@ def test_shared_read_rejects_a_damaged_adts_stream(tmp_path):
     with pytest.raises(_tagreader.TagReadError):
         _tagreader.read(track)
     assert _tagreader.read(track, duration=False) is not None
+    # A sync word alone, or a sync-like first header that is invalid, is
+    # still ADTS and still refused (review of #4997).
+    for head in (b"\xff\xf1", b"\xff\xf1\xff\xff\xff\xff\xff" + b"\x00" * 64):
+        track.write_bytes(head)
+        assert _tagreader.starts_with_adts(track)
+        with pytest.raises(_tagreader.TagReadError):
+            _tagreader.read(track)
+    assert not _tagreader.starts_with_adts(FIXTURE)
     track.write_bytes(_adts_frames(8))
     assert _tagreader.read(track).duration == pytest.approx(8 * 1024 / 44100)
