@@ -187,9 +187,10 @@ def _norm_name(ecosystem: str, name: str) -> str:
 # ----- license expressions ----------------------------------------------------
 
 
-# Operators need surrounding whitespace, so the "-or-later" inside an id is
-# never read as OR.
-_TOKEN = re.compile(r"(\(|\)|\s+(?:AND|OR|and|or)\s+)")
+# Operators need whitespace (or the start or end of the expression) on both
+# sides, so the "-or-later" inside an id is never read as OR, while a dangling
+# "MIT OR" or a doubled "OR OR" still splits into operators the parser rejects.
+_TOKEN = re.compile(r"(\(|\)|(?<!\S)(?:AND|OR|and|or)(?!\S))")
 
 
 def _tokens(expr: str) -> list[str]:
@@ -224,7 +225,9 @@ class _Expr:
         self.expr, self.allow, self.deny = expr, allow, deny
         self.tokens = _tokens(expr)
         self.pos = 0
-        self.unbalanced = False
+        # Set by any syntax fault (unbalanced paren, missing or misplaced operand),
+        # so a branch that IS allowed can never carry a malformed OR to allowed.
+        self.malformed = False
 
     def _peek(self) -> str | None:
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -252,7 +255,9 @@ class _Expr:
 
     def _term(self) -> _Result:
         tok = self._peek()
-        if tok is None:
+        if tok is None or tok in ("AND", "OR", ")"):
+            # "MIT OR" or "MIT OR OR Apache-2.0": an operand is missing.
+            self.malformed = True
             return "unknown", [self.expr]
         self.pos += 1
         if tok != "(":
@@ -262,7 +267,7 @@ class _Expr:
             self.pos += 1
         else:
             # "(MIT" reached EOF: a truncated expression never reads as allowed.
-            self.unbalanced = True
+            self.malformed = True
         return result
 
 
@@ -272,7 +277,7 @@ def evaluate(expr: str, allow: list[re.Pattern], deny: list[re.Pattern]) -> _Res
     if not parser.tokens:
         return "unknown", [expr or "(empty)"]
     result = parser.parse_or()
-    if parser.pos != len(parser.tokens) or (parser.unbalanced and result[0] != "denied"):
+    if parser.pos != len(parser.tokens) or (parser.malformed and result[0] != "denied"):
         return "unknown", [expr]
     return result
 
