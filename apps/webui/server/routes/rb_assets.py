@@ -92,7 +92,7 @@ class RbMetaOut(BaseModel):
     :func:`_local_rb_meta`.
 
     ``artwork_available`` is tri-state (``bool | None``) rather than a plain
-    bool: for a local-vendor row it is ``None`` when the optional ``mutagen``
+    bool: for a local-vendor row it is ``None`` when the tinytag
     tag reader was never available to check with, distinct from a checked
     ``False`` (no embedded picture). A rekordbox-vendor row never needs the
     reader, so it is always a definite ``True``/``False`` there. See

@@ -1,7 +1,6 @@
 /**
  * Pin 27fe1e3e61b5: agent replies weren't selectable text and hyperlinks
- * weren't clickable. This packet fixes both halves; the "additional replies
- * / only has Close" half is the multi-reply feature and is OUT OF SCOPE here.
+ * weren't clickable; follow-up replies on partial/open pins use FB-13 Reply.
  *
  * Root cause of the non-selectable text: .perf-root sets `user-select: none`
  * globally (theme.css), inherited by .fb-note with nothing overriding it.
@@ -25,7 +24,7 @@ const CARD = readFileSync(
 	'utf8'
 );
 
-test('agent reply text is user-selectable, overriding the inherited perf-root user-select:none', () => {
+test('pin 27fe1e3e61b5 agent reply text is user-selectable, overriding perf-root user-select:none', () => {
 	const styles = CARD.slice(CARD.indexOf('<style>'));
 	const rule = styles.slice(styles.indexOf('.fb-note'), styles.indexOf('.fb-note') + 400);
 	assert.match(rule, /user-select:\s*text/, 'the inherited user-select: none must be overridden for the note');

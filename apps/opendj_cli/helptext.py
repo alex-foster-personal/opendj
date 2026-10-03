@@ -23,6 +23,9 @@ audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_output_health
   opendj audio_switch_output --confirm
 
+feedback pins (FB-20, issue #4085, pin 6af63c5e9b7c):
+  opendj feedback comments summary
+
 installed app shell navigation (AGENT-12, issue #2866):
   opendj open performance
   opendj open /performance
