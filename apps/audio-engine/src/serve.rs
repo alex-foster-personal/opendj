@@ -979,9 +979,14 @@ impl Control {
             // another deck is still decoding waits for that decode. The deck
             // gets the head as soon as it is decoded; the whole track follows.
             let head_tx = tx.clone();
-            let result = tracks.load_progressive(std::path::Path::new(&spec.path), &spec, seq, head_frames, |track| {
-                let _ = head_tx.send(Msg::Head { seq, deck, track });
-            });
+            // A panicking decode still ends in `Decoded`: the deck's decode
+            // count (`DECODES_PER_DECK`) and the load's result depend on it.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                tracks.load_progressive(std::path::Path::new(&spec.path), &spec, seq, head_frames, |track| {
+                    let _ = head_tx.send(Msg::Head { seq, deck, track });
+                })
+            }))
+            .unwrap_or_else(|_| Err(ProtoError::new(ErrorCode::Decode, format!("decoding {} failed unexpectedly (panic)", spec.path))));
             let _ = tx.send(Msg::Decoded { seq, deck, result });
         });
     }
