@@ -16,12 +16,13 @@ and `bdb` are omitted: they are Linux/X11-only and Berkeley DB respectively,
 none of which this runtime bundles). All are permissive (BSD/MIT/zlib-style,
 public domain, or Apache-2.0 for OpenSSL 3.x) -- none are copyleft.
 
-`scripts/third_party_licenses.py`'s `supplement_components` reads every file
-in this directory and attaches it to the "CPython (python-build-standalone)"
+`scripts/third_party_licenses.py`'s `supplement_components` requires every file
+named in `scripts/license_mirrors.py` `PBS_NATIVE_LIBRARIES` (the build fails if
+one is missing) and attaches it to the "CPython (python-build-standalone)"
 component, replacing a prior note that only said the notices were "published
 with the release" without actually shipping them.
 
 To refresh for a new CPython/python-build-standalone pin: re-download the
 `LICENSE.*.txt` files relevant to the target platform from that repo at its
 current `main` SHA, update the commit SHA and date above, and re-run
-`just dmg` (verify_bundled_licenses will fail if this directory is empty).
+`just dmg`; a library added or dropped must be edited in `PBS_NATIVE_LIBRARIES` too.

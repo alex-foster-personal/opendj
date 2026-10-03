@@ -2,14 +2,12 @@
 
 WHAT THIS PRODUCES
 
-``THIRD-PARTY-LICENSES.txt`` (every shipped component, its license identifier
-and the verbatim license / NOTICE texts its distribution carries) and a
-markdown flag report (every component whose license is copyleft,
-non-commercial or unidentified). The dmg build stages both inside the payload,
-so they land in ``Open DJ.app/Contents/Resources/payload/``.
+``THIRD-PARTY-LICENSES.txt`` (every shipped component, its license identifier and the verbatim
+license / NOTICE texts its distribution carries) and a markdown flag report (every component whose
+license is copyleft, non-commercial or unidentified). The dmg build stages both inside the payload, so
+they land in ``Open DJ.app/Contents/Resources/payload/``. Reviewed exceptions: scripts/license_mirrors.py.
 
-WHERE EACH ECOSYSTEM'S INVENTORY COMES FROM (the shipped artifact, not the
-declared intent)
+WHERE EACH ECOSYSTEM'S INVENTORY COMES FROM (the shipped artifact, not the declared intent)
 
 - Python: the ``*.dist-info`` directories of the STAGED payload sites
   (``pylib`` and the beat-grid runner site), read with ``importlib.metadata``.
@@ -23,14 +21,12 @@ declared intent)
 - Rust: ``cargo metadata --locked`` for the Tauri shell, the ``odj-audio``
   engine (feature ``device``, as staged) and the waveform PyO3 extension,
   following normal dependency edges only (build and dev edges never ship).
-- Bundled data and runtimes that are not package-manager managed: the
-  relocatable CPython, the Beat This! weights notice, the Anybody font, and
-  the native codecs compiled into the JS audio decoders (see SUPPLEMENTS).
+- Bundled data and runtimes that are not package-manager managed: the relocatable CPython, the Beat
+  This! weights notice, the Anybody font, and the native codecs compiled into the JS audio decoders.
 
-Industry-standard equivalents (pip-licenses, license-checker, cargo-about)
-were considered; this stays one stdlib-only module because the build already
-stages every ecosystem and a second tool per ecosystem would be three more
-things to pin. See docs/third-party-licenses.md.
+Industry-standard equivalents (pip-licenses, license-checker, cargo-about) were considered; this stays
+one stdlib-only module because the build already stages every ecosystem and a second tool per ecosystem
+would be three more things to pin. See docs/third-party-licenses.md.
 
 Requirements:
 
@@ -68,6 +64,12 @@ from pathlib import Path
 import yaml
 
 from scripts.license_classify import FLAGGED, RANK, Cat, classify_license
+from scripts.license_mirrors import (
+    KNOWN_TEXTLESS,
+    PBS_NATIVE_LIBRARIES,
+    PBS_NATIVE_LICENSES_RELATIVE,
+    REVIEWED_LICENSE_TEXTS,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,10 +80,6 @@ ROOT_LICENSE_FILE_NAME = "LICENSE"
 
 PYTHON_SITES_RELATIVE: tuple[str, ...] = ("pylib", "runners/beatgrid/site")
 FRONTEND_RELATIVE = Path("apps/webui/frontend")
-#: Checked-in mirror of python-build-standalone's per-library LICENSE files
-#: for the CPython runtime's statically-linked native C libs; see that dir's
-#: README.md for provenance.
-PBS_NATIVE_LICENSES_RELATIVE = Path("docs/legal/python-build-standalone")
 # vite bundles the framework runtime out of devDependencies, so the
 # production-only closure would under-attribute the shipped SPA.
 JS_BUNDLED_FROM_DEV: tuple[str, ...] = ("svelte", "@sveltejs/kit")
@@ -98,26 +96,6 @@ NOTICE_FILE_PATTERN = re.compile(r"notice", re.IGNORECASE)
 
 #: A real inventory renders hundreds of license texts; a stub cannot pass.
 MIN_LICENSES_FILE_CHARS = 100_000
-
-#: (ecosystem, name) pairs verified textless at BOTH the installed package
-#: AND its upstream repo root -- the ONLY components `write_payload_license_files`
-#: may stage without a license text or notice (Sol P1, PR #4853: the flag
-#: report used to exclude "bundled" wholesale from its textless table, which
-#: let a NEW textless component of any ecosystem ship unnoticed). mpg123 was
-#: wrongly listed here once on the premise that "the package carries no
-#: license text" -- true of its npm wrapper, false of mpg123 itself, whose
-#: COPYING (LGPL-2.1) is now mirrored at docs/legal/mpg123-COPYING.txt and
-#: staged as its license text; that single-file check was not enough on its
-#: own, hence the BOTH above. eshaz/wasm-audio-decoders below IS verified at
-#: both: every package declares MIT but ships no LICENSE file, and the
-#: monorepo's GitHub root has none either (commit 3c74930e67, Fri 2 Oct 2026).
-KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("javascript", "mpg123-decoder"),
-        ("javascript", "@wasm-audio-decoders/common"),
-        ("javascript", "@wasm-audio-decoders/flac"),
-    }
-)
 
 #: Our own packages are not third party.
 FIRST_PARTY_NAMES: frozenset[str] = frozenset(
@@ -396,13 +374,12 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
     if not mpg123_copying.is_file():
         raise LicenseInventoryError(f"{mpg123_copying} missing: mpg123 (LGPL-2.1) ships with no license text")
     native_lib_dir = repo_root / PBS_NATIVE_LICENSES_RELATIVE
-    native_lib_licenses = sorted(native_lib_dir.glob("LICENSE.*.txt"))
-    if not native_lib_licenses:
+    native_lib_licenses = [native_lib_dir / f"LICENSE.{lib}.txt" for lib in PBS_NATIVE_LIBRARIES]
+    if missing_native := [path.name for path in native_lib_licenses if not path.is_file()]:
         raise LicenseInventoryError(
-            f"no LICENSE.*.txt under {native_lib_dir}: the CPython runtime statically links "
-            "third-party native libraries (OpenSSL, SQLite, zlib, bzip2, xz, libffi, expat, "
-            "and others) whose notices must ship with the binary (Sol P1, PR #4853). See "
-            f"{native_lib_dir}/README.md to refresh this mirror."
+            f"{missing_native} missing under {native_lib_dir}: the CPython runtime statically links "
+            "these native libraries, whose notices must ship with the binary (Sol P1, PR #4853). "
+            f"See {native_lib_dir}/README.md to refresh this mirror."
         )
     return [
         Component(
@@ -437,10 +414,25 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
     ]
 
 
+def attach_reviewed_license_texts(repo_root: Path, components: list[Component]) -> list[Component]:
+    """Stage each REVIEWED_LICENSE_TEXTS entry on its exact (ecosystem, name, version), if textless."""
+    reviewed = {(e.ecosystem, e.name, e.version): e for e in REVIEWED_LICENSE_TEXTS}
+    for c in components:
+        entry = reviewed.get((c.ecosystem, re.sub(r"[-_.]+", "-", c.name).lower(), c.version))
+        if entry is None or any(text.strip() for _, text in c.license_texts):
+            continue
+        text_path = repo_root / entry.text_relative
+        if not text_path.is_file() or hashlib.sha256(text_path.read_bytes()).hexdigest() != entry.sha256:
+            raise LicenseInventoryError(f"{text_path} is missing or not the reviewed text (sha256 {entry.sha256})")
+        c.texts.append((text_path.name, _read_text(text_path)))
+        c.note = f"Canonical text from {entry.source_url} (fetched {entry.fetched}): {entry.reason}. {entry.issue}"
+    return components
+
+
 # ----- rendering ----------------------------------------------------------
 def collect_all(repo_root: Path, payload_dir: Path) -> list[Component]:
     return [
-        *python_components(payload_dir),
+        *attach_reviewed_license_texts(repo_root, python_components(payload_dir)),
         *js_components(repo_root / FRONTEND_RELATIVE),
         *rust_components(repo_root),
         *supplement_components(repo_root, payload_dir),
@@ -528,14 +520,11 @@ def render_licenses(components: list[Component]) -> str:
 def unreviewed_textless_components(components: list[Component]) -> list[Component]:
     """Components with no non-empty license text, excluding `KNOWN_TEXTLESS`.
 
-    A NOTICE is attribution, not the license text itself (Apache-2.0 section
-    4(d) notices are additive, not a substitute for the license terms), so it
-    does not excuse a missing license text (Sol P1, PR #4853 r4167612998). An
-    empty-string text entry is likewise not real content: `any(... .strip()
-    ...)` catches it even though `c.license_texts` itself is a non-empty list.
-
-    Pulled out of `write_payload_license_files` so the guard is testable
-    without staging a full fake payload across every ecosystem.
+    A NOTICE is attribution, not the license text itself (Apache-2.0 section 4(d) notices are additive,
+    not a substitute for the license terms), so it does not excuse a missing license text (Sol P1,
+    PR #4853 r4167612998). An empty-string text entry is likewise not real content: `any(... .strip()
+    ...)` catches it even though `c.license_texts` itself is a non-empty list. Pulled out of
+    `write_payload_license_files` so the guard is testable without staging a full fake payload.
     """
     return sorted(
         (
@@ -548,6 +537,16 @@ def unreviewed_textless_components(components: list[Component]) -> list[Componen
     )
 
 
+def require_license_texts(components: list[Component]) -> None:
+    """Raise unless every component carries a license text or a reviewed exception."""
+    if unreviewed := unreviewed_textless_components(components):
+        names = ", ".join(f"{c.ecosystem}:{c.name} {c.version}" for c in unreviewed)
+        raise LicenseInventoryError(
+            f"{len(unreviewed)} component(s) have no non-empty license text: {names}. Stage the missing text, "
+            "or add a human-reviewed entry (scripts/license_mirrors.py) explaining why none ships."
+        )
+
+
 def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str, object]:
     """Stage THIRD-PARTY-LICENSES.txt, the flag report, LICENSE and NOTICE.
 
@@ -555,14 +554,7 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
     measured, so the dmg build fails rather than shipping without attribution.
     """
     components = collect_all(repo_root, payload_dir)
-    unreviewed = unreviewed_textless_components(components)
-    if unreviewed:
-        names = ", ".join(f"{c.ecosystem}:{c.name}" for c in unreviewed)
-        raise LicenseInventoryError(
-            f"{len(unreviewed)} component(s) have no non-empty license text and are not in "
-            f"KNOWN_TEXTLESS: {names}. Stage the missing text, or add a human-reviewed entry to "
-            "KNOWN_TEXTLESS with a note explaining why none exists."
-        )
+    require_license_texts(components)
     (payload_dir / LICENSES_FILE_NAME).write_text(render_licenses(components), encoding="utf-8")
     (payload_dir / REPORT_FILE_NAME).write_text(flag_report(components), encoding="utf-8")
     for name in (ROOT_LICENSE_FILE_NAME, NOTICE_FILE_NAME):
