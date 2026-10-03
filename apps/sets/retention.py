@@ -1,7 +1,7 @@
-"""MP3 retention: prune old audio segments, keep timeline.jsonl.
+"""Audio retention: prune old audio segments, keep timeline.jsonl.
 
 Plan 12-01 Step 7. Retention default is 90 days (Open Question 4).
-Only ``audio_*.mp3`` files are candidates; ``timeline.jsonl`` and
+Only audio segments (``audio_*.wav`` / ``audio_*.mp3``) are candidates; ``timeline.jsonl`` and
 ``manifest.json`` are NEVER pruned (those are tiny and the whole
 point of the recorder).
 """
@@ -27,9 +27,9 @@ def find_candidates(
     root: Path | None = None,
     now: float | None = None,
 ) -> list[PruneCandidate]:
-    """Return MP3 segments older than ``retention_days``.
+    """Return audio segments older than ``retention_days``.
 
-    Scans ``<root>/<session>/audio_*.mp3`` (``root`` defaults to
+    Scans ``<root>/<session>/audio_*`` (``root`` defaults to
     :data:`apps.sets.paths.SETS_DIR`). ``now`` lets tests pin the clock.
     """
     base = Path(root) if root is not None else sets_paths.SETS_DIR
@@ -41,14 +41,14 @@ def find_candidates(
     for session_dir in sorted(base.iterdir()):
         if not session_dir.is_dir():
             continue
-        for mp3 in sorted(session_dir.glob("audio_*.mp3")):
-            mtime = mp3.stat().st_mtime
+        for seg_path in sets_paths.segment_files(session_dir):
+            mtime = seg_path.stat().st_mtime
             if mtime < cutoff:
                 age = max(0.0, (wall_now - mtime) / 86400.0)
                 out.append(
                     PruneCandidate(
-                        path=mp3,
-                        size_bytes=mp3.stat().st_size,
+                        path=seg_path,
+                        size_bytes=seg_path.stat().st_size,
                         age_days=age,
                     )
                 )
@@ -62,7 +62,7 @@ def prune(
     root: Path | None = None,
     now: float | None = None,
 ) -> list[PruneCandidate]:
-    """Delete MP3s older than ``retention_days`` unless ``dry_run``.
+    """Delete audio segments older than ``retention_days`` unless ``dry_run``.
 
     Returns the list of candidates inspected (deleted or would-delete).
     """

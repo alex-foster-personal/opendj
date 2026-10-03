@@ -12674,6 +12674,17 @@ export interface components {
         RecorderStatus: {
             /** Active */
             active: boolean;
+            /**
+             * Capture
+             * @description The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).
+             * @enum {string}
+             */
+            capture: "none" | "unknown" | "starting" | "waiting_permission" | "recording" | "stopped" | "failed";
+            /**
+             * Capture Error
+             * @description Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).
+             */
+            capture_error?: string | null;
             /** Owned */
             owned: boolean;
             /** Pid */
@@ -15755,7 +15766,7 @@ export interface operations {
             header?: never;
             path: {
                 session_id: string;
-                /** @description audio_<iso>.mp3 */
+                /** @description audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg) */
                 segment: string;
             };
             cookie?: never;
