@@ -163,7 +163,13 @@ export async function handOffStemsLive(
 	const stillSchedulable = safeTransportScheduleTime(deps.now(), deps.leadSec) <= when;
 	// `stale` is re-read here, not only between attempts: the track can be
 	// unloaded, or stems switched off, while the acknowledgement is in flight.
-	if (deps.stale() || after.revision !== before.revision || !_idle(after) || !stillSchedulable) {
+	if (deps.stale()) {
+		// A stale upgrade's stems are disconnected at once: an awaited cancel
+		// that stalls would let the old track's stems start at `when`.
+		deps.retireIncoming();
+		return 'moved';
+	}
+	if (after.revision !== before.revision || !_idle(after) || !stillSchedulable) {
 		await deps.cancelIncoming(when);
 		return 'moved';
 	}
@@ -226,10 +232,14 @@ export async function handOffStemsLive(
 		// back even when the stems' cancel fails.
 		const at = earliest > when ? earliest : when;
 		let rollbackError: unknown = null;
-		try {
-			await deps.cancelIncoming(at);
-		} catch (error) {
-			rollbackError = error;
+		if (deps.stale()) {
+			deps.retireIncoming();
+		} else {
+			try {
+				await deps.cancelIncoming(at);
+			} catch (error) {
+				rollbackError = error;
+			}
 		}
 		try {
 			await deps.restoreOutgoing(at, deps.segmentAt(at));

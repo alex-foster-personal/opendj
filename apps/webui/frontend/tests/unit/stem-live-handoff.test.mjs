@@ -178,8 +178,49 @@ test('a deck that goes stale during the acknowledgement lands nothing', async ()
 		state.stale = true;
 	};
 	assert.equal(await mod.landStemUpgrade(deps), 'stale');
-	assert.deepEqual(names(log), ['segmentAt', 'cancelIncoming'], 'a stale landing returns at once, with no retry delay');
+	assert.deepEqual(names(log), ['segmentAt', 'retireIncoming'], 'a stale landing retires its stems at once, with no retry delay');
 	assert.ok(!names(log).includes('commit') && !names(log).includes('stopOutgoing'));
+});
+
+test('a deck that goes stale during the acknowledgement never waits on a stems cancel', async () => {
+	const { deps, log, state } = deck();
+	deps.scheduleIncoming = async () => {
+		state.stale = true;
+	};
+	deps.cancelIncoming = () => new Promise(() => {});
+	const outcome = await Promise.race([
+		mod.handOffStemsLive(deps, 0.15),
+		new Promise((resolve) => setTimeout(() => resolve('hung'), 50))
+	]);
+	assert.equal(outcome, 'moved', 'the stale check waited on the stems acknowledging a cancel');
+	assert.ok(names(log).includes('retireIncoming'));
+});
+
+test('a deck that goes stale after the mix stop is acked retires the stems and still restores the mix', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async (when) => {
+		log.push(['stopOutgoing', when]);
+		state.stale = true;
+	};
+	deps.cancelIncoming = () => new Promise(() => {});
+	const outcome = await Promise.race([
+		mod.handOffStemsLive(deps, 0.15),
+		new Promise((resolve) => setTimeout(() => resolve('hung'), 50))
+	]);
+	assert.equal(outcome, 'moved');
+	const order = names(log);
+	assert.ok(order.indexOf('retireIncoming') >= 0, 'the stale stems were not retired');
+	assert.equal(order.at(-1), 'restoreOutgoing', 'the mix was not put back');
+	assert.ok(!order.includes('cancelIncoming'), 'the stale stems were silenced by an awaited command');
+});
+
+test('control: a moved, non-stale deck still cancels its stems by command', async () => {
+	const { deps, log, state } = deck();
+	deps.scheduleIncoming = async () => {
+		state.snap.revision += 1;
+	};
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'moved');
+	assert.ok(names(log).includes('cancelIncoming') && !names(log).includes('retireIncoming'));
 });
 
 test('a failed stem schedule never touches the playing mix', async () => {
