@@ -31,6 +31,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared import fs_residency
+
 # pyacoustid import is lazy so the module can be imported even when the
 # package is missing (useful for test environments that stub it out). The
 # real ``compute`` call will raise ``ChromaprintMissing`` if fpcalc is
@@ -242,12 +244,13 @@ class FingerprintCache:
         fp_str, duration, size, mtime, bitrate, computed_at = row
         if size != st.st_size or abs(mtime - st.st_mtime) > 1e-3:
             return None
-        if bitrate is None:
+        if bitrate is None and not fs_residency.is_dataless_stub(st):
             # Rows cached while no tag reader was installed (the packaged app
             # before tinytag, Thu 1 Oct 2026) hold a NULL bitrate, which
             # canonical selection reads as 0 and so can keep the worse twin.
             # Backfill it here: the scan calls get() for every file, so the
-            # cache heals on the next scan without re-running fpcalc.
+            # cache heals on the next scan without re-running fpcalc. An
+            # iCloud placeholder is skipped: opening it would download it.
             bitrate = _safe_bitrate(path)
             if bitrate is not None:
                 with self._conn() as c:

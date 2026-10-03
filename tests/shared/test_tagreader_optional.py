@@ -329,6 +329,40 @@ def test_fingerprint_cache_backfills_a_null_bitrate(tmp_path):
         assert conn.execute("SELECT bitrate FROM fingerprints").fetchone() == (127,)
 
 
+def test_fingerprint_cache_skips_backfill_for_a_dataless_placeholder(tmp_path):
+    """The NULL-bitrate backfill never opens an iCloud placeholder (review of
+    #4997): opening one downloads it. A sparse file is the placeholder
+    signature on Darwin; elsewhere it is a real file, and the control below
+    shows the backfill does run (and finds no bitrate in zeros)."""
+    import sqlite3
+    import sys
+
+    from apps.shared import fs_residency
+    from apps.shared.fingerprints import Fingerprint, FingerprintCache
+
+    sparse = tmp_path / "evicted.mp3"
+    with open(sparse, "wb") as handle:
+        handle.truncate(8_240_691)
+    st = sparse.stat()
+    if st.st_blocks != 0:
+        pytest.skip("filesystem does not support sparse files; cannot mimic a placeholder")
+    cache = FingerprintCache(tmp_path / "fp.sqlite")
+    cache.put(
+        Fingerprint(
+            path=sparse, duration=3.0, fp_str="AQAA", size=st.st_size,
+            mtime=st.st_mtime, bitrate=None,
+        )
+    )
+    hit = cache.get(sparse)
+    assert hit is not None and hit.bitrate is None
+    with sqlite3.connect(tmp_path / "fp.sqlite") as conn:
+        assert conn.execute("SELECT bitrate FROM fingerprints").fetchone() == (None,)
+    assert fs_residency.is_dataless_stub(sparse.stat()) is (sys.platform == "darwin")
+    if sys.platform == "darwin":
+        # Still a placeholder: get() read nothing from it.
+        assert sparse.stat().st_blocks == 0
+
+
 def _adts_frames(count: int, rate_index: int = 4, frame_len: int = 1024) -> bytes:
     """``count`` ADTS frames (AAC-LC, mono, no CRC) of ``frame_len`` bytes."""
     header = bytes([
