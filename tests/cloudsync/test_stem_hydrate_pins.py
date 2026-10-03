@@ -314,3 +314,28 @@ def test_a_hydrate_holds_the_cross_process_lock_for_its_id(tmp_path: Path):
     assert outcome.status == "error"
     assert seen == [True], "the fetch ran without the cross-process lock"
     assert not _stripe_is_locked(lock_path), "the lock outlived the hydrate"
+
+
+@pytest.mark.requirement("STEM-42")
+def test_the_windows_lock_waits_past_msvcrt_ten_second_limit(tmp_path: Path):
+    """[if] another process holds the lock longer than ``LK_LOCK``'s ten retries [then] the waiter keeps waiting rather than raising, [else stop].
+
+    A hydrate holds its lock across a whole download, so a deck load that
+    hit ``LK_LOCK``'s OSError would fail instead of waiting. MUTATION TARGET:
+    give up after ten attempts and this raises. Control: the region is taken
+    on the first free attempt, at byte 0, in the non-blocking mode.
+    """
+    from apps.cloud.stem_upload_queue import lock_region_until_acquired
+
+    calls: list[tuple[int, int, int]] = []
+
+    def busy_for_25(fd: int, mode: int, nbytes: int) -> None:
+        calls.append((handle.tell(), mode, nbytes))
+        if len(calls) <= 25:
+            raise OSError("locked by another process")
+
+    with (tmp_path / "x.lock").open("a+b") as handle:
+        lock_region_until_acquired(handle, busy_for_25, 2, retry_s=0)
+
+    assert len(calls) == 26
+    assert set(calls) == {(0, 2, 1)}

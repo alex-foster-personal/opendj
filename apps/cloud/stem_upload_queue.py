@@ -22,9 +22,10 @@ import contextlib
 import json
 import sys
 import threading
-from collections.abc import Iterator, Mapping
+import time
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import TypeVar
+from typing import IO, TypeVar
 
 from apps.cloud.stem_bundles import current_fingerprint
 from apps.cloud.stem_cache_settings import write_json_atomically
@@ -50,14 +51,37 @@ def upload_queue_lock_path(data_dir: Path) -> Path:
     return path.with_name(f"{path.name}.lock")
 
 
+def lock_region_until_acquired(
+    handle: IO[bytes],
+    locking: Callable[[int, int, int], None],
+    nonblocking_mode: int,
+    *,
+    retry_s: float = 0.05,
+) -> None:
+    """Take byte 0 of ``handle`` on Windows, waiting as long as it takes.
+
+    ``msvcrt.LK_LOCK`` gives up with OSError after about ten one-second
+    retries, which a hydrate holding the lock across a whole bundle download
+    outlasts; so this polls the non-blocking mode instead, without a limit,
+    like ``flock(LOCK_EX)`` on POSIX.
+    """
+    while True:
+        handle.seek(0)
+        try:
+            locking(handle.fileno(), nonblocking_mode, 1)
+        except OSError:
+            time.sleep(retry_s)
+            continue
+        return
+
+
 @contextlib.contextmanager
 def exclusive_file_lock(lock_path: Path) -> Iterator[None]:
     """Hold an OS-level exclusive lock on ``lock_path`` (blocking), across processes."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
         if sys.platform == "win32":
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            lock_region_until_acquired(handle, msvcrt.locking, msvcrt.LK_NBLCK)
         else:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
