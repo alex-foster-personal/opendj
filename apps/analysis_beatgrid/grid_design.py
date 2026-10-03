@@ -17,6 +17,24 @@ disagree on how much:
     clips, median). That is the TARGET FOR V2, when our grids stand on their
     own rather than next to rekordbox's.
 
+THE OFFSET MOVED WITH THE TIME BASE (JIK, Fri 2 Oct 2026, "Shift at import").
+The +15 ms above was fitted against rekordbox PQTZ times read as stored,
+which start at the first sample of a RAW decode, while the bench fixtures
+were decoded by ffmpeg, which trims an MP3's encoder lead-in (1105 samples,
+25.06 ms at 44.1 kHz) as every engine of ours does. Measured Thu 1 Oct 2026 on
+32 library MP3s (rekordbox time zero = raw decode on 30). So on a tagged MP3,
+about 89% of the library, +15 ms put our beats where rekordbox's beats are in
+rekordbox's time base, not ours. rekordbox positions are now shifted onto our
+timeline at import (`apps.shared.mp3_lead_in`), so serving the same placement
+relative to rekordbox takes 15 - 25.06 = -10 ms (rounded). That is a
+translation of the 29 Sep fit, not a new fit: the KPIs below were measured at
++15 against unshifted references, which is the same relative placement on
+those tracks. A round rebuilt through the daemon reads `/anlz`, which now
+serves shifted references, so the next round measures -10 directly. Untagged
+MP3s and other formats had no time-base gap, so on them -10 sits 25 ms
+earlier against rekordbox than +15 did; the round that measures this should
+split its rows by `apps.shared.mp3_lead_in.read_lead_in`.
+
 KPIs. `KPIS` names the bench metric each target is read from, the value
 measured at the served design, and the v2 target. The targets are proposals
 set with the offset decision, not measurements. The measured values are
@@ -39,8 +57,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: Shift added to every regularized beat, as served. Matches rekordbox.
-OFFSET_SERVED_S = 0.015
+#: Shift added to every regularized beat, as served. Matches rekordbox on our
+#: (lead-in trimmed) timeline: the 29 Sep +15 ms less the 25.06 ms MP3 lead-in.
+OFFSET_SERVED_S = -0.010
 
 #: The v2 target: human-annotated beat position (round 2, GTZAN median).
 OFFSET_V2_TARGET_S = 0.008
