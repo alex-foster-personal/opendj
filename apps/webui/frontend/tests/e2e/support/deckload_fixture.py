@@ -420,6 +420,14 @@ def _ingest_and_verify(
     return rows
 
 
+def _uv() -> str:
+    """uv by resolved path (portable-by-default: never a bare program name)."""
+    uv = shutil.which("uv")
+    if uv is None:
+        raise SystemExit("[ERROR] uv not found on PATH; the fixture builder runs the real CLIs through it")
+    return uv
+
+
 def _state_cli(data_dir: Path, *args: str) -> None:
     """Run the REAL shared-state CLI against this fixture data dir."""
     env = dict(os.environ)
@@ -428,7 +436,7 @@ def _state_cli(data_dir: Path, *args: str) -> None:
     # the one the engine will boot under so a surprise cannot hide here.
     env.pop("WEB_CONCURRENCY", None)
     command = [
-        "uv",
+        _uv(),
         "run",
         "--no-sync",
         "python",
@@ -753,7 +761,7 @@ def _run_librosa_analysis(
     env["MDT_DATA_DIR"] = str(data_dir)
     env.pop("WEB_CONCURRENCY", None)
     command = [
-        "uv",
+        _uv(),
         "run",
         "--no-sync",
         "python",
@@ -846,7 +854,7 @@ def _ensure_rescue_artwork_embedded(audio_dir: Path) -> None:
             f"[ERROR] artwork PNG checksum mismatch for {ARTWORK_SOURCE_PNG}: {digest}"
         )
     command = [
-        "uv",
+        _uv(),
         "run",
         "--no-sync",
         "--extra",
@@ -908,7 +916,7 @@ def _run_own_beatgrid_analysis(
     env["MDT_DATA_DIR"] = str(data_dir)
     env.pop("WEB_CONCURRENCY", None)
     command = [
-        "uv", "run", "--no-sync", "python", "-m", "apps.analysis.run",
+        _uv(), "run", "--no-sync", "python", "-m", "apps.analysis.run",
         "--pairs-json", str(pairs_path), "--backend", OWN_BEATGRID_BACKEND,
     ]
     result = subprocess.run(
