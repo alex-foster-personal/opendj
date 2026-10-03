@@ -456,11 +456,13 @@ struct Trim {
     pos: u64,
     trimmed_start: u64,
     dropped_end: u64,
+    /// Cut the packet that straddles the end too (an `iTunSMPB` length).
+    exact_end: bool,
 }
 
 impl Trim {
     fn new(raw: Option<crate::mp4edit::RawEdit>) -> Self {
-        Trim { raw, resolved: None, pos: 0, trimmed_start: 0, dropped_end: 0 }
+        Trim { raw, resolved: None, pos: 0, trimmed_start: 0, dropped_end: 0, exact_end: raw.is_some_and(|e| e.exact_end()) }
     }
 
     /// Of the next `n` decoded frames, (first kept, how many kept). The edit
@@ -479,7 +481,13 @@ impl Trim {
         }
         let from = skip.saturating_sub(at).min(n);
         self.trimmed_start += from;
-        (from, n - from)
+        let mut take = n - from;
+        if let (true, Some(k)) = (self.exact_end, keep) {
+            let room = skip.saturating_add(k).saturating_sub(at + from);
+            self.dropped_end += take.saturating_sub(room);
+            take = take.min(room);
+        }
+        (from, take)
     }
 
     fn describe(&self) -> String {
@@ -698,6 +706,13 @@ mod tests {
         // A skip inside a packet keeps its tail.
         let (w, _) = windows(Some(Edit { skip: 2112, keep: None }), 3);
         assert_eq!(w, vec![(1024, 0), (1024, 0), (64, 960)]);
+        // An iTunSMPB length is exact: the straddling packet is cut at the
+        // end (2524 - 2048 = 476 frames), not kept whole.
+        let mut t = Trim::new(None);
+        (t.resolved, t.exact_end) = (Some(Some(Edit { skip: 1024, keep: Some(1500) })), true);
+        let w: Vec<_> = (0..4).map(|_| t.window(1024, 44100)).collect();
+        assert_eq!(w, vec![(1024, 0), (0, 1024), (0, 476), (0, 0)]);
+        assert_eq!(t.dropped_end, 548 + 1024);
         // Control: no edit list keeps every frame.
         let (w, t) = windows(None, 3);
         assert_eq!(w, vec![(0, 1024); 3]);

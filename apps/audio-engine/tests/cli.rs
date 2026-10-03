@@ -883,6 +883,20 @@ fn an_m4a_with_only_an_itunes_gapless_tag_decodes_without_its_priming() {
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["frames"], 44100);
     assert_eq!(v["delay"], 1024);
+
+    // The streaming `decode --in/--out` (stems, vocals) cuts at the tag's
+    // exact length too, rather than keeping the straddling packet whole as
+    // it does for an edit list.
+    let d = temp_dir("cli-itunsmpb");
+    let wav = d.join("out.wav");
+    let o = Command::new(BIN).args(["decode", "--in", m4a, "--out"]).arg(&wav).output().unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!((s["edit_list"].as_str(), s["trimmed_start_frames"].as_u64()), (Some("applied"), Some(1024)));
+    let (_, ch, pcm) = read_f32_wav(&wav);
+    assert_eq!(pcm.len() / ch as usize, 44100, "the tag's exact length, straddling packet cut");
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap() / ch as usize;
+    assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
 }
 
 /// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still

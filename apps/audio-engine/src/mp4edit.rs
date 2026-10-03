@@ -145,9 +145,18 @@ pub struct RawEdit {
     media_ts: u32,
     duration: u64,
     movie_ts: u32,
+    /// The length is exact to the frame (an `iTunSMPB` count), so a
+    /// streaming decode cuts the packet that straddles the end. An `elst`
+    /// end keeps that packet whole, as ffmpeg does.
+    exact_end: bool,
 }
 
 impl RawEdit {
+    /// Whether the stated length is exact to the frame (see `exact_end`).
+    pub fn exact_end(&self) -> bool {
+        self.exact_end
+    }
+
     /// The edit in frames at `rate`, or `None` when it trims nothing or
     /// states a position past [`MAX_EDIT_FRAMES`]: a corrupt edit or tag
     /// leaves the file untrimmed rather than wrap into a tiny length.
@@ -202,10 +211,10 @@ pub fn read_raw_edit<R: Read + Seek>(r: &mut R) -> std::io::Result<Option<RawEdi
         let Some(elst) = elst else {
             // No edit list: the iTunes gapless tag, counted in the track's own
             // sample frames, so both timescales are the media timescale.
-            return Ok(itunsmpb(r, &moov_kids)?.map(|(delay, count)| RawEdit { media_time: delay, media_ts, duration: count, movie_ts: media_ts }));
+            return Ok(itunsmpb(r, &moov_kids)?.map(|(delay, count)| RawEdit { media_time: delay, media_ts, duration: count, movie_ts: media_ts, exact_end: true }));
         };
         let Some((dur, time)) = body(r, &elst)?.and_then(|v| first_edit(&v)) else { return Ok(None) };
-        return Ok(Some(RawEdit { media_time: time, media_ts, duration: dur, movie_ts }));
+        return Ok(Some(RawEdit { media_time: time, media_ts, duration: dur, movie_ts, exact_end: false }));
     }
     Ok(None)
 }
@@ -405,7 +414,7 @@ mod tests {
 
     #[test]
     fn an_edit_past_the_frame_bound_is_ignored_not_wrapped() {
-        let raw = |media_time, duration| RawEdit { media_time, media_ts: 44100, duration, movie_ts: 44100 };
+        let raw = |media_time, duration| RawEdit { media_time, media_ts: 44100, duration, movie_ts: 44100, exact_end: false };
         assert_eq!(raw(1024, u64::MAX).at(44100), None);
         assert_eq!(raw(u64::MAX, 0).at(44100), None);
         assert_eq!(raw(1024, MAX_EDIT_FRAMES + 1).at(44100), None);
