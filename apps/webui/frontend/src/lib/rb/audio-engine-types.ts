@@ -107,6 +107,8 @@ export interface AudioEngine {
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void;
 	/** Toggle HI/MID/LOW between EQ and stem level for one channel strip. */
 	setStemEqMode(deck: DeckId, enabled: boolean): void;
+	/** Get this deck's stems now: retry a failed load, start one that is held. */
+	retryStems(deck: DeckId): Promise<void>;
 	/** Explicit seek entry point. cueJump delegates here so quantize is central.
 	 * pressT0Ms is Q1's operator-felt press stamp, present on the hot-cue jump
 	 * path and absent on a plain waveform seek. */

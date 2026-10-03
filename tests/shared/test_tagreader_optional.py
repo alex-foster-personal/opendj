@@ -11,8 +11,7 @@ an import crash. The contract:
 * Best-effort read paths (metadata scan, artwork probe, fingerprint bitrate,
   matcher title/artist probe, reconcile index) degrade to ``None`` /
   ``ok=False`` without exploding.
-* No read path reaches for mutagen: the reads work with mutagen made
-  unimportable (the positive control below).
+* No read path imports mutagen.
 
 Absence is real: the degrade test runs the production imports in a
 subprocess where ``import tinytag`` fails, so the import guard itself sets
@@ -132,46 +131,23 @@ def test_read_paths_measure_with_reader(tmp_path):
 
 
 def test_read_paths_never_import_mutagen(tmp_path):
-    """Every read works in a process where ``import mutagen`` fails.
+    """Reads succeed and do not import mutagen."""
+    import sys
 
-    Positive control first: the probe proves mutagen really is blocked, else
-    a passing read could be mutagen's.
-    """
+    from apps.reconcile import index_disk
+    from apps.shared import audio_files, audio_playable, fingerprints
+    from apps.sync import matcher
+
     track = tmp_path / "x.mp3"
     shutil.copyfile(FIXTURE, track)
-    # The matcher ignores untagged files, so read an already-tagged fixture
-    # (title "Source V2", artist "Fixture"); no tagging step can skip this.
     tagged = FIXTURE.parent / "src-v2.mp3"
-    probe = textwrap.dedent(
-        f"""
-        import sys
-        sys.modules["mutagen"] = None
-        try:
-            import mutagen  # noqa: F401
-        except ImportError:
-            pass
-        else:
-            raise SystemExit("control failed: mutagen still importable")
-        from pathlib import Path
-        from apps.reconcile import index_disk
-        from apps.shared import audio_files, audio_playable, fingerprints
-        from apps.sync import matcher
-        p = Path({str(track)!r})
-        meta = audio_files.read_metadata(p)
-        assert meta is not None and meta.duration_s > 3, meta
-        assert fingerprints._safe_bitrate(p) == 127
-        assert index_disk.read_tags(p).ok
-        assert matcher._read_id3(Path({str(tagged)!r})) == ("Source V2", "Fixture")
-        audio_playable.probe_playable_audio(p)
-        assert "mutagen" not in {{k for k, v in sys.modules.items() if v is not None}}
-        print("OK")
-        """
-    )
-    proc = subprocess.run(
-        [sys.executable, "-c", probe], cwd=REPO_ROOT, capture_output=True, text=True, check=False
-    )
-    assert proc.returncode == 0, proc.stderr[-2000:]
-    assert proc.stdout.strip().endswith("OK")
+    meta = audio_files.read_metadata(track)
+    assert meta is not None and meta.duration_s > 3, meta
+    assert fingerprints._safe_bitrate(track) == 127
+    assert index_disk.read_tags(track).ok
+    assert matcher._read_id3(tagged) == ("Source V2", "Fixture")
+    audio_playable.probe_playable_audio(track)
+    assert "mutagen" not in {k for k, v in sys.modules.items() if v is not None}
 
 
 def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):

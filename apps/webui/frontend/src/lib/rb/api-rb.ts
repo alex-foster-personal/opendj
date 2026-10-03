@@ -26,6 +26,7 @@ import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-t
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { stemWorkSignal } from './stem-decode-policy';
+import type { StemFetchProgress } from './stem-types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -966,7 +967,27 @@ export type StemArtifactProbe =
 	// The server has the bundle in its R2 index and just started fetching it
 	// (STEM_BUNDLE_HYDRATING). NOT settled: the same GET answers `ready` once
 	// the download lands, so a caller must re-ask, never read this as "no stems".
-	| { status: 'hydrating'; error: string };
+	// `progress` is the fetch's file and byte count (STEM-45); null when the
+	// server did not report one.
+	| { status: 'hydrating'; error: string; progress: StemFetchProgress | null };
+
+/** The hydrating envelope's progress, or null when absent. A present but
+ * malformed progress rejects: a wrong count on the deck is worse than none. */
+function _stemFetchProgress(raw: unknown): StemFetchProgress | null {
+	if (raw === undefined || raw === null) return null;
+	const progress = raw as Partial<StemFetchProgress>;
+	for (const field of ['files_total', 'files_done', 'bytes_done'] as const) {
+		const value = progress[field];
+		if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+			throw new Error(`stem hydration progress ${field} must be a non-negative integer`);
+		}
+	}
+	return {
+		files_total: progress.files_total as number,
+		files_done: progress.files_done as number,
+		bytes_done: progress.bytes_done as number
+	};
+}
 
 function _validateStemManifest(raw: unknown, stableId: string): StemArtifactManifest {
 	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -1043,7 +1064,12 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 			const hydrating =
 				code === 'STEM_BUNDLE_HYDRATING' ||
 				('hydrating' in raw && (raw as { hydrating: unknown }).hydrating === true);
-			return { status: hydrating ? 'hydrating' : 'unavailable', error: `${code}: ${message}` };
+			if (!hydrating) return { status: 'unavailable', error: `${code}: ${message}` };
+			return {
+				status: 'hydrating',
+				error: `${code}: ${message}`,
+				progress: _stemFetchProgress((raw as { progress?: unknown }).progress)
+			};
 		}
 		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
 	} catch (error) {

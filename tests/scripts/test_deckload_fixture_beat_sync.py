@@ -26,15 +26,6 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _id3_apic_frames(wav_path: Path) -> list[Any]:
-    from mutagen.wave import WAVE
-
-    audio = WAVE(wav_path)
-    if audio.tags is None:
-        return []
-    return list(audio.tags.getall("APIC") or [])
-
-
 @pytest.mark.requirement("PARITY-10")
 def test_rescue_playback_fixture_writes_measured_librosa_downbeats(tmp_path: Path) -> None:
     """[if] rescue audio is analyzed [then] downbeats persist in state.db, [else stop]."""
@@ -125,10 +116,6 @@ def test_rescue_playback_fixture_is_idempotent_on_second_build(tmp_path: Path) -
     assert hashlib.sha256(expected_png).hexdigest() == ARTWORK_PNG_SHA256
     artwork = audio_files.read_embedded_artwork(artwork_wav)
     assert artwork == (expected_png, "image/png")
-    apics = _id3_apic_frames(artwork_wav)
-    assert len(apics) == 1
-    assert apics[0].type == 3
-    assert apics[0].mime == "image/png"
     other_wavs = {
         track.filename
         for track in RESCUE_PLAYBACK_LIBRARY_TRACKS

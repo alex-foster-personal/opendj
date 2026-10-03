@@ -163,6 +163,10 @@ class OpenDeckRegistry:
 #: Process-wide registry shared by the deck-load route and eviction.
 OPEN_DECKS = OpenDeckRegistry()
 
+#: Infix of a fetch's temp directory (``<stable_id>.tmp-hydrate-*``) while it
+#: is in flight; a progress read lists that directory by this name.
+IN_FLIGHT_MARKER: str = ".tmp-hydrate-"
+
 _hydrate_locks_guard = threading.Lock()
 _hydrate_locks: dict[str, threading.Lock] = {}
 
@@ -274,7 +278,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             return HydrationOutcome(stable_id, "already_local")
         root.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(
-            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}.tmp-hydrate-")
+            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}{IN_FLIGHT_MARKER}")
         )
         renamed = False
         try:
@@ -502,6 +506,7 @@ def enforce_budget(
 
 
 __all__ = [
+    "IN_FLIGHT_MARKER",
     "OPEN_DECKS",
     "OPEN_DECK_SERVED_TTL_S",
     "RESERVATION_FILENAME",

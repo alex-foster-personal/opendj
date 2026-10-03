@@ -6,7 +6,33 @@ import { probeStemArtifact } from '$lib/rb/api-rb';
 import type { StemArtifactProbe } from '$lib/rb/api-rb';
 import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
-import type { StemDeckState } from '$lib/rb/stem-types';
+import type { StemDeckState, StemFetchProgress } from '$lib/rb/stem-types';
+import type { HeldStemLandingPort, StemLandingOutcome, StemLandingPort } from '$lib/rb/stem-live-handoff';
+import type { StemRetryPort } from '$lib/rb/stem-retry';
+
+// The deck engine sits at its import fan-out ceiling, so the rest of the stem
+// landing surface reaches it through this module, which it already imports.
+export type { StemLandingOutcome } from '$lib/rb/stem-live-handoff';
+export type { StemRetryPort } from '$lib/rb/stem-retry';
+
+/** STEM-47. Land built stems on a deck (stem-live-handoff.ts). The handoff is
+ * imported on first use, not statically: the engine is in the library page's
+ * first paint, and a landing only ever follows a stem decode of seconds, so
+ * one local chunk fetch there costs the deck nothing it would notice. */
+export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
+	const handoff = await import('$lib/rb/stem-live-handoff');
+	return handoff.landStemsOnDeck(port);
+}
+
+/** STEM-47. `LOAD NOW` on a held bundle, settling the deck if it rejects. */
+export async function landHeldStemsOrSettle(port: HeldStemLandingPort): Promise<void> {
+	return (await import('$lib/rb/stem-live-handoff')).landHeldStemsOrSettle(port);
+}
+
+/** Why a decode is held (shown on the deck while `waiting`). */
+export const STEM_HELD_BY_PRESSURE = 'this machine is under pressure while a deck is playing';
+/** Why finished stems have not taken over yet (shown on the deck while `waiting`). */
+export const STEM_HELD_BY_TRANSPORT = 'the deck was busy with transport commands';
 
 /** PERFMODE-15: the settled `unavailable` stem state a deck shows while stems
  * are blocked (Trackify), naming the reason, or null when stems are allowed.
@@ -35,9 +61,21 @@ export function stemBlockCheck(deck: { stems: StemDeckState }, isCurrent: () => 
  * from R2. A four-part bundle is tens of MB; ten minutes covers a slow venue
  * link, and the loop stops the moment the deck loads another track. */
 export const STEM_HYDRATE_MAX_WAIT_MS = 10 * 60 * 1000;
-/** Re-ask delays: quick at first (a cached hub answers in seconds), then a
- * steady 5 s, so a long download costs one small GET per deck per 5 s. */
-export const STEM_HYDRATE_POLL_MS: readonly number[] = [1000, 2000, 3000, 5000];
+/** Re-ask delays (PERFMODE-18). The deck learns a fetch finished only on its
+ * next probe, so the delay IS the lag between "the engine has the bundle" and
+ * the deck leaving FETCHING. It was 1, 2, 3 then a steady 5 s, which left a
+ * finished fetch unnoticed for up to 5 s (3 s measured Thu 1 Oct 2026). Now
+ * 500 ms, then 1 s for the first minute, where almost every fetch ends (7 to
+ * 17 s measured); a download still running after that is a slow link, and
+ * falls back to one small GET per deck per 5 s. */
+export const STEM_HYDRATE_POLL_MS: readonly number[] = [500, 1000];
+export const STEM_HYDRATE_SLOW_AFTER_MS = 60_000;
+export const STEM_HYDRATE_SLOW_POLL_MS = 5000;
+
+export function stemHydratePollDelayMs(attempt: number, waitedMs: number): number {
+	if (waitedMs >= STEM_HYDRATE_SLOW_AFTER_MS) return STEM_HYDRATE_SLOW_POLL_MS;
+	return STEM_HYDRATE_POLL_MS[Math.min(attempt, STEM_HYDRATE_POLL_MS.length - 1)];
+}
 
 export type AwaitStemArtifactOptions = {
 	/** True once the deck has moved on; the wait returns `null` at once. */
@@ -46,6 +84,9 @@ export type AwaitStemArtifactOptions = {
 	sleep?: (ms: number) => Promise<void>;
 	now?: () => number;
 	probe?: (stableId: string) => Promise<StemArtifactProbe>;
+	/** STEM-45: called for every `hydrating` answer with the fetch's progress
+	 * (null when the server reported none), so the deck can name the fetch. */
+	onHydrating?: (progress: StemFetchProgress | null) => void;
 };
 
 export type SettledStemArtifactProbe = Exclude<StemArtifactProbe, { status: 'hydrating' }>;
@@ -75,6 +116,7 @@ export async function awaitStemArtifact(
 		const result = await probe(stableId);
 		if (isStale()) return null;
 		if (result.status !== 'hydrating') return result;
+		options.onHydrating?.(result.progress);
 		const waited = now() - started;
 		if (waited >= maxWaitMs) {
 			throw new Error(
@@ -82,8 +124,19 @@ export async function awaitStemArtifact(
 					`(${result.error}); reload the track to try again`
 			);
 		}
-		const delay = STEM_HYDRATE_POLL_MS[Math.min(attempt, STEM_HYDRATE_POLL_MS.length - 1)];
+		const delay = stemHydratePollDelayMs(attempt, waited);
 		await sleep(Math.min(delay, Math.max(0, maxWaitMs - waited)));
 		if (isStale()) return null;
 	}
+}
+
+/** STEM-46/47. "Get this deck's stems now" (stem-retry.ts). Imported on first
+ * use, like the landing above: it only ever runs from a click or a command. */
+export async function retryDeckStems(
+	deck: number,
+	stableId: string | null,
+	stems: StemDeckState,
+	port: StemRetryPort
+): Promise<void> {
+	return (await import('$lib/rb/stem-retry')).retryDeckStems(deck, stableId, stems, port);
 }
