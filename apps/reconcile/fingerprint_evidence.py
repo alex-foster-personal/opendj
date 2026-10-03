@@ -122,6 +122,11 @@ class FingerprintEvidence:
         self._index = (w[order], np.concatenate(files)[order], np.concatenate(positions)[order])
         return self._index
 
+    def owner(self, original_path: str) -> str | None:
+        """The stable_id the scan recorded for the track at ``original_path``,
+        for a caller whose row names only the path (``broken.csv``)."""
+        return self.sid_by_path.get(_norm(original_path)) if original_path else None
+
     def recorded(self, original_path: str, stable_id: str | None = None) -> str | None:
         """The fingerprint recorded for a track before its file went missing."""
         if stable_id and stable_id in self.by_stable_id:

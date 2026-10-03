@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::{decode_open_at, decode_progressive, reserve_within, SourceId};
+use crate::decode::{decode_open_at, decode_progressive_metered, reserve_within, SourceId};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -348,7 +348,22 @@ impl TrackCache {
         spec: &LoadSpec,
         load_id: u64,
         head_frames: usize,
+        on_head: impl FnMut(Arc<Track>),
+    ) -> Result<Arc<Track>, ProtoError> {
+        self.load_progressive_metered(path, spec, load_id, head_frames, on_head, |_| {})
+    }
+
+    /// As `load_progressive`, telling `on_grow` the bytes its decode buffer
+    /// has allocated each time that grows (`decode_progressive_metered`). A
+    /// load that shares another's samples decodes nothing and never calls it.
+    pub fn load_progressive_metered(
+        &self,
+        path: &Path,
+        spec: &LoadSpec,
+        load_id: u64,
+        head_frames: usize,
         mut on_head: impl FnMut(Arc<Track>),
+        on_grow: impl FnMut(usize),
     ) -> Result<Arc<Track>, ProtoError> {
         let (opened, key) = open_keyed(path)?;
         let file = {
@@ -369,9 +384,15 @@ impl TrackCache {
         let (sr, pcm, source) = match held.iter().find_map(|t| Some((t.sample_rate, t.pcm.upgrade()?, t.source.clone()))) {
             Some(found) => found,
             None => {
-                let d = decode_progressive(opened, path, self.sample_rate, u64::MAX, head_frames, |h| {
-                    on_head(Arc::new(Track::head(h.sample_rate, h.pcm, h.frames, spec.beats.clone(), spec.bpm, load_id)));
-                })?;
+                let d = decode_progressive_metered(
+                    opened,
+                    path,
+                    self.sample_rate,
+                    u64::MAX,
+                    head_frames,
+                    |h| on_head(Arc::new(Track::head(h.sample_rate, h.pcm, h.frames, spec.beats.clone(), spec.bpm, load_id))),
+                    on_grow,
+                )?;
                 let pcm = Arc::new(d.pcm);
                 held.push(Shared { sample_rate: d.sample_rate, pcm: Arc::downgrade(&pcm), source: d.source.clone() });
                 (d.sample_rate, pcm, d.source)

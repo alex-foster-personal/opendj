@@ -94,10 +94,10 @@ const LOAD_BYTES: usize = 64 << 20;
 /// one decode per deck may already be running when it is reached.
 const PCM_BYTES: usize = 1 << 30;
 
-/// The length a progressive load's rest is charged at, from its head until
-/// it decodes, when its file states none: ten minutes. The rest grows to the
-/// whole track off this thread, so it is charged up front, at the length the
-/// file states when it states one.
+/// The length a progressive load's rest is charged at least, from its head
+/// on, when its file states none: ten minutes. The rest grows to the whole
+/// track off this thread, so it is charged up front, at the length the file
+/// states when it states one; past that, it is charged as it grows (`Meter`).
 const UNSTATED_TAIL_S: usize = 600;
 
 /// What `LOAD_BYTES` counts for one load: its path, its grid, and the
@@ -118,6 +118,35 @@ struct Charge {
 impl Drop for Charge {
     fn drop(&mut self) {
         self.used.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
+
+/// A decode's share of `PCM_BYTES` while its buffer fills: never less than
+/// what that buffer has allocated (the decode thread raises it as it grows)
+/// or than what the whole track is expected to take once its head is out,
+/// and given back when the last holder drops it.
+struct Meter {
+    charged: AtomicUsize,
+    used: Arc<AtomicUsize>,
+}
+
+impl Meter {
+    fn new(used: Arc<AtomicUsize>) -> Meter {
+        Meter { charged: AtomicUsize::new(0), used }
+    }
+
+    /// Hold at least `bytes`.
+    fn at_least(&self, bytes: usize) {
+        let before = self.charged.fetch_max(bytes, Ordering::AcqRel);
+        if bytes > before {
+            self.used.fetch_add(bytes - before, Ordering::AcqRel);
+        }
+    }
+}
+
+impl Drop for Meter {
+    fn drop(&mut self) {
+        self.used.fetch_sub(*self.charged.get_mut(), Ordering::AcqRel);
     }
 }
 
@@ -781,10 +810,10 @@ struct Control {
     /// and the most there may be before another decode starts.
     pcm_used: Arc<AtomicUsize>,
     pcm_budget: usize,
-    /// By load seq: the share of `pcm_used` a progressive load's rest holds
-    /// from its head until the rest is sent to its deck or dropped, first at
-    /// its expected size and, once decoded, at its real one.
-    tail_pcm: HashMap<u64, Charge>,
+    /// By load seq: the share of `pcm_used` a decode holds while its buffer
+    /// fills and, for a progressive load, its rest until that is sent to its
+    /// deck or dropped (`Meter`).
+    meters: HashMap<u64, Arc<Meter>>,
     /// By load seq: the file a load decodes, kept past its head while its
     /// rest may still fail, so `load_failed` names the load it ends.
     load_paths: HashMap<u64, String>,
@@ -988,6 +1017,8 @@ impl Control {
         let tx = self.msg_tx.clone();
         let tracks = self.tracks.clone();
         let head_frames = self.head_frames;
+        let meter = Arc::new(Meter::new(self.pcm_used.clone()));
+        self.meters.insert(seq, meter.clone());
         std::thread::spawn(move || {
             // Decks on one file share its samples, and a load of a file
             // another deck is still decoding waits for that decode. The deck
@@ -996,11 +1027,21 @@ impl Control {
             // A panicking decode still ends in `Decoded`: the deck's decode
             // count (`DECODES_PER_DECK`) and the load's result depend on it.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                tracks.load_progressive(std::path::Path::new(&spec.path), &spec, seq, head_frames, |track| {
-                    let _ = head_tx.send(Msg::Head { seq, deck, track });
-                })
+                tracks.load_progressive_metered(
+                    std::path::Path::new(&spec.path),
+                    &spec,
+                    seq,
+                    head_frames,
+                    |track| {
+                        let _ = head_tx.send(Msg::Head { seq, deck, track });
+                    },
+                    |bytes| meter.at_least(bytes),
+                )
             }))
             .unwrap_or_else(|_| Err(ProtoError::new(ErrorCode::Decode, format!("decoding {} failed unexpectedly (panic)", spec.path))));
+            // The control side holds the meter from here on, for as long as
+            // the decoded samples wait to reach the deck.
+            drop(meter);
             let _ = tx.send(Msg::Decoded { seq, deck, result });
         });
     }
@@ -1017,15 +1058,10 @@ impl Control {
         // before anything here sees it: charge it now, or rapid loads on
         // every deck grow whole-track buffers no budget stops.
         let frames = if track.frames > track.available() { track.frames } else { track.sample_rate as usize * UNSTATED_TAIL_S };
-        self.charge_tail(seq, frames.saturating_mul(2 * std::mem::size_of::<f32>()));
+        if let Some(meter) = self.meters.get(&seq) {
+            meter.at_least(frames.saturating_mul(2 * std::mem::size_of::<f32>()));
+        }
         self.finish_load(seq, deck, Ok(track));
-    }
-
-    /// Hold `bytes` of `PCM_BYTES` for load `seq`'s rest, in place of what
-    /// it held before.
-    fn charge_tail(&mut self, seq: u64, bytes: usize) {
-        self.pcm_used.fetch_add(bytes, Ordering::AcqRel);
-        self.tail_pcm.insert(seq, Charge { bytes, used: self.pcm_used.clone() });
     }
 
     /// A decode thread is done, with its whole track or its error. A load
@@ -1034,10 +1070,6 @@ impl Control {
     fn decoded(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
         let n = &mut self.decodes[deck as usize - 1];
         *n = n.saturating_sub(1);
-        if let (true, Ok(track)) = (self.tail_pcm.contains_key(&seq), &result) {
-            // Its real size, held while it waits to go to the deck.
-            self.charge_tail(seq, track.pcm.capacity() * std::mem::size_of::<f32>());
-        }
         self.finish_load(seq, deck, result);
         if self.loading[deck as usize - 1].is_none() {
             if let Some(q) = self.waiting[deck as usize - 1].take() {
@@ -1062,14 +1094,16 @@ impl Control {
         if self.loading[deck as usize - 1] != Some(seq) {
             // A load whose head went out and which a later load on the deck
             // has since replaced.
-            self.tail_pcm.remove(&seq);
+            self.meters.remove(&seq);
             self.load_paths.remove(&seq);
             return;
         }
         self.loading[deck as usize - 1] = None;
         if self.tailing[deck as usize - 1] != Some(seq) {
-            // Whole or failed: no rest follows that could fail later.
+            // Whole or failed: no rest follows that could fail later, and a
+            // whole track is charged below as the load's own.
             self.load_paths.remove(&seq);
+            self.meters.remove(&seq);
         }
         let mut q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         match result {
@@ -1111,7 +1145,7 @@ impl Control {
     /// when the deck no longer holds that load's head.
     fn send_tail(&mut self, deck: DeckId, seq: u64, result: Result<Arc<Track>, ProtoError>) {
         // Sent or dropped, the rest is charged below as the deck's track.
-        let _held = self.tail_pcm.remove(&seq);
+        let _held = self.meters.remove(&seq);
         let path = self.load_paths.remove(&seq).unwrap_or_default();
         let Some(head) = self.on_deck[deck as usize - 1].clone().filter(|t| t.decoding && t.load_id == seq) else {
             return;
@@ -1580,7 +1614,7 @@ fn serve_threaded_with(
         load_used: Arc::default(),
         pcm_used: Arc::default(),
         pcm_budget: PCM_BYTES,
-        tail_pcm: HashMap::new(),
+        meters: HashMap::new(),
         load_paths: HashMap::new(),
         closed,
     };
@@ -2097,10 +2131,20 @@ mod tests {
             load_used: Arc::default(),
             pcm_used: Arc::default(),
             pcm_budget: PCM_BYTES,
-            tail_pcm: HashMap::new(),
+            meters: HashMap::new(),
             load_paths: HashMap::new(),
         };
         (control, cmd_rx, out)
+    }
+
+    /// Wait for the decode threads `control` started to let go of their
+    /// meters: in these tests each fails at once on its missing file.
+    fn decode_threads_done(c: &Control) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while c.meters.values().any(|m| Arc::strong_count(m) > 1) {
+            assert!(std::time::Instant::now() < deadline, "a decode thread kept its meter");
+            std::thread::yield_now();
+        }
     }
 
     fn silent_track() -> Result<Arc<Track>, ProtoError> {
@@ -2400,11 +2444,13 @@ mod tests {
         let mut whole = Track::new(48000, vec![0.5; 4000], vec![], None);
         whole.load_id = a;
         c.on_deck[0] = Some(Arc::new(Track::head(48000, vec![0.0; 960], Some(48000), vec![], None, a)));
+        decode_threads_done(&c);
         c.decoded(a, 1, Ok(Arc::new(whole)));
         let Ok((x, EngineCmd::Extend { deck: 1, .. })) = cmd_rx.pop() else { panic!("A's rest was not sent") };
         assert_eq!(used(&c), 4000 * f32s + 48000 * 2 * f32s, "A's rest is not held once, at its real size");
         drop(take_id(&c.ids, x));
         // B's rest fails: its charge is given back and C starts.
+        decode_threads_done(&c);
         c.decoded(b, 2, Err(ProtoError::new(ErrorCode::Decode, "bad")));
         assert_eq!(used(&c), 0, "a failed rest kept its charge");
         c.release_staged();
@@ -2412,6 +2458,7 @@ mod tests {
         // A file that states no length is charged at `UNSTATED_TAIL_S`, and a
         // rest a later load replaced on its deck gives its charge back.
         c.pcm_budget = PCM_BYTES;
+        decode_threads_done(&c);
         c.decoded(cs, 3, silent_track());
         while cmd_rx.pop().is_ok() {}
         drop(take_id(&c.ids, cs));
@@ -2424,9 +2471,12 @@ mod tests {
         let e = c.loading[3].unwrap();
         let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
         rest.load_id = d;
+        decode_threads_done(&c);
         c.decoded(d, 4, Ok(Arc::new(rest)));
-        // Parked behind E, it still holds its samples, so it stays charged.
-        assert_eq!(used(&c), 9600 * f32s, "a rest parked behind a later load is not charged");
+        // Parked behind E, it still holds its samples, so it stays charged
+        // (at its estimate, which is above its real size here).
+        assert_eq!(used(&c), 48000 * UNSTATED_TAIL_S * 2 * f32s, "a rest parked behind a later load is not charged");
+        decode_threads_done(&c);
         c.decoded(e, 4, silent_track());
         while cmd_rx.pop().is_ok() {}
         drop(take_id(&c.ids, e));
@@ -2445,8 +2495,71 @@ mod tests {
         }
         let mut rest = Track::new(48000, vec![0.5; 9600], vec![], None);
         rest.load_id = f;
+        decode_threads_done(&c);
         c.decoded(f, 4, Ok(Arc::new(rest)));
         assert_eq!(used(&c), 4800 * 2 * f32s, "a rest dropped behind a newer head kept its charge");
+    }
+
+    #[test]
+    fn a_rest_that_outgrows_its_estimate_is_charged_as_it_grows() {
+        // Codex on 89606daec: a file that states no length (a CBR MP3 with no
+        // Xing or VBRI header) was charged ten minutes while its buffer grew
+        // without bound, so hour-long mixes passed `PCM_BYTES` before their
+        // decodes ended. The decode thread now raises the charge as its buffer
+        // grows (`Meter`), so the budget sees it and holds the next decode.
+        let (mut c, mut cmd_rx, _out) = control();
+        let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        let estimate = 48000 * UNSTATED_TAIL_S * 2 * std::mem::size_of::<f32>();
+        c.pcm_budget = 2 * estimate;
+        c.load((STDIO, Some("a".into())), spec(1));
+        let a = c.loading[0].unwrap();
+        c.head_loaded(a, 1, Arc::new(Track::head(48000, vec![0.0; 960], None, vec![], None, a)));
+        while cmd_rx.pop().is_ok() {}
+        drop(take_id(&c.ids, a));
+        decode_threads_done(&c);
+        assert_eq!(used(&c), estimate);
+        // Control: within the budget, a second deck's load still starts.
+        c.load((STDIO, Some("b".into())), spec(2));
+        let b = c.loading[1].expect("a load within the budget was held");
+        c.decoded(b, 2, silent_track());
+        while cmd_rx.pop().is_ok() {}
+        drop(take_id(&c.ids, b));
+        // A's buffer grows past its estimate, as the decode thread reports.
+        let meter = c.meters.get(&a).expect("A's rest has no meter").clone();
+        meter.at_least(estimate / 2);
+        assert_eq!(used(&c), estimate, "a smaller report lowered or added to the charge");
+        meter.at_least(3 * estimate);
+        assert_eq!(used(&c), 3 * estimate, "growth past the estimate is not charged");
+        c.load((STDIO, Some("c".into())), spec(3));
+        assert_eq!(c.loading[2], None, "a decode started while a growing rest passed the budget");
+        // The rest reaches the deck: everything it held is given back.
+        drop(meter);
+        let mut whole = Track::new(48000, vec![0.5; 9600], vec![], None);
+        whole.load_id = a;
+        c.decoded(a, 1, Ok(Arc::new(whole)));
+        let Ok((x, EngineCmd::Extend { deck: 1, .. })) = cmd_rx.pop() else { panic!("A's rest was not sent") };
+        assert_eq!(used(&c), 9600 * std::mem::size_of::<f32>(), "the rest's meter outlived it");
+        drop(take_id(&c.ids, x));
+        assert_eq!(used(&c), 0);
+        c.release_staged();
+        assert!(c.loading[2].is_some(), "the held load never started");
+    }
+
+    #[test]
+    fn a_decode_thread_charges_its_buffer_as_it_fills() {
+        // The wiring the growth charge depends on: a real file's decode
+        // raises its load's meter while it runs, before any result is seen.
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-meter-").tempdir().unwrap();
+        let path = tmp.path().join("a.wav");
+        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&path).unwrap()), 48000, &vec![0.1; 96000]).unwrap();
+        let (mut c, _cmd_rx, _out) = control();
+        c.load((STDIO, Some("a".into())), LoadSpec { deck: 1, path: path.display().to_string(), beats: vec![], bpm: None });
+        let a = c.loading[0].unwrap();
+        decode_threads_done(&c);
+        let charged = c.meters[&a].charged.load(Ordering::Acquire);
+        assert!(charged >= 96000 * std::mem::size_of::<f32>(), "the decode charged {charged} bytes for 96000 samples");
+        assert_eq!(c.pcm_used.load(Ordering::Acquire), charged);
     }
 
     #[test]

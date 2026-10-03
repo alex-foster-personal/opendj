@@ -113,6 +113,23 @@ def test_a_file_another_track_owns_is_not_offered(tmp_path: Path) -> None:
     assert [c.path for c in cands] == [dup]
 
 
+def test_a_row_without_a_stable_id_still_finds_the_file_its_track_owns(tmp_path: Path) -> None:
+    """[if] a broken.csv row (no stable_id) has a moved file the scan recorded under the same track [then] that file is a candidate, [else stop]."""
+    original = tmp_path / "old" / "track.mp3"
+    moved = _file(tmp_path / "new" / "renamed.mp3")
+    other = _file(tmp_path / "lib" / "copy.mp3")
+    db = _db(tmp_path, [(original, SONG, "sid-1"), (moved, SONG, "sid-1"), (other, SONG, "sid-2")])
+    ev = fe.FingerprintEvidence.open(db)
+    assert ev is not None
+    idx = locate.FsIndex.build([_af(moved), _af(other)])
+    row = _row(original)
+    assert "stable_id" not in row
+    cands = locate.find_candidates(row, idx, {moved: None, other: None}, fingerprints=ev)
+    # Control in the same call: another track's file stays out.
+    assert [c.path for c in cands] == [moved]
+    assert "fingerprint_match" in cands[0].signals
+
+
 def test_no_scan_database_means_no_evidence(tmp_path: Path) -> None:
     """[if] no duplicate scan ever ran [then] there is no evidence object, [else stop]."""
     assert fe.FingerprintEvidence.open(tmp_path / "missing.sqlite") is None

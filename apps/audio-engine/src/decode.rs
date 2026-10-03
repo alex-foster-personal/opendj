@@ -282,8 +282,31 @@ pub fn decode_progressive(
     sample_rate: Option<u32>,
     max_frames: u64,
     head_frames: usize,
-    mut on_head: impl FnMut(Head),
+    on_head: impl FnMut(Head),
 ) -> Result<Decoded, ProtoError> {
+    decode_progressive_metered(file, path, sample_rate, max_frames, head_frames, on_head, |_| {})
+}
+
+/// As `decode_progressive`, also telling `on_grow` the bytes the decode
+/// buffer has allocated each time that grows, so a caller can count a
+/// buffer whose final size the file does not state while it is filled.
+pub fn decode_progressive_metered(
+    file: File,
+    path: &Path,
+    sample_rate: Option<u32>,
+    max_frames: u64,
+    head_frames: usize,
+    mut on_head: impl FnMut(Head),
+    mut on_grow: impl FnMut(usize),
+) -> Result<Decoded, ProtoError> {
+    let mut grown = 0usize;
+    let mut grew = |pcm: &Vec<f32>| {
+        let bytes = pcm.capacity() * std::mem::size_of::<f32>();
+        if bytes > grown {
+            grown = bytes;
+            on_grow(bytes);
+        }
+    };
     let limit = usize::try_from(max_frames.saturating_mul(2)).unwrap_or(usize::MAX);
     let resample_err = |e: String| ProtoError::new(ErrorCode::Decode, format!("cannot resample {}: {e}", path.display()));
     let mut pcm: Vec<f32> = Vec::new();
@@ -317,6 +340,7 @@ pub fn decode_progressive(
                     pcm.extend_from_slice(block);
                 }
             }
+            grew(&pcm);
             let frames = || {
                 stated.get().map(|n| match conv.as_ref() {
                     Some(c) => c.frames_for(n),
@@ -333,6 +357,7 @@ pub fn decode_progressive(
     )?;
     if let Some(c) = conv {
         c.finish(&mut pcm).map_err(resample_err)?;
+        grew(&pcm);
         check_room(pcm.len(), 0, max_frames, path)?;
     }
     if pcm.is_empty() {
@@ -1216,5 +1241,21 @@ mod tests {
         // The budget still holds the converted track to `max_frames`.
         let e = decode_progressive(open(&p).unwrap(), &p, Some(48000), 2 * 48000, 48000, |_| {}).err().expect("over budget");
         assert!(e.message.contains("memory budget"), "{}", e.message);
+    }
+
+    #[test]
+    fn a_metered_decode_reports_its_buffer_as_it_grows_up_to_what_it_returns() {
+        // The engine charges a rest whose length the file does not state by
+        // these reports (serve.rs `Meter`), so they must rise while the
+        // buffer fills and end at exactly what the decode hands back.
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-metered-").tempdir().unwrap();
+        let p = wav(tmp.path(), "a.wav", 44100, &noise(3 * 44100));
+        for rate in [Some(48000), None] {
+            let mut grown = Vec::new();
+            let d = decode_progressive_metered(open(&p).unwrap(), &p, rate, u64::MAX, 4800, |_| {}, |b| grown.push(b)).unwrap();
+            assert!(grown.len() > 1, "{rate:?}: the growth was reported once, not as it filled: {grown:?}");
+            assert!(grown.windows(2).all(|w| w[0] < w[1]), "{rate:?}: reports did not rise: {grown:?}");
+            assert_eq!(grown.last().copied(), Some(d.pcm.capacity() * std::mem::size_of::<f32>()), "{rate:?}");
+        }
     }
 }
