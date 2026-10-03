@@ -1,8 +1,9 @@
 /**
  * Beat Sync MASTER election (issue #320 / DECKUX-17).
  *
- * Pure policy: among playing loaded decks, prefer on-air, then Beat-Synced,
- * then loudest on-air gain, then lowest deck id. No engine or IPC imports.
+ * Election policy: among playing loaded decks, prefer on-air, then Beat-Synced,
+ * then loudest on-air gain, then lowest deck id. The dispatcher installs the
+ * shared automatic handoff runner here. No engine or IPC imports.
  */
 import { TRIM_MAX_GAIN } from '$lib/player/constants';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -90,4 +91,23 @@ export function electMaster(input: MasterElectionInput): DeckId | null {
 export function lowestPlayingMaster(input: MasterElectionInput): DeckId | null {
 	const playingIds = input.decks.filter(_isEligible).map((deck) => deck.id);
 	return nextPlayingMaster(playingIds);
+}
+
+/** Supersedes the separate automatic-rejoin.ts runner: master election owns handoffs. */
+/** Runs an automatic master handoff's follower re-join. The dispatcher installs
+ * one that takes every deck's scope plus 'sync' (installed rather than
+ * imported, since this module is imported FROM there); until then it runs now. */
+export type AutomaticRejoinRunner = (work: () => Promise<void>) => Promise<void>;
+let _automaticRejoinRunner: AutomaticRejoinRunner = (work) => work();
+
+export function installAutomaticRejoinRunner(runner: AutomaticRejoinRunner): () => void {
+	const previous = _automaticRejoinRunner;
+	_automaticRejoinRunner = runner;
+	return () => {
+		_automaticRejoinRunner = previous;
+	};
+}
+
+export function runAutomaticRejoin(work: () => Promise<void>): Promise<void> {
+	return _automaticRejoinRunner(work);
 }

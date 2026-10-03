@@ -1,4 +1,4 @@
-import { runAutomaticRejoin } from '$lib/rb/automatic-rejoin';
+import { runAutomaticRejoin } from '$lib/rb/master-election';
 /**
  * Rust engine mode's connection to `odj-audio`: start and connect, load a
  * library track with its beatgrid, forward the commands the engine plays as

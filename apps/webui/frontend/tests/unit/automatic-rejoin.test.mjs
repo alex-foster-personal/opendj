@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { installAutomaticRejoinRunner, runAutomaticRejoin } from '../../src/lib/rb/automatic-rejoin.ts';
+import { after, test } from 'node:test';
+import { createServer } from 'vite';
+const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+after(() => server.close());
+const { installAutomaticRejoinRunner, runAutomaticRejoin } = await server.ssrLoadModule('/src/lib/rb/master-election.ts');
 import { ScopedCommandScheduler } from '../../src/lib/rb/performance-command-scheduler.ts';
 
 // Exercise the actual runner and scheduler, without replacing an engine or API.

@@ -1,5 +1,4 @@
-import { runAutomaticRejoin } from './automatic-rejoin';
-export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './automatic-rejoin';
+export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './master-election';
 import {
 	SILENT_METER_READING,
 	createMasterMeterSource,
@@ -1037,6 +1036,7 @@ import {
 } from './audio-engine-guards';
 import {
 	AUTOMATIC_HANDOFF_REASONS,
+	runAutomaticRejoin,
 	electMaster,
 	onAirGain,
 	SILENCE_GAIN_EPSILON,
