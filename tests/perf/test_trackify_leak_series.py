@@ -1,8 +1,8 @@
 """PERFMODE-15 retained-slope rules (ADR-NEW-trackify-leak-kpi-quiescent-baselines).
 
-Pure series math, so it runs on every host. The real-process controls (a
-leaking and a non-leaking descendant through the real sampler and protocol)
-are in test_capture_mode_ratios_leak.py, macOS only.
+Pure series math, so it runs on every host. These are the leak and
+working-set controls; test_capture_mode_ratios_leak.py drives the real
+browser helper through real checkpoints against a live frontend.
 """
 
 from __future__ import annotations

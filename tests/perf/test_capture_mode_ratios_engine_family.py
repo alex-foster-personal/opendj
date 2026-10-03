@@ -41,22 +41,34 @@ from scripts.perf.mode_ratio_rows import PROCESS_FAMILY, gig_baseline_rows
 _MB = 1024 * 1024
 _IDS = [f"{deck}" * 40 for deck in "abcd"]
 
+# Every process these tests spawn is this interpreter running stdlib-only code,
+# so the fixture is the same on macOS, Linux and Windows (Codex P1 r4170456321:
+# no bare `sleep`, no SIGCHLD). `_base_executable` because a Windows venv's
+# python.exe is a redirector that starts the real interpreter as ITS child,
+# which would add a process level the tree walk below would then count.
+_PYTHON = getattr(sys, "_base_executable", None) or sys.executable
+_SLEEPER = [_PYTHON, "-c", "import time; time.sleep(30)"]
+
 # A real process with one real child of its own, so the tree walk has a
 # descendant to find: the launcher stands in for mode_ratio_browser.mjs (its
 # child for Chromium), the engine for the engine (its child for a stem worker).
+# The parent polls its child, which reaps it the moment it is killed, so a
+# killed child leaves no zombie for psutil to still report as running.
 _PARENT_WITH_CHILD = (
-    "import signal, subprocess, sys, time\n"
-    "signal.signal(signal.SIGCHLD, signal.SIG_IGN)  # reap at once: a killed child leaves no zombie\n"
-    "subprocess.Popen(['sleep', '30'])\n"
+    "import subprocess, sys, time\n"
+    f"child = subprocess.Popen({_SLEEPER!r})\n"
     "print('ready', flush=True)\n"
-    "time.sleep(30)\n"
+    "deadline = time.monotonic() + 30\n"
+    "while time.monotonic() < deadline:\n"
+    "    child.poll()\n"
+    "    time.sleep(0.02)\n"
 )
 
 
 @contextmanager
 def _tree() -> Iterator[tuple[int, int]]:
     """A live (root pid, child pid) pair; both killed on exit."""
-    root = subprocess.Popen([sys.executable, "-c", _PARENT_WITH_CHILD], stdout=subprocess.PIPE, text=True)
+    root = subprocess.Popen([_PYTHON, "-c", _PARENT_WITH_CHILD], stdout=subprocess.PIPE, text=True)
     try:
         assert root.stdout is not None and root.stdout.readline().strip() == "ready"
         children = psutil.Process(root.pid).children()
@@ -104,9 +116,7 @@ class _PerPidNative:
 
 
 def _sampler(launcher: int, native: _PerPidNative, engine_root: int | None) -> cmr._ProcessTreeSampler:
-    return cmr._ProcessTreeSampler(
-        launcher, engine_root_pid=engine_root, native=cast(DarwinProcessMetrics, native)
-    )
+    return cmr._ProcessTreeSampler(launcher, engine_root_pid=engine_root, native=cast(DarwinProcessMetrics, native))
 
 
 # ----- sampler membership ----------------------------------------------------
@@ -116,7 +126,7 @@ def _sampler(launcher: int, native: _PerPidNative, engine_root: int | None) -> c
 def test_sample_counts_the_engine_and_its_descendant_and_nothing_else() -> None:
     """[if] an engine root is given [then] the total is browser plus engine tree and nothing outside them, [else stop]."""
     with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        outsider = subprocess.Popen(["sleep", "30"])
+        outsider = subprocess.Popen(_SLEEPER)
         try:
             native = _PerPidNative(
                 {launcher: 111.0, browser_child: 222.0, engine: 333.0, engine_child: 444.0, outsider.pid: 555.0}
@@ -147,7 +157,7 @@ def test_sample_without_an_engine_root_stays_browser_only() -> None:
 def test_sample_raises_when_the_engine_root_exits_mid_capture() -> None:
     """[if] the engine exits after the sampler pinned it [then] sample() raises, never reads zero, [else stop]."""
     with _tree() as (launcher, browser_child):
-        engine = subprocess.Popen(["sleep", "30"])
+        engine = subprocess.Popen(_SLEEPER)
         native = _PerPidNative({browser_child: 222.0, engine.pid: 333.0})
         sampler = _sampler(launcher, native, engine.pid)
         assert sampler.sample()["engine_footprint_mb"] == pytest.approx(333.0)

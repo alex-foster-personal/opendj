@@ -1,184 +1,170 @@
-"""Leak-capture integration tests for scripts.perf.capture_mode_ratios.
+"""Leak-capture tests against the REAL browser helper: no fake child, no fake clock.
 
-Split out of test_capture_mode_ratios.py (600-line test-file ratchet, PR
-#4540). Shares the real-subprocess helpers that PR #4553 moved into
-test_capture_mode_ratios_browser_pid.py.
+Codex P1/BLOCKING r4170456315, PR #4888: the earlier version of this file
+monkeypatched `_start_browser_session`, `DarwinProcessMetrics` and the clock,
+so it stayed green while `mode_ratio_browser.mjs`'s leak protocol or its real
+quiescence could be broken. Every test here now drives the production
+`_start_browser_session` -> `mode_ratio_browser.mjs --mode trackify-leak` ->
+real Playwright Chromium -> a live frontend, over the real stdin/stdout
+protocol (TRACKIFY_READY, CHECKPOINT -> QUIESCENT, RESUME -> RESUMED, NEXT ->
+DONE) in a short window: two checkpoints, not the 1 h capture.
 
-ADR-NEW-trackify-leak-kpi-quiescent-baselines: the gating slope is fitted to
-quiescent baselines. Each test runs the REAL `_capture_trackify_leak` against a
-REAL child that speaks `mode_ratio_browser.mjs`'s leak protocol
-(TRACKIFY_READY, CHECKPOINT -> QUIESCENT, RESUME -> RESUMED, NEXT -> DONE) and
-a REAL descendant whose phys_footprint the real sampler reads. Only the clock
-is faked: `time.sleep` advances it and really sleeps 10 ms.
+The slope arithmetic those fakes used to exercise is pure and lives, honestly
+named as unit tests, in test_trackify_leak_series.py (a series whose baselines
+keep rising reads as a leak; a growing working set over flat baselines does
+not).
+
+Prerequisites, each reported UNAVAILABLE by name when absent, never a pass:
+- `MDT_PERF_LIVE_FRONTEND`: origin of a running frontend whose Trackify feed
+  plays (e.g. the e2e fixture engine plus `pnpm dev`);
+- `node` on PATH and Playwright's Chromium installed for the frontend;
+- macOS, for the footprint test only: `_ProcessTreeSampler` reads
+  `proc_pid_rusage` through `DarwinProcessMetrics`.
 """
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
-import time
 from collections.abc import Iterator
-from contextlib import contextmanager
-from unittest.mock import patch
 
+import psutil
 import pytest
 
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf import capture_mode_ratios as cmr
-from scripts.perf.trackify_leak_series import LeakSeries
-from tests.perf.test_capture_mode_ratios_browser_pid import _kill_tree, _RecordingNative, _requires_darwin
+from tests.perf.test_capture_mode_ratios_browser_pid import _kill_tree, _RecordingNative
 
-_REAL_SLEEP = time.sleep
-
-# The descendant the sampler measures. While "playing" it holds a working set
-# that grows track by track (4 MB more per track, like round 4's playlist of
-# ever longer tracks). "Q" (quiesce) frees the working set; in `leak` mode it
-# also keeps 4 MB for good, which is retention. Pages are mmap'd and touched so
-# phys_footprint really moves, and unmapped so it really falls.
-_WORKER = r"""
-import mmap, sys
-mode = sys.argv[1]
-MB = 1 << 20
-def touched(mb):
-    block = mmap.mmap(-1, mb * MB)
-    for offset in range(0, mb * MB, 4096):
-        block[offset] = 1
-    return block
-retained = []
-tracks = 1
-working = touched(4)
-for line in sys.stdin:
-    command = line.strip()
-    if command == "Q":
-        working.close()
-        working = None
-        if mode == "leak":
-            retained.append(touched(4))
-    elif command == "R":
-        tracks += 1
-        working = touched(4 * tracks)
-    print("ok", flush=True)
-"""
-
-# The protocol child (the sampler's root, which it excludes) relays each
-# checkpoint to the descendant and answers only after the descendant has.
-_LEAK_PROTOCOL_CHILD = r"""
-import subprocess, sys
-worker = subprocess.Popen([sys.executable, "-c", sys.argv[2], sys.argv[1]],
-                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-def tell(command):
-    worker.stdin.write(command + "\n")
-    worker.stdin.flush()
-    worker.stdout.readline()
-tell("PING")
-print("TRACKIFY_READY", flush=True)
-for line in sys.stdin:
-    command = line.strip()
-    if command == "CHECKPOINT":
-        tell("Q")
-        print("QUIESCENT", flush=True)
-    elif command == "RESUME":
-        tell("R")
-        print("RESUMED", flush=True)
-    elif command == "NEXT":
-        print("DONE", flush=True)
-        break
-    else:
-        sys.exit(f"unexpected protocol line {command!r}")
-sys.stdin.read()  # like node: stay alive until stdin reaches EOF
-"""
+_FRONTEND_ENV = "MDT_PERF_LIVE_FRONTEND"
+_CHECKPOINTS = 2
+_CHROMIUM_PROBE = (
+    "const { createRequire } = require('node:module');"
+    "const path = require('node:path');"
+    "const fs = require('node:fs');"
+    "const req = createRequire(path.join(process.cwd(), 'package.json'));"
+    "const { chromium } = req('@playwright/test');"
+    "const exe = chromium.executablePath();"
+    "if (!fs.existsSync(exe)) { console.error('missing ' + exe); process.exit(2); }"
+)
 
 
-class _SteppedClock:
-    """`time.monotonic` that only moves when the capture sleeps."""
-
-    def __init__(self) -> None:
-        self.now = 0.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def sleep(self, seconds: float) -> None:
-        self.now += seconds
-        _REAL_SLEEP(0.01)
+# ----- prerequisites ---------------------------------------------------------
 
 
-@contextmanager
-def _leak_child(mode: str) -> Iterator[subprocess.Popen[str]]:
-    child = subprocess.Popen(
-        [sys.executable, "-c", _LEAK_PROTOCOL_CHILD, mode, _WORKER],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+def _unavailable_reason() -> str | None:
+    """Why the real helper cannot run here, or None when it can."""
+    if not os.environ.get(_FRONTEND_ENV):
+        return f"UNAVAILABLE: {_FRONTEND_ENV} names no live frontend whose Trackify feed plays"
+    node = shutil.which("node")
+    if node is None:
+        return "UNAVAILABLE: node is not on PATH, and mode_ratio_browser.mjs runs under node"
+    probe = subprocess.run(
+        [node, "-e", _CHROMIUM_PROBE],
+        cwd=cmr._FRONTEND_ROOT,
+        capture_output=True,
         text=True,
-        bufsize=1,
+        timeout=60,
+        check=False,
     )
+    if probe.returncode != 0:
+        return f"UNAVAILABLE: Playwright Chromium is not installed for the frontend: {probe.stderr.strip()[-400:]}"
+    return None
+
+
+@pytest.fixture
+def live_frontend() -> str:
+    reason = _unavailable_reason()
+    if reason is not None:
+        pytest.skip(reason)
+    return os.environ[_FRONTEND_ENV]
+
+
+@pytest.fixture
+def leak_session(live_frontend: str) -> Iterator[subprocess.Popen[str]]:
+    """The production helper in trackify-leak mode, past TRACKIFY_READY."""
+    proc = cmr._start_browser_session(live_frontend, "trackify-leak")
     try:
-        yield child
+        cmr._read_browser_line(proc, "TRACKIFY_READY")
+        yield proc
     finally:
-        _kill_tree(child.pid)
-        child.wait(timeout=5)
+        if proc.poll() is None:
+            _kill_tree(proc.pid)
+            proc.wait(timeout=30)
 
 
-def _capture(mode: str, native: _RecordingNative | None = None) -> tuple[LeakSeries, int]:
-    """The series, and the pid of the protocol child (the sampler's excluded root)."""
-    clock = _SteppedClock()
-    reader = native if native is not None else DarwinProcessMetrics()
-    with (
-        _leak_child(mode) as child,
-        patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-        patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=reader),
-        patch("scripts.perf.capture_mode_ratios.time.sleep", new=clock.sleep),
-        patch("scripts.perf.capture_mode_ratios.time.monotonic", new=clock.monotonic),
-    ):
-        return cmr._capture_trackify_leak("http://127.0.0.1:5273", cmr._MIN_LEAK_DURATION_S), child.pid
+def _chromium_pids(launcher_pid: int) -> set[int]:
+    return {child.pid for child in psutil.Process(launcher_pid).children(recursive=True)}
 
 
-@_requires_darwin
+# ----- the real protocol ------------------------------------------------------
+
+
+@pytest.mark.timeout(300)  # a protocol line that never arrives fails here, never hangs the suite
 @pytest.mark.requirement("PERFMODE-15")
-def test_retention_that_survives_every_checkpoint_reads_over_budget() -> None:
-    """[if] the tree keeps 4 MB more after every quiescent checkpoint [then] the retained slope is over 5 MB per 10 min, [else stop].
+def test_the_real_helper_quiesces_and_resumes_at_every_checkpoint(leak_session: subprocess.Popen[str]) -> None:
+    """[if] the real helper is driven through two checkpoints [then] it answers QUIESCENT, RESUMED, DONE and exits 0, [else stop].
 
-    Positive control: 4 MB per 300 s of played time is 8 MB per 10 min of real
-    retention, so only a capture that samples this tree's real footprint at
-    real checkpoints reports it.
+    QUIESCENT is only printed after `quiesceTrackify` saw the deck unloaded
+    before AND after garbage collection, and RESUMED only once a track is
+    loaded and playing again, so each answer is the helper's own proof of the
+    state it names. A Chromium tree must be live under the launcher while the
+    capture runs: the sampler measures it, never the launcher.
     """
-    series, _ = _capture("leak")
-    assert len(series.baselines) == 13
-    retained = series.retained_slope_mb_per_10min()
-    assert retained > 5.0, f"expected the leak to read over budget, got {retained:.3f} ({series.summary()})"
+    assert _chromium_pids(leak_session.pid), "no Chromium process under the mode_ratio_browser launcher"
+    for _ in range(_CHECKPOINTS):
+        cmr._send_browser_line(leak_session, "CHECKPOINT")
+        cmr._read_browser_line(leak_session, "QUIESCENT")
+        cmr._send_browser_line(leak_session, "RESUME")
+        cmr._read_browser_line(leak_session, "RESUMED")
+    cmr._signal_browser(leak_session)
+    cmr._finish_browser_session(leak_session)
+    assert leak_session.returncode == 0
 
 
-@_requires_darwin
+@pytest.mark.timeout(300)  # a protocol line that never arrives fails here, never hangs the suite
 @pytest.mark.requirement("PERFMODE-15")
-def test_a_working_set_that_grows_with_track_length_is_not_read_as_a_leak() -> None:
-    """[if] only the playing track's working set grows [then] the retained slope stays flat while the raw slope reads over budget, [else stop].
+def test_the_real_helper_refuses_an_unknown_protocol_line(leak_session: subprocess.Popen[str]) -> None:
+    """[if] the capture sends a line the leak protocol does not define [then] the helper exits nonzero naming it, [else stop].
 
-    Negative control: this is round 4's shape on the fixed build, a raw slope
-    driven by ever longer tracks. The raw assertion proves the run really had a
-    growing working set for the retained slope to see past.
+    Negative control for the test above: a helper that answered anything at
+    all would pass it, so this shows the real protocol can say no.
     """
-    series, _ = _capture("working-set")
-    retained = series.retained_slope_mb_per_10min()
-    raw = series.raw_slope_mb_per_10min()
-    assert abs(retained) < 2.0, f"expected a flat retained slope, got {retained:.3f} ({series.summary()})"
-    assert raw > 5.0, f"control: the raw slope should read the working set as growth, got {raw:.3f}"
+    cmr._send_browser_line(leak_session, "BOGUS")
+    with pytest.raises(RuntimeError, match="leak protocol expected CHECKPOINT or NEXT"):
+        cmr._read_browser_line(leak_session, "QUIESCENT")
 
 
-@_requires_darwin
+# ----- real footprints at real checkpoints ------------------------------------
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason=(
+        "UNAVAILABLE: _ProcessTreeSampler reads phys_footprint through DarwinProcessMetrics "
+        "(proc_pid_rusage), which only macOS provides"
+    ),
+)
+@pytest.mark.timeout(300)  # a protocol line that never arrives fails here, never hangs the suite
 @pytest.mark.requirement("PERFMODE-15")
-def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() -> None:
-    """[if] a leak capture runs [then] it reads the browser descendant's real footprint, never the launcher's, [else stop].
+def test_quiescent_baselines_read_chromium_footprint_never_the_launcher(
+    leak_session: subprocess.Popen[str],
+) -> None:
+    """[if] real checkpoints sample the real helper tree [then] each baseline is positive Chromium footprint, not the launcher, [else stop].
 
-    Sol P1/BLOCKING, PR #4553: a slope alone cannot prove which pid produced
-    it. `_RecordingNative` wraps the REAL reader and records every pid it was
-    asked for, so the assertion is on the measurement subject itself: exactly
-    one pid, the descendant, and never the protocol child that stands in for
-    the Node launcher.
+    `_RecordingNative` wraps the REAL reader (constructor-injected, nothing
+    patched) and records each pid read, so the assertion is on the measurement
+    subject itself: Chromium descendants of the launcher, never the launcher.
     """
     native = _RecordingNative(DarwinProcessMetrics())
-    series, launcher_pid = _capture("working-set", native)
+    sampler = cmr._ProcessTreeSampler(leak_session.pid, native=native)
+    chromium = _chromium_pids(leak_session.pid)
+    baselines = [cmr._quiescent_baseline_mb(leak_session, sampler) for _ in range(_CHECKPOINTS)]
+    chromium |= _chromium_pids(leak_session.pid)
+    cmr._signal_browser(leak_session)
+    cmr._finish_browser_session(leak_session)
+    assert all(mb > 0.0 for mb in baselines), baselines
     assert native.pids_read
-    assert launcher_pid not in native.pids_read
-    assert len(set(native.pids_read)) == 1
-    assert all(mb > 0.0 for _, mb in series.raw + series.baselines)
+    assert leak_session.pid not in native.pids_read
+    assert set(native.pids_read) & chromium, f"no pid read was a Chromium descendant: {sorted(set(native.pids_read))}"
