@@ -52,4 +52,4 @@ def resolved_node(search_path: str | None = None) -> str:
     refusal = node_version_refusal(parse_node_version(version), node_floor())
     if refusal is not None:
         raise SystemExit(f"{node}: {refusal}")
-    return node
+    return str(Path(node).resolve())
