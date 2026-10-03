@@ -111,9 +111,30 @@ const HIGH_BAND_SCALE = 0.6;
 const MID_BAND_SCALE = 0.85;
 
 /** 'blocks' design geometry: BLOCK_BAR_PX-wide bars on a BLOCK_PITCH_PX
- * pitch, i.e. a 1px gap. Rendering style only, heights are the real data. */
+ * pitch, i.e. a 1px gap, ONE-SIDED: bars grow up from the bottom baseline.
+ * Rendering style only, heights are the real data. */
 export const BLOCK_BAR_PX = 2;
 export const BLOCK_PITCH_PX = 3;
+
+/** How a block's height is derived from its band data (skin preview):
+ *  - max:      per-block max of all bands, gamma-lifted (the original).
+ *  - kick:     LOW band dominant, mid/high minor, gamma > 1 (expands peaks).
+ *  - contrast: stretched between the rolling min/max over ~1 beat, scaled
+ *              by that window's max so quiet sections stay quiet.
+ *  - onset:    rise above the rolling mean over ~1/4 beat, plus a floor. */
+export type BlocksVariant = 'max' | 'kick' | 'contrast' | 'onset';
+
+export const BLOCKS_CFG = {
+	VARIANT_DEFAULT: 'contrast' as BlocksVariant,
+	KICK_LOW_WEIGHT: 0.8,
+	KICK_GAMMA: 1.6,
+	CONTRAST_WINDOW_BEATS: 1,
+	ONSET_WINDOW_BEATS: 0.25,
+	ONSET_FLOOR: 0.2,
+	/** contrast/onset need a beat period; with no beat grid they paint as
+	 * 'kick' (stated here, not hidden in the painter). */
+	NO_GRID_VARIANT: 'kick' as BlocksVariant
+} as const;
 
 /** Perceptual amplitude shaping (rendering only, the band DATA is never
  * modified). Raw PWV6/PWV7 bytes sit mostly in the 0.3-0.7 range after
@@ -165,7 +186,7 @@ function _p99(values: number[]): number {
 	return Math.min(1, Math.max(NORM_FLOOR, p99));
 }
 
-function _normsFor(waveform: AnlzWaveform): BandNorms {
+export function bandNormsFor(waveform: AnlzWaveform): BandNorms {
 	const cached = _normCache.get(waveform);
 	if (cached !== undefined) return cached;
 	const bands = waveform.detail;
@@ -204,6 +225,8 @@ export interface WaveRowFrame {
 	playheadTimeMs?: number;
 	/** DECKUX-20: user-selected paint style; default tri-band. */
 	waveformDesign?: WaveformDesign;
+	/** 'blocks' height model; default BLOCKS_CFG.VARIANT_DEFAULT. */
+	blocksVariant?: BlocksVariant;
 	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
 	masterDownbeatOverlay?: MasterDownbeatOverlay | null;
 	/** Pending deferred seek ghost playhead (ms). */
@@ -232,7 +255,11 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 
 	const design = frame.waveformDesign ?? 'tri-band';
 	if (frame.anlz !== null && durS > 0) {
-		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design);
+		const blocks: BlocksSpec = {
+			variant: frame.blocksVariant ?? BLOCKS_CFG.VARIANT_DEFAULT,
+			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats)
+		};
+		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design, blocks);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
 	// and pitch, so a loaded row with no (or failed) local analysis still shows
@@ -332,19 +359,20 @@ function _drawCachedBands(
 	w: number,
 	h: number,
 	palette: WavePalette,
-	design: WaveformDesign
+	design: WaveformDesign,
+	blocks: BlocksSpec
 ): void {
 	// Node painter tests intentionally provide only Path2D. Browser production
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
 	if (typeof document === 'undefined') {
-		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 		return;
 	}
-	const key = `${design}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
+	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
 	let image = _bandImages.get(waveform);
 	if (image === undefined || image.key !== key) {
-		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design), key };
+		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key };
 		_bandImages.set(waveform, image);
 	}
 	ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
@@ -356,7 +384,8 @@ function _buildBandImage(
 	durS: number,
 	h: number,
 	palette: WavePalette,
-	design: WaveformDesign
+	design: WaveformDesign,
+	blocks: BlocksSpec
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
@@ -367,7 +396,7 @@ function _buildBandImage(
 	canvas.height = h;
 	const ctx = canvas.getContext('2d');
 	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
-	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
+	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 	return canvas;
 }
 
@@ -380,7 +409,8 @@ function _drawBands(
 	w: number,
 	h: number,
 	palette: WavePalette,
-	design: WaveformDesign
+	design: WaveformDesign,
+	blocks: BlocksSpec = { variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null }
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
@@ -389,26 +419,20 @@ function _drawBands(
 	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
 	const mono = design === 'mono' || waveform.kind === 'mono';
 	const line = design === 'line';
-	const norms = _normsFor(waveform);
+	const norms = bandNormsFor(waveform);
 	// Mono payloads mix all three arrays into one height, so normalize by
 	// the loudest band's p99 rather than any single band's.
 	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
 
 	if (design === 'blocks') {
+		const blocksPerBeat =
+			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
+		const heights = blockHeights(bands, w, norms, blocks.variant, blocksPerBeat);
+		const maxBarH = h - MARKER_BAND_PX - 1;
 		const blockPath = new Path2D();
-		for (let x = 0; x < w; x += BLOCK_PITCH_PX) {
-			const p0 = Math.max(0, Math.floor((x / w) * n));
-			const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / w) * n) - 1));
-			const v = _amp(
-				Math.max(
-					_bucketMax(bands.low, p0, p1),
-					_bucketMax(bands.mid, p0, p1),
-					_bucketMax(bands.high, p0, p1)
-				),
-				monoNorm
-			);
-			const half = Math.round(v * halfH);
-			if (half > 0) blockPath.rect(x, centerY - half, BLOCK_BAR_PX, half * 2);
+		for (let b = 0; b < heights.length; b++) {
+			const barH = Math.round(heights[b] * maxBarH);
+			if (barH > 0) blockPath.rect(b * BLOCK_PITCH_PX, h - barH, BLOCK_BAR_PX, barH);
 		}
 		ctx.fillStyle = palette.mono;
 		ctx.fill(blockPath);
@@ -486,6 +510,107 @@ function _drawBands(
 	ctx.fillStyle = palette.high;
 	ctx.fill(highPath);
 	ctx.globalAlpha = 1;
+}
+
+interface BlocksSpec {
+	variant: BlocksVariant;
+	beatPeriodS: number | null;
+}
+
+/** Median beat period of the grid in seconds; null without a usable grid. */
+export function beatPeriodS(beats: readonly AnlzBeat[] | undefined): number | null {
+	if (beats === undefined || beats.length < 2) return null;
+	const gaps: number[] = [];
+	for (let i = 1; i < beats.length; i++) {
+		const gap = beats[i].t - beats[i - 1].t;
+		if (gap > 0) gaps.push(gap);
+	}
+	if (gaps.length === 0) return null;
+	gaps.sort((a, b) => a - b);
+	return gaps[Math.floor(gaps.length / 2)];
+}
+
+function _rollingWindow(values: Float32Array, i: number, half: number): [number, number] {
+	return [Math.max(0, i - half), Math.min(values.length - 1, i + half)];
+}
+
+/** Per-block heights 0..1 for the 'blocks' design over a widthPx surface.
+ * Pure (exported for tests): band DATA is read, never modified. */
+export function blockHeights(
+	bands: AnlzWaveform['detail'],
+	widthPx: number,
+	norms: { low: number; mid: number; high: number },
+	variant: BlocksVariant,
+	blocksPerBeat: number | null
+): Float32Array {
+	const n = bands.length;
+	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
+	const low = new Float32Array(count);
+	const rest = new Float32Array(count);
+	const all = new Float32Array(count);
+	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
+	for (let b = 0; b < count; b++) {
+		const x = b * BLOCK_PITCH_PX;
+		const p0 = Math.max(0, Math.floor((x / widthPx) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		const lo = _bucketMax(bands.low, p0, p1);
+		const mi = _bucketMax(bands.mid, p0, p1);
+		const hi = _bucketMax(bands.high, p0, p1);
+		low[b] = Math.min(1, lo / norms.low);
+		rest[b] = Math.min(1, Math.max(mi / norms.mid, hi / norms.high));
+		all[b] = Math.min(1, Math.max(lo, mi, hi) / monoNorm);
+	}
+	const out = new Float32Array(count);
+	const effective =
+		blocksPerBeat === null && (variant === 'contrast' || variant === 'onset')
+			? BLOCKS_CFG.NO_GRID_VARIANT
+			: variant;
+	if (effective === 'max') {
+		for (let b = 0; b < count; b++) out[b] = all[b] > 0 ? Math.pow(all[b], AMP_GAMMA) : 0;
+	} else if (effective === 'kick') {
+		const w = BLOCKS_CFG.KICK_LOW_WEIGHT;
+		for (let b = 0; b < count; b++) {
+			out[b] = Math.pow(w * low[b] + (1 - w) * rest[b], BLOCKS_CFG.KICK_GAMMA);
+		}
+	} else if (effective === 'contrast') {
+		const half = Math.max(1, Math.round(((blocksPerBeat as number) * BLOCKS_CFG.CONTRAST_WINDOW_BEATS) / 2));
+		for (let b = 0; b < count; b++) {
+			const [a, z] = _rollingWindow(all, b, half);
+			let lo = 1;
+			let hi = 0;
+			for (let i = a; i <= z; i++) {
+				if (all[i] < lo) lo = all[i];
+				if (all[i] > hi) hi = all[i];
+			}
+			out[b] = hi - lo > 1e-6 ? ((all[b] - lo) / (hi - lo)) * hi : 0;
+		}
+	} else if (effective === 'onset') {
+		const half = Math.max(1, Math.round(((blocksPerBeat as number) * BLOCKS_CFG.ONSET_WINDOW_BEATS) / 2));
+		const rise = new Float32Array(count);
+		let peak = 0;
+		for (let b = 0; b < count; b++) {
+			const [a, z] = _rollingWindow(all, b, half);
+			let sum = 0;
+			for (let i = a; i <= z; i++) sum += all[i];
+			rise[b] = Math.max(0, all[b] - sum / (z - a + 1));
+			if (rise[b] > peak) peak = rise[b];
+		}
+		const f = BLOCKS_CFG.ONSET_FLOOR;
+		for (let b = 0; b < count; b++) {
+			const r = peak > 0 ? rise[b] / peak : 0;
+			out[b] = Math.min(1, (1 - f) * r + f * all[b]);
+		}
+	}
+	return out;
+}
+
+/** Mean squared difference between adjacent block heights: the 'can I see
+ * individual beats' signal the variants are compared on. */
+export function adjacentBlockVariance(heights: Float32Array): number {
+	if (heights.length < 2) return 0;
+	let sum = 0;
+	for (let i = 1; i < heights.length; i++) sum += (heights[i] - heights[i - 1]) ** 2;
+	return sum / (heights.length - 1);
 }
 
 function _drawTempoChanges(
@@ -595,3 +720,6 @@ export function resolvePaintPalette(deckId: number, palette: WavePalette): WaveP
 		? palette
 		: { ...palette, bg: palette.secondaryBg };
 }
+
+/** Test seam: the uncached band painter (no DOM canvas needed). */
+export const __test_drawBands = _drawBands;

@@ -243,8 +243,9 @@ function _drawLoopCueBands(
 	}
 }
 
-/** 'blocks' design: mirrored single-color bars, BLOCK_BAR_PX wide on a
- * BLOCK_PITCH_PX pitch, each the max of the preview points it covers. */
+/** 'blocks' design: one-sided single-color bars growing up from the bottom
+ * baseline, BLOCK_BAR_PX wide on a BLOCK_PITCH_PX pitch, each the max of the
+ * preview points it covers. */
 function _drawBlocks(
 	ctx: CanvasRenderingContext2D,
 	bands: StripBands,
@@ -253,14 +254,13 @@ function _drawBlocks(
 	color: string
 ): void {
 	const n = bands.length;
-	const mid = heightPx / 2;
 	ctx.fillStyle = color;
 	for (let x = 0; x < widthPx; x += BLOCK_PITCH_PX) {
 		const p0 = Math.floor((x / widthPx) * n);
 		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
 		let v = 0;
 		for (let i = p0; i <= p1; i++) v = Math.max(v, bands.low[i], bands.mid[i], bands.high[i]);
-		const half = Math.round(Math.max(0, Math.min(1, v)) * mid);
-		if (half > 0) ctx.fillRect(x, mid - half, BLOCK_BAR_PX, half * 2);
+		const barH = Math.round(Math.max(0, Math.min(1, v)) * heightPx);
+		if (barH > 0) ctx.fillRect(x, heightPx - barH, BLOCK_BAR_PX, barH);
 	}
 }
