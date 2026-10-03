@@ -58,7 +58,6 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import datetime as dt
-import json
 import shutil
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -90,12 +89,16 @@ from apps.cloud.stem_cache_settings import (
     save_settings,
     settings_from_mapping,
     settings_path,
-    write_json_atomically,
+)
+from apps.cloud.stem_upload_queue import (
+    UPLOAD_QUEUE_FILENAME,
+    load_upload_queue,
+    load_verified_fingerprints,
+    save_upload_queue,
+    upload_queue_path,
 )
 
 GIB: int = 1024**3
-UPLOAD_QUEUE_FILENAME: str = "stem-upload-queue.json"
-UPLOAD_QUEUE_SCHEMA_VERSION: int = 1
 #: Bytes one timer pass may hash to find same-name re-renders, so a first pass
 #: meeting every bundle unverified spreads that read over several passes.
 REVERIFY_HASH_BUDGET_BYTES: int = 2 * GIB
@@ -149,44 +152,6 @@ def derived_budget_bytes(
 
 
 # ----- upload queue --------------------------------------------------------------
-
-
-def upload_queue_path(data_dir: Path) -> Path:
-    return Path(data_dir) / "state" / UPLOAD_QUEUE_FILENAME
-
-
-def load_upload_queue(data_dir: Path) -> dict[str, dict[str, object]]:
-    """``{stable_id: {reason, bytes, queued_at}}`` for bundles awaiting upload."""
-    path = upload_queue_path(data_dir)
-    if not path.is_file():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return dict(payload["bundles"])
-
-
-def load_verified_fingerprints(data_dir: Path) -> dict[str, str]:
-    """``{stable_id: fingerprint}`` of bundles last hashed equal to the index.
-
-    Kept beside the queue (an additive key, absent in older files) so a
-    bundle is hashed once per change, not once per pass."""
-    path = upload_queue_path(data_dir)
-    if not path.is_file():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return dict(payload.get("verified", {}))
-
-
-def _save_upload_queue(
-    data_dir: Path,
-    queue: dict[str, dict[str, object]],
-    verified: dict[str, str] | None = None,
-) -> None:
-    path = upload_queue_path(data_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload: dict[str, object] = {"schema_version": UPLOAD_QUEUE_SCHEMA_VERSION, "bundles": queue}
-    if verified:
-        payload["verified"] = verified
-    write_json_atomically(path, payload)
 
 
 def _queue_reason(
@@ -475,7 +440,10 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
         hash_budget_bytes=0 if max_evict_bytes is not None else REVERIFY_HASH_BUDGET_BYTES,
     )
     if not dry_run and (queue != previous or verified != previous_verified):
-        _save_upload_queue(data_dir, queue, verified)
+        queue = save_upload_queue(
+            data_dir, queue, verified, stems_dir=stems_dir,
+            seen={bundle.stable_id for bundle in bundles},
+        )
 
     return EnforceReport(
         at_utc=now_iso,

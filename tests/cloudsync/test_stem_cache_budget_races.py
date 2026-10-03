@@ -216,3 +216,45 @@ def test_claim_and_remove_lets_exactly_one_remover_win(tmp_path: Path):
     assert claim_and_remove(stems_dir / "one") is True
     assert claim_and_remove(stems_dir / "one") is False
     assert list(stems_dir.iterdir()) == []
+
+
+@pytest.mark.requirement("STEM-40")
+def test_an_older_pass_does_not_erase_a_bundle_a_newer_pass_queued(tmp_path: Path):
+    """[if] a pass that scanned before a bundle appeared saves after a pass that queued it [then] the entry stays, [else stop].
+
+    MUTATION TARGET: write this pass's snapshot without merging the on-disk
+    file and ``late`` leaves the queue until some later pass re-queues it.
+    """
+    data_dir, stems_dir = tmp_path / "data", tmp_path / "stems"
+    (stems_dir / "late").mkdir(parents=True)
+    entry: dict[str, object] = {"reason": "not_in_index", "bytes": 1, "queued_at": "t"}
+    # The newer pass saw "late" and queued it, with a verified neighbor.
+    budget.save_upload_queue(
+        data_dir, {"late": entry}, {"other": "fp"}, stems_dir=stems_dir, seen={"late"}
+    )
+    (stems_dir / "other").mkdir()
+    # The older pass scanned before either existed and found nothing to queue.
+    written = budget.save_upload_queue(data_dir, {}, {}, stems_dir=stems_dir, seen=set())
+    assert "late" in written and "late" in budget.load_upload_queue(data_dir)
+    assert budget.load_verified_fingerprints(data_dir) == {"other": "fp"}
+
+
+@pytest.mark.requirement("STEM-40")
+def test_the_merge_does_not_keep_what_a_pass_saw_or_what_is_gone(tmp_path: Path):
+    """Overshoot control: a pass that SAW the bundle decides for it, and an
+    entry whose directory is gone is dropped, so the merge cannot pin stale
+    rows forever."""
+    data_dir, stems_dir = tmp_path / "data", tmp_path / "stems"
+    (stems_dir / "seen-clean").mkdir(parents=True)
+    entry: dict[str, object] = {"reason": "not_in_index", "bytes": 1, "queued_at": "t"}
+    budget.save_upload_queue(
+        data_dir,
+        {"seen-clean": entry, "deleted": entry},
+        {},
+        stems_dir=stems_dir,
+        seen={"seen-clean", "deleted"},
+    )
+    written = budget.save_upload_queue(
+        data_dir, {}, {}, stems_dir=stems_dir, seen={"seen-clean"}
+    )
+    assert written == {} and budget.load_upload_queue(data_dir) == {}

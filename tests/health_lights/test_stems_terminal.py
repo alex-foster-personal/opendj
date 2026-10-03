@@ -15,6 +15,9 @@ Regression lines:
 from __future__ import annotations
 
 import shutil
+import sys
+import threading
+import time
 import wave
 from pathlib import Path
 
@@ -36,6 +39,11 @@ needs_ffprobe = pytest.mark.skipif(
     shutil.which("ffprobe") is None, reason="ffprobe is not installed on this machine"
 )
 NO_SOURCE = "/api/v1/coverage-outcomes/stems/no-source"
+#: The fake ffprobe/ffmpeg below is an extensionless ``#!/bin/sh`` script with
+#: an execute bit; Windows finds executables through PATHEXT, not that bit.
+posix_fake_tool = pytest.mark.skipif(
+    sys.platform == "win32", reason="fake tool is a POSIX #!/bin/sh script (no PATHEXT match)"
+)
 
 
 def _wav(path: Path, seconds: float) -> Path:
@@ -185,6 +193,7 @@ def test_without_ffprobe_the_bundled_ffmpeg_reads_durations_and_damage(
     assert st.probe(tmp_path / "absent.mp3").kind == "unknown"
 
 
+@posix_fake_tool
 @pytest.mark.parametrize(
     "line",
     ["{path}: Permission denied", "{path}: Input/output error", "Invalid argument"],
@@ -213,6 +222,7 @@ def _ffprobe_that_fails_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, li
     monkeypatch.setenv("PATH", str(bin_dir))
 
 
+@posix_fake_tool
 def test_an_older_ffprobe_invalid_argument_for_the_file_is_damage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -223,6 +233,7 @@ def test_an_older_ffprobe_invalid_argument_for_the_file_is_damage(
     assert st.probe(damaged) == st.Probe("no_duration", detail="ffprobe: invalid data")
 
 
+@posix_fake_tool
 @pytest.mark.parametrize(
     "line",
     ["{path}: Permission denied", "{path}: Input/output error", "Invalid argument"],
@@ -373,3 +384,35 @@ def test_cli_verbs_build_the_same_requests_as_the_routes() -> None:
     )
     with pytest.raises(ValueError, match="--stable-id, --reason"):
         cli.request_for("no-source-mark")
+
+
+def test_concurrent_clears_keep_every_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] several clears run at once [then] every id stays kept and no writer
+    loses its temp file to another. MUTATION TARGET: drop the lock (ids are
+    lost) or share one ``.tmp`` path (FileNotFoundError)."""
+    keep = st.KeepPending(st.keep_pending_path(tmp_path))
+    real_load = st.KeepPending.load
+
+    def slow_load(self: st.KeepPending) -> set[str]:
+        current = real_load(self)
+        time.sleep(0.02)  # widen the read-modify-write window
+        return current
+
+    monkeypatch.setattr(st.KeepPending, "load", slow_load)
+    errors: list[BaseException] = []
+
+    def clear(stable_id: str) -> None:
+        try:
+            keep.add(stable_id)
+        except BaseException as error:  # noqa: BLE001 - surfaced by the assert below
+            errors.append(error)
+
+    ids = [f"t{n}" for n in range(8)]
+    threads = [threading.Thread(target=clear, args=(stable_id,)) for stable_id in ids]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert real_load(keep) == set(ids)
+    assert [p.name for p in keep.path.parent.iterdir()] == [keep.path.name]

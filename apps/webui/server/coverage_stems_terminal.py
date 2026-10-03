@@ -50,11 +50,14 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -225,6 +228,11 @@ def classify(
 #-----------------------------------------------------------------------------
 # user overrides
 #-----------------------------------------------------------------------------
+#: One read-modify-write of the keep-pending file at a time, so concurrent
+#: mark and clear requests cannot drop each other's ids.
+_KEEP_PENDING_LOCK = threading.Lock()
+
+
 class KeepPending:
     """Ids a user cleared: the automatic check leaves them pending."""
 
@@ -240,21 +248,32 @@ class KeepPending:
         return {str(stable_id) for stable_id in payload["stable_ids"]}
 
     def _write(self, stable_ids: set[str]) -> None:
+        """Atomic replace through a temp file unique to this writer."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(self.path.name + ".tmp")
-        temporary.write_text(
-            json.dumps({"schema": KEEP_PENDING_SCHEMA, "stable_ids": sorted(stable_ids)}) + "\n",
-            encoding="utf-8",
+        fd, temporary = tempfile.mkstemp(
+            dir=self.path.parent, prefix=self.path.name + ".", suffix=".tmp"
         )
-        os.replace(temporary, self.path)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps({"schema": KEEP_PENDING_SCHEMA, "stable_ids": sorted(stable_ids)})
+                    + "\n"
+                )
+            os.replace(temporary, self.path)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(temporary)
+            raise
 
     def add(self, stable_id: str) -> None:
-        self._write(self.load() | {stable_id})
+        with _KEEP_PENDING_LOCK:
+            self._write(self.load() | {stable_id})
 
     def discard(self, stable_id: str) -> None:
-        current = self.load()
-        if stable_id in current:
-            self._write(current - {stable_id})
+        with _KEEP_PENDING_LOCK:
+            current = self.load()
+            if stable_id in current:
+                self._write(current - {stable_id})
 
 
 def keep_pending_path(data_dir: Path) -> Path:
