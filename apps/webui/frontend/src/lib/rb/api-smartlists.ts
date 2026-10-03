@@ -69,6 +69,8 @@ export interface SmartlistTrackRow {
 	duration_ms: number | null;
 	genre: string | null;
 	genre_reason?: string | null;
+	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
+	genre_guess?: { family: string; confidence: number; source: 'jev' } | null;
 	comments: string | null;
 	etag: string;
 	preview_b64: string | null;

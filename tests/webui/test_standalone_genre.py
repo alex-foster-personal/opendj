@@ -270,7 +270,7 @@ def test_tracks_listing_hides_tombstoned_genre(tombstoned_genre_client: TestClie
     assert resp.status_code == 200, resp.text
     row = resp.json()["items"][0]
     assert row["genre"] is None
-    assert row["genre_reason"] in (GENRE_REASON_NO_FILE_TAG, GENRE_REASON_TAG_READER_MISSING)
+    assert row["genre_reason"] == GENRE_REASON_NO_FILE_TAG
 
 
 @pytest.fixture
@@ -384,6 +384,80 @@ def test_tracks_listing_names_tag_reader_when_unavailable(
     reason = reason_lines[0].removeprefix("GENRE_REASON=")
     assert reason == GENRE_REASON_TAG_READER_MISSING
     assert "tinytag" in reason
+
+
+def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
+    tmp_path: Path,
+) -> None:
+    """[if] mutagen is absent, as in the packaged app [then] the reason is no-file-tag, [else stop]."""
+    state_path = tmp_path / "state.db"
+    conn = state_db.open_rw(state_path)
+    try:
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, "
+            "created_at, updated_at) VALUES (?, 'inferred', ?, ?, '2026-01-01', '2026-01-01')",
+            ("a" * 40, "Untagged", str(tmp_path / "x.mp3")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    probe = textwrap.dedent(
+        f"""
+        import sys
+        sys.modules["mutagen"] = None
+
+        from pathlib import Path
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from apps.adapters.rekordbox import config as rb_config
+        from apps.shared._mutagen import HAS_MUTAGEN
+        from apps.webui.server.app import create_app
+        from apps.webui.server.sqlite_backend import SqliteBackend
+
+        assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
+
+        state_path = Path({str(state_path)!r})
+        rb_config.STATE_DB = state_path
+        rb_config.MASTER_PLAIN_DB = state_path.parent / "absent.db"
+
+        app = create_app(
+            backend=SqliteBackend(state_path),
+            bind_host="127.0.0.1",
+            hostname="test-host",
+            state_db_path=str(state_path),
+            mount_frontend=False,
+        )
+        with TestClient(app, base_url="http://test-host") as client:
+            resp = client.get("/api/v1/tracks")
+
+        assert resp.status_code == 200, resp.text
+        row = resp.json()["items"][0]
+        assert row["genre"] is None
+        print("GENRE_REASON=" + str(row["genre_reason"]))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-"],
+        input=probe,
+        text=True,
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    reason_lines = [
+        line for line in completed.stdout.splitlines() if line.startswith("GENRE_REASON=")
+    ]
+    assert len(reason_lines) == 1, completed.stdout
+    reason = reason_lines[0].removeprefix("GENRE_REASON=")
+    # tinytag reads file genres when mutagen is absent, so a missing mutagen is
+    # not a missing genre reader, and the packaged app never ships mutagen.
+    assert reason == GENRE_REASON_NO_FILE_TAG
+    assert "install" not in reason
+    assert "mutagen" not in reason
 
 
 def _find_track(result: dict, stable_id: str) -> dict:
