@@ -569,20 +569,6 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
     }
 
 
-def verify_bundled_licenses(payload_dir: Path) -> None:
-    """Prove the PRESENCE of the good thing: real attribution files, per ecosystem."""
-    for name in (LICENSES_FILE_NAME, NOTICE_FILE_NAME, ROOT_LICENSE_FILE_NAME):
-        staged = payload_dir / name
-        if not staged.is_file() or staged.stat().st_size == 0:
-            raise LicenseInventoryError(f"{staged} is missing or empty: the app would ship without {name}")
-    inventory = (payload_dir / LICENSES_FILE_NAME).read_text(encoding="utf-8")
-    for ecosystem in ("python", "javascript", "rust", "bundled"):
-        if f"[{ecosystem}]" not in inventory:
-            raise LicenseInventoryError(f"{LICENSES_FILE_NAME} lists no {ecosystem} component: an inventory failed silently")
-    if len(inventory) < MIN_LICENSES_FILE_CHARS:
-        raise LicenseInventoryError(f"{LICENSES_FILE_NAME} is only {len(inventory)} chars: license texts were not rendered")
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--payload", type=Path, required=True, help="a staged payload dir (or one with pylib/, runtime/, models/)")
