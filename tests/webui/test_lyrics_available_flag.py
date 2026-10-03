@@ -18,6 +18,7 @@ import pytest
 
 from apps.lyrics import cache as lyrics_cache
 from apps.webui.server.routes import tracks
+from tests.platform_capabilities import posix_permission_denial_supported
 
 pytestmark = [pytest.mark.requirement("LIBM-137")]
 
@@ -50,7 +51,10 @@ def test_a_missing_cache_directory_is_no_lyrics(tmp_path: Path) -> None:
     assert flags(tmp_path, "a") == {"a": False}
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores permission bits")
+@pytest.mark.skipif(
+    not posix_permission_denial_supported(os.name, getattr(os, "geteuid", None)),
+    reason="needs POSIX permission bits and a non-root user (Windows has no os.geteuid; root ignores chmod)",
+)
 def test_an_unreadable_cache_directory_is_no_lyrics(cache: Path, tmp_path: Path) -> None:
     os.chmod(cache, 0)
     try:

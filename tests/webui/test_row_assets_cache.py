@@ -28,6 +28,7 @@ from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared.platform_paths import AssetResolver
 from apps.webui.server.rb_vendor_pkg import row_assets
 from apps.webui.server.rb_vendor_pkg import row_hydration_cache as rhc
+from tests.platform_capabilities import posix_permission_denial_supported
 
 pytestmark = pytest.mark.skipif(
     not fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED, reason="needs the fd-anchored walk"
@@ -154,7 +155,10 @@ def test_directory_turned_symlink_loop_degrades_the_row(share: Path) -> None:
     assert len(row_assets._ROW_ASSETS) == 0, "an errored row is not remembered"
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores permission bits")
+@pytest.mark.skipif(
+    not posix_permission_denial_supported(os.name, getattr(os, "geteuid", None)),
+    reason="needs POSIX permission bits and a non-root user (Windows has no os.geteuid; root ignores chmod)",
+)
 def test_unreadable_directory_degrades_the_row_and_recovers(share: Path) -> None:
     assert level_of(call()) == INSIDE
     parent = share / "PIONEER/USBANLZ/P001"
