@@ -100,6 +100,18 @@ def test_state_is_none_when_no_bundle_exists_anywhere(tmp_path: Path):
     assert unarmed.json()["hydration_armed"] is False
 
 
+@pytest.mark.requirement("STEM-44")
+def test_armed_state_before_the_index_is_fetched_is_never_none(tmp_path: Path):
+    """[if] hydration is armed but no index is cached yet [then] error, never none, [else stop]."""
+    stems_dir = tmp_path / "stems"
+    cfg = _cfg()
+    with _client(stems_dir, data_dir=tmp_path / "data", hydration_cfg=cfg, hydration_s3=InMemoryAssetS3()) as client:
+        body = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+    assert body["state"] == "error"
+    assert body["error_code"] == "STEM_INDEX_NOT_FETCHED"
+    assert body["hydration_armed"] is True
+
+
 class _SlowAfterTwoS3(InMemoryAssetS3):
     """The in-memory object store, with the third download held open.
 

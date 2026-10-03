@@ -660,6 +660,14 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
             "none",
             "no stem bundle on this machine, and cloud stems are not configured here",
         )
+    if not stem_index.local_index_cache_path(Path(data_dir)).is_file():
+        # load_cached_index reads a missing cache as empty; that is "not
+        # fetched yet", never proof the track has no cloud bundle.
+        return _out(
+            "error",
+            "the cloud stem index has not been fetched yet",
+            error_code="STEM_INDEX_NOT_FETCHED",
+        )
     try:
         index = stem_index.load_cached_index(Path(data_dir))
     except stem_index.StemIndexError as exc:

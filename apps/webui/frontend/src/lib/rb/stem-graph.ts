@@ -108,6 +108,9 @@ export async function decodeStemBuffers(
 		...(hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred })
 	});
 	const decodeWaitMs = Math.round(performance.now() - waitStartedMs);
+	// A hold can outlive its load (the deck loaded another track): the bound or
+	// the shed still ends the wait, and the decode must not run for nothing.
+	if (hooks.stale?.() === true) throw new Error('stem decode: the load it belongs to is gone');
 	hooks.onStart?.();
 	const decoded = await decodeStemParts(ctx, encoded, parts);
 	return {

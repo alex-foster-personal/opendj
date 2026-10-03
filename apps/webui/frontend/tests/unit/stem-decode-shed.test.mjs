@@ -194,6 +194,17 @@ test('LOAD NOW for a deck\'s new track never starts its old track\'s held decode
 	shedModule.setEagerStemDecodeShed(null);
 });
 
+test('a held decode whose load went stale never starts decoding', async () => {
+	const graph = await loadTypeScriptModule('src/lib/rb/stem-graph.ts');
+	shedModule.setEagerStemDecodeShed(null);
+	let started = false;
+	await assert.rejects(
+		graph.decodeStemBuffers({}, {}, [], { stale: () => true, onStart: () => (started = true) }),
+		/the load it belongs to is gone/
+	);
+	assert.equal(started, false, 'a stale load was shown decoding');
+});
+
 test('a hold nobody releases ends at the bound instead of lasting the whole track', async () => {
 	// PERFMODE-18: kernel pressure is real pressure, which takes the longer of
 	// the two bounds (the grading itself is tested in
