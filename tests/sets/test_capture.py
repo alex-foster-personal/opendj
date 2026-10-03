@@ -108,7 +108,7 @@ class _FakePopen:
 @pytest.mark.requirement("SET-01")
 def test_start_capture_spawns_subprocess_with_argv(tmp_path: Path):
     _FakePopen.instances.clear()
-    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen)
+    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen, ffmpeg="ffmpeg")
     assert isinstance(handle, capture.CaptureHandle)
     assert handle.argv[0] == "ffmpeg"
     assert handle.stderr_log == tmp_path / "ffmpeg.stderr.log"
@@ -119,7 +119,7 @@ def test_start_capture_spawns_subprocess_with_argv(tmp_path: Path):
 @pytest.mark.requirement("SET-01")
 def test_stop_capture_sends_sigterm(tmp_path: Path):
     _FakePopen.instances.clear()
-    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen)
+    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen, ffmpeg="ffmpeg")
     rc = capture.stop_capture(handle)
     assert rc == 0
     assert signal.SIGTERM in _FakePopen.instances[0].signals
@@ -139,7 +139,7 @@ def test_stop_capture_kills_on_timeout(tmp_path: Path, monkeypatch):
                 raise subprocess.TimeoutExpired(cmd="ffmpeg", timeout=timeout)
             return self.returncode
 
-    handle = capture.start_capture(tmp_path, 1, popen=_StubbornPopen)
+    handle = capture.start_capture(tmp_path, 1, popen=_StubbornPopen, ffmpeg="ffmpeg")
     rc = capture.stop_capture(handle, timeout=0.01)
     assert rc == -9  # kill path
     assert signal.SIGTERM in handle.proc.signals
@@ -149,7 +149,7 @@ def test_stop_capture_kills_on_timeout(tmp_path: Path, monkeypatch):
 def test_start_stop_closes_log_file_handle(tmp_path: Path):
     """If stop_capture does not close log_fh, repeated cycles leak fds."""
     _FakePopen.instances.clear()
-    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen)
+    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen, ffmpeg="ffmpeg")
     assert hasattr(handle, "log_fh"), "CaptureHandle must store log_fh"
     assert not handle.log_fh.closed, "log_fh should be open while capturing"
     capture.stop_capture(handle)
@@ -170,7 +170,7 @@ def test_stop_capture_closes_log_fh_even_on_kill_path(tmp_path: Path):
                 raise subprocess.TimeoutExpired(cmd="ffmpeg", timeout=timeout)
             return self.returncode
 
-    handle = capture.start_capture(tmp_path, 1, popen=_StubbornPopen2)
+    handle = capture.start_capture(tmp_path, 1, popen=_StubbornPopen2, ffmpeg="ffmpeg")
     capture.stop_capture(handle, timeout=0.01)
     assert handle.log_fh.closed, "log_fh must close even after SIGKILL path"
 
@@ -199,7 +199,7 @@ def test_start_capture_closes_log_fh_on_popen_failure(tmp_path: Path):
 
     with _um.patch.object(Path, "open", _spy_open):
         with pytest.raises(OSError, match="simulated Popen failure"):
-            capture.start_capture(tmp_path, 1, popen=_ExplodingPopen)
+            capture.start_capture(tmp_path, 1, popen=_ExplodingPopen, ffmpeg="ffmpeg")
 
     assert "fh" in captured_fh, "log file handle was never opened"
     assert captured_fh["fh"].closed, "log_fh leaked -- not closed after Popen failure"
