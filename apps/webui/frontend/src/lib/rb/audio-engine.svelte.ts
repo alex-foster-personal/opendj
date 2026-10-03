@@ -1036,7 +1036,7 @@ import {
 } from './audio-engine-guards';
 import {
 	AUTOMATIC_HANDOFF_REASONS,
-	runAutomaticRejoin,
+	runAutomaticRejoin as _automaticRejoinRunner,
 	electMaster,
 	onAirGain,
 	SILENCE_GAIN_EPSILON,
@@ -1163,7 +1163,7 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 		// Under the shared sync claim, queued behind the command that moved the
 		// master, so a load, seek or tempo sent after it never completes first
 		// and then has its follower position or tempo overwritten by this.
-		void runAutomaticRejoin(async () => {
+		void _automaticRejoinRunner(async () => {
 			if (_masterDeck !== next || !deckStates[next].playing) return;
 			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
 			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) });
