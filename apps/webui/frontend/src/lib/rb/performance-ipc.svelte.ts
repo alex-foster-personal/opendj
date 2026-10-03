@@ -75,6 +75,7 @@ import {
 	getDeckState,
 	getMasterMode,
 	getMasterReason,
+	installAutomaticRejoinRunner,
 	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
@@ -908,6 +909,38 @@ installScopedSyncRunner((_deck, run) => {
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
 installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// An automatic master handoff (unload, pause, natural end) re-joins the
+// followers under the same wide claim, queued behind the command that moved the
+// master, so later deck commands wait for it rather than racing it.
+// Counted like a widened claim, so a caller waiting for the queue to drain
+// waits for the re-join too.
+installAutomaticRejoinRunner((work) => {
+	const statusGeneration = _commandStatusGeneration;
+	const counted = () => statusGeneration === _commandStatusGeneration;
+	let started = false;
+	if (counted()) {
+		performanceCommandStatus.queued += 1;
+		for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
+	}
+	return _commandScheduler
+		.run([...DECK_IDS, 'sync'], async () => {
+			started = true;
+			if (counted()) {
+				performanceCommandStatus.queued -= 1;
+				performanceCommandStatus.active += 1;
+			}
+			try {
+				await work();
+			} finally {
+				if (counted()) performanceCommandStatus.active -= 1;
+			}
+		})
+		.finally(() => {
+			if (!counted()) return;
+			if (!started) performanceCommandStatus.queued -= 1;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+		});
+});
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;

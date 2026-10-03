@@ -753,11 +753,14 @@ pub fn result_json(id: Option<&Value>, res: &Result<(), ProtoError>) -> Value {
 
 /// Sent to every client when the rest of a progressive load's file fails to
 /// decode after its head was loaded (and its `load` answered ok): the deck
-/// has been emptied rather than left playing a track cut short.
-pub fn load_failed_json(deck: u8, e: &ProtoError) -> Value {
+/// has been emptied rather than left playing a track cut short. `path` is
+/// that load's file, as its `load` gave it, so a client with a newer load
+/// in flight on the deck can tell this one ends an earlier load.
+pub fn load_failed_json(deck: u8, path: &str, e: &ProtoError) -> Value {
     json!({
         "type": "load_failed",
         "deck": deck,
+        "path": path,
         "error": {"code": e.code.as_str(), "message": e.message},
     })
 }

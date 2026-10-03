@@ -44,7 +44,7 @@ from apps.shared.state.writer import StateWriter
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_write_state
+from ..deps import get_read_state, get_write_state
 
 router = APIRouter(prefix="/tracks", tags=["rb-hot-cues"])
 
@@ -220,7 +220,7 @@ def _write_op(
 def list_hot_cue_slots(
     stable_id: str,
     request: Request,
-    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[HotCueSlotOut]:
     content = _rekordbox_content(stable_id)
     conn = state_db.open_ro(_state_db_path(request))

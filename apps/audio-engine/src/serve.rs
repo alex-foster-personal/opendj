@@ -785,6 +785,9 @@ struct Control {
     /// from its head until the rest is sent to its deck or dropped, first at
     /// its expected size and, once decoded, at its real one.
     tail_pcm: HashMap<u64, Charge>,
+    /// By load seq: the file a load decodes, kept past its head while its
+    /// rest may still fail, so `load_failed` names the load it ends.
+    load_paths: HashMap<u64, String>,
     /// Set by whichever write to the output fails first.
     closed: Arc<AtomicBool>,
 }
@@ -974,6 +977,7 @@ impl Control {
     fn start_load(&mut self, id: Origin, spec: LoadSpec, charge: Charge, behind: VecDeque<Queued>) {
         let deck = spec.deck;
         let seq = self.seq(id);
+        self.load_paths.insert(seq, spec.path.clone());
         // Held until the load's result is out, decoded or not.
         if let Some(p) = self.ids.lock().unwrap().get_mut(&seq) {
             p.hold = Some(charge);
@@ -1059,9 +1063,14 @@ impl Control {
             // A load whose head went out and which a later load on the deck
             // has since replaced.
             self.tail_pcm.remove(&seq);
+            self.load_paths.remove(&seq);
             return;
         }
         self.loading[deck as usize - 1] = None;
+        if self.tailing[deck as usize - 1] != Some(seq) {
+            // Whole or failed: no rest follows that could fail later.
+            self.load_paths.remove(&seq);
+        }
         let mut q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         match result {
             Ok(track) => {
@@ -1103,6 +1112,7 @@ impl Control {
     fn send_tail(&mut self, deck: DeckId, seq: u64, result: Result<Arc<Track>, ProtoError>) {
         // Sent or dropped, the rest is charged below as the deck's track.
         let _held = self.tail_pcm.remove(&seq);
+        let path = self.load_paths.remove(&seq).unwrap_or_default();
         let Some(head) = self.on_deck[deck as usize - 1].clone().filter(|t| t.decoding && t.load_id == seq) else {
             return;
         };
@@ -1121,7 +1131,7 @@ impl Control {
             }
             Err(e) => {
                 let _ = self.push_seq(internal, EngineCmd::Unload { deck });
-                self.broadcast(&protocol::load_failed_json(deck, &e));
+                self.broadcast(&protocol::load_failed_json(deck, &path, &e));
             }
         }
     }
@@ -1571,6 +1581,7 @@ fn serve_threaded_with(
         pcm_used: Arc::default(),
         pcm_budget: PCM_BYTES,
         tail_pcm: HashMap::new(),
+        load_paths: HashMap::new(),
         closed,
     };
     let mut audio_failed = false;
@@ -2087,6 +2098,7 @@ mod tests {
             pcm_used: Arc::default(),
             pcm_budget: PCM_BYTES,
             tail_pcm: HashMap::new(),
+            load_paths: HashMap::new(),
         };
         (control, cmd_rx, out)
     }
@@ -2232,12 +2244,16 @@ mod tests {
         assert!(matches!(cmd_rx.pop(), Ok((_, EngineCmd::Unload { deck: 3 }))), "the cut-short track stayed on the deck");
         let t = text(&out);
         assert!(t.contains(r#""type":"load_failed""#) && t.contains("late.mp3"), "{t}");
+        // It names the load it ends by that load's file, so a page with a
+        // newer load still in flight can tell it is not that one's.
+        assert!(t.contains(r#""path":"nope.wav""#), "{t}");
         // Control: a load that was never progressive still finishes as before.
         c.load((STDIO, Some("e".into())), spec(4));
         let e = c.loading[3].unwrap();
         c.decoded(e, 4, Ok(Arc::new(Track::new(48000, vec![0.0; 960], vec![], None))));
         assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { track, .. })) if seq == e && !track.decoding));
         assert!(cmd_rx.pop().is_err());
+        assert!(c.load_paths.is_empty(), "a finished load kept its path: {:?}", c.load_paths);
     }
 
     #[test]

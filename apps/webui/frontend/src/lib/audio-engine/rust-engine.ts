@@ -171,14 +171,19 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<void> {
 	if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
 	loadFences[deck] = Infinity;
-	let trackRes, anlz, slots;
+	holdLoadFailures(deck);
+	let trackRes, anlz, slots, loaded: unknown;
 	try {
-		[trackRes, anlz, slots] = await Promise.all([
+		[trackRes, anlz, slots, loaded] = await Promise.all([
 			getTrack(stable_id),
 			fetchAnlzForDeckLoad(stable_id),
 			fetchHotCueSlots(stable_id),
 			_post(`${AUDIO_ENGINE_PATH}/load`, { deck, stable_id })
 		]);
+	} catch (error) {
+		// The deck still shows the earlier track: a failure that ended it lands now.
+		releaseLoadFailures(deck, null);
+		throw error;
 	} finally {
 		loadFences[deck] = link.lastState?.frame ?? -1;
 	}
@@ -203,7 +208,35 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
 	displayLoops[deck] = st.loop;
 	st.load_generation += 1;
+	const loadedPath =
+		typeof loaded === 'object' && loaded !== null && 'path' in loaded && typeof loaded.path === 'string'
+			? loaded.path
+			: null;
+	releaseLoadFailures(deck, loadedPath);
 	link.client?.send({ type: 'engine_state' }).catch(() => {});
+}
+
+/** Per deck, while a load is in flight there: the late decode failures heard
+ * meanwhile. The engine can answer a load on its head and fail its rest
+ * before the page has published that load, so a failure is held until then
+ * rather than dropped against a deck that shows no track yet. */
+const heldLoadFailures: Partial<Record<DeckId, EngineLoadFailed[]>> = {};
+
+/** A load starts on `deck`: hold the failures heard until it is published. */
+export function holdLoadFailures(deck: DeckId): void {
+	heldLoadFailures[deck] = [];
+}
+
+/** The load on `deck` is settled. Published with the engine's file `path`,
+ * the held failures for that file end it; one naming another file ended
+ * the earlier load this one replaced, and is dropped. Not published (`null`),
+ * every held failure lands on the earlier track the deck still shows. */
+export function releaseLoadFailures(deck: DeckId, path: string | null): void {
+	const held = heldLoadFailures[deck] ?? [];
+	delete heldLoadFailures[deck];
+	for (const e of held) {
+		if (path === null || e.path === undefined || e.path === path) applyLoadFailed(e);
+	}
 }
 
 /** Reset what a load publishes. Rust-mode twin of the Web Audio engine's
@@ -269,6 +302,11 @@ export function applyAcknowledged(command: PerformanceCommand): void {
  * unloaded the deck, so the page clears it too and says why, rather than
  * showing a track whose audio is gone. */
 export function applyLoadFailed(e: EngineLoadFailed): void {
+	const held = heldLoadFailures[e.deck as DeckId];
+	if (held !== undefined) {
+		held.push(e);
+		return;
+	}
 	const st = deckStates[e.deck as DeckId];
 	if (st === undefined || st.stable_id === null) return;
 	clearRustDeck(st);

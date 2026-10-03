@@ -67,6 +67,41 @@ test('1. an automatic master election re-joins the playing followers to the new 
 	assert.match(elect, /next !== previous/);
 });
 
+test('1b. the automatic re-join runs under the shared sync claim, behind the command that moved the master', async () => {
+	// Codex on 5143106cf: the re-join was fire-and-forget, so the pause or
+	// unload that moved the master released its claim while the re-join still
+	// awaited, and a later load, seek or tempo could finish first and then have
+	// its follower position or tempo overwritten.
+	const source = readFrontendSource(ENGINE);
+	const elect = body(source, 'function _electPlayingMaster(', '\n}\n');
+	assert.match(elect, /_automaticRejoinRunner\(async \(\) => \{/, 'the re-join does not go through the claim runner');
+	assert.doesNotMatch(elect, /void _synchronizeFollowers\(/, 'the re-join is detached from every claim');
+	// It re-checks the master when its turn comes: a later command may have
+	// moved it again while the re-join waited.
+	assert.match(elect, /if \(_masterDeck !== next \|\| !deckStates\[next\]\.playing\) return;/);
+	const ipc = readFrontendSource('src/lib/rb/performance-ipc.svelte.ts');
+	const install = body(ipc, 'installAutomaticRejoinRunner((work) => {', '\n});\n');
+	assert.match(install, /_commandScheduler\s*\.run\(\[\.\.\.DECK_IDS, 'sync'\], /, 'the runner does not take every deck plus sync');
+
+	// What that claim buys, on the real scheduler: a deck command sent after
+	// the one that moved the master waits for the re-join, not the other way.
+	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const scheduler = new ScopedCommandScheduler();
+	const order = [];
+	let rejoined;
+	const pause = scheduler.run([1], async () => {
+		order.push('pause master');
+		rejoined = scheduler.run([1, 2, 3, 4, 'sync'], async () => {
+			await new Promise((resolve) => setImmediate(resolve));
+			order.push('re-join followers');
+		});
+	});
+	await pause;
+	await scheduler.run([2], async () => order.push('seek follower'));
+	await rejoined;
+	assert.deepEqual(order, ['pause master', 're-join followers', 'seek follower']);
+});
+
 test('control: only the automatic handoff reasons re-join; claims and re-elections do not', async () => {
 	const { AUTOMATIC_HANDOFF_REASONS } = await loadTypeScriptModule('src/lib/rb/master-election.ts');
 	for (const reason of ['master-left', 'natural-end', 'unload']) {

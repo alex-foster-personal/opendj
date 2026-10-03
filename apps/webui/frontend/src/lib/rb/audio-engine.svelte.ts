@@ -1157,11 +1157,31 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 	// An AUTOMATIC handoff re-joins the playing followers as setDeckMaster does;
 	// otherwise each phase lock drops ('master moved') and the decks free-run.
 	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
-		const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
 		_bumpReanchorOperation(next);
-		void _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) }).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
+		// Under the shared sync claim, queued behind the command that moved the
+		// master, so a load, seek or tempo sent after it never completes first
+		// and then has its follower position or tempo overwritten by this.
+		void _automaticRejoinRunner(async () => {
+			if (_masterDeck !== next || !deckStates[next].playing) return;
+			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
+			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) });
+		}).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
 	}
 	return next;
+}
+
+/** Runs an automatic master handoff's follower re-join. The dispatcher installs
+ * one that takes every deck's scope plus 'sync' (installed rather than
+ * imported, since this module is imported FROM there); until then it runs now. */
+export type AutomaticRejoinRunner = (work: () => Promise<void>) => Promise<void>;
+let _automaticRejoinRunner: AutomaticRejoinRunner = (work) => work();
+
+export function installAutomaticRejoinRunner(runner: AutomaticRejoinRunner): () => void {
+	const previous = _automaticRejoinRunner;
+	_automaticRejoinRunner = runner;
+	return () => {
+		_automaticRejoinRunner = previous;
+	};
 }
 
 function _maybeHandoffOnAir(): void {

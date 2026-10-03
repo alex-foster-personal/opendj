@@ -72,6 +72,8 @@ export type EngineCommand = { type: string } & Record<string, unknown>;
 export interface EngineLoadFailed {
 	type: 'load_failed';
 	deck: number;
+	/** The file of the load it ends, as that load gave it. */
+	path?: string;
 	error: { code: string; message: string };
 }
 
