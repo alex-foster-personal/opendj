@@ -94,8 +94,13 @@ export interface StemHandoffDeps {
 	/** Retire the stopped mix `tailSec` after `when`. */
 	retireOutgoingAfter(when: number, tailSec: number): void;
 	/** Cut the mix at `when` if `stillPending()` then says its stop has not
-	 * settled. Returns whether that cut happened (read once the stop settles). */
-	cutOutgoingAt(when: number, stillPending: () => boolean): () => boolean;
+	 * settled. Resolves when that cut happens; never resolves otherwise. */
+	cutOutgoingAt(when: number, stillPending: () => boolean): Promise<void>;
+	/** Re-point the committed stems at the control clock from `at` (a command
+	 * landed on the dead mix while its stop was failing). */
+	resyncIncoming(at: number, segment: StemHandoffSegment): Promise<void>;
+	/** The deck's processor is unusable: fail the deck. */
+	failDeck(error: unknown): void;
 	/** The mix refused its stop or never acknowledged it; the stems took over. */
 	reportOutgoingFailure(error: unknown): void;
 	/** The mix is dead (poisoned or cut) and the deck still points at it, with
@@ -174,9 +179,10 @@ export async function handOffStemsLive(
 			stopError = error;
 		}
 	);
-	const wasCut = deps.cutOutgoingAt(when, () => stop.state === 'pending');
-	await stopSettled;
-	const cut = wasCut();
+	// A cut does not wait for the stalled stop to time out: the deck must
+	// point at the audible stems at once, or commands go to the dead mix.
+	await Promise.race([stopSettled, deps.cutOutgoingAt(when, () => stop.state === 'pending')]);
+	const cut = stop.state === 'pending';
 	if (stop.state === 'failed' || cut) {
 		// A refused or timed-out command poisons the mix's processor, and a cut
 		// one is disconnected: either way it cannot be put back. The stems'
@@ -188,9 +194,20 @@ export async function handOffStemsLive(
 			deps.failOutgoing(reason);
 			return 'moved';
 		}
+		const moved = deps.snapshot().revision !== before.revision;
 		deps.commit(when, segment);
 		if (!cut) deps.retireOutgoingAfter(when, 0);
 		deps.reportOutgoingFailure(reason);
+		if (moved) {
+			// A command landed on the dying mix: the stems still run the segment
+			// scheduled before it, so bring them to the control clock now.
+			const at = Math.max(when, safeTransportScheduleTime(deps.now(), deps.leadSec));
+			try {
+				await deps.resyncIncoming(at, deps.segmentAt(at));
+			} catch (error) {
+				deps.failDeck(error);
+			}
+		}
 		return 'handed_off';
 	}
 	const settled = deps.snapshot();
@@ -356,18 +373,18 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			const delaySec = Math.max(0, when - port.clock.currentTime) + tailSec;
 			setTimer(() => port.retire(retiring), delaySec * 1000);
 		},
-		cutOutgoingAt: (when, stillPending) => {
-			const cutting = outgoing;
-			let fired = false;
-			if (cutting !== null) {
+		cutOutgoingAt: (when, stillPending) =>
+			new Promise<void>((resolve) => {
+				const cutting = outgoing;
+				if (cutting === null) return;
 				setTimer(() => {
 					if (!stillPending()) return;
-					fired = true;
 					port.retire(cutting);
+					resolve();
 				}, Math.max(0, when - port.clock.currentTime) * 1000);
-			}
-			return () => fired;
-		},
+			}),
+		resyncIncoming: (at, segment) => port.incoming.schedule(at, port.startChange(segment)),
+		failDeck: (error) => port.outgoingFailed(error, true),
 		reportOutgoingFailure: (error) => port.outgoingFailed(error, false),
 		failOutgoing: (error) => {
 			if (outgoing !== null && rt.processor === outgoing) port.outgoingFailed(error, true);

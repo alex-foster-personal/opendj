@@ -58,7 +58,6 @@ function deck(overrides = {}) {
 		},
 		replaceable: false,
 		stale: false,
-		cut: false,
 		cutChecks: []
 	};
 	const deps = {
@@ -87,9 +86,15 @@ function deck(overrides = {}) {
 		reportOutgoingFailure: (error) => {
 			log.push(['reportOutgoingFailure', error.message]);
 		},
-		cutOutgoingAt: (when, stillPending) => {
-			state.cutChecks.push({ when, stillPending });
-			return () => state.cut;
+		cutOutgoingAt: (when, stillPending) =>
+			new Promise((resolve) => {
+				state.cutChecks.push({ when, stillPending, fire: resolve });
+			}),
+		resyncIncoming: async (at, segment) => {
+			log.push(['resyncIncoming', at, segment.positionSec]);
+		},
+		failDeck: (error) => {
+			log.push(['failDeck', error.message]);
 		},
 		failOutgoing: (error) => {
 			log.push(['failOutgoing', error.message]);
@@ -230,9 +235,10 @@ test('a stop still unacknowledged at the handoff instant is cut there, never dou
 	assert.equal(state.cutChecks.length, 1, 'no independent cut was armed for the mix');
 	assert.equal(state.cutChecks[0].when, when, 'the cut is not at the handoff instant');
 	assert.equal(state.cutChecks[0].stillPending(), true, 'the cut must fire while the stop is unsettled');
-	state.cut = true; // the timer fired at `when`
-	ack(); // the ack lands after the cut
+	state.cutChecks[0].fire(); // the timer fired at `when`; the stop never settles
+	// Committed at the cut, not after the stop's command timeout.
 	assert.equal(await outcome, 'handed_off');
+	ack();
 	assert.ok(!names(log).includes('restoreOutgoing'), 'a cut mix was "restored"');
 	assert.ok(!names(log).includes('retireOutgoingAfter'), 'the cut mix was retired twice');
 	assert.deepEqual(names(log).slice(-2), ['commit', 'reportOutgoingFailure']);
@@ -242,6 +248,41 @@ test('control: a stop acknowledged in time disarms the cut', async () => {
 	const { deps, state } = deck();
 	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
 	assert.equal(state.cutChecks[0].stillPending(), false, 'the cut would fire after an acknowledged stop');
+});
+
+test('a command that landed on the dying mix is replayed onto the stems', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async (when) => {
+		log.push(['stopOutgoing', when]);
+		state.snap.revision += 1; // a pause or seek scheduled on the mix
+		throw new Error('stop timed out');
+	};
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
+	const order = names(log);
+	assert.ok(order.indexOf('commit') < order.indexOf('resyncIncoming'), 'the stems were not brought to the control clock after the commit');
+	assert.ok(log.find((entry) => entry[0] === 'resyncIncoming')[1] >= log[1][1], 'resync before the handoff instant');
+});
+
+test('control: a failed stop with an unmoved deck does not resync the stems', async () => {
+	const { deps, log } = deck();
+	deps.stopOutgoing = async () => {
+		throw new Error('stop refused');
+	};
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
+	assert.ok(!names(log).includes('resyncIncoming'));
+});
+
+test('a stems resync that fails fails the deck', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async () => {
+		state.snap.revision += 1;
+		throw new Error('stop timed out');
+	};
+	deps.resyncIncoming = async () => {
+		throw new Error('stems refused');
+	};
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
+	assert.deepEqual(log.at(-1), ['failDeck', 'stems refused']);
 });
 
 test('a failed stop on an upgrade that went stale fails the deck instead of leaving the dead mix', async () => {
