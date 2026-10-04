@@ -167,6 +167,37 @@ def test_the_device_build_lists_this_hosts_inputs(capture_engine: Path):
     assert [d.index for d in devices] == list(range(len(devices)))
 
 
+def test_an_unavailable_real_input_does_not_hide_other_inputs(capture_engine: Path, tmp_path: Path, caplog: Any):
+    """[if] input cannot configure [then] list usable inputs and refuse that name, [else stop]."""
+    listing = subprocess.run(
+        [str(capture_engine), "input-devices"], capture_output=True, text=True, check=False, timeout=30
+    )
+    assert listing.returncode == 0, listing.stderr
+    prefix = "odj-audio: UNAVAILABLE audio input "
+    rejected = [line[len(prefix) :] for line in listing.stderr.splitlines() if line.startswith(prefix)]
+    if not rejected:
+        pytest.skip("UNAVAILABLE: this host has no actual rejected input configuration to verify")
+    name, consumed = json.JSONDecoder().raw_decode(rejected[0])
+    reason = rejected[0][consumed:].removeprefix(": ")
+    with caplog.at_level("WARNING", logger="apps.sets.capture_odj_audio"):
+        devices = capture.list_input_devices(backend=capture.CaptureBackend("odj-audio", str(capture_engine)))
+    assert [device.index for device in devices] == list(range(len(devices)))
+    assert name not in [device.name for device in devices]
+    assert name in caplog.text and reason in caplog.text
+    recording = subprocess.run(
+        [str(capture_engine), "record", "--device", name, "--dir", str(tmp_path)],
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert recording.returncode != 0
+    failed = [json.loads(line)["failed"] for line in recording.stdout.splitlines() if "failed" in json.loads(line)]
+    assert failed and name in failed[0] and reason in failed[0]
+    assert not list(tmp_path.glob("*.wav")), "unavailable named input wrote audio"
+
+
 def test_a_build_that_cannot_list_is_unavailable_not_empty(plain_engine: Path):
     """[if] the listing fails [then] CaptureUnavailable with odj-audio's reason, never []."""
     with pytest.raises(capture.CaptureUnavailable, match="rebuild with --features device"):

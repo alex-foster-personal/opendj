@@ -5,9 +5,11 @@ The installed app bundles no ffmpeg (#4766), so ``odj-audio`` (build feature
 segments (``record``); see ``docs/decisions/*-set-recording-without-ffmpeg.md``.
 :mod:`apps.sets.capture` picks between this and ffmpeg.
 """
+
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import threading
@@ -25,6 +27,8 @@ from .capture_types import (
     InputDevice,
     is_loopback_name,
 )
+
+logger = logging.getLogger(__name__)
 
 LIST_DEVICES_TIMEOUT_S = 10.0
 VERSION_PROBE_TIMEOUT_S = 10.0
@@ -118,6 +122,8 @@ def list_odj_audio_inputs(
     if devices is None:
         tail = (result.stderr or "").strip()[-300:] or "no stderr"
         raise CaptureUnavailable(f"{exe} input-devices exited {result.returncode} without a device list: {tail}")
+    if diagnostics := (result.stderr or "").strip():
+        logger.warning("odj-audio input listing: %s", diagnostics)
     return devices
 
 
