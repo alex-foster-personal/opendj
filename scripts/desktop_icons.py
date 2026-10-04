@@ -136,16 +136,22 @@ def icns_embedded_pixel_sizes(icns_path: Path) -> set[int]:
         raise PayloadBuildError(msg)
 
     sizes: set[int] = set()
+    chunk_types: set[bytes] = set()
     offset = 8
     while offset + 8 <= len(data):
         chunk_size = struct.unpack(">I", data[offset + 4 : offset + 8])[0]
         if chunk_size < 8 or offset + chunk_size > len(data):
             msg = f"{icns_path} has a corrupt icns chunk at offset {offset}"
             raise PayloadBuildError(msg)
+        chunk_types.add(data[offset : offset + 4])
         chunk_data = data[offset + 8 : offset + chunk_size]
         if chunk_data[:8] == b"\x89PNG\r\n\x1a\n":
             sizes.add(_read_png_edge(chunk_data))
         offset += chunk_size
+    if {b"is32", b"s8mk"} <= chunk_types:
+        sizes.add(16)
+    if {b"il32", b"l8mk"} <= chunk_types:
+        sizes.add(32)
     return sizes
 
 
@@ -153,8 +159,24 @@ def _write_icns(png_by_size: dict[int, bytes], icns_path: Path) -> None:
     chunks: list[bytes] = []
     for edge_px, ostype in ICNS_OSTYPES:
         png_data = png_by_size[edge_px]
-        chunk_body = ostype + struct.pack(">I", 8 + len(png_data)) + png_data
-        chunks.append(chunk_body)
+        if ostype in {b"is32", b"il32"}:
+            # These legacy types require planar RGB RLE, never a PNG stream.
+            # Literal packets encode 1..128 bytes as count-minus-one plus bytes.
+            with Image.open(io.BytesIO(png_data)) as image:
+                rgba = image.convert("RGBA")
+                rgb = bytearray()
+                for band in ("R", "G", "B"):
+                    channel = rgba.getchannel(band).tobytes()
+                    for offset in range(0, len(channel), 128):
+                        packet = channel[offset : offset + 128]
+                        rgb.append(len(packet) - 1)
+                        rgb.extend(packet)
+                alpha = rgba.getchannel("A").tobytes()
+            chunks.append(ostype + struct.pack(">I", 8 + len(rgb)) + rgb)
+            mask_type = b"s8mk" if ostype == b"is32" else b"l8mk"
+            chunks.append(mask_type + struct.pack(">I", 8 + len(alpha)) + alpha)
+        else:
+            chunks.append(ostype + struct.pack(">I", 8 + len(png_data)) + png_data)
     body = b"".join(chunks)
     header = b"icns" + struct.pack(">I", 8 + len(body))
     icns_path.write_bytes(header + body)
