@@ -10,20 +10,8 @@
  * control never gains a wait by being measured.
  */
 
-import {
-	EQ_APPLY_KIND,
-	applyEqRamp,
-	eqApplyStages,
-	eqRampPlan
-} from '$lib/player/eq-apply';
-import {
-	FADER_APPLY_KIND,
-	FILTER_APPLY_KIND,
-	mixerApplyStages,
-	STEM_MUTE_APPLY_KIND,
-	STEM_SOLO_APPLY_KIND,
-	XFADER_APPLY_KIND
-} from '$lib/player/mixer-apply';
+import { EQ_APPLY_KIND, eqApplyStages } from '$lib/player/eq-apply';
+import { mixerApplyStages } from '$lib/player/mixer-apply';
 import {
 	latencyFloorLabels,
 	type ScheduleRowKind,
@@ -33,15 +21,7 @@ import {
 import { claimArmedHotCuePress, claimLoadSpanningPress } from '$lib/rb/deck-slots';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 
-export { EQ_APPLY_KIND, applyEqRamp, eqApplyStages, eqRampPlan } from '$lib/player/eq-apply';
-export {
-	FADER_APPLY_KIND,
-	FILTER_APPLY_KIND,
-	mixerApplyStages,
-	STEM_MUTE_APPLY_KIND,
-	STEM_SOLO_APPLY_KIND,
-	XFADER_APPLY_KIND
-} from '$lib/player/mixer-apply';
+export { applyEqRamp } from '$lib/player/eq-apply';
 
 /**
  * A deck, exactly as the perf ring accepts one.
