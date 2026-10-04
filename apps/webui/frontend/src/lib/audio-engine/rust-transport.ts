@@ -260,7 +260,7 @@ export function phaseLockTick(): void {
 			const masterId = masterState.stable_id;
 			// Share the load's scheduler claim: stale writes must not reach its new head.
 			void runAutomaticRejoin(async () => {
-				if (phaseLocks[deck] !== lock || st.load_generation !== generation ||
+				if (_syncMaster() !== master || phaseLocks[deck] !== lock || st.load_generation !== generation ||
 					st.stable_id !== stableId || masterState.load_generation !== masterGeneration ||
 					masterState.stable_id !== masterId || loadFences[deck] === Infinity ||
 					loadFences[master] === Infinity) {
