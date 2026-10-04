@@ -202,8 +202,12 @@ function _dropLock(deck: DeckId, lock: PhaseLock): void {
 	const near = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-6 * b;
 	if (!near(st.pitch, lock.sent) && !near(st.pitch, lock.base)) return;
 	st.pitch = lock.base;
+	const generation = st.load_generation;
+	const stableId = st.stable_id;
 	void send({ type: 'tempo', deck, ratio: lock.base }).catch((e: unknown) => {
-		st.sync_error = `phase lock release failed: ${e instanceof Error ? e.message : String(e)}`;
+		if (st.load_generation === generation && st.stable_id === stableId) {
+			st.sync_error = `phase lock release failed: ${e instanceof Error ? e.message : String(e)}`;
+		}
 	});
 }
 
@@ -249,8 +253,16 @@ export function phaseLockTick(): void {
 			// A follower in its own loop is the DJ's: it is not seeked out of it.
 			if (st.loop?.engaged) continue;
 			lock.busy = true;
+			const generation = st.load_generation;
+			const stableId = st.stable_id;
+			const masterState = deckStates[master];
+			const masterGeneration = masterState.load_generation;
+			const masterId = masterState.stable_id;
 			void _join(master, deck, { reanchor: true }).catch((e: unknown) => {
-				st.sync_error = `phase lock lost: ${e instanceof Error ? e.message : String(e)}`;
+				if (st.load_generation === generation && st.stable_id === stableId &&
+					masterState.load_generation === masterGeneration && masterState.stable_id === masterId) {
+					st.sync_error = `phase lock lost: ${e instanceof Error ? e.message : String(e)}`;
+				}
 			});
 			continue;
 		}
