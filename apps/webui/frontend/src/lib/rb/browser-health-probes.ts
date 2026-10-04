@@ -1,5 +1,5 @@
 /** Actual browser/engine liveness probes and validated ingest coverage readout. */
-import { pingHealth, timeoutSignal } from '$lib/rb/api-rb';
+import { pingHealth, timeoutSignal } from '$lib/api';
 import type { IngestCoverage } from '$lib/rb/api-ingest';
 import type { LibraryHealthDot } from '$lib/rb/library-health-dots';
 

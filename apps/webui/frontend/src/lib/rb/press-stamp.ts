@@ -22,6 +22,7 @@ import { claimArmedHotCuePress, claimLoadSpanningPress } from '$lib/rb/deck-slot
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 
 export { applyEqRamp } from '$lib/player/eq-apply';
+export { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND } from '$lib/player/mixer-apply';
 
 /**
  * A deck, exactly as the perf ring accepts one.

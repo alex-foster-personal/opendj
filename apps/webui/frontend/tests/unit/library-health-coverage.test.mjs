@@ -2,7 +2,7 @@
  * BrowserPanel ingest-coverage health-dot contract.
  *
  * The node:test harness cannot mount a Svelte component, so this evaluates
- * BrowserPanel's real _coverageDot implementation directly from its source.
+ * the real browser-health-probes production module with its API dependencies.
  * It exercises the response values received from the existing typed API, not
  * a substitute API or DOM.
  *
@@ -12,27 +12,21 @@
  * the dot must throw so _loadIngestCoverage renders an API-contract error.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { build } from 'esbuild';
+import { importBundledSource } from './import-bundled-source.mjs';
 
-const PANEL = fileURLToPath(
-	new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)
-);
-
-function coverageDot() {
-	const source = readFileSync(PANEL, 'utf8');
-	const start = source.indexOf('\tfunction _coverageDot(');
-	const end = source.indexOf('\n\tasync function _loadIngestCoverage()', start);
-	assert.ok(start >= 0 && end > start, 'could not isolate BrowserPanel._coverageDot');
-	const functionSource = source
-		.slice(start, end)
-		.replace("label: LibraryHealthDot['label']", 'label')
-		.replace('coverage: IngestCoverage', 'coverage')
-		.replace("step: 'vocals' | 'stems' | 'lyrics'", 'step')
-		.replace('): LibraryHealthDot {', ') {');
-	return Function(`${functionSource}\nreturn _coverageDot;`)();
-}
+const LIB = fileURLToPath(new URL('../../src/lib', import.meta.url));
+// Bundle the actual production module and its real API dependencies. No alias
+// substitutes, rune shims, component stubs, or source-text function extraction.
+const result = await build({
+ entryPoints: [fileURLToPath(new URL('../../src/lib/rb/browser-health-probes.ts', import.meta.url))],
+ alias: { $lib: LIB }, bundle: true, format: 'esm', platform: 'node',
+ define: { 'import.meta.env.VITE_API_BASE': 'undefined', 'import.meta.env.DEV': 'false' },
+ write: false
+});
+const { _coverageDot: dot } = await importBundledSource(result.outputFiles[0].text, 'browser-health-probes');
 
 function coverage(corrupt, missing = 0) {
 	return {
@@ -44,8 +38,7 @@ function coverage(corrupt, missing = 0) {
 }
 
 test('valid coverage stays complete while a corrupt cache entry is a visible error', () => {
-	const dot = coverageDot();
-	assert.deepEqual(dot('Lyrics completion', coverage(0), 'lyrics'), {
+		assert.deepEqual(dot('Lyrics completion', coverage(0), 'lyrics'), {
 		label: 'Lyrics completion',
 		state: 'complete',
 		detail: '3/3 playable complete, 0 missing, 0 broken links'
@@ -65,7 +58,7 @@ for (const [name, corrupt] of [
 ]) {
 	test(`${name} corruption count fails the ingest coverage contract`, () => {
 		assert.throws(
-			() => coverageDot()('Lyrics completion', coverage(corrupt), 'lyrics'),
+			() => dot('Lyrics completion', coverage(corrupt), 'lyrics'),
 			/lyrics coverage corrupt count must be a nonnegative integer/
 		);
 	});

@@ -124,7 +124,7 @@ import {
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
 import { buildDeckChannelGraph, recreateFromEngineAccess } from '$lib/rb/deck-channel-graph';
-import { applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
+import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -4034,13 +4034,13 @@ class RbAudioEngine implements AudioEngine {
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void {
 		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
 		applyStemControl(deck, stem, 'muted', muted, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
-		if (_ctx !== null) logMixerApply('stem-mute-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(STEM_MUTE_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
 		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
-		if (_ctx !== null) logMixerApply('stem-solo-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(STEM_SOLO_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void {
@@ -4137,7 +4137,7 @@ class RbAudioEngine implements AudioEngine {
 			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
 			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
-		if (_ctx !== null) logMixerApply('filter-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(FILTER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setFader(deck: DeckId, value: number, pressT0Ms?: number): void {
@@ -4146,13 +4146,13 @@ class RbAudioEngine implements AudioEngine {
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
 		_maybeHandoffOnAir();
-		if (_ctx !== null) logMixerApply('fader-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(FADER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setCrossfader(value: number, pressT0Ms?: number): void {
 		assertUnitRange('setCrossfader value', value);
 		mixerState.crossfader = value;
-		if (_ctx !== null) { _applyCrossfader(); logMixerApply('xfader-apply', null, pressT0Ms, _ctx.currentTime); }
+		if (_ctx !== null) { _applyCrossfader(); logMixerApply(XFADER_APPLY_KIND, null, pressT0Ms, _ctx.currentTime); }
 		_maybeHandoffOnAir();
 	}
 
