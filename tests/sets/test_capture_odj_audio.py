@@ -182,6 +182,10 @@ def test_an_unavailable_real_input_does_not_hide_other_inputs(capture_engine: Pa
     with caplog.at_level("WARNING", logger="apps.sets.capture_odj_audio"):
         devices = capture.list_input_devices(backend=capture.CaptureBackend("odj-audio", str(capture_engine)))
     assert [device.index for device in devices] == list(range(len(devices)))
+    native_devices = json.loads(listing.stdout)["devices"]
+    assert [(device.index, device.name) for device in devices] == [
+        (device["index"], device["name"]) for device in native_devices
+    ]
     assert name not in [device.name for device in devices]
     assert name in caplog.text and reason in caplog.text
     recording = subprocess.run(
