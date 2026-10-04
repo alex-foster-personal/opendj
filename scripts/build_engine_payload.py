@@ -1379,13 +1379,14 @@ def locked_requirements(repo_root: Path) -> tuple[list[LockedRequirement], list[
     and served an app with six routes. A payload must ship the versions the
     test suite ran against, so the lock is the input.
     """
-    if shutil.which("uv") is None:
+    uv = shutil.which("uv")
+    if uv is None:
         raise PayloadBuildError("uv is not on PATH; cannot export the payload deps")
     result = subprocess.run(
         [
-            "uv",
+            uv,
             "export",
-            "--frozen",
+            "--locked",
             "--no-dev",
             "--no-emit-project",
             "--no-hashes",
