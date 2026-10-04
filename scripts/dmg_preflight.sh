@@ -685,7 +685,7 @@ check_icon_composer_asset() {
     local status=0
     local result host
     host="$(uname -n 2>/dev/null || hostname 2>/dev/null || echo unknown)"
-    result="$(cd "$SELF_ROOT" && uv run --no-project python -m scripts.icon_composer_asset \
+    result="$(cd "$SELF_ROOT" && env -u UV_LOCKED uv run --no-project python -m scripts.icon_composer_asset \
         --check \
         --source "$icon_source" \
         --committed-car "$icon_source/Assets.car" \
