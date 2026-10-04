@@ -1,6 +1,7 @@
 # Source of pylock.release-check.toml, synced by release-check.yml's project
-# venv. `make release-check` builds the sdist/wheel (build) and the native
+# venv. Reuse the full CI test-tool closure; `make release-check` also builds
+# the sdist/wheel (build) and the native
 # extension (maturin). Recompile with `python -m scripts.ci_lock compile`.
--r requirements.txt
+-r requirements-ci.in
 build
 maturin

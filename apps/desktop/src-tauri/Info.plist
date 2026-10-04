@@ -27,6 +27,9 @@
 -->
 <plist version="1.0">
 <dict>
+    <!-- Apple platform version fields remain numeric; app/updater identity keeps prerelease. -->
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Open DJ lists your audio devices, briefly listens to auto-calibrate headphone cue latency, and records your set from the input you pick when you press Record. Audio stays on this Mac and is never sent anywhere.</string>
 </dict>

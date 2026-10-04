@@ -17,7 +17,7 @@ import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
 import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
-import { electMaster } from '$lib/rb/master-election';
+import { electMaster, runAutomaticRejoin } from '$lib/rb/master-election';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
 import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -205,8 +205,12 @@ function _dropLock(deck: DeckId, lock: PhaseLock): void {
 	const near = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-6 * b;
 	if (!near(st.pitch, lock.sent) && !near(st.pitch, lock.base)) return;
 	st.pitch = lock.base;
+	const generation = st.load_generation;
+	const stableId = st.stable_id;
 	void send({ type: 'tempo', deck, ratio: lock.base }).catch((e: unknown) => {
-		st.sync_error = `phase lock release failed: ${e instanceof Error ? e.message : String(e)}`;
+		if (st.load_generation === generation && st.stable_id === stableId) {
+			st.sync_error = `phase lock release failed: ${e instanceof Error ? e.message : String(e)}`;
+		}
 	});
 }
 
@@ -267,8 +271,27 @@ export function phaseLockTick(): void {
 			// A follower in its own loop is the DJ's: it is not seeked out of it.
 			if (st.loop?.engaged) continue;
 			lock.busy = true;
-			void _join(master, deck, { reanchor: true }).catch((e: unknown) => {
-				st.sync_error = `phase lock lost: ${e instanceof Error ? e.message : String(e)}`;
+			const generation = st.load_generation;
+			const stableId = st.stable_id;
+			const masterState = deckStates[master];
+			const masterGeneration = masterState.load_generation;
+			const masterId = masterState.stable_id;
+			// Share the load's scheduler claim: stale writes must not reach its new head.
+			void runAutomaticRejoin(async () => {
+				if (_syncMaster() !== master || phaseLocks[deck] !== lock || st.load_generation !== generation ||
+					st.stable_id !== stableId || masterState.load_generation !== masterGeneration ||
+					masterState.stable_id !== masterId || loadFences[deck] === Infinity ||
+					loadFences[master] === Infinity) {
+					if (phaseLocks[deck] === lock) lock.busy = false;
+					return;
+				}
+				await _join(master, deck, { reanchor: true });
+			}).catch((e: unknown) => {
+				if (st.load_generation === generation && st.stable_id === stableId &&
+					masterState.load_generation === masterGeneration && masterState.stable_id === masterId) {
+					st.sync_error = `phase lock lost: ${e instanceof Error ? e.message : String(e)}`;
+				}
+				if (phaseLocks[deck] === lock) lock.busy = false;
 			});
 			continue;
 		}

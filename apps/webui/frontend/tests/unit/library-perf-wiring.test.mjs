@@ -108,7 +108,10 @@ test('TrackTable row artwork stays thumbnail-sized', () => {
 // health-14-coverage-at-mount.test.mjs.
 test('BrowserPanel sends ingestion coverage at mount and never awaits it on the boot path', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(src, /import \{ _pingBackend, _pingFrontend \} from '\$lib\/rb\/browser-health-probes';/);
 	assert.match(src, /import \{ getIngestCoverage \} from '\$lib\/rb\/api-ingest';/);
+	// HEALTH-14: the cached read leaves at mount, ahead of the listing. It is
+	// still never awaited on the boot path.
 	assert.match(src, /void _loadIngestCoverage\(\);\s*void _init\(\);/);
 	assert.match(src, /getIngestCoverage\(\{ cached: true \}\)/, 'the mount read must be the cached one');
 	const init = src.slice(src.indexOf('async function _init()'), src.indexOf('async function _restoreBootPane'));
@@ -117,14 +120,17 @@ test('BrowserPanel sends ingestion coverage at mount and never awaits it on the 
 	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
 		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
 	}
-	// The verdicts live in the pure module (HEALTH-01/03/04); the panel only
-	// measures. A failed coverage request is grey "unknown", never a verdict.
+	// Present-track verdicts live in the pure module (HEALTH-01/03/04). The
+	// extracted probe module still owns the on-disk corrupt/missing readout.
 	const rules = source('src/lib/rb/library-health-dots.ts');
 	assert.match(rules, /state: pending === 0 && failed === 0 \? 'complete' : 'incomplete'/);
 	assert.match(rules, /state: 'unavailable'/);
 	assert.match(rules, /state: 'error'/);
 	assert.match(src, /vocalsCompletion = _unknownDot\('Vocals completion', why\);/);
 	assert.doesNotMatch(src, /function _coverageDot\(/, 'the panel must not keep its own copy of the rule');
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: missing === 0 \? 'complete' : 'incomplete'/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: 'unavailable'/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: 'error'/);
 });
 
 test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
@@ -138,6 +144,8 @@ test('coverage counts only reachable audio and refetches through the library ref
 		'the dots must re-ask on their own clock while the drain works'
 	);
 	assert.match(src, /clearInterval\(healthRefetchTimer\);/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /const completed = coverage\.on_disk - missing;/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
 	assert.match(
 		src,
 		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\);/

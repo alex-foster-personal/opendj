@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _pingBackend, _pingFrontend } from '$lib/rb/browser-health-probes';
 	// Build unit: browser (COMPONENT-MAP 1.5, SCREENSHOT-SPEC 5).
 	// Layout: icon rail (inert) | playlist tree (real: /playlists + /health
 	// counts - OUR numbers) | 4-pane track list. Rows arrive FULLY HYDRATED
@@ -21,8 +22,6 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
-		pingHealth,
-		timeoutSignal,
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
@@ -1086,43 +1085,6 @@
 
 	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
 	const CONN_PING_MS = 2500;
-	const CONN_PING_TIMEOUT_MS = 2000;
-
-	async function _pingBackend(): Promise<LibraryHealthDot> {
-		try {
-			await pingHealth(CONN_PING_TIMEOUT_MS);
-			return { label: 'Backend', state: 'complete', detail: 'engine online' };
-		} catch (error: unknown) {
-			// The reason is kept rather than flattened to "offline": a timeout
-			// and a 500 want different things from the reader.
-			const why = error instanceof Error ? error.message : String(error);
-			return { label: 'Backend', state: 'error', detail: `engine not answering - ${why}` };
-		}
-	}
-
-	async function _pingFrontend(): Promise<LibraryHealthDot> {
-		const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
-		try {
-			const response = await fetch(`${window.location.origin}/`, {
-				method: 'GET',
-				cache: 'no-store',
-				signal
-			});
-			if (!response.ok) {
-				return {
-					label: 'Frontend',
-					state: 'error',
-					detail: `dev server returned HTTP ${response.status}`
-				};
-			}
-			return { label: 'Frontend', state: 'complete', detail: 'dev server online' };
-		} catch (error: unknown) {
-			const why = error instanceof Error ? error.message : String(error);
-			return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
-		} finally {
-			clear();
-		}
-	}
 
 	/** How often the dots re-ask on their own, so a drain that is working
 	 * through the library shows up without a reload (HEALTH-03). */

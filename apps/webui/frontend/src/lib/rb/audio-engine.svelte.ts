@@ -1,3 +1,4 @@
+import { _emptyRuntime, type _PendingSegment, type _DeckProcessor, type _DeckRuntime, type DeckTransportClock } from '$lib/rb/deck-runtime';
 export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './master-election';
 import {
 	SILENT_METER_READING,
@@ -118,7 +119,7 @@ import {
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/deck-channel-graph';
-import { applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
+import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
 	fetchAnlz,
@@ -447,106 +448,7 @@ function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
 // AudioNodes and AudioBuffers stay OUT of $state on purpose: proxying
 // native audio objects breaks identity checks and buys nothing reactive.
 
-export interface DeckTransportClock {
-	source: 'paused_cursor' | 'audio_output';
-	presentation_context_time_s: number | null;
-	desired_revision: number;
-	presented_revision: number;
-}
-
-interface _PendingSegment {
-	active: boolean;
-	loop: LoopState | null;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	masterTempoEnabled?: boolean;
-	keyShiftSemitones?: number;
-}
-
-type _DeckProcessor = StretchDeckProcessor | AlignedStemDeckProcessor;
-interface _DeckRuntime {
-	processor: _DeckProcessor | null;
-	durationSec: number;
-	latencySec: number;
-	controlActive: boolean;
-	controlLoop: LoopState | null;
-	controlTempoRatio: number;
-	controlMasterTempoEnabled: boolean;
-	controlKeyShiftSemitones: number;
-	/** ctx.currentTime at the moment the current processor segment starts. */
-	startCtxTime: number;
-	/** Track offset (seconds) at the moment the segment started. */
-	startOffsetSec: number;
-	/** Monotonic token guarding against stale load() results. */
-	loadToken: number;
-	nodes: _ChannelNodes | null;
-	pending: _PendingSegment[];
-	presentation: PresentedTransportTimeline;
-	nextScheduleRevision: number;
-	desiredActive: boolean;
-	scheduleIntentCount: number;
-	scheduleTail: Promise<void>;
-	swapTail: Promise<void>;
-	slipAnchor: SlipAnchor | null;
-	slipTempoBoundaries: SlipTempoBoundary[];
-	/** Manual key-shift baseline captured when KEY SYNC latches on; restored
-	 * on disable so the Camelot offset cannot drift away from the latch. */
-	keySyncBaselineSemitones: number | null;
-	audioBuffer: AudioBuffer | null; // decoded mix, retained for sync-seek crossfades and read by deckMixBuffer
-	/** Library-listed track duration; decoded buffer duration lives in deck state. */
-	metadataDurationMs: number | null;
-	/** Monotonic token; superseding transport/sync commands bump this deck's generation. */
-	reanchorOperationGeneration: number;
-	/** When set, equals the generation of the ramp that owns `transport_pending`. */
-	reanchorRampOwnerGeneration: number | null;
-	/**
-	 * LAZY-STEMS. A fully built AlignedStemDeckProcessor waiting for the deck to
-	 * be replaceable, held here because the engine forbids swapping a deck's
-	 * processor while it is playing or audible (assertDeckReplacementAllowed).
-	 * Set by _landStems when a live handoff (STEM-47) found the deck busy on
-	 * every attempt; drained by _drainPendingStemUpgrade on the next stop, or by
-	 * retryStems. Null the rest of the time. `token` pins it to the load that produced it so a track swap during
-	 * the fetch cannot graft one track's stems onto another's mix.
-	 */
-	pendingStemUpgrade: {
-		token: number;
-		processor: AlignedStemDeckProcessor;
-		state: StemDeckState;
-	} | null;
-}
-
-function _emptyRuntime(): _DeckRuntime {
-	return {
-		processor: null,
-		durationSec: 0,
-		latencySec: 0,
-		controlActive: false,
-		controlLoop: null,
-		controlTempoRatio: 1,
-		controlMasterTempoEnabled: true,
-		controlKeyShiftSemitones: 0,
-		startCtxTime: 0,
-		startOffsetSec: 0,
-		loadToken: 0,
-		nodes: null,
-		pending: [],
-		presentation: createPresentedTransportTimeline(0),
-		nextScheduleRevision: 0,
-		desiredActive: false,
-		scheduleIntentCount: 0,
-		scheduleTail: Promise.resolve(),
-		swapTail: Promise.resolve(),
-		slipAnchor: null,
-		slipTempoBoundaries: [],
-		keySyncBaselineSemitones: null,
-		audioBuffer: null,
-		metadataDurationMs: null,
-		reanchorOperationGeneration: 0,
-		reanchorRampOwnerGeneration: null,
-		pendingStemUpgrade: null
-	};
-}
+export type { DeckTransportClock } from '$lib/rb/deck-runtime';
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
@@ -4097,13 +3999,13 @@ class RbAudioEngine implements AudioEngine {
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void {
 		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
 		applyStemControl(deck, stem, 'muted', muted, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
-		if (_ctx !== null) logMixerApply('stem-mute-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(STEM_MUTE_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
 		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive });
-		if (_ctx !== null) logMixerApply('stem-solo-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(STEM_SOLO_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemGain(deck: DeckId, stem: StemControl, value: number): void {
@@ -4200,7 +4102,7 @@ class RbAudioEngine implements AudioEngine {
 			_setParam(nodes.filterDry.gain, dryGain); _setParam(nodes.filterLpWet.gain, lpWetGain);
 			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
-		if (_ctx !== null) logMixerApply('filter-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(FILTER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setFader(deck: DeckId, value: number, pressT0Ms?: number): void {
@@ -4209,13 +4111,13 @@ class RbAudioEngine implements AudioEngine {
 		const nodes = _rt[deck].nodes;
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
 		_maybeHandoffOnAir();
-		if (_ctx !== null) logMixerApply('fader-apply', deck, pressT0Ms, _ctx.currentTime);
+		if (_ctx !== null) logMixerApply(FADER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setCrossfader(value: number, pressT0Ms?: number): void {
 		assertUnitRange('setCrossfader value', value);
 		mixerState.crossfader = value;
-		if (_ctx !== null) { _applyCrossfader(); logMixerApply('xfader-apply', null, pressT0Ms, _ctx.currentTime); }
+		if (_ctx !== null) { _applyCrossfader(); logMixerApply(XFADER_APPLY_KIND, null, pressT0Ms, _ctx.currentTime); }
 		_maybeHandoffOnAir();
 	}
 

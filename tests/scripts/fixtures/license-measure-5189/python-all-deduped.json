@@ -1,0 +1,1382 @@
+[
+  {
+    "name": "kaitaistruct",
+    "version": "0.11",
+    "license": "MIT",
+    "texts": [
+      "kaitaistruct-0.11.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "audioread",
+    "version": "3.1.0",
+    "license": "MIT",
+    "texts": [
+      "audioread-3.1.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "uri-template",
+    "version": "1.3.0",
+    "license": "MIT License",
+    "texts": [
+      "uri_template-1.3.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rbox",
+    "version": "0.1.7",
+    "license": "GNU General Public License v3 (GPLv3)",
+    "texts": [],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "starlette",
+    "version": "1.3.1",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "starlette-1.3.1.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rfc3339-validator",
+    "version": "0.1.4",
+    "license": "MIT license",
+    "texts": [
+      "rfc3339_validator-0.1.4.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "fqdn",
+    "version": "1.5.1",
+    "license": "MPL 2.0",
+    "texts": [
+      "fqdn-1.5.1.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pydantic_core",
+    "version": "2.46.4",
+    "license": "MIT",
+    "texts": [
+      "pydantic_core-2.46.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "tzdata",
+    "version": "2026.2",
+    "license": "Apache-2.0",
+    "texts": [
+      "tzdata-2026.2.dist-info/licenses/LICENSE",
+      "tzdata-2026.2.dist-info/licenses/licenses/LICENSE_APACHE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "sse-starlette",
+    "version": "3.4.11",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "sse_starlette-3.4.11.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "lark",
+    "version": "1.3.1",
+    "license": "MIT",
+    "texts": [
+      "lark-1.3.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "isoduration",
+    "version": "20.11.0",
+    "license": "ISC License (ISCL)",
+    "texts": [
+      "isoduration-20.11.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "setproctitle",
+    "version": "1.3.7",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "setproctitle-1.3.7.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "jsonschema-specifications",
+    "version": "2025.9.1",
+    "license": "MIT",
+    "texts": [
+      "jsonschema_specifications-2025.9.1.dist-info/licenses/COPYING"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "websockets",
+    "version": "16.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "websockets-16.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pyacoustid",
+    "version": "1.3.1",
+    "license": "MIT",
+    "texts": [
+      "pyacoustid-1.3.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "requests",
+    "version": "2.34.2",
+    "license": "Apache-2.0",
+    "texts": [
+      "requests-2.34.2.dist-info/licenses/LICENSE",
+      "requests-2.34.2.dist-info/licenses/NOTICE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rich",
+    "version": "15.0.0",
+    "license": "MIT",
+    "texts": [
+      "rich-15.0.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "PyJWT",
+    "version": "2.13.0",
+    "license": "MIT",
+    "texts": [
+      "pyjwt-2.13.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "jsonschema",
+    "version": "4.26.0",
+    "license": "MIT",
+    "texts": [
+      "jsonschema-4.26.0.dist-info/licenses/COPYING"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "tinytag",
+    "version": "2.3.2",
+    "license": "MIT License",
+    "texts": [
+      "tinytag-2.3.2.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "packaging",
+    "version": "26.2",
+    "license": "Apache-2.0 OR BSD-2-Clause",
+    "texts": [
+      "packaging-26.2.dist-info/licenses/LICENSE",
+      "packaging-26.2.dist-info/licenses/LICENSE.APACHE",
+      "packaging-26.2.dist-info/licenses/LICENSE.BSD"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "mcp",
+    "version": "2.2.0",
+    "license": "MIT",
+    "texts": [
+      "mcp-2.2.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "sqlcipher3-wheels",
+    "version": "0.5.7",
+    "license": "zlib/libpng",
+    "texts": [
+      "sqlcipher3_wheels-0.5.7.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "cffi",
+    "version": "2.0.0",
+    "license": "MIT",
+    "texts": [
+      "cffi-2.0.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "fastapi",
+    "version": "0.136.3",
+    "license": "MIT",
+    "texts": [
+      "fastapi-0.136.3.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "numpy",
+    "version": "1.26.4",
+    "license": "BSD License",
+    "texts": [
+      "numpy-1.26.4.dist-info/LICENSE.txt",
+      "numpy/core/include/numpy/random/LICENSE.txt",
+      "numpy/ma/LICENSE",
+      "numpy/random/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pyobjc-framework-Quartz",
+    "version": "12.2.2",
+    "license": "MIT",
+    "texts": [
+      "pyobjc_framework_quartz-12.2.2.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "httpcore",
+    "version": "1.0.9",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "httpcore-1.0.9.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "SQLAlchemy",
+    "version": "2.0.50",
+    "license": "MIT",
+    "texts": [
+      "sqlalchemy-2.0.50.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "webcolors",
+    "version": "25.10.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "webcolors-25.10.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pyobjc-framework-Cocoa",
+    "version": "12.2.2",
+    "license": "MIT",
+    "texts": [
+      "pyobjc_framework_cocoa-12.2.2.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "construct",
+    "version": "2.10.70",
+    "license": "MIT",
+    "texts": [
+      "construct-2.10.70.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "bidict",
+    "version": "0.23.1",
+    "license": "MPL 2.0",
+    "texts": [
+      "bidict-0.23.1.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "httptools",
+    "version": "0.8.0",
+    "license": "MIT",
+    "texts": [
+      "httptools-0.8.0.dist-info/licenses/LICENSE",
+      "httptools-0.8.0.dist-info/licenses/vendor/http-parser/LICENSE-MIT",
+      "httptools-0.8.0.dist-info/licenses/vendor/llhttp/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "python-dotenv",
+    "version": "1.2.2",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "python_dotenv-1.2.2.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "h11",
+    "version": "0.16.0",
+    "license": "MIT",
+    "texts": [
+      "h11-0.16.0.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "httpx2",
+    "version": "2.13.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "httpx2-2.13.0.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pycparser",
+    "version": "3.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "pycparser-3.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "Pygments",
+    "version": "2.20.0",
+    "license": "BSD-2-Clause",
+    "texts": [
+      "pygments-2.20.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "mdurl",
+    "version": "0.1.2",
+    "license": "MIT License",
+    "texts": [
+      "mdurl-0.1.2.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "python-multipart",
+    "version": "0.0.32",
+    "license": "Apache-2.0",
+    "texts": [
+      "python_multipart-0.0.32.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "python-dateutil",
+    "version": "2.9.0.post0",
+    "license": "BSD License / Apache Software License",
+    "texts": [
+      "python_dateutil-2.9.0.post0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "PyYAML",
+    "version": "6.0.3",
+    "license": "MIT",
+    "texts": [
+      "pyyaml-6.0.3.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rfc3987-syntax",
+    "version": "1.1.0",
+    "license": "MIT",
+    "texts": [
+      "rfc3987_syntax-1.1.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "jsonpointer",
+    "version": "3.1.1",
+    "license": "Modified BSD License",
+    "texts": [
+      "jsonpointer-3.1.1.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pyobjc-core",
+    "version": "12.2.2",
+    "license": "MIT",
+    "texts": [],
+    "skipped_pyobjctest": [
+      "PyObjCTest/copying.cpython-311-darwin.so.dSYM/Contents/Resources/Relocations/aarch64/copying.cpython-311-darwin.so.yml",
+      "PyObjCTest/copying.cpython-311-darwin.so.dSYM/Contents/Resources/Relocations/x86_64/copying.cpython-311-darwin.so.yml"
+    ],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rfc8785",
+    "version": "0.1.4",
+    "license": "Apache Software License",
+    "texts": [
+      "rfc8785-0.1.4.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "httpcore2",
+    "version": "2.13.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "httpcore2-2.13.0.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "watchfiles",
+    "version": "1.2.0",
+    "license": "MIT",
+    "texts": [
+      "watchfiles-1.2.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "opentelemetry-api",
+    "version": "1.44.0",
+    "license": "Apache-2.0",
+    "texts": [
+      "opentelemetry_api-1.44.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "referencing",
+    "version": "0.37.0",
+    "license": "MIT",
+    "texts": [
+      "referencing-0.37.0.dist-info/licenses/COPYING"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "charset-normalizer",
+    "version": "3.4.7",
+    "license": "MIT",
+    "texts": [
+      "charset_normalizer-3.4.7.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "uvicorn",
+    "version": "0.49.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "uvicorn-0.49.0.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "markdown-it-py",
+    "version": "4.2.0",
+    "license": "MIT License",
+    "texts": [
+      "markdown_it_py-4.2.0.dist-info/licenses/LICENSE",
+      "markdown_it_py-4.2.0.dist-info/licenses/LICENSE.markdown-it"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "cryptography",
+    "version": "50.0.1",
+    "license": "Apache-2.0 OR BSD-3-Clause",
+    "texts": [
+      "cryptography-50.0.1.dist-info/licenses/LICENSE",
+      "cryptography-50.0.1.dist-info/licenses/LICENSE.APACHE",
+      "cryptography-50.0.1.dist-info/licenses/LICENSE.BSD"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "mcp-types",
+    "version": "2.2.0",
+    "license": "MIT",
+    "texts": [
+      "mcp_types-2.2.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "certifi",
+    "version": "2026.5.20",
+    "license": "MPL-2.0",
+    "texts": [
+      "certifi-2026.5.20.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rfc3986-validator",
+    "version": "0.1.1",
+    "license": "MIT license",
+    "texts": [
+      "rfc3986_validator-0.1.1.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "attrs",
+    "version": "26.1.0",
+    "license": "MIT",
+    "texts": [
+      "attrs-26.1.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pydantic",
+    "version": "2.13.4",
+    "license": "MIT",
+    "texts": [
+      "pydantic-2.13.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pyrekordbox",
+    "version": "0.4.4",
+    "license": "MIT License",
+    "texts": [
+      "pyrekordbox-0.4.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "urllib3",
+    "version": "2.7.0",
+    "license": "MIT",
+    "texts": [
+      "urllib3-2.7.0.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "httpx",
+    "version": "0.28.1",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "httpx-0.28.1.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "typing_extensions",
+    "version": "4.16.0",
+    "license": "PSF-2.0",
+    "texts": [
+      "typing_extensions-4.16.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "uvloop",
+    "version": "0.22.1",
+    "license": "MIT License",
+    "texts": [
+      "uvloop-0.22.1.dist-info/licenses/LICENSE-APACHE",
+      "uvloop-0.22.1.dist-info/licenses/LICENSE-MIT"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "psutil",
+    "version": "7.2.2",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "psutil-7.2.2.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "music-dj-tools",
+    "version": "1.0.1",
+    "license": "Apache-2.0",
+    "texts": [
+      "music_dj_tools-1.0.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "click",
+    "version": "8.4.1",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "click-8.4.1.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "rpds-py",
+    "version": "2026.5.1",
+    "license": "MIT",
+    "texts": [
+      "rpds_py-2026.5.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "truststore",
+    "version": "0.10.4",
+    "license": "MIT",
+    "texts": [
+      "truststore-0.10.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "idna",
+    "version": "3.18",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "idna-3.18.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "typing-inspection",
+    "version": "0.4.2",
+    "license": "MIT",
+    "texts": [
+      "typing_inspection-0.4.2.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pillow",
+    "version": "12.3.0",
+    "license": "MIT-CMU",
+    "texts": [
+      "pillow-12.3.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "annotated-types",
+    "version": "0.7.0",
+    "license": "MIT License",
+    "texts": [
+      "annotated_types-0.7.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "regex",
+    "version": "2026.7.19",
+    "license": "Apache-2.0 AND CNRI-Python",
+    "texts": [
+      "regex-2026.7.19.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "anyio",
+    "version": "4.15.1",
+    "license": "MIT",
+    "texts": [
+      "anyio-4.15.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "arrow",
+    "version": "1.4.0",
+    "license": "Apache Software License",
+    "texts": [
+      "arrow-1.4.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "six",
+    "version": "1.17.0",
+    "license": "MIT",
+    "texts": [
+      "six-1.17.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "annotated-doc",
+    "version": "0.0.4",
+    "license": "MIT",
+    "texts": [
+      "annotated_doc-0.0.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "tqdm",
+    "version": "4.68.1",
+    "license": "MPL-2.0 AND MIT",
+    "texts": [
+      "tqdm-4.68.1.dist-info/licenses/LICENCE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "threadpoolctl",
+    "version": "3.6.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "threadpoolctl-3.6.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "cloudpickle",
+    "version": "3.1.2",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "cloudpickle-3.1.2.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "standard-sunau",
+    "version": "3.13.0",
+    "license": "PSF-2.0",
+    "texts": [
+      "standard_sunau-3.13.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "einops",
+    "version": "0.8.2",
+    "license": "MIT",
+    "texts": [
+      "einops-0.8.2.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "filelock",
+    "version": "4.0.1",
+    "license": "MIT",
+    "texts": [
+      "filelock-4.0.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "retrying",
+    "version": "1.4.2",
+    "license": "Apache-2.0",
+    "texts": [
+      "retrying-1.4.2.dist-info/licenses/LICENSE.txt",
+      "retrying-1.4.2.dist-info/licenses/NOTICE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "standard-chunk",
+    "version": "3.13.0",
+    "license": "PSF-2.0",
+    "texts": [
+      "standard_chunk-3.13.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "narwhals",
+    "version": "2.22.1",
+    "license": "MIT",
+    "texts": [
+      "narwhals-2.22.1.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "networkx",
+    "version": "3.6.1",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "networkx-3.6.1.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "lazy-loader",
+    "version": "0.5",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "lazy_loader-0.5.dist-info/licenses/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "treetable",
+    "version": "0.2.6",
+    "license": "Unlicense license",
+    "texts": [
+      "treetable-0.2.6.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "sentry-sdk",
+    "version": "2.66.1",
+    "license": "MIT",
+    "texts": [
+      "sentry_sdk-2.66.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "platformdirs",
+    "version": "4.10.0",
+    "license": "MIT",
+    "texts": [
+      "platformdirs-4.10.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "sympy",
+    "version": "1.14.0",
+    "license": "BSD",
+    "texts": [
+      "sympy-1.14.0.dist-info/licenses/LICENSE",
+      "sympy/parsing/latex/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "greenlet",
+    "version": "3.5.1",
+    "license": "MIT AND PSF-2.0",
+    "texts": [
+      "greenlet-3.5.1.dist-info/licenses/LICENSE",
+      "greenlet-3.5.1.dist-info/licenses/LICENSE.PSF"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "setuptools",
+    "version": "84.0.0",
+    "license": "MIT",
+    "texts": [
+      "setuptools-84.0.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/autocommand-2.2.2.dist-info/LICENSE",
+      "setuptools/_vendor/backports.tarfile-1.2.0.dist-info/LICENSE",
+      "setuptools/_vendor/importlib_metadata-8.7.1.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/jaraco.text-4.0.0.dist-info/LICENSE",
+      "setuptools/_vendor/jaraco_context-6.1.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/jaraco_functools-4.4.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/more_itertools-10.8.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.APACHE",
+      "setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.BSD",
+      "setuptools/_vendor/platformdirs-4.4.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/tomli-2.4.0.dist-info/licenses/LICENSE",
+      "setuptools/_vendor/wheel-0.46.3.dist-info/licenses/LICENSE.txt",
+      "setuptools/_vendor/zipp-3.23.0.dist-info/licenses/LICENSE",
+      "setuptools/config/NOTICE",
+      "setuptools/config/_validate_pyproject/NOTICE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "pooch",
+    "version": "1.9.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "pooch-1.9.0.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "soxr",
+    "version": "1.1.0",
+    "license": "LGPL-2.1-or-later",
+    "texts": [
+      "soxr-1.1.0.dist-info/licenses/COPYING.LGPL",
+      "soxr-1.1.0.dist-info/licenses/LICENSE-PFFFT.txt",
+      "soxr-1.1.0.dist-info/licenses/LICENSE-libsoxr.txt",
+      "soxr-1.1.0.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "standard-aifc",
+    "version": "3.13.0",
+    "license": "PSF-2.0",
+    "texts": [
+      "standard_aifc-3.13.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "mpmath",
+    "version": "1.3.0",
+    "license": "BSD",
+    "texts": [
+      "mpmath-1.3.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "fsspec",
+    "version": "2026.9.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "fsspec-2026.9.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "antlr4-python3-runtime",
+    "version": "4.9.3",
+    "license": "BSD",
+    "texts": [],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "openunmix",
+    "version": "1.3.0",
+    "license": "MIT",
+    "texts": [
+      "openunmix-1.3.0.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "joblib",
+    "version": "1.5.3",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "joblib-1.5.3.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "Jinja2",
+    "version": "3.1.6",
+    "license": "BSD License",
+    "texts": [
+      "jinja2-3.1.6.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "julius",
+    "version": "0.2.8",
+    "license": "MIT License",
+    "texts": [
+      "julius-0.2.8.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "omegaconf",
+    "version": "2.3.1",
+    "license": "BSD License",
+    "texts": [
+      "omegaconf-2.3.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "soundfile",
+    "version": "0.13.1",
+    "license": "BSD 3-Clause License",
+    "texts": [
+      "_soundfile_data/COPYING",
+      "soundfile-0.13.1.dist-info/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "MarkupSafe",
+    "version": "3.0.3",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "markupsafe-3.0.3.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "demucs",
+    "version": "4.0.1",
+    "license": "MIT License",
+    "texts": [
+      "demucs-4.0.1.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "msgpack",
+    "version": "1.2.2",
+    "license": "Apache-2.0",
+    "texts": [
+      "msgpack-1.2.2.dist-info/licenses/COPYING"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "dora_search",
+    "version": "0.1.13",
+    "license": "MIT",
+    "texts": [
+      "dora_search-0.1.13.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "decorator",
+    "version": "5.3.1",
+    "license": "BSD-2-Clause",
+    "texts": [
+      "decorator-5.3.1.dist-info/licenses/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "lameenc",
+    "version": "1.8.4",
+    "license": "LGPL-3.0-or-later",
+    "texts": [
+      "lameenc-1.8.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "librosa",
+    "version": "0.10.2.post1",
+    "license": "ISC",
+    "texts": [
+      "librosa-0.10.2.post1.dist-info/LICENSE.md"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "submitit",
+    "version": "1.5.4",
+    "license": "MIT License",
+    "texts": [
+      "submitit-1.5.4.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  },
+  {
+    "name": "numba",
+    "version": "0.65.1",
+    "license": "BSD",
+    "texts": [
+      "numba-0.65.1.dist-info/licenses/LICENSE",
+      "numba-0.65.1.dist-info/licenses/LICENSES.third-party"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189-heavy"
+  },
+  {
+    "name": "torchaudio",
+    "version": "2.11.0",
+    "license": "BSD License",
+    "texts": [
+      "torchaudio-2.11.0.dist-info/licenses/LICENSE"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189-heavy"
+  },
+  {
+    "name": "scikit-learn",
+    "version": "1.9.0",
+    "license": "BSD-3-Clause",
+    "texts": [
+      "scikit_learn-1.9.0.dist-info/licenses/COPYING",
+      "sklearn/externals/array_api_compat/LICENSE",
+      "sklearn/externals/array_api_extra/LICENSE",
+      "sklearn/svm/src/liblinear/COPYRIGHT"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189-heavy"
+  },
+  {
+    "name": "llvmlite",
+    "version": "0.47.0",
+    "license": "BSD-2-Clause AND Apache-2.0 WITH LLVM-exception",
+    "texts": [
+      "llvmlite-0.47.0.dist-info/licenses/LICENSE",
+      "llvmlite-0.47.0.dist-info/licenses/LICENSE.thirdparty"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189-heavy2"
+  },
+  {
+    "name": "scipy",
+    "version": "1.17.1",
+    "license": "BSD License",
+    "texts": [
+      "scipy-1.17.1.dist-info/LICENSE.txt",
+      "scipy/_lib/_uarray/LICENSE",
+      "scipy/fft/_pocketfft/LICENSE.md",
+      "scipy/integrate/LICENSE_DOP",
+      "scipy/spatial/qhull_src/COPYING_QHULL.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189-heavy2"
+  },
+  {
+    "name": "torch",
+    "version": "2.13.0",
+    "license": "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT",
+    "texts": [
+      "torch-2.13.0.dist-info/licenses/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/FP16/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/FXdiv/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/NNPACK/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/NVTX/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/NVTX/docs/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/NVTX/python/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/NVTX/tools/docs/github-markdown-css/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/VulkanMemoryAllocator/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/XNNPACK/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/aiter/3rdparty/composable_kernel/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/aiter/3rdparty/composable_kernel/docs/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/aiter/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/benchmark/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/composable_kernel/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/composable_kernel/docs/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/cpp-httplib/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/cpuinfo/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/cpuinfo/deps/clog/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/cudnn_frontend/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/cutlass/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/cutlass/python/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/composable_kernel/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/composable_kernel/docs/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/cpuinfo/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/cpuinfo/deps/clog/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/cutlass/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/cutlass/python/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/external/hipify_torch/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/fbgemm_gpu/docs/src/general/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/fbgemm_gpu/experimental/hstu/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/fbgemm_gpu/src/quantize_ops/mx/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fbgemm/fbgemm_gpu/test/quantize/mx/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/csrc/composable_kernel/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/csrc/composable_kernel/docs/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/csrc/cutlass/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/csrc/cutlass/python/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/flash_attn/cute/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/third_party/aiter/3rdparty/composable_kernel/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/third_party/aiter/3rdparty/composable_kernel/docs/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/flash-attention/third_party/aiter/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flatbuffers/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flatbuffers/dart/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/flatbuffers/swift/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/fmt/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/gemmlowp/gemmlowp/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/gloo/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/ideep/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/ideep/mkl-dnn/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/ideep/mkl-dnn/third_party/gtest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/ideep/mkl-dnn/third_party/opencl/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/DCGM/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/DCGM/testing/python3/libs_3rdparty/colorama/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/cpr/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/cpr/test/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/fmt/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/json/test/thirdparty/doctest/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/json/third_party/cpplint/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/pfs/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/prometheus-cpp/3rdparty/civetweb/examples/rest/cJSON/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/prometheus-cpp/3rdparty/civetweb/src/third_party/duktape-1.5.2/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/prometheus-cpp/3rdparty/civetweb/src/third_party/duktape-1.8.0/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/prometheus-cpp/3rdparty/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/prometheus-cpp/3rdparty/googletest/googlemock/scripts/generator/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/third_party/prometheus-cpp/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/fmt/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/kineto/libkineto/third_party/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/llvm-openmp/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/mimalloc/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/miniz-3.0.2/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/external/composable_kernel/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/external/composable_kernel/docs/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/external/cutlass/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/external/cutlass/python/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/external/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/external/hipify_torch/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/mslk/mslk/attention/flash_attn/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/nccl/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/nccl/bindings/nccl4py/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/onnx/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/onnx/third_party/pybind11/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/protobuf/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/protobuf/third_party/benchmark/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/protobuf/third_party/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/protobuf/third_party/googletest/googlemock/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/protobuf/third_party/googletest/googlemock/scripts/generator/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/protobuf/third_party/googletest/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/psimd/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/pthreadpool/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/pybind11/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/python-peachpy/LICENSE.rst",
+      "torch-2.13.0.dist-info/licenses/third_party/sleef/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/LICENSE.txt",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/googletest/googlemock/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/googletest/googlemock/scripts/generator/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/googletest/googletest/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/libnop/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/libuv/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/pybind11/LICENSE",
+      "torch-2.13.0.dist-info/licenses/third_party/tensorpipe/third_party/pybind11/tools/clang/LICENSE.txt"
+    ],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-torch-5189"
+  }
+]
