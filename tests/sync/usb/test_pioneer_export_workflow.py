@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 from apps.sync.usb.pioneer import export_workflow as workflow
-from apps.sync.usb.pioneer import writer_rbox
-from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
+from apps.sync.usb.pioneer import writer_onelibrary
+from apps.sync.usb.pioneer.writer_onelibrary import PlaylistSpec, TrackUpdate
 from tests.fixtures.conftest import resolve_required_fixture
 
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
@@ -43,7 +43,7 @@ def _fixture_db() -> Path:
     ``MDT_ALLOW_MISSING_FIXTURES=1`` skip -- or a missing host with no
     opt-out, which fails closed via ``resolve_required_fixture`` -- drops
     only the tests that actually need USB data, not the whole module
-    (PR #718 review). test_rbox_dependency_contract_is_pinned_for_ci,
+    (PR #718 review). test_onelibrary_dependency_contract_is_declared_for_ci,
     the platform-refusal tests, and marker validation need no fixture and
     must stay collectible either way.
     """
@@ -61,13 +61,13 @@ def _identity(target: Path, *, uuid: str = "USB-205") -> workflow.TargetIdentity
     )
 
 
-def _require_rbox_runtime() -> None:
+def _require_writer_runtime() -> None:
     """Fail USB integration tests at the dependency contract boundary."""
-    if not writer_rbox.RBOX_AVAILABLE:
+    if not writer_onelibrary.WRITER_AVAILABLE:
         pytest.fail(
-            "USB export integration requires the pinned runtime dependency "
-            "rbox==0.1.7. Install the repository dependency contract before "
-            f"running these tests: {writer_rbox.RBOX_IMPORT_ERROR}",
+            "USB export integration requires the runtime dependency "
+            "sqlcipher3-wheels. Install the repository dependency contract before "
+            f"running these tests: {writer_onelibrary.WRITER_IMPORT_ERROR}",
             pytrace=False,
         )
 
@@ -87,22 +87,32 @@ def platform_neutral_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_rbox_dependency_contract_is_pinned_for_ci() -> None:
-    """CI and the dev extra install rbox; the core deps and the DMG do not.
+def test_onelibrary_dependency_contract_is_declared_for_ci() -> None:
+    """sqlcipher3 is a core dep; rbox is not, and CI still pins it.
 
-    rbox is GPL-3.0-only (issue #5143). Fresh Windows parity environments
-    and Linux CI still get the pin through the dev extra and requirements.txt.
+    The OneLibrary handle is apps/sync/usb/pioneer/onelibrary.py over
+    sqlcipher3-wheels. rbox is GPL-3.0-only (issue #5143): not a core
+    dependency, optional usb-export extra, repeated on dev, and present in
+    requirements.txt because that file is what CI installs. First use goes
+    through ensure_rbox(); the desktop payload does not ship the wheel.
     """
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
-    assert "rbox==0.1.7" not in pyproject["project"]["dependencies"]
+    deps = pyproject["project"]["dependencies"]
+    assert any(d.startswith("sqlcipher3-wheels") for d in deps), (
+        "pyproject.toml must declare sqlcipher3-wheels so fresh Windows parity "
+        "environments install the OneLibrary runtime."
+    )
+    assert "rbox==0.1.7" not in deps
+    assert not any(d.split("=")[0].split(">")[0].split("[")[0].strip() == "rbox" for d in deps)
     optional = pyproject["project"]["optional-dependencies"]
     assert optional["usb-export"] == ["rbox==0.1.7"]
     assert "rbox==0.1.7" in optional["dev"]
     requirements = (REPO_ROOT / "requirements.txt").read_text("utf-8").splitlines()
-    assert "rbox==0.1.7" in requirements, (
-        "requirements.txt must pin rbox==0.1.7 so the Linux CI job installs "
-        "the OneLibrary runtime."
+    assert any(r.startswith("sqlcipher3-wheels") for r in requirements), (
+        "requirements.txt must declare sqlcipher3-wheels so the Linux CI job "
+        "installs the OneLibrary runtime."
     )
+    assert "rbox==0.1.7" in requirements
 
 
 @pytest.fixture
@@ -280,7 +290,7 @@ def test_apply_and_readback_real_onelibrary_round_trip(
     monkeypatch: pytest.MonkeyPatch,
     platform_neutral_promotion: None,
 ) -> None:
-    _require_rbox_runtime()
+    _require_writer_runtime()
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -355,7 +365,7 @@ def test_cli_plan_apply_readback_uses_same_serializable_contract(
     capsys: pytest.CaptureFixture[str],
     platform_neutral_promotion: None,
 ) -> None:
-    _require_rbox_runtime()
+    _require_writer_runtime()
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -469,7 +479,7 @@ def test_identity_drift_after_promotion_refuses_rollback_deletion(
     monkeypatch: pytest.MonkeyPatch,
     platform_neutral_promotion: None,
 ) -> None:
-    _require_rbox_runtime()
+    _require_writer_runtime()
     original = _identity(disposable_target)
     monkeypatch.setattr(workflow, "inspect_macos_target", lambda target: original)
     plan = workflow.plan_export(
@@ -500,7 +510,7 @@ def test_oserror_during_mounted_readback_rolls_back_exact_output(
     monkeypatch: pytest.MonkeyPatch,
     platform_neutral_promotion: None,
 ) -> None:
-    _require_rbox_runtime()
+    _require_writer_runtime()
     identity = _identity(disposable_target)
     monkeypatch.setattr(workflow, "inspect_macos_target", lambda target: identity)
     plan = workflow.plan_export(

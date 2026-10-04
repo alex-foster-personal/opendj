@@ -17735,6 +17735,112 @@
         "title": "RowsResponse",
         "type": "object"
       },
+      "ScanStatusOut": {
+        "description": "Progress of the on-device library fingerprint scan.",
+        "properties": {
+          "cache_hits": {
+            "title": "Cache Hits",
+            "type": "integer"
+          },
+          "clusters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clusters"
+          },
+          "computed": {
+            "title": "Computed",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_samples": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Error Samples",
+            "type": "array"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "not_local": {
+            "title": "Not Local",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "total",
+          "done",
+          "computed",
+          "cache_hits",
+          "not_local",
+          "errors",
+          "clusters",
+          "error",
+          "started_at",
+          "finished_at",
+          "error_samples"
+        ],
+        "title": "ScanStatusOut",
+        "type": "object"
+      },
       "SchedulerResumeOut": {
         "properties": {
           "ok": {
@@ -21899,6 +22005,57 @@
         "title": "TrackPatch",
         "type": "object"
       },
+      "TrackPlayIn": {
+        "additionalProperties": false,
+        "properties": {
+          "audible_s": {
+            "description": "Seconds the room heard this load (master-routed, above silence).",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Audible S",
+            "type": "number"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "play_id": {
+            "description": "Client-minted id of this deck load; a retry with the same id is not counted twice.",
+            "maxLength": 64,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Play Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "play_id",
+          "audible_s"
+        ],
+        "title": "TrackPlayIn",
+        "type": "object"
+      },
       "TrackPlaylistOut": {
         "properties": {
           "name": {
@@ -21928,6 +22085,59 @@
           "positions"
         ],
         "title": "TrackPlaylistOut",
+        "type": "object"
+      },
+      "TrackPlaysOut": {
+        "properties": {
+          "opendj_last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opendj Last Played At"
+          },
+          "opendj_play_count": {
+            "title": "Opendj Play Count",
+            "type": "integer"
+          },
+          "play_count": {
+            "description": "rekordbox_play_count + opendj_play_count",
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "recorded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "POST only: false when this play_id was already logged.",
+            "title": "Recorded"
+          },
+          "rekordbox_play_count": {
+            "title": "Rekordbox Play Count",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "play_count",
+          "rekordbox_play_count",
+          "opendj_play_count",
+          "opendj_last_played_at"
+        ],
+        "title": "TrackPlaysOut",
         "type": "object"
       },
       "TrackRowOut": {
@@ -28725,6 +28935,51 @@
           }
         },
         "summary": "Post Dedup Undo",
+        "tags": [
+          "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/dedup/scan": {
+      "get": {
+        "description": "Where the library fingerprint scan is (idle until first started).",
+        "operationId": "get_dedup_scan_api_v1_dedup_scan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dedup Scan",
+        "tags": [
+          "dedup-review"
+        ]
+      },
+      "post": {
+        "description": "Start fingerprinting the library and rebuilding duplicate clusters.\n\nLocal only: the engine fingerprints each track's own file, nothing is\nlooked up online, and no audio file is written, moved or deleted.",
+        "operationId": "post_dedup_scan_api_v1_dedup_scan_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "A scan is already running"
+          }
+        },
+        "summary": "Post Dedup Scan",
         "tags": [
           "dedup-review"
         ]
@@ -39109,6 +39364,98 @@
         "summary": "List Track Playlists",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/plays": {
+      "get": {
+        "operationId": "get_track_plays_api_v1_tracks__stable_id__plays_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackPlaysOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Plays",
+        "tags": [
+          "track-plays"
+        ]
+      },
+      "post": {
+        "operationId": "record_track_play_api_v1_tracks__stable_id__plays_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackPlayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackPlaysOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Track Play",
+        "tags": [
+          "track-plays"
         ]
       }
     },

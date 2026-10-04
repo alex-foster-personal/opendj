@@ -20,6 +20,16 @@ energy:
     - [-6.0, 9]
     - [0.0, 10]
 
+own_beatgrid:
+  # Which grid the own beatgrid lane serves (NATIVE-19, JIK, Thu 1 Oct 2026):
+  #   const_regions  one constant-tempo line fitted to the track's longest
+  #                  steady stretch (NATIVE-18), the line fitter where no
+  #                  stretch covers half the track
+  #   line           a least-squares line per constant-tempo segment (NATIVE-16)
+  #   raw            the model's beat times exactly as it heard them
+  # MDT_BEATGRID_GRID_FIT, when set, overrides this for one process.
+  grid_fit: const_regions
+
 beatgrid_detector:
   max_downbeat_transient_gap_beats: 2.0
   max_bpm_drift_pct: 0.3

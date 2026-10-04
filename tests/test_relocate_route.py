@@ -30,6 +30,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -150,7 +151,7 @@ def _swap_candidate_after_scan(
 ) -> None:
     original_find = locate.find_candidates
 
-    def _swap(*args: object, **kwargs: object):
+    def _swap(*args: Any, **kwargs: Any) -> list[locate.Candidate]:
         found = original_find(*args, **kwargs)
         replacement = candidate.with_suffix(".replacement")
         replacement.write_bytes(b"replacement bytes")

@@ -67,6 +67,16 @@ export interface EngineResult {
 /** A command in the engine's vocabulary: the audio subset of `PerformanceCommand`. */
 export type EngineCommand = { type: string } & Record<string, unknown>;
 
+/** A deck's progressive decode failed after its head was already playable:
+ * the engine has unloaded that deck, and this names why. */
+export interface EngineLoadFailed {
+	type: 'load_failed';
+	deck: number;
+	/** The file of the load it ends, as that load gave it. */
+	path?: string;
+	error: { code: string; message: string };
+}
+
 export const PROTOCOL_VERSION = 1;
 export const AUDIO_ENGINE_PATH = '/api/v1/audio-engine';
 
@@ -182,6 +192,7 @@ export class AudioEngineClient {
 	private nextId = 1;
 	private pending = new Map<string, Pending>();
 	private listeners = new Set<(s: EngineState) => void>();
+	private loadFailedListeners = new Set<(e: EngineLoadFailed) => void>();
 	private readonly opts: Required<Omit<AudioEngineClientOptions, 'apiBase'>> & { apiBase: string };
 
 	constructor(opts: AudioEngineClientOptions) {
@@ -256,6 +267,12 @@ export class AudioEngineClient {
 		return () => this.listeners.delete(fn);
 	}
 
+	/** Called with every `load_failed` event. Returns an unsubscribe function. */
+	onLoadFailed(fn: (e: EngineLoadFailed) => void): () => void {
+		this.loadFailedListeners.add(fn);
+		return () => this.loadFailedListeners.delete(fn);
+	}
+
 	/** A deck's playhead now, from the last state message. Null before one arrives. */
 	positionMs(deck: number): number | null {
 		const d = this.state?.decks.find((x) => x.deck === deck);
@@ -275,6 +292,10 @@ export class AudioEngineClient {
 			this.state = msg;
 			this.stateReceivedAt = this.opts.now();
 			for (const fn of this.listeners) fn(this.state);
+			return;
+		}
+		if (isLoadFailed(msg)) {
+			for (const fn of this.loadFailedListeners) fn(msg);
 			return;
 		}
 		if (isResult(msg)) {
@@ -303,6 +324,16 @@ export class AudioEngineClient {
 // The engine is the only writer of these lines; `type` names the shape.
 function isState(msg: object): msg is EngineState {
 	return (msg as { type?: unknown }).type === 'state';
+}
+
+function isLoadFailed(msg: object): msg is EngineLoadFailed {
+	const m = msg as { type?: unknown; deck?: unknown; error?: { code?: unknown; message?: unknown } };
+	return (
+		m.type === 'load_failed' &&
+		typeof m.deck === 'number' &&
+		typeof m.error?.code === 'string' &&
+		typeof m.error?.message === 'string'
+	);
 }
 
 function isResult(msg: object): msg is EngineResult {

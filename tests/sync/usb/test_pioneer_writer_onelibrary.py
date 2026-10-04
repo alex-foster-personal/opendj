@@ -1,15 +1,17 @@
 """Round-trip tests for the Pioneer OneLibrary writer (CAT-06 Prototype B).
 
-These tests exercise ``apps.sync.usb.pioneer.writer_rbox`` end-to-end:
+[if] overlays land on a copy of a real Rekordbox export [then] every value reads back unchanged, [else stop].
+
+These tests exercise ``apps.sync.usb.pioneer.writer_onelibrary`` end-to-end:
 
   1. Copy the committed ``exportLibrary.db`` SQLCipher fixture to a
      scratch location.
   2. Apply track-metadata overlays + create new playlists.
-  3. Reopen the resulting file via :mod:`rbox` and assert every written
+  3. Reopen the resulting file via :mod:`apps.sync.usb.pioneer.onelibrary` and assert every written
      value round-trips byte-for-byte (including UTF-8).
 
-All tests are skipped with a clear reason if ``rbox`` is not
-installable on the host (see :data:`writer_rbox.RBOX_AVAILABLE`).
+All tests are skipped with a clear reason if ``sqlcipher3`` is not
+installable on the host (see :data:`writer_onelibrary.WRITER_AVAILABLE`).
 
 Tests do *not* write to the real USB mount (``/Volumes/MAINTAINER``)
 — everything lives under ``tmp_path``.
@@ -20,9 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from apps.sync.usb.pioneer.writer_rbox import (
-    RBOX_AVAILABLE,
-    RBOX_IMPORT_ERROR,
+from apps.sync.usb.pioneer.writer_onelibrary import (
+    WRITER_AVAILABLE,
+    WRITER_IMPORT_ERROR,
     OneLibraryWriteError,
     OneLibraryWriteResult,
     PlaylistSpec,
@@ -33,15 +35,15 @@ from apps.sync.usb.pioneer.writer_rbox import (
 from tests.fixtures.conftest import resolve_required_fixture
 
 # -----------------------------------------------------------------------
-# Skip marker: applied to every test in this module when rbox is missing.
+# Skip marker: applied to every test in this module when sqlcipher3 is missing.
 # -----------------------------------------------------------------------
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
     pytest.mark.skipif(
-        not RBOX_AVAILABLE,
+        not WRITER_AVAILABLE,
         reason=(
-            "rbox (PyPI) is not installed: "
-            f"{RBOX_IMPORT_ERROR}. Install with `pip install rbox`."
+            "OneLibrary writer unavailable: "
+            f"{WRITER_IMPORT_ERROR}. Install the repository dependencies."
         ),
     ),
 ]
@@ -73,9 +75,9 @@ def fixture_onelibrary(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Path to a per-test COPY of the SQLCipher-encrypted OneLibrary
     fixture.
 
-    rbox ``OneLibrary(path)`` opens in read/write mode and SQLite
+    ``OneLibrary(path)`` opens in read/write mode and SQLite
     materialises ``-shm``/``-wal`` sidecar files alongside the opened
-    DB. Pointing rbox at the committed fixture directly therefore
+    DB. Pointing it at the committed fixture directly therefore
     mutates files under ``tests/fixtures/`` on every test run. We dodge
     that by copying the fixture to a fresh tmp dir per test and
     returning THAT path — so writer tests can safely be passed the
@@ -104,7 +106,7 @@ def test_round_trip_5_tracks(
     fixture_onelibrary: Path, scratch_onelibrary: Path
 ) -> None:
     """Write overlays for 5 tracks + one playlist containing them, then
-    round-trip via rbox.
+    round-trip via the reader.
 
     Asserts:
 
@@ -156,7 +158,7 @@ def test_round_trip_5_tracks(
         f"was NOT applied. Header: {header!r}"
     )
 
-    # --- Round-trip read via rbox -----------------------------------
+    # --- Round-trip read -----------------------------------
     (playlist_id,) = result.playlist_ids
     rt = read_playlist_roundtrip(
         onelibrary_path=scratch_onelibrary, playlist_id=playlist_id
@@ -186,7 +188,7 @@ def test_round_trip_empty_library(
     back the *original* playlists and contents.
 
     This is the "no-op passthrough" edge case: zero overlays, zero new
-    playlists.  The output must still be a valid, rbox-readable file
+    playlists.  The output must still be a valid, readable file
     whose existing data is intact.
     """
     result = write_onelibrary(
@@ -199,8 +201,8 @@ def test_round_trip_empty_library(
     assert result.playlists_written == 0
     assert result.playlist_ids == ()
 
-    # Reopen via rbox and assert the original data is intact.
-    from rbox import OneLibrary  # local import: rbox is optional.
+    # Reopen and assert the original data is intact.
+    from apps.sync.usb.pioneer.onelibrary import OneLibrary
 
     template_db = OneLibrary(str(fixture_onelibrary))
     template_playlists = {p["name"] for p in template_db.get_playlists()}
@@ -337,8 +339,8 @@ def test_unknown_track_id_raises(
 def test_track_update_to_overlay_dropping_none_fields() -> None:
     """Unit: ``TrackUpdate`` only emits explicitly-set fields.
 
-    (Pure-Python logic, runs even on hosts where rbox is missing —
-    covered by the module-level skipif on rbox itself, but exercises
+    (Pure-Python logic, runs even on hosts where sqlcipher3 is missing —
+    covered by the module-level skipif on sqlcipher3 itself, but exercises
     the overlay shape used in the other tests.)
     """
     upd = TrackUpdate(id=42, title="x", bpmx100=12000)

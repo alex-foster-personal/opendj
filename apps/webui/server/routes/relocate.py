@@ -333,6 +333,7 @@ def get_candidates(
         )
 
     from apps.reconcile import locate
+    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
 
     index = locate.FsIndex.build(audio_files.scan_music_files())
     row: dict[str, str] = {
@@ -342,9 +343,12 @@ def get_candidates(
         "artist": track.artist or "",
         "duration_s": str(track.duration_ms / 1000) if track.duration_ms else "",
         "file_size": "",
+        "stable_id": stable_id,
     }
     id3_cache: dict[Path, audio_files.AudioMetadata | None] = {}
-    found = locate.find_candidates(row, index, id3_cache, limit=limit)
+    found = locate.find_candidates(
+        row, index, id3_cache, limit=limit, fingerprints=FingerprintEvidence.open(),
+    )
     candidates: list[RelocateCandidateOut] = []
     for found_candidate in found:
         try:
@@ -561,6 +565,7 @@ def apply_relocate(
     )
     os.close(descriptor)
     from apps.reconcile import locate
+    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
 
     index = locate.FsIndex.build(audio_files.scan_music_files())
     row = {
@@ -570,8 +575,11 @@ def apply_relocate(
         "artist": track.artist or "",
         "duration_s": str(track.duration_ms / 1000) if track.duration_ms else "",
         "file_size": "",
+        "stable_id": stable_id,
     }
-    current_candidates = locate.find_candidates(row, index, {}, limit=20)
+    current_candidates = locate.find_candidates(
+        row, index, {}, limit=20, fingerprints=FingerprintEvidence.open(),
+    )
     if candidate.path not in {str(found.path.resolve()) for found in current_candidates}:
         raise HTTPException(status_code=409, detail={
             "code": "RELOCATE_CANDIDATE_STALE",

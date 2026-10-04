@@ -1,0 +1,173 @@
+Open DJ (music-dj-tools)
+Copyright 2026 The Open DJ contributors
+
+This product includes software developed by The Open DJ contributors
+(https://github.com/alex-foster-personal/opendj).
+
+Licensed under the Apache License, Version 2.0 (the "License").
+You may obtain a copy of the License in the LICENSE file at the root of
+this repository, or at http://www.apache.org/licenses/LICENSE-2.0.
+
+--------------------------------------------------------------------------
+Third-party software distributed with the Open DJ desktop app
+--------------------------------------------------------------------------
+
+The Open DJ desktop app (the dmg) bundles third-party Python, JavaScript
+and Rust components, a relocatable CPython runtime, a model checkpoint and
+a font. Each remains under its own license. The complete inventory, with
+each component's license identifier and the license and NOTICE texts its
+distribution carries, ships inside the app at
+Contents/Resources/payload/THIRD-PARTY-LICENSES.txt (next to this NOTICE
+and LICENSE). It is generated from the shipped payload by
+scripts/third_party_licenses.py during the dmg build (`just dmg`), so it
+cannot drift from what the app contains. `just third-party-licenses-flags`
+prints the components whose licenses are copyleft or non-commercial.
+
+Notices that Apache-2.0 section 4(d) requires us to reproduce, from
+bundled components that ship a NOTICE file (the full set, regenerated on
+every build, is the NOTICES section of THIRD-PARTY-LICENSES.txt):
+
+* requests (Apache-2.0)
+    Requests
+    Copyright 2019 Kenneth Reitz
+
+* retrying (Apache-2.0)
+    Copyright 2013 Ray Holder
+    Copyright 2015 the "retrying" Contributors
+
+Bundled outside the language package managers:
+
+* CPython, via python-build-standalone (PSF-2.0)
+    https://github.com/astral-sh/python-build-standalone
+* Anybody variable font, wordmark subset (SIL OFL 1.1)
+    Its license text is bundled with the font files.
+* CPJKU/beat_this model weights: see "Beat detection model shipped in the
+  desktop app" below.
+* rekordbox_pdb.py, vendored crate-digger Kaitai-generated parser (EPL-1.0)
+    apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py
+    https://github.com/Deep-Symmetry/crate-digger
+    Attribution: Henry Betts, Fabian Lesniak, James Elliott / Deep Symmetry.
+    The EPL-1.0 text ships in THIRD-PARTY-LICENSES.txt.
+
+Tag reading in the source dependency set uses tinytag (MIT). Mutagen
+(GPL-2.0-or-later; https://github.com/quodlibet/mutagen) is not declared
+in the current pyproject.toml or uv.lock, and there is no tags extra.
+For the components actually distributed in a desktop payload, consult
+that payload's generated THIRD-PARTY-LICENSES.txt inventory.
+
+The Python dependency set for source installs is declared in
+pyproject.toml and locked in uv.lock; reqs.json and requirements.txt carry
+the development superset.
+
+--------------------------------------------------------------------------
+Open-source prior art, format specs, and reverse-engineering references
+--------------------------------------------------------------------------
+
+music-dj-tools is built against a body of open-source work that documented
+DJ-library file formats, reverse-engineered vendor protocols, and shipped
+interop code long before this project existed. None of their code is
+redistributed here except crate-digger (a vendored generated parser) and
+Beat This! (package and weights), but our readers, writers, and test
+oracles cross-check against their specs and implementations. Gratitude
+to the authors.
+
+See docs/prior-art-and-communities.md for the full annotated list.
+
+Rekordbox master.db (v6 / v7)
+* dylanljones/pyrekordbox (MIT)
+    https://github.com/dylanljones/pyrekordbox
+    Reference implementation and documentation for the SQLCipher-encrypted
+    master.db, XML export, ANLZ analysis files, and MySettings.
+
+Rekordbox USB export (export.pdb / ANLZ)
+* Deep-Symmetry/crate-digger (Eclipse Public License 1.0)
+    https://github.com/Deep-Symmetry/crate-digger
+    Kaitai Struct .ksy specifications for export.pdb and ANLZ; the
+    canonical machine-readable format definitions we validate against.
+    A Kaitai-generated parser derived from its rekordbox_pdb.ksy IS
+    redistributed (apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py,
+    EPL-1.0, attribution Henry Betts, Fabian Lesniak, James Elliott /
+    Deep Symmetry; source at https://github.com/Deep-Symmetry/crate-digger).
+    The EPL-1.0 text is in THIRD-PARTY-LICENSES.txt.
+* Holzhaus/rekordcrate (MIT)
+    https://github.com/Holzhaus/rekordcrate
+    Rust library for Rekordbox USB export; reference for the USB write
+    path.
+* Deep-Symmetry/dysentery (Eclipse Public License 1.0)
+    https://github.com/Deep-Symmetry/dysentery
+    Pioneer ProDJ Link protocol reverse engineering; canonical analysis
+    docs at djl-analysis.deepsymmetry.org.
+* flesniak/python-prodj-link (GPL-3.0)
+    https://github.com/flesniak/python-prodj-link
+    Python ProDJ Link implementation; credited by crate-digger as an
+    early PDB format contributor.
+
+Serato crates and tags
+* Holzhaus/serato-tags (MIT)
+    https://github.com/Holzhaus/serato-tags
+    Canonical spec for Serato GEOB ID3 tags: Markers2, BeatGrid, Overview.
+* Holzhaus/triseratops (Mozilla Public License 2.0)
+    https://github.com/Holzhaus/triseratops
+    Rust Serato tag parser and writer; complements our Serato write path.
+
+Traktor NML
+* wolkenarchitekt/traktor-nml-utils (MIT)
+    https://github.com/wolkenarchitekt/traktor-nml-utils
+    Traktor NML XML parser (Python); reference schema for our Traktor
+    import and export path.
+
+Engine DJ (Denon)
+* xsco/libdjinterop (LGPL-3.0)
+    https://github.com/xsco/libdjinterop
+    C++ library for Engine Library read and write (Denon SC Prime series);
+    the only open-source library covering the Engine DJ format end to
+    end.
+
+CDJ network protocol (live link)
+* Deep-Symmetry/beat-link (Eclipse Public License 1.0)
+    https://github.com/Deep-Symmetry/beat-link
+    Java library for Pioneer ProDJ Link, waveform streaming, and live
+    CDJ sync.
+
+djay Pro MediaLibrary.db
+* yapstudios/YapDatabase (MIT)
+    https://github.com/yapstudios/YapDatabase
+    Objective-C key-value store over SQLite used internally by djay Pro;
+    understanding its layout unlocks djay library access.
+
+Peer open-source DJ software
+* mixxxdj/mixxx (GPL-2.0-or-later)
+    https://github.com/mixxxdj/mixxx
+    Gold-standard open-source DJ application; its library import code is
+    a bugs-as-oracle reference for our Serato and Traktor readers.
+
+Audio analysis (reference oracles for beat, key, onset)
+* CPJKU/madmom (code: BSD-3-Clause; pre-trained models: CC-BY-NC-SA 4.0)
+    https://github.com/CPJKU/madmom
+    Beat tracking, onset detection, key estimation; used at runtime and
+    as an analysis-quality oracle. The Python package is BSD-3-Clause,
+    but the shipped pre-trained model files (``madmom/models/*``) are
+    released under Creative Commons Attribution-NonCommercial-ShareAlike
+    4.0 International (CC-BY-NC-SA 4.0). Non-commercial use in this
+    project is fine; redistribution of any product that bundles those
+    model files requires explicit compliance with CC-BY-NC-SA 4.0.
+    madmom is installed from git via requirements.txt (analysis extra)
+    and is never bundled in the music-dj-tools wheel.
+
+Beat detection model shipped in the desktop app
+* CPJKU/beat_this (code and published model weights: MIT)
+    https://github.com/CPJKU/beat_this
+    Copyright (c) 2024 Institute of Computational Perception, JKU Linz,
+    Austria. Unlike the projects above, this one IS redistributed: the
+    desktop engine payload bundles the ``final0`` checkpoint at
+    ``models/beatgrid/beat_this-final0.ckpt`` with its MIT notice beside
+    it (``models/beatgrid/LICENSE-beat_this.txt``), and the runner site
+    installs the ``beat-this`` package. Upstream states the weights are
+    MIT; its training audio is under mixed terms that upstream leaves to
+    the user to assess. See
+    docs/decisions/ADR-NEW-beat-this-weights-license.md.
+
+No code from the projects above is copied into this repository. (Beat This!, above, is an exception: its package and weights are bundled. crate-digger, above, is an exception: a Kaitai-generated parser is vendored.) They are
+cited here because their documentation, file-format specs, and issue
+trackers directly informed our implementation and are the references we
+return to when something does not match.

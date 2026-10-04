@@ -72,6 +72,8 @@ export function planRustFollowerJoin(
 		pitchRangePct: number;
 		/** Anchor near this follower position instead of its playhead (a seek). */
 		followerAtSec?: number;
+		/** A user seek: anchor on the beat nearest `followerAtSec` (`anchorOnBeat`). */
+		anchorOnBeat?: boolean;
 	}
 ): SyncJoin {
 	const lead = options.leadSec;
@@ -92,7 +94,8 @@ export function planRustFollowerJoin(
 		syncAtContextTimeSec: lead,
 		minFollowerTempoRatio: Math.max(0.01, 1 - range),
 		maxFollowerTempoRatio: 1 + range,
-		mode: options.mode
+		mode: options.mode,
+		anchorOnBeat: options.anchorOnBeat === true && options.followerAtSec !== undefined
 	});
 	return { tempo: plan.followerTempoRatio, positionMs: plan.followerPositionSec * 1000, plan };
 }

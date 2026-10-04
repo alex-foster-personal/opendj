@@ -1,6 +1,6 @@
 """Read key, grid, and loudness values back from a rekordbox-exported USB stick.
 
-Must not import ``writer_rbox`` or ``export_workflow`` (overlay-only writers).
+Must not import ``writer_onelibrary`` or ``export_workflow`` (overlay-only writers).
 """
 from __future__ import annotations
 

@@ -319,11 +319,16 @@ def rust_components(repo_root: Path) -> list[Component]:
     return sorted(components.values(), key=lambda c: c.name.lower())
 
 
+def _reviewed_name(name: str) -> str:
+    """PEP 503 / cargo hyphen-normalization so `dasp_envelope` matches `dasp-envelope`."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def attach_reviewed_license_texts(repo_root: Path, components: list[Component]) -> list[Component]:
     """Stage each REVIEWED_LICENSE_TEXTS entry on its exact (ecosystem, name, version), if textless."""
-    reviewed = {(e.ecosystem, e.name, e.version): e for e in REVIEWED_LICENSE_TEXTS}
+    reviewed = {(e.ecosystem, _reviewed_name(e.name), e.version): e for e in REVIEWED_LICENSE_TEXTS}
     for c in components:
-        entry = reviewed.get((c.ecosystem, re.sub(r"[-_.]+", "-", c.name).lower(), c.version))
+        entry = reviewed.get((c.ecosystem, _reviewed_name(c.name), c.version))
         if entry is None or any(text.strip() for _, text in c.license_texts):
             continue
         text_path = repo_root / entry.text_relative
@@ -336,12 +341,15 @@ def attach_reviewed_license_texts(repo_root: Path, components: list[Component]) 
 
 # ----- rendering ----------------------------------------------------------
 def collect_all(repo_root: Path, payload_dir: Path) -> list[Component]:
-    return [
-        *attach_reviewed_license_texts(repo_root, python_components(payload_dir)),
-        *js_components(repo_root / FRONTEND_RELATIVE),
-        *rust_components(repo_root),
-        *supplement_components(repo_root, payload_dir),
-    ]
+    return attach_reviewed_license_texts(
+        repo_root,
+        [
+            *python_components(payload_dir),
+            *js_components(repo_root / FRONTEND_RELATIVE),
+            *rust_components(repo_root),
+            *supplement_components(repo_root, payload_dir),
+        ],
+    )
 
 
 def _digest(text: str) -> str:

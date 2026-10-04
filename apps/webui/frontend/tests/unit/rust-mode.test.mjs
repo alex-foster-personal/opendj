@@ -16,6 +16,9 @@
  * - if knob positions do not follow an acknowledged command then broken
  * - if a hot-cue command is taken from the page or refused then broken: the
  *   page's own cue logic drives the engine through `rustHotCueDriver`
+ * - if a late decode failure heard while a load is in flight is dropped then
+ *   broken: the load publishes a track the engine already unloaded; if one
+ *   that ended the earlier load is applied to the new one then broken too
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -126,6 +129,75 @@ test('an empty deck is never written from the feed', () => {
 	m.mirrorEngineState(frame(100, { position_ms: 9000, playing: true }));
 	assert.equal(st.position_ms, 0);
 	assert.equal(st.playing, false);
+});
+
+test('a late decode failure clears its deck and says why; an empty deck stays untouched', () => {
+	const st = m.deckStates[2];
+	st.stable_id = 'late';
+	st.title = 'Late';
+	st.processor_error = null;
+	m.applyLoadFailed({
+		type: 'load_failed',
+		deck: 2,
+		error: { code: 'decode', message: 'decode error in late.mp3: bad frame' }
+	});
+	assert.equal(st.stable_id, null, 'the page still shows a track the engine unloaded');
+	assert.equal(st.title, null);
+	assert.match(st.processor_error, /late\.mp3: bad frame/);
+
+	// Control: a deck with nothing loaded is not given an error.
+	const empty = m.deckStates[3];
+	empty.stable_id = null;
+	empty.processor_error = null;
+	m.applyLoadFailed({ type: 'load_failed', deck: 3, error: { code: 'decode', message: 'x' } });
+	assert.equal(empty.processor_error, null);
+});
+
+test('a late failure heard while a load is in flight is held until that load settles', () => {
+	const st = m.deckStates[2];
+	const fail = (path) => ({
+		type: 'load_failed',
+		deck: 2,
+		path,
+		error: { code: 'decode', message: `decode error in ${path}: bad frame` }
+	});
+	// The new load's own rest fails before the page has published it: the
+	// failure is not dropped against the empty deck, it ends the load once
+	// published.
+	st.stable_id = null;
+	st.processor_error = null;
+	m.holdLoadFailures(2);
+	m.applyLoadFailed(fail('/music/new.mp3'));
+	assert.equal(st.processor_error, null, 'applied before the load it ends was shown');
+	st.stable_id = 'new';
+	m.releaseLoadFailures(2, '/music/new.mp3');
+	assert.equal(st.stable_id, null, 'the published load outlived its failed rest');
+	assert.match(st.processor_error, /new\.mp3: bad frame/);
+
+	// Control: a failure that ended the earlier load on the deck is dropped,
+	// never applied to the load that replaced it.
+	st.stable_id = 'old';
+	st.processor_error = null;
+	m.holdLoadFailures(2);
+	m.applyLoadFailed(fail('/music/old.mp3'));
+	st.stable_id = 'new';
+	m.releaseLoadFailures(2, '/music/new.mp3');
+	assert.equal(st.stable_id, 'new', "an earlier load's failure cleared the new one");
+	assert.equal(st.processor_error, null);
+
+	// A load that never publishes leaves the earlier track shown: a failure
+	// held meanwhile ends that one.
+	st.stable_id = 'old';
+	m.holdLoadFailures(2);
+	m.applyLoadFailed(fail('/music/old.mp3'));
+	m.releaseLoadFailures(2, null);
+	assert.equal(st.stable_id, null, 'the earlier track stayed shown after the engine unloaded it');
+
+	// Nothing stays held once a load settles.
+	st.stable_id = 'next';
+	st.processor_error = null;
+	m.applyLoadFailed(fail('/music/next.mp3'));
+	assert.equal(st.stable_id, null, 'a failure after the load settled was held');
 });
 
 test('knobs follow acknowledged commands; unload clears the deck', () => {

@@ -8,9 +8,10 @@ Incremental on re-run: files whose ``(size, mtime)`` match the cache row
 are skipped. ``--force-recompute`` wipes and regenerates.
 
 Never raises on individual-file errors; instead records them in a summary
-counter and prints at the end. The ``fpcalc`` missing case is the
-exception -- we raise early with the install remediation from
-:class:`ChromaprintMissing` since no file can be fingerprinted without it.
+counter and prints at the end. A missing fingerprint backend (no engine
+build and no ``fpcalc``) is the exception -- we raise early with the
+remediation from :class:`ChromaprintMissing` since no file can be
+fingerprinted without it.
 """
 from __future__ import annotations
 
@@ -183,8 +184,9 @@ def main(argv: list[str] | None = None) -> int:
     except ChromaprintMissing as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         print(
-            "Run `scripts/check-chromaprint.sh` or "
-            "`brew install chromaprint` then retry.",
+            "Build the engine (`cargo build --release --manifest-path "
+            "apps/audio-engine/Cargo.toml`), or install chromaprint's fpcalc, "
+            "then retry.",
             file=sys.stderr,
         )
         return 2

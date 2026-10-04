@@ -249,7 +249,7 @@ test('pause, cue and seek schedule through the plain-transport horizon', () => {
 	for (const anchor of [
 		'	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {',
 		'	async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {',
-		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {'
+		'	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {'
 	]) {
 		const body = engineBlockAfter(anchor);
 		assert.ok(
