@@ -379,7 +379,7 @@ def test_pioneer_denominator_is_stick_not_expected(tmp_path: Path) -> None:
     pioneer = _rb_export_pioneer()
     stick_count = len(read_usb_export(pioneer)["tracks"])
     expected = {
-        "a": ExpectedTrack(filename="Flawless.mp3", key="8A"),
+        "a": ExpectedTrack(filename="01 Flawless.mp3", key="8A"),
         "b": ExpectedTrack(filename="missing.mp3", key="1A"),
         "c": ExpectedTrack(filename="also-missing.mp3", key="2A"),
     }
@@ -433,10 +433,10 @@ def test_pioneer_loudness_absent_on_rekordbox_dump() -> None:
 def test_pioneer_verified_means_stick_not_plan() -> None:
     pioneer = _rb_export_pioneer()
     data = read_usb_export(pioneer)
-    track = next(t for t in data["tracks"] if t.get("filename") == "Flawless.mp3")
-    wrong_key = ExpectedTrack(filename="Flawless.mp3", key="8A")
+    track = next(t for t in data["tracks"] if t.get("filename") == "01 Flawless.mp3")
+    wrong_key = ExpectedTrack(filename="01 Flawless.mp3", key="8A")
     report = verify_stick_values(pioneer, expected={"x": wrong_key})
-    row = next(t for t in report.tracks if t.filename == "Flawless.mp3")
+    row = next(t for t in report.tracks if t.filename == "01 Flawless.mp3")
     assert row.key.stick_value == track.get("key")
     if track.get("key"):
         assert row.key.stick_value != "8A" or row.key.status is FieldStatus.MATCH
@@ -446,7 +446,7 @@ def test_pioneer_verified_means_stick_not_plan() -> None:
     summary = grid_summary_from_anlz(anlz_dir)
     assert summary is not None
     bad_grid = ExpectedTrack(
-        filename="Flawless.mp3",
+        filename="01 Flawless.mp3",
         grid=ExpectedGrid(
             beat_count=summary["beat_count"] + 1,
             first_bpm=summary["first_bpm"],
@@ -454,7 +454,7 @@ def test_pioneer_verified_means_stick_not_plan() -> None:
         ),
     )
     report2 = verify_stick_values(pioneer, expected={"x": bad_grid})
-    row2 = next(t for t in report2.tracks if t.filename == "Flawless.mp3")
+    row2 = next(t for t in report2.tracks if t.filename == "01 Flawless.mp3")
     assert row2.grid.status is FieldStatus.MISMATCH
     assert str(summary["beat_count"]) in (row2.grid.stick_value or "")
 
