@@ -7,8 +7,10 @@ bench with a 600 s test timeout and a 240 s webServer timeout, and it ate a whol
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -28,11 +30,16 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _run_live_playlist_switch_bench() -> dict:
+def _run_live_playlist_switch_bench(output_path: Path) -> dict:
     """Run the Playwright bench and return the measured payload JSON."""
+    pnpm = shutil.which("pnpm")
+    if pnpm is None:
+        raise RuntimeError("Playlist benchmark requires pnpm on PATH")
+    if output_path.resolve() == _FIXTURE.resolve():
+        raise ValueError("Live benchmark output must not replace the locked fixture")
     if not _BUILD_INDEX.is_file():
         subprocess.run(
-            ["pnpm", "build"],
+            [pnpm, "build"],
             cwd=_FRONTEND,
             check=True,
         )
@@ -47,11 +54,11 @@ def _run_live_playlist_switch_bench() -> dict:
     # the per-run port here is what keeps concurrent shards apart.
     env.setdefault("PLAYLIST_SWITCH_BENCH_PORT", str(_free_port()))
     env.setdefault("PLAYLIST_SWITCH_BENCH_SAMPLES", "10")
-    env["PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE"] = "1"
-    env["PLAYLIST_SWITCH_BENCH_OUT"] = str(_FIXTURE)
+    env.pop("PLAYLIST_SWITCH_BENCH_UPDATE_FIXTURE", None)
+    env["PLAYLIST_SWITCH_BENCH_OUT"] = str(output_path)
     subprocess.run(
         [
-            "pnpm",
+            pnpm,
             "exec",
             "playwright",
             "test",
@@ -62,15 +69,19 @@ def _run_live_playlist_switch_bench() -> dict:
         check=True,
         env=env,
     )
-    return json.loads(_FIXTURE.read_text())
+    return json.loads(output_path.read_text(encoding="utf-8"))
 
 
 # REQ: PERF-UI-05
 @pytest.mark.requirement("PERF-UI-05")
 @pytest.mark.slow  # full Playwright bench: never in the CI fast tier (scripts/pytest_fast_tier.py)
-def test_playlist_switch_bench_meets_post_fix_caps() -> None:
+def test_playlist_switch_bench_meets_post_fix_caps(tmp_path: Path) -> None:
     """[if] live bench p50 exceeds caps [then] gate fails, [else stop]."""
-    payload = _run_live_playlist_switch_bench()
+    fixture_hash = hashlib.sha256(_FIXTURE.read_bytes()).hexdigest()
+    try:
+        payload = _run_live_playlist_switch_bench(tmp_path / "live-bench.json")
+    finally:
+        assert hashlib.sha256(_FIXTURE.read_bytes()).hexdigest() == fixture_hash
     thresholds = payload["thresholds_p50_ms"]
     post_fix = payload["post_fix"]
     assert isinstance(payload.get("sha"), str) and payload["sha"]
