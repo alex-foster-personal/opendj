@@ -79,7 +79,9 @@ from apps.analysis_waveform.decode import (
     BAND_NAMES,
     OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
-    decode_peaks,
+    decode_peaks_used,
+    decoder_mode,
+    select_decoder,
 )
 
 # STRIP_COLUMNS is imported, not restated: the browser strip is ONE contract
@@ -176,6 +178,44 @@ def _source_key(path: Path) -> dict[str, Any]:
     return key
 
 
+NO_DECODER: str = "none"
+# A decoder the operator forced (or an invalid setting) that is unavailable.
+# Unlike NO_DECODER it matches no cache entry: a forced decoder fails closed
+# rather than serving another decoder's columns.
+FORCED_DECODER_UNAVAILABLE: str = "forced-unavailable"
+
+
+def _decode_key(path: Path) -> dict[str, Any]:
+    """``_source_key`` plus the decoder that would produce these peaks now.
+
+    The engine and ffmpeg agree to within 1 of 255 on 44.1 kHz files but not on
+    a 48 kHz high band or an AAC file's start (``decode`` module docstring), so
+    a switch of decoder is a different decode convention and rebuilds the entry
+    rather than serving the other decoder's columns. With no decoder available
+    the key says so (``NO_DECODER``): nothing is ever decoded under it, and the
+    decode attempt raises the reason. Only ``auto`` mode may fall back to an
+    existing cache that way; a forced decoder that is missing, or an invalid
+    setting, keys as ``FORCED_DECODER_UNAVAILABLE`` and never hits the cache.
+    """
+    try:
+        decoder: str = select_decoder(path)
+    except LocalDecodeUnavailable:
+        decoder = NO_DECODER if decoder_mode() == "auto" else FORCED_DECODER_UNAVAILABLE
+    return {**_source_key(path), "decoder": decoder}
+
+
+def _auto_fallback_entry(entry: dict[str, Any], decoder: Any) -> bool:
+    """ffmpeg peaks for a file the engine refused stand in for an ``auto``
+    engine decode of the same bytes, and only for ``auto``: a forced engine
+    must try the engine and fail."""
+    return (
+        decoder == "engine"
+        and entry.get("decoder") == "ffmpeg"
+        and entry.get("engine_refused") is True
+        and decoder_mode() == "auto"
+    )
+
+
 def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
     """Whether ``entry`` was written by THIS decoder from THESE bytes.
 
@@ -188,7 +228,15 @@ def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
     return (
         entry.get("schema") == config.LOCAL_WAVEFORM_CACHE_SCHEMA
         and entry.get("peaks_version") == peaks_version()
-        and all(entry.get(name) == value for name, value in key.items())
+        and all(
+            entry.get(name) == value
+            or (name == "decoder" and _auto_fallback_entry(entry, value))
+            for name, value in key.items()
+            # With no decoder on the host nothing can rebuild the entry, so the
+            # last real decode of these same bytes stands, whichever decoder
+            # wrote it; a pre-decoder-key entry (no "decoder") still misses.
+            if not (name == "decoder" and value == NO_DECODER and entry.get(name))
+        )
     )
 
 
@@ -335,7 +383,7 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
             raise
         raise LocalDecodeUnavailable(str(detail.get("message") or exc.detail)) from None
     try:
-        key = _source_key(path)
+        key = _decode_key(path)
     except OSError as exc:
         raise LocalDecodeUnavailable(f"audio file cannot be stat'd: {exc}") from None
 
@@ -361,10 +409,16 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
                     retryable=True,
                 )
             try:
-                peaks = decode_peaks(path)
+                decoder = key["decoder"]
+                if decoder in (NO_DECODER, FORCED_DECODER_UNAVAILABLE):
+                    decoder = select_decoder(path)  # raises the reason
+                peaks, _rate, used = decode_peaks_used(decoder, path)
             finally:
                 _DECODE_SLOTS.release()
-            _store_peaks(stable_id, key, peaks)
+            # Recorded under the decoder that made the peaks: an auto engine
+            # refusal decoded by ffmpeg must never answer a forced engine.
+            stored = key if used == decoder else {**key, "decoder": used, "engine_refused": True}
+            _store_peaks(stable_id, stored, peaks)
     finally:
         _DECODE_ADMISSION.release()
     return peaks
@@ -426,7 +480,7 @@ def local_preview_strip(stable_id: str) -> tuple[str | None, int | None]:
         return None, None
     source = entry.get("source")
     try:
-        key = _source_key(Path(str(source)))
+        key = _decode_key(Path(str(source)))
     except OSError:
         return None, None
     if not _entry_is_current(entry, key):

@@ -128,7 +128,7 @@ When rekordbox analyzes tracks, some data is too big to fit in the database itse
 |---|---|---|---|---|---|---|---|---|---|
 | **crate-digger** | Java / Clojure | [GitHub][crate-digger-gh] | Eclipse Public 2.0 | ✅ | ❌ | ✅ | ❌ | Active 2024–25 (beat-link ecosystem) | Gold standard reader; generates Java from Kaitai `.ksy` files |
 | **pyrekordbox** | Python | [GitHub][pyrkb-gh] | MIT | ✅ master.db | ❌ | ✅ parse | ⚠️ planned | v0.4.4 Aug 2025 | Reads ANLZ; **no USB PDB write**; roadmap item |
-| **rbox** | Python | [PyPI][rbox-pypi] | MIT (assumed) | ✅ | ❓ unclear | ✅ | ✅ | ~2025 | Newer fork/sibling of pyrekordbox; claims ANLZ read+write |
+| **rbox** | Python | [PyPI][rbox-pypi] | MIT/Apache to 0.1.5, GPL-3.0-only from 0.1.6 (not used here since Thu 1 Oct 2026) | ✅ | ❓ unclear | ✅ | ✅ | ~2025 | Newer fork/sibling of pyrekordbox; claims ANLZ read+write |
 | **rekordcrate** | Rust | [GitHub][rekordcrate-gh] | MIT | ✅ | ⚠️ structural (binrw) | ✅ | ✅ | Active 2023–24 | Uses `binrw` for both read & write; most promising write path |
 | **rex** | Go | [GitHub][rex-gh] | MIT (assumed) | ✅ | ✅ (experimental) | ❌ | ❌ | 2022–23, sparse | Writes PDB from Mixxx DB; author warns ⚠️ **"do not use on a live gig"** |
 | **python-prodj-link** | Python | [GitHub][prodj-gh] | MIT | ✅ pdb decode | ❌ | ✅ partial | ❌ | 2020–22, low activity | Fabian Lesniak's original PDB decode work; foundational research |

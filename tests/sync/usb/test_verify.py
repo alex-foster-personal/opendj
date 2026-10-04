@@ -506,7 +506,7 @@ def test_pioneer_overlay_only_tree_rejected(tmp_path: Path) -> None:
 def test_value_verify_ast_guard_no_overlay_imports() -> None:
     src = Path("apps/sync/usb/pioneer/value_verify.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
-    blocked = ("writer_rbox", "export_" + "workflow")
+    blocked = ("writer_onelibrary", "export_" + "workflow")
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:

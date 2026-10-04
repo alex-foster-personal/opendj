@@ -67,7 +67,7 @@ def _tri_peaks(columns: int = 600) -> np.ndarray:
 def test_a_current_entry_round_trips_exactly(source: Path) -> None:
     """The positive control: without this, every assertion below could pass
     because the cache never reads anything back at all."""
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     peaks = _tri_peaks()
     local_waveform._store_peaks(SID, key, peaks)
 
@@ -78,7 +78,7 @@ def test_a_current_entry_round_trips_exactly(source: Path) -> None:
 
 
 def test_a_pre_tri_band_mono_entry_is_a_cache_miss(source: Path) -> None:
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     mono = np.arange(600, dtype=np.uint8)
     assert mono.size % decode.BAND_COUNT == 0, (
         "the fixture must be reshapeable to (n, 3), or this test proves nothing: "
@@ -118,7 +118,7 @@ def test_peaks_written_under_another_producer_profile_are_a_cache_miss(
     assert local_waveform.peaks_version(other) != local_waveform.peaks_version(), (
         "the fixture profile must actually differ from the shipped one"
     )
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     peaks = _tri_peaks()
     local_waveform._write_json(
         local_waveform._entry_path(SID),
@@ -137,7 +137,7 @@ def test_peaks_written_under_another_producer_profile_are_a_cache_miss(
 def test_the_strip_sidecar_carries_the_same_version_as_the_entry(source: Path) -> None:
     """The half a cache-key change is easiest to forget: the browser strip is a
     separate file and would otherwise outlive the peaks it came from."""
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     local_waveform._store_peaks(SID, key, _tri_peaks())
     assert local_waveform.local_preview_strip(SID)[0] is not None, "precondition: a hit"
 
@@ -171,7 +171,7 @@ def test_the_version_moves_for_every_field_that_defines_the_peaks() -> None:
 
 
 def test_a_ragged_band_payload_is_refused_rather_than_guessed_at(source: Path) -> None:
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     ragged = np.arange(601, dtype=np.uint8)  # not a whole number of 3-band columns
     local_waveform._write_json(
         local_waveform._entry_path(SID),
@@ -186,7 +186,7 @@ def test_a_ragged_band_payload_is_refused_rather_than_guessed_at(source: Path) -
 
 
 def test_the_stored_entry_records_the_version_it_was_written_under(source: Path) -> None:
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     local_waveform._store_peaks(SID, key, _tri_peaks())
     entry = json.loads(local_waveform._entry_path(SID).read_text(encoding="utf-8"))
     assert entry["peaks_version"] == local_waveform.peaks_version()
@@ -233,3 +233,48 @@ def test_the_payload_declares_tri_and_carries_three_distinct_bands() -> None:
     assert payload["preview"]["length"] == min(600, decode.OVERVIEW_COLUMNS), (
         "the preview is capped at the rekordbox PWV6 width before `points` applies"
     )
+
+
+@pytest.mark.parametrize("forced", ["engine", "ffmpeg", "rust"])
+def test_a_forced_decoder_that_is_missing_never_serves_another_decoders_cache(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forced: str
+) -> None:
+    """Only ``auto`` falls back to the last real decode when nothing can decode.
+
+    A forced decoder that is missing, or an invalid setting, must fail closed,
+    not quietly serve columns another decoder wrote.
+    """
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(tmp_path / "no-such-odj-audio"))
+    monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
+    written = {**local_waveform._source_key(source), "decoder": "ffmpeg"}
+    local_waveform._store_peaks(SID, written, _tri_peaks())
+
+    # Control: under auto with no decoder at all, that same entry still stands.
+    monkeypatch.delenv(decode.DECODER_ENV, raising=False)
+    assert local_waveform._cached_peaks(SID, local_waveform._decode_key(source)) is not None
+
+    monkeypatch.setenv(decode.DECODER_ENV, forced)
+    assert local_waveform._cached_peaks(SID, local_waveform._decode_key(source)) is None
+
+
+def test_ffmpeg_peaks_for_an_engine_refused_file_never_answer_a_forced_engine(
+    source: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An auto decode the engine refused is stored as ffmpeg's. It stands in for
+    the next auto engine request, but a forced engine must miss and try the
+    engine itself."""
+    engine_key = {**local_waveform._source_key(source), "decoder": "engine"}
+    local_waveform._store_peaks(
+        SID, {**engine_key, "decoder": "ffmpeg", "engine_refused": True}, _tri_peaks()
+    )
+
+    monkeypatch.delenv(decode.DECODER_ENV, raising=False)
+    assert local_waveform._cached_peaks(SID, engine_key) is not None, "auto must reuse it"
+
+    monkeypatch.setenv(decode.DECODER_ENV, "engine")
+    assert local_waveform._cached_peaks(SID, engine_key) is None
+
+    # Control: plain ffmpeg peaks (no engine refusal) never stand in for the engine.
+    local_waveform._store_peaks(SID, {**engine_key, "decoder": "ffmpeg"}, _tri_peaks())
+    monkeypatch.delenv(decode.DECODER_ENV)
+    assert local_waveform._cached_peaks(SID, engine_key) is None

@@ -1,23 +1,28 @@
 """Chromaprint fingerprint helpers (Phase 7 dedup).
 
-Small, pure, reusable wrapper around pyacoustid. The real work is done by
-the external ``fpcalc`` CLI (install via ``brew install chromaprint``);
-pyacoustid's ``fingerprint_file`` shells out to it and returns
-``(duration, fingerprint_str)``.
+Fingerprints are computed on the device by the Rust engine
+(``odj-audio fingerprint``, rusty-chromaprint over symphonia), which the
+packaged app ships, so duplicate detection works in a shipped build with
+no system install and no network call. Its output is the same string
+chromaprint's ``fpcalc`` prints (algorithm 2, first 120 s, compressed and
+URL-safe base64), so fingerprints cached from either backend compare.
+Where no engine binary resolves (a checkout with no cargo build), the old
+pyacoustid + ``fpcalc`` path is the fallback. The AcoustID web service is
+never called: it is free for non-commercial use only.
 
 Design notes:
 
 * We cache fingerprints in a SQLite file keyed by
   ``(abs_path, size, mtime)`` so re-scans are O(rows) instead of
-  O(rows * ~1s-of-fpcalc). The cache also persists duration / bitrate
+  O(rows * ~0.4s-of-decode). The cache also persists duration / bitrate
   because we use them for the cross-bitrate-twin similarity guard.
-* ``compute`` raises :class:`ChromaprintMissing` when fpcalc is not on
-  PATH. Callers surface the friendly install message from
-  ``scripts/check-chromaprint.sh``.
-* ``compare`` is a small Hamming-distance fraction over the raw
-  fingerprint bytes. pyacoustid ships a similar helper but only for its
-  Web API response; we reimplement the 32-bit-word Hamming distance
-  here so we do not need an online account.
+* ``compute`` raises :class:`ChromaprintMissing` when neither backend is
+  available, and :class:`FingerprintFailed` when a backend ran but could
+  not fingerprint that one file.
+* ``compare`` is a Hamming-distance fraction over the 32-bit
+  sub-fingerprints, decoded from the compressed string by
+  :func:`decode_fingerprint` (a port of chromaprint's decompressor, so it
+  needs no libchromaprint either).
 
 The module is intentionally side-effect-free: no prints, no logging
 configuration; callers wire in ``rich`` progress at the CLI layer.
@@ -25,9 +30,12 @@ configuration; callers wire in ``rich`` progress at the CLI layer.
 from __future__ import annotations
 
 import base64
+import functools
+import json
+import os
 import sqlite3
-import struct
-from collections.abc import Iterable
+import subprocess
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,12 +48,19 @@ from apps.shared import fs_residency
 
 
 class ChromaprintMissing(RuntimeError):
-    """Raised when the external ``fpcalc`` CLI is unavailable.
+    """Raised when no fingerprint backend is available.
 
-    pyacoustid surfaces this as ``acoustid.NoBackendError`` or an
-    ``OSError`` depending on version. We normalise to a single typed
-    exception so callers can show the install-remediation message.
+    Neither the engine binary (``odj-audio fingerprint``) nor pyacoustid's
+    ``fpcalc`` could be found. pyacoustid surfaces its half as
+    ``acoustid.NoBackendError`` or an ``OSError`` depending on version. We
+    normalise to a single typed exception so callers can show the
+    remediation message.
     """
+
+
+class FingerprintFailed(RuntimeError):
+    """A backend ran but could not fingerprint this one file (corrupt,
+    unsupported codec, too short). Other files are unaffected."""
 
 
 # ------------------------------------------------------------------ types
@@ -88,18 +103,70 @@ def _require_acoustid():
     return acoustid
 
 
-def compute(path: Path) -> Fingerprint:
-    """Compute a chromaprint fingerprint for ``path``.
+# Seconds of audio fingerprinted, as fpcalc does by default.
+FINGERPRINT_LENGTH_S = 120
+# A whole-file decode of one track is well under this on any machine.
+_ENGINE_TIMEOUT_S = 120
 
-    Raises
-    ------
-    ChromaprintMissing
-        When the external ``fpcalc`` CLI is unavailable.
-    FileNotFoundError
-        When ``path`` does not exist.
+
+_ENGINE_BIN_ENV = "ODJ_AUDIO_BIN"
+_ENGINE_EXE = "odj-audio.exe" if os.name == "nt" else "odj-audio"
+
+
+def _engine_binary() -> Path | None:
+    """The odj-audio binary to fingerprint with, or None.
+
+    The same rule as ``apps.engine_core.audio_engine.resolve_binary`` (not
+    imported: ``engine_core`` already depends on ``shared``):
+    ``ODJ_AUDIO_BIN`` (set by the packaged app) wins and is never
+    second-guessed, else the newest release or debug cargo build in this
+    checkout.
     """
-    if not path.exists():
-        raise FileNotFoundError(str(path))
+    from apps.shared.platform_paths import PROJECT_ROOT
+
+    raw = os.environ.get(_ENGINE_BIN_ENV, "").strip()
+    if raw:
+        p = Path(raw)
+        return p if p.is_file() and os.access(p, os.X_OK) else None
+    builds = [
+        PROJECT_ROOT / "apps" / "audio-engine" / "target" / profile / _ENGINE_EXE
+        for profile in ("release", "debug")
+    ]
+    found = [p for p in builds if p.is_file() and os.access(p, os.X_OK)]
+    return max(found, key=lambda p: p.stat().st_mtime) if found else None
+
+
+def _compute_with_engine(binary: Path, path: Path) -> tuple[float, str]:
+    try:
+        proc = subprocess.run(
+            [str(binary), "fingerprint", str(path), "--length", str(FINGERPRINT_LENGTH_S)],
+            capture_output=True,
+            text=True,
+            timeout=_ENGINE_TIMEOUT_S,
+            check=False,
+        )
+    except OSError as exc:
+        raise ChromaprintMissing(f"cannot run {binary}: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise FingerprintFailed(f"fingerprinting {path} timed out") from exc
+    if "unknown command fingerprint" in proc.stderr:
+        # An engine build older than the fingerprint command.
+        raise ChromaprintMissing(
+            f"{binary} has no fingerprint command; rebuild apps/audio-engine"
+        )
+    lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    if not lines:
+        raise FingerprintFailed(
+            f"odj-audio fingerprint printed nothing for {path} "
+            f"(exit {proc.returncode}): {proc.stderr.strip()[-300:]}"
+        )
+    row = json.loads(lines[-1])
+    if "error" in row or proc.returncode != 0:
+        raise FingerprintFailed(str(row.get("error") or proc.stderr.strip()[-300:]))
+    return float(row["duration"]), str(row["fingerprint"])
+
+
+def _compute_with_fpcalc(path: Path) -> tuple[float, str]:
     acoustid = _require_acoustid()
     try:
         duration, fp = acoustid.fingerprint_file(str(path))
@@ -111,19 +178,45 @@ def compute(path: Path) -> Fingerprint:
             exc, (OSError, FileNotFoundError)
         ):
             raise ChromaprintMissing(
-                f"fpcalc not available: {exc}. "
-                "Install with `brew install chromaprint`."
+                f"no odj-audio engine build and fpcalc not available: {exc}. "
+                "Build apps/audio-engine (cargo build --release) or install "
+                "chromaprint."
             ) from exc
         raise
-    if isinstance(fp, bytes):
-        fp_str = fp.decode("ascii")
+    fp_str = fp.decode("ascii") if isinstance(fp, bytes) else str(fp)
+    return float(duration), fp_str
+
+
+def compute(path: Path) -> Fingerprint:
+    """Compute a chromaprint fingerprint for ``path``.
+
+    Raises
+    ------
+    ChromaprintMissing
+        When no fingerprint backend is available.
+    FingerprintFailed
+        When the engine could not fingerprint this file.
+    FileNotFoundError
+        When ``path`` does not exist.
+    """
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+    binary = _engine_binary()
+    if binary is None:
+        duration, fp_str = _compute_with_fpcalc(path)
     else:
-        fp_str = str(fp)
+        try:
+            duration, fp_str = _compute_with_engine(binary, path)
+        except ChromaprintMissing:
+            # An engine build that cannot fingerprint (older than the
+            # command, or not runnable) must not hide a working fpcalc:
+            # a checkout or CI runner can hold a stale cargo build.
+            duration, fp_str = _compute_with_fpcalc(path)
     st = path.stat()
     bitrate = _safe_bitrate(path)
     return Fingerprint(
         path=path,
-        duration=float(duration),
+        duration=duration,
         fp_str=fp_str,
         size=st.st_size,
         mtime=st.st_mtime,
@@ -147,51 +240,200 @@ def _safe_bitrate(path: Path) -> int | None:
 # ---------------------------------------------------------------- compare
 
 
-def _decode(fp_str: str) -> list[int]:
-    """Decode a chromaprint base64 string into a list of 32-bit ints.
+def _unpack(data: bytes, bits: int, count: int | None = None) -> list[int]:
+    """Little-endian ``bits``-wide values packed into ``data``."""
+    out: list[int] = []
+    acc = n = 0
+    mask = (1 << bits) - 1
+    for byte in data:
+        acc |= byte << n
+        n += 8
+        while n >= bits:
+            out.append(acc & mask)
+            acc >>= bits
+            n -= bits
+            if count is not None and len(out) == count:
+                return out
+    return out
 
-    pyacoustid's fingerprint strings are url-safe base64 with a leading
-    algorithm byte; we use ``acoustid.chromaprint.decode_fingerprint``
-    when available, else a local decoder.
+
+def _pack(values: Sequence[int], bits: int) -> bytes:
+    out = bytearray()
+    acc = n = 0
+    for v in values:
+        acc |= v << n
+        n += bits
+        while n >= 8:
+            out.append(acc & 0xFF)
+            acc >>= 8
+            n -= 8
+    if n:
+        out.append(acc & 0xFF)
+    return bytes(out)
+
+
+def _normal_extent(normal: list[int], count: int) -> tuple[int, int]:
+    """How many 3-bit values encode ``count`` sub-fingerprints (each ends in
+    a 0), and how many of those escape into a 5-bit exception value."""
+    zeros = exceptions = 0
+    for used, v in enumerate(normal, start=1):
+        if v == 7:
+            exceptions += 1
+        elif v == 0:
+            zeros += 1
+            if zeros == count:
+                return used, exceptions
+    if count == 0:
+        return 0, 0
+    raise ValueError("not a chromaprint fingerprint: truncated body")
+
+
+def decode_fingerprint(fp_str: str) -> tuple[list[int], int]:
+    """Decompress a chromaprint string into ``(sub_fingerprints, algorithm)``.
+
+    Port of chromaprint's ``FingerprintDecompressor``: a 4-byte header
+    (algorithm, 24-bit big-endian count), then per sub-fingerprint the gaps
+    between set bits of its XOR with the previous one, as 3-bit values
+    (7 = escape into a 5-bit exception value) ending in a 0.
+
+    Raises ``ValueError`` on a string that is not a valid fingerprint.
     """
     try:
-        from acoustid.chromaprint import decode_fingerprint  # type: ignore
+        raw = base64.urlsafe_b64decode(fp_str + "=" * (-len(fp_str) % 4))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"not a chromaprint fingerprint: {exc}") from exc
+    if len(raw) < 4:
+        raise ValueError("not a chromaprint fingerprint: too short")
+    algorithm = raw[0]
+    count = int.from_bytes(raw[1:4], "big")
+    normal = _unpack(raw[4:], 3)
+    used, exceptions = _normal_extent(normal, count)
+    exc_vals = _unpack(raw[4 + (used * 3 + 7) // 8 :], 5, exceptions)
+    if len(exc_vals) != exceptions:
+        raise ValueError("not a chromaprint fingerprint: truncated exceptions")
+    words: list[int] = []
+    cur = bit = ei = 0
+    for packed in normal[:used]:
+        gap = packed
+        if packed == 7:
+            gap += exc_vals[ei]
+            ei += 1
+        if gap == 0:
+            words.append(cur)
+            cur = bit = 0
+            continue
+        bit += gap
+        if bit > 32:
+            raise ValueError("not a chromaprint fingerprint: bit index past 32")
+        cur |= 1 << (bit - 1)
+    for i in range(1, len(words)):
+        words[i] ^= words[i - 1]
+    return words, algorithm
 
-        decoded, _algo = decode_fingerprint(fp_str.encode("ascii"))
-        return list(decoded)
-    except Exception:
-        # Fallback: strip URL-safe base64, read 32-bit big-endian words.
-        padded = fp_str + "=" * (-len(fp_str) % 4)
-        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
-        # First byte is algorithm; drop it. Then fold into 32-bit words.
-        body = raw[1:]
-        n = len(body) // 4
-        if n == 0:
-            return []
-        return list(struct.unpack(f">{n}I", body[: n * 4]))
+
+def encode_fingerprint(words: Sequence[int], algorithm: int = 1) -> str:
+    """Compress sub-fingerprints the way ``fpcalc`` prints them (inverse of
+    :func:`decode_fingerprint`)."""
+    normal: list[int] = []
+    exceptional: list[int] = []
+    prev = 0
+    for w in words:
+        x = (w ^ prev) & 0xFFFFFFFF
+        prev = w & 0xFFFFFFFF
+        last = 0
+        for b in range(1, 33):
+            if x >> (b - 1) & 1:
+                gap = b - last
+                if gap >= 7:
+                    normal.append(7)
+                    exceptional.append(gap - 7)
+                else:
+                    normal.append(gap)
+                last = b
+        normal.append(0)
+    raw = (
+        bytes([algorithm & 0xFF])
+        + len(words).to_bytes(3, "big")
+        + _pack(normal, 3)
+        + _pack(exceptional, 5)
+    )
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def compare(a: Fingerprint | str, b: Fingerprint | str) -> float:
+# Bounded: a 120 s fingerprint decodes to ~950 ints (~35 KB as a tuple).
+@functools.lru_cache(maxsize=512)
+def _decode(fp_str: str) -> tuple[int, ...]:
+    return tuple(decode_fingerprint(fp_str)[0])
+
+
+def words(fp: Fingerprint | str) -> tuple[int, ...]:
+    """The decoded 32-bit sub-fingerprints of ``fp`` (cached)."""
+    return _decode(fp.fp_str if isinstance(fp, Fingerprint) else fp)
+
+
+# Fewer overlapping sub-fingerprints than this (~4 s of audio) cannot say
+# two files are the same recording: short or near-silent files would match
+# anything with the same few silence words.
+MIN_OVERLAP_WORDS = 32
+
+
+def compare(a: Fingerprint | str, b: Fingerprint | str, *, offset: int = 0) -> float:
     """Return similarity in ``[0.0, 1.0]`` for two fingerprints.
 
-    Uses bitwise Hamming distance over the 32-bit words emitted by
-    chromaprint. Different-length fingerprints align to the shorter of
-    the two.
+    Uses bitwise Hamming distance over the 32-bit sub-fingerprints.
+    ``offset`` shifts ``b`` against ``a`` (sub-fingerprint ``i`` of ``a``
+    meets ``i - offset`` of ``b``), for files whose audio starts at
+    different points (encoder delay, trimmed silence). Unless the two
+    strings are identical, the overlap must be at least
+    :data:`MIN_OVERLAP_WORDS`, else the answer is 0.0.
     """
     sa = a.fp_str if isinstance(a, Fingerprint) else a
     sb = b.fp_str if isinstance(b, Fingerprint) else b
-    if sa == sb:
+    if sa == sb and offset == 0:
+        # Bit-identical chromaprint output, however short (a re-upload of
+        # the same file): the overlap guard is for partial agreement.
         return 1.0
     wa = _decode(sa)
     wb = _decode(sb)
+    if offset >= 0:
+        wa = wa[offset:]
+    else:
+        wb = wb[-offset:]
     n = min(len(wa), len(wb))
-    if n == 0:
+    if n < MIN_OVERLAP_WORDS:
         return 0.0
-    bits = n * 32
     diff = 0
-    for i in range(n):
-        diff += bin(wa[i] ^ wb[i]).count("1")
-    return 1.0 - (diff / bits)
+    for x, y in zip(wa[:n], wb[:n], strict=False):
+        diff += (x ^ y).bit_count()
+    return 1.0 - (diff / (n * 32))
+
+
+def best_offset(a: Fingerprint | str, b: Fingerprint | str) -> int:
+    """The shift of ``b`` against ``a`` that the most identical
+    sub-fingerprints agree on (0 when none are shared)."""
+    wa, wb = words(a), words(b)
+    first_b: dict[int, int] = {}
+    for pos, w in enumerate(wb):
+        first_b.setdefault(w, pos)
+    votes: dict[int, int] = {}
+    for pos, w in enumerate(wa):
+        pb = first_b.get(w)
+        if pb is not None:
+            votes[pos - pb] = votes.get(pos - pb, 0) + 1
+    if not votes:
+        return 0
+    return max(votes.items(), key=lambda kv: (kv[1], -abs(kv[0])))[0]
+
+
+def match(a: Fingerprint | str, b: Fingerprint | str) -> tuple[float, int]:
+    """``(similarity, offset)`` at the better of no shift and the shift the
+    shared sub-fingerprints vote for."""
+    off = best_offset(a, b)
+    at_zero = compare(a, b)
+    if off == 0:
+        return at_zero, 0
+    shifted = compare(a, b, offset=off)
+    return (shifted, off) if shifted > at_zero else (at_zero, 0)
 
 
 # ---------------------------------------------------------------- cache
@@ -327,10 +569,17 @@ def load_or_compute(
 
 
 __all__ = [
+    "MIN_OVERLAP_WORDS",
     "ChromaprintMissing",
     "Fingerprint",
     "FingerprintCache",
+    "FingerprintFailed",
+    "best_offset",
     "compare",
     "compute",
+    "decode_fingerprint",
+    "encode_fingerprint",
     "load_or_compute",
+    "match",
+    "words",
 ]

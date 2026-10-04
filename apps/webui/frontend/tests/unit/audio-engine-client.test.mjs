@@ -121,6 +121,15 @@ test('a command resolves on its own result and rejects on a refusal', async () =
 	await assert.rejects(bad, (e) => e instanceof mod.EngineCommandError && e.code === 'not_implemented');
 });
 
+test('a load_failed event reaches its listeners; a malformed one does not', async () => {
+	const { c, sockets } = await connected();
+	const seen = [];
+	c.onLoadFailed((e) => seen.push(e));
+	sockets[0].engine({ type: 'load_failed', deck: 3, error: { code: 'decode', message: 'bad frame' } });
+	sockets[0].engine({ type: 'load_failed', deck: 'three' });
+	assert.deepEqual(seen, [{ type: 'load_failed', deck: 3, error: { code: 'decode', message: 'bad frame' } }]);
+});
+
 test('a dropped socket rejects every waiting command and a reconnect re-reads the route', async () => {
 	const fetch = fetchOf(RUNNING);
 	const { c, sockets } = await connected({ fetch });

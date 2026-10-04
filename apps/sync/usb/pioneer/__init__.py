@@ -7,12 +7,10 @@ Prototype A (reader) — when ``reader.py`` is present, re-exports
 :func:`read_usb_export`. Absence is tolerated so downstream callers can
 still import this package.
 
-Prototype B (writer) — :func:`writer_rbox.write_onelibrary`: serialise a
+Prototype B (writer) — :func:`writer_onelibrary.write_onelibrary`: serialise a
 minimal tracks-and-playlists payload into an ``exportLibrary.db``
-OneLibrary (Device Library Plus) file via the ``rbox`` Rust crate's
-Python bindings. See ``writer_rbox.py`` for the capability matrix
-documenting what rbox 0.1.7 can and cannot do (spoiler: fresh-create is
-buggy; seed-from-fixture + modify works).
+OneLibrary (Device Library Plus) file, seeded from a Rekordbox-made
+template, through our own SQLCipher handle (``onelibrary.py``).
 
 Requirement: CAT-06.
 """

@@ -19,6 +19,7 @@ import {
 	FILTER_LP_CEILING_HZ,
 	FILTER_LP_FLOOR_HZ
 } from '$lib/player/constants';
+import { _assertKeyShift } from '$lib/player/key/camelot';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { PresentedTransportObservation } from '$lib/player/transport/presentation';
 
@@ -249,4 +250,36 @@ export function filterParamsFromKnob(value: number): {
 	}
 	const hpHz = FILTER_HP_FLOOR_HZ * (FILTER_HP_CEILING_HZ / FILTER_HP_FLOOR_HZ) ** u;
 	return { lpHz: FILTER_LP_CEILING_HZ, hpHz, dryGain: 0, lpWetGain: 0, hpWetGain: 1 };
+}
+
+export interface KeyShiftMutationPlan {
+	kind: 'immediate' | 'scheduled';
+	active: boolean;
+	publishedKeyShiftSemitones: number | null;
+}
+
+/** A stop acknowledged by the processor can remain audible at the output.
+ * Key changes must join that revisioned schedule instead of publishing ahead
+ * of the listener. */
+export function planKeyShiftMutation(
+	activity: TransportMutationActivity,
+	desiredActive: boolean,
+	requestedKeyShiftSemitones: number
+): KeyShiftMutationPlan {
+	if (typeof desiredActive !== 'boolean') {
+		throw new TypeError('key shift desired active must be boolean');
+	}
+	_assertKeyShift(requestedKeyShiftSemitones);
+	if (transportNeedsScheduledMutation(activity)) {
+		return {
+			kind: 'scheduled',
+			active: desiredActive,
+			publishedKeyShiftSemitones: null
+		};
+	}
+	return {
+		kind: 'immediate',
+		active: false,
+		publishedKeyShiftSemitones: requestedKeyShiftSemitones
+	};
 }
