@@ -1,0 +1,90 @@
+{
+  "description": "Captured-real measurement of lock packages whose installed distributions shipped no license text. Produced Sat 3 Oct 2026 on worktree HEAD cbee2e4a82238cf719221e59dbae0c4a9a31f10e by the production collectors in scripts/third_party_licenses.py (python_components, js_components, rust_components), before reviewed texts were attached. Machine-specific worktree prefixes in Python site paths are replaced with /Users/dev/code/music-dj-tools; /tmp measurement sites are kept. Never hand-edit a payload to make a test pass; re-run the collectors and replace the capture plus this manifest together.",
+  "captured": "Sat 3 Oct 2026",
+  "issue": "https://github.com/maintainer/music-dj-tools/issues/5143",
+  "pull_request": "https://github.com/maintainer/music-dj-tools/pull/5189",
+  "measured_source_head": "cbee2e4a82238cf719221e59dbae0c4a9a31f10e",
+  "collectors": {
+    "module": "scripts/third_party_licenses.py",
+    "module_git_blob": "8b15dfacbd77e914509fe2c4225dde56a8ed2473",
+    "module_sha256": "6fe477bbc28fd25159edab2893bcc387130f8953c634b871639dd40cc8baa76d",
+    "module_bytes": 23163,
+    "functions": [
+      "python_components",
+      "js_components",
+      "rust_components"
+    ],
+    "notes": {
+      "python_components": "Worktree venv plus extra pylib sites after PyObjCTest prune. Sites recorded on each Python row.",
+      "js_components": "apps/webui/frontend/node_modules against pnpm-lock.yaml.",
+      "rust_components": "cargo metadata --locked for the three RUST_CRATES, CARGO_HOME=/tmp/cargo-home-license-5189."
+    }
+  },
+  "lock_inputs": {
+    "uv.lock": {
+      "git_blob": "3e7c27b242fd732d25f37f85a61da8384753555e",
+      "sha256": "69e4dba7808bcf356723b344d4c010fa8c7d443346552d5cc826d00f755bf668",
+      "bytes": 846596
+    },
+    "apps/webui/frontend/pnpm-lock.yaml": {
+      "git_blob": "18abb1f1e291f637ecba1e64b20c10366b1eec3a",
+      "sha256": "4724cc305dead4df6e81efd167a459c4ad5517e239bd0ee0e26bb822495c95fe",
+      "bytes": 101484
+    },
+    "apps/desktop/src-tauri/Cargo.lock": {
+      "git_blob": "5922a996a510d71563b4278649c097339cee4727",
+      "sha256": "92eae132470d9864d145a8c0d6299b2cd99f7a92a24903ed9795fc7e4460f31b",
+      "bytes": 146028
+    },
+    "apps/audio-engine/Cargo.lock": {
+      "git_blob": "6f613db1d7acaa5e222de6b8b1c3527621b3fbe4",
+      "sha256": "b3acabe4a4090c2973ef0f70a517a9ae38a0738ccd12c2facbdb661e186b738e",
+      "bytes": 53541
+    },
+    "apps/webui/server/native/waveform/Cargo.lock": {
+      "git_blob": "8841ef27bc87b06324913f2dc2c0817dcfc35768",
+      "sha256": "171d1edf2c318ad5e9ea8375500cdff53e62be075f7f4353227768d28936d067",
+      "bytes": 5828
+    }
+  },
+  "counts": {
+    "python_all_deduped": 123,
+    "python_textless": 3,
+    "javascript_textless": 10,
+    "rust_textless": 43
+  },
+  "files": {
+    "python-textless.json": {
+      "sha256": "b52df63dcb7ac07a0fc34116949825dd5e26eddc87a3d4263db32948d1042919",
+      "bytes": 886,
+      "capture_sha256": "ae2c4a2ad9b9c5cf745826e227d47ce01f33635142d5596e11aa96729743ed0c",
+      "capture_bytes": 932,
+      "sanitized": true,
+      "note": "python_components rows with texts==[] (rbox, pyobjc-core, antlr4-python3-runtime)."
+    },
+    "python-all-deduped.json": {
+      "sha256": "793d0d22e002f3cd86621f566d6c57dc3e8b53dbffc505bb803a38d1f2393523",
+      "bytes": 44451,
+      "capture_sha256": "f270a6e4f4ec4a3b465d446e7790ee49aa2b4694c59ffd190430b5cbc4f71340",
+      "capture_bytes": 46291,
+      "sanitized": true,
+      "note": "Deduped python_components inventory across the measured sites, including distributions that did ship license files."
+    },
+    "js-textless.json": {
+      "sha256": "1131b5211e96944333cd15565a5542cd72173b684610c9019aa721130fdd21cf",
+      "bytes": 1330,
+      "capture_sha256": "1131b5211e96944333cd15565a5542cd72173b684610c9019aa721130fdd21cf",
+      "capture_bytes": 1330,
+      "sanitized": false,
+      "note": "js_components rows with n_texts==0 and n_license_texts==0. wasm-audio-decoders wrappers stay on KNOWN_TEXTLESS."
+    },
+    "rust-textless.json": {
+      "sha256": "8bf1f7e7604927f0953c03a7f9924bb2d0402a24c05d51bf95437be6cb694330",
+      "bytes": 5037,
+      "capture_sha256": "8bf1f7e7604927f0953c03a7f9924bb2d0402a24c05d51bf95437be6cb694330",
+      "capture_bytes": 5037,
+      "sanitized": false,
+      "note": "rust_components rows with n_texts==0."
+    }
+  }
+}
