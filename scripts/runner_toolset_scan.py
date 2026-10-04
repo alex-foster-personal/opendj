@@ -110,6 +110,7 @@ class Usage:
     executables: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     apt_packages: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     playwright_browsers: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    unresolved_executables: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     unresolved_python_programs: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     scanned_files: set[str] = field(default_factory=set)
 
@@ -453,6 +454,8 @@ def scan_python_source(text: str, source: str, base_line: int, ctx: _Ctx) -> Non
         where = f"{source}:{base_line + command.line}"
         if command.kind == "name" and WORD_RE.match(command.text):
             ctx.usage.executables[command.text].add(where)
+        elif command.kind == "unresolved-executable":
+            ctx.usage.unresolved_executables[command.text].add(f"{where} via {' -> '.join(command.chain)}")
         elif command.kind == "shell":
             before = {name: set(places) for name, places in ctx.usage.executables.items()}
             scan_shell(command.text, source, base_line + command.line - 1, ctx)
@@ -558,7 +561,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
     usage = scan_repo()
-    kinds = ("executables", "apt_packages", "playwright_browsers", "unresolved_python_programs")
+    kinds = ("executables", "apt_packages", "playwright_browsers", "unresolved_python_programs", "unresolved_executables")
     report = {
         kind: {name: sorted(srcs)[0] for name, srcs in sorted(getattr(usage, kind).items())}
         for kind in kinds

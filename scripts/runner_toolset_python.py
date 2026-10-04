@@ -134,26 +134,29 @@ class _Flow:
         owner, name = target(call)
         module, underlying = (self.modules.get(owner, ""), name) if owner else self.sinks.get(name, ("", ""))
         allowed = PROCESS if module == "subprocess" else ASYNC_PROCESS if module == "asyncio" else set()
-        if chain and underlying in allowed and (owner or name) not in env:
+        if underlying in allowed and (owner or name) not in env:
             if not call.args:
                 return
             executable = next((kw.value for kw in call.keywords if kw.arg == "executable"), None)
             values = (_combine([_value(n.value if isinstance(n, ast.Starred) else n, env)
                                 for n in call.args]) if module == "asyncio"
                       else _value(call.args[0], env))
-            for argv in values:
+            sink = f"{module}.{underlying}@{call.lineno}(alias:{owner or name})"
+            provenance = (*chain, sink) if chain else ()
+            overrides = _value(executable, env) if executable is not None else ((),)
+            for argv, override in itertools.product(values, overrides):
                 if executable is not None:
-                    override = _value(executable, env)
-                    if len(override) != 1 or override[0] == (PLACEHOLDER,):
+                    if not override or PLACEHOLDER in override:
+                        self.results.append(Command("unresolved-executable",
+                                                    ast.unparse(executable), origin, (*chain, sink)))
                         continue
-                    argv = (*override[0], *argv[1:])
+                    argv = (*override, *argv[1:])
                 if argv and argv[0] != PLACEHOLDER:
                     shell = shlex.join(argv)
                     if len(argv) == 1 and any(k.arg == "shell" and isinstance(k.value, ast.Constant)
                                               and k.value.value is True for k in call.keywords):
                         shell = argv[0]
-                    self.results.append(Command("shell", shell, origin,
-                                                (*chain, f"{module}.{underlying}@{call.lineno}(alias:{owner or name})")))
+                    self.results.append(Command("shell", shell, origin, provenance))
         elif not owner and name in self.functions and name not in active and len(active) < 12:
             function = self.functions[name]
             bound = _bind(function, call, env, self.globals)
