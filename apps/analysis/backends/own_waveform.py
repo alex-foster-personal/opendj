@@ -36,7 +36,6 @@ from apps.analysis.pcm_fingerprint import (
 )
 from apps.analysis_waveform import decode
 from apps.analysis_waveform.decode import (
-    DECODE_SAMPLE_RATE_HZ,
     DETAIL_COLUMNS_PER_S,
     LocalDecodeUnavailable,
 )
@@ -170,7 +169,9 @@ def analyze_audio(audio_path: Path, stable_id: str) -> AnalysisRecord:
     require_resampler()
     decode_fingerprint, pcm_fingerprint = _resolve_decode_fingerprint(audio_path)
     try:
-        peaks = decode.decode_peaks(audio_path)
+        peaks, sample_rate = decode.decode_peaks_measured(
+            decode.select_decoder(audio_path), audio_path
+        )
     except LocalDecodeUnavailable as exc:
         if exc.retryable:
             raise BackendNotAvailable(str(exc)) from exc
@@ -187,7 +188,7 @@ def analyze_audio(audio_path: Path, stable_id: str) -> AnalysisRecord:
         stable_id,
         peaks,
         duration_s=duration_s,
-        sample_rate=DECODE_SAMPLE_RATE_HZ,
+        sample_rate=sample_rate,
         decode_fingerprint=decode_fingerprint,
     )
 

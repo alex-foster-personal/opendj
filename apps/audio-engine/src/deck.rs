@@ -38,7 +38,17 @@ pub struct Track {
     /// the `Arc`, so the decoder's buffer is shared as it is: turning it into
     /// an `Arc<[f32]>` would copy it, holding two whole copies for a moment.
     pub pcm: Arc<Vec<f32>>,
+    /// The track's length. While `decoding`, `pcm` holds only its head and
+    /// this is the length the container states (the head's own when it
+    /// states none): seeks, cues and loops are bounded by it, and the deck
+    /// plays silence past what has been decoded so far.
     pub frames: usize,
+    /// Only the head of the file is decoded yet; the deck swaps in the whole
+    /// track (`Deck::extend`) when its decode finishes.
+    pub decoding: bool,
+    /// The load this track came from, so the whole track replaces only its
+    /// own head (0: not a progressive load).
+    pub load_id: u64,
     pub beats: Vec<Beat>,
     /// Frame index (into `beats`) of every downbeat, precomputed for bar lookups.
     downbeats: Vec<usize>,
@@ -60,7 +70,22 @@ impl Track {
             .filter(|(_, b)| b.downbeat)
             .map(|(i, _)| i)
             .collect();
-        Track { sample_rate, pcm, frames, beats, downbeats, bpm, source: None }
+        Track { sample_rate, pcm, frames, decoding: false, load_id: 0, beats, downbeats, bpm, source: None }
+    }
+
+    /// The head of a track whose decode is still running: `pcm` is its first
+    /// frames, and `length` the length its container states, if any.
+    pub fn head(sample_rate: u32, pcm: Vec<f32>, length: Option<u64>, beats: Vec<Beat>, bpm: Option<f64>, load_id: u64) -> Track {
+        let mut t = Track::new(sample_rate, pcm, beats, bpm);
+        t.frames = t.frames.max(length.map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX)));
+        t.decoding = true;
+        t.load_id = load_id;
+        t
+    }
+
+    /// Frames of `pcm` decoded so far: all of them once `decoding` is false.
+    pub fn available(&self) -> usize {
+        self.pcm.len() / 2
     }
 
     pub fn with_source(mut self, source: Option<crate::decode::SourceId>) -> Track {
@@ -71,7 +96,10 @@ impl Track {
     /// The same audio with another beatgrid. Shares the samples, so a
     /// re-analysis never decodes the file again.
     pub fn with_grid(&self, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
-        Track::new(self.sample_rate, self.pcm.clone(), beats, bpm)
+        let mut t = Track::new(self.sample_rate, self.pcm.clone(), beats, bpm);
+        // A head stays a head, with the length it was given.
+        (t.frames, t.decoding, t.load_id) = (self.frames, self.decoding, self.load_id);
+        t
     }
 
     pub fn duration_ms(&self) -> f64 {
@@ -500,6 +528,28 @@ impl Deck {
         }
     }
 
+    /// Swap the whole decoded track in for the head it was loaded with
+    /// (`Track::head`). Everything else is untouched: playhead, play state,
+    /// cue, loop, tempo, the strip and the stretcher, which reads on into the
+    /// rest of the track; the head is a prefix of it sample for sample, so
+    /// nothing is heard at the swap. A loop that ends past the real end (the
+    /// stated length was an estimate) is let go. Refused when the deck no
+    /// longer holds that load's head. Returns the head, for the caller to
+    /// free off this thread.
+    pub fn extend(&mut self, track: Arc<Track>) -> Result<Arc<Track>, (EngineError, Arc<Track>)> {
+        match &self.track {
+            Some(cur) if cur.decoding && cur.load_id == track.load_id && track.load_id != 0 => {
+                if let Some((_, b)) = self.looping {
+                    if b > track.frames as f64 {
+                        self.clear_loop();
+                    }
+                }
+                Ok(self.track.replace(track).expect("checked above"))
+            }
+            _ => Err((EngineError::new(ErrorCode::Invalid, "the deck no longer holds that load"), track)),
+        }
+    }
+
     /// An emptied deck is the page's `_emptyDeckState`: unity tempo and
     /// Quantize back to on at grid 1. The pitch range and the channel strip
     /// live outside that state on the page and carry over.
@@ -760,7 +810,20 @@ impl Deck {
         let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).ok_or_else(|| {
             EngineError::new(ErrorCode::Invalid, "beat jump: no grid beat at or before the end of the decoded audio")
         })?;
-        let target = t.beats[i].time_ms.clamp(0.0, dur);
+        let mut target = t.beats[i].time_ms.clamp(0.0, dur);
+        // A PLAYING deck keeps its fractional beat phase, exactly `beats`
+        // grid beats on (`beatJumpSeekPlan`): snapping it to a beat skips
+        // `p` of a beat in its own groove and knocks every follower of a
+        // jumping master off phase. Only inside the grid and the audio; an
+        // edge stops on its beat as before. A paused deck still snaps.
+        if self.playing {
+            let last = t.beats.len() - 1;
+            let from = t.beat_index_at(now).filter(|&f| f >= 0.0 && f < last as f64);
+            let to = from.map(|f| f + beats).filter(|&f| f >= 0.0 && f <= last as f64);
+            if let Some(ms) = to.and_then(|f| t.beat_time_ms(f)).filter(|&ms| ms <= dur) {
+                target = ms;
+            }
+        }
         let Some((a, b)) = self.looping else {
             self.pos = t.ms_to_frames(target);
             self.stretch_warm = false;
@@ -903,8 +966,12 @@ impl Deck {
         }
         let mut done = 0;
         let pcm = &track.pcm[..];
-        let frames = track.frames;
-        let end = frames as f64;
+        // Reads stay within what is decoded. While the rest is decoding the
+        // deck plays on past it in silence and never stops at the stated end
+        // (an estimate for some MP3s): the whole track decides that.
+        let frames = track.available();
+        let decoding = track.decoding;
+        let end = if decoding { f64::INFINITY } else { frames as f64 };
         let step = self.tempo * track.sample_rate as f64 / engine_sr;
         if self.pos != self.rendered_pos || step != self.anchor_step {
             self.anchor = self.pos;
@@ -931,7 +998,10 @@ impl Deck {
                 self.playing = false;
                 break;
             }
-            let (l, r) = if self.path_fade > 0 {
+            let (l, r) = if decoding && self.pos + 2.0 >= frames as f64 {
+                // Not decoded yet: silence, keeping time.
+                (0.0, 0.0)
+            } else if self.path_fade > 0 {
                 let (hl, hr) = hermite(pcm, frames, self.pos, self.looping);
                 let (sl, sr) = self.stretch.next(pcm, frames, self.pos, step, semis);
                 // g goes 1/Q .. 1 towards the new path over the fade.
@@ -1669,6 +1739,28 @@ mod tests {
     }
 
     #[test]
+    fn a_playing_beat_jump_keeps_its_phase_and_a_paused_one_snaps() {
+        // 120 BPM grid (500 ms beats); playhead 30% into beat 4 (2150 ms).
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 20.0, grid_120(8))));
+        d.set_quantize(false);
+        d.seek(2150.0).unwrap();
+        d.play(true).unwrap();
+        d.beat_jump(4.0).unwrap();
+        assert!((d.pos - 4150.0 * 48.0).abs() < 1e-6, "playing: +4 beats exactly, pos {}", d.pos);
+        d.beat_jump(-1.0).unwrap();
+        assert!((d.pos - 3650.0 * 48.0).abs() < 1e-6, "playing: -1 beat exactly, pos {}", d.pos);
+        // Past the end of the grid a playing jump still stops on the last beat.
+        d.beat_jump(64.0).unwrap();
+        assert_eq!(d.pos, 15500.0 * 48.0);
+        // Control: paused, the same jump snaps to the nearest beat first.
+        d.play(false).unwrap();
+        d.seek(2150.0).unwrap();
+        d.beat_jump(4.0).unwrap();
+        assert_eq!(d.pos, 4000.0 * 48.0);
+    }
+
+    #[test]
     fn beat_jump_moves_an_active_loop_with_the_playhead() {
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 20.0, grid_120(8))));
@@ -1991,5 +2083,129 @@ mod tests {
         // Without a bpm on the beat, the gap is still the answer.
         let gap = t.bpm_at(600.0).unwrap();
         assert!((gap - 60000.0 / 499.0).abs() < 1e-9, "{gap}");
+    }
+
+    /// `noise_track(n)`'s samples as a progressive load's whole track.
+    fn whole(n: usize, load_id: u64) -> Arc<Track> {
+        let mut t = noise_track(n);
+        t.load_id = load_id;
+        Arc::new(t)
+    }
+
+    #[test]
+    fn a_head_plays_as_the_whole_track_does_and_the_swap_to_it_is_seamless() {
+        // A progressive load plays its head while the rest decodes, then the
+        // whole track is swapped in mid-play. The head is the whole track's
+        // first frames sample for sample, so the deck must sound exactly as
+        // one that had the whole track from the start: varispeed, a tempo
+        // that interpolates, and key lock, which reads ahead of the playhead.
+        let (n, head_n, swap_at, total) = (48000usize, 24000usize, 9000usize, 30000usize);
+        for (tempo, mt) in [(1.0, false), (1.037, false), (1.037, true)] {
+            let full = whole(n, 7);
+            let render = |d: &mut Deck, swap: Option<Arc<Track>>| {
+                d.set_tempo(tempo).unwrap();
+                d.set_master_tempo(mt);
+                d.play(true).unwrap();
+                let mut buf = vec![0.0f32; total * 2];
+                let (a, b) = buf.split_at_mut(swap_at * 2);
+                for c in a.chunks_mut(256 * 2) {
+                    d.render_add(c, 48000.0);
+                }
+                if let Some(t) = swap {
+                    assert!(!d.extend(t).expect("the head's own load is accepted").pcm.is_empty());
+                }
+                for c in b.chunks_mut(300 * 2) {
+                    d.render_add(c, 48000.0);
+                }
+                buf
+            };
+            let mut reference = Deck::new(48000.0);
+            reference.load(full.clone());
+            let want = render(&mut reference, None);
+            let mut d = Deck::new(48000.0);
+            d.load(Arc::new(Track::head(48000, full.pcm[..head_n * 2].to_vec(), Some(n as u64), vec![], None, 7)));
+            let got = render(&mut d, Some(full.clone()));
+            let diff = got.iter().zip(&want).filter(|(a, b)| a != b).count();
+            assert_eq!(diff, 0, "tempo {tempo} mt {mt}: {diff} samples differ from the whole track's");
+            assert!(!d.loaded().unwrap().decoding, "the whole track is not on the deck");
+            // Control: the render is not silence on both sides.
+            assert!(want.iter().any(|&x| x.abs() > 0.1), "tempo {tempo} mt {mt}: nothing played");
+        }
+    }
+
+    #[test]
+    fn past_the_decoded_head_a_deck_plays_silence_and_keeps_time_until_the_rest_lands() {
+        let (head_n, stated) = (1000usize, 2000u64);
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::head(48000, vec![0.5; head_n * 2], Some(stated), vec![], None, 3)));
+        // The stated length bounds seeks, not the head: a seek past the head
+        // is taken.
+        assert!(d.seek(1500.0 * 1000.0 / 48000.0).is_ok(), "a seek within the stated length was refused");
+        assert!(d.seek(2100.0 * 1000.0 / 48000.0).is_err(), "a seek past the stated length was taken");
+        d.seek(0.0).unwrap();
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; 3000 * 2];
+        d.render_add(&mut buf, 48000.0);
+        assert!(buf[..900 * 2].iter().all(|&x| x == 0.5), "the head did not play");
+        // Silence through the strip: what is left is its filters' ringing
+        // out at -340 dB.
+        let loud: Vec<_> = buf[head_n * 2..].iter().enumerate().filter(|(_, &x)| x.abs() > 1e-9).take(6).collect();
+        assert!(loud.is_empty(), "past the head is not silence: {loud:?}");
+        // Still playing past the stated end (here, an estimate that came up
+        // short), with the playhead running on.
+        assert!(d.playing, "a deck whose rest is still decoding stopped");
+        assert_eq!(d.pos, 3000.0);
+        // The whole track turns out shorter than the playhead: it stops now.
+        let mut t = Track::new(48000, vec![0.25; 2500 * 2], vec![], None);
+        t.load_id = 3;
+        d.extend(Arc::new(t)).unwrap();
+        let mut more = vec![0.0f32; 64 * 2];
+        d.render_add(&mut more, 48000.0);
+        assert!(!d.playing, "the deck played on past the whole track's end");
+        // Control: a whole track (no decode running) stops at its end as it
+        // always has.
+        let mut w = Deck::new(48000.0);
+        w.load(Arc::new(Track::new(48000, vec![0.5; head_n * 2], vec![], None)));
+        w.play(true).unwrap();
+        let mut buf = vec![0.0f32; 3000 * 2];
+        w.render_add(&mut buf, 48000.0);
+        assert!(!w.playing && w.pos == head_n as f64, "a whole track did not stop at its end");
+    }
+
+    #[test]
+    fn only_the_heads_own_load_replaces_it_and_a_regridded_head_stays_a_head() {
+        let head = |id| Arc::new(Track::head(48000, vec![0.0; 200], Some(1000), grid_120(1), None, id));
+        let mut d = Deck::new(48000.0);
+        // No track, another load's track, and a whole track: all refused,
+        // and the refused track is handed back, never freed here.
+        let (_, back) = d.extend(whole(1000, 5)).unwrap_err();
+        assert_eq!(back.load_id, 5);
+        d.load(head(5));
+        assert!(d.extend(whole(1000, 6)).is_err(), "another load's track replaced the head");
+        let mut zero = noise_track(1000);
+        zero.load_id = 0;
+        assert!(d.extend(Arc::new(zero)).is_err(), "a track from no progressive load replaced the head");
+        d.load(Arc::new(Track::new(48000, vec![0.0; 200], vec![], None)));
+        assert!(d.extend(whole(1000, 0)).is_err(), "a whole track was replaced");
+        // A head regridded while its rest decodes keeps its stated length and
+        // stays replaceable by its own load.
+        let h = head(5);
+        let g = Arc::new(h.with_grid(grid_120(2), Some(120.0)));
+        assert!(g.decoding && g.frames == 1000 && g.load_id == 5 && g.available() == 100);
+        d.load(h);
+        d.regrid(g).unwrap();
+        // A loop past the real end is let go when the whole track lands.
+        d.set_quantize(false);
+        d.set_loop(Some((10.0, 19.0))).unwrap();
+        let mut short = Track::new(48000, vec![0.0; 800 * 2], vec![], None);
+        short.load_id = 5;
+        d.extend(Arc::new(short)).unwrap();
+        assert!(d.looping.is_none(), "a loop past the end of the track survived the swap");
+        // Control: a loop within the track survives it.
+        d.load(head(9));
+        d.set_quantize(false);
+        d.set_loop(Some((1.0, 5.0))).unwrap();
+        d.extend(whole(1000, 9)).unwrap();
+        assert!(d.looping.is_some(), "a loop within the track was let go");
     }
 }

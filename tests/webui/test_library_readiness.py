@@ -146,7 +146,7 @@ def _write_corrupt_stems(root: Path, stable_id: str) -> None:
 
 def _write_local_strip(sid: str, audio: Path) -> None:
     peaks = np.ones((200, 3), dtype=np.uint8) * 40
-    local_waveform._store_peaks(sid, local_waveform._source_key(audio), peaks)
+    local_waveform._store_peaks(sid, local_waveform._decode_key(audio), peaks)
 
 
 def _downbeats() -> list[float]:

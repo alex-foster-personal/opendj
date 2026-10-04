@@ -951,6 +951,13 @@ fn an_mp3_behind_a_large_id3_tag_opens() {
     let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
     let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
     assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
+
+    // The duplicate finder reads the same file the deck plays. The clip is
+    // shorter than a fingerprint needs, so getting as far as "too short" (the
+    // audio was decoded) is the pass; "unrecognized format" is the probe bug.
+    let out = Command::new(BIN).args(["fingerprint"]).arg(&tagged).output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v["error"].as_str().is_some_and(|e| e.contains("too short to fingerprint")), "{v}");
 }
 
 #[test]

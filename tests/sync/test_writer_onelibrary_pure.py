@@ -1,6 +1,8 @@
-"""Pure-function tests for :mod:`apps.sync.usb.pioneer.writer_rbox`.
+"""Pure-function tests for :mod:`apps.sync.usb.pioneer.writer_onelibrary`.
 
-``test_pioneer_writer_rbox.py`` carries ``pytest.mark.requires_darwin``,
+[if] write_onelibrary is pointed at a path under a fixture root [then] the guard refuses it before any copy or open, [else stop].
+
+``test_pioneer_writer_onelibrary.py`` carries ``pytest.mark.requires_darwin``,
 so every assertion about the writer is skipped off macOS -- and CI runs
 ``ubuntu-latest`` only. That leaves ``_is_under_fixture_root`` with no
 executing coverage anywhere except a developer's Mac, which matters more
@@ -9,7 +11,7 @@ function that reads ``MUX_FIXTURE_HOST`` and walks symlink targets on
 disk, and it is the guard standing between ``write_onelibrary`` and an
 overwritten fixture library.
 
-These tests need neither macOS nor rbox, so they live outside
+These tests need neither macOS nor sqlcipher3, so they live outside
 ``tests/sync/usb/`` (the required fast lane's ``--ignore=tests/sync/usb``
 in ``.github/workflows/ci.yml`` would otherwise drop every assertion here
 silently -- PR #941 review) and run on every PR.
@@ -49,17 +51,18 @@ from pathlib import Path
 
 import pytest
 
-from apps.sync.usb.pioneer import writer_rbox
+from apps.sync.usb.pioneer import writer_onelibrary
 
 pytestmark = pytest.mark.requirement("CAT-06")
 
-_REPO_ROOT = Path(writer_rbox.__file__).resolve().parents[4]
-_WRITER_RBOX_PACKAGE_FILES = (
+_REPO_ROOT = Path(writer_onelibrary.__file__).resolve().parents[4]
+_WRITER_PACKAGE_FILES = (
     "apps/__init__.py",
     "apps/sync/__init__.py",
     "apps/sync/usb/__init__.py",
     "apps/sync/usb/pioneer/__init__.py",
-    "apps/sync/usb/pioneer/writer_rbox.py",
+    "apps/sync/usb/pioneer/onelibrary.py",
+    "apps/sync/usb/pioneer/writer_onelibrary.py",
 )
 
 
@@ -67,15 +70,15 @@ def _env_without_mux_fixture_host() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key != "MUX_FIXTURE_HOST"}
 
 
-def _write_isolated_writer_rbox_package(root: Path) -> None:
-    """Copy just the writer_rbox package chain into ``root``, no tests/ sibling.
+def _write_isolated_writer_onelibrary_package(root: Path) -> None:
+    """Copy just the writer_onelibrary package chain into ``root``, no tests/ sibling.
 
     A disposable layout, never the checkout's own ``tests/fixtures/``: per
     AGENTS.md, canonical fixture sources are immutable, and a probe that
     writes into the real committed tree would race other test runs sharing
     this checkout (PR #941 review).
     """
-    for rel in _WRITER_RBOX_PACKAGE_FILES:
+    for rel in _WRITER_PACKAGE_FILES:
         dest = root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes((_REPO_ROOT / rel).read_bytes())
@@ -91,7 +94,7 @@ def _run_guard_probe(target: str, *, env: dict[str, str], cwd: Path | None = Non
     code = (
         "import json\n"
         "from pathlib import Path\n"
-        "from apps.sync.usb.pioneer import writer_rbox as w\n"
+        "from apps.sync.usb.pioneer import writer_onelibrary as w\n"
         f"print(json.dumps(w._is_under_fixture_root(Path({target!r}))))\n"
     )
     completed = subprocess.run(
@@ -131,12 +134,12 @@ def test_ordinary_export_paths_are_not_fixture_roots(destination: str) -> None:
 # -----------------------------------------------------------------------
 def test_in_repo_fixture_tree_is_a_fixture_root() -> None:
     target = _REPO_ROOT / "tests" / "fixtures" / "rb-usb-export" / "PIONEER" / "x.db"
-    assert writer_rbox._is_under_fixture_root(target) is True
+    assert writer_onelibrary._is_under_fixture_root(target) is True
 
 
 def test_default_external_host_is_a_fixture_root() -> None:
     """LaCie is a fixture root even though its path says neither 'tests' nor 'fixtures'."""
-    host = writer_rbox._DEFAULT_EXTERNAL_FIXTURE_HOST
+    host = writer_onelibrary._DEFAULT_EXTERNAL_FIXTURE_HOST
     target = str(host / "rb-usb-export" / "x.db")
     assert _run_guard_probe(target, env=_env_without_mux_fixture_host()) is True
 
@@ -165,7 +168,7 @@ def test_contributor_symlink_target_is_a_fixture_root(tmp_path: Path) -> None:
     checkout tree).
     """
     isolated_root = tmp_path / "isolated-install"
-    _write_isolated_writer_rbox_package(isolated_root)
+    _write_isolated_writer_onelibrary_package(isolated_root)
     fixtures_dir = isolated_root / "tests" / "fixtures"
     fixtures_dir.mkdir(parents=True)
     target = tmp_path / "elsewhere"
@@ -196,12 +199,12 @@ def _run_write_onelibrary_probe(
     """Call the real ``write_onelibrary`` in a fresh interpreter.
 
     Both paths point under a fixture root, so the guard raises before any
-    rbox/SQLCipher I/O happens -- this exercises the actual call sites in
+    SQLCipher I/O happens -- this exercises the actual call sites in
     ``write_onelibrary`` (not just the private helper), cross-platform.
     """
     code = (
         "import json\n"
-        "from apps.sync.usb.pioneer import writer_rbox as w\n"
+        "from apps.sync.usb.pioneer import writer_onelibrary as w\n"
         "try:\n"
         f"    w.write_onelibrary(template_path={template_path!r}, output_path={output_path!r})\n"
         "except w.OneLibraryWriteError as exc:\n"
@@ -257,13 +260,13 @@ def test_write_onelibrary_refuses_template_under_fixture_root(tmp_path: Path) ->
 def test_missing_fixtures_dir_does_not_raise(tmp_path: Path) -> None:
     """A packaged install has no tests/ tree; the guard must degrade, not explode.
 
-    Builds a real, isolated copy of just the writer_rbox module's package
+    Builds a real, isolated copy of just the writer_onelibrary module's package
     chain with no ``tests/`` sibling, and imports it from there in a fresh
     interpreter -- a real layout with no ``tests/fixtures/`` to find, not a
     patched ``_TESTS_FIXTURES_DIR`` constant.
     """
     isolated_root = tmp_path / "isolated-install"
-    _write_isolated_writer_rbox_package(isolated_root)
+    _write_isolated_writer_onelibrary_package(isolated_root)
     assert not (isolated_root / "tests").exists()
 
     result = _run_guard_probe(

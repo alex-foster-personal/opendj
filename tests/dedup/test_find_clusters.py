@@ -10,6 +10,9 @@ import pytest
 from apps.dedup import find_clusters as fc_mod
 from apps.dedup import scan as scan_mod
 from apps.shared.fingerprints import Fingerprint, FingerprintCache
+from tests.fingerprint_fakes import fake_fingerprint
+
+SAME_FP = fake_fingerprint(b"same", b"")
 
 
 def _seed(tmp_path: Path, tmp_fixture_tree: Path) -> Path:
@@ -212,7 +215,7 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
     canonical = Fingerprint(
         path=tmp_path / "canonical.flac",
         duration=180.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=2_000,
         mtime=100.0,
         bitrate=320,
@@ -220,7 +223,7 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
     alias = Fingerprint(
         path=tmp_path / "alias.mp3",
         duration=180.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=1_000,
         mtime=200.0,
         bitrate=128,
@@ -257,12 +260,57 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-03")
+def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> None:
+    """A run that fingerprints nothing leaves no stale groups to merge."""
+    db = tmp_path / "phase7.sqlite"
+    members = [
+        Fingerprint(
+            path=tmp_path / name, duration=180.0, fp_str=SAME_FP,
+            size=size, mtime=100.0, bitrate=bitrate,
+        )
+        for name, size, bitrate in (("a.flac", 2_000, 320), ("b.mp3", 1_000, 128))
+    ]
+    cache = FingerprintCache(db)
+    for i, fp in enumerate(members):
+        cache.put(fp, stable_id=f"sid-{i}")
+    def run(fingerprints: list[Fingerprint]) -> list[fc_mod.ClusterOutcome]:
+        return fc_mod.run_find_clusters(
+            db_path=db, threshold=0.9, roots=[tmp_path],
+            clusters_csv=tmp_path / "c.csv", manual_review_csv=tmp_path / "m.csv",
+            fingerprints=fingerprints,
+        )
+
+    assert len(run(members)) == 1
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (1,)
+    found_header = (tmp_path / "c.csv").read_text(encoding="utf-8").splitlines()[0]
+
+    # A borderline row a previous run left for manual review.
+    with (tmp_path / "m.csv").open("a", encoding="utf-8") as handle:
+        handle.write("1,duration_delta,a.flac,b.mp3,0.95,12.0\n")
+
+    assert run([]) == []
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (0,)
+        assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (0,)
+    # Both artifacts are rewritten header only, with the same schema a run
+    # that found clusters writes.
+    assert (tmp_path / "c.csv").read_text(encoding="utf-8").splitlines() == [
+        found_header
+    ]
+    assert found_header.split(",") == list(fc_mod.CLUSTERS_CSV_HEADER)
+    assert (tmp_path / "m.csv").read_text(encoding="utf-8").splitlines() == [
+        "cluster_id,reason,canonical_path,alias_path,similarity,duration_delta_s"
+    ]
+
+
+@pytest.mark.requirement("META-03")
 def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
     db = tmp_path / "phase7.sqlite"
     canonical = Fingerprint(
         path=tmp_path / "canonical.flac",
         duration=180.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=2_000,
         mtime=100.0,
         bitrate=320,
@@ -270,7 +318,7 @@ def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
     alias = Fingerprint(
         path=tmp_path / "alias.mp3",
         duration=190.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=1_000,
         mtime=200.0,
         bitrate=128,

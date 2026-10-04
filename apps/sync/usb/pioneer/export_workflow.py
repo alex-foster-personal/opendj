@@ -38,8 +38,8 @@ from typing import Any
 
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
-from . import writer_rbox
-from .writer_rbox import PlaylistSpec, TrackUpdate
+from . import writer_onelibrary
+from .writer_onelibrary import PlaylistSpec, TrackUpdate
 
 SCHEMA_VERSION = 1
 DISPOSABLE_MARKER_NAME = ".mdj-disposable-usb.json"
@@ -489,59 +489,58 @@ def _verify_database(
     plan: ExportPlan,
     playlist_ids: Sequence[int],
 ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
-    if not writer_rbox.RBOX_AVAILABLE:
+    if not writer_onelibrary.WRITER_AVAILABLE:
         raise UsbExportError(
             "writer_unavailable",
-            f"rbox is unavailable: {writer_rbox.RBOX_IMPORT_ERROR}",
+            f"OneLibrary writer is unavailable: {writer_onelibrary.WRITER_IMPORT_ERROR}",
         )
     if len(playlist_ids) != len(plan.playlists):
         raise UsbExportError(
             "readback_mismatch", "playlist receipt count differs from plan"
         )
     try:
-        db = writer_rbox.OneLibrary(str(path))
-        playlist_rows: list[dict[str, Any]] = []
-        for playlist_id, expected in zip(playlist_ids, plan.playlists, strict=True):
-            playlist = db.get_playlist_by_id(int(playlist_id))
-            if playlist is None or str(playlist["name"]) != expected.name:
-                raise UsbExportError(
-                    "readback_mismatch",
-                    f"playlist {playlist_id} name does not match plan",
-                )
-            contents = db.get_playlist_contents(int(playlist_id))
-            track_ids = [int(content["id"]) for content in contents]
-            expected_ids = [int(value) for value in expected.track_ids]
-            if track_ids != expected_ids:
-                raise UsbExportError(
-                    "readback_mismatch",
-                    f"playlist {playlist_id} membership does not match plan",
-                )
-            playlist_rows.append(
-                {"id": int(playlist_id), "name": expected.name, "track_ids": track_ids}
-            )
-        track_rows: list[dict[str, Any]] = []
-        for expected in plan.track_updates:
-            content = db.get_content_by_id(expected.id)
-            if content is None:
-                raise UsbExportError(
-                    "readback_mismatch", f"track {expected.id} is missing"
-                )
-            actual: dict[str, Any] = {"id": expected.id}
-            for field, expected_value in expected.to_overlay().items():
-                actual_value = content[field]
-                if actual_value != expected_value:
+        with writer_onelibrary.OneLibrary(path) as db:
+            playlist_rows: list[dict[str, Any]] = []
+            for playlist_id, expected in zip(playlist_ids, plan.playlists, strict=True):
+                playlist = db.get_playlist_by_id(int(playlist_id))
+                if playlist is None or str(playlist["name"]) != expected.name:
                     raise UsbExportError(
                         "readback_mismatch",
-                        f"track {expected.id} field {field} does not match plan",
+                        f"playlist {playlist_id} name does not match plan",
                     )
-                actual[field] = actual_value
-            track_rows.append(actual)
-        del db
+                contents = db.get_playlist_contents(int(playlist_id))
+                track_ids = [int(content["id"]) for content in contents]
+                expected_ids = [int(value) for value in expected.track_ids]
+                if track_ids != expected_ids:
+                    raise UsbExportError(
+                        "readback_mismatch",
+                        f"playlist {playlist_id} membership does not match plan",
+                    )
+                playlist_rows.append(
+                    {"id": int(playlist_id), "name": expected.name, "track_ids": track_ids}
+                )
+            track_rows: list[dict[str, Any]] = []
+            for expected in plan.track_updates:
+                content = db.get_content_by_id(expected.id)
+                if content is None:
+                    raise UsbExportError(
+                        "readback_mismatch", f"track {expected.id} is missing"
+                    )
+                actual: dict[str, Any] = {"id": expected.id}
+                for field, expected_value in expected.to_overlay().items():
+                    actual_value = content[field]
+                    if actual_value != expected_value:
+                        raise UsbExportError(
+                            "readback_mismatch",
+                            f"track {expected.id} field {field} does not match plan",
+                        )
+                    actual[field] = actual_value
+                track_rows.append(actual)
         return tuple(playlist_rows), tuple(track_rows)
     except UsbExportError:
         raise
     except Exception as exc:
-        raise UsbExportError("readback_failed", f"rbox readback failed: {exc}") from exc
+        raise UsbExportError("readback_failed", f"OneLibrary readback failed: {exc}") from exc
 
 
 def _rename_exclusive(source: Path, destination: Path) -> None:
@@ -668,14 +667,14 @@ def apply_export(plan: ExportPlan, *, confirmation: str) -> ApplyReceipt:
         local_output = staging_root / "exportLibrary.db"
         shutil.copyfile(template, local_template)
         try:
-            result = writer_rbox.write_onelibrary(
+            result = writer_onelibrary.write_onelibrary(
                 template_path=local_template,
                 output_path=local_output,
                 playlists=plan.playlists,
                 track_updates=plan.track_updates,
                 overwrite=False,
             )
-        except writer_rbox.OneLibraryWriteError as exc:
+        except writer_onelibrary.OneLibraryWriteError as exc:
             raise UsbExportError("writer_failed", str(exc)) from exc
         _verify_database(
             local_output,
