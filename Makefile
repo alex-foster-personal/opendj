@@ -133,7 +133,7 @@ quality-baseline:
 
 build-dist:
 	rm -rf dist build
-	$(PY) -m build
+	$(PY) -m build --installer uv
 
 # The native extension is part of the normal server distribution. Keep this
 # target wheel-based so the gate tests what consumers install, not a source-tree
