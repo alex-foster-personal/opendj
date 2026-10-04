@@ -35,12 +35,12 @@ export function trackApiPath(id: string, suffix = ''): string {
 	return `${isUsbTrackId(id) ? '/api/v1/usb/tracks/' : '/api/v1/tracks/'}${encodeURIComponent(id)}${suffix}`;
 }
 
-/** Whether a deck holding `stableId` takes hot cue edits. A library track
- * needs a rekordbox mapping for them to land (#736); a stick track keeps them
- * in the session (spec 4b, decision 2); an empty deck takes none (#804). The
- * one definition HotCueBank's pads and the hot_cue_save IPC gate share. */
-export function hotCueEditsAllowed(stableId: string | null, hasRbMapping: boolean): boolean {
-	return stableId !== null && (hasRbMapping || isUsbTrackId(stableId));
+/** Whether a deck holding `stableId` takes hot cue edits. Every loaded track
+ * can save (CUES-01; the #736 mapping gate is gone). A stick track still keeps
+ * the edit in the session (spec 4b, decision 2); an empty deck takes none
+ * (#804). `hasRbMapping` stays in the signature so existing callers compile. */
+export function hotCueEditsAllowed(stableId: string | null, _hasRbMapping: boolean): boolean {
+	return stableId !== null;
 }
 
 /** Stick ids never enter library-keyed requests (spec 4b: the copilot 404s

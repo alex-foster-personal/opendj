@@ -226,15 +226,15 @@ test('[if] the same hot cue calls get a library id [then] they still write to th
 // the shared edit gate, and the IPC (agent and MIDI entry point) end to end
 //-----------------------------------------------------------------------------
 
-test('[if] hotCueEditsAllowed is asked about each deck kind [then] only a mapped library deck or a stick deck takes edits', () => {
+test('[if] hotCueEditsAllowed is asked about each deck kind [then] every loaded deck takes edits (CUES-01)', () => {
 	const stick = freshStickId();
 	assert.equal(m.hotCueEditsAllowed(null, true), false, 'empty deck (#804)');
-	assert.equal(m.hotCueEditsAllowed(LIBRARY_ID, false), false, 'unmapped library track (#736)');
+	assert.equal(m.hotCueEditsAllowed(LIBRARY_ID, false), true, 'unmapped library track saves (CUES-01)');
 	assert.equal(m.hotCueEditsAllowed(LIBRARY_ID, true), true, 'mapped library track');
 	assert.equal(m.hotCueEditsAllowed(stick, false), true, 'stick track: session edits need no mapping');
 });
 
-test('[if] hot_cue_save, clear and restore are dispatched for an unmapped stick deck [then] they succeed in the session with no write, while an unmapped library deck is still refused', async () => {
+test('[if] hot_cue_save, clear and restore are dispatched for an unmapped stick deck [then] they succeed in the session with no write, while an unmapped library deck still writes', async () => {
 	let loaded = freshStickId();
 	let mapped = false;
 	let refreshed = 0;
@@ -264,19 +264,24 @@ test('[if] hot_cue_save, clear and restore are dispatched for an unmapped stick 
 		assert.deepEqual(writeRequests(), []);
 		assert.deepEqual(libraryRouteRequests(), []);
 
-		// Control: the mapping gate still bites for an unmapped LIBRARY deck.
+		// Control: CUES-01 lets an unmapped library deck save, and it writes.
 		loaded = LIBRARY_ID;
-		await assert.rejects(
-			dispatch({ type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag' }),
-			/cues need a rekordbox mapping/
-		);
-		assert.deepEqual(writeRequests(), [], 'refused before any request');
-		mapped = true;
+		mapped = false;
 		await assert.rejects(dispatch({ type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag' }));
 		assert.deepEqual(
 			writeRequests().map(({ method, url }) => `${method} ${url}`),
 			[`PUT ${API_BASE}/api/v1/tracks/${LIBRARY_ID}/hot-cues/A`],
-			'control: a mapped library save still writes'
+			'an unmapped library save still writes'
+		);
+		mapped = true;
+		await assert.rejects(dispatch({ type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag' }));
+		assert.deepEqual(
+			writeRequests().map(({ method, url }) => `${method} ${url}`),
+			[
+				`PUT ${API_BASE}/api/v1/tracks/${LIBRARY_ID}/hot-cues/A`,
+				`PUT ${API_BASE}/api/v1/tracks/${LIBRARY_ID}/hot-cues/A`
+			],
+			'control: a mapped library save still writes, and the unmapped save above was not dropped'
 		);
 	} finally {
 		uninstall();

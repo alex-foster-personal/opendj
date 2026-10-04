@@ -121,6 +121,22 @@ test('a trim never leaves the pitch range', () => {
 	assert.ok(Math.abs(lo.tempo - 0.94) < 1e-12, `clamped at the bottom, got ${lo.tempo}`);
 });
 
+test('a trim never goes below the 0.01 floor, even with a pitch range of 100% or more', () => {
+	const d = pl.phaseLockDecision(
+		input(60, inPhase(60) + 0.012 * BASE, { followerBaseTempo: 0.005, pitchRangePct: 100 })
+	);
+	assert.equal(d.action, 'trim');
+	assert.equal(d.tempo, 0.01);
+});
+
+test('the feed-forward base ignores a non-finite or non-positive ask and keeps the base', () => {
+	assert.equal(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: Infinity })), BASE);
+	assert.equal(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: Number.NaN })), BASE);
+	assert.equal(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: 0 })), BASE);
+	// Control: a real ask past the hysteresis does move it.
+	assert.notEqual(pl.phaseLockFeedForwardBase(input(60, inPhase(60), { masterTempo: 1.02 })), BASE);
+});
+
 test('a lost lock asks for a re-seek, and the base meanwhile', () => {
 	// The confirming tick (the gates themselves: phase-lock-jitter.test.mjs).
 	const confirming = { overLineTicks: pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS - 1 };

@@ -322,6 +322,16 @@ const BUDGETS = [
   // (enrich card collapses beside the help buttons) merged in: 251,283, 403
   // over 245 KiB. Raised to the measured size ceiled to KiB (246 KiB), no extra
   // headroom; the same performance-register row covers it.
+  // RAISED Fri 2 Oct 2026: 237 -> 252 KiB for PR #5013 (V1 ports from
+  // main-electron-rust). Beat Sync's continuous phase lock (#4602, #4653, #4733:
+  // phase-lock-webaudio, phase-lock, context-time-wait, the preset runner split)
+  // is real always-loaded deck weight on this route; on main-electron-rust the
+  // same code shipped under a 249 KiB ceiling. Local build on this head measured
+  // 245,752 (CI agreed to the byte), 3,064 over. The ceiling follows the +5%
+  // ceil-to-KiB rule on 245,752. Re-measured after merging main (#4904 copy
+  // and paste, #4766): 246,970.
+  // Merge with main after #4014/#4094/#4906/#5228: main's ceiling 260,096
+  // (measured 247,657) is the larger of the two, so the merged tree keeps it.
   // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4094, FB-20 comment hover counts; JIK's V1
   // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin-summary
   // hover rides the /performance FeedbackWidget. Main 5504f60e7 + this PR

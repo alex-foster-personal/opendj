@@ -20,11 +20,9 @@
  *       before invoking the engine or recreating an off-route audio graph ⛔️
  *     [if] a new route session starts while old work settles [then] its commands
  *       use fresh scheduler tails and clean pending counters
- *   ✔︎ ✅ 🎯 hot_cue_save is gated on has_rb_mapping for every caller (#736).
- *     [if] a browser/CLI agent dispatches hot_cue_save for an unmapped deck
- *       [then] it rejects before reaching saveHotCue, same as the UI click ⛔️
- *     [if] the deck holds a USB stick track [then] the save is allowed and
- *       stays in the session (specs/usb-play-from-stick.md 4b, decision 2) ⛔️
+ *   ✔︎ ✅ 🎯 hot_cue_save works for every loaded deck, mapped or not (CUES-01;
+ *     supersedes the #736 mapping gate). [if] a browser/CLI agent dispatches
+ *       hot_cue_save for an unmapped deck [then] it reaches saveHotCue ⛔️
  *   ✔︎ ✅ 🎯 hot_cue_trigger honours BeatSyncMax on a playing, unlooped deck (#884).
  *     [if] BeatSyncMax is on, the deck is playing and unlooped [then] the jump
  *       arms for the deck's own next downbeat instead of firing immediately,
@@ -58,7 +56,6 @@ import {
 } from '$lib/stores.svelte';
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
-import { hotCueEditsAllowed } from '$lib/rb/track-source';
 import {
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
@@ -80,6 +77,7 @@ import {
 	getDeckState,
 	getMasterMode,
 	getMasterReason,
+	installAutomaticRejoinRunner,
 	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
@@ -154,6 +152,7 @@ export {
 	uninstallRescueRingWriterHooks
 } from '$lib/rb/rescue-ring-writer.svelte';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
+import { TempoCoalescer } from '$lib/rb/tempo-coalesce';
 import {
 	hoveredEdgeList,
 	isEqRaised,
@@ -758,10 +757,6 @@ export function resetQuantizedLaunchArmedForTest(): void {
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
 	refresh(deck: DeckId): Promise<void>;
-	/** Same `DeckState.has_rb_mapping` HotCueBank gates its click on (#736) -
-	 * read here too so a non-UI caller (browser IPC, a preset transaction)
-	 * hits the identical guard rather than only the component seeing it. */
-	hasRbMapping(deck: DeckId): boolean;
 	/** #884: everything planHotCueTrigger needs for one slot, in one read so
 	 * the test seam can stand in for the engine without a real audio graph. */
 	triggerState(
@@ -788,7 +783,6 @@ export interface PerformanceHotCueDriver {
 const _defaultHotCueDriver: PerformanceHotCueDriver = {
 	stableId: (deck) => getDeckState(deck).stable_id,
 	refresh: (deck) => engine.refreshHotCues(deck),
-	hasRbMapping: (deck) => getDeckState(deck).has_rb_mapping,
 	triggerState: (deck, slot) => {
 		const state = getDeckState(deck);
 		return {
@@ -825,6 +819,10 @@ let _presetClaim: { id: string } | null = null;
 type PersistenceScope = `persistence-${DeckId}`;
 type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+// S1 (round 2): a queued fader step that a newer one has overtaken is a no-op
+// when its turn comes, so a sweep costs one group re-lock, not one per message.
+// A command queued between two tempos is a barrier (tempo-coalesce.ts).
+const _tempoCoalescer = new TempoCoalescer<DeckId | null, CommandScope>();
 // PARITY-10: the only module that owns the scoped command scheduler, so a
 // beatgrid-landed resync fired long after its load() command released [deck]
 // reclaims scope here rather than racing whatever now holds it. The
@@ -926,6 +924,38 @@ installScopedSyncRunner((_deck, run) => {
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
 installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// An automatic master handoff (unload, pause, natural end) re-joins the
+// followers under the same wide claim, queued behind the command that moved the
+// master, so later deck commands wait for it rather than racing it.
+// Counted like a widened claim, so a caller waiting for the queue to drain
+// waits for the re-join too.
+installAutomaticRejoinRunner((work) => {
+	const statusGeneration = _commandStatusGeneration;
+	const counted = () => statusGeneration === _commandStatusGeneration;
+	let started = false;
+	if (counted()) {
+		performanceCommandStatus.queued += 1;
+		for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
+	}
+	return _commandScheduler
+		.run([...DECK_IDS, 'sync'], async () => {
+			started = true;
+			if (counted()) {
+				performanceCommandStatus.queued -= 1;
+				performanceCommandStatus.active += 1;
+			}
+			try {
+				await work();
+			} finally {
+				if (counted()) performanceCommandStatus.active -= 1;
+			}
+		})
+		.finally(() => {
+			if (!counted()) return;
+			if (!started) performanceCommandStatus.queued -= 1;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+		});
+});
 installAutomaticMasterElectionRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
@@ -2312,11 +2342,6 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'hot_cue_save') {
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
-		if (!hotCueEditsAllowed(stableId, _hotCueDriver.hasRbMapping(command.deck))) {
-			throw new Error(
-				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
-			);
-		}
 		// Untrusted own grids (static_grid_untrusted: true) must not BeatSyncMax-snap.
 		const beatSyncMaxSnap =
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(getDeckState(command.deck).anlz);
@@ -3047,6 +3072,7 @@ async function _dispatchUnknown(
 			throw error;
 		}
 	}
+	const tempoTicket = _tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
 	let started = false;
@@ -3061,7 +3087,9 @@ async function _dispatchUnknown(
 		try {
 			// Q1: this body starts only AFTER the scope wait above, which is
 			// exactly the gap press_to_schedule_ms exists to expose.
-			await _execute(command, pressT0Ms);
+			if (_tempoCoalescer.runs(deck, tempoTicket)) {
+				await _execute(command, pressT0Ms);
+			}
 			_assertCommandSession(commandGeneration);
 			return _completeCommand(command);
 		} catch (error) {

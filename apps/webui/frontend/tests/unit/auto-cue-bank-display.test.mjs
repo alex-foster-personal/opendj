@@ -3,7 +3,7 @@
  *
  * Regression lines:
  * - if a proposed pad sets class:filled then a proposal looks committed
- * - if empty mapped click no longer beginRenames then SAVE is stolen
+ * - if empty loaded click no longer beginRenames then SAVE is stolen
  * - if 404 ANALYSIS_NOT_FOUND toasts or disables pads then missing analysis is treated as a hard error
  * - if proposal !== true still renders then a committed-looking pad can appear
  * - if MIDI or waveform painters gain proposal markers then this issue exceeded slots
@@ -24,8 +24,7 @@ function source(relativePath) {
 const HOT_CUE_BANK = 'lib/components/rb/deck/HotCueBank.svelte';
 const PROPOSAL_LABEL = 'lib/components/rb/deck/HotCueProposalLabel.svelte';
 const CACHE = 'lib/components/rb/deck/auto-cues-cache.svelte.ts';
-// canSave is hotCueEditsAllowed(stable_id, has_rb_mapping): see hot-cue-mapping-gate.test.mjs.
-const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!canSave\s*\)\s*return/;
+const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\)\s*return/;
 
 // REQ: DECKUX-15
 test('class:filled remains committed-cue only; class:proposal is empty-plus-visible', () => {
@@ -47,7 +46,7 @@ test('class:filled remains committed-cue only; class:proposal is empty-plus-visi
 	);
 });
 
-test('onSlotClick still refuses unmapped/unloaded empty slots and still beginRenames mapped empties', () => {
+test('onSlotClick still refuses unloaded empty slots and still beginRenames loaded empties (CUES-01)', () => {
 	const text = source(HOT_CUE_BANK);
 	const fnStart = text.indexOf('async function onSlotClick');
 	assert.ok(fnStart >= 0, 'onSlotClick not found in HotCueBank.svelte');
@@ -57,12 +56,12 @@ test('onSlotClick still refuses unmapped/unloaded empty slots and still beginRen
 
 	assert.ok(
 		EMPTY_SAVE_GUARD.test(fnText),
-		'onSlotClick lost EMPTY_SAVE_GUARD - a proposal must not steal the unmapped/unloaded inert path'
+		'onSlotClick lost EMPTY_SAVE_GUARD - a proposal must not steal the unloaded inert path'
 	);
 	assert.match(
 		fnText,
 		/await beginRename\(entry\.slot, deck\.position_ms, deck\.stable_id\);/,
-		'an empty mapped pad must still SAVE the current playhead, not the proposal time_s'
+		'an empty pad must still SAVE the current playhead, not the proposal time_s'
 	);
 	assert.doesNotMatch(
 		fnText,
@@ -71,9 +70,9 @@ test('onSlotClick still refuses unmapped/unloaded empty slots and still beginRen
 	);
 });
 
-test('empty-slot title binding still carries MAPPING_TIP and NOT_LOADED_TIP', () => {
+test('empty-slot title binding still carries NOT_LOADED_TIP (the mapping tip is gone, CUES-01)', () => {
 	const text = source(HOT_CUE_BANK);
-	assert.match(text, /const MAPPING_TIP = ['"]cues need a rekordbox mapping['"]/);
+	assert.doesNotMatch(text, /MAPPING_TIP/);
 	assert.match(text, /const NOT_LOADED_TIP = ['"]no track loaded - nothing to save['"]/);
 
 	const titleStart = text.indexOf('title={entry.cue === null');
@@ -82,13 +81,13 @@ test('empty-slot title binding still carries MAPPING_TIP and NOT_LOADED_TIP', ()
 	assert.ok(titleEnd > titleStart, 'title binding end not found before onclick');
 	const titleText = text.slice(titleStart, titleEnd);
 	assert.ok(
-		titleText.includes('MAPPING_TIP') && titleText.includes('NOT_LOADED_TIP'),
-		'MAPPING_TIP and NOT_LOADED_TIP must remain in the empty-slot title binding'
+		titleText.includes('NOT_LOADED_TIP'),
+		'NOT_LOADED_TIP must remain in the empty-slot title binding'
 	);
 	assert.ok(
 		titleText.includes('proposalTitle') &&
 			titleText.includes('click to save the current position'),
-		'a mapped empty proposal tooltip concatenates proposalTitle with the save hint'
+		'an empty proposal tooltip concatenates proposalTitle with the save hint'
 	);
 });
 

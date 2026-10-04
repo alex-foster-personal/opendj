@@ -289,6 +289,27 @@ test('3d. control: a lock dropped by a track change sends nothing to the new tra
 	assert.deepEqual(sent.filter((c) => c.deck === 2), []);
 });
 
+test('5. feed-forward: a tempo change inside the follower grid moves the lock base and sends it', async () => {
+	const masterGrid = grid(128, 0.1, 1200);
+	await playingMaster(1, masterGrid, 60_000);
+	const join = await joinFollower(2, grid(126, 0.05, 1200), 30_000);
+	assert.ok(Math.abs(join.tempo - 128 / 126) < 1e-9, 'precondition: base 128/126');
+	// The follower plays into a 130 BPM region of its grid, still in phase.
+	const region = grid(130, 0.05, 1200);
+	m.deckStates[2].anlz.beatgrid.beats = region;
+	const masterAtSec = 60 + m.SYNC_LEAD_SEC;
+	const mi = beatIndex(masterGrid, masterAtSec);
+	positions[1] = masterAtSec * 1000;
+	positions[2] = (region[0].t + mi * (region[1].t - region[0].t)) * 1000;
+	m.phaseLockTick();
+	await settle();
+	assert.ok(Math.abs(m.phaseLocksForTest()[2].base - 128 / 130) < 1e-9, `base ${m.phaseLocksForTest()[2].base}`);
+	const tempo = sent.filter((c) => c.type === 'tempo' && c.deck === 2);
+	assert.equal(tempo.length, 1);
+	assert.ok(Math.abs(tempo[0].ratio - 128 / 130) < 1e-9);
+	assert.deepEqual(sent.filter((c) => c.type === 'seek'), [], 'followed, not re-seeked');
+});
+
 test('control: a manual master switch re-joins the followers to the new master', async () => {
 	await playingMaster(1, grid(128, 0.1, 1200), 60_000);
 	await joinFollower(2, grid(126, 0.05, 1200), 30_000);

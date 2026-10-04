@@ -65,6 +65,17 @@ export interface FollowerSyncRequest {
 	maxFollowerTempoRatio: number;
 	/** Beat matches the nearest beat; bar also requires the same PQTZ n. */
 	mode: SyncMode;
+	/**
+	 * A user's seek on a synced, playing follower (waveform click, hot cue,
+	 * CUE): pick the anchor whose BEAT is nearest `followerPositionSec` (the
+	 * clicked or cued beat), not the anchor whose phase-shifted LANDING is.
+	 * The landing then sits on that beat plus the master's phase, so the
+	 * follower goes where it was sent and is in phase in one move; by landing
+	 * it could fall a beat early whenever the master was past mid-beat. BAR
+	 * still takes only anchors on the master's beat number, so the nearest
+	 * bar-aligned beat to the click. Off (the default) for every other join.
+	 */
+	anchorOnBeat?: boolean | undefined;
 }
 
 export interface FollowerSyncPlan {
@@ -111,6 +122,78 @@ function _firstBeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: number): n
 		}
 	}
 	return lo;
+}
+
+/** Fractional beat index of `positionSec` on `beats`, or null off the grid
+ * (before the first beat or at/after the last). Shared with phase-lock.ts. */
+export function gridBeatPosition(beats: readonly AnlzBeat[], positionSec: number): number | null {
+	// The comparisons also refuse NaN and +-Infinity.
+	if (beats.length < 2 || !(positionSec >= beats[0].t && positionSec < beats[beats.length - 1].t)) return null;
+	const lo = _enclosingBeatIndex(beats, positionSec, 'position'); // in range: never throws
+	const span = beats[lo + 1].t - beats[lo].t;
+	if (!(span > 0)) return null;
+	return lo + (positionSec - beats[lo].t) / span;
+}
+
+/** Track time of fractional beat index `index` (0 <= index <= last), the
+ * inverse of `gridBeatPosition`; a whole index is that beat's exact time. */
+export function beatTimeAt(beats: readonly AnlzBeat[], index: number): number {
+	const i = Math.floor(index);
+	const f = index - i;
+	// `f &&`: a whole index never reads past the last beat.
+	return beats[i].t + (f && f * (beats[i + 1].t - beats[i].t));
+}
+
+/**
+ * Phase-keeping seek: a quantized seek or a beat jump on a PLAYING deck keeps
+ * the deck's own beat phase AT THE INSTANT IT LANDS (round 2 hardening, NAE-19).
+ *
+ * The engine decides a seek's target at one context time and the schedule
+ * lands at another: `_scheduleDeckSerial` moves the requested instant later
+ * whenever the processor lead or a superseding pending segment needs it. A
+ * target fixed in track seconds then lands late by that gap, so the deck
+ * skips part of a beat. Measured in the real engine
+ * (performance-beat-sync-adversarial.spec.ts): with BeatSyncMax on, a +4
+ * beat jump on a playing 128 BPM master landed 165.2 ms behind its own rhythm
+ * and a quantized click 169.6 ms (8.7 and 117.5 ms with it off), and the
+ * phase lock then had to drag every Beat Sync follower after it.
+ *
+ * The landing is therefore evaluated from the playhead projected to the
+ * effective landing time:
+ * - a beat jump moves exactly the beats asked, fraction included, so +4 lands
+ *   four grid beats on whenever it lands (inside an engaged loop too: the
+ *   loop shifts by the same beats);
+ * - a quantized click / CUE / hot cue lands on the snapped target beat at
+ *   the beat fraction the playhead is at when it lands (Rekordbox's quantize:
+ *   the groove never skips, and a synced follower stays in phase without a
+ *   re-seek).
+ * Off the grid (before the first beat, at or after the last) there is no
+ * phase to keep and the caller lands on its fixed target as before.
+ *
+ * Where a deck playing at `currentSec` lands: `jumpBeats` grid beats on
+ * (a beat jump), or with no jump on the beat nearest `targetSec` at the
+ * playhead's own beat fraction (a quantized seek). `targetSec` with no grid,
+ * when either end is off the grid, or past `endSec` (a grid can run past the
+ * decoded audio). -Claude
+ */
+export function phaseKeepingLandingSec(
+	beats: readonly AnlzBeat[] | null,
+	currentSec: number,
+	jumpBeats: number | null,
+	targetSec: number,
+	endSec: number
+): number {
+	if (beats === null) return targetSec;
+	const current = gridBeatPosition(beats, currentSec);
+	const target = jumpBeats === null ? gridBeatPosition(beats, targetSec) : 0;
+	const index =
+		current === null || target === null
+			? -1
+			: jumpBeats === null
+				? Math.round(target) + (current % 1)
+				: current + jumpBeats;
+	const landing = index >= 0 && index <= beats.length - 1 ? beatTimeAt(beats, index) : endSec + 1;
+	return landing <= endSec ? landing : targetSec;
 }
 
 function _nearestBeatIndex(beats: readonly AnlzBeat[], positionSec: number): number {
@@ -280,7 +363,8 @@ function _bestFollowerAnchor(
 	masterBpm: number,
 	masterTempoRatio: number,
 	minRatio: number,
-	maxRatio: number
+	maxRatio: number,
+	anchorOnBeat?: boolean
 ): _FollowerAnchorPlan {
 	let best: _FollowerAnchorPlan | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
@@ -315,7 +399,7 @@ function _bestFollowerAnchor(
 		// `_tempoRatioWithinRangeOrNull` has run. That is the price of asking
 		// the right question in the right order.
 		if (mode === 'bar' && !foldedBar && beat.n !== masterBeatNumber) continue;
-		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex % 2 : 0;
+		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex & 1 : 0;
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
 		const targetPositionSec = _positionAtIntervalOffset(beats, index, phaseOffsetIntervals);
@@ -325,7 +409,7 @@ function _bestFollowerAnchor(
 			nextBoundaryOffsetIntervals
 		);
 		if (targetPositionSec === null || nextBoundarySec === null) continue;
-		const distance = Math.abs(targetPositionSec - positionSec);
+		const distance = Math.abs((anchorOnBeat ? beat.t : targetPositionSec) - positionSec);
 		const candidate: _FollowerAnchorPlan = {
 			index,
 			positionSec: targetPositionSec,
@@ -536,20 +620,53 @@ export function planHotCueTrigger(
  * jump from where it was, not from where the operator hears it. The routing
  * side of that call (loop exit, follower phase sync, presentation clock) is
  * `quantizedSeek`'s, so this module stays pure and testable.
+ *
+ * `keepPhase` lands exactly `deltaBeats` grid beats from the anchor instead,
+ * carrying its fractional phase (p of its own beat lands at p of the target
+ * beat, through each beat's own interval). A PLAYING deck must not snap: a
+ * jump from phase p to a beat moves `deltaBeats - p` beats, a rhythm skip in
+ * the deck's own groove that also knocks every Beat Sync follower of a
+ * jumping master off phase. It snaps as above (as for a paused deck) when
+ * the anchor or the target is off the grid's interior: a track edge is a
+ * defined stop, not a phase to keep.
  */
 export function beatJumpTargetMs(
 	beats: readonly AnlzBeat[],
 	positionMs: number,
-	deltaBeats: number
+	deltaBeats: number,
+	keepPhase = false
 ): number {
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionMs', positionMs);
 	if (!Number.isInteger(deltaBeats) || deltaBeats === 0) {
 		throw new RangeError(`deltaBeats must be a non-zero integer, got ${deltaBeats}`);
 	}
+	const from = keepPhase ? gridBeatPosition(beats, positionMs / 1000) : null;
+	if (from !== null && from + deltaBeats >= 0 && from + deltaBeats <= beats.length - 1) {
+		return beatTimeAt(beats, from + deltaBeats) * 1000;
+	}
 	const anchorIndex = _nearestBeatIndex(beats, positionMs / 1000);
 	const targetIndex = Math.min(Math.max(anchorIndex + deltaBeats, 0), beats.length - 1);
 	return beats[targetIndex].t * 1000;
+}
+
+/**
+ * The seek a beat jump performs: where it lands and whether `quantizedSeek`
+ * may re-snap it. A PLAYING deck (`playing`: transport running or scheduled
+ * to) keeps its phase and skips the deck's own 1/4/8-beat re-snap, which
+ * would otherwise erase that phase a second time; a paused deck snaps to the
+ * nearest beat and is re-quantized as before. Both are clamped to the last
+ * beat inside the decoded audio (`beatJumpTargetWithinDurationMs`).
+ */
+export function beatJumpSeekPlan(
+	beats: readonly AnlzBeat[],
+	anchorMs: number,
+	deltaBeats: number,
+	durationMs: number,
+	playing: boolean
+): { targetMs: number; skipGridQuantize: boolean } {
+	const raw = beatJumpTargetMs(beats, anchorMs, deltaBeats, playing);
+	return { targetMs: beatJumpTargetWithinDurationMs(beats, raw, durationMs), skipGridQuantize: playing };
 }
 
 /**
@@ -952,18 +1069,27 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 	if (!Number.isFinite(projectedMasterPositionSec)) {
 		throw new RangeError(`projected master position is not finite: ${projectedMasterPositionSec}`);
 	}
-	const masterBeatIndex = _enclosingBeatIndex(
-		request.masterGrid,
-		projectedMasterPositionSec,
-		'master position'
-	);
+	// A master still in its intro (before its first grid beat: a pickup, a
+	// count-in, silence) is read on its grid extrapolated BACKWARDS at the
+	// first interval, so the follower lands where the master's first beat
+	// will find it in phase. Its beat index is then negative, and the beat is
+	// treated as extrapolated, so BAR (which needs a real downbeat number)
+	// refuses it below as it refuses any extrapolated anchor.
+	// `back`: how many first intervals the master is before its first beat (0
+	// on the grid, negative in the intro); `gridIndex`: the grid beat it is
+	// on (the first one in the intro). The grid is validated, so `n` is 1..4
+	// and `back * interval` is exactly 0 on it.
+	const grid = request.masterGrid;
+	const back = Math.min(0, Math.floor((projectedMasterPositionSec - grid[0].t) / (grid[1].t - grid[0].t)));
+	const gridIndex = back ? 0 : _enclosingBeatIndex(grid, projectedMasterPositionSec, 'master position');
+	const masterBeatIndex = gridIndex + back;
 	_enclosingBeatIndex(request.followerGrid, request.followerPositionSec, 'follower position');
 
-	const masterBeat = request.masterGrid[masterBeatIndex];
-	const masterBeatNumber = masterBeat.n as BeatNumber;
-	const masterBeatIntervalSec = request.masterGrid[masterBeatIndex + 1].t - masterBeat.t;
-	const beatPhase = (projectedMasterPositionSec - masterBeat.t) / masterBeatIntervalSec;
-	const masterIntervalBpm = _windowedIntervalBpm(request.masterGrid, masterBeatIndex);
+	const masterBeatNumber = (((grid[gridIndex].n - 1 + back) & 3) + 1) as BeatNumber;
+	const masterBeatIntervalSec = grid[gridIndex + 1].t - grid[gridIndex].t;
+	const masterBeatSec = grid[gridIndex].t + back * masterBeatIntervalSec;
+	const beatPhase = (projectedMasterPositionSec - masterBeatSec) / masterBeatIntervalSec;
+	const masterIntervalBpm = _windowedIntervalBpm(grid, gridIndex);
 	const followerAnchor = _bestFollowerAnchor(
 		request.followerGrid,
 		request.followerPositionSec,
@@ -974,11 +1100,12 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		masterIntervalBpm,
 		request.masterTempoRatio,
 		request.minFollowerTempoRatio,
-		request.maxFollowerTempoRatio
+		request.maxFollowerTempoRatio,
+		request.anchorOnBeat
 	);
 
 	if (mode === 'bar') {
-		if (beatIsExtrapolated(masterBeat)) {
+		if (back || beatIsExtrapolated(grid[gridIndex])) {
 			throw new RangeError(BAR_SYNC_EXTRAPOLATED_ANCHOR);
 		}
 		if (beatIsExtrapolated(request.followerGrid[followerAnchor.index])) {

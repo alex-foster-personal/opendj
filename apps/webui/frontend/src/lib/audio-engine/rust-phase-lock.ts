@@ -3,7 +3,7 @@
  * phase lock in `rust-transport.ts`. Types only.
  */
 import type { TempoNormalization } from '$lib/rb/beat-sync-math';
-import type { DeckId } from './rust-link';
+import { DECKS, type DeckId } from './rust-link';
 
 /**
  * What a join leaves for the continuous phase lock (`phaseLockTick`): the
@@ -28,4 +28,18 @@ export interface PhaseLock {
 	/** The phase offset the DJ dialed in since the join, wall-clock ms. No Rust
 	 * mode control moves a locked follower yet, so this stays 0. */
 	userOffsetMs: number;
+}
+
+export const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};
+
+/** A replacement load owns the engine head immediately, even for the same track. */
+export function invalidateRustPhaseLocks(deck: DeckId): void {
+	for (const follower of DECKS) {
+		if (follower === deck || phaseLocks[follower]?.master === deck) delete phaseLocks[follower];
+	}
+}
+
+/** The locks in force, for tests. */
+export function phaseLocksForTest(): Readonly<Partial<Record<DeckId, Readonly<PhaseLock>>>> {
+	return phaseLocks;
 }

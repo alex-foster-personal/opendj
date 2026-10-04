@@ -2,7 +2,10 @@
 
 Reads a Rekordbox 6/7 master.db via pyrekordbox and writes tracks,
 provenance-wrapped analysed fields (``bpm``, ``key``, ``rating``),
-vendor id links, and playlists to the state layer.
+hot cues, memory cues and loops (``cue_points``, CUES-01), vendor id links,
+and playlists to the state layer. Cues are copied only while the track's cue
+set still belongs to rekordbox; once edited in Open DJ it is never overwritten
+(:func:`apps.shared.state.cue_store.import_vendor_cues`).
 
 Safety:
 
@@ -32,6 +35,7 @@ from typing import Any
 
 from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
+from apps.shared.state import cue_store
 from apps.shared.state import db as state_db
 from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
@@ -65,6 +69,7 @@ class IngestReport:
     playlists_inserted: int = 0
     playlists_updated: int = 0
     fields_written: int = 0
+    cue_sets_written: int = 0
     content_hash_missing: int = 0
     duration_s: float = 0.0
     rb_path: str = ""
@@ -131,6 +136,42 @@ def _rb_playlists(rb_db: Any) -> Iterator[tuple[str, str, list[str]]]:
         songs.sort(key=lambda s: getattr(s, "TrackNo", 0) or 0)
         tids = [str(s.ContentID) for s in songs if getattr(s, "ContentID", None) is not None]
         yield (str(p.ID), p.Name or "", tids)
+
+
+def _rb_cues_by_content(rb_db: Any) -> dict[str, list[dict[str, Any]]]:
+    """Live djmdCue rows per ContentID, in the shape ``fetch_cues`` serves.
+
+    Kind 0 is a memory cue (a loop when it has an out point), Kind 1-8 the
+    hot-cue slots A-H. Kind 9-11 is skipped: its slot mapping is unverified
+    (PARITY-TODO "Hot-cue SAVE"), the same rule the read path applies.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    for row in rb_db.get_cue():
+        if _safe_int(getattr(row, "rb_local_deleted", 0)):
+            continue
+        kind = _safe_int(getattr(row, "Kind", None))
+        in_ms = _safe_int(getattr(row, "InMsec", None))
+        if kind is None or not 0 <= kind <= 8 or in_ms is None or in_ms < 0:
+            continue
+        out_ms = _safe_int(getattr(row, "OutMsec", None))
+        is_loop = out_ms is not None and out_ms > 0
+        if kind == 0:
+            cue_kind, slot = ("loop" if is_loop else "memory"), None
+        else:
+            cue_kind, slot = "hot_cue", cue_store.HOT_CUE_SLOTS[kind - 1]
+        out.setdefault(str(row.ContentID), []).append(
+            {
+                "kind": cue_kind,
+                "slot": slot,
+                "in_ms": in_ms,
+                "out_ms": out_ms if is_loop else None,
+                "active_loop": bool(_safe_int(getattr(row, "ActiveLoop", 0))),
+                "beat_loop_size": _safe_int(getattr(row, "BeatLoopSize", None)),
+                "color_table_index": _safe_int(getattr(row, "ColorTableIndex", None)),
+                "comment": getattr(row, "Comment", None) or None,
+            }
+        )
+    return out
 
 
 def _content_hash_for(path_str: str, is_streaming: bool) -> str | None:
@@ -229,6 +270,8 @@ def ingest_rb(
             if track["folder_path"] and not track["is_streaming"]
         ]
         assert_no_path_collisions(local_paths)
+
+        cues_by_content = _rb_cues_by_content(rb_db)
 
         with state_db.write_unit(conn, savepoint, keep=not dry_run):
             rb_to_stable: dict[str, str] = {}
@@ -357,6 +400,16 @@ def ingest_rb(
                         modified_at=modified_at,
                     ):
                         report.fields_written += 1
+                report.cue_sets_written += int(
+                    cue_store.import_vendor_cues(
+                        writer.set_field,
+                        conn,
+                        sid,
+                        cues_by_content.get(track["id"], []),
+                        source="rekordbox",
+                        modified_at=modified_at,
+                    )
+                )
 
             for rb_pl_id, pl_name, rb_tids in _rb_playlists(rb_db):
                 pl_id = compute_playlist_id("rekordbox", rb_pl_id)

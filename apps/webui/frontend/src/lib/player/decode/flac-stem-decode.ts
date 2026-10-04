@@ -112,22 +112,14 @@ async function _flacDecoderFactory(): Promise<StemFlacDecoderFactory> {
 	return (): StemFlacDecoder => new mod.FLACDecoderWebWorker();
 }
 
-/**
- * mpg123-decoder (`MPEGDecoderWebWorker`, eshaz/wasm-audio-decoders).
- * Issue #2058 names `@wasm-audio-decoders/mpeg`; that scoped name is not on npm.
+/*
+ * No bundled MPEG decoder. `mpg123-decoder` (LGPL-2.1 libmpg123 in WASM) was
+ * the bench decoder for PERF-STEMDEC-03 and never shipped: the rung lost on
+ * Chromium and failed its LSB check there, so it was removed rather than
+ * carried as an LGPL chunk in the bundle. An `mpeg` claim with no injected
+ * `makeDecoder` takes the decodeAudioData fallback.
+ * See research/mp3-decoder/2026-10-01-mp3-decoder-license.md.
  */
-async function _mpegDecoderFactory(): Promise<StemFlacDecoderFactory> {
-	const mod = await import('mpg123-decoder');
-	return (): StemFlacDecoder => {
-		const decoder = new mod.MPEGDecoderWebWorker({ enableGapless: true });
-		return {
-			ready: decoder.ready,
-			decodeFile: (bytes: Uint8Array) => decoder.decode(bytes),
-			reset: () => decoder.reset(),
-			free: () => decoder.free()
-		};
-	};
-}
 
 export interface StemDecodeOptions {
 	makeDecoder?: StemFlacDecoderFactory;
@@ -173,8 +165,7 @@ export async function decodeStemParts<P extends string>(
 		let makeDecoder: StemFlacDecoderFactory | null = options.makeDecoder ?? null;
 		if (makeDecoder === null && claim.lane === 'workers') {
 			try {
-				makeDecoder =
-					claim.codec === 'mpeg' ? await _mpegDecoderFactory() : await _flacDecoderFactory();
+				makeDecoder = claim.codec === 'mpeg' ? null : await _flacDecoderFactory();
 			} catch {
 				makeDecoder = null;
 			}

@@ -19,10 +19,12 @@ import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster } from '$lib/rb/master-election';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
-import { phaseLockDecision, phaseLockShouldSend } from '$lib/rb/phase-lock';
+import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
-import type { PhaseLock } from './rust-phase-lock';
+import { phaseLocks, type PhaseLock } from './rust-phase-lock';
+
+export { phaseLocksForTest, invalidateRustPhaseLocks } from './rust-phase-lock';
 import { DECKS, type DeckId, displayLoops, loadFences, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
@@ -120,6 +122,8 @@ async function _join(
 		reanchor?: boolean;
 		masterAtSec?: number | undefined;
 		followerAtSec?: number;
+		/** A user seek: join on the beat nearest `followerAtSec`, not the nearest phased landing. */
+		anchorOnBeat?: boolean;
 	} = {}
 ): Promise<void> {
 	const st = deckStates[follower];
@@ -143,7 +147,8 @@ async function _join(
 		leadSec: SYNC_LEAD_SEC,
 		mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode),
 		pitchRangePct: pitchRanges[follower],
-		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec })
+		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec }),
+		...(options.anchorOnBeat === undefined ? {} : { anchorOnBeat: options.anchorOnBeat })
 	});
 	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
 	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
@@ -170,13 +175,6 @@ async function _join(
 		overLineTicks: 0,
 		userOffsetMs: 0
 	};
-}
-
-const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};
-
-/** The locks in force, for tests. */
-export function phaseLocksForTest(): Readonly<Partial<Record<DeckId, Readonly<PhaseLock>>>> {
-	return phaseLocks;
 }
 
 function _lockHolds(deck: DeckId, lock: PhaseLock, master: DeckId): boolean {
@@ -231,7 +229,7 @@ export function phaseLockTick(): void {
 		const st = deckStates[deck];
 		let decision: ReturnType<typeof phaseLockDecision>;
 		try {
-			decision = phaseLockDecision({
+			const input = {
 				masterBeats: deckStates[master].anlz?.beatgrid.beats ?? [],
 				masterPositionSec: playheadMs(master) / 1000,
 				masterTempo: deckStates[master].pitch,
@@ -240,10 +238,19 @@ export function phaseLockTick(): void {
 				followerBaseTempo: lock.base,
 				normalization: lock.normalization,
 				pitchRangePct: pitchRanges[deck],
-				trimming: lock.sent !== lock.base,
 				sinceJoinSec: _nowSec() - lock.joinedAtSec,
 				overLineTicks: lock.overLineTicks,
 				userOffsetMs: lock.userOffsetMs
+			};
+			// Feed-forward may rewrite the base this tick. `trimming` is whether a
+			// trim is already on the wire (sent !== the base the last tick settled),
+			// not whether this tick's candidate base differs: using the candidate
+			// made an in-phase follower look mid-trim and send on the next frame.
+			const forwarded = phaseLockFeedForwardBase(input); // follows a grid tempo change (F4)
+			decision = phaseLockDecision({
+				...input,
+				followerBaseTempo: forwarded,
+				trimming: lock.sent !== lock.base
 			});
 		} catch (e) {
 			// Thrown inside the state mirror: drop this lock and say why rather
@@ -407,7 +414,7 @@ async function _seek(deck: DeckId, ms: number, options: { quantize: boolean }): 
 	}
 	const master = _syncMaster();
 	if (st.playing && effectiveBeatSync(st) && master !== null && master !== deck) {
-		await _join(master, deck, { followerAtSec: targetMs / 1000 });
+		await _join(master, deck, { followerAtSec: targetMs / 1000, anchorOnBeat: options.quantize });
 		st.position_ms = targetMs;
 		return;
 	}
@@ -581,7 +588,6 @@ export const rustHotCueDriver: PerformanceHotCueDriver = {
 		st.hot_cues = hotCuesFromAnlz(slots.flatMap((s) => (s.cue === null ? [] : [s.cue])));
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 	},
-	hasRbMapping: (deck) => deckStates[deck].has_rb_mapping,
 	triggerState: (deck, slot) => {
 		const st = deckStates[deck];
 		return {

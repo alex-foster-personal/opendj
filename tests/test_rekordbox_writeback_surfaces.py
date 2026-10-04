@@ -119,7 +119,11 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
     "apps/sync/usb/pioneer/reader.py": "reads an exportLibrary.db",
     "apps/sync/usb/pioneer/differ.py": "diffs two exportLibrary.db reads",
     "apps/sync/usb/pioneer/__init__.py": "package docstring",
-    "apps/sync/usb/pioneer/writer_rbox.py": "reached only via the two mapped USB entrypoints",
+    "apps/sync/usb/pioneer/writer_onelibrary.py": "reached only via the two mapped USB entrypoints",
+    "apps/sync/usb/pioneer/onelibrary.py": (
+        "SQLCipher handle only; it opens whatever path its caller passes: the "
+        "writer's template copy, or readers' tempfile copies"
+    ),
     "apps/sync/usb/pioneer/value_verify.py": (
         "read-only USB stick value verify (key / PQTZ / loudness counts); "
         "never writes exportLibrary.db, ANLZ, or a desktop master.db"

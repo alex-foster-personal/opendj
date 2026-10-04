@@ -53,6 +53,10 @@ class _RekordboxSource:
     def __init__(self, root: Path, names: tuple[str, ...]) -> None:
         self.rows = [_rb_row(root, index, name) for index, name in enumerate(names)]
 
+    def get_cue(self) -> list[object]:
+        # No djmdCue rows: these tests are about deletes, not cues (CUES-01).
+        return []
+
     def close(self) -> None:
         return None
 

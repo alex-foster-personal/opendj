@@ -4,12 +4,19 @@
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
 //!                   [--ws 127.0.0.1:0]
 //!                   [--midi] [--midi-map MAPS.json]
+//!   odj-audio waveform --in AUDIO --out PEAKS [--low-hz 200] [--high-hz 4000] [--sections 2] [--columns-per-s 150]
+//!   odj-audio fingerprint FILE... [--length SECONDS]
 //!   odj-audio decode --in SOURCE --out OUT.wav
 //!   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
 //!   odj-audio probe PATH
 //!   odj-audio input-devices
 //!   odj-audio record --dir DIR (--device NAME | --device-index N) [--segment-seconds 300]
 //!   odj-audio version
+//!
+//! `waveform` writes the track's tri-band peak columns to PEAKS as raw bytes,
+//! three per column (low, mid, high), and prints one JSON line: the column
+//! count, the rate it filtered at and the file's channel count. See
+//! `src/waveform.rs`.
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
 //! sha256, when each event fired, which decks are heard when (the timeline
@@ -58,6 +65,8 @@ const USAGE: &str = "usage:
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
+  odj-audio waveform --in AUDIO --out PEAKS [--low-hz HZ] [--high-hz HZ] [--sections N] [--columns-per-s N]
+  odj-audio fingerprint FILE... [--length SECONDS]   (0 = whole file; default 120, as fpcalc)
   odj-audio decode --in SOURCE --out OUT.wav   (OUT must not exist)
   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
   odj-audio probe PATH
@@ -649,6 +658,34 @@ fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen
     Err("this build has no device output; rebuild with --features device".into())
 }
 
+fn waveform_cmd(mut a: Args) -> Result<(), String> {
+    let path = a.take("--in")?.ok_or("waveform needs --in AUDIO")?;
+    let out = a.take("--out")?.ok_or("waveform needs --out PEAKS")?;
+    let mut p = odj_audio::waveform::Profile::default();
+    fn num<T: std::str::FromStr>(flag: &str, v: Option<String>, into: &mut T) -> Result<(), String> {
+        if let Some(v) = v {
+            *into = v.parse().map_err(|_| format!("{flag} {v} is not a number"))?;
+        }
+        Ok(())
+    }
+    num("--low-hz", a.take("--low-hz")?, &mut p.crossover_low_hz)?;
+    num("--high-hz", a.take("--high-hz")?, &mut p.crossover_high_hz)?;
+    num("--sections", a.take("--sections")?, &mut p.filter_sections)?;
+    num("--columns-per-s", a.take("--columns-per-s")?, &mut p.columns_per_s)?;
+    a.done()?;
+    let peaks = odj_audio::waveform::peaks_file(Path::new(&path), &p).map_err(|e| e.message)?;
+    let bytes: Vec<u8> = peaks.columns.iter().flatten().copied().collect();
+    std::fs::write(&out, &bytes).map_err(|e| format!("cannot write {out}: {e}"))?;
+    let v = json!({
+        "type": "waveform",
+        "columns": peaks.columns.len(),
+        "sample_rate": peaks.sample_rate,
+        "channels": peaks.channels,
+    });
+    println!("{v}");
+    Ok(())
+}
+
 /// The one positional argument left after the flags are taken.
 fn sole_path(args: &mut Args) -> Result<PathBuf, String> {
     if args.rest.len() != 1 || args.rest[0].starts_with("--") {
@@ -731,6 +768,38 @@ fn probe_cmd(mut args: Args) -> Result<(), String> {
         "source": source,
     });
     println!("{v}");
+    Ok(())
+}
+
+/// One JSON line per file: `{"path", "duration", "fingerprint"}` on success,
+/// `{"path", "error"}` on failure, so one bad file never hides the rest. The
+/// exit status is nonzero when any file failed.
+fn fingerprint_cmd(mut args: Args) -> Result<(), String> {
+    let length: u32 = match args.take("--length")? {
+        Some(v) => v.parse().map_err(|_| format!("--length must be whole seconds, got {v}"))?,
+        None => odj_audio::fingerprint::DEFAULT_LENGTH_S,
+    };
+    let files = std::mem::take(&mut args.rest);
+    if files.is_empty() {
+        return Err("fingerprint needs at least one FILE".into());
+    }
+    if let Some(flag) = files.iter().find(|f| f.starts_with("--")) {
+        return Err(format!("unknown option {flag}"));
+    }
+    let mut failed = 0usize;
+    for f in &files {
+        let line = match odj_audio::fingerprint::fingerprint_file(Path::new(f), length) {
+            Ok(fp) => json!({"path": f, "duration": fp.duration_s, "fingerprint": fp.fingerprint}),
+            Err(e) => {
+                failed += 1;
+                json!({"path": f, "error": e.message})
+            }
+        };
+        println!("{line}");
+    }
+    if failed > 0 {
+        return Err(format!("{failed} of {} files could not be fingerprinted", files.len()));
+    }
     Ok(())
 }
 
@@ -854,17 +923,20 @@ fn main() -> ExitCode {
     let r = match sub.as_str() {
         "render" => render(args),
         "serve" => serve_cmd(args),
+        "waveform" => waveform_cmd(args),
+        "fingerprint" => fingerprint_cmd(args),
         "decode" => decode_cmd(args),
         "probe" => probe_cmd(args),
         "input-devices" => input_devices_cmd(args),
         "record" => record_cmd(args),
         "version" => {
-            // `capture`: whether this build can list and record audio inputs
-            // (feature `device`), which the sets recorder checks before
-            // choosing it over ffmpeg.
+            // `commands` lets a caller tell this build from an older one before it
+            // runs a subcommand the older one lacks (a stale cargo build in a
+            // reused CI workspace, say).
             let v = json!({
                 "engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")),
                 "protocol": protocol::PROTOCOL_VERSION,
+                "commands": ["decode", "fingerprint", "probe", "render", "serve", "waveform", "input-devices", "record", "version"],
                 "capture": cfg!(feature = "device"),
             });
             println!("{v}");

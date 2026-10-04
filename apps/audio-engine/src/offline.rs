@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::{decode_open_at, reserve_within, SourceId};
+use crate::decode::{decode_open_at, decode_progressive_metered, reserve_within, SourceId};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -304,10 +304,11 @@ fn change_time(f: &std::fs::File) -> Option<(i64, i64)> {
 /// a load of a file already being decoded waits for that decode and shares
 /// it, while loads of other files go ahead.
 ///
-/// Each file keeps a `Weak` to every track loaded from it, since any one of
-/// them may be the last to hold the samples. A dead `Weak<Track>` keeps only
-/// the small `Track` allocation, never the samples, and dead ones are
-/// dropped on every load.
+/// Each file keeps a `Weak` to the samples it decoded to, which every track
+/// loaded from it shares (a regridded or extended track included), so any
+/// one of them may be the last to hold them. A dead `Weak` keeps only the
+/// small `Arc` allocation, never the samples, and dead ones are dropped on
+/// every load.
 #[derive(Default)]
 pub struct TrackCache {
     files: Mutex<HashMap<FileKey, Holders>>,
@@ -315,8 +316,16 @@ pub struct TrackCache {
     sample_rate: Option<u32>,
 }
 
-/// Every track loaded from one file, locked while that file decodes.
-type Holders = Arc<Mutex<Vec<Weak<Track>>>>;
+/// The samples of every track loaded from one file (a regridded track
+/// shares them), locked while that file decodes.
+type Holders = Arc<Mutex<Vec<Shared>>>;
+
+/// One decode's samples, held weakly: the decks own them.
+struct Shared {
+    sample_rate: u32,
+    pcm: Weak<Vec<f32>>,
+    source: Option<SourceId>,
+}
 
 impl TrackCache {
     /// A cache whose tracks play at `sample_rate`.
@@ -325,6 +334,37 @@ impl TrackCache {
     }
 
     pub fn load(&self, path: &Path, spec: &LoadSpec) -> Result<Arc<Track>, ProtoError> {
+        self.load_progressive(path, spec, 0, 0, |_| {})
+    }
+
+    /// Load as `load` does, handing `on_head` a `Track::head` of the first
+    /// `head_frames` frames, tagged `load_id`, as soon as they are decoded
+    /// (`decode_progressive`), and returning the whole track, tagged the
+    /// same. A file another load already decoded is shared at once, whole,
+    /// with no head; one another load is decoding now waits for it whole.
+    pub fn load_progressive(
+        &self,
+        path: &Path,
+        spec: &LoadSpec,
+        load_id: u64,
+        head_frames: usize,
+        on_head: impl FnMut(Arc<Track>),
+    ) -> Result<Arc<Track>, ProtoError> {
+        self.load_progressive_metered(path, spec, load_id, head_frames, on_head, |_| {})
+    }
+
+    /// As `load_progressive`, telling `on_grow` the bytes its decode buffer
+    /// has allocated each time that grows (`decode_progressive_metered`). A
+    /// load that shares another's samples decodes nothing and never calls it.
+    pub fn load_progressive_metered(
+        &self,
+        path: &Path,
+        spec: &LoadSpec,
+        load_id: u64,
+        head_frames: usize,
+        mut on_head: impl FnMut(Arc<Track>),
+        on_grow: impl FnMut(usize),
+    ) -> Result<Arc<Track>, ProtoError> {
         let (opened, key) = open_keyed(path)?;
         let file = {
             let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
@@ -333,24 +373,34 @@ impl TrackCache {
             // locks it, and a cloned slot is kept without being locked, so
             // this never waits on another file's decode.
             files.retain(|_, f| {
-                Arc::strong_count(f) > 1 || f.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|t| t.strong_count() > 0)
+                Arc::strong_count(f) > 1 || f.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|t| t.pcm.strong_count() > 0)
             });
             files.entry(key).or_default().clone()
         };
         // Held across the decode: a second load of this file waits here and
         // then finds the first one's track.
         let mut held = file.lock().unwrap_or_else(|e| e.into_inner());
-        held.retain(|t| t.strong_count() > 0);
-        let (sr, pcm, source) = match held.iter().find_map(Weak::upgrade) {
-            Some(t) => (t.sample_rate, t.pcm.clone(), t.source.clone()),
+        held.retain(|t| t.pcm.strong_count() > 0);
+        let (sr, pcm, source) = match held.iter().find_map(|t| Some((t.sample_rate, t.pcm.upgrade()?, t.source.clone()))) {
+            Some(found) => found,
             None => {
-                let d = decode_open_at(opened, path, self.sample_rate, u64::MAX)?;
-                (d.sample_rate, Arc::new(d.pcm), d.source)
+                let d = decode_progressive_metered(
+                    opened,
+                    path,
+                    self.sample_rate,
+                    u64::MAX,
+                    head_frames,
+                    |h| on_head(Arc::new(Track::head(h.sample_rate, h.pcm, h.frames, spec.beats.clone(), spec.bpm, load_id))),
+                    on_grow,
+                )?;
+                let pcm = Arc::new(d.pcm);
+                held.push(Shared { sample_rate: d.sample_rate, pcm: Arc::downgrade(&pcm), source: d.source.clone() });
+                (d.sample_rate, pcm, d.source)
             }
         };
-        let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm).with_source(source));
-        held.push(Arc::downgrade(&track));
-        Ok(track)
+        let mut track = Track::new(sr, pcm, spec.beats.clone(), spec.bpm).with_source(source);
+        track.load_id = load_id;
+        Ok(Arc::new(track))
     }
 }
 
@@ -1072,6 +1122,40 @@ mod tests {
             assert!(Arc::ptr_eq(&first.pcm, &a.pcm), "{name}: a.wav was decoded again");
             assert_eq!(load("cur.wav").pcm[0], 0.5, "{name}: the repointed path was handed the old samples");
         }
+    }
+
+    #[test]
+    fn a_progressive_load_hands_over_its_head_and_the_samples_stay_shared_past_a_regrid() {
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-progressive-").tempdir().unwrap();
+        let p = tmp.path().join("a.wav");
+        let pcm: Vec<f32> = (0..9600).map(|i| (i % 97) as f32 / 97.0).collect();
+        crate::wav::write_f32(&mut std::io::BufWriter::new(std::fs::File::create(&p).unwrap()), 48000, &pcm).unwrap();
+        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: Some(120.0) };
+        let cache = TrackCache::at(48000);
+        let mut heads = Vec::new();
+        let whole = cache.load_progressive(&p, &spec, 41, 1000, |h| heads.push(h)).unwrap();
+        assert_eq!(heads.len(), 1, "no head was handed over");
+        let h = &heads[0];
+        assert!(h.decoding && h.load_id == 41 && h.available() == 1000, "{:?}", (h.decoding, h.load_id, h.available()));
+        assert_eq!(h.frames, 4800, "the head does not carry the stated length");
+        assert_eq!(h.bpm, Some(120.0));
+        assert!(h.pcm[..] == whole.pcm[..2000], "the head is not the start of the whole track");
+        assert!(!whole.decoding && whole.load_id == 41 && whole.frames == 4800);
+        // The deck regrids the whole track and lets the load's own track go:
+        // a later load of the file still shares the decode.
+        let regridded = Arc::new(whole.with_grid(vec![], None));
+        drop(whole);
+        drop(heads);
+        let mut called = false;
+        let again = cache.load_progressive(&p, &spec, 42, 1000, |_| called = true).unwrap();
+        assert!(Arc::ptr_eq(&again.pcm, &regridded.pcm), "a regridded track's samples were decoded again");
+        assert!(!called, "a shared decode handed over a head");
+        // Control: with no track holding the samples, the file decodes anew.
+        let (old, new_id) = (Arc::downgrade(&regridded.pcm), again.load_id);
+        drop((regridded, again));
+        assert!(old.upgrade().is_none());
+        let fresh = cache.load_progressive(&p, &spec, 43, 1000, |_| {}).unwrap();
+        assert!(fresh.pcm[..] == pcm[..] && new_id == 42);
     }
 
     #[test]

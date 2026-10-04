@@ -33,9 +33,6 @@ importers:
       '@wasm-audio-decoders/flac':
         specifier: 0.2.11
         version: 0.2.11
-      mpg123-decoder:
-        specifier: 1.0.3
-        version: 1.0.3
       openapi-fetch:
         specifier: 0.17.0
         version: 0.17.0
@@ -1319,9 +1316,6 @@ packages:
   minimatch@5.1.9:
     resolution: {integrity: sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw==}
     engines: {node: '>=10'}
-
-  mpg123-decoder@1.0.3:
-    resolution: {integrity: sha512-+fjxnWigodWJm3+4pndi+KUg9TBojgn31DPk85zEsim7C6s0X5Ztc/hQYdytXkwuGXH+aB0/aEkG40Emukv6oQ==}
 
   mri@1.2.0:
     resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
@@ -2610,10 +2604,6 @@ snapshots:
   minimatch@5.1.9:
     dependencies:
       brace-expansion: 2.1.7
-
-  mpg123-decoder@1.0.3:
-    dependencies:
-      '@wasm-audio-decoders/common': 9.0.7
 
   mri@1.2.0: {}
 

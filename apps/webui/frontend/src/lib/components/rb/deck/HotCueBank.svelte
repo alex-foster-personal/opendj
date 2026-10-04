@@ -35,9 +35,8 @@
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
 	import { createLyricsFetchState } from '../wave/lyrics-fetch.svelte';
-	import { hotCueEditsAllowed, isUsbTrackId } from '$lib/rb/track-source';
+	import { isUsbTrackId } from '$lib/rb/track-source';
 
-	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
 	const SESSION_TIP = ' (this session only - the stick is never written)';
 
@@ -66,7 +65,6 @@
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 	const onStick = $derived(deck.stable_id !== null && isUsbTrackId(deck.stable_id));
-	const canSave = $derived(hotCueEditsAllowed(deck.stable_id, deck.has_rb_mapping));
 	const sessionTip = $derived(onStick ? SESSION_TIP : '');
 
 	const bank: { slot: HotCueSlot; cue: HotCue | null }[] = $derived(
@@ -135,11 +133,10 @@
 			await onJump(entry.slot, pressT0Ms);
 			return;
 		}
-		// Empty deck rows are inert (WaveRow.svelte precedent): has_rb_mapping
-		// defaults true on an empty deck (deck-state-types.ts), so it alone
-		// cannot gate the save - stable_id is the real "is there a deck to
-		// save onto" signal (#804).
-		if (deck.stable_id === null || !canSave) return;
+		// Empty deck rows are inert (WaveRow.svelte precedent). CUES-01: a loaded
+		// track can save whether or not a rekordbox mapping exists. stable_id
+		// is the "is there a deck to save onto" signal (#804).
+		if (deck.stable_id === null) return;
 		await beginRename(entry.slot, deck.position_ms, deck.stable_id);
 	}
 
@@ -277,7 +274,7 @@
 							class:filled={entry.cue !== null}
 							class:proposal={entry.cue === null && visible !== null}
 							class:loop={entry.cue !== null && entry.cue.is_loop}
-							class:inert-mapping={entry.cue === null && !canSave}
+							class:inert-mapping={entry.cue === null && deck.stable_id === null}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
 							aria-busy={pending}
 							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
@@ -287,11 +284,9 @@
 							title={entry.cue === null
 								? deck.stable_id === null
 									? NOT_LOADED_TIP
-									: canSave
-										? `${visible !== null
-											? proposalTitle(visible.kind, visible.time_s)
-											: 'empty hot cue slot'} - click to save the current position${sessionTip}`
-										: MAPPING_TIP
+									: `${visible !== null
+										? proposalTitle(visible.kind, visible.time_s)
+										: 'empty hot cue slot'} - click to save the current position${sessionTip}`
 								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [], lyricsState.lyrics?.lines ?? [])}
 							onclick={(e) => onSlotClick(entry, e.timeStamp)}
 						>

@@ -1,3 +1,4 @@
+export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './master-election';
 import {
 	SILENT_METER_READING,
 	createMasterMeterSource,
@@ -154,8 +155,7 @@ import {
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
-	beatJumpTargetMs,
-	beatJumpTargetWithinDurationMs,
+	beatJumpSeekPlan,
 	computeFollowerSyncPlan,
 	displayLoopFrom,
 	computeQuantizedLaunchArm,
@@ -164,6 +164,7 @@ import {
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
 	QUANTIZED_LAUNCH,
+	phaseKeepingLandingSec,
 	resolveArmAtPosition
 } from '$lib/rb/beat-sync-math';
 import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
@@ -1068,6 +1069,7 @@ import {
 } from './audio-engine-guards';
 import {
 	AUTOMATIC_HANDOFF_REASONS,
+	runAutomaticRejoin as _automaticRejoinRunner,
 	electMaster,
 	onAirGain,
 	SILENCE_GAIN_EPSILON,
@@ -1187,12 +1189,15 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
 	const previous = _masterDeck, next = electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
 	_assignMaster(next, reason);
-	// An AUTOMATIC handoff re-joins the playing followers as setDeckMaster does;
-	// otherwise each phase lock drops ('master moved') and the decks free-run.
+	// Automatic handoff re-joins playing followers (same as setDeckMaster). Queued
+	// on the shared sync claim so a later load/seek/tempo is not overwritten.
 	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
-		const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
 		_bumpReanchorOperation(next);
-		void _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) }).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
+		void _automaticRejoinRunner(async () => {
+			if (_masterDeck !== next || !deckStates[next].playing) return;
+			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
+			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) });
+		}).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
 	}
 	return next;
 }
@@ -2114,27 +2119,18 @@ async function _resumeContext(): Promise<AudioContext> {
 interface _MasterSyncSchedule {
 	tempoRatio: number;
 	masterTempoEnabled: boolean;
-	/** When set, relocate master to this track position as part of the sync. */
-	positionSec?: number;
+	/** Relocate master via this fn of the group's sync instant (`phaseKeepingLandingSec`). */
+	positionSec?: (syncAt: number) => number;
 }
 
 interface _SyncOptions {
 	followerAnchorSec?: Partial<Record<DeckId, number>>;
+	anchorOnBeat?: boolean; // a user seek: join on the clicked beat (FollowerSyncRequest.anchorOnBeat)
 	masterSchedule?: _MasterSyncSchedule;
-	/**
-	 * Followers that were already playing and already beat-synced before
-	 * this call - a re-anchor of an ongoing lock, not a fresh join or the
-	 * first Beat Sync engage. Each caller below already restricts itself to
-	 * exactly that precondition (see seekSyncMaster, beatSyncMaxFollowers,
-	 * masterSwitchFollowers, syncChangeRequiresReschedule), so it passes the
-	 * same followers through here unchanged. Their recomputed
-	 * followerTempoRatio approaches its target through
-	 * `_scheduleReanchoredFollower` instead of stepping - see that function.
-	 */
+	/** Already-playing beat-synced followers to re-anchor via `_scheduleReanchoredFollower`. */
 	reanchorDecks?: ReadonlySet<DeckId>;
-	/** Q1: the press behind this sync, when one deck's start caused it. Set
-	 * ONLY by `play`, whose followers are the single pressed deck; the resync
-	 * callers leave it unset so a background re-anchor never files a press row. */
+	/** Q1: the press behind this sync. Set ONLY by `play` (one pressed follower);
+	 * resync callers leave it unset so a background re-anchor files no press row. */
 	pressT0Ms?: number;
 }
 
@@ -2399,7 +2395,7 @@ async function _synchronizeFollowers(
 		}
 		const syncAt = requestedSyncAt;
 		const projectedMasterSec = _projectPositionAt(master, syncAt);
-		const masterPositionSec = options.masterSchedule?.positionSec ?? projectedMasterSec;
+		const masterPositionSec = options.masterSchedule?.positionSec?.(syncAt) ?? projectedMasterSec;
 		const masterTempoRatio = options.masterSchedule?.tempoRatio ?? _tempoAt(master, syncAt);
 		// Plan per follower independently. One unsyncable deck (e.g. BAR tempo
 		// out of range) must not abort BeatSyncMax for the rest - that left
@@ -2442,7 +2438,7 @@ async function _synchronizeFollowers(
 					syncAtContextTimeSec: syncAt,
 					minFollowerTempoRatio: bounds.min,
 					maxFollowerTempoRatio: bounds.max,
-					mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode)
+					mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode), anchorOnBeat: options.anchorOnBeat && requestedAnchorSec !== undefined
 				});
 				planned.push({ deck, st, plan, rawFollowerPositionSec });
 			} catch (error) {
@@ -2535,8 +2531,7 @@ async function _synchronizeFollowers(
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
 		);
-		// Lock every follower that DID sync before a partial failure throws (a
-		// failed master schedule leaves no tempo to lock against).
+		// Lock followers that synced; a failed master schedule has no tempo to lock.
 		for (const item of planned) {
 			if (failedDecks.includes(item.deck) || failedDecks.includes(master)) continue;
 			item.st.sync_error = null;
@@ -2582,8 +2577,7 @@ const _beatgridResyncPorts: BeatgridResyncPorts = {
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };
-// NAE-19 continuous phase lock: bookkeeping and ports in phase-lock-webaudio.ts.
-const _phaseLock = createWebAudioPhaseLock({
+const _phaseLock = createWebAudioPhaseLock({ // NAE-19; bookkeeping lives in phase-lock-webaudio.ts
 	deckIds: DECK_IDS, syncMaster: _syncMaster, masterDeck: _ownedMaster, ownsTempo: _syncOwnsFollowerTempo, playing: (deck) => deckStates[deck].playing,
 	loadToken: (deck) => _rt[deck].loadToken, stableId: (deck) => deckStates[deck].stable_id,
 	settled: (deck) => { const rt = _rt[deck]; return rt.pending.length === 0 && rt.scheduleIntentCount === 0 && !_presentationPending(rt) && !_reanchorRampPending(rt) && _quantizedLaunchAt[deck] === null; },
@@ -3343,7 +3337,7 @@ class RbAudioEngine implements AudioEngine {
 		await this.quantizedSeek(deck, ms);
 	}
 
-	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {
+	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
@@ -3369,6 +3363,9 @@ class RbAudioEngine implements AudioEngine {
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
 		if (needsScheduledMutation) {
+			const when = _ctx === null ? 0 : _futureScheduleTime(deck); // phase at the effective time
+			const grid = !rt.desiredActive ? null : jumpBeats != null ? (st.anlz?.beatgrid.beats ?? null) : skipGridQuantize ? null : seekBeats; // never throws on a gridless deck
+			const landing = (at: number): number => phaseKeepingLandingSec(grid, _projectPositionAt(deck, at), jumpBeats ?? null, targetMs / 1000, durMs / 1000);
 			const activeMaster = _syncMaster();
 			const syncPlan = planSeekSync({
 				deck,
@@ -3391,7 +3388,7 @@ class RbAudioEngine implements AudioEngine {
 				// seekSyncMaster only returns this kind for a deck already
 				// playing and already beat-synced - a re-anchor, not a join.
 				await _synchronizeFollowers(syncPlan.master, [deck], {
-					followerAnchorSec: { [deck]: targetMs / 1000 },
+					followerAnchorSec: { [deck]: targetMs / 1000 }, anchorOnBeat: !skipGridQuantize, // a beat jump's target is already exact (F3)
 					reanchorDecks: new Set([deck]),
 					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
@@ -3402,7 +3399,7 @@ class RbAudioEngine implements AudioEngine {
 					masterSchedule: {
 						tempoRatio: st.pitch,
 						masterTempoEnabled: st.master_tempo_enabled,
-						positionSec: targetMs / 1000
+						positionSec: landing
 					},
 					reanchorDecks: new Set(syncPlan.followers),
 					...(pressT0Ms === undefined ? {} : { pressT0Ms })
@@ -3411,8 +3408,8 @@ class RbAudioEngine implements AudioEngine {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
 				await _scheduleDeck(
 					deck,
-					_futureScheduleTime(deck),
-					targetMs / 1000,
+					when,
+					landing,
 					rt.desiredActive,
 					undefined,
 					undefined,
@@ -3732,8 +3729,7 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'beatJump');
 		const grid = requireBeatGrid(st, 'beatJump');
 		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
-		const rawTargetMs = beatJumpTargetMs(grid, anchorMs, beats);
-		const targetMs = beatJumpTargetWithinDurationMs(grid, rawTargetMs, _durationSec(deck) * 1000);
+		const { targetMs, skipGridQuantize } = beatJumpSeekPlan(grid, anchorMs, beats, _durationSec(deck) * 1000, _rt[deck].desiredActive);
 		if (st.loop !== null && st.loop.engaged) {
 			const previousLoop = st.loop;
 			// quantizedSeek preserves an in-range loop. Shift its exact PQTZ
@@ -3752,14 +3748,14 @@ class RbAudioEngine implements AudioEngine {
 				beat_length: previousLoop.beat_length
 			};
 			try {
-				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop), true);
+				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop), true, undefined, beats);
 			} catch (error) {
 				st.loop = previousLoop;
 				throw error;
 			}
 			return;
 		}
-		await this.quantizedSeek(deck, targetMs);
+		await this.quantizedSeek(deck, targetMs, skipGridQuantize, undefined, beats);
 	}
 
 	/** Capture the current engaged loop as the one-slot safety loop (armed). */

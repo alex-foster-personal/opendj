@@ -39,7 +39,7 @@
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { TempoNormalization } from '$lib/rb/beat-sync-math';
 import type { DeckId } from '$lib/rb/deck-id';
-import { phaseLockDecision, phaseLockShouldSend, type PhaseLockDecision } from '$lib/rb/phase-lock';
+import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend, type PhaseLockDecision } from '$lib/rb/phase-lock';
 
 /** At most one phase-lock evaluation per this much AudioContext time (30 Hz),
  * however fast the display's frame rate drives the presentation tick. */
@@ -273,7 +273,7 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 			if (lock.joinedAtContextTime === null) lock.joinedAtContextTime = contextTime;
 			let decision: PhaseLockDecision;
 			try {
-				decision = phaseLockDecision({
+				const input = {
 					masterBeats: ports.beats(lock.master),
 					masterPositionSec: ports.positionSec(lock.master, contextTime),
 					masterTempo: lock.masterTempo,
@@ -282,10 +282,15 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 					followerBaseTempo: lock.base,
 					normalization: lock.normalization,
 					pitchRangePct: ports.pitchRangePct(deck),
-					trimming: lock.sent !== lock.base,
 					sinceJoinSec: contextTime - lock.joinedAtContextTime,
 					overLineTicks: lock.overLineTicks,
 					userOffsetMs: lock.userOffsetMs
+				};
+				const forwarded = phaseLockFeedForwardBase(input); // follows a grid tempo change (F4)
+				decision = phaseLockDecision({
+					...input,
+					followerBaseTempo: forwarded,
+					trimming: lock.sent !== lock.base
 				});
 			} catch (error) {
 				// Inside the presentation frame: drop this lock and say why rather

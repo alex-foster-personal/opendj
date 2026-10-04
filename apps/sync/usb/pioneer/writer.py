@@ -6,7 +6,7 @@ keeps backward-compatible discoverability for callers who treat the
 writer as its own entry point, without duplicating the argparse tree.
 
 See :mod:`apps.sync.usb.pioneer.__main__` for the full CLI, and
-:mod:`apps.sync.usb.pioneer.writer_rbox` for the underlying
+:mod:`apps.sync.usb.pioneer.writer_onelibrary` for the underlying
 :func:`write_onelibrary` API.
 
 Requirement: CAT-06.

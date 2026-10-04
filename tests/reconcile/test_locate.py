@@ -302,7 +302,7 @@ def test_signal_weights_sum_cap_covers_all_six() -> None:
     """Every declared signal has a weight; missing one would mis-score."""
     assert set(locate.SIGNAL_WEIGHTS) == {
         "basename_exact", "basename_fuzzy", "size_match",
-        "path_rewrite", "id3_match", "duration_match",
+        "path_rewrite", "id3_match", "duration_match", "fingerprint_match",
     }
     # Every weight is positive.
     assert all(w > 0 for w in locate.SIGNAL_WEIGHTS.values())

@@ -94,7 +94,7 @@ export interface BrowserRow extends Pick<
 	/** Venue-rung quality, inline on every row from the SAME stat pass.
 	 * null only for synthesized rows that never came off the wire. */
 	quality: TrackQuality | null;
-	/** Rekordbox DJPlayCount (0 when unknown / non-RB). */
+	/** Rekordbox DJPlayCount plus Open DJ plays (PLAYS-01); 0 when neither. */
 	play_count: number;
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */

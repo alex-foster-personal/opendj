@@ -4,12 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 /**
- * PARITY-05 / issue #736 - hot-cue SAVE for a deck with no live rekordbox
- * mapping. `djmdCue` is keyed by `djmdContent.ID`, which a locally imported
- * track never has, so a SAVE write for such a deck has nowhere to land and
- * would 404. Rather than let the click fire that write, an empty slot on an
- * unmapped deck (`deck.has_rb_mapping === false`) goes inert-with-tooltip
- * instead (PARITY-TODO.md line 134).
+ * CUES-01 (supersedes PARITY-05 / issue #736) - hot cues now live in Open DJ's
+ * own cue store in state.db, so a deck with no rekordbox mapping SAVES like
+ * any other. The #736 inert-with-tooltip gate on `deck.has_rb_mapping` is
+ * gone; these tests pin that it stays gone, because a revived gate would
+ * silently make every locally imported track cue-less again.
  *
  * Issue #804 - `has_rb_mapping` defaults `true` on an empty deck
  * (`_emptyDeckState`, `state.svelte.ts`), so it alone cannot gate a deck with
@@ -22,29 +21,16 @@ import { test } from 'node:test';
  * tooltip text are pinned as source text, same as every other structural
  * guard in this file's neighbors.
  *
- * Play from USB (specs/usb-play-from-stick.md 4b, decision 2): a stick track
- * has no rekordbox mapping and needs none, because its cue edits stay in the
- * session. The gate is therefore `canSave`, derived from the shared
- * `hotCueEditsAllowed(stable_id, has_rb_mapping)` in lib/rb/track-source.ts,
- * whose behavior (library unmapped refused, stick allowed, empty deck
- * refused) is unit-tested in usb-stick-session-edits.test.mjs. This file pins
- * that HotCueBank actually uses it.
- *
  * Regression lines:
- * - if onSlotClick fires onSave for an empty slot while deck.has_rb_mapping is
- *   false then a SAVE request reaches the server and 404s
+ * - if onSlotClick refuses an empty slot because deck.has_rb_mapping is false
+ *   then a locally imported track can never keep a cue (CUES-01)
  * - if onSlotClick fires onSave for an empty slot while deck.stable_id is
  *   null then a SAVE runs against a deck with nothing loaded and throws
  *   "hot cue X: deck is not loaded" unhandled (#804)
  * - if a FILLED slot is also gated on has_rb_mapping or stable_id then
  *   jumping to an existing cue breaks, which is not the bug being fixed
- * - if the tooltip does not change for either inert case then the control is
- *   inert with no explanation, which the repo's no-mocked-data rule forbids
- * - if DeckState drops has_rb_mapping, or a fresh/cleared deck does not
- *   default it true, then every empty deck reads as unmapped and every first
- *   empty-slot click on a freshly loaded MAPPED track is wrongly inert
- * - if the deck load path stops copying Track.has_rb_mapping onto DeckState
- *   then the gate reads a stale value from whatever track loaded previously
+ * - if the unloaded-deck tooltip goes away then the control is inert with no
+ *   explanation, which the repo's no-mocked-data rule forbids
  */
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
@@ -60,10 +46,9 @@ const DECK_STATE_TYPES = 'lib/rb/deck-state-types.ts';
 const STATE = 'lib/player/state.svelte.ts';
 const AUDIO_ENGINE = 'lib/rb/audio-engine.svelte.ts';
 
-const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\|\|\s*!canSave\s*\)\s*return/;
-const CAN_SAVE = /const canSave = \$derived\(hotCueEditsAllowed\(deck\.stable_id, deck\.has_rb_mapping\)\);/;
+const EMPTY_SAVE_GUARD = /if\s*\(\s*deck\.stable_id\s*===\s*null\s*\)\s*return/;
 
-test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before it can save', () => {
+test('onSlotClick refuses an empty slot only on an unloaded deck, never for a missing rekordbox mapping', () => {
 	const text = source(HOT_CUE_BANK);
 	const fnStart = text.indexOf('async function onSlotClick');
 	assert.ok(fnStart >= 0, 'onSlotClick not found in HotCueBank.svelte');
@@ -71,12 +56,16 @@ test('onSlotClick refuses an empty slot on an unmapped OR unloaded deck before i
 	assert.ok(fnEnd > fnStart, 'onSlotClick body end not found');
 	const fnText = text.slice(fnStart, fnEnd);
 
-	assert.match(text, CAN_SAVE, 'canSave no longer derives from the shared hotCueEditsAllowed gate on has_rb_mapping');
 	assert.ok(
 		EMPTY_SAVE_GUARD.test(fnText),
-		'onSlotClick no longer refuses an empty slot on an unmapped-or-unloaded deck - a click can ' +
-			'reach onSave and either fire a djmdCue write with nowhere to land (404, #736) or save ' +
-			'onto a deck with nothing loaded, throwing "deck is not loaded" unhandled (#804)'
+		'onSlotClick no longer refuses an empty slot on an unloaded deck - a click can save onto a ' +
+			'deck with nothing loaded, throwing "deck is not loaded" unhandled (#804)'
+	);
+	assert.doesNotMatch(
+		fnText,
+		/has_rb_mapping/,
+		'onSlotClick gates on has_rb_mapping again - cues live in the own store (CUES-01), so an ' +
+			'unmapped track must be able to save'
 	);
 
 	// The jump branch deliberately precedes the empty-save guard: filled pads
@@ -103,19 +92,18 @@ test('onClearClick refuses to fire against a deck with nothing loaded', () => {
 	);
 });
 
-test('an empty slot on an unmapped or unloaded deck carries an explanatory tooltip, not a bare inert control', () => {
+test('an empty slot on an unloaded deck explains itself, and no mapping tooltip remains', () => {
 	const text = source(HOT_CUE_BANK);
 
-	assert.match(
+	assert.doesNotMatch(
 		text,
-		/const MAPPING_TIP = ['"]cues need a rekordbox mapping['"]/,
-		'MAPPING_TIP constant missing or reworded - PARITY-TODO.md line 134 names this exact tooltip'
+		/cues need a rekordbox mapping/,
+		'the #736 mapping tooltip is back - cues live in the own store now (CUES-01)'
 	);
 	assert.match(
 		text,
 		/const NOT_LOADED_TIP = ['"]no track loaded - nothing to save['"]/,
-		'NOT_LOADED_TIP constant missing or reworded - #804 needs a distinct explanation for the ' +
-			'empty-deck case, not a reused mapping tooltip that would be factually wrong'
+		'NOT_LOADED_TIP constant missing or reworded - #804 needs an explanation for the empty-deck case'
 	);
 
 	const titleStart = text.indexOf('title={entry.cue === null');
@@ -125,20 +113,17 @@ test('an empty slot on an unmapped or unloaded deck carries an explanatory toolt
 	const titleText = text.slice(titleStart, titleEnd);
 
 	assert.ok(
-		titleText.includes('canSave') && titleText.includes('MAPPING_TIP'),
-		'the empty-slot title no longer branches on canSave (has_rb_mapping) to show MAPPING_TIP - ' +
-			'an inert slot with no explanation is exactly what the no-mocked-data rule forbids'
-	);
-	assert.ok(
 		titleText.includes('deck.stable_id') && titleText.includes('NOT_LOADED_TIP'),
 		'the empty-slot title no longer branches on deck.stable_id to show NOT_LOADED_TIP - an ' +
 			'empty-deck pad would go back to promising a save it cannot perform (#804)'
 	);
-
 	assert.ok(
-		text.includes('class:inert-mapping={entry.cue === null && !canSave}') && CAN_SAVE.test(text),
-		'the inert-mapping CSS class no longer covers the empty-deck case - the pad would render ' +
-			'as a normal, live-looking control while still being unable to save (#804)'
+		!titleText.includes('has_rb_mapping'),
+		'the empty-slot title branches on has_rb_mapping again (CUES-01 removed that gate)'
+	);
+	assert.ok(
+		text.includes('class:inert-mapping={entry.cue === null && deck.stable_id === null}'),
+		'the inert CSS class must cover exactly the empty-deck case (#804), not unmapped tracks'
 	);
 });
 

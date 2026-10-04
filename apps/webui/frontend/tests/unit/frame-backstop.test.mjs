@@ -24,7 +24,7 @@ let preset;
 
 before(async () => {
 	backstop = await loadTypeScriptModule('src/lib/rb/frame-backstop.ts');
-	preset = await loadTypeScriptModule('src/lib/rb/performance-preset.ts');
+	preset = await loadTypeScriptModule('src/lib/rb/performance-preset-runner.ts');
 });
 
 //-----------------------------------------------------------------------------

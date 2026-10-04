@@ -411,16 +411,15 @@ test('controller hot-cue pad rounds the presented position to persistent millise
 });
 
 // [if] a stick deck's empty hot-cue pad is pressed [then] hot_cue_save is
-// dispatched and reaches the stick session-edit store, exactly as HotCueBank
-// and the IPC gate allow; [if] the deck is an unmapped LIBRARY track [then] it
-// is still refused before dispatch.
+// dispatched and reaches the stick session-edit store; [if] the deck is a
+// loaded library track with no rekordbox mapping [then] CUES-01 still
+// dispatches the save (only an empty deck is refused).
 //
-// No track was loaded here, so the real session store answers the save with
-// its own "slots were never read" refusal. That refusal is the evidence: only
-// a command that passed the pad gate AND the IPC gate reaches that store. The
-// pad fires its command without awaiting it, so the rejection is unhandled by
-// design; the runner's own listener is parked for the duration to read it.
-test('controller hot-cue pad saves on a stick deck and still refuses an unmapped library deck', async () => {
+// No track was loaded here, so the real session store answers the stick save
+// with its own "slots were never read" refusal. That refusal is the evidence
+// the command passed the pad gate. The pad fires without awaiting, so the
+// rejection is unhandled by design; the runner's listener is parked to read it.
+test('controller hot-cue pad saves on a stick deck and on an unmapped library deck', async () => {
 	glue._resetControllerStateForTests();
 	const deck = audioEngine.deckStates[1];
 	const stickId = 'usb-AAAAAAAA-0000-4000-8000-00000000000A-7';
@@ -453,10 +452,13 @@ test('controller hot-cue pad saves on a stick deck and still refuses an unmapped
 
 		deck.stable_id = 'b'.repeat(40);
 		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
-		await new Promise((resolve) => setTimeout(resolve, 50));
-		assert.equal(notes.length, 1, 'an unmapped library deck is still refused');
-		assert.match(notes[0].message, /cannot persist Rekordbox hot cues/);
-		assert.equal(rejections.length, 1, 'a refused library deck dispatches nothing');
+		const libraryDeadline = Date.now() + 5000;
+		while (rejections.length < 2 && Date.now() < libraryDeadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.deepEqual(notes, [], 'CUES-01: an unmapped loaded library deck is not refused');
+		assert.equal(rejections.length, 2, 'the library save is dispatched, past the pad gate');
+		assert.match(rejections[1], /bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/, 'the dispatched save names the library id');
 	} finally {
 		process.off('unhandledRejection', onRejection);
 		for (const listener of runnerListeners) process.on('unhandledRejection', listener);
