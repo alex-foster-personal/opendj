@@ -103,7 +103,8 @@ test('TrackTable row artwork stays thumbnail-sized', () => {
 
 test('BrowserPanel loads ingestion coverage after primary browser initialization', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /import \{ getIngestCoverage, type IngestCoverage \} from '\$lib\/rb\/api-ingest';/);
+	assert.match(src, /import \{ _pingBackend, _pingFrontend, _coverageDot \} from '\$lib\/rb\/browser-health-probes';/);
+	assert.match(src, /import \{ getIngestCoverage \} from '\$lib\/rb\/api-ingest';/);
 	assert.match(
 		src,
 		/await _restoreBootPane\(\);[\s\S]*?finally \{[\s\S]*?playlistsLoading = false;[\s\S]*?\}[\s\S]*?void _loadIngestCoverage\(\);/,
@@ -112,15 +113,15 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
 		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
 	}
-	assert.match(src, /state: missing === 0 \? 'complete' : 'incomplete'/);
-	assert.match(src, /state: 'unavailable'/);
-	assert.match(src, /state: 'error'/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: missing === 0 \? 'complete' : 'incomplete'/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: 'unavailable'/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: 'error'/);
 });
 
 test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /const completed = coverage\.on_disk - missing;/);
-	assert.match(src, /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /const completed = coverage\.on_disk - missing;/);
+	assert.match(source('src/lib/rb/browser-health-probes.ts'), /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
 	assert.match(
 		src,
 		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\);/
