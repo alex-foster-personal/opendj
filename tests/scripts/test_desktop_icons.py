@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -103,3 +107,80 @@ def test_committed_master_sits_on_apple_grid() -> None:
         assert alphas == [0] * len(MASTER_GRID_PROBE_PX)
         # and the tile itself is opaque, so the check is not passing on an empty image
         assert rgba.getpixel((512, 120))[3] == 255
+
+ICONSET_SLOTS = {
+    "icon_16x16.png": (16, 1), "icon_16x16@2x.png": (16, 2),
+    "icon_32x32.png": (32, 1), "icon_32x32@2x.png": (32, 2),
+    "icon_128x128.png": (128, 1), "icon_128x128@2x.png": (128, 2),
+    "icon_256x256.png": (256, 1), "icon_256x256@2x.png": (256, 2),
+    "icon_512x512.png": (512, 1), "icon_512x512@2x.png": (512, 2),
+}
+
+
+def _assert_master_pixels(image: Image.Image, edge: int) -> None:
+    with Image.open(ICONS_DIR / "app-icon.png") as master:
+        expected = master.convert("RGBA").resize((edge, edge), Image.Resampling.LANCZOS)
+    actual = image.convert("RGBA")
+    assert actual.size == expected.size
+    assert actual.tobytes() == expected.tobytes()
+
+
+@pytest.mark.requirement("INSTALL-17")
+def test_committed_icns_all_frames_preserve_real_master_pixels() -> None:
+    """[if] a committed ICNS frame misdecodes [then] real master pixels differ, [else stop]."""
+    with Image.open(ICONS_DIR / "icon.icns") as image:
+        sizes = {(edge, edge, scale) for edge, scale in ICONSET_SLOTS.values()}
+        assert set(image.info["sizes"]) == sizes
+        for edge, scale in ICONSET_SLOTS.values():
+            _assert_master_pixels(image.icns.getimage((edge, edge, scale)), edge * scale)
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="Darwin native iconutil ICNS decoder is unavailable off macOS",
+)
+@pytest.mark.requirement("INSTALL-17")
+def test_generated_icns_native_decode_preserves_real_master_pixels(tmp_path: Path) -> None:
+    """[if] native ICNS decoding corrupts a slot [then] real master pixels differ, [else stop]."""
+    iconutil = shutil.which("iconutil")
+    assert iconutil is not None, "UNAVAILABLE: Darwin native iconutil decoder"
+    master = ICONS_DIR / "app-icon.png"
+    before = hashlib.sha256(master.read_bytes()).hexdigest()
+    generated = tmp_path / "generated"
+    generate_desktop_icons(master, generated)
+    for label, icns in (("generated", generated / "icon.icns"),
+                        ("committed", ICONS_DIR / "icon.icns")):
+        unpacked = tmp_path / f"{label}.iconset"
+        subprocess.run(
+            [iconutil, "-c", "iconset", str(icns), "-o", str(unpacked)],
+            check=True, capture_output=True, text=True, timeout=20,
+        )
+        assert {p.name for p in unpacked.iterdir()} == set(ICONSET_SLOTS)
+        for name, (edge, scale) in ICONSET_SLOTS.items():
+            with Image.open(unpacked / name) as image:
+                _assert_master_pixels(image, edge * scale)
+    assert hashlib.sha256(master.read_bytes()).hexdigest() == before
+
+
+
+@pytest.mark.parametrize("chunk_type", [b"is32", b"s8mk", b"il32", b"l8mk"])
+@pytest.mark.requirement("INSTALL-17")
+def test_real_icns_corrupt_legacy_chunk_is_refused(tmp_path: Path, chunk_type: bytes) -> None:
+    """[if] a real legacy chunk is empty [then] production inspection refuses it, [else stop]."""
+    source = ICONS_DIR / "icon.icns"
+    original = source.read_bytes()
+    result = bytearray(original[:8])
+    offset = 8
+    while offset < len(original):
+        size = int.from_bytes(original[offset + 4 : offset + 8], "big")
+        chunk = original[offset : offset + size]
+        if chunk[:4] == chunk_type:
+            chunk = chunk_type + (8).to_bytes(4, "big")
+        result.extend(chunk)
+        offset += size
+    result[4:8] = len(result).to_bytes(4, "big")
+    altered = tmp_path / "corrupt.icns"
+    altered.write_bytes(result)
+    with pytest.raises(PayloadBuildError, match="invalid"):
+        icns_embedded_pixel_sizes(altered)
+    assert source.read_bytes() == original
