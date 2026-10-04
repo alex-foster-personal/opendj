@@ -37,7 +37,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image
+from PIL import IcnsImagePlugin, Image
 
 from scripts.build_engine_payload import PayloadBuildError
 
@@ -136,22 +136,36 @@ def icns_embedded_pixel_sizes(icns_path: Path) -> set[int]:
         raise PayloadBuildError(msg)
 
     sizes: set[int] = set()
-    chunk_types: set[bytes] = set()
+    legacy_chunks: dict[bytes, bytes] = {}
     offset = 8
     while offset + 8 <= len(data):
         chunk_size = struct.unpack(">I", data[offset + 4 : offset + 8])[0]
         if chunk_size < 8 or offset + chunk_size > len(data):
             msg = f"{icns_path} has a corrupt icns chunk at offset {offset}"
             raise PayloadBuildError(msg)
-        chunk_types.add(data[offset : offset + 4])
+        chunk_type = data[offset : offset + 4]
         chunk_data = data[offset + 8 : offset + chunk_size]
+        if chunk_type in {b"is32", b"s8mk", b"il32", b"l8mk"}:
+            legacy_chunks[chunk_type] = chunk_data
         if chunk_data[:8] == b"\x89PNG\r\n\x1a\n":
             sizes.add(_read_png_edge(chunk_data))
         offset += chunk_size
-    if {b"is32", b"s8mk"} <= chunk_types:
-        sizes.add(16)
-    if {b"il32", b"l8mk"} <= chunk_types:
-        sizes.add(32)
+    for edge, rgb_type, mask_type in ((16, b"is32", b"s8mk"), (32, b"il32", b"l8mk")):
+        if rgb_type not in legacy_chunks or mask_type not in legacy_chunks:
+            continue
+        rgb_data = legacy_chunks[rgb_type]
+        if len(legacy_chunks[mask_type]) != edge * edge:
+            raise PayloadBuildError(f"{icns_path} has an invalid {edge}px alpha mask")
+        try:
+            # Decode a bounded real chunk: Pillow must not read into the next record.
+            channels = IcnsImagePlugin.read_32(
+                io.BytesIO(rgb_data), (0, len(rgb_data)), (edge, edge, 1)
+            )
+            if channels["RGB"].size != (edge, edge):
+                raise ValueError("legacy RGB dimensions differ")
+        except (OSError, SyntaxError, ValueError, KeyError) as exc:
+            raise PayloadBuildError(f"{icns_path} has invalid {edge}px legacy RGB") from exc
+        sizes.add(edge)
     return sizes
 
 

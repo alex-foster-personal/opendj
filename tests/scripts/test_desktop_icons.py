@@ -148,13 +148,39 @@ def test_generated_icns_native_decode_preserves_real_master_pixels(tmp_path: Pat
     before = hashlib.sha256(master.read_bytes()).hexdigest()
     generated = tmp_path / "generated"
     generate_desktop_icons(master, generated)
-    unpacked = tmp_path / "native.iconset"
-    subprocess.run(
-        [iconutil, "-c", "iconset", str(generated / "icon.icns"), "-o", str(unpacked)],
-        check=True, capture_output=True, text=True, timeout=20,
-    )
-    assert {p.name for p in unpacked.iterdir()} == set(ICONSET_SLOTS)
-    for name, (edge, scale) in ICONSET_SLOTS.items():
-        with Image.open(unpacked / name) as image:
-            _assert_master_pixels(image, edge * scale)
+    for label, icns in (("generated", generated / "icon.icns"),
+                        ("committed", ICONS_DIR / "icon.icns")):
+        unpacked = tmp_path / f"{label}.iconset"
+        subprocess.run(
+            [iconutil, "-c", "iconset", str(icns), "-o", str(unpacked)],
+            check=True, capture_output=True, text=True, timeout=20,
+        )
+        assert {p.name for p in unpacked.iterdir()} == set(ICONSET_SLOTS)
+        for name, (edge, scale) in ICONSET_SLOTS.items():
+            with Image.open(unpacked / name) as image:
+                _assert_master_pixels(image, edge * scale)
     assert hashlib.sha256(master.read_bytes()).hexdigest() == before
+
+
+
+@pytest.mark.parametrize("chunk_type", [b"is32", b"s8mk", b"il32", b"l8mk"])
+@pytest.mark.requirement("INSTALL-17")
+def test_real_icns_corrupt_legacy_chunk_is_refused(tmp_path: Path, chunk_type: bytes) -> None:
+    """[if] a real legacy chunk is empty [then] production inspection refuses it, [else stop]."""
+    source = ICONS_DIR / "icon.icns"
+    original = source.read_bytes()
+    result = bytearray(original[:8])
+    offset = 8
+    while offset < len(original):
+        size = int.from_bytes(original[offset + 4 : offset + 8], "big")
+        chunk = original[offset : offset + size]
+        if chunk[:4] == chunk_type:
+            chunk = chunk_type + (8).to_bytes(4, "big")
+        result.extend(chunk)
+        offset += size
+    result[4:8] = len(result).to_bytes(4, "big")
+    altered = tmp_path / "corrupt.icns"
+    altered.write_bytes(result)
+    with pytest.raises(PayloadBuildError, match="invalid"):
+        icns_embedded_pixel_sizes(altered)
+    assert source.read_bytes() == original
