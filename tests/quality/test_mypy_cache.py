@@ -46,6 +46,14 @@ def _copy_source(destination: Path) -> None:
     ).decode("utf-8").split("\0")
     for relative in filter(None, tracked):
         source = REPO_ROOT / relative
+        # Sparse media and operator-only directory links are not mypy inputs.
+        # Missing Python files or linked source trees must never shrink its scope.
+        if source.suffix in {".py", ".pyi"} and not source.is_file():
+            raise RuntimeError(f"UNAVAILABLE: tracked mypy input is absent: {relative}")
+        if source.is_symlink() and Path(relative).parts[0] in {
+            "apps", "tests", "scripts", "ops", "stubs",
+        }:
+            raise RuntimeError(f"UNAVAILABLE: tracked mypy source is linked: {relative}")
         if source.is_file():
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -111,12 +119,12 @@ def test_warm_cache_still_finds_a_new_error(tmp_path: Path) -> None:
     injected = "\n_MYPY_CACHE_PROBE: int = 'warm-must-see-this'\n"
     try:
         cold = _eval_owned_source(repo)
-        target.write_text(original + injected, encoding="utf-8")
+        target.write_text(original + injected, encoding="utf-8", newline="\n")
         warm = _eval_owned_source(repo)
-        target.write_text(original, encoding="utf-8")
+        target.write_text(original, encoding="utf-8", newline="\n")
         restored = _eval_owned_source(repo)
     finally:
-        target.write_text(original, encoding="utf-8")
+        target.write_text(original, encoding="utf-8", newline="\n")
         if previous_cache is None:
             os.environ.pop("MDT_MYPY_CACHE_DIR", None)
         else:
