@@ -1,0 +1,770 @@
+# ---------------------------------------------------------------------------
+# Python dependency policy (ADR: docs/decisions/ADR-*-uv-lock-single-python-lock.md)
+#
+# 1. uv is the only installer and resolver. Never pip, pip-tools or poetry
+#    (the one bare pip left in CI is a transitional exception in the ADR).
+# 2. This file is the single declaration of dependencies:
+#    - [project].dependencies: what the shipped package imports.
+#    - [project.optional-dependencies]: user-facing extras (analysis, voice, ...).
+#    - [dependency-groups] (PEP 735): dev and CI tooling that never ships.
+# 3. uv.lock is the committed lock. Change it only with `uv lock`, `uv add`
+#    or `uv remove`, in the same commit as any dependency edit here (a
+#    lock-only `uv lock --upgrade` refresh, e.g. Renovate, is fine).
+# 4. Install with `uv sync --locked` plus the needed `--extra` / `--group`.
+#    `--locked` fails if uv.lock is stale; `--frozen` skips that check.
+# 5. Run commands with `uv run --locked` (or UV_LOCKED=1) so a run can never
+#    rewrite uv.lock; it syncs first, UV_NO_SYNC=1 opts out.
+# 6. Heavy ML deps (torch, demucs) stay out of the dev env: they live in
+#    PEP 723 inline-metadata scripts run with `uv run <script>`, except the
+#    opt-in `vocals` extra, which the packaged app ships (keep it);
+#    a script's own `<script>.py.lock` is written only by `uv lock --script`.
+# 7. No hand-edited root requirements*.txt as a dependency source (isolated
+#    tool pins in their own throwaway env, e.g. ops/quality/, are exempt).
+#    A dependency-only consumer gets `uv export --locked --no-emit-project
+#    --format requirements.txt` (or `--format pylock.toml`).
+#    TRANSITIONAL until issue #4356: CI still installs
+#    from the hand-kept requirements files, which hold CI-only pins uv.lock
+#    lacks, so do NOT regenerate them from uv.lock; a dependency change ALSO
+#    goes in requirements.txt (docs-only deps: requirements-docs.txt).
+#
+# Docs:
+#   https://docs.astral.sh/uv/concepts/projects/sync/
+#   https://docs.astral.sh/uv/concepts/projects/layout/
+#   https://docs.astral.sh/uv/concepts/projects/dependencies/
+#   https://docs.astral.sh/uv/concepts/projects/export/
+#   https://docs.astral.sh/uv/guides/integration/github/
+#   https://packaging.python.org/en/latest/specifications/pyproject-toml/
+#   https://peps.python.org/pep-0735/  (dependency groups)
+#   https://peps.python.org/pep-0723/  (inline script metadata)
+#   https://peps.python.org/pep-0751/  (pylock.toml)
+# Guarded by tests/scripts/test_pyproject_dependency_policy.py.
+# ---------------------------------------------------------------------------
+
+[build-system]
+requires = ["setuptools>=77", "setuptools-rust>=1.12,<2", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "music-dj-tools"
+version = "1.0.1"
+description = "Bi-directional sync, enrichment, and authoring toolchain for working DJ libraries (Rekordbox, djay Pro, Serato, Traktor) with the open-dj cross-format metadata layer."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "The Open DJ contributors" }]
+keywords = ["rekordbox", "djay", "serato", "traktor", "open-dj", "dj", "music-library", "sync"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+# Core runtime deps: everything a pip consumer needs to import apps.* without
+# ImportError for the baseline sync + metadata + web UI surface. Feature-gated
+# stacks (voice, cloud, spotify, analysis, ai) live in optional-dependencies
+# so a vanilla ``pip install music-dj-tools`` stays lean. See requirements.txt
+# for the dev superset (includes madmom git HEAD for the analysis backend).
+dependencies = [
+    # Imported directly by the Rekordbox waveform path and required by the
+    # bundled PyO3 extension. The madmom-only NumPy ceiling lives in analysis.
+    "numpy>=1.26",
+    "pyrekordbox>=0.4.4",
+    "kaitaistruct>=0.11",
+    "rich>=13.0",
+    "pyacoustid>=1.3.0",
+    "PyYAML>=6.0",
+    "jsonschema[format-nongpl]>=4.25,<5",
+    "rfc8785>=0.1.4,<1",
+    "fastapi>=0.115",
+    "anyio>=4.15.1",
+    # multipart uploads (POST /api/v1/ingest/upload); fastapi Form/File need it
+    "python-multipart>=0.0.9",
+    "uvicorn[standard]>=0.30",
+    # Activity Monitor and ps should identify the daemon as part of Open DJ,
+    # rather than as an anonymous python3 bound to a loopback URL.
+    "setproctitle>=1.3,<2",
+    "regex==2026.7.19",
+    # pydantic is a transitive dep of fastapi but we import it directly
+    # in apps/sets, apps/webui/server/{models,errors}.py, so pin it
+    # explicitly (diagnose F5-1).
+    "pydantic>=2.0,<3",
+    # sqlalchemy is a transitive dep of pyrekordbox but we import
+    # `from sqlalchemy import text` directly in apps/reconcile/remove_track.py
+    # (diagnose F5-2).
+    "sqlalchemy>=2.0,<2.1",  # <2.1 until 2.1 ships wheels + pyrekordbox is verified (Thu 24 Sep 2026, see requirements.txt)
+    # Pillow is imported directly by apps/sync/usb/pioneer/agent_actuator.py
+    # for artwork resizing (diagnose F5-3).
+    "Pillow>=12.3.0",
+    # Every audio tag READ (title/artist/genre, duration, bitrate, embedded
+    # art) goes through tinytag behind apps/shared/_tagreader.py. MIT, pure
+    # Python, no dependencies. Writing tags into audio files is not a product
+    # feature: mutagen is GPL-2.0-or-later (issue #4717; ADR-0122).
+    "tinytag>=2.2.1,<3",
+    # Same module reads display geometry and grabs window images through
+    # Quartz. It was undeclared until Mon 17 Aug 2026, so a uv-synced venv
+    # had no pyobjc and every geometry call raised "Quartz unavailable" ON
+    # macOS -- the platform the tool exists for. Marker-gated so Linux CI
+    # (where the module is skipped wholesale) never installs it.
+    "pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'",
+    # Pioneer OneLibrary export opens and verifies Device Library Plus
+    # (SQLCipher) databases through apps/sync/usb/pioneer/onelibrary.py,
+    # which imports sqlcipher3 directly. It also arrives through pyrekordbox,
+    # but a direct import gets a direct declaration. zlib license. Replaced
+    # rbox (GPL-3.0-only since 0.1.6) on Thu 1 Oct 2026. rbox itself stays
+    # off this list: optional usb-export extra, fetched by ensure_rbox().
+    "sqlcipher3-wheels>=0.5.7",
+    # apps/engine_core/jobs/reap.py imports psutil at module scope, and that
+    # module is on the ENGINE BOOT PATH (JobStore.recover -> reap). It was
+    # declared in requirements.txt but not here, so a `pip install
+    # music-dj-tools` consumer got ImportError the moment the engine started.
+    # Floor, not a pin: the API used (Process, create_time, cmdline, status,
+    # process_iter, NoSuchProcess/AccessDenied/ZombieProcess) has been stable
+    # for years. Validated against the 7.2.2 in the dev venv.
+    "psutil>=5.9",
+    # apps/engine_core/assistant/api.py imports httpx at module scope, and
+    # that module is on the ENGINE BOOT PATH (app.py includes the assistant
+    # router unconditionally). It lived only in the dev group, so the dmg
+    # payload (uv export --no-dev) shipped an engine that died on import
+    # (found by the just dmg verify half, Thu 20 Aug 2026). Runtime dep now.
+    "httpx>=0.28,<1",
+    # AGENT-11: stdio MCP server ships in the dmg payload beside opendj-engine.
+    "mcp>=2.0,<3",
+    # apps/sync_hub/google_id_token.py verifies Google id_tokens presented at
+    # POST /api/v1/sync/enroll (ADR 12 section B): RS256 signature by kid,
+    # iss, aud, exp and iat. Runtime, because the hub verifies on the request
+    # path; [crypto] pulls cryptography, which RS256 needs. A maintained JWT
+    # library rather than hand-rolled verification: the first signature check
+    # in this tree should not also be the first JWT parser.
+    "pyjwt[crypto]>=2.15.1,<3",
+    # Declared directly, not only reached through pyjwt[crypto]: RS256 needs
+    # it at runtime, so it is in the locked runtime closure, and
+    # scripts/build_engine_payload.py refuses a payload that ships a package
+    # which is declared ONLY in an omitted extra (it was dev-only before).
+    # Same range as the dev extra below, which keeps its entry for the dmg
+    # preflight's reason.
+    "cryptography>=50,<51",
+]
+
+# AGENT-05: the `opendj` console script. A thin client of the AGENT-03 command
+# bus (apps/webui/server/routes/commands.py), so an agent drives the same
+# performance surface a person drives, over the same dispatcher. Its verb table
+# is checked against the TypeScript command union by
+# tests/opendj_cli/test_bus_parity.py.
+[project.scripts]
+opendj = "apps.opendj_cli.__main__:main"
+
+[project.optional-dependencies]
+# Pioneer OneLibrary (Device Library Plus) export. rbox is GPL-3.0-only, so
+# it is not a core dependency of this Apache-2.0 package and the desktop
+# payload never vendors it. First USB-export use downloads the pin
+# (apps.sync.usb.pioneer.rbox_runtime). The dev extra repeats the pin so
+# `uv sync --extra dev` and CI keep the same wheel.
+usb-export = ["rbox==0.1.7"]
+# Phase 6 analysis backend (META-01/02/04). numpy<2 pin is for madmom compat;
+# madmom itself is not on PyPI in a usable form (0.16.1 breaks on Python 3.10+
+# due to collections.MutableSequence), so it must be installed from git via
+# requirements.txt with --no-build-isolation. This extra gives you librosa +
+# scipy which cover the default pipeline on their own.
+analysis = [
+    "numpy<2",
+    "scipy>=1.13",
+    "librosa==0.10.*",
+    "soundfile>=0.12",
+]
+# Phase 14 voice commands (VOICE-01). All lazy-imported; PortAudio (via
+# sounddevice) needs a system library (``brew install portaudio``).
+voice = [
+    "openwakeword>=0.6",
+    "sounddevice>=0.4",
+    "webrtcvad>=2.0.10",
+]
+# Phase 11 cloud replicate (CAT-04). boto3 is opt-in; only apps.cloud touches
+# it and it is lazy-imported so the rest of the repo works without AWS SDKs.
+cloud = [
+    "boto3>=1.34",
+]
+# Phase 9 Spotify playlist importer (CAT-01). spotipy lazy-imported from
+# apps.spotify.client.
+spotify = [
+    "spotipy>=2.23.0",
+]
+# Sets auto-classifier (apps.sets.classify). scikit-learn lazy-imported.
+ai = [
+    "scikit-learn>=1.4",
+]
+# Local Demucs separation for the packaged desktop payload. These remain
+# optional so the development repo venv does not carry the heavy ML stack.
+vocals = [
+    "demucs==4.0.1",
+    "torch==2.13.0",
+    "torchaudio==2.11.0",
+    "soundfile>=0.12",
+    "numpy<2",
+]
+# Dev/test-only deps. The FastAPI 0.115 / Starlette 0.38 minimum contract uses
+# standard httpx, while current Starlette 1.3 TestClient resolves httpx2 first.
+#
+# The dev venv's setuptools pin is NOT declared here. [build-system].requires
+# provisions the ISOLATED environment that builds THIS package's own wheel,
+# whereas madmom is installed with --no-build-isolation (see requirements.txt
+# and CONTRIBUTING.md) and therefore builds against the AMBIENT venv's
+# setuptools. So that pin lives where the venv is described: requirements.txt
+# carries `setuptools>=83`, the CVE-2026-59890 security floor (diagnose F6-3).
+dev = [
+    # Ed25519 for the dmg preflight's updater-key verification (item H).
+    # DECLARED here rather than resolved ad hoc: the check ran through
+    # `uv run --with cryptography`, which needs the network on a cold cache,
+    # so a release host with every build tool present but PyPI unreachable had
+    # its dmg gate blocked by the verifier rather than by anything about the
+    # build. A release gate must not depend on a package fetch.
+    "cryptography>=50,<51",
+    "httpx>=0.28,<1",
+    "httpx2>=2.12.0,<3",
+    # pytest lived in .venv undeclared until Fri 24 Jul 2026, so the first
+    # `uv sync` that pruned the env deleted the test runner. Declared now:
+    # an undeclared dependency is a dependency that disappears without warning.
+    "pytest>=9,<10",
+    # pytest-asyncio 1.3 is the lowest release line whose Requires-Dist raises
+    # its pytest ceiling to <10 (1.0-1.2 still cap at pytest<9, incompatible
+    # with the pytest>=9.0.3 security bump above). No asyncio_mode/loop-scope
+    # config changes needed: the suite has one file using @pytest.mark.asyncio
+    # (strict mode, no event_loop fixture override), unaffected by the 1.x
+    # default-loop-scope change.
+    "pytest-asyncio>=1.3,<2",
+    # Parallel test execution. The suite turned out to be process-safe already
+    # -- tests bind port 0 rather than a fixed port, and tmp_path is per test --
+    # bar one pair: tests/webui/test_writeback_cli.py passed only because
+    # test_server_port_config.py had leaked MUSIC_DJ_BACKEND_PORT into the
+    # process first. Both are fixed rather than serialised, so nothing here
+    # carries an xdist_group marker; `--dist loadgroup` is still the mode the
+    # call sites pass, so the marker works the day something needs it.
+    # `-n` itself is opt-in per call site, so a scoped inner-loop run does not
+    # pay worker startup. Full-suite callers pass `-n auto` AND
+    # `--collect-floor`: -n redistributes tests, it must never shrink them.
+    "pytest-xdist>=3.6,<4",
+    # Shards the CI fast lane across runners by recorded duration
+    # (`--splits N --group i`, balanced from the committed `.test_durations`).
+    "pytest-split>=0.10,<1",
+    # Per-test wall clock (`--timeout=N` at the CI call sites). Without it a
+    # hung test can only die with its whole leg or shard at the step's wall
+    # budget, anonymously: on Mon 21 Sep 2026 six fast-tier legs in one
+    # evening stalled 2-6 min at the same 32% mark and were killed as
+    # "exit 124 after 480s" with no test named (jobs 106501413853,
+    # 106532364812, 106517178623 among them). pytest-timeout fails the ONE
+    # test, prints its stack, and the leg carries on.
+    "pytest-timeout>=2.3,<3",
+    # The type checker, exact-pinned rather than floored, because the quality
+    # ratchet records a mypy error count and mypy adds and removes checks
+    # between versions exactly as ruff does. It has to be the SAME version the
+    # gate measures with (ops/quality/mypy-requirements.txt);
+    # tests/quality/test_mypy_scope.py fails when the two pins drift.
+    #
+    # Read the number it prints here with that in mind. This copy exists for
+    # editors and ad-hoc runs and resolves inside the project venv, where the
+    # repo's own dependencies ARE importable, so it scores a DIFFERENT tree
+    # from the gate (measured on one commit: 550 errors against the gate's
+    # 1356 before overrides). The authoritative count comes from
+    # `just typecheck`, which runs the isolated env the baseline was recorded
+    # under.
+    "mypy==2.3.1",
+    # modal is NOT declared here on purpose. Every call site is
+    # `uv run --with modal`, and CI installs from requirements.txt, so a
+    # pyproject extra would not reach it anyway -- it would only look like the
+    # problem was solved. tests/test_stem_tiers.py parses the farm's source
+    # instead of importing it, so the tier/farm contract is checked with no
+    # modal anywhere. tests/vocals/test_envelope.py and test_farm_scheduling.py
+    # still import it at module scope and still abort collection without it;
+    # that predates this branch (a2f3dfd) and needs the same treatment.
+    # Until it gets that treatment, the CI test job installs modal explicitly
+    # as a test-environment tool (.github/workflows/ci.yml) so the suite
+    # collects in full -- otherwise those aborts drop their requirement
+    # markers and the published coverage-matrix artifact understates coverage.
+    # Locally, a full run needs `uv run --with modal pytest tests` or a venv
+    # with modal installed.
+    #
+    # Allocation and wall-time profiling of Python we LAUNCH. macOS will not
+    # let an allocator tracer attach to a running task, so these two only ever
+    # profile a process the harness starts itself -- which is exactly the
+    # scripts/bench/*.py case they are here for
+    # (scripts/perf/perf_alloc.sh --python-bench, docs/perf/profiling-harness.md).
+    # Declared rather than `uv run --with`, so allocation profiling is a
+    # zero-setup step rather than a per-invocation resolve.
+    #
+    # memray is macOS/Linux only (no Windows wheel, and the platform marker
+    # keeps it that way on purpose): scripts/run_rb_parity_check.ps1 installs
+    # `.[dev]` on a clean Windows runner before running anything, and an
+    # unconditional memray here breaks that bootstrap with no Windows wheel
+    # in the committed lock. pyinstrument is pure-Python (sys.setprofile) and
+    # has no such restriction.
+    "memray>=1.14; sys_platform != 'win32'",
+    "pyinstrument>=5",
+    "hypothesis>=6.100,<7",
+    # tools/controller-probe/capture.py declares this in its own PEP 723 header
+    # (it runs standalone via `uv run`), and it is ALSO declared here because
+    # tests/controller_probe/test_capture.py imports that module by path to
+    # exercise its pure decode/lookup/verdict functions. An `import rtmidi` at
+    # module scope means the test cannot collect without it. macOS/Linux only:
+    # the probe is a CoreMIDI instrument and no Windows runner opens a port.
+    "python-rtmidi>=1.5,<2; sys_platform != 'win32'",
+    # Per-test coverage contexts for `scripts/suite_census.py` (the nightly test census). Until
+    # now it came only from requirements.txt (the CI coverage job, CRITICAL_PINS in
+    # tests/test_dependency_contract.py keeps that line), so a plain `uv sync --extra dev`
+    # environment such as the nucbox census worktree did not have it.
+    "pytest-cov>=7,<8",
+    # Same pin as the usb-export extra. CI installs requirements.txt, which
+    # must list every dev-extra dep (tests/test_dependency_contract.py). The
+    # desktop payload does not request this extra.
+    "rbox==0.1.7",
+]
+# Opt-in Sentry (`apps/shared/telemetry`). Empty SENTRY_DSN = no-op.
+observability = [
+    "sentry-sdk>=2.0,<3",
+]
+# Aggregate extra so ``pip install music-dj-tools[all]`` pulls every optional
+# stack (minus madmom git HEAD, which still needs requirements.txt).
+all = [
+    "music-dj-tools[analysis,voice,cloud,spotify,ai,observability]",
+]
+
+[tool.setuptools.packages.find]
+include = ["apps*"]
+exclude = ["data*", "tests*", "scripts*", "docs*", "open-dj*", ".planning*", "usb-profiles*", "htmlcov*",
+           "apps.webui.server.native.waveform.target*"]
+
+[[tool.setuptools-rust.ext-modules]]
+target = "_rb_waveform_native"
+path = "apps/webui/server/native/waveform/Cargo.toml"
+binding = "PyO3"
+# Source installs remain usable through the explicit NumPy fallback when a
+# supported host has no Rust toolchain. Official wheels are still fail-closed
+# by scripts/check_waveform_native_wheel.py and the native release gate.
+optional = true
+
+[tool.distutils.bdist_wheel]
+py_limited_api = "cp311"
+
+[project.urls]
+Homepage = "https://github.com/alex-foster-personal/opendj"
+Repository = "https://github.com/alex-foster-personal/opendj"
+Issues = "https://github.com/alex-foster-personal/opendj/issues"
+Changelog = "https://github.com/alex-foster-personal/opendj/blob/main/CHANGELOG.md"
+
+[tool.af]
+# Namespace for AF_SERVICE_ID on every process this repo spawns (ADR-NNNN).
+# Matches the launchd label convention `com.opendj.<area>-<part>` of the fleet
+# process registry (fleet-af `process_registry/`). Test-spawned servers get
+# `<namespace>.test.<name>` from scripts/server_owner_guard.py.
+process_namespace = "com.opendj"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Requirement markers let the reqs plugin build coverage-matrix.md without
+# parsing test names. Every test that exercises a spec'd behavior should be
+# tagged with @pytest.mark.requirement("<ID>"); the plugin then flags
+# orphan requirements (no tests) and orphan markers (unknown ID).
+markers = [
+    "requirement(id): trace this test to a requirement ID (e.g. RECON-01)",
+    "slow: marks slow tests",
+    "live_db: touches a live Rekordbox/djay DB (skipped unless --live-db)",
+    "live_r2: real R2 round-trip (skipped unless R2_* creds are in the env)",
+    "real_library: needs a real state.db (auto-applied in tests/cloudsync/conftest.py; skipped when absent)",
+    "live_github: real GitHub API round-trip via gh (UNAVAILABLE unless MDT_LIVE_GITHUB=1, then a gh-auth failure is a hard fail)",
+    "audio_hw: exercises real audio hardware (skipped on CI; Phase 12 recorder)",
+    "conformance: open-dj conformance corpus round-trip (Phase 16, OPEN-03c)",
+    "integration: Phase 4 smoke (run via `make integration`)",
+    "rb_parity: owned by the focused Rekordbox parity gates",
+    "requires_darwin: macOS-only (Quartz/cliclick/CoreGraphics/djay)",
+    "requires_audio_stack: needs the analysis extra (soundfile/librosa)",
+    "requires_fpcalc: needs chromaprint's fpcalc binary on PATH",
+    "requires_ffmpeg: needs the ffmpeg binary on PATH (local waveform decode)",
+    "requires_canonical_decode: needs an odj-audio build with decode (canonical decode fingerprint)",
+    "rekordbox_writeback: opts this module into the one-way import gate being ON, because it exercises live-write MECHANICS against tmp fixtures (never a real rekordbox target)",
+    "requires_joblib: needs joblib (sets classifier model persistence)",
+    "requires_madmom: needs madmom (git-HEAD only; see requirements.txt)",
+    "live_openrouter: spends real OpenRouter credit (skipped unless OPENROUTER_API_KEY is set)",
+    "no_leaked_threads: also fail when a non-daemon thread the test started outlives it (sentry_sdk threads are checked suite-wide; see tests/support/thread_leaks.py)",
+]
+addopts = "--strict-markers -ra"
+# xunit1 writes a `file` attribute on every <testcase>; Trunk Flaky Tests needs it to map a test
+# to its path and CODEOWNERS (xunit2, the default, drops it).
+junit_family = "xunit1"
+# Delete a passing test's tmp_path as soon as it finishes; keep only failed and errored
+# ones for debugging. The default ("all") kept every dir until the session ended, and one
+# CI shard's total outgrew its runner's 4 GB RUNNER_TEMP tmpfs (ENOSPC on agbox3-3,
+# Fri 2 Oct 2026, job 111057769928).
+tmp_path_retention_policy = "failed"
+filterwarnings = [
+    # pyrekordbox uses SQLAlchemy ORM patterns that trigger a few deprecation
+    # warnings on 2.x; we don't control those.
+    "ignore::DeprecationWarning:sqlalchemy.*",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["apps"]
+omit = [
+    "*/__pycache__/*",
+    "*/scratch/*",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+# Fail under is set by the Makefile target, not here, so ad-hoc runs don't
+# fail while we're growing tests.
+show_missing = true
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]
+
+# ----- ruff: explicit, version-independent lint contract ------------------
+# Before this block existed the repo had no [tool.ruff] section at all, so
+# `make lint` inherited whatever the installed ruff's built-in defaults were.
+# Ruff widened those defaults between 0.5 and 0.16, which meant two machines
+# on different ruff versions disagreed about whether the tree was clean. The
+# selection below is pinned in ops/quality/requirements.txt and stated here,
+# so the answer is the same everywhere. Counts are ratcheted (never allowed
+# to grow) by `python -m scripts.quality_gate`, not gated at zero, because
+# the tree carries pre-existing debt this config now makes visible.
+[tool.ruff]
+target-version = "py311"
+# The width `ruff format` wraps to, ratified Tue 29 Sep 2026 for issue #4456
+# (specs/formatter-adoption.md). 120 is what the anthropic SDK, openai-python,
+# pydantic, pydantic-ai and autogen use. Changing it from 100 moved zero lint
+# findings on the unformatted tree (1443 either way): E501 has its own
+# threshold below, and nothing else selected here reads this width.
+line-length = 120
+extend-exclude = [
+    # Vendored upstream sources: not ours to restyle.
+    "apps/sync/usb/pioneer/_vendor",
+    # apps/webui/server/rb_vendor.py was listed here under the same "vendored"
+    # label until T3b wave 4. It never was vendored -- it held first-party CAS
+    # hot-cue writes, reversible undo, ANLZ caching and waveform decode, and
+    # the label is why 2,267 lines of it went unlinted. Commit 710a93c4 struck
+    # the twin entry in scripts/quality_gate.py's Config.VENDORED; this one
+    # survived it. The file is now a re-export facade and lints clean.
+    "apps/webui/frontend",
+    "data",
+    "htmlcov",
+]
+
+[tool.ruff.format]
+# ruff 0.16 also formats Python code blocks inside Markdown, which would
+# rewrite 159 .md files (mostly write-once .planning/ records). Prose is not
+# this formatter's to touch, and neither is .planning/, whose content the repo
+# treats as write-once records (scripts/oss_tip_rules.py); see
+# specs/formatter-adoption.md.
+exclude = ["*.md", ".planning/**"]
+
+[tool.ruff.lint]
+# Grouped by what each family is here to catch, because a bare code list
+# tells a reader nothing about intent.
+select = [
+    "E", "W", "F",   # pycodestyle + pyflakes: the baseline
+    "I",             # import ordering
+    "UP",            # pyupgrade: keep syntax at the target-version floor
+    "B",             # bugbear: real bug shapes, not style
+    "C90",           # mccabe cyclomatic complexity (see max-complexity)
+    "PL",            # pylint refactor/warn: function size and shape limits
+    "SIM",           # collapsible/redundant control flow
+    "RET",           # return-path smells
+    "ARG",           # unused arguments: dead parameters are dead coupling
+    "PERF",          # obviously slow comprehension/loop shapes
+    "DTZ",           # naive datetimes (this repo timestamps DJ sets)
+    "BLE",           # blind `except Exception` -- fail-fast house rule
+    "TRY",           # exception antipatterns
+    "PIE", "RUF",    # misc correctness
+]
+ignore = [
+    # The house style is prose-heavy module headers, not per-symbol docstrings.
+    "TRY003",  # long messages outside the exception class: we want them inline
+    "TRY400",  # logging.error vs logging.exception: too noisy to be useful here
+    "PLR2004", # magic value comparison: fires constantly on audio/DSP constants
+    "PLC0415", # import not at top level: lazy imports are deliberate (optional extras)
+]
+
+[tool.ruff.lint.mccabe]
+# 12 is the conventional "needs a second look" line. The tree currently has
+# blocks up to 44 (Actuator.execute_action) and 41 (usb preflight); those are
+# recorded in ops/quality/baseline.json as debt, not silently permitted.
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-branches = 15
+max-returns = 8
+max-statements = 60
+
+[tool.ruff.lint.pycodestyle]
+# Two different widths on purpose. `line-length = 120` above is what
+# `ruff format` wraps code to (issue #4456). This is only the E501
+# threshold. On a formatted file E501 can only fire on what the formatter
+# cannot wrap (long strings, comments, URLs), so at 100 it was the largest
+# single code in ruff.total and ruff.style and buried the findings worth
+# reading. 150 is the nuisance line for an unwrappable line.
+# Measured Tue 29 Sep 2026 on 9b910c86f with the pinned ruff 0.16.3:
+# E501 1087 -> 104 whole-tree (739 -> 75 in the quality gate's lint paths).
+# `ruff format --check` reported the identical file count before and after.
+# Two side effects, both expected: SIM108 only suggests a ternary that fits
+# this width, so it rose 19 -> 44, and ten `# noqa: E501` pragmas went dead
+# (RUF100) and were removed in the same change.
+max-line-length = 150
+
+# TID (flake8-tidy-imports) is deliberately NOT selected. TID252 with
+# ban-relative-imports = "parents" flagged 156 imports here, and every single
+# one was a single-level `from ..record import AnalysisRecord` inside a nested
+# package: idiomatic Python, not a reach across subsystems. Zero climbed two
+# or more levels. Scoring it as coupling would have put 156 style opinions
+# into a bucket meant to mean "a module is reaching somewhere it should not",
+# and buried the 67 findings that do mean that. Genuine cross-subsystem reach
+# is caught properly by .importlinter and the package-cycle count, which look
+# at the resolved graph rather than the punctuation.
+
+[tool.deptry]
+# Dependency-declaration defects: imports with no declaration (DEP001), a
+# declaration nothing imports (DEP002), and imports satisfied only because
+# some other package happened to pull the library in (DEP003). The third is
+# the one that bites: `from starlette...` works today because fastapi drags
+# starlette along, and breaks the day fastapi vendors or repins it.
+extend_exclude = [
+    # PEP 723 standalone scripts declare their own inline deps by design
+    # (torch/demucs never enter the repo venv, see CLAUDE.md), so scoring them
+    # against pyproject.toml produces 400 findings that are all correct-by-design.
+    "scripts",
+    "tools",
+    "ops",
+    "open-dj",
+    "blog",
+    "docs",
+    "data",
+    "htmlcov",
+    ".venv",
+    "node_modules",
+]
+# Import name is not package name. Without this map, deptry reports `yaml`,
+# `PIL`, `sklearn` and `acoustid` as undeclared while simultaneously reporting
+# PyYAML, Pillow, scikit-learn and pyacoustid as unused: four false positives
+# each way that drown the real findings.
+package_module_name_map = { PyYAML = ["yaml"], Pillow = ["PIL"], "scikit-learn" = [
+    "sklearn",
+], pyacoustid = ["acoustid"], pyrekordbox = [
+    "pyrekordbox",
+], "sqlcipher3-wheels" = [
+    "sqlcipher3",
+] }
+
+[tool.deptry.per_rule_ignores]
+# The `all` extra depends on this package's own name to aggregate the others.
+# mypy is a command the quality gate and `just typecheck` RUN, never a module
+# anything imports, so "declared but unused" is true and uninteresting. It is
+# declared in the dev extra because tests/test_dependency_contract.py requires
+# every dev-extra entry to also reach CI through requirements.txt.
+DEP002 = ["music-dj-tools", "mypy"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may shadow, re-import, and assert on private helpers.
+"tests/**" = ["ARG", "PLR0915", "PLR0913", "S101"]
+# Standalone PEP 723 scripts are CLIs: prints, long mains, broad excepts.
+"scripts/**" = ["T20", "PLR0915", "BLE001"]
+"conftest.py" = ["ARG"]
+
+# ----- mypy: measure the Python interior, do not yet demand it be clean ----
+# The tree had no [tool.mypy] section at all until Tue 1 Sep 2026, so nothing
+# in it was type-checked by anything: 553 errors at default strictness, up
+# from 119 measured in April, growing unobserved because no gate could see
+# them. (Those two were measured with a project venv in scope; the gate's own
+# numbers are lower and live in ops/quality/baseline.json.) This block does not fix one of them. It makes the number reproducible
+# so `python -m scripts.quality_gate` can ratchet it down (mypy.errors_apps /
+# mypy.errors_tests / mypy.errors_scripts in ops/quality/baseline.json).
+#
+# Every setting below exists to stop the SAME TREE scoring differently on two
+# machines. A ratchet compares today's number against one recorded on someone
+# else's host, so anything host-sensitive can only produce false failures or a
+# silently inflated allowance -- the exact failure mode `deps.issues` had to be
+# un-gated for (see REPORT_ONLY in scripts/quality_gate.py).
+#
+#   files          the scored set, named once. scripts/quality_gate.py passes
+#                  NO paths so this is the single source of truth, and
+#                  tests/quality/test_mypy_scope.py fails if it drifts from
+#                  the set ruff lints (CFG.PY_LINT_PATHS).
+#   python_version pinned to the requires-python floor. Unpinned, mypy uses
+#                  whatever interpreter uv happened to put in the throwaway
+#                  tool env, so a version-gated branch scores differently by
+#                  host.
+#   platform       pinned to darwin, the platform this tool exists for
+#                  (Quartz window grabs, cliclick, djay). Unpinned it follows
+#                  sys.platform, so CI on ubuntu would skip every
+#                  `sys.platform == "darwin"` branch and score a smaller,
+#                  incomparable tree than the same commit on the maintainer's Mac.
+#   exclude        vendored third-party source, plus the desktop payload:
+#                  ~100MB of relocatable CPython and installed numpy/uvicorn
+#                  staged under apps/desktop/ by `just dmg`. It is gitignored,
+#                  so it exists only on a machine that has built the dmg --
+#                  i.e. it would add thousands of errors on one host and none
+#                  on another. radon hit this first and CRASHED on numpy's
+#                  .pxd files (see CFG.DERIVED in scripts/quality_gate.py);
+#                  mypy would merely lie.
+[tool.mypy]
+files = ["apps", "tests", "scripts", "conftest.py"]
+python_version = "3.11"
+platform = "darwin"
+exclude = [
+    "^apps/sync/usb/pioneer/_vendor/",
+    "^apps/desktop/src-tauri/payload/",
+    "^apps/desktop/src-tauri/target/",
+]
+
+# Third-party packages with no type information available to the measurement
+# environment. mypy runs from ops/quality/mypy-requirements.txt in an ISOLATED
+# throwaway uv env holding mypy and nothing else, so NONE of the repo's own
+# dependencies are importable there -- deliberately: a quality score must not
+# depend on whether an optional extra, or a `.venv`, happened to be present on
+# the host that ran it.
+#
+# Without these entries every one of the imports below scores as an error, and
+# whether a host happened to have them installed moves the total. With them the
+# count is a property of the source: 1356 errors becomes 478, and the 29
+# import errors that survive are all first-party (see below), which is a
+# finding rather than noise.
+#
+# For the record, because the two numbers get confused: the Tue 1 Sep 2026
+# audit's 553 (and the 459 these overrides take it to) were measured with a
+# project venv in scope, so pytest, fastapi, pydantic and numpy resolved. Those
+# figures are not comparable to the ones in ops/quality/baseline.json and never
+# were reproducible in CI, which has no venv.
+#
+# The first block is the repo's own runtime and test dependencies, which are
+# NOT installed in that environment either. Silencing them is what makes the
+# count a property of the source rather than of the host: `pytest`, `fastapi`,
+# `pydantic`, `numpy` and friends carry real type information, and letting them
+# resolve on a machine that happens to have a `.venv` (while CI, which has
+# none, resolves nothing) is precisely the cross-host divergence this whole
+# block exists to prevent. It was measured: the same commit read 550 errors
+# with a project venv in scope and 1356 without.
+#
+# The cost is real and deliberate. A `pydantic` model attribute is Any here, so
+# mypy cannot catch a typo in a field name yet. Buying that back is an explicit,
+# separate act: add the package as an exact pin to
+# ops/quality/mypy-requirements.txt (that file IS the install set), delete its
+# line from this block, and reprint the baseline in the same diff. Doing it one
+# package at a time keeps each jump in the count attributable.
+#
+# What is deliberately NOT here: the local modules that only resolve through
+# sys.path manipulation at runtime (`_harness`, `kpi_derive`, `ci_cost_guard`,
+# `perf_health*`, `src.extract_djay`, the four_stem/shootout bench helpers) and
+# `_rb_waveform_native`, the compiled Rust extension. Those are first-party and
+# their unresolvability is a finding, not an environment artifact, so they stay
+# in the measured count as debt.
+[[tool.mypy.overrides]]
+module = [
+    # This repo's own declared dependencies. Typed, but not installed in the
+    # measurement environment; see the note above before removing any of them.
+    "PIL",
+    "PIL.*",
+    # pytest's own dependency, used as the PEP 440 / PEP 508 oracle in
+    # tests/scripts/test_lock_metadata_check.py; typed, not installed here.
+    "packaging",
+    "packaging.*",
+    "cryptography",
+    "cryptography.*",
+    "fastapi",
+    "fastapi.*",
+    "httpx",
+    "httpx2",
+    "hypothesis",
+    "hypothesis.*",
+    "jwt",
+    "jwt.*",
+    "numpy",
+    "numpy.*",
+    "pydantic",
+    "pydantic.*",
+    "pytest",
+    "rfc8785",
+    "rich",
+    "rich.*",
+    "sqlalchemy",
+    "sqlalchemy.*",
+    "sqlcipher3",
+    "starlette",
+    "starlette.*",
+    "uvicorn",
+    "uvicorn.*",
+    # Optional extras and standalone-script dependencies, none of which are
+    # installed in a plain `uv sync` either.
+    "acoustid",
+    "anthropic",
+    "aubio",
+    "audio_separator.*",
+    "beat_this.*",
+    "boto3",
+    "botocore.*",
+    "construct",
+    "construct.*",
+    "demucs.*",
+    "essentia",
+    "essentia.*",
+    "fast_bss_eval",
+    "fast_bss_eval.*",
+    "joblib",
+    "jsonschema",
+    "jsonschema.*",
+    "kaitaistruct",
+    "librosa",
+    "madmom",
+    "madmom.*",
+    "mir_eval",
+    "mir_eval.*",
+    "modal",
+    "modal.*",
+    "onnxruntime",
+    "psutil",
+    "pyrekordbox",
+    "pyrekordbox.*",
+    "regex",
+    "scipy",
+    "scipy.*",
+    "sentry_sdk",
+    "sentry_sdk.*",
+    "setproctitle",
+    "sklearn.*",
+    "soundfile",
+    "spotipy",
+    "spotipy.*",
+    "tensorflow",
+    "tinytag",
+    "torch",
+    "torchaudio",
+    "yaml",
+]
+ignore_missing_imports = true
+
+# ----- IDD pre-PR gate (OPS-44) ------------------------------------------------
+# The build factory's (SSSF) quality blocks. This repository owns the commands; the factory
+# only calls them and reads the exit code (docs/decisions/ADR-NEW-repo-owns-pre-pr-gate-commands.md).
+# `--isolated --no-project`: the gate is stdlib-only and provisions CI's pytest environment
+# into .venv itself, so it must not run FROM that .venv. Exit 3 means UNMEASURED, never a pass.
+[tool.sssf.quality]
+unmeasured_exit = 3
+pre_pr = ["lint", "typecheck", "build", "test"]
+
+[tool.sssf.quality.blocks.lint]
+argv = ["uv", "run", "--isolated", "--no-project", "python", "-m", "scripts.pre_pr_gate", "lint"]
+timeout_seconds = 180
+
+[tool.sssf.quality.blocks.typecheck]
+argv = ["uv", "run", "--isolated", "--no-project", "python", "-m", "scripts.pre_pr_gate", "typecheck"]
+timeout_seconds = 300
+
+[tool.sssf.quality.blocks.build]
+argv = ["uv", "run", "--isolated", "--no-project", "python", "-m", "scripts.pre_pr_gate", "build"]
+timeout_seconds = 300
+
+[tool.sssf.quality.blocks.test]
+argv = ["uv", "run", "--isolated", "--no-project", "python", "-m", "scripts.pre_pr_gate", "test"]
+timeout_seconds = 420

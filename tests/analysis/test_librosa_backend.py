@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis import auto_cues, detect_bad_beatgrid, run, write_tags
+from apps.analysis import auto_cues, detect_bad_beatgrid, run
 from apps.analysis.backends import DEFAULT_BACKEND, NONSHIPPABLE_ENV, get_backend
 from apps.analysis.backends import librosa as librosa_backend_module
 from apps.analysis.backends.librosa import LibrosaBackend, estimate_downbeats_from_beats
@@ -59,9 +59,8 @@ def test_every_production_default_uses_exported_librosa_constant() -> None:
     assert run._parse_args(["--files", "track.wav"]).backend == DEFAULT_BACKEND
     assert auto_cues._parse_args([]).backend == DEFAULT_BACKEND
     assert detect_bad_beatgrid._parse_args([]).backend == DEFAULT_BACKEND
-    assert write_tags._parse_args(["--files", "track.wav"]).backend == DEFAULT_BACKEND
 
-    for module in (run, auto_cues, detect_bad_beatgrid, write_tags):
+    for module in (run, auto_cues, detect_bad_beatgrid):
         source = inspect.getsource(module)
         assert 'default="librosa+madmom"' not in source
 
