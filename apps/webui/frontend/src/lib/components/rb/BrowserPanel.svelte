@@ -35,7 +35,8 @@
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		coverageDot as _coverageDot,
-		coverageRecheckDelayMs as _coverageRecheckDelayMs,
+		createCoverageRefresh,
+		HEALTH_REFETCH_MS,
 		libraryHealthDot as _computeLibraryHealthDot,
 		unknownDot as _unknownDot,
 		type LibraryHealthDot
@@ -1064,9 +1065,7 @@
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			clearInterval(healthRefetchTimer);
-			if (_coverageRecheckTimer !== null) clearTimeout(_coverageRecheckTimer);
-			_coverageRecheckTimer = null;
-			_coveragePanelAlive = false;
+			_coverageRefresh.dispose();
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -1077,51 +1076,30 @@
 			shortViewportMq.removeEventListener('change', applyShortViewport);
 		};
 	});
-	/**
-	 * The Library health dot policy now lives in `$lib/rb/library-health-dots`
-	 * (pure, unit tested with no component or network mock), the same split
-	 * as `meter-math.ts`. `libraryHealth` above calls it directly.
-	 */
-
-	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
+	/** Liveness poll cadence, restored with the dots. The probe timeout lives with the probes. */
 	const CONN_PING_MS = 2500;
 
-	/** How often the dots re-ask on their own, so a drain that is working
-	 * through the library shows up without a reload (HEALTH-03). */
-	const HEALTH_REFETCH_MS = 60_000;
-
-	// HEALTH-12: the dots take the engine's LAST measurement (instant, with its
-	// age) and re-ask soon while a newer one is being taken, instead of waiting
-	// grey on a whole-library re-measure and then a full minute after a miss.
-	let _coverageRechecks = 0;
-	let _coverageRecheckTimer: ReturnType<typeof setTimeout> | null = null;
-	let _coveragePanelAlive = true;
-
-	async function _loadIngestCoverage(): Promise<void> {
-		let outcome: Parameters<typeof _coverageRecheckDelayMs>[0];
+	// HEALTH-12: paint the engine's last measurement at once and re-ask soon
+	// while a newer one is in flight. The backoff lives in library-health-dots.
+	const _coverageRefresh = createCoverageRefresh(async () => {
 		try {
 			const coverage = await getIngestCoverage({ cached: true });
 			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
 			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
 			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
-			outcome = { ok: true, refreshing: coverage.refreshing, refresh_error: coverage.refresh_error };
+			return { ok: true, refreshing: coverage.refreshing, refresh_error: coverage.refresh_error };
 		} catch (error: unknown) {
 			// An endpoint that cannot answer is grey "unknown", never a verdict.
 			const why = error instanceof Error ? error.message : String(error);
 			vocalsCompletion = _unknownDot('Vocals completion', why);
 			stemsCompletion = _unknownDot('Stems completion', why);
 			lyricsCompletion = _unknownDot('Lyrics completion', why);
-			outcome = { ok: false };
+			return { ok: false };
 		}
-		const delay = _coverageRecheckDelayMs(outcome, _coverageRechecks);
-		if (outcome.ok && !outcome.refreshing && outcome.refresh_error === null) _coverageRechecks = 0;
-		if (delay === null || !_coveragePanelAlive) return;
-		_coverageRechecks += 1;
-		if (_coverageRecheckTimer !== null) clearTimeout(_coverageRecheckTimer);
-		_coverageRecheckTimer = setTimeout(() => {
-			_coverageRecheckTimer = null;
-			void _loadIngestCoverage();
-		}, delay);
+	});
+
+	function _loadIngestCoverage(): Promise<void> {
+		return _coverageRefresh.load();
 	}
 
 	function _prefetchPlaylistTreeIntent(
@@ -4182,44 +4160,6 @@
 	}
 	.panels-chevron:hover {
 		color: var(--rb-accent);
-	}
-	.tray-right-cluster {
-		display: inline-flex;
-		align-items: center;
-		margin-left: auto;
-		gap: 0;
-	}
-	.tray-midi {
-		opacity: 0.45;
-		margin-right: 20px;
-		background: transparent;
-		border: 1px solid var(--rb-border);
-		border-radius: 3px;
-		color: var(--rb-text-dim);
-		font-size: 10px;
-		padding: 2px 8px;
-		cursor: pointer;
-	}
-	.tray-midi:hover {
-		opacity: 0.75;
-		color: var(--rb-text);
-	}
-	.tray-preview {
-		background: transparent;
-		border: 1px solid var(--rb-border);
-		border-radius: 3px;
-		color: var(--rb-text-dim);
-		font-size: 10px;
-		padding: 2px 8px;
-		cursor: pointer;
-	}
-	.tray-preview:disabled {
-		opacity: 0.45;
-		cursor: default;
-	}
-	.tray-preview.active {
-		color: var(--rb-accent);
-		border-color: var(--rb-accent);
 	}
 	.bottom-bar {
 		grid-area: bottom;

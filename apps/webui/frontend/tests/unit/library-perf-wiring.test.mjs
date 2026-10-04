@@ -117,12 +117,15 @@ test('BrowserPanel sends ingestion coverage at mount and never awaits it on the 
 	const init = src.slice(src.indexOf('async function _init()'), src.indexOf('async function _restoreBootPane'));
 	assert.ok(init.includes('await _restoreBootPane();'), 'control: the _init() body was found');
 	assert.doesNotMatch(init, /_loadIngestCoverage/, 'tree and first pane must never wait on ingestion accounting');
-	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
+	const popover = src.slice(src.indexOf('class="health-popover"'), src.indexOf('tray-right-cluster'));
+	assert.match(popover, /\{dot\.label\}/, 'the health detail popover must print each dot label');
+	for (const meaning of ['Vocals completion', 'Stems completion']) {
 		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
 	}
 	// Present-track verdicts live in the pure module (HEALTH-01/03/04). The
 	// extracted probe module still owns the on-disk corrupt/missing readout.
 	const rules = source('src/lib/rb/library-health-dots.ts');
+	assert.ok(rules.includes("label = 'Library health'"), 'the health detail popover must retain Library health');
 	assert.match(rules, /state: pending === 0 && failed === 0 \? 'complete' : 'incomplete'/);
 	assert.match(rules, /state: 'unavailable'/);
 	assert.match(rules, /state: 'error'/);

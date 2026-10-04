@@ -223,6 +223,51 @@ export function coverageRecheckDelayMs(
 	return COVERAGE_RECHECK_DELAYS_MS[rechecks] ?? null;
 }
 
+/** Regular coverage refetch while the library view is mounted (HEALTH-12). */
+export const HEALTH_REFETCH_MS = 60_000;
+
+type CoverageOutcome =
+	| { ok: true; refreshing: boolean; refresh_error: string | null }
+	| { ok: false };
+
+export type CoverageRefresh = {
+	load: () => Promise<void>;
+	/** Drop a pending re-ask. Call when the panel unmounts. */
+	dispose: () => void;
+};
+
+/**
+ * Early re-asks for the coverage dots. The panel measures and paints; this
+ * only decides when to ask again, then backs off and stops.
+ */
+export function createCoverageRefresh(run: () => Promise<CoverageOutcome>): CoverageRefresh {
+	let rechecks = 0;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let alive = true;
+
+	async function load(): Promise<void> {
+		const outcome = await run();
+		if (outcome.ok && !outcome.refreshing && outcome.refresh_error === null) rechecks = 0;
+		const delay = coverageRecheckDelayMs(outcome, rechecks);
+		if (delay === null || !alive) return;
+		rechecks += 1;
+		if (timer !== null) clearTimeout(timer);
+		timer = setTimeout(() => {
+			timer = null;
+			void load();
+		}, delay);
+	}
+
+	return {
+		load,
+		dispose() {
+			alive = false;
+			if (timer !== null) clearTimeout(timer);
+			timer = null;
+		}
+	};
+}
+
 export function coverageDot(
 	label: LibraryHealthDot['label'],
 	coverage: CoverageCounts,

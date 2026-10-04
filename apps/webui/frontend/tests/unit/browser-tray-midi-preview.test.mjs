@@ -11,11 +11,21 @@ const panel = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)),
 	'utf8'
 );
+const trayCss = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/browser-panel-tray.css', import.meta.url)),
+	'utf8'
+);
+const stemDot = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/StemCacheHealthDot.svelte', import.meta.url)),
+	'utf8'
+);
 
 test('bottom tray renders MIDI 20px left of Preview', () => {
 	assert.match(panel, /class="tray-midi"/);
 	assert.match(panel, /class="tray-preview"/);
-	assert.match(panel, /margin-right:\s*20px/);
+	assert.match(panel, /<StemCacheHealthDot \/>/);
+	assert.match(stemDot, /import '\.\/browser-panel-tray\.css'/);
+	assert.match(trayCss, /\.tray-midi\s*\{[^}]*margin-right:\s*20px/);
 	const midiAt = panel.indexOf('class="tray-midi"');
 	const previewAt = panel.indexOf('class="tray-preview"');
 	assert.ok(midiAt >= 0 && previewAt > midiAt);

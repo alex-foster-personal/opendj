@@ -7,6 +7,9 @@
 	 * Decides nothing. `stemCacheHealthDot` in `$lib/rb/stem-cache-health`
 	 * owns the state and the wording.
 	 */
+	// Tray button rules for the bar that mounts this dot. Imported from script
+	// so the classes stay global, and off BrowserPanel's import fan-out.
+	import './browser-panel-tray.css';
 	import { onMount } from 'svelte';
 	import { api, unwrap } from '$lib/api/client';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
