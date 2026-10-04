@@ -39,10 +39,12 @@ export function createDeckHotCueActions(
 		const revision = deck.hot_cue_revisions[slot];
 		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
 		let ms = fixedPositionMs ?? deck.position_ms;
+		const validPosition = Number.isFinite(ms) && ms >= 0;
 		const beats = deck.anlz?.beatgrid.beats;
-		if ((fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
+		if (validPosition && (fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
 			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
 		}
+		if (Number.isFinite(ms) && ms >= 0) ms = Math.round(ms);
 		try {
 			const deckId = readDeckId();
 			const command = {
