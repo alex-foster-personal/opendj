@@ -49,10 +49,26 @@ fn inputs() -> Result<Vec<(cpal::Device, String)>, String> {
     Ok(out)
 }
 
-/// Every input with its default format, in the host's order.
+/// Usable inputs in host order, shared by listing and index selection.
+/// Each rejected configuration is reported; host enumeration failures stay terminal.
+fn available_inputs() -> Result<Vec<(cpal::Device, String)>, String> {
+    let mut out = Vec::new();
+    for (device, name) in inputs()? {
+        match device.default_input_config() {
+            Ok(_) => out.push((device, name)),
+            Err(error) => eprintln!(
+                "odj-audio: UNAVAILABLE audio input {}: {error}",
+                serde_json::json!(name)
+            ),
+        }
+    }
+    Ok(out)
+}
+
+/// Every usable input with its default format, in the host order.
 pub fn input_devices() -> Result<Vec<InputInfo>, String> {
     let mut out = Vec::new();
-    for (index, (d, name)) in inputs()?.into_iter().enumerate() {
+    for (index, (d, name)) in available_inputs()?.into_iter().enumerate() {
         let config = d
             .default_input_config()
             .map_err(|e| format!("cannot read the format of audio input {name:?}: {e}"))?;
@@ -171,7 +187,13 @@ pub fn record(
     if first == Permission::Denied {
         return Err(mic_permission::DENIED_MESSAGE.into());
     }
-    let (device, name) = pick(inputs()?, select)?;
+    let found = match select {
+        // A requested name retains the original configuration failure instead of
+        // disappearing from the inventory of inputs that can currently open.
+        Select::Name(_) => inputs()?,
+        Select::Index(_) => available_inputs()?,
+    };
+    let (device, name) = pick(found, select)?;
     let supported = device
         .default_input_config()
         .map_err(|e| format!("cannot read the format of audio input {name:?}: {e}"))?;
