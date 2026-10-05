@@ -57,6 +57,7 @@ import {
 } from '$lib/stores.svelte';
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
+import { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
 import {
 	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
@@ -953,7 +954,11 @@ installScopedSyncRunner((_deck, run) => {
 // mutation instead of replacing grids underneath them
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
-installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// A dev hot update re-runs this module while analysis-source keeps its
+// runner; reinstallAcrossHotUpdates releases the old one first (no-op in prod).
+reinstallAcrossHotUpdates(import.meta.hot, 'analysisSourceRefreshRunner', () =>
+	installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work))
+);
 // An automatic master handoff (unload, pause, natural end) re-joins the
 // followers under the same wide claim, queued behind the command that moved the
 // master, so later deck commands wait for it rather than racing it.

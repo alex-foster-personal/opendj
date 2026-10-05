@@ -86,6 +86,7 @@ import {
  */
 
 import { pushToast } from '$lib/stores.svelte';
+import { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import {
@@ -2513,8 +2514,14 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	reportError: (message) => pushToast(message, 'error'),
 	desiredBeatgridSource: () => analysisSourceState.features.beatgrid
 });
-installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid);
-installAuthoritativeAnlzErrorSink(_beatgridGuards.adoptAuthoritativeError);
+// A dev hot update re-runs this module while anlz-cache keeps its sinks;
+// reinstallAcrossHotUpdates releases the old ones first (no-op in prod).
+reinstallAcrossHotUpdates(import.meta.hot, 'authoritativeAnlzGridSink', () =>
+	installAuthoritativeAnlzGridSink(_beatgridGuards.adoptAuthoritativeGrid)
+);
+reinstallAcrossHotUpdates(import.meta.hot, 'authoritativeAnlzErrorSink', () =>
+	installAuthoritativeAnlzErrorSink(_beatgridGuards.adoptAuthoritativeError)
+);
 export const installScopedSyncRunner = _beatgridGuards.installScopedSyncRunner; // rationale for [deck]-then-widen: performance-ipc.svelte.ts's installScopedSyncRunner
 
 async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promise<T> {
