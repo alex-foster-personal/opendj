@@ -205,19 +205,19 @@ test('Rust control: a paused follower, a follower with sync off, and the master 
 	m.deckStates[1].quantize_enabled = true;
 	// The master: a click snaps to the beat, and with BeatSyncMax off nothing else moves.
 	await m.executeInRustEngine({ type: 'seek', deck: 1, position_ms: MASTER[300].t * 1000 + 40 });
-	assert.deepEqual(sent, [{ type: 'seek', deck: 1, position_ms: MASTER[300].t * 1000 }]);
+	assert.deepEqual(sent, [{ type: 'seek', deck: 1, position_ms: MASTER[300].t * 1000, quantize: false }]);
 	// Sync off, playing.
 	sent = [];
 	loadDeck(3, FOLLOWER, { quantize_enabled: true, position_ms: 30_000 });
 	await m.executeInRustEngine({ type: 'play', deck: 3, playing: true });
 	sent = [];
 	await m.executeInRustEngine({ type: 'seek', deck: 3, position_ms: FOLLOWER[100].t * 1000 + 40 });
-	assert.deepEqual(sent, [{ type: 'seek', deck: 3, position_ms: FOLLOWER[100].t * 1000 }]);
+	assert.deepEqual(sent, [{ type: 'seek', deck: 3, position_ms: FOLLOWER[100].t * 1000, quantize: false }]);
 	// Sync on, paused.
 	sent = [];
 	loadDeck(4, FOLLOWER, { quantize_enabled: true, beat_sync_enabled: true, position_ms: 30_000 });
 	await m.executeInRustEngine({ type: 'seek', deck: 4, position_ms: FOLLOWER[100].t * 1000 + 40 });
-	assert.deepEqual(sent, [{ type: 'seek', deck: 4, position_ms: FOLLOWER[100].t * 1000 }]);
+	assert.deepEqual(sent, [{ type: 'seek', deck: 4, position_ms: FOLLOWER[100].t * 1000, quantize: false }]);
 });
 
 // ------------------------------------------------------- Web Audio wiring
