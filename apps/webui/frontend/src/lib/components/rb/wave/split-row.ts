@@ -16,7 +16,7 @@
  *   ✔︎ paintSplitRow: partner half on top (bars grow up to the centerline),
  *     this deck flipped into the bottom half (bars grow down from it).
  */
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import { drawWaveRow, type WaveRowFrame } from './render';
 
 export interface SplitDeckRef {

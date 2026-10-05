@@ -43,6 +43,7 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
+import type { KeySyncStatus } from '$lib/player/key/camelot';
 import { assertHeadDelayMs } from '$lib/player/constants';
 import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
@@ -57,6 +58,7 @@ import {
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import {
+	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
 	setAnalysisSource,
@@ -81,6 +83,7 @@ import {
 	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
+	keySyncStatus,
 	mixerState,
 	pitchRanges,
 	setMasterMuted,
@@ -120,14 +123,11 @@ import {
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
 import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
-import { parseWavePalettePref, type WavePaletteChoice, type WavePalettePref } from '$lib/rb/wave-palette';
 import {
 	effectiveWaveformDesign,
 	effectiveWavePalette,
-	parseUiSkin,
-	parseWaveSplitMaster,
-	type UiSkin,
-	type WaveSplitMaster
+	parseSkinSettings,
+	type SkinSettings
 } from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
@@ -246,7 +246,7 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesignPref }
-	| { type: 'set_skin'; ui_skin: UiSkin; wave_palette: WavePalettePref; wave_split_master: WaveSplitMaster }
+	| ({ type: 'set_skin' } & SkinSettings)
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
@@ -379,6 +379,8 @@ export interface PerformanceDeckSnapshot {
 	quantize_grid_beats: QuantizeGrid;
 	beat_sync_enabled: boolean;
 	key_sync_enabled: boolean;
+	/** Whether the KEY SYNC arm is actually following a master now (DECKUX-34). */
+	key_sync_status: KeySyncStatus;
 	master_tempo_enabled: boolean;
 	slip_enabled: boolean;
 	slip_active: boolean;
@@ -507,10 +509,10 @@ export interface PerformanceState {
 		waveform_design: WaveformDesignPref;
 		/** What the waveforms actually paint (auto resolved through the skin). */
 		waveform_design_effective: WaveformDesign;
-		ui_skin: UiSkin;
-		wave_palette: WavePalettePref;
-		wave_palette_effective: WavePaletteChoice;
-		wave_split_master: WaveSplitMaster;
+		ui_skin: SkinSettings['ui_skin'];
+		wave_palette: SkinSettings['wave_palette'];
+		wave_palette_effective: ReturnType<typeof effectiveWavePalette>;
+		wave_split_master: SkinSettings['wave_split_master'];
 	};
 }
 
@@ -1251,11 +1253,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
-		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (!(ANALYSIS_SOURCE_FEATURES as readonly unknown[]).includes(record.feature)) {
+			throw new TypeError(`analysis-source feature must be one of ${ANALYSIS_SOURCE_FEATURES.join(', ')}; got ${String(record.feature)}`);
+		}
 		if (record.source !== 'rekordbox' && record.source !== 'own') {
 			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
 		}
-		return { type, feature: record.feature, source: record.source };
+		return { type, feature: record.feature as AnalysisSourceFeature, source: record.source };
 	}
 	if (type === 'auto_play_two_track') {
 		_exactKeys(record, ['type']);
@@ -1339,13 +1343,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'set_skin') {
 		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
-		const ui_skin = parseUiSkin(record.ui_skin);
-		const wave_palette = parseWavePalettePref(record.wave_palette);
-		const wave_split_master = parseWaveSplitMaster(record.wave_split_master);
-		if (ui_skin === undefined || wave_palette === undefined || wave_split_master === undefined) {
-			throw new TypeError('set_skin requires ui_skin, wave_palette and wave_split_master');
-		}
-		return { type, ui_skin, wave_palette, wave_split_master };
+		return { type, ...parseSkinSettings(record) };
 	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
@@ -1768,6 +1766,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		quantize_grid_beats: deck.quantize_grid_beats,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		key_sync_enabled: deck.key_sync_enabled,
+		key_sync_status: keySyncStatus(deckId),
 		master_tempo_enabled: deck.master_tempo_enabled,
 		slip_enabled: deck.slip_enabled,
 		slip_active: deck.slip_active,

@@ -88,7 +88,7 @@ export interface PresentedTransportTimeline {
 }
 
 /** Inputs shared by KEY SYNC commands and its listener-facing UI preview. */
-interface KeySyncEffectiveOffsetSource {
+export interface KeySyncEffectiveOffsetSource {
 	audible: boolean;
 	transportPending: boolean;
 	pendingMutation: boolean;

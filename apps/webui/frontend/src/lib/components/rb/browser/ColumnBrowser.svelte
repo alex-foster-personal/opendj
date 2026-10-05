@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import type { ColumnSourceRow } from './column-buckets';
-	import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
+	import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 
 	/** Minimal track shape the Miller-column browser needs - deliberately
 	 * NOT the full BrowserRow (strip/rb_meta/revealed are table-only

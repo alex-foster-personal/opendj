@@ -19,7 +19,7 @@
  */
 
 import type { WaveformDesign, WaveformDesignPref } from './waveform-design';
-import type { WavePaletteChoice, WavePalettePref } from './wave-palette';
+import { parseWavePalettePref, type WavePaletteChoice, type WavePalettePref } from './wave-palette';
 
 export type UiSkin = 'default' | 'mono-dev' | 'light';
 
@@ -107,4 +107,22 @@ export function waveSplitActive(pref: WaveSplitMaster, skin: UiSkin): boolean {
 	else if (pref === 'off') return false;
 	else if (pref === 'auto') return _SKINS_WITH_SPLIT.has(skin);
 	throw new Error(`wave_split_master: unhandled ${String(pref)}`);
+}
+
+/** The three fields one set_skin command carries; every one is required. */
+export type SkinSettings = {
+	ui_skin: UiSkin;
+	wave_palette: WavePalettePref;
+	wave_split_master: WaveSplitMaster;
+};
+
+/** Parses a set_skin record's fields together, so the skin owns its own wire shape. */
+export function parseSkinSettings(record: Record<string, unknown>): SkinSettings {
+	const ui_skin = parseUiSkin(record.ui_skin);
+	const wave_palette = parseWavePalettePref(record.wave_palette);
+	const wave_split_master = parseWaveSplitMaster(record.wave_split_master);
+	if (ui_skin === undefined || wave_palette === undefined || wave_split_master === undefined) {
+		throw new TypeError('set_skin requires ui_skin, wave_palette and wave_split_master');
+	}
+	return { ui_skin, wave_palette, wave_split_master };
 }
