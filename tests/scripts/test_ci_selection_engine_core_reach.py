@@ -88,7 +88,7 @@ def test_every_webui_module_engine_core_imports_reaches_the_engine_conftest():
     """[if] a webui module engine_core imports misses its conftest [then] fail, [else stop]."""
     graph = _graph()
     derived = _webui_modules_engine_core_imports(graph)
-    assert KNOWN_DIRECT <= derived, sorted(KNOWN_DIRECT - derived)
+    assert derived >= KNOWN_DIRECT, sorted(KNOWN_DIRECT - derived)
     missing = sorted(m for m in derived if ENGINE_CONFTEST not in reverse_reach({m}, graph.importers))
     assert not missing, f"engine_core imports these but no engine_core test would run: {missing}"
 
