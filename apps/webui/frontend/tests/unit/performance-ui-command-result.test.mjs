@@ -156,7 +156,12 @@ test('a load that suppressed its toast still reaches console.error, and stays to
 	globalThis.window = { localStorage: { getItem: () => null, setItem: () => {} } };
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
-		const toastsBefore = window.musicDjToolsPerformance.toasts().length;
+		// Earlier cases in this file leave error toasts whose 5s dismissal timer
+		// is still armed. A missing-track load waits on fetch, and in CI that
+		// wait outlives the timer, so a raw length compare sees those toasts
+		// vanish and reports a toast this load did not raise. Count only toasts
+		// this call introduces.
+		const toastIdsBefore = new Set(window.musicDjToolsPerformance.toasts().map((toast) => toast.id));
 		let result;
 		const seen = await withConsole(async () => {
 			result = await ipc.runPerformanceCommandFromUi({
@@ -167,7 +172,8 @@ test('a load that suppressed its toast still reaches console.error, and stays to
 		assert.equal(result.reason, 'failed');
 		assert.equal(seen.error.length, 1, JSON.stringify(seen.error.map((a) => String(a[0]).slice(0, 160))));
 		assert.match(String(seen.error[0][0]), /\[performance-ipc\] load failed/);
-		assert.equal(window.musicDjToolsPerformance.toasts().length, toastsBefore);
+		const introduced = window.musicDjToolsPerformance.toasts().filter((toast) => !toastIdsBefore.has(toast.id));
+		assert.deepEqual(introduced.map((toast) => toast.message), []);
 		assert.notEqual(ipc.performanceCommandStatus.deck_errors[1], null);
 	} finally {
 		uninstall();
