@@ -330,7 +330,12 @@ class TestRoundTripReads:
     def test_stats(self, fresh_state_db: Path) -> None:
         backend = SqliteBackend(fresh_state_db)
         s = backend.stats()
-        assert s == {"tracks": 3, "playlists": 2, "pairings": 0}
+        assert s == {
+            "tracks": 3,
+            "tracks_playable": 0,
+            "playlists": 2,
+            "pairings": 0,
+        }
 
     def test_get_file_paths_bulk_matches_tracks_bulk_file_paths(
         self, fresh_state_db: Path,
@@ -504,7 +509,10 @@ class TestFallbackPaths:
         fallback = InMemoryBackend()
         backend = SqliteBackend(db_path, fallback=fallback)
         assert backend.stats() == {
-            "tracks": 0, "playlists": 0, "pairings": 0,
+            "tracks": 0,
+            "tracks_playable": 0,
+            "playlists": 0,
+            "pairings": 0,
         }
 
     def test_update_track_writes_through_state_writer(
