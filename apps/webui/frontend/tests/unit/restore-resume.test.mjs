@@ -122,7 +122,8 @@ test('the settled callback fires after a resume that ran to its end', async () =
 	assert.equal(settled, 1);
 });
 
-test('bug #31: a restore disposed by losing the lease mid-flight raises no unhandled rejection', async () => {
+for (const resumeInterruptedRestore of [true, false]) test(`bug #31: a restore disposed by losing the lease mid-flight is quiet (resume=${resumeInterruptedRestore})`, async () => {
+	stores.toasts.length = 0;
 	const unhandled = [];
 	const onUnhandled = (reason) => unhandled.push(String(reason));
 	process.on('unhandledRejection', onUnhandled);
@@ -148,7 +149,7 @@ test('bug #31: a restore disposed by losing the lease mid-flight raises no unhan
 			clearInterval: () => {},
 			commandSession: () => 1,
 			operatorMaster: () => null,
-			resumeInterruptedRestore: true
+			resumeInterruptedRestore
 		});
 		for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
 		dispose(); // the lease is lost while deck 1 is still loading
