@@ -131,3 +131,27 @@ export function deckDecodedForRescue(input: {
 	}
 	return input.processor_error === null;
 }
+
+/**
+ * RESCUE-06: the deck that is master once a rescue resume has started.
+ *
+ * The rescued decks are started by one shared schedule, which bypasses the
+ * play-claim election a plain play runs, so without this the reloaded page
+ * plays with NO master. AutoPlay only ever arms off the playing master, so on
+ * Mon 5 Oct 2026 (silver preview, 19:19Z) both rescued decks played to their
+ * ends with AutoPlay on and nothing was queued after them.
+ *
+ * The snapshot's own master wins when it was resumed; otherwise the first
+ * resumed deck, so a rescued set always has a master.
+ */
+export function rescueResumeMasterDeck(
+	snapshotMaster: DeckId | null,
+	resumedDecks: readonly DeckId[]
+): DeckId {
+	const first = resumedDecks[0];
+	if (first === undefined) {
+		throw new RangeError('rescueResumeMasterDeck requires at least one resumed deck');
+	}
+	if (snapshotMaster !== null && resumedDecks.includes(snapshotMaster)) return snapshotMaster;
+	return first;
+}
