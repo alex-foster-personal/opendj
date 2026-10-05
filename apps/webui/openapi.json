@@ -19222,6 +19222,17 @@
             ],
             "title": "File Exists"
           },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
           "genre": {
             "anyOf": [
               {
