@@ -365,3 +365,64 @@ test('PreviewStrip.svelte: draw effect does not call _draw once canvas has unmou
 	);
 	assert.equal(drawnWithNull, false, 'the effect must not call _draw once canvas has unmounted to null');
 });
+
+// --------------------------------------------------------------------------- JogDial
+
+// Soak tester, Mon 5 Oct 2026 (22:24Z, 22:33Z, and 8x across HMR reloads):
+// "Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of
+// type 'Element'" from readPalette <- JogDial's palette $effect. The radial
+// canvas sits inside {#if showRadialCanvas}; when a deck handoff (AutoPlay)
+// or a reload drops the preview bands, the block unmounts, Svelte sets
+// radialCanvas to null, the effect re-runs on that change, and the old
+// `=== undefined` guard let null through into getComputedStyle.
+
+test('JogDial.svelte: palette effect does not read a palette once radialCanvas has unmounted to null', () => {
+	const source = readSource('deck/JogDial.svelte');
+	const arrow = extractEffectArrow(source, 'deck/JogDial.svelte', 'radialPalette = readPalette(c);');
+	let readWith = 'never';
+	// The real readPalette needs getComputedStyle, unavailable in node; this
+	// stand-in records the argument and dereferences it the same way.
+	const readPalette = (el) => {
+		readWith = el;
+		return el.tagName;
+	};
+	const uiPrefs = { theme: 'dark', wave_palette: '3band', ui_skin: 'default' };
+	assert.doesNotThrow(() =>
+		runEffect(arrow, { radialCanvas: null, radialPalette: null, readPalette, uiPrefs })
+	);
+	assert.equal(readWith, 'never', 'an unmounted radial canvas must skip the palette read');
+});
+
+test('JogDial.svelte: palette effect still reads the palette from a mounted canvas (mutation control)', () => {
+	const source = readSource('deck/JogDial.svelte');
+	const arrow = extractEffectArrow(source, 'deck/JogDial.svelte', 'radialPalette = readPalette(c);');
+	const canvas = { tagName: 'CANVAS' };
+	let readWith = null;
+	const readPalette = (el) => {
+		readWith = el;
+		return el.tagName;
+	};
+	const uiPrefs = { theme: 'dark', wave_palette: '3band', ui_skin: 'default' };
+	runEffect(arrow, { radialCanvas: canvas, radialPalette: null, readPalette, uiPrefs });
+	assert.equal(readWith, canvas, 'a guard that always returns would hide the radial waveform');
+});
+
+test('JogDial.svelte: radial draw effect does not touch the canvas once radialCanvas has unmounted to null', () => {
+	const source = readSource('deck/JogDial.svelte');
+	const arrow = extractEffectArrow(source, 'deck/JogDial.svelte', 'blitJogRadial(ctx, frame');
+	let blitted = false;
+	assert.doesNotThrow(() =>
+		runEffect(arrow, {
+			radialCanvas: null,
+			// A palette read from the canvas that just unmounted is still held.
+			radialPalette: { bg: '#000000' },
+			showRadialCanvas: true,
+			previewBands: {},
+			deck: { anlz: { waveform: { kind: 'x' } } },
+			blitJogRadial: () => {
+				blitted = true;
+			}
+		})
+	);
+	assert.equal(blitted, false, 'the draw effect must return before getContext on a null canvas');
+});

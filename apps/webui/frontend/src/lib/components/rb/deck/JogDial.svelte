@@ -54,7 +54,11 @@
 	} = $props();
 
 	const DIAL_CSS_PX = 104;
-	let radialCanvas: HTMLCanvasElement | undefined = $state();
+	// null, not undefined: Svelte 5 sets an unmounted bind:this to null, and the
+	// canvas lives inside {#if showRadialCanvas}, which a deck handoff, a track
+	// reload or an HMR swap unmounts. Typing it `| undefined` let a `=== undefined`
+	// guard pass null into getComputedStyle (soak tester, Mon 5 Oct 2026).
+	let radialCanvas: HTMLCanvasElement | null = $state(null);
 	// Same palette source as the deck rows (WaveRow.svelte): the .perf-root
 	// --rb-wave-* vars, re-read when the theme, the waveform colour choice or
 	// the skin swaps them. $state.raw so an idle deck still repaints on a swap.
@@ -217,7 +221,9 @@
 
 	$effect(() => {
 		const c = radialCanvas;
-		if (c === undefined) return;
+		// Not mounted: no element to read vars from, so skip by design. The draw
+		// effect below needs both a canvas and a palette, so it skips too.
+		if (c === null) return;
 		void uiPrefs.theme;
 		void uiPrefs.wave_palette;
 		void uiPrefs.ui_skin;
@@ -227,7 +233,7 @@
 	$effect(() => {
 		const c = radialCanvas;
 		const palette = radialPalette;
-		if (c === undefined || palette === null) return;
+		if (c === null || palette === null) return;
 		if (!showRadialCanvas || previewBands === null || deck.anlz === null) return;
 		const ctx = c.getContext('2d');
 		if (ctx === null) throw new Error('JogDial: radial canvas 2d context unavailable');
