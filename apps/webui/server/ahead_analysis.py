@@ -23,8 +23,10 @@ Both phases yield while a deck plays or a track was loaded moments ago, using
 the coverage drain's own ``DeckGate``. A lane the HOST cannot produce (every
 track in a chunk fails the same way, e.g. ffmpeg without soxr) is marked
 unavailable with that reason: one log line per transition, never a per-track
-storm, never a silent skip. A track that a deck loads or whose /anlz is read
-is bumped to the front (``bump``).
+storm, never a silent skip. A shared reason that is not a known host cause is
+first re-tried one track at a time, so one track that aborts a run cannot
+close the lane for every other track. A track that a deck loads or whose
+/anlz is read is bumped to the front (``bump``).
 
 ``MUSIC_DJ_AHEAD_ANALYSIS`` is a fail-fast enum, ``on`` or ``off``, default on
 for the real daemon; ``create_app`` leaves it unarmed so pytest spawns nothing.
@@ -40,7 +42,10 @@ Requirements (mini-PRD):
   ✔︎ cheap lanes before expensive ones
     [if] loudness/waveform are missing anywhere [then] beatgrid/key wait
   ✔︎ a host-level failure is named once
-    [if] a whole chunk fails with one reason [then] the lane is unavailable
+    [if] every track of a chunk fails one known host way [then] the lane is unavailable
+  ✔︎ one track never closes a lane (NATIVE-21)
+    [if] a chunk fails one unknown way [then] each track reruns alone before any verdict
+    [if] only one track reproduces it alone [then] that track fails and the lane stays open
   ✔︎ agent parity
     [if] coverage is asked for [then] GET /ahead-analysis/coverage and the CLI agree
 """
@@ -172,6 +177,18 @@ def reason_kind(reason: str) -> str:
     if len(parts) < 3:
         return reason
     return f"{parts[0]}: {parts[2]}"
+
+
+def _is_known_host_cause(reason: str) -> bool:
+    return any(cause in reason for cause in KNOWN_HOST_CAUSES)
+
+
+def _shared_reason(chunk: Sequence[str], errors: Mapping[str, str]) -> str | None:
+    """The one reason kind every track of a multi-track chunk failed with, else None."""
+    distinct = {reason_kind(why) for why in errors.values()}
+    if len(chunk) > 1 and len(errors) == len(chunk) and len(distinct) == 1:
+        return distinct.pop()
+    return None
 
 
 def coverage_counts(
@@ -356,14 +373,32 @@ class AheadDrain:
         errors = self._src.run_lane_fn(lane, backend, chunk)
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
-        distinct = {reason_kind(why) for why in errors.values()}
-        if len(chunk) > 1 and len(errors) == len(chunk) and len(distinct) == 1:
-            reason = distinct.pop()
+        reason = _shared_reason(chunk, errors)
+        if reason is not None and not _is_known_host_cause(reason):
+            # One reason for the whole chunk is ambiguous: a host fault, or ONE
+            # track's failure that aborted the run and was copied to its
+            # siblings (demon-llama, Fri 2 to Mon 5 Oct 2026: beatgrid and key
+            # closed for 3 days on one record's contract breach). Each track
+            # alone decides it; only a reason every track reproduces alone
+            # names the host.
+            errors = self._run_singly(lane, backend, chunk)
+            reason = _shared_reason(chunk, errors)
+        if reason is not None:
             if self._status.unavailable.get(lane) != reason:
                 log.warning("ahead analysis: lane %s unavailable on this host: %s", lane, reason)
             self._status.unavailable[lane] = reason
             return
         self._lane_failed[lane].update(errors)
+
+    def _run_singly(self, lane: str, backend: str, chunk: list[str]) -> dict[str, str]:
+        errors: dict[str, str] = {}
+        for sid in chunk:
+            if self._src.playing_fn():
+                break
+            errors.update(self._src.run_lane_fn(lane, backend, [sid]))
+            self._status.lane_batches += 1
+        self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
+        return errors
 
     def retry_failed(self) -> None:
         self._strip_failed.clear()
