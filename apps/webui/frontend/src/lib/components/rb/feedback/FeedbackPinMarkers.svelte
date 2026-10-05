@@ -1,27 +1,33 @@
 <script lang="ts">
 	/**
-	 * The comment-pin marker layer (#858, #3782): every drawn pin, fixed at
-	 * stored viewport percentages. Badges surface anchor/route drift, harvest,
-	 * and regression without hiding or moving the pin.
+	 * The comment-pin marker layer (#858, #3782): every drawn pin, placed at the
+	 * position FeedbackPinLayer resolved for it (feedback-pin-position.ts:
+	 * its element, else a nearby anchor, else stored viewport percentages).
+	 * A pin drawn on a fallback tier carries a subtle dashed ring. Badges
+	 * surface anchor/route drift, harvest, and regression without hiding the pin.
 	 */
 	import { isPinUnread, pinStyle, type PinSeen } from '$lib/rb/feedback';
+	import { resolvedPinStyle, type ResolvedPinPosition } from '$lib/rb/feedback-pin-position';
 	import {
 		anchorMovedAtPin,
 		pinBoardState,
 		type PinBoardBadge
 	} from '$lib/rb/feedback-pin-board';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
-	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
 	let {
 		pins,
+		positions = new Map(),
 		seen,
 		pathname,
 		optionKeyHeld = false,
 		onopen
 	}: {
 		pins: FeedbackPin[];
+		/** Resolved placement per pin id; a pin with none draws at its stored
+		 * percentages, exactly as before placement existed. */
+		positions?: ReadonlyMap<string, ResolvedPinPosition>;
 		seen: PinSeen;
 		pathname: string;
 		optionKeyHeld?: boolean;
@@ -54,14 +60,18 @@
 {#each pins as pin (pin.id)}
 	{@const state = pinVisualState(pin)}
 	{@const board = pinBoardState(pin, pathname, anchorMovedFor(pin))}
+	{@const pos = positions.get(pin.id)}
 	<button
 		type="button"
 		class="fb-pin fb-{state}"
 		class:fb-agent={pin.author === 'agent'}
 		class:fb-unread={isPinUnread(pin, seen)}
 		class:fb-harvested={board.collapsed}
-		style={pinStyle(pin)}
-		title={`${pin.text} - ${pin.created_at}${pin.anchor ? ` (near ${pin.anchor})` : ''}${pin.page !== pathname ? ` [page ${pin.page}]` : ''}${board.badges.length ? ` - ${board.badges.map(badgeLabel).join(', ')}` : ''}`}
+		class:fb-pos-fallback={pos?.fallback === true}
+		data-pin-id={pin.id}
+		data-pin-tier={pos?.tier ?? 'viewport'}
+		style={pos === undefined ? pinStyle(pin) : resolvedPinStyle(pin, pos)}
+		title={`${pin.text} - ${pin.created_at}${pin.anchor ? ` (near ${pin.anchor})` : ''}${pos?.fallback ? ` [placed via ${pos.via ?? 'saved screen position'}]` : ''}${pin.page !== pathname ? ` [page ${pin.page}]` : ''}${board.badges.length ? ` - ${board.badges.map(badgeLabel).join(', ')}` : ''}`}
 		aria-label={`Comment pin (${state}) - open${board.badges.length ? ` - ${board.badges.join(', ')}` : ''}`}
 		onclick={() => onopen(pin)}
 	>
@@ -83,13 +93,9 @@
 			</svg>
 		{/if}
 		{#if pin.attachment}
-			<img
-				class="fb-pin-thumb"
-				src={`${API_BASE}${pin.attachment.url}`}
-				alt=""
-				width="28"
-				height="20"
-			/>
+			<!-- FB-23: a mark, not the image. The screenshot is requested when
+			     the pin is opened (FeedbackPinCard), never for every pin at load. -->
+			<span class="fb-pin-thumb" title="Screenshot attached - open the pin to load it"></span>
 		{/if}
 		{#if optionKeyHeld}
 			{#each board.badges as badge (badge)}
@@ -114,6 +120,14 @@
 	.fb-harvested {
 		opacity: 0.55;
 		transform: translate(-50%, -50%) scale(0.82);
+	}
+	/* On a fallback tier: what it was pinned to moved or is gone. Subtle on
+	 * purpose - the pin is still a valid record, just re-placed. */
+	.fb-pos-fallback {
+		outline: 1px dashed currentColor;
+		outline-offset: 2px;
+		border-radius: 50%;
+		opacity: 0.85;
 	}
 	.fb-pin-badge {
 		position: absolute;
@@ -198,7 +212,7 @@
 		display: block;
 		width: 28px;
 		height: 20px;
-		object-fit: cover;
+		background: color-mix(in srgb, currentColor 22%, transparent);
 		border: 1px solid currentColor;
 		border-radius: 1px;
 		margin-top: 2px;

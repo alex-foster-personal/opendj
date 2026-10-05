@@ -33,7 +33,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPO_ROOT = resolve(FRONTEND_ROOT, '../../..');
-const START_TIMEOUT_MS = 20_000;
+// Cold import of apps.webui.server.app_wiring can exceed 20s on a loaded host;
+// this budget is startup tolerance only, not a product latency contract.
+const START_TIMEOUT_MS = 60_000;
 const WS_URL = 'ws://events.example.test/api/v1/events';
 
 let vite;
@@ -184,6 +186,7 @@ before(async () => {
 });
 
 after(async () => {
+	uiState?.detachMidiGlueForRouteUnmount();
 	await vite.close();
 	globalThis.fetch = realFetch;
 	backendProc?.kill();
@@ -212,6 +215,7 @@ const DOC_B = {
 };
 
 beforeEach(async () => {
+	uiState.detachMidiGlueForRouteUnmount();
 	webmidi._resetMidiForTests();
 	installed._resetInstalledMapsForTests();
 	eventsBus._resetForTests();

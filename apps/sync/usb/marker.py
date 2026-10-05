@@ -12,6 +12,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from apps.shared import macos_diskutil
+
 MARKER_NAME = ".mdj-marker.json"
 
 
@@ -22,7 +24,7 @@ def _volume_uuid(drive_root: Path) -> str | None:
     """
     try:
         proc = subprocess.run(
-            ["diskutil", "info", "-plist", str(drive_root)],
+            [str(macos_diskutil.DISKUTIL_PATH), "info", "-plist", str(drive_root)],
             capture_output=True,
             text=True,
             timeout=5,

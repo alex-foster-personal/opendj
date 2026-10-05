@@ -125,7 +125,7 @@ def _disabled_response(refusal: FlagRefusal | None) -> JSONResponse:
 @router.post("/plan", response_model=PlanModel)
 def plan_export(body: PlanRequest, request: Request) -> dict[str, Any] | JSONResponse:
     from apps.sync.usb.pioneer import export_workflow as workflow
-    from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
+    from apps.sync.usb.pioneer.writer_onelibrary import PlaylistSpec, TrackUpdate
 
     gate = usb_export_gate(request)
     if not gate.available:

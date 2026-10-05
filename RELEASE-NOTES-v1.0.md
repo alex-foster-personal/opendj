@@ -147,7 +147,7 @@ make test
 
 v1.0 is the result of an 18-phase compound-engineering build executed by an
 agent swarm (Mux + codex-pro + Claude Sonnet 4.5/5 + GPT-5.4) coordinated by
-@former-work-account, with adversarial review, triage, remediation, and
+the project maintainer, with adversarial review, triage, remediation, and
 verification gated by `verify-work` / `check-plan` / `validate-work` cycles.
 Final adversarial sweep used a best-of-n consensus across 17 phases × 3 models
 (see PR #34, rc3).

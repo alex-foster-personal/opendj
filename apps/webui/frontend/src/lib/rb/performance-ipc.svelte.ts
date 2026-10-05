@@ -20,9 +20,9 @@
  *       before invoking the engine or recreating an off-route audio graph ⛔️
  *     [if] a new route session starts while old work settles [then] its commands
  *       use fresh scheduler tails and clean pending counters
- *   ✔︎ ✅ 🎯 hot_cue_save is gated on has_rb_mapping for every caller (#736).
- *     [if] a browser/CLI agent dispatches hot_cue_save for an unmapped deck
- *       [then] it rejects before reaching saveHotCue, same as the UI click ⛔️
+ *   ✔︎ ✅ 🎯 hot_cue_save works for every loaded deck, mapped or not (CUES-01;
+ *     supersedes the #736 mapping gate). [if] a browser/CLI agent dispatches
+ *       hot_cue_save for an unmapped deck [then] it reaches saveHotCue ⛔️
  *   ✔︎ ✅ 🎯 hot_cue_trigger honours BeatSyncMax on a playing, unlooped deck (#884).
  *     [if] BeatSyncMax is on, the deck is playing and unlooped [then] the jump
  *       arms for the deck's own next downbeat instead of firing immediately,
@@ -44,6 +44,7 @@
  */
 
 import { assertHeadDelayMs } from '$lib/player/constants';
+import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
 	copyToast,
 	dismissToast,
@@ -53,6 +54,7 @@ import {
 	toasts,
 	toastTimerArmed
 } from '$lib/stores.svelte';
+import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import {
 	analysisSourceState,
@@ -75,6 +77,7 @@ import {
 	getDeckState,
 	getMasterMode,
 	getMasterReason,
+	installAutomaticRejoinRunner,
 	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
@@ -144,6 +147,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
@@ -153,6 +157,7 @@ export {
 	uninstallRescueRingWriterHooks
 } from '$lib/rb/rescue-ring-writer.svelte';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
+import { TempoCoalescer } from '$lib/rb/tempo-coalesce';
 import {
 	hoveredEdgeList,
 	isEqRaised,
@@ -177,6 +182,11 @@ import {
 	previewCueSeek,
 	stopPreviewCue
 } from '$lib/player/preview-cue.svelte';
+import {
+	midiTakeoverUi,
+	setMidiTakeoverMode
+} from '$lib/rb/midi/takeover-ui.svelte';
+import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -230,8 +240,10 @@ export type PerformanceCommand =
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesign }
 	| { type: 'set_skin'; ui_skin: UiSkin; wave_palette: WavePaletteChoice; wave_split_master: WaveSplitMaster }
-	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
-	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
+			/** Optional load condition is checked inside the queue, not at input time.
+	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
+	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
+	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number; if_load_generation?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
@@ -249,8 +261,10 @@ export type PerformanceCommand =
 	| { type: 'master'; deck: DeckId; lock?: boolean }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
-	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean; exclusive?: boolean }
 	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
+	/** STEM-46/47: get this deck's stems now (retry a failed load, start a held one). */
+	| { type: 'stem_load'; deck: DeckId }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
@@ -268,6 +282,8 @@ export type PerformanceCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
+	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
+	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -306,7 +322,7 @@ export type PerformanceCommand =
 	| { type: 'hot_cue_trigger'; deck: DeckId; slot: HotCueSlot }
 	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
 	// write to serialize, but still a real UI action - every one of these has
-	// a cmd+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
+	// a Ctrl+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
 	// so agent-native parity requires the same commands here.
 	| { type: 'tech_mode_toggle' }
 	| { type: 'tech_mode_peek'; peeking: boolean }
@@ -422,6 +438,7 @@ export interface PerformanceState {
 		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
 		selected_row: string | null;
 	};
+	midi_takeover: { mode: MidiTakeoverMode };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	rescue_restore: {
@@ -749,10 +766,6 @@ export function resetQuantizedLaunchArmedForTest(): void {
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
 	refresh(deck: DeckId): Promise<void>;
-	/** Same `DeckState.has_rb_mapping` HotCueBank gates its click on (#736) -
-	 * read here too so a non-UI caller (browser IPC, a preset transaction)
-	 * hits the identical guard rather than only the component seeing it. */
-	hasRbMapping(deck: DeckId): boolean;
 	/** #884: everything planHotCueTrigger needs for one slot, in one read so
 	 * the test seam can stand in for the engine without a real audio graph. */
 	triggerState(
@@ -779,7 +792,6 @@ export interface PerformanceHotCueDriver {
 const _defaultHotCueDriver: PerformanceHotCueDriver = {
 	stableId: (deck) => getDeckState(deck).stable_id,
 	refresh: (deck) => engine.refreshHotCues(deck),
-	hasRbMapping: (deck) => getDeckState(deck).has_rb_mapping,
 	triggerState: (deck, slot) => {
 		const state = getDeckState(deck);
 		return {
@@ -816,6 +828,10 @@ let _presetClaim: { id: string } | null = null;
 type PersistenceScope = `persistence-${DeckId}`;
 type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+// S1 (round 2): a queued fader step that a newer one has overtaken is a no-op
+// when its turn comes, so a sweep costs one group re-lock, not one per message.
+// A command queued between two tempos is a barrier (tempo-coalesce.ts).
+const _tempoCoalescer = new TempoCoalescer<DeckId | null, CommandScope>();
 // PARITY-10: the only module that owns the scoped command scheduler, so a
 // beatgrid-landed resync fired long after its load() command released [deck]
 // reclaims scope here rather than racing whatever now holds it. The
@@ -917,6 +933,39 @@ installScopedSyncRunner((_deck, run) => {
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
 installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// An automatic master handoff (unload, pause, natural end) re-joins the
+// followers under the same wide claim, queued behind the command that moved the
+// master, so later deck commands wait for it rather than racing it.
+// Counted like a widened claim, so a caller waiting for the queue to drain
+// waits for the re-join too.
+installAutomaticRejoinRunner((work) => {
+	const statusGeneration = _commandStatusGeneration;
+	const counted = () => statusGeneration === _commandStatusGeneration;
+	let started = false;
+	if (counted()) {
+		performanceCommandStatus.queued += 1;
+		for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
+	}
+	return _commandScheduler
+		.run([...DECK_IDS, 'sync'], async () => {
+			started = true;
+			if (counted()) {
+				performanceCommandStatus.queued -= 1;
+				performanceCommandStatus.active += 1;
+			}
+			try {
+				await work();
+			} finally {
+				if (counted()) performanceCommandStatus.active -= 1;
+			}
+		})
+		.finally(() => {
+			if (!counted()) return;
+			if (!started) performanceCommandStatus.queued -= 1;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+		});
+});
+installAutomaticMasterElectionRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
@@ -1025,8 +1074,8 @@ function _generation(value: unknown): number {
 }
 
 function _stem(value: unknown): StemControl {
-	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
-		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
+	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums' && value !== 'bass' && value !== 'other') {
+		throw new TypeError(`unknown stem control: ${String(value)}`);
 	}
 	return value;
 }
@@ -1118,6 +1167,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('playlist_id must be a non-empty string');
 		}
 		return { type, playlist_id: record.playlist_id };
+	}
+	if (type === 'midi_takeover_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		if (record.mode !== 'pickup' && record.mode !== 'jump') {
+			throw new TypeError(`midi takeover mode must be pickup or jump; got ${String(record.mode)}`);
+		}
+		return { type, mode: record.mode };
 	}
 	if (type === 'headphone_outputs_refresh') {
 		_exactKeys(record, ['type']);
@@ -1379,25 +1435,28 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, position_ms, snap };
 	} else if (type === 'loop') {
-		_exactKeys(record, ['type', 'deck', 'loop']);
-		if (record.loop === null) return { type, deck, loop: null };
+		_exactKeys(record, ['type', 'deck', 'loop', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
+		if (record.loop === null) return { type, deck, loop: null, ...condition };
 		const loop = _record(record.loop);
 		_exactKeys(loop, ['in_ms', 'out_ms']);
 		return {
 			type,
 			deck,
+			...condition,
 			loop: { in_ms: _finite('loop.in_ms', loop.in_ms), out_ms: _finite('loop.out_ms', loop.out_ms) }
 		};
 	} else if (type === 'beat_loop') {
-		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms']);
+		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
 		const beats = _finite('beats', record.beats);
-		if (!Number.isInteger(beats) || beats <= 0) {
-			throw new RangeError(`beats must be a positive integer; got ${beats}`);
+		if (beats <= 0) {
+			throw new RangeError(`beats must be positive; got ${beats}`);
 		}
-		if (record.start_ms === undefined) return { type, deck, beats };
+		if (record.start_ms === undefined) return { type, deck, beats, ...condition };
 		const start_ms = _finite('start_ms', record.start_ms);
 		if (start_ms < 0) throw new RangeError('start_ms must be >= 0');
-		return { type, deck, beats, start_ms };
+		return { type, deck, beats, start_ms, ...condition };
 	} else if (type === 'beat_jump') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		const beats = _finite('beats', record.beats);
@@ -1437,11 +1496,15 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
 		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
 	} else if (type === 'stem_solo') {
-		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
-		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+		_exactKeys(record, ['type', 'deck', 'stem', 'solo', 'exclusive']);
+		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo),
+			...(record.exclusive === undefined ? {} : { exclusive: _boolean('exclusive', record.exclusive) }) };
 	} else if (type === 'stem_eq_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'stem_load') {
+		_exactKeys(record, ['type', 'deck']);
+		return { type, deck };
 	} else if (type === 'stem_gain') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
@@ -1579,18 +1642,23 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
 }
 
 /** Live-derive `remaining_ms` from the AudioContext clock rather than
- * trusting a cached countdown, then self-clear once the schedule has landed -
- * the same "recompute, don't cache" rule `deckTransportClock` follows. */
+ * trusting a cached countdown - the same "recompute, don't cache" rule
+ * `deckTransportClock` follows. A landed schedule reads as null.
+ *
+ * These snapshots are READ paths: queryPerformanceState() runs inside
+ * `$derived` (WaveRow.svelte, Deck.svelte), and Svelte throws
+ * `state_unsafe_mutation` on any `$state` write from there. Queries must
+ * not mutate reactive state while a consumer derives or renders the snapshot.
+ * An expired record is reported as null and left for the command paths and
+ * session lifecycle owners (the next arm, unload, or session teardown) to
+ * clear or replace. */
 function _waveformSeekArmedSnapshot(
 	deckId: DeckId
 ): { target_position_ms: number; remaining_ms: number } | null {
 	const armed = waveformSeekArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		waveformSeekArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -1600,10 +1668,7 @@ function _hotCueArmedSnapshot(
 	const armed = hotCueArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		hotCueArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -1613,10 +1678,7 @@ function _quantizedLaunchArmedSnapshot(
 	const armed = quantizedLaunchArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.launch_at_context_sec - _quantizedLaunchDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		quantizedLaunchArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
@@ -1624,21 +1686,22 @@ function _openPairingSnapshot(): PairingSnapshot {
 	const loaded = DECK_IDS.flatMap((deckId) => {
 		const deck = getDeckState(deckId);
 		if (deck.stable_id === null) return [];
-		const positionBeat = [...(deck.anlz?.beatgrid.beats ?? [])]
-			.reverse()
-			.find((beat) => beat.t * 1000 <= deck.position_ms);
+		// A playhead before the first beat (a deck parked at 0:00) is in the
+		// lead-in, not gridless; pairingBeatAt counts back to a beat-in-bar.
+		// Null only when the grid has no beats at all (pairing-readiness.ts).
+		const positionBeat = pairingBeatAt(deck.anlz?.beatgrid.beats ?? [], deck.position_ms);
 		return [{ deckId, deck, positionBeat }];
 	});
-	// Beat timestamps only when EVERY loaded deck has a beat at or before its
-	// position. A deck with no beatgrid yet, or one parked before its first
-	// beat (a fresh load sits at 0 ms), used to throw here and leave the sheet
-	// unopenable; it now captures every deck in real time instead, and the
-	// snapshot says so (beat_sync_max false = time units), so nothing is faked.
-	const beats = uiPrefs.beat_sync_max && loaded.every((item) => item.positionBeat !== undefined);
+	// Beat timestamps only when EVERY loaded deck has one. An empty grid used
+	// to throw here and leave the sheet unopenable; it now captures every deck
+	// in real time instead, and the snapshot says so (beat_sync_max false =
+	// time units), so nothing is faked. The top-bar button is disabled for an
+	// empty grid; a lead-in playhead still records a beat.
+	const beats = uiPrefs.beat_sync_max && loaded.every((item) => item.positionBeat !== null);
 	const unit: 'beats' | 'time' = beats ? 'beats' : 'time';
 	const decks = loaded.map(({ deckId, deck, positionBeat }) => {
 		const channel = mixerState.channels[deckId];
-		const timestampValue = beats && positionBeat !== undefined ? positionBeat.n : deck.position_ms;
+		const timestampValue = beats && positionBeat !== null ? positionBeat : deck.position_ms;
 		const adjustments: Array<{ band: EqBand; value: number }> = [
 			{ band: 'low', value: channel.eq_low },
 			{ band: 'mid', value: channel.eq_mid },
@@ -1712,7 +1775,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			controls: {
 				vocal: { ...deck.stems.controls.vocal },
 				instrumental: { ...deck.stems.controls.instrumental },
-				drums: { ...deck.stems.controls.drums }
+				drums: { ...deck.stems.controls.drums },
+				bass: { ...deck.stems.controls.bass },
+				other: { ...deck.stems.controls.other }
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
@@ -1753,6 +1818,7 @@ export function queryPerformanceState(): PerformanceState {
 	const previewStats = previewCacheStats();
 	return {
 		version: 1,
+		midi_takeover: { mode: midiTakeoverUi.mode },
 		master_deck: masterDecks[0] ?? null,
 		master_mode: getMasterMode(),
 		master_reason: getMasterReason(),
@@ -1776,8 +1842,29 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
+				calibration: {
+					...mixerState.headphones.calibration,
+					diagnostics: {
+						...mixerState.headphones.calibration.diagnostics,
+						master_measurements_ms: [...mixerState.headphones.calibration.diagnostics.master_measurements_ms],
+						cue_measurements_ms: [...mixerState.headphones.calibration.diagnostics.cue_measurements_ms]
+					}
+				},
+				signals: {
+					master: { ...mixerState.headphones.signals.master },
+					cue: { ...mixerState.headphones.signals.cue },
+					input: { ...mixerState.headphones.signals.input }
+				},
+				routes: {
+					master: { ...mixerState.headphones.routes.master },
+					cue: { ...mixerState.headphones.routes.cue }
+				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
-				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input })),
+				device_access: {
+					...mixerState.headphones.device_access,
+					notices: [...mixerState.headphones.device_access.notices]
+				}
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },
@@ -1921,11 +2008,15 @@ export function performanceCommandQueueScopes(
 		command.type === 'fader' ||
 		command.type === 'stem_mute' ||
 		command.type === 'stem_solo' ||
+		// STEM-47: landing stems on a playing deck waits for the transport to
+		// be idle; in the deck's queue it would BE the thing keeping it busy.
+		command.type === 'stem_load' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
 		command.type === 'master_volume' ||
 		command.type === 'master_mute' ||
 		command.type === 'browser_select_playlist' ||
+		command.type === 'midi_takeover_mode' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
@@ -2008,6 +2099,12 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	if (command.type === 'master_volume') _operatorMasterVolume = command.value;
+	// A device release can wait behind a load of the very same track ID. The
+	// load generation, checked under the deck queue claim, owns the gesture.
+	if ((command.type === 'loop' || command.type === 'beat_loop') &&
+		command.if_load_generation !== undefined &&
+		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
 	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
 	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
 	if (await executeInRustEngine(command, pushToast)) return;
@@ -2076,7 +2173,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (command.playing) {
 			if (command.start_at_context_sec !== undefined) {
 				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
-			} else if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+			} else if (_quantizedLaunchArmedSnapshot(command.deck) !== null && command.quantize !== true) {
+				// The snapshot, not the raw record: a launch that has already
+				// landed is not cleared by reads, and must not turn this press
+				// into a disarm.
 				quantizedLaunchArmed[command.deck] = null;
 				_quantizedLaunchDriver.clear(command.deck);
 			} else if (command.quantize === true) {
@@ -2174,9 +2274,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'stem_mute') {
 		engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms);
 	} else if (command.type === 'stem_solo') {
-		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms);
+		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
+	} else if (command.type === 'stem_load') {
+		await engine.retryStems(command.deck);
 	} else if (command.type === 'stem_gain') {
 		engine.setStemGain(command.deck, command.stem, command.value);
 	} else if (command.type === 'slip') {
@@ -2269,11 +2371,6 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'hot_cue_save') {
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
-		if (!_hotCueDriver.hasRbMapping(command.deck)) {
-			throw new Error(
-				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
-			);
-		}
 		// Untrusted own grids (static_grid_untrusted: true) must not BeatSyncMax-snap.
 		const beatSyncMaxSnap =
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(getDeckState(command.deck).anlz);
@@ -2431,11 +2528,19 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 		await engine.rescueStopAllTogether(decks);
 		_rescueRestoredDecks = [];
+	} else if (command.type === 'midi_takeover_mode') {
+		setMidiTakeoverMode(command.mode);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
 	}
 }
+
+/** How `_persistCommandError` already put an error on screen, so the UI
+ * boundary can tell "reported" from "about to vanish" without a second toast.
+ * `toasted` also reached console.error (an error toast writes its own log
+ * row there); `banner_only` is a load whose caller suppressed the toast. */
+const _persistedCommandErrors = new WeakMap<object, 'toasted' | 'banner_only'>();
 
 function _persistCommandError(
 	deck: DeckId | null, error: unknown, command?: PerformanceCommand
@@ -2443,6 +2548,7 @@ function _persistCommandError(
 	const messageText = _errorMessage(error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
+	const errorObject = typeof error === 'object' && error !== null ? error : null;
 	if (
 		(command !== undefined &&
 			command.type === 'load' &&
@@ -2450,6 +2556,12 @@ function _persistCommandError(
 		// A worded load failure already raised its own deck-load toast (CLOUDSYNC-33).
 		deckFacingMessage(error) !== undefined
 	) {
+		if (errorObject !== null) _persistedCommandErrors.set(errorObject, 'banner_only');
+		return;
+	}
+	if (errorObject !== null) _persistedCommandErrors.set(errorObject, 'toasted');
+	if (command !== undefined && command.type === 'load') {
+		reportDeckLoadCommandFailure(command.deck, messageText, error);
 		return;
 	}
 	let subcontrol = '';
@@ -2526,6 +2638,24 @@ function _invalidateCommandSession(generation: number): void {
 		waveformSeekArmed[deckId] = null;
 		hotCueArmed[deckId] = null;
 	}
+}
+
+/** The value of the last master_volume command this page executed, or null
+ * if none has run. The route's teardown hard mute (`engine.setMaster(0)`) and
+ * a preset's late-settlement mute write the mixer directly, so a live
+ * `mixer.master` of 0 is not by itself an operator's choice; this is. */
+let _operatorMasterVolume: number | null = null;
+
+export function operatorMasterVolume(): number | null {
+	return _operatorMasterVolume;
+}
+
+/** The generation of the live route command session, or null between
+ * mounts. A session-scoped writer binds to the value it saw at install and
+ * stops the moment it changes, so nothing it writes can describe a torn-down
+ * route (hard-muted master, stopped decks). */
+export function activePerformanceCommandSession(): number | null {
+	return _activeCommandSession?.generation ?? null;
 }
 
 function _currentCommandSession(): number {
@@ -2971,6 +3101,7 @@ async function _dispatchUnknown(
 			throw error;
 		}
 	}
+	const tempoTicket = _tempoCoalescer.mark(command.type === 'tempo', deck, scopes, 'sync');
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
 	let started = false;
@@ -2985,7 +3116,9 @@ async function _dispatchUnknown(
 		try {
 			// Q1: this body starts only AFTER the scope wait above, which is
 			// exactly the gap press_to_schedule_ms exists to expose.
-			await _execute(command, pressT0Ms);
+			if (_tempoCoalescer.runs(deck, tempoTicket)) {
+				await _execute(command, pressT0Ms);
+			}
 			_assertCommandSession(commandGeneration);
 			return _completeCommand(command);
 		} catch (error) {
@@ -3015,8 +3148,22 @@ export async function dispatchPerformanceCommand(
 }
 
 /**
- * UI event boundary: await the same fail-fast dispatcher, then consume the
- * rejection only after it has been persisted in visible reactive state.
+ * What a UI-boundary command came to. `no_session` is the one EXPECTED
+ * refusal: no command session is current, because the route has not started
+ * one yet (it does so after its first async hydration) or has torn it down.
+ * `failed` is everything else, and has always been reported by the time the
+ * caller sees it.
+ */
+export type PerformanceUiCommandResult =
+	| { ok: true }
+	| { ok: false; reason: 'no_session'; error: ScopedCommandInvalidatedError }
+	| { ok: false; reason: 'failed'; error: unknown };
+
+/**
+ * UI event boundary: await the same fail-fast dispatcher and turn its
+ * rejection into a result, never into silence. A failure the dispatcher did
+ * not persist (it skips its report once the session is no longer current) is
+ * persisted here, so no path out of this function drops an error unseen.
  *
  * Q1 / S2: this is where the press clock starts. The default is taken on ENTRY,
  * before `_dispatchUnknown` can park the command behind another scope's tail,
@@ -3027,11 +3174,28 @@ export async function dispatchPerformanceCommand(
 export async function runPerformanceCommandFromUi(
 	command: PerformanceCommand,
 	pressT0Ms: number = performance.now()
-): Promise<void> {
+): Promise<PerformanceUiCommandResult> {
 	try {
 		await dispatchPerformanceCommand(command, pressT0Ms);
-	} catch {
-		// The dispatcher already populated the deck alert and toast.
+		return { ok: true };
+	} catch (error) {
+		if (error instanceof ScopedCommandInvalidatedError) {
+			console.debug(`[performance-ipc] ${command.type} not run, no command session: ${error.message}`);
+			return { ok: false, reason: 'no_session', error };
+		}
+		const reported =
+			typeof error === 'object' && error !== null ? _persistedCommandErrors.get(error) : undefined;
+		if (reported === undefined) {
+			// Toast plus its console.error row: the same channel as every
+			// other command failure.
+			_persistCommandError(null, error);
+		} else if (reported === 'banner_only') {
+			console.error(`[performance-ipc] ${command.type} failed`, error);
+		} else if (reported === 'toasted') {
+			// Already on screen and in the console; a second report would
+			// only double the toast and the forwarded log row.
+		}
+		return { ok: false, reason: 'failed', error };
 	}
 }
 

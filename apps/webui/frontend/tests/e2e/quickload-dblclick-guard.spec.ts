@@ -63,9 +63,16 @@ async function _query(page: Page): Promise<PerformanceState> {
 }
 
 async function _openAllTracks(page: Page): Promise<void> {
-	// The app's own persistence, not a stub: a prefs blob it would have
-	// written itself, so a double-click takes the deterministic no-confirm
-	// load-and-play path rather than opening the confirm dialog.
+	// The app's own persistence, not a stub: the remembered choice it would
+	// have written itself, on disk AND in localStorage, so a double-click takes
+	// the deterministic no-confirm load-and-play path rather than opening the
+	// confirm dialog. Disk is authoritative for confirm keys since PR #4014
+	// (hydrateConfirmFromDisk drops a key the disk map lacks), so a
+	// localStorage-only seed is reset to "ask" by the boot GET.
+	const put = await page.request.put('/api/v1/ui-prefs', {
+		data: { confirm: { dblclick_load_play: false } }
+	});
+	expect(put.ok(), `seed confirm.dblclick_load_play: HTTP ${put.status()}`).toBe(true);
 	await page.addInitScript((prefsKey) => {
 		window.localStorage.setItem(
 			prefsKey,
@@ -109,6 +116,15 @@ async function _waitForPlaying(page: Page, deck: 1 | 2, expected: boolean): Prom
 }
 
 test.describe('quick-load box does not hijack a double-click on a selected row (#1558)', () => {
+	// The fixture library is shared by the whole serial root suite, and other
+	// specs (library-keyboard-nav) expect the default "ask" dialog.
+	test.afterEach(async ({ request }) => {
+		const put = await request.put('/api/v1/ui-prefs', {
+			data: { confirm: { dblclick_load_play: null } }
+		});
+		expect(put.ok(), `clear confirm.dblclick_load_play: HTTP ${put.status()}`).toBe(true);
+	});
+
 	test('double-clicking a just-selected row loads AND plays the smart-picked deck', async ({
 		page
 	}) => {

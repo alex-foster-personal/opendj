@@ -29,10 +29,12 @@
 
 import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
+import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
-import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
+import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
+import { rowRendersUnavailable } from './browser-row-wire';
 import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
@@ -55,6 +57,10 @@ export interface BrowserRow extends Pick<
 	| 'loudness_reason'
 > {
 	stable_id: string;
+	bpm_source?: string | null;
+	bpm_method?: string | null;
+	bpm_confidence?: number | null;
+	bpm_confidence_error?: string | null;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
 	/** 1-based membership position within the pane playlist (# column). */
@@ -78,18 +84,20 @@ export interface BrowserRow extends Pick<
 	/** Inline genre when the listing or playlist row carries it; null =
 	 * fall back to lazily fetched rb_meta. */
 	genre: string | null;
-	/** Explains an empty genre cell (missing tags extra, no file tag, etc.). */
+	/** Explains an empty genre cell (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
 	/** GENRE-02: a JEV genre-family guess; shown only while genre is empty. */
 	genre_guess?: { family: string; confidence: number; source: 'jev' } | null;
 	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
 	file_exists: boolean | null;
+	/** Path the listing probed (state file_path, or rekordbox FolderPath). */
+	file_path?: string | null;
 	/** Typed disk-truth lane; pending rows are neither playable nor broken. */
 	file_availability: FileAvailabilityStatus;
 	/** Venue-rung quality, inline on every row from the SAME stat pass.
 	 * null only for synthesized rows that never came off the wire. */
 	quality: TrackQuality | null;
-	/** Rekordbox DJPlayCount (0 when unknown / non-RB). */
+	/** Rekordbox DJPlayCount plus Open DJ plays (PLAYS-01); 0 when neither. */
 	play_count: number;
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
@@ -102,6 +110,9 @@ export interface BrowserRow extends Pick<
 	/** Spotify-unmatched placeholder (light green row). True when the
 	 * row is a synthetic spotify-pending track or wire spotify_pending. */
 	spotify_pending?: boolean;
+	/** Inline streaming provider (playlist and /tracks rows); the only source for
+	 * a row with no rekordbox mapping, whose rb_meta never loads. */
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null | undefined;
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;
@@ -131,6 +142,10 @@ export interface BrowserRow extends Pick<
 	match_context: string | null;
 	/** Listing-row lyric summary; null = pipeline never ran. */
 	lyrics: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02): the server's scan wrote it, the
+	 * Err column draws it. Absent or null on synthetic rows and older
+	 * payloads, which then show no beatgrid flag state at all. */
+	grid_quality?: GridQualityRow | null;
 	/** Title-marker remix heuristic (backend is_remix); null on synthetic rows. */
 	is_remix: boolean | null;
 	/** Radio edits are length trims, not remixes - separate tag. */
@@ -202,9 +217,8 @@ export function makeClientRowProvider(
 export class PaneStore {
 	/** Selected playlist id ('all' for All Tracks); null = blank pane. */
 	playlist_id = $state<string | null>(null);
-	kind = $state<
-		'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist' | null
-	>(null);
+	/** The loaded node's kind (PlaylistNode's union); null = blank pane. */
+	kind = $state<PlaylistNode['kind'] | null>(null);
 	/** Pane tab title (playlist name; 'blank list' when empty). */
 	title = $state('blank list');
 	/** Loaded rows in membership order (pre filter/sort). */
@@ -267,14 +281,7 @@ export class PaneStore {
 	beginLoad(
 		playlist_id: string,
 		title: string,
-		kind:
-			| 'all_tracks'
-			| 'playlist'
-			| 'smartlist'
-			| 'folder'
-			| 'missing_tracks'
-			| 'taglist'
-			| 'autolist' = playlist_id === 'all' ? 'all_tracks' : 'playlist'
+		kind: PlaylistNode['kind'] = playlist_id === 'all' ? 'all_tracks' : 'playlist'
 	): number {
 		this.#load_seq += 1;
 		this.playlist_id = playlist_id;
@@ -489,16 +496,13 @@ export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from 
  * into the pure module's SearchableTrack shape (resolving the rb_meta genre
  * fallback here, since that fallback is BrowserRow-specific).
  *
- * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
- * hide-broken: they are intentional unmatched placeholders, not broken links.
- * Pending rows (file_exists null, PERF-RB-02) stay visible: nothing showed them missing. */
+ * Spotify-pending placeholders stay visible under hide-broken. A streaming
+ * service URI is a broken link and hides with the other unavailable rows
+ * (absent, or unchecked / pending). */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
-	const base = hideBroken
-		? rows.filter(
-				(r) => r.file_exists !== false || r.is_streaming === true || r.spotify_pending === true
-			)
-		: rows;
+	// The Broken checkbox is the inverse of hideBroken: unticked hides these rows.
+	const base = hideBroken ? rows.filter((r) => !rowRendersUnavailable(r)) : rows;
 	if (query.trim() === '') return base;
 	return base.filter((r) =>
 		matchesSearchQuery(
@@ -530,6 +534,7 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'energy') return row.energy;
 	else if (key === 'genre') return row.genre ?? row.rb_meta?.genre ?? null;
 	else if (key === 'lyrics') return lyricsSortValue(row.lyrics);
+	else if (key === 'grid') return gridFlagSortValue(row);
 	throw new Error('AutoPlay ranks are not cell values');
 }
 

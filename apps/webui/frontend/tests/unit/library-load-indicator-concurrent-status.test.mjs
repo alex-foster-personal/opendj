@@ -35,9 +35,13 @@ function count(html, pattern) {
 	return [...html.matchAll(pattern)].length;
 }
 
-test('idle props render no overlay', () => {
+// pins 1f9711b7, dd5fad7f, e452be6b: the strip root is reserved space, so it
+// renders while idle too. What idle must NOT render is any status content.
+test('idle props render the reserved strip with no status content', () => {
 	const html = renderIndicator({ loading: false, progress: null, searching: false });
-	assert.equal(html.includes('lli-root'), false, `rendered: ${html}`);
+	assert.equal(count(html, /lli-root/g), 1, `rendered: ${html}`);
+	assert.equal(html.includes('lli-mark'), false, `rendered: ${html}`);
+	assert.equal(html.includes('lli-track'), false, `rendered: ${html}`);
 	assert.equal(html.includes('searching whole collection'), false, `rendered: ${html}`);
 	assert.equal(html.includes('loading...'), false, `rendered: ${html}`);
 });

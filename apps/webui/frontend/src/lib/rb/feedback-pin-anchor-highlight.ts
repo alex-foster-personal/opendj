@@ -1,8 +1,9 @@
 const HIGHLIGHT_CLASS = 'fb-pin-anchor-target';
 let highlighted: Element | null = null;
 
-/** Selectors produced by describeAnchor only; refuse unknown shapes. */
-function parseAnchorSelector(anchor: string): string | null {
+/** Selectors produced by describeAnchor (and feedback-pin-position.ts's
+ * stableSelectorOf, a subset of its shapes) only; refuse unknown shapes. */
+export function parseAnchorSelector(anchor: string): string | null {
 	if (/^#[\w-]+$/.test(anchor)) return anchor;
 	const testId = /^\[data-testid="([^"]+)"\]$/.exec(anchor);
 	if (testId) return `[data-testid="${testId[1]}"]`;

@@ -38,6 +38,7 @@ let vite;
 let webmidi; // $lib/rb/midi/webmidi.svelte.ts
 let flx10; // $lib/rb/midi/maps/ddj-flx10.ts
 let mixtour; // $lib/rb/midi/maps/reloop-mixtour.ts
+let mixtourPro; // $lib/rb/midi/maps/reloop-mixtour-pro.ts
 let ddj400; // $lib/rb/midi/maps/ddj-400.ts
 let flx4; // $lib/rb/midi/maps/ddj-flx4.ts
 
@@ -62,6 +63,8 @@ function _fakeOutput(id, name) {
 const flxIn = _fakeInput('flx-in', 'DDJ-FLX10', 'AlphaTheta');
 const flxOut = _fakeOutput('flx-out', 'DDJ-FLX10');
 const mixIn = _fakeInput('mix-in', 'Mixtour', 'Reloop');
+const mixProIn = _fakeInput('mix-pro-in', 'Reloop Mixtour Pro', 'Reloop');
+const mixProOut = _fakeOutput('mix-pro-out', 'Reloop Mixtour Pro');
 const ddjIn = _fakeInput('ddj-in', 'DDJ-400', 'Pioneer DJ');
 const ddjOut = _fakeOutput('ddj-out', 'DDJ-400');
 const flx4In = _fakeInput('flx4-in', 'DDJ-FLX4', 'Pioneer DJ');
@@ -71,11 +74,13 @@ const fakeAccess = {
 	inputs: new Map([
 		[flxIn.id, flxIn],
 		[mixIn.id, mixIn],
+		[mixProIn.id, mixProIn],
 		[ddjIn.id, ddjIn],
 		[flx4In.id, flx4In]
 	]),
 	outputs: new Map([
 		[flxOut.id, flxOut],
+		[mixProOut.id, mixProOut],
 		[ddjOut.id, ddjOut],
 		[flx4Out.id, flx4Out]
 	]),
@@ -110,6 +115,7 @@ before(async () => {
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	flx10 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx10.ts');
 	mixtour = await vite.ssrLoadModule('/src/lib/rb/midi/maps/reloop-mixtour.ts');
+	mixtourPro = await vite.ssrLoadModule('/src/lib/rb/midi/maps/reloop-mixtour-pro.ts');
 	ddj400 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-400.ts');
 	flx4 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx4.ts');
 
@@ -131,6 +137,7 @@ before(async () => {
 	webmidi._resetMidiForTests();
 	webmidi.registerDeviceMap(flx10.FLX10_MAP);
 	webmidi.registerDeviceMap(mixtour.RELOOP_MIXTOUR_MAP);
+	webmidi.registerDeviceMap(mixtourPro.RELOOP_MIXTOUR_PRO_MAP);
 	webmidi.registerDeviceMap(ddj400.DDJ400_MAP);
 	webmidi.registerDeviceMap(flx4.FLX4_MAP);
 	webmidi.registerActionHandler((action, value, deviceId) => {
@@ -159,6 +166,8 @@ test('initMidi requested sysex:false and resolved both fake devices to maps', ()
 	assert.equal(byId.get('flx-in').hasOutput, true);
 	assert.equal(byId.get('mix-in').mapVendor, 'Reloop');
 	assert.equal(byId.get('mix-in').hasOutput, false);
+	assert.equal(byId.get('mix-pro-in').mapVendor, 'Reloop');
+	assert.equal(byId.get('mix-pro-in').hasOutput, true);
 	assert.equal(byId.get('ddj-in').mapVendor, 'Pioneer DJ');
 	assert.equal(byId.get('ddj-in').hasOutput, true);
 	assert.equal(byId.get('flx4-in').mapVendor, 'Pioneer DJ');
@@ -279,6 +288,22 @@ test('Mixtour PFL note 0x03 -> channel_cue deck 1', () => {
 	assert.deepEqual(actions[n].action, { type: 'channel_cue', deck: 1 });
 });
 
+test('Mixtour Pro messages resolve to the Pro map and normalize browse to one row', () => {
+	let n = actions.length;
+	wire(mixProIn, 0x90, 0x02, 0x7f);
+	assert.equal(actions.length, n + 1);
+	assert.deepEqual(actions[n].action, { type: 'deck_sync_toggle', deck: 1 });
+	assert.equal(actions[n].deviceId, 'mix-pro-in');
+
+	n = actions.length;
+	// Captured encoder direction: low values are up, high values down; the
+	// map inverts WebMIDI's generic two's-complement interpretation.
+	wire(mixProIn, 0xbf, 0x00, 0x01);
+	assert.deepEqual(actions[n].value, { kind: 'relative', delta: -1 });
+	wire(mixProIn, 0xbf, 0x00, 0x7e);
+	assert.deepEqual(actions[n + 1].value, { kind: 'relative', delta: 1 });
+});
+
 test('FLX4 play note -> deck_play_toggle and CFX CC -> filter action', () => {
 	const n = actions.length;
 	// [PDF] 1-1 PLAY/PAUSE deck 1: Note On ch 1, note 11.
@@ -364,4 +389,11 @@ test('LED writes to one (ch,note) coalesce within a flush window: last wins', as
 
 test('sendLed to a device without an output port fails fast', () => {
 	assert.throws(() => webmidi.sendLed('mix-in', 1, 0x0b, 0x7f), /no MIDI output/);
+});
+
+test('Mixtour Pro VU value uses the production coalesced CC output path', async () => {
+	const n = mixProOut.sent.length;
+	webmidi.sendCc('mix-pro-in', 1, 0x1f, 6);
+	await sleep(50);
+	assert.deepEqual(mixProOut.sent.slice(n), [[0xb0, 0x1f, 6]]);
 });

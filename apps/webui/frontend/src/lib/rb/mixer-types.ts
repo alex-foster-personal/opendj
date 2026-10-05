@@ -5,8 +5,9 @@
  * Split out of the former lib/rb/types.ts god module.
  */
 
-import type { DeckId } from './deck-slots';
 import type { HeadphoneAlignmentMode } from '$lib/player/constants';
+import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
+import type { DeckId } from './deck-slots';
 
 /** EQ band selector for AudioEngine.setEq. */
 export type EqBand = 'low' | 'mid' | 'high';
@@ -67,6 +68,29 @@ export type CueAlignStep =
 	| 'applied'
 	| 'failed';
 
+/** One production calibration probe.  The historic implementation only has a
+ * chirp train; `alternate_probe` makes that absence visible instead of
+ * offering a no-op selector. */
+export type CueCalibrationProbe = 'chirp';
+export type CueCalibrationFailure =
+	| 'no_input_signal'
+	| 'weak_correlation'
+	| 'inconsistent_measurements'
+	| 'microphone_access'
+	| 'route_or_operation';
+
+/** Bounded, serializable evidence from the current/last calibration run.
+ * These are measured summaries, never a claim that sound reached a physical
+ * speaker or headphone. */
+export interface HeadphoneCalibrationDiagnostics {
+	probe: CueCalibrationProbe;
+	alternate_probe: 'unavailable';
+	failure: CueCalibrationFailure | null;
+	master_measurements_ms: number[];
+	cue_measurements_ms: number[];
+	spread_ms: number | null;
+}
+
 /** One stage-one attempt, in the serialized read model. The snake_case twin of
  * `CueAlignProbe` (player/cue-align.svelte.ts), which is the controller's own
  * camelCase shape. It lives here because the ear-cup step is interactive: the
@@ -98,10 +122,67 @@ export interface HeadphoneCalibrationState {
 	/** Live stage-one level find. What the modal's bar draws, so an agent sees it too. */
 	probe: HeadphoneCalibrationProbe | null;
 	error: string | null;
+	diagnostics: HeadphoneCalibrationDiagnostics;
+}
+
+export type HeadphoneSignalState = 'inactive' | 'unavailable' | 'measured';
+/** A measured internal app bus or captured microphone block.  It explicitly
+ * cannot prove physical acoustic output. */
+export interface HeadphoneSignal {
+	state: HeadphoneSignalState;
+	rms: number | null;
+	peak: number | null;
+	measured_at: string | null;
+	source: 'application_bus' | 'captured_input';
+	physical_output_proven: false;
+}
+
+export interface HeadphoneSignals {
+	master: HeadphoneSignal;
+	cue: HeadphoneSignal;
+	input: HeadphoneSignal;
+}
+
+/** Route capability is kept apart from CUE graph activity: an active CUE
+ * stream does not establish that a separate MAIN sink was accepted. */
+export interface HeadphoneRouteHealth {
+	state: 'default' | 'selected' | 'unsupported' | 'failed';
+	selected: boolean;
 }
 
 /** Serializable headphone cue-bus read model. `active` means the monitor
  * stream is attached to the element and the selected sink accepted playback. */
+/** IOPIN-14: the outcome of the last attempt to list audio devices.
+ * `listed` is the only state in which the lists are the machine's real device
+ * names; every other state names why they are not, so an unreadable list is
+ * never drawn as an empty one. */
+export type IoDeviceAccessStatus =
+	| 'not_checked'
+	| 'listed'
+	| 'permission_needed'
+	| 'permission_denied'
+	| 'api_missing'
+	| 'enumeration_failed'
+	| 'timeout';
+
+/** What the panel offers next to the state: `grant` opens the permission
+ * flow, `retry` lists again, `none` means there is nothing to fix. */
+export type IoDeviceAccessAction = 'none' | 'grant' | 'retry';
+
+export interface IoDeviceAccess {
+	status: IoDeviceAccessStatus;
+	action: IoDeviceAccessAction;
+	/** Operator-facing sentence for the state; null only when `listed`. */
+	message: string | null;
+	/** The underlying error text for a failed attempt, else null. */
+	detail: string | null;
+	/** False when this browser or shell cannot pin an output (no
+	 * `AudioContext.setSinkId`): audio follows the OS default output. */
+	output_pinning: boolean;
+	/** Standing notices: a saved device that is absent, an unpinnable shell. */
+	notices: string[];
+}
+
 export interface HeadphoneState {
 	mix: number;
 	level: number;
@@ -120,6 +201,9 @@ export interface HeadphoneState {
 	master_delay_ms: number;
 	/** CUEOUT-14: live calibration progress and the last measured offset. */
 	calibration: HeadphoneCalibrationState;
+	/** Actual analyser/capture observations. Null levels are unavailable or inactive, never animated estimates. */
+	signals: HeadphoneSignals;
+	routes: { master: HeadphoneRouteHealth; cue: HeadphoneRouteHealth };
 	outputs: HeadphoneOutputDevice[];
 	inputs: HeadphoneOutputDevice[];
 	/** Room / MASTER sink (`AudioContext.setSinkId`). Null follows the OS default. */
@@ -129,6 +213,11 @@ export interface HeadphoneState {
 	supported: boolean;
 	active: boolean;
 	error: string | null;
+	/** IOPIN-14: whether the device lists above could be read at all, and what
+	 * the operator can do when they could not. Never inferred from an empty list. */
+	device_access: IoDeviceAccess;
+	/** Live output liveness verdict from the monitor path; absent until probed. */
+	liveness_verdict?: LivenessVerdict;
 }
 
 /** Whole mixer surface including the real headphone cue bus. */

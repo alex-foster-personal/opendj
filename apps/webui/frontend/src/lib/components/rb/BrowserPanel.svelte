@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _pingBackend, _pingFrontend } from '$lib/rb/browser-health-probes';
 	// Build unit: browser (COMPONENT-MAP 1.5, SCREENSHOT-SPEC 5).
 	// Layout: icon rail (inert) | playlist tree (real: /playlists + /health
 	// counts - OUR numbers) | 4-pane track list. Rows arrive FULLY HYDRATED
@@ -12,6 +13,7 @@
 	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
+	import StemCacheHealthDot from './StemCacheHealthDot.svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import { shouldRunLibraryFallbackPoll } from '$lib/rb/app-posture';
 	import {
@@ -20,8 +22,6 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
-		pingHealth,
-		timeoutSignal,
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
@@ -31,9 +31,14 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
-	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
+	import { getIngestCoverage } from '$lib/rb/api-ingest';
 	import {
+		coverageDot as _coverageDot,
+		createCoverageRefresh,
+		HEALTH_REFETCH_MS,
 		libraryHealthDot as _computeLibraryHealthDot,
+		unknownDot as _unknownDot,
 		type LibraryHealthDot
 	} from '$lib/rb/library-health-dots';
 	import {
@@ -84,11 +89,23 @@
 		clearSelection,
 		pruneSelection,
 		fetchAllPages,
+		libraryAudioLoadRefusal,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
+		applySettledAvailability,
+		startPendingSettle,
 		PlaylistSetTabs,
+		usbPaneSource,
+		isRemovedStickRow,
+		registerBrowseAdapter,
+		createBrowserKeyboard,
+		createLibraryEditKeys,
+		openIoView,
+		PairingIndex,
+		CompatibleFilterPopover,
 		libraryEditShortcut,
-		loadTrackClipboard
+		loadTrackClipboard,
+		loadBrowserConfirmDialog
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -101,7 +118,6 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
-	import { computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -142,6 +158,7 @@
 		bootPlaylistsPrefetch,
 		bootTracksPrefetch,
 		canBootAllTracksEarly,
+		bootListingWalkSettled,
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
@@ -152,7 +169,8 @@
 		prefetchPlaylistFirstPage,
 		prefetchPlaylistTreeIntent,
 		invalidatePlaylistFirstPage,
-		invalidateAllPlaylistFirstPages
+		invalidateAllPlaylistFirstPages,
+		computeNextOnlyRef
 	} from './browser/browser-panel-support';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
@@ -175,7 +193,7 @@
 		hydrateRuntimePolicy,
 		playlistMostlyBroken
 	} from '$lib/rb/runtime-policy.svelte';
-	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
+	import { PREVIEW_SUPERSEDED, previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
@@ -284,6 +302,18 @@
 	// is mounted (one TrackTable) - a deliberate perf choice, kept.
 	const panes: PaneStore[] = [createPaneStore()];
 	let activePane = $state(0);
+	/** IOPIN-01: ownership is application state, not incidental DOM focus
+	 * (focus zone, deck target and double-Enter live in browser-keyboard). */
+	const browserKeys = createBrowserKeyboard({
+		selectedId: () => panes[activePane].selected_id,
+		activePane: () => activePane,
+		moveTrackSelection: (delta) => _moveMidiSelection(delta),
+		searchFocused: () => searchFocused,
+		searchMode: () => searchMode,
+		openSearchMode: (mode) => openSearchMode(mode)
+	});
+	let browseScrollRevision = 0;
+	let browseScroll = $state<{ order: number; direction: -1 | 1; revision: number } | null>(null);
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
@@ -303,8 +333,33 @@
 	let _healthWriteEpoch = 0;
 	let _playlistsWriteEpoch = 0;
 	let allTracksNonBrokenCount = $state<number | null>(null);
+	// A failed pairing lookup is unknown, not empty: say so instead of
+	// silently dropping the purple underlines (Sol P1, PR #4014).
+	const pairingIndex = new PairingIndex({
+		onError: (message) => pushToast(message, 'error')
+	});
+	let browserConfirmOpen = $state(false);
+	// The confirm dialog renders only after a delete or drop asks, so it loads on
+	// first use instead of riding the /performance route's eager bundle budget.
+	let BrowserConfirmDialog = $state<
+		Awaited<ReturnType<typeof loadBrowserConfirmDialog>>['default'] | null
+	>(null);
+	/** `cancelled`: superseded by a newer confirm before the user answered. */
+	type BrowserConfirmChoice = { ok: boolean; remember: boolean; setDefault: boolean; cancelled?: true };
+	let browserConfirmPending = $state<{
+		title: string;
+		message: string;
+		primaryLabel: string;
+		secondaryLabel: string;
+		showDefault: boolean;
+		resolve: (value: BrowserConfirmChoice) => void;
+	} | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
+	/** The reconcile summary's per-machine breakdown; 'unknown' when the
+	 * engine answered without one, null until the first answer lands. */
+	let libraryAvailability = $state<unknown>(null);
+	let reconcileReadGeneration = 0;
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -339,23 +394,20 @@
 	});
 	let libraryHealthError = $state<string | null>(null);
 	/**
-	 * Derived, not assigned. pin a66ee132a14e: this dot used to quote
-	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
-	 * available" on a library where most of those rows are broken links to
-	 * files that are permanently gone. The playable total is
-	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
-	 * AFTER init - assigning the dot at init time is precisely how it came to
-	 * quote the wrong number, so the dot is computed from whatever has landed
-	 * instead of frozen at the first thing that did.
+	 * Derived, not assigned: computed from whatever has landed rather than
+	 * frozen at init. The verdict comes from the reconcile summary's
+	 * per-machine `availability` breakdown (HEALTH-01), never the raw row
+	 * count: green means every track expected on THIS machine resolves.
+	 * The source tree retains its non-broken library navigation count.
 	 */
 	const libraryHealth = $derived<LibraryHealthDot>(
 		_computeLibraryHealthDot(
 			libraryHealthError,
 			allTracksCount,
 			playlists.length,
-			allTracksNonBrokenCount,
-			allTracksBrokenCount,
-			allTracksReconcileError
+			libraryAvailability,
+			allTracksReconcileError,
+			panes[0].load_progress
 		)
 	);
 	let vocalsCompletion = $state<LibraryHealthDot>({
@@ -415,6 +467,23 @@
 	let searchReturnSnap = $state<NavSnap | null>(null);
 
 	const pane = $derived(panes[activePane]);
+	// PERF-RB-03 (pin cba7bf1dbb05): rows that loaded with disk truth pending
+	// settle on screen, so hide-broken and the tree count agree.
+	$effect(() => {
+		const p = pane;
+		const id = p.playlist_id;
+		void p.rows;
+		if (p.loading || id === null || (p.kind !== 'playlist' && p.kind !== 'smartlist')) return;
+		if (isMissingTracksId(id) || isAutolistId(id)) return;
+		const fetchRows = p.kind === 'smartlist' ? _fetchSmartlistRows : _fetchPlaylistRows;
+		return untrack(() =>
+			startPendingSettle({
+				rows: () => (p.playlist_id === id ? p.rows : []),
+				fetchRows: async () => (await fetchRows(id)).rows,
+				onError: (exc) => console.error(`[pending-settle] ${id}: ${String(exc)}`)
+			})
+		);
+	});
 	const spotifyPlaylists = $derived(playlists.filter((playlist) => playlist.vendor === 'spotify'));
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
@@ -473,25 +542,9 @@
 			cachedAnlzEntry: (stable_id: string) => getAnlzEntry(stable_id)
 		})
 	);
-	/** Reactively copies a decoded local waveform strip into the selected
-	 * row(s), across every pane and every row loaded there. Reads the shared
-	 * anlz cache (same pattern as `vocalsById` above) instead of fetching
-	 * directly, so a decode that only resolves after `ensureAnlz`'s ambient
-	 * retry (issue #735 follow-up) still reaches the row. The old one-shot
-	 * fetch-and-adopt stopped watching the moment its OWN fetch settled
-	 * retryable, so a track needing a second or third retry never got its
-	 * strip until the row was reselected or the page reloaded (Codex
-	 * finding, issue #735 follow-up, discussion_r3908286630). Applies to
-	 * EVERY row matching a selected stable_id in EVERY pane, not just the
-	 * pane whose own selection triggered the decode: the same track can be
-	 * loaded as a row in more than one pane, and a copy that isn't the
-	 * active selection still shares the one cache entry
-	 * (discussion_r3908503574, discussion_r3909752654). Watches each pane's
-	 * full `selected_ids` multi-selection, not just its singular
-	 * `selected_id` (the last-clicked anchor): a Cmd/Ctrl-click adds to
-	 * `selected_ids` without moving `selected_id` off the new anchor, so an
-	 * earlier multi-selected row's still-pending decode needs its own id
-	 * watched too (discussion_r3910053530). */
+	/** Copies a decoded local waveform strip onto every selected row in every
+	 * pane from the shared anlz cache, including a later ambient retry
+	 * (issue #735). Watches `selected_ids`, not only `selected_id`. */
 	$effect(() => {
 		const selectedIds = new Set<string>();
 		for (const p of panes) {
@@ -612,6 +665,51 @@
 	);
 
 	/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
+	const referenceMasterStableId = $derived.by((): string | null => {
+		const states = DECK_IDS.map((d) => decks[d]);
+		const ordered = [
+			...states.filter((s) => s.is_master && s.stable_id !== null),
+			...states.filter((s) => s.playing && s.stable_id !== null),
+			...states.filter((s) => s.stable_id !== null)
+		];
+		for (const s of ordered) {
+			if (s.stable_id !== null) return s.stable_id;
+		}
+		return null;
+	});
+
+	$effect(() => {
+		void pairingIndex.refresh(() => referenceMasterStableId);
+	});
+
+	function askBrowserConfirm(cfg: {
+		title: string;
+		message: string;
+		primaryLabel: string;
+		secondaryLabel: string;
+		showDefault?: boolean;
+	}): Promise<BrowserConfirmChoice> {
+		const loaded =
+			BrowserConfirmDialog === null
+				? loadBrowserConfirmDialog().then((mod) => {
+						BrowserConfirmDialog = mod.default;
+					})
+				: Promise.resolve();
+		return loaded.then(() => new Promise((resolve) => {
+			// The dialog is not modal over the browser, so a second delete or
+			// drop can arrive while one is open: settle the first as cancelled
+			// rather than drop its resolver and leave it awaiting forever
+			// (Sol P2, PR #4014). Not ok:false - for a drop that means Move.
+			browserConfirmPending?.resolve({ ok: false, remember: false, setDefault: false, cancelled: true });
+			browserConfirmPending = {
+				...cfg,
+				showDefault: cfg.showDefault ?? false,
+				resolve
+			};
+			browserConfirmOpen = true;
+		}));
+	}
+
 	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
 		const slices = DECK_IDS.map((d) => {
 			const s = decks[d];
@@ -638,7 +736,7 @@
 		if (!uiPrefs.next_only_filter) return rows;
 		const ref = nextOnlyRef;
 		if (ref === null) return rows;
-		return rows.filter((r) => isAppropriateNext(r, ref));
+		return rows.filter((r) => isAppropriateNext(r, ref, uiPrefs.compatible_filter));
 	}
 
 	function _applyPaneFilters(rows: BrowserRow[]): BrowserRow[] {
@@ -833,6 +931,7 @@
 	});
 
 	onMount(() => {
+		pairingIndex.start(() => referenceMasterStableId);
 		const uninstallBrowserSortIpc = installBrowserSortIpc({
 			sort: sortBy,
 			query: () => ({
@@ -856,6 +955,10 @@
 				};
 			}
 		});
+		const unregisterMidiBrowser = registerBrowseAdapter({
+			moveSelection: _moveMidiSelection,
+			loadSelected: _loadMidiSelection
+		});
 		const url = new URL(window.location.href);
 		const lv1 = parseLv1(url.searchParams);
 		if (lv1.source === 'spotify') {
@@ -869,26 +972,7 @@
 			// still waiting to settle.
 			if (request.revision > 0) _setSearchNow(request.query, request);
 		});
-		const onKey = (e: KeyboardEvent): void => {
-			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-			if (e.key !== 'f' && e.key !== 'F') return;
-			// Don't steal from text fields outside the browser search box.
-			const t = e.target;
-			if (t instanceof HTMLElement) {
-				const tag = t.tagName;
-				const inSearch = t.closest('.rb-search') !== null;
-				if (
-					!inSearch &&
-					(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable)
-				) {
-					return;
-				}
-			}
-			e.preventDefault();
-			if (e.shiftKey) openSearchMode('collection');
-			else if (searchFocused && searchMode === 'filter') openSearchMode('find');
-			else openSearchMode('filter');
-		};
+		const onKey = browserKeys.onKey;
 		window.addEventListener('keydown', onKey);
 		window.addEventListener('keydown', onLibraryEditKey);
 		// PERF-UI-01: first crossing into a short viewport collapses
@@ -904,6 +988,9 @@
 		};
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
+		// HEALTH-14: the cached coverage read answers in milliseconds, so it
+		// leaves at mount instead of queueing behind the whole paged listing.
+		void _loadIngestCoverage();
 		void _init();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
@@ -963,13 +1050,23 @@
 			_libraryRefreshGate.request();
 		}, 60_000);
 
+		// The dots re-ask on their own clock, independent of the playing-gated
+		// row refetch above: coverage moves while the drain works, with no
+		// library row changing. Coverage only; the reconcile scan is heavier
+		// and rides the `tracks` event a sync pull publishes.
+		const healthRefetchTimer = setInterval(() => void _loadIngestCoverage(), HEALTH_REFETCH_MS);
+
 		return () => {
+			pairingIndex.stop();
 			uninstallBrowserSortIpc();
+			unregisterMidiBrowser();
 			unregisterPerformanceBrowser();
 			connAlive = false;
 			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
+			clearInterval(healthRefetchTimer);
+			_coverageRefresh.dispose();
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -980,108 +1077,30 @@
 			shortViewportMq.removeEventListener('change', applyShortViewport);
 		};
 	});
-	/**
-	 * The Library health dot policy now lives in `$lib/rb/library-health-dots`
-	 * (pure, unit tested with no component or network mock), the same split
-	 * as `meter-math.ts`. `libraryHealth` above calls it directly.
-	 */
-
-	/** Liveness poll cadence and per-probe timeout, restored with the dots. */
+	/** Liveness poll cadence, restored with the dots. The probe timeout lives with the probes. */
 	const CONN_PING_MS = 2500;
-	const CONN_PING_TIMEOUT_MS = 2000;
 
-	async function _pingBackend(): Promise<LibraryHealthDot> {
+	// HEALTH-12: paint the engine's last measurement at once and re-ask soon
+	// while a newer one is in flight. The backoff lives in library-health-dots.
+	const _coverageRefresh = createCoverageRefresh(async () => {
 		try {
-			await pingHealth(CONN_PING_TIMEOUT_MS);
-			return { label: 'Backend', state: 'complete', detail: 'engine online' };
-		} catch (error: unknown) {
-			// The reason is kept rather than flattened to "offline": a timeout
-			// and a 500 want different things from the reader.
-			const why = error instanceof Error ? error.message : String(error);
-			return { label: 'Backend', state: 'error', detail: `engine not answering - ${why}` };
-		}
-	}
-
-	async function _pingFrontend(): Promise<LibraryHealthDot> {
-		const { signal, clear } = timeoutSignal(CONN_PING_TIMEOUT_MS);
-		try {
-			const response = await fetch(`${window.location.origin}/`, {
-				method: 'GET',
-				cache: 'no-store',
-				signal
-			});
-			if (!response.ok) {
-				return {
-					label: 'Frontend',
-					state: 'error',
-					detail: `dev server returned HTTP ${response.status}`
-				};
-			}
-			return { label: 'Frontend', state: 'complete', detail: 'dev server online' };
-		} catch (error: unknown) {
-			const why = error instanceof Error ? error.message : String(error);
-			return { label: 'Frontend', state: 'error', detail: `dev server not answering - ${why}` };
-		} finally {
-			clear();
-		}
-	}
-
-	function _coverageDot(
-		label: LibraryHealthDot['label'],
-		coverage: IngestCoverage,
-		step: 'vocals' | 'stems' | 'lyrics'
-	): LibraryHealthDot {
-		const missing = coverage.missing[step];
-		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
-			return { label, state: 'unavailable', detail: `${step} coverage could not be measured` };
-		}
-		if (coverage.on_disk <= 0) {
-			return {
-				label,
-				state: 'unavailable',
-				detail: `no playable tracks to measure, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
-			};
-		}
-		const completed = coverage.on_disk - missing;
-		if (completed < 0) {
-			throw new Error(`${step} coverage missing count exceeds on-disk tracks`);
-		}
-		// Corruption is a DISTINCT, always-surfaced state - never folded into a
-		// quiet 'incomplete'. It is a subset of `missing` (a malformed entry is
-		// not done, whatever else it is), so it is checked after validating
-		// `missing` but before the ordinary complete/incomplete split. lyrics
-		// has no refresh runner (see routes/ingest.py), so a corrupt lyrics
-		// entry has NO repair path except this dot saying so.
-		const corrupt = coverage.corrupt[step];
-		if (typeof corrupt !== 'number' || !Number.isInteger(corrupt) || corrupt < 0) {
-			throw new Error(`${step} coverage corrupt count must be a nonnegative integer`);
-		}
-		if (corrupt > 0) {
-			return {
-				label,
-				state: 'error',
-				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
-			};
-		}
-		return {
-			label,
-			state: missing === 0 ? 'complete' : 'incomplete',
-			detail: `${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
-		};
-	}
-
-	async function _loadIngestCoverage(): Promise<void> {
-		try {
-			const coverage = await getIngestCoverage();
+			const coverage = await getIngestCoverage({ cached: true });
 			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
 			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
 			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
+			return { ok: true, refreshing: coverage.refreshing, refresh_error: coverage.refresh_error };
 		} catch (error: unknown) {
-			const detail = error instanceof Error ? error.message : String(error);
-			vocalsCompletion = { label: 'Vocals completion', state: 'error', detail };
-			stemsCompletion = { label: 'Stems completion', state: 'error', detail };
-			lyricsCompletion = { label: 'Lyrics completion', state: 'error', detail };
+			// An endpoint that cannot answer is grey "unknown", never a verdict.
+			const why = error instanceof Error ? error.message : String(error);
+			vocalsCompletion = _unknownDot('Vocals completion', why);
+			stemsCompletion = _unknownDot('Stems completion', why);
+			lyricsCompletion = _unknownDot('Lyrics completion', why);
+			return { ok: false };
 		}
+	});
+
+	function _loadIngestCoverage(): Promise<void> {
+		return _coverageRefresh.load();
 	}
 
 	function _prefetchPlaylistTreeIntent(
@@ -1095,12 +1114,17 @@
 	}
 
 	async function _loadReconcileSummary(): Promise<void> {
+		const generation = ++reconcileReadGeneration;
+		libraryAvailability = null;
 		try {
 			const summary = await getReconcileSummary();
+			if (generation !== reconcileReadGeneration) return;
 			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
+			libraryAvailability = summary.availability ?? 'unknown';
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
+			if (generation !== reconcileReadGeneration) return;
 			allTracksReconcileError = error instanceof Error ? error.message : String(error);
 		}
 	}
@@ -1117,6 +1141,8 @@
 			spotify_selected_id: spotifySelectedId
 		});
 		let bootPaneRestored = false;
+		// LIBM-138: a boot that opens another pane never walks All Tracks.
+		if (!bootAllTracksEarly) bootListingWalkSettled();
 		let bootPaneDone: Promise<void> | null = null;
 		const healthPromise = getHealthAtBoot(getHealth);
 		const playlistsPromise = bootPlaylistsPrefetch();
@@ -1203,9 +1229,6 @@
 			// resolves when playlist boot throws (#3750).
 			void _loadReconcileSummary();
 		}
-		// This coverage request is deliberately after primary browser initialization:
-		// tree and first track pane must never wait on ingestion accounting.
-		void _loadIngestCoverage();
 	}
 
 	/**
@@ -1378,13 +1401,20 @@
 		if (isAutolistId(snap.playlist_id)) {
 			return autolistNode(autolistTitle, 0);
 		}
-		if (snap.playlist_id.startsWith('taglist:')) {
+		// Prefix-addressed panes (taglists, Play from USB sticks) are not in
+		// the library tree; their names come from their own sources on load.
+		const prefixKind = snap.playlist_id.startsWith('taglist:')
+			? 'taglist'
+			: snap.playlist_id.startsWith('usbpl:')
+				? 'usb'
+				: null;
+		if (prefixKind !== null) {
 			return {
 				playlist_id: snap.playlist_id,
 				name: snap.playlist_name,
 				track_count: 0,
 				broken_count: 0,
-				kind: 'taglist',
+				kind: prefixKind,
 				children: []
 			};
 		}
@@ -1571,6 +1601,12 @@
 			// leave it there until the next event. The mount-time read in
 			// `_init` above has no such constraint and shares one.
 			const healthRes = await getHealthFreshWithRetry(getHealth);
+			// RAW state_db row total, the same population `_init` writes: it
+			// only says whether the library has rows, and All Tracks nodes
+			// pair it with `allTracksBrokenCount` like any playlist's
+			// track_count. Every NON-BROKEN total reads
+			// `allTracksNonBrokenCount` and shows unknown while it is null;
+			// never substitute this for it, nor it for this (Sol P1, #4014).
 			allTracksCount = healthRes.health.state_db.tracks;
 			_healthWriteEpoch += 1;
 		} catch (exc) {
@@ -1588,6 +1624,10 @@
 			// pane showing another playlist's tracks is still wrong on screen.
 			const requestedPlaylistId = p.playlist_id;
 			try {
+				if (p.kind === 'usb') {
+					await (await usbPaneSource()).refreshUsbPane(p);
+					continue;
+				}
 				const result =
 					requestedPlaylistId === 'all'
 						? await _fetchAllRows()
@@ -1779,10 +1819,14 @@
 			return;
 		const skip = uiPrefs.confirm.delete_playlist === false;
 		if (!skip) {
-			const every = window.confirm(`Delete playlist "${node.name}"?`);
-			if (!every) return;
-			const remember = window.confirm('Do this every time (skip delete confirm)?');
-			if (remember) setConfirmPref('delete_playlist', false);
+			const choice = await askBrowserConfirm({
+				title: 'Delete playlist',
+				message: `Delete playlist "${node.name}"?`,
+				primaryLabel: 'Delete',
+				secondaryLabel: 'Cancel'
+			});
+			if (!choice.ok) return;
+			if (choice.remember) setConfirmPref('delete_playlist', false);
 		}
 		try {
 			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
@@ -1855,12 +1899,18 @@
 		const remembered = uiPrefs.confirm.playlist_drop_mode;
 		let mode: 'add' | 'move' | null = remembered ?? null;
 		if (mode === null) {
-			const add = window.confirm(
-				`Drop ${stableIds.length} track(s) onto playlist.\n\nOK = Add\nCancel = choose Move`
-			);
-			mode = add ? 'add' : 'move';
-			const remember = window.confirm(`Remember "${mode}" every time for playlist drops?`);
-			if (remember) setConfirmPref('playlist_drop_mode', mode);
+			const choice = await askBrowserConfirm({
+				title: 'Drop onto playlist',
+				message: `Drop ${stableIds.length} track(s).\n\nAdd keeps them on the source playlist; Move transfers membership.`,
+				primaryLabel: 'Add',
+				secondaryLabel: 'Move',
+				showDefault: true
+			});
+			if (choice.cancelled) return;
+			mode = choice.ok ? 'add' : 'move';
+			if (choice.remember || choice.setDefault) {
+				setConfirmPref('playlist_drop_mode', mode);
+			}
 		}
 		try {
 			let effectiveMode: 'add' | 'move' = 'add';
@@ -1954,7 +2004,8 @@
 			node.kind !== 'missing_tracks' &&
 			node.kind !== 'taglist' &&
 			node.kind !== 'smartlist' &&
-			node.kind !== 'autolist'
+			node.kind !== 'autolist' &&
+			node.kind !== 'usb'
 		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
@@ -1974,6 +2025,13 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
 		try {
+			if (node.kind === 'usb') {
+				// Play from USB (USBPLAY-05): rows come from the stick's export,
+				// read only; the store also grays and restores them on unplug.
+				const failure = await (await usbPaneSource()).loadUsbPane(p, seq, () => panes);
+				if (failure !== null) pushToast(`playlist load failed: ${failure}`, 'error');
+				return;
+			}
 			if (node.kind === 'autolist') {
 				await fillAutolistPane({
 					pane: p,
@@ -2098,13 +2156,13 @@
 				children: []
 			};
 		}
-		if (p.playlist_id.startsWith('taglist:')) {
+		if (p.playlist_id.startsWith('taglist:') || p.kind === 'usb') {
 			return {
 				playlist_id: p.playlist_id,
 				name: p.title,
 				track_count: p.rows.length,
 				broken_count: 0,
-				kind: 'taglist',
+				kind: p.kind === 'usb' ? 'usb' : 'taglist',
 				children: []
 			};
 		}
@@ -2211,10 +2269,12 @@
 		// stayed empty even when /artwork could serve real bytes. Unmapped
 		// rows now pay the same one-fetch-per-visible-row cost mapped rows
 		// already pay via this same IntersectionObserver-gated path.
-		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
+		// Stick rows (usb- ids) have no library row: rb-meta would only 404.
+		if (row.rb_meta !== null || row.stable_id.startsWith('usb-') || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
+			applySettledAvailability(row);
 		} catch (exc) {
 			// A track with no rekordbox vendor mapping is NOT an error any more:
 			// rb-meta answers 200 with the local-vendor payload. A 404 here now
@@ -2243,6 +2303,10 @@
 	// ------------------------------------------------------- rating edits
 
 	function rateRow(row: BrowserRow, next: number): void {
+		if (row.stable_id.startsWith('usb-')) {
+			pushToast('stick tracks are read only: the rating was not saved', 'error');
+			return;
+		}
 		void _patchRating(row, next);
 	}
 
@@ -2276,13 +2340,8 @@
 	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
 		rb_meta?: BrowserRow['rb_meta'];
 		file_availability?: BrowserRow['file_availability'];
+		file_path?: string | null;
 	};
-
-	/** PERF-RB-01: disk truth not probed yet (file_exists null). Refused with
-	 * its own reason, never reported as a missing file. */
-	function _availabilityPending(row: LoadableRow): boolean {
-		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
-	}
 
 	function loadRow(
 		row: LoadableRow,
@@ -2521,16 +2580,16 @@
 		// broken link has no audio to preview, and finding that out as an
 		// opaque decoder error several hundred milliseconds later teaches the
 		// operator nothing. `is_streaming` has no local file at all.
-		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
-			pushToast('preview: streaming track has no local audio to preview', 'error');
+		if (isRemovedStickRow(row)) {
+			pushToast('preview: Stick removed', 'error');
 			return;
 		}
-		if (_availabilityPending(row)) {
-			pushToast('preview: availability still checking (wait for disk probe)', 'error');
-			return;
-		}
-		if (!row.file_exists) {
-			pushToast('preview: audio file missing on disk (broken link)', 'error');
+		const previewRefusal = libraryAudioLoadRefusal(row);
+		if (previewRefusal !== null) {
+			const detail = /streaming track/i.test(previewRefusal)
+				? previewRefusal
+				: previewRefusal.replace(/^cannot load: /, '');
+			pushToast(`preview: ${detail}`, 'error');
 			return;
 		}
 		// The row already carries the analyzed BPM, so the tempo match (CUEOUT-15
@@ -2563,17 +2622,15 @@
 		// generation number, not a boolean, is what makes that safe.
 		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
-			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
-				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
+			if (isRemovedStickRow(row)) {
+				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
-			if (_availabilityPending(row)) {
-				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
-				return;
-			}
-			if (!row.file_exists) {
-				// FR-1: broken-link rows stay selectable but never load.
-				pushToast('cannot load: audio file missing on disk (broken link)', 'error');
+			const loadRefusal = libraryAudioLoadRefusal(row);
+			if (loadRefusal !== null) {
+				// Refuse before dispatchPerformanceCommand. Absent and
+				// unchecked/pending rows never become a deck error toast.
+				pushToast(loadRefusal, 'error');
 				return;
 			}
 			const target = deck ?? _lowestFreeDeck();
@@ -2761,7 +2818,10 @@
 	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
-		if (p.selected_id !== row.stable_id) _pushNav();
+		if (p.selected_id !== row.stable_id) {
+			browserKeys.resetEnter();
+			_pushNav();
+		}
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
 		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
@@ -2777,6 +2837,25 @@
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
 		ensureAudioPrefetch(row.stable_id);
+	}
+
+	function _moveMidiSelection(delta: number): void {
+		const row = nextMidiSelection(visibleRows, panes[activePane].selected_id, delta);
+		if (row === null) return;
+		browserKeys.tracksMoved();
+		selectRow(row);
+		browseScrollRevision += 1;
+		browseScroll = { order: row.order, direction: delta > 0 ? 1 : -1, revision: browseScrollRevision };
+	}
+
+	function _loadMidiSelection(deck: DeckId): void {
+		const row = midiLoadRow(visibleRows, panes[activePane].selected_id);
+		if (row === undefined) return;
+		if (row === null) {
+			pushToast(`Deck ${deck}: select a track before pressing LOAD`, 'error');
+			return;
+		}
+		loadRow(row, deck);
 	}
 
 	/**
@@ -3116,128 +3195,24 @@
 		if (node !== null) await _loadPane(p, node);
 	}
 
-	// Cmd/Ctrl+A, C, X, V on the track list (pins ce142ae7e22f, 0b1e12cc01d0).
-	// Pure rules live in ./browser/track-clipboard; this owns the key and the
-	// one write. Paste goes through the atomic transfer endpoint, which is a
-	// set-union on the destination, so a repeated Cmd+V never stacks
-	// duplicates and a cut paste removes the tracks from their source in the
-	// same transaction.
-	function onLibraryEditKey(e: KeyboardEvent): void {
-		if (e.repeat) return;
-		const action = libraryEditShortcut(e);
-		if (action === null) return;
-		// A modal dialog over the library owns the keyboard.
-		if (document.querySelector('dialog[open], [aria-modal="true"]') !== null) return;
-		if (action === 'copy' || action === 'cut') {
-			// Selected page text (a lyric line, a toast) keeps the native copy.
-			const sel = window.getSelection();
-			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
-		}
-		e.preventDefault();
-		void _runLibraryEdit(action, pane);
-	}
-
-	async function _runLibraryEdit(action: 'select_all' | 'copy' | 'cut' | 'paste', p: PaneStore): Promise<void> {
-		const { clipboardToastMessage, selectAllRows, selectedIdsInViewOrder, setTrackClipboard } =
-			await loadTrackClipboard();
-		if (action === 'select_all') {
-			if (selectAllRows(p, renderedRows) === 0) pushToast('no tracks to select', 'info');
-			return;
-		}
-		if (action === 'copy' || action === 'cut') {
-			const ids = selectedIdsInViewOrder(renderedRows, p.selected_orders, p.selected_ids);
-			if (ids.length === 0) {
-				pushToast(`select tracks to ${action} first`, 'info');
-				return;
-			}
-			const fromPlaylist =
-				source === 'collection' && p.kind === 'playlist' && p.playlist_id !== null && !p.whole_collection
-					? p.playlist_id
-					: null;
-			// Cutting from something that is not a playlist (All Tracks,
-			// search results) has nothing to remove the tracks from: copy.
-			const mode = action === 'cut' && fromPlaylist !== null ? 'cut' : 'copy';
-			setTrackClipboard({
-				stable_ids: ids,
-				mode,
-				source_playlist_id: fromPlaylist,
-				source_title: p.title
-			});
-			pushToast(clipboardToastMessage(ids.length, mode), 'info');
-			return;
-		}
-		await _pasteTracks(p);
-	}
-
-	async function _pasteTracks(p: PaneStore): Promise<void> {
-		const { getTrackClipboard, partitionPaste, pasteBlockReason, pasteToastMessage, setTrackClipboard } =
-			await loadTrackClipboard();
-		const clip = getTrackClipboard();
-		const blocked = pasteBlockReason(p, source, clip);
-		if (blocked !== null || clip === null || p.playlist_id === null) {
-			pushToast(blocked ?? 'nothing to paste', 'info');
-			return;
-		}
-		const destId = p.playlist_id;
-		const destTitle = p.title;
-		const move = clip.mode === 'cut' && clip.source_playlist_id !== null && clip.source_playlist_id !== destId;
-		try {
-			const dest = await getPlaylistTracksEtag(destId);
-			const plan = partitionPaste(
-				clip.stable_ids,
-				dest.detail.tracks.map((t) => t.stable_id)
-			);
-			if (plan.add.length > 0 || move) {
-				const src = move && clip.source_playlist_id !== null
-					? await getPlaylistTracksEtag(clip.source_playlist_id)
-					: null;
-				await transferPlaylistTracks(destId, dest.etag, {
-					stable_ids: clip.stable_ids,
-					mode: move ? 'move' : 'add',
-					...(src !== null && clip.source_playlist_id !== null
-						? { source_playlist_id: clip.source_playlist_id, source_etag: src.etag }
-						: {})
-				});
-			}
-			// A cut pastes once, like a Finder move; copy can paste again.
-			if (move) setTrackClipboard({ ...clip, mode: 'copy', source_playlist_id: null });
-			pushToast(pasteToastMessage(plan.add.length, plan.already, destTitle, move), 'info');
-			// Reload every pane showing either playlist BEFORE the tree refresh,
-			// so the pasted rows are on screen as soon as the write lands.
-			const sourceId = move ? clip.source_playlist_id : null;
-			await Promise.all(
-				panes
-					.filter((q) => q.playlist_id === destId || (sourceId !== null && q.playlist_id === sourceId))
-					.map(async (q) => {
-						const node = _currentNode(q);
-						if (node !== null) await _loadPane(q, node);
-					})
-			);
-			if (p.playlist_id === destId && plan.add.length > 0) await _revealPasted(p, plan.add);
-		} catch (exc) {
-			if (exc instanceof PlaylistConflictError) {
-				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
-			} else {
-				pushToast(`paste failed: ${String(exc)}`, 'error');
-			}
-			return;
-		}
-		await _refreshPlaylists();
-	}
-
-	/** Pasted rows land at the END of the playlist, below the fold in a long
-	 * one: select them and scroll the first into view so the paste is seen. */
-	async function _revealPasted(p: PaneStore, pastedIds: string[]): Promise<void> {
-		const { pastedRowOrders, pasteRevealScrollTop, selectRowOrders } = await loadTrackClipboard();
-		const orders = pastedRowOrders(p.rows, pastedIds);
-		if (orders.length === 0) return;
-		selectRowOrders(p, orders);
-		if (p !== pane) return;
-		const index = renderedRows.findIndex((r) => r.order === orders[0]);
-		if (index < 0) return;
-		p.rememberScroll(pasteRevealScrollTop(index, uiPrefs.library_density));
-		navEpoch += 1;
-	}
+	// Cmd/Ctrl+A, C, X, V on the track list (pins ce142ae7e22f, 0b1e12cc01d0):
+	// the key handler and the atomic-transfer paste live in
+	// ./browser/library-edit-keys; this supplies the pane state it reads.
+	const onLibraryEditKey = createLibraryEditKeys({
+		pane: () => pane,
+		panes: () => panes,
+		renderedRows: () => renderedRows,
+		source: () => source,
+		// TrackTable's ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT.
+		rowHeight: () => (uiPrefs.library_density === 'cosy' ? 30 : 22),
+		currentNode: _currentNode,
+		loadPane: _loadPane,
+		refreshPlaylists: _refreshPlaylists,
+		bumpNavEpoch: () => {
+			navEpoch += 1;
+		},
+		pushToast: (message, kind) => pushToast(message, kind)
+	});
 
 	let addToPlaylistIds = $state<string[] | null>(null);
 
@@ -3543,14 +3518,19 @@
 					preference (prefs.svelte.ts validates that exact key). Only the
 					user-facing label changes, to the one the maintainer asked for.
 				-->
-				<label class="next-only" title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Shortcut: Tab">
-					<input
-						type="checkbox"
-						aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
-						checked={uiPrefs.next_only_filter}
-						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
-					/>
-					<span>compatible</span>
+				<label
+					class="next-only"
+					title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Hover compatible for range buttons. Shortcut: Tab"
+				>
+					<CompatibleFilterPopover>
+						<input
+							type="checkbox"
+							aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
+							checked={uiPrefs.next_only_filter}
+							onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+						/>
+						<span>compatible</span>
+					</CompatibleFilterPopover>
 				</label>
 				<label
 					class="offline-filter"
@@ -3618,18 +3598,16 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		{#snippet libraryLoadOverlay()}
-			<LibraryLoadIndicator
-				loading={pane.loading}
-				progress={pane.load_progress}
-				searching={pane.searching}
-			/>
-		{/snippet}
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
 			<PlaylistSetTabs playlistId={pane.playlist_id} />
 		{/if}
+		<LibraryLoadIndicator
+			loading={pane.loading}
+			progress={pane.load_progress}
+			searching={pane.searching}
+		/>
 		<TrackTable
-			bodyOverlay={libraryLoadOverlay}
+			pairedPartnerIds={pairingIndex.partnerIds}
 			{provider}
 			selectedIds={pane.selected_ids}
 			selectedOrders={pane.selected_orders}
@@ -3649,6 +3627,7 @@
 			{filterBypassNote}
 			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
+			{browseScroll}
 			removable={editablePane}
 			reorderable={reorderablePane}
 			onscrollcursor={(top) => {
@@ -3767,17 +3746,47 @@
 					class:incomplete={dot.state === 'incomplete'}
 					class:unavailable={dot.state === 'unavailable'}
 					class:error={dot.state === 'error'}
+					class:loading={dot.state === 'loading'}
 					class="health-dot"
 					aria-label={`${dot.label}: ${dot.detail}`}
 				>
 					<span aria-hidden="true"></span>
 				</button>
 			{/each}
+			<StemCacheHealthDot />
 			<div class="health-popover" role="tooltip" use:viewportFloatingPopover={{ preferred: 'above', gap: 4 }}>
 				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
 					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
 				{/each}
 			</div>
+		</div>
+		<div class="tray-right-cluster">
+			<button
+				type="button"
+				class="tray-midi"
+				aria-label="Open audio I/O and MIDI"
+				title="Open audio I/O view (MIDI connect)"
+				onclick={() => {
+					// Same entry as the mixer's I/O button: acquire the audio devices
+					// inside this click's user gesture (selectAudioOutput needs it,
+					// and device labels stay locked without it), then open the view.
+					void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
+					openIoView();
+				}}
+			>
+				MIDI
+			</button>
+			<button
+				type="button"
+				class="tray-preview"
+				class:active={previewCue.playing}
+				disabled={!previewCue.playing}
+				aria-label={previewCue.playing ? 'Stop library preview' : 'Library preview cue'}
+				title={previewCue.playing ? 'Stop library preview' : 'No preview playing: click a mini-waveform to start one'}
+				onclick={() => void stopPreviewCue()}
+			>
+				Preview
+			</button>
 		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
@@ -3792,6 +3801,29 @@
 		</span>
 	</div>
 </section>
+
+{#if browserConfirmPending && BrowserConfirmDialog}
+	<!-- Keyed per request (PR #4014, Sol P2): a superseding confirmation remounts
+	     the dialog, so the previous prompt's checkboxes never carry over. -->
+	{#key browserConfirmPending}
+	<BrowserConfirmDialog
+		bind:open={browserConfirmOpen}
+		title={browserConfirmPending.title}
+		message={browserConfirmPending.message}
+		primaryLabel={browserConfirmPending.primaryLabel}
+		secondaryLabel={browserConfirmPending.secondaryLabel}
+		showDefault={browserConfirmPending.showDefault}
+		onPrimary={(opts) => {
+			browserConfirmPending?.resolve({ ok: true, ...opts });
+			browserConfirmPending = null;
+		}}
+		onSecondary={(opts) => {
+			browserConfirmPending?.resolve({ ok: false, ...opts });
+			browserConfirmPending = null;
+		}}
+	/>
+	{/key}
+{/if}
 
 <TrackEditModals
 	{openModal}
@@ -4187,6 +4219,7 @@
 		background: var(--rb-green, #35c04f);
 		box-shadow: 0 0 4px color-mix(in srgb, var(--rb-green, #35c04f) 70%, transparent);
 	}
+	.health-dot.loading > span:first-child { background: color-mix(in srgb, var(--rb-accent) 60%, #3a4048); }
 	.health-dot.incomplete > span:first-child { background: var(--rb-orange); }
 	.health-dot.unavailable > span:first-child { background: var(--rb-text-dim); }
 	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }

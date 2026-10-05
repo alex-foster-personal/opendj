@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-native-midi-snapshot"
+description = "Enables the native_midi_snapshot command without any pre-configured scope."
+commands.allow = ["native_midi_snapshot"]
+
+[[permission]]
+identifier = "deny-native-midi-snapshot"
+description = "Denies the native_midi_snapshot command without any pre-configured scope."
+commands.deny = ["native_midi_snapshot"]

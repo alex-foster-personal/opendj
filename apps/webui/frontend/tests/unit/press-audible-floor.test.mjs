@@ -476,7 +476,7 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 
 	const engine = readSource('src/lib/rb/audio-engine.svelte.ts');
 	assert.ok(
-		/async quantizedSeek\(\s*deck: DeckId,\s*ms: number,\s*skipGridQuantize = false,\s*pressT0Ms\?: number\s*\): Promise<void> \{/.test(
+		/async quantizedSeek\(\s*deck: DeckId,\s*ms: number,\s*skipGridQuantize = false,\s*pressT0Ms\?: number,\s*jumpBeats\?: number \| null\s*\): Promise<void> \{/.test(
 			engine
 		),
 		'quantizedSeek must accept the stamp rather than dropping it on the floor'
@@ -627,7 +627,7 @@ test('a hot-cue jump against an already-playing synced follower carries the pres
 	// either branch's `_synchronizeFollowers` call.
 	const body = readSource('src/lib/rb/audio-engine.svelte.ts');
 	assert.ok(
-		/await _synchronizeFollowers\(syncPlan\.master, \[deck\], \{\s*followerAnchorSec: \{ \[deck\]: targetMs \/ 1000 \},\s*reanchorDecks: new Set\(\[deck\]\),\s*\.\.\.\(pressT0Ms === undefined \? \{\} : \{ pressT0Ms \}\)/.test(
+		/await _synchronizeFollowers\(syncPlan\.master, \[deck\], \{\s*followerAnchorSec: \{ \[deck\]: targetMs \/ 1000 \}, anchorOnBeat: !skipGridQuantize,[^\n]*\s*reanchorDecks: new Set\(\[deck\]\),\s*\.\.\.\(pressT0Ms === undefined \? \{\} : \{ pressT0Ms \}\)/.test(
 			body
 		),
 		"'follower' must forward the press it was given"
@@ -711,7 +711,7 @@ test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
 	// a plain schedule row.
 	const midi = readSource('src/lib/rb/midi/webmidi.svelte.ts');
 	assert.ok(
-		midi.includes('_actionHandler(binding.action, value, device.input.id, log.ts)'),
+		midi.includes('_actionHandler(binding.action, value, device.id, log.ts)'),
 		'the receipt stamp must reach the glue layer'
 	);
 	// Pinned on the registration signature, not on the whole file, and on

@@ -19,8 +19,6 @@ tests/analysis/test_mik_backend.py
 tests/analysis/test_record.py
 tests/analysis/test_run_cli.py
 tests/analysis/test_store.py
-tests/analysis/test_write_tags.py
-tests/analysis/test_write_tags_atomic.py
 tests/audit/test_rekordbox_vs_music.py
 tests/audit/test_sync_diff_prefer.py
 tests/cloud/test_config.py
@@ -209,7 +207,6 @@ tests/sync/usb/test_pioneer_cli.py
 tests/sync/usb/test_pioneer_export_workflow.py
 tests/sync/usb/test_pioneer_reader.py
 tests/sync/usb/test_pioneer_reader_big.py
-tests/sync/usb/test_pioneer_writer_rbox.py
 tests/sync/usb/test_playlist_writer.py
 tests/sync/usb/test_preflight.py
 tests/sync/usb/test_profile.py
@@ -301,7 +298,6 @@ tests/scripts/test_ops_skill_runners.py
 tests/scripts/test_perf_squeeze.py
 tests/scripts/test_ship_dmg_close_and_reuse.py
 tests/shared/test_tsaf_format.py
-tests/sync/test_writer_rbox_pure.py
 tests/test_progress.py
 tests/test_progress_interprocess.py
 tests/test_rb_assets.py
@@ -318,7 +314,6 @@ tests/webui/test_dedup_review.py
 tests/webui/test_local_waveform_decode.py
 tests/webui/test_local_waveform_share_audience.py
 tests/webui/test_rb_artwork_local_track.py
-tests/webui/test_rb_artwork_reader_unavailable.py
 tests/webui/test_rb_hot_cue_write.py
 tests/webui/test_rb_mapping_flag.py
 tests/webui/test_rb_meta_local_track.py

@@ -34,14 +34,16 @@ from __future__ import annotations
 
 import argparse
 import codecs
+import hashlib
 import os
 import re
 import subprocess
 import sys
 from bisect import bisect_right
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from scripts.oss_tip_logins import RULE as KNOWN_LOGIN_RULE
 from scripts.oss_tip_logins import (
@@ -69,6 +71,7 @@ __all__ = [
     "BINARY_SNIFF_BYTES",
     "GENERATED_TEST_ID_PATHS",
     "MAILBOX_EXEMPT_PATHS",
+    "UPSTREAM_LICENSE_MAILBOX_BLOBS",
     "PATTERNS",
     "PLACEHOLDER_USERS",
     "RECORD_PATHS",
@@ -140,20 +143,50 @@ class KnownLogins:
 
 NO_KNOWN_LOGINS = KnownLogins()
 
+# Verbatim upstream license mirrors whose author mailboxes are part of the
+# attribution text. Path AND sha256 of the published blob audit_index already
+# holds: a future file under docs/legal/ is not exempt, and an edited copy at
+# a listed path is not exempt. Only consumer-mailbox is waived. Pins match
+# scripts/license_mirrors.py REVIEWED_LICENSE_TEXTS for these paths.
+UPSTREAM_LICENSE_MAILBOX_BLOBS: Mapping[str, str] = MappingProxyType(
+    {
+        "docs/legal/lukeed-MIT.txt": (
+            "ba573393f24555ac0528612ad39665fab5bdcc80330a61096024bbf5f736526d"
+        ),
+        "docs/legal/objc2-licenses.txt": (
+            "2001f1ac74823ea95c52652785873026e36246088d72908175eeb4a3075e015e"
+        ),
+        "docs/legal/realfft-3.5.0-LICENSE.txt": (
+            "8eb17835ae38101a31dca0aa580fefded3fa604c9b6a3f761faa8b84fb63b061"
+        ),
+        "docs/legal/rollup-LICENSE.md": (
+            "fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8"
+        ),
+    }
+)
+
 
 # ----- matching ------------------------------------------------------------------------
 
 
-def is_exempt(finding: Finding) -> bool:
-    """True for a mailbox on one of the repository's published identity surfaces.
+def is_exempt(finding: Finding, blob_sha256: str = "") -> bool:
+    """True for a mailbox on a reviewed identity surface or pinned license blob.
 
     Reported and counted separately rather than dropped: an exemption that hides
     its own matches cannot be checked, and a NEW address in one of these files
-    must still be visible to whoever runs the gate.
+    must still be visible to whoever runs the gate. The verbatim upstream license
+    mirrors under docs/legal/python-build-standalone/ are enumerated exactly in
+    MAILBOX_EXEMPT_PATHS (Codex P1, PR #4853 r4170573408), not prefix-matched, so
+    a future file added to that directory is NOT auto-exempt. Identity-surface
+    and PBS paths stay path-only. The UPSTREAM_LICENSE_MAILBOX_BLOBS paths also
+    require the published blob SHA256 to equal the reviewed pin.
     """
     if finding.rule != "consumer-mailbox":
         return False
-    return finding.path in MAILBOX_EXEMPT_PATHS or finding.path in GENERATED_TEST_ID_PATHS
+    if finding.path in MAILBOX_EXEMPT_PATHS or finding.path in GENERATED_TEST_ID_PATHS:
+        return True
+    expected = UPSTREAM_LICENSE_MAILBOX_BLOBS.get(finding.path)
+    return expected is not None and blob_sha256 == expected
 
 
 def findings_in_text(
@@ -393,12 +426,16 @@ def _audit_one(
     known: KnownLogins = NO_KNOWN_LOGINS,
 ) -> bool:
     """Audit one path plus its bytes. True when the CONTENT was read."""
+    # Hash the bytes this walk already holds (the published blob in audit_index,
+    # the filesystem bytes in audit_paths). Re-reading the working tree here
+    # would certify a scrub that git is not about to publish.
+    digest = hashlib.sha256(raw).hexdigest()
     # Line 0: the name, not a line of the content. Done for EVERY tracked path,
     # including binaries and including records, because `git ls-files` prints the
     # name of a blob nobody opens (Codex P1, #1440) and a record FILENAME must not
     # be a way to smuggle an identity past the gate (#1808).
     for finding in findings_in_text(rel, rel, known):
-        (exempt if is_exempt(finding) else findings).append(
+        (exempt if is_exempt(finding, digest) else findings).append(
             Finding(finding.path, 0, finding.rule, finding.match)
         )
     if not scan_content:
@@ -407,7 +444,7 @@ def _audit_one(
     if text is None:
         return False
     for finding in findings_in_text(rel, text, known):
-        (exempt if is_exempt(finding) else findings).append(finding)
+        (exempt if is_exempt(finding, digest) else findings).append(finding)
     return True
 
 

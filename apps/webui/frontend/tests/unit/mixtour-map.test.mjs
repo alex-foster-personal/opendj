@@ -4,7 +4,7 @@
 //
 // Regression lines (single-line format per CLAUDE.md):
 //   if registerDeviceMap(RELOOP_MIXTOUR_MAP) throws then broken (dupes/invalid)
-//   if nameMatch doesn't match 'Reloop Mixtour' AND 'Mixtour Pro' then broken
+//   if nameMatch accepts 'Mixtour Pro' then the unsafe legacy collision is back
 //   if play deck1 isn't note ch1 0x0C ([S4]) then broken
 //   if EQ CCs aren't 0x01=high 0x02=mid 0x03=low ([S4]) then broken
 //   if pitch isn't pitchbend with lsbOffset null then broken
@@ -61,10 +61,11 @@ test('map registers cleanly through the core fail-fast validator', () => {
 	webmidi._resetMidiForTests();
 });
 
-test('nameMatch covers Mixtour and Mixtour Pro port names', () => {
+test('nameMatch covers classic Mixtour and explicitly excludes Mixtour Pro', () => {
 	const re = new RegExp(mapModule.RELOOP_MIXTOUR_MAP.nameMatch, 'i');
 	assert.ok(re.test('Reloop Mixtour'));
-	assert.ok(re.test('Mixtour Pro'));
+	assert.ok(!re.test('Reloop Mixtour Pro'));
+	assert.ok(!re.test('Mixtour Pro'));
 	assert.ok(re.test('MIXTOUR MIDI 1'));
 	assert.ok(!re.test('DDJ-FLX10'));
 });

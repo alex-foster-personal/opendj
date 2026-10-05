@@ -57,7 +57,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.analysis import backlog
@@ -66,8 +66,14 @@ from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.webui.server import coverage_cloud
 from apps.webui.server.routes import ingest_coverage
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
+from apps.webui.server.routes.ingest_coverage_out import (
+    COVERAGE_CACHED_HELP,
+    CoverageOut,
+    read_coverage,
+)
 from apps.webui.server.routes.ingest_job import (
     _JOBS,
     _PER_TARGET_EXITS,
@@ -205,28 +211,9 @@ def put_config(body: ConfigIn) -> ConfigOut:
 
 
 # ----- coverage -------------------------------------------------------------
-class CoverageOut(BaseModel):
-    """Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.
-
-    ``on_disk`` is the denominator (``availability.present``). Per step,
-    ``done + terminal + failed + pending == on_disk``. ``missing`` and
-    ``corrupt`` keep their artifact meaning for the refresh job's targeting:
-    ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
-    """
-
-    total_tracks: int
-    on_disk: int
-    unreachable: int
-    missing: dict[str, int]
-    corrupt: dict[str, int]
-    availability: dict[str, int]
-    done: dict[str, int]
-    terminal: dict[str, int]
-    failed: dict[str, int]
-    pending: dict[str, int]
-    waiting_on_stems: int
-    stems_source_refusal: str | None
-    generated_at: float
+def stem_cloud_for(app: FastAPI) -> coverage_cloud.StemCloud:
+    """What R2 holds that this machine can fetch, for coverage AND refresh."""
+    return coverage_cloud.for_app_state(app.state, COVERAGE_DATA_DIR)
 
 
 def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
@@ -237,15 +224,15 @@ def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
     return ingest_coverage.compute_snapshot(
         open_ro, _stem_roots(app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR, COVERAGE_DATA_DIR,
         stems_source_refusal=refusal_fn(),
+        stem_cloud=stem_cloud_for(app),
     )
 
 
 @router.get("/coverage", response_model=CoverageOut)
-def get_coverage(request: Request) -> CoverageOut:
-    snapshot = build_snapshot(request.app)
-    return CoverageOut(
-        total_tracks=snapshot.playability.total, **ingest_coverage.response_fields(snapshot)
-    )
+def get_coverage(
+    request: Request, cached: bool = Query(False, description=COVERAGE_CACHED_HELP)
+) -> CoverageOut:
+    return read_coverage(request.app, cached, build_snapshot)
 
 
 # ----- refresh job ----------------------------------------------------------
@@ -427,7 +414,16 @@ def _library_targets(
     missing, _corrupt = missing_by_step(
         on_disk, open_ro, roots, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
     )
-    return missing
+    # A bundle evicted to R2 is done, not missing (HEALTH-07): the same split
+    # coverage and the drain use, so a refresh never re-renders one.
+    to_make, in_cloud = ingest_coverage.split_stems_by_place(missing["stems"], job.stem_cloud)
+    if job.stem_cloud.state == "unknown":
+        _log(job, f"stems: the cloud stem index could not be read ({job.stem_cloud.reason}); "
+                  f"all {len(to_make)} tracks with no local bundle are treated as missing")
+    elif in_cloud:
+        _log(job, f"stems: {len(in_cloud)} of {len(missing['stems'])} with no local bundle "
+                  "are in the cloud (fetched back when loaded on a deck), not re-rendered")
+    return {**missing, "stems": to_make}
 
 
 def validate_track_order_target(stable_id: str) -> None:
@@ -497,6 +493,8 @@ def _start_refresh_job(
     body: RefreshIn | None,
     roots: tuple[Path, ...],
     guard: Callable[[], None] | None = None,
+    *,
+    stem_cloud: coverage_cloud.StemCloud,
 ) -> _RefreshJob:
     """Claim the one slot and hand back THE job created, not the slot.
 
@@ -542,7 +540,8 @@ def _start_refresh_job(
         )
         orders = {body.stable_id: body.analysis_kind} if is_track_order and body is not None else {}
         job = _RefreshJob(started_at=time.time(), steps=steps, scope=scope,
-                          batch_dir=batch_dir, skipped_steps=skipped, analysis_orders=orders)
+                          batch_dir=batch_dir, skipped_steps=skipped, analysis_orders=orders,
+                          stem_cloud=stem_cloud)
         _JOBS.current = job
         if scope == UNMAPPED_SCOPE:
             _JOBS.last_unmapped = job
@@ -554,7 +553,11 @@ def _start_refresh_job(
 
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
 def start_refresh(request: Request, body: RefreshIn | None = None) -> RefreshStatusOut:
-    return _status_of(_start_refresh_job(body, _stem_roots(request.app)))
+    return _status_of(
+        _start_refresh_job(
+            body, _stem_roots(request.app), stem_cloud=stem_cloud_for(request.app)
+        )
+    )
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)

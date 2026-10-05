@@ -75,6 +75,8 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'feedback-pin-visibility': "Other users' pins - shows the comment pins collaborators left on this screen beside your own and the agents', so shared review feedback appears in place. Needs community sharing first.",
 	'context-menu-unavailable': 'Library action - this menu command will act on the selected tracks or playlist. Its handler is not connected yet, so choosing it changes nothing.',
 	'track-table-filter': 'Column filter - narrows the track table to rows matching a value you pick per column (genre, key, BPM range, rating), like the rekordbox column filter funnel.',
+	'pad-mode-unbuilt': 'Pad mode - this performance-pad mode (for example slicer, sampler or keyboard) will turn the eight pads into its own controls. It is listed so the menu matches the hardware, but it is not built yet, so picking it changes nothing.',
+	'grid-flag-dismiss': 'Dismiss beatgrid flag - hides the uneven-beatgrid warning for this track without changing its grid, and can restore it here. This view has no dismiss handler connected yet, so the button does nothing.',
 	'quantize-grid-phase': 'Phrase quantize - snaps seeks, cue points and loop ends to the detected phrase length from analysis (for example 16 or 32 bars) instead of a fixed 1, 4 or 8 beat grid.'
 };
 

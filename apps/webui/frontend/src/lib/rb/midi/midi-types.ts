@@ -81,10 +81,83 @@ export interface DeckBeatLoopAction {
 	beats: number;
 }
 
+/** Toggle the selected loop length, or cancel an unfinished manual IN. */
+export interface DeckAutoLoopToggleAction {
+	type: 'deck_auto_loop_toggle';
+	deck: DeckId;
+}
+
 /** Loop exit (reloop/exit button family - disengages the active loop). */
 export interface DeckLoopExitAction {
 	type: 'deck_loop_exit';
 	deck: DeckId;
+}
+
+/** Toggle the deck's existing Beat Sync state. */
+export interface DeckSyncToggleAction {
+	type: 'deck_sync_toggle';
+	deck: DeckId;
+}
+
+/** One-button LOOP IN -> LOOP OUT -> EXIT state machine. */
+export interface DeckManualLoopCycleAction {
+	type: 'deck_manual_loop_cycle';
+	deck: DeckId;
+}
+
+/** Resize an engaged loop around its existing in point. */
+export interface DeckLoopScaleAction {
+	type: 'deck_loop_scale';
+	deck: DeckId;
+	factor: 0.5 | 2;
+}
+
+export interface DeckKeySyncToggleAction {
+	type: 'deck_key_sync_toggle';
+	deck: DeckId;
+}
+
+export interface DeckStemEqToggleAction {
+	type: 'deck_stem_eq_toggle';
+	deck: DeckId;
+}
+
+export interface DeckKeyNudgeAction {
+	type: 'deck_key_nudge';
+	deck: DeckId;
+	semitones: -1 | 1;
+}
+
+/** Change the audible tempo by one tenth of a BPM. */
+export interface DeckTempoNudgeAction {
+	type: 'deck_tempo_nudge';
+	deck: DeckId;
+	direction: -1 | 1;
+}
+
+/** Device-local performance-pad mode. Kept generic so another controller can
+ * use the same stateful pad dispatcher without device checks in the glue. */
+export type ControllerPadMode =
+	| 'hot_cue'
+	| 'bounce_loop'
+	| 'pitch_cue'
+	| 'instant_fx'
+	| 'auto_loop'
+	| 'sampler'
+	| 'saved_loops'
+	| 'neural_mix';
+
+export interface ControllerPadModeAction {
+	type: 'controller_pad_mode';
+	deck: DeckId;
+	mode: ControllerPadMode;
+}
+
+export interface ControllerPadAction {
+	type: 'controller_pad';
+	deck: DeckId;
+	pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+	shifted: boolean;
 }
 
 /** Per-channel continuous mixer control (spike rows 17-19: setTrim/setEq/
@@ -164,7 +237,17 @@ export type MidiAction =
 	| DeckCueAction
 	| DeckHotCueAction
 	| DeckBeatLoopAction
+	| DeckAutoLoopToggleAction
 	| DeckLoopExitAction
+	| DeckSyncToggleAction
+	| DeckManualLoopCycleAction
+	| DeckLoopScaleAction
+	| DeckKeySyncToggleAction
+	| DeckStemEqToggleAction
+	| DeckKeyNudgeAction
+	| DeckTempoNudgeAction
+	| ControllerPadModeAction
+	| ControllerPadAction
 	| MixerChannelAction
 	| MixerGlobalAction
 	| ChannelCueAction
@@ -200,11 +283,14 @@ export interface MidiBinding {
 	 * bindings also fire while shift is held IF no shifted twin exists. */
 	shift?: boolean;
 	/** Invert a continuous value (1 - value01) for faders whose wire
-	 * orientation opposes the engine's 0..1 convention. */
+	 * orientation opposes the engine's 0..1 convention. For a relative
+	 * encoder, negate the decoded delta instead. */
 	invert?: boolean;
 	/** Treat this CC as a relative encoder (two's-complement delta) instead
 	 * of an absolute 0..127 value. Required true for browse_encoder. */
 	relative?: boolean;
+	/** Normalize any non-zero relative value to one row/detent. */
+	relativeUnit?: boolean;
 }
 
 // ------------------------------------------------------------ led feedback
@@ -215,16 +301,24 @@ export type LedTrigger =
 	| { kind: 'deck_playing'; deck: DeckId }
 	| { kind: 'deck_loaded'; deck: DeckId }
 	| { kind: 'loop_engaged'; deck: DeckId }
+	| { kind: 'loop_beats_engaged'; deck: DeckId; beats: number }
+	| { kind: 'beat_sync_enabled'; deck: DeckId }
+	| { kind: 'stem_eq_enabled'; deck: DeckId }
+	| { kind: 'stem_active'; deck: DeckId; stem: 'drums' | 'bass' | 'other' | 'vocal' }
+	| { kind: 'stem_solo'; deck: DeckId; stem: 'drums' | 'bass' | 'other' | 'vocal' }
+	| { kind: 'pad_mode_selected'; deck: DeckId; mode: ControllerPadMode }
 	/** Lit when the hot-cue slot is populated. On RGB pads velocityOn may
 	 * be overridden per-cue by the palette resolver (FLX10: Note-On
 	 * velocity 1-127 selects the colour palette entry - spike 2a). */
-	| { kind: 'hot_cue_present'; deck: DeckId; slot: HotCueSlot }
+	| { kind: 'hot_cue_present'; deck: DeckId; slot: HotCueSlot; padMode?: ControllerPadMode }
 	| { kind: 'channel_cue_enabled'; deck: DeckId };
 
 /** One LED output rule: when trigger is true send velocityOn, else
  * velocityOff, as a Note On to (ch, note) on the device's MIDI output. */
 export interface LedRule {
 	trigger: LedTrigger;
+	/** A mode-specific rule only owns this output while that pad mode is selected. */
+	padMode?: ControllerPadMode;
 	out: {
 		ch: number;
 		note: number;
@@ -254,10 +348,22 @@ export interface DeviceMap {
 	 * port name, e.g. 'DDJ-FLX10'. Stored as a string so maps stay
 	 * serialisable. */
 	nameMatch: string;
+	/** Optional native-shell audio topology requested when this controller is
+	 * present. The runtime reloads into the profile explicitly; browser WebMIDI
+	 * never guesses that a MIDI port is also the selected audio destination. */
+	nativeAudioProfile?: 'master12-cue34';
 	bindings: MidiBinding[];
 	leds?: LedRule[];
+	/** Host-driven seven-segment channel meters. Values are scaled from the
+	 * engine's real 0..10 meter reading to 0..maxValue and sent as CC. */
+	meters?: MidiMeterOutput[];
 	/** Documented-but-unbound controls, for learn-log best-guess hints. */
 	hints?: ControlHint[];
+}
+
+export interface MidiMeterOutput {
+	deck: DeckId;
+	out: { ch: number; cc: number; maxValue: number };
 }
 
 // ---------------------------------------------------------------- learn log

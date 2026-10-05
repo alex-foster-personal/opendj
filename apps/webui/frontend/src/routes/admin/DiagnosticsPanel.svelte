@@ -17,6 +17,7 @@
 	import { health } from '$lib/stores.svelte';
 	import { staleness } from './health-history';
 	import { fetchWorktreePorts, type WorktreePorts } from './diagnostics-api';
+	import LibraryOpsPanel from './LibraryOpsPanel.svelte';
 
 	let busState = $state<ConnectionState>(getConnectionState());
 	let ports = $state<WorktreePorts | null>(null);
@@ -137,7 +138,7 @@
 	{/if}
 	{#if health.data}
 		<p class="readouts">
-			<span class="readout">{health.data.state_db.tracks} tracks</span>
+			<span class="readout" title="{health.data.state_db.tracks} tracks in state.db. {health.data.state_db.tracks_playable ?? 0} playable: track_availability present on this machine. Streaming-service rows are not playable.">{health.data.state_db.tracks} tracks ({health.data.state_db.tracks_playable ?? 0} playable)</span>
 			<span class="sep"> · </span>
 			<span class="readout">{health.data.state_db.playlists} playlists</span>
 			<span class="sep"> · </span>
@@ -207,6 +208,8 @@ frontend http://127.0.0.1:{ports.frontend}
 proxy    {ports.api_proxy_target}</pre>
 	{/if}
 </section>
+
+<LibraryOpsPanel />
 
 <style>
 	.panel {

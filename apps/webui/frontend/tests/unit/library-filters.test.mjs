@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { afterEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -56,7 +57,7 @@ test('rowHasVocalLyrics demands MORE than 5 real lines', async () => {
 	assert.equal(c.rowHasVocalLyrics(_row({ lyrics: null })), false, 'no lyric data yet');
 });
 
-test('rowIsLocallyAvailable keeps only local-audio rows', async () => {
+test('CAT-07 (pin c7da76c16aae): rowIsLocallyAvailable keeps only local-audio rows', async () => {
 	const c = await _loadContract();
 	assert.equal(
 		c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: false })),
@@ -116,4 +117,11 @@ test('both filters have settings agent parity: allowlist, read, apply, catalog',
 		assert.equal(entry.implemented, true);
 		assert.equal(entry.group, 'library');
 	}
+});
+
+test('CAT-07: the browser applies rowIsLocallyAvailable only while the available-offline filter is on', async () => {
+	const panel = await readFile('src/lib/components/rb/BrowserPanel.svelte', 'utf8');
+	const body = panel.slice(panel.indexOf('function _applyLibraryFilters('), panel.indexOf('function _applyNextOnly('));
+	assert.match(body, /if \(uiPrefs\.available_offline_filter\) out = out\.filter\(rowIsLocallyAvailable\);/);
+	assert.match(panel, /checked=\{uiPrefs\.available_offline_filter\}/);
 });

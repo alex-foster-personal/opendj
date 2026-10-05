@@ -59,6 +59,7 @@ import yaml
 
 from scripts import runner_toolset_shell_lex as lex
 from scripts import runner_toolset_sources as sources
+from scripts import runner_toolset_python as python_reader
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "ci" / "runner-toolset.yml"
@@ -97,7 +98,6 @@ FD_PREFIX_RE = re.compile(r"\d+|\{[A-Za-z_]\w*\}")
 PY_MODULE_RE = re.compile(r"^(scripts|ops|apps)(\.[A-Za-z_]\w*)+$")
 GH_EXPR_RE = re.compile(r"\$\{\{.*?\}\}", re.S)
 JUST_INTERP_RE = re.compile(r"\{\{.*?\}\}", re.S)
-SUBPROCESS_FUNCS = {"run", "call", "check_call", "check_output", "Popen", "create_subprocess_exec"}
 
 
 # ----- result model --------------------------------------------------------------
@@ -105,11 +105,13 @@ SUBPROCESS_FUNCS = {"run", "call", "check_call", "check_output", "Popen", "creat
 
 @dataclass
 class Usage:
-    """Every external name CI reaches, keyed by name, with where it was seen."""
+    """Discovered names and unresolved program references, with source provenance."""
 
     executables: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     apt_packages: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     playwright_browsers: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    unresolved_executables: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    unresolved_python_programs: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     scanned_files: set[str] = field(default_factory=set)
 
 
@@ -318,6 +320,10 @@ def _args_inline_program(name: str, args: list[str], where: str, ctx: _Ctx) -> N
     if "-c" not in args or args.index("-c") + 1 >= len(args):
         return
     program, (source, line) = args[args.index("-c") + 1], where.rsplit(":", 1)
+    # A whole shell parameter is an argv reference, not embedded Python source.
+    if name not in {"bash", "sh"} and re.fullmatch(r"\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})", program):
+        ctx.usage.unresolved_python_programs[program].add(where)
+        return
     scan = scan_shell if name in {"bash", "sh"} else scan_python_source
     scan(program, source, int(line) - 1, ctx)
 
@@ -442,47 +448,21 @@ def _queue_repo_file(rel: str, ctx: _Ctx) -> None:
 # ----- python ------------------------------------------------------------------------
 
 
-def _const_str(node: ast.AST) -> str | None:
-    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
-
-
-def _call_target(node: ast.Call) -> tuple[str, str]:
-    """(owner, attribute) of a call: `subprocess.run` -> ("subprocess", "run")."""
-    func = node.func
-    if isinstance(func, ast.Attribute):
-        return (func.value.id if isinstance(func.value, ast.Name) else "?"), func.attr
-    return "", func.id if isinstance(func, ast.Name) else ""
-
-
-def _argv_as_shell(node: ast.Call) -> str | None:
-    """A literal argv (or a shell=True string) rendered as one shell command."""
-    first = node.args[0]
-    if isinstance(first, (ast.List, ast.Tuple)) and first.elts and _const_str(first.elts[0]):
-        return shlex.join([_const_str(e) or lex.PLACEHOLDER for e in first.elts])
-    if _const_str(first) and any(kw.arg == "shell" for kw in node.keywords):
-        return _const_str(first)
-    if _call_target(node)[1] == "create_subprocess_exec":
-        return _const_str(first)
-    return None
-
-
 def scan_python_source(text: str, source: str, base_line: int, ctx: _Ctx) -> None:
-    """Record argv[0] literals of subprocess calls and shutil.which() names."""
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not node.args:
-            continue
-        owner, attr = _call_target(node)
-        name = _const_str(node.args[0])
-        if attr == "which" and owner in {"shutil", ""} and name and WORD_RE.match(name):
-            ctx.usage.executables[name].add(f"{source}:{base_line + node.lineno}")
-        elif attr in SUBPROCESS_FUNCS and owner in {"subprocess", "sp", "asyncio", ""}:
-            shell = _argv_as_shell(node)
-            if shell:
-                scan_shell(shell, source, base_line + node.lineno - 1, ctx)
+    """Read direct commands and same-source argv flow with retained sink provenance."""
+    for command in python_reader.commands(text):
+        where = f"{source}:{base_line + command.line}"
+        if command.kind == "name" and WORD_RE.match(command.text):
+            ctx.usage.executables[command.text].add(where)
+        elif command.kind == "unresolved-executable":
+            ctx.usage.unresolved_executables[command.text].add(f"{where} via {' -> '.join(command.chain)}")
+        elif command.kind == "shell":
+            before = {name: set(places) for name, places in ctx.usage.executables.items()}
+            scan_shell(command.text, source, base_line + command.line - 1, ctx)
+            if command.chain:
+                for name, places in ctx.usage.executables.items():
+                    for place in places - before.get(name, set()):
+                        places.add(f"{place} via {' -> '.join(command.chain)}")
 
 
 # ----- workflows and recipes ------------------------------------------------------------
@@ -581,7 +561,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
     usage = scan_repo()
-    kinds = ("executables", "apt_packages", "playwright_browsers")
+    kinds = ("executables", "apt_packages", "playwright_browsers", "unresolved_python_programs", "unresolved_executables")
     report = {
         kind: {name: sorted(srcs)[0] for name, srcs in sorted(getattr(usage, kind).items())}
         for kind in kinds

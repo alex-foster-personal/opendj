@@ -32,6 +32,7 @@ import { hasAnlzBeatgrid, sameBeatgrid } from '$lib/rb/beatgrid-fallback';
 import { isScopedCommandInvalidated } from '$lib/rb/performance-command-scheduler';
 import { createScopedSyncRunner, type ScopedSyncRunner } from '$lib/player/scoped-sync-runner';
 import { displayLoopFrom, pqtzLoopBeatCount, validateBeatGrid } from '$lib/rb/beat-sync-math';
+import { isUsbTrackId } from '$lib/rb/track-source';
 export { createBeatgridResyncTracking } from '$lib/player/beatgrid-resync-tracking';
 export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
@@ -441,11 +442,14 @@ export function createBeatgridResyncGuards(deps: BeatgridResyncGuardDeps): Beatg
 				// cleans the shared cache, never an already-loaded deck's own anlz
 				// (discussion_r3975650988 P1 BLOCKING). `undefined` means no poll has
 				// confirmed a selection yet (cold mount): nothing to disagree with.
+				// A stick track is exempt (USB Play spec 4b): its only grid is the
+				// stick's own, served under either lane, so no switch makes it stale.
 				const isStale = (): boolean =>
 					deckRuntime(deck) !== runtime ||
 					deckLoadToken(deck) !== token ||
 					deckStableId(deck) !== stableId ||
 					(!alreadyScoped &&
+						!isUsbTrackId(stableId) &&
 						desiredBeatgridSource() !== undefined &&
 						desiredBeatgridSource() !== data.beatgrid_source);
 				const next: AnlzData = _withSourceDependentAnlzFields(current, data);

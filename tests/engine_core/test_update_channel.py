@@ -38,6 +38,7 @@ from apps.engine_core.build_info import (
     BUILD_IDENTITY_STATE_ATTR,
     BuildIdentity,
     BuildInfoOut,
+    resolve_build_info,
 )
 from apps.engine_core.update_channel import (
     UPDATE_CHECK_PATH,
@@ -193,14 +194,13 @@ def test_an_unmappable_platform_is_refused() -> None:
 
 
 # ----- the happy path -----------------------------------------------------
-def test_a_newer_release_is_offered_with_both_versions_named() -> None:
-    with _client(_json_ok(_manifest("0.2.0"))) as client:
-        result = resolve_update_check(_identity(), client=client, key=KEY)
-    assert result.status == "update-available"
-    assert result.current_version == RUNNING_VERSION
-    assert result.available_version == "0.2.0"
-    assert result.current_git_sha == "0d41a28c"
-    assert "0.2.0" in (result.detail or "")
+def test_the_checkout_identity_orders_a_future_release_as_newer() -> None:
+    """Compare real configured identity without a mocked update channel."""
+    info = resolve_build_info({}, REPO_ROOT)
+    assert info.app_version is not None
+    future = _bump_patch_version(info.app_version)
+    assert compare_versions(info.app_version, future) == "update-available"
+    assert compare_versions(future, info.app_version) == "ahead-of-channel"
 
 
 def test_the_same_release_is_up_to_date() -> None:

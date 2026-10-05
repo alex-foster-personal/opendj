@@ -32,7 +32,7 @@ from apps.stems import bundle_publish
 FARM = Path(__file__).resolve().parents[2] / "scripts" / "modal_vocal_farm.py"
 MIRRORED_LITERALS = ("BAKED_MODELS", "DEMUCS_VERSION", "STEM_PARTS", "STEM_BUNDLE_SCHEMA")
 
-pytestmark = pytest.mark.requirement("STEM-39")
+pytestmark = pytest.mark.requirement("STEM-52")
 
 
 def _farm_tree() -> ast.Module:

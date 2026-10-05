@@ -1784,12 +1784,6 @@ wheels = [
 ]
 
 [[packages]]
-name = "mutagen"
-version = "1.48.1"
-sdist = { url = "https://files.pythonhosted.org/packages/df/70/1675da133ea92227da41bf5b24e1c66be597ff736a1533ade41da986852f/mutagen-1.48.1.tar.gz", upload-time = 2026-06-25T09:47:32Z, size = 1276978, hashes = { sha256 = "8f95637ab9f6f305cec6bd1294e197debe207998e3e068596563c74f86b0a173" } }
-wheels = [{ url = "https://files.pythonhosted.org/packages/47/d8/a29e4e3991765e7ce4ed1f7e4074fe1ba9da03e0048639734de60f9cadb9/mutagen-1.48.1-py3-none-any.whl", upload-time = 2026-06-25T09:47:30Z, size = 195706, hashes = { sha256 = "4f077fe87d3fc7fba259aa63d8c026b18382ca6a42ef37c61e16f1b1b5b82fe7" } }]
-
-[[packages]]
 name = "mypy"
 version = "2.3.1"
 sdist = { url = "https://files.pythonhosted.org/packages/82/6a/878cc1097d4035f82bd516658d0c528d2a9955bc7b363afcbd0b07fea11b/mypy-2.3.1.tar.gz", upload-time = 2026-08-15T03:03:38Z, size = 3992554, hashes = { sha256 = "47c1b1207258513a9d93495f69c8be9de73916186f0e52703e8c461b7a623419" } }
@@ -2403,9 +2397,9 @@ wheels = [
 
 [[packages]]
 name = "pyjwt"
-version = "2.15.0"
-sdist = { url = "https://files.pythonhosted.org/packages/02/a5/5197bfd06417837ac079921c66fa6393f1dea3557272a263cebfef69e432/pyjwt-2.15.0.tar.gz", upload-time = 2026-09-23T16:56:00Z, size = 120513, hashes = { sha256 = "b11c5f9791d7bf51c2b39a81ed669f6b2dbbd669df2942f6c60167e9e3d1abe4" } }
-wheels = [{ url = "https://files.pythonhosted.org/packages/e8/55/40e45bf052ee8ee12a4dfd785519660f8effa7b065442b91646ec6828619/pyjwt-2.15.0-py3-none-any.whl", upload-time = 2026-09-23T16:55:59Z, size = 33680, hashes = { sha256 = "7a3742debf6b879e912dbb9819ceec1594be812452b78c5f2e2dfc56564954f8" } }]
+version = "2.15.1"
+sdist = { url = "https://files.pythonhosted.org/packages/43/ea/5194e52748b0da83d71e082d75496eaec6e58f419f5e184786ded517e6a9/pyjwt-2.15.1.tar.gz", upload-time = 2026-09-28T18:40:42Z, size = 121252, hashes = { sha256 = "4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/50/ca/44de4e75f8aadc457f0634be3b542815078ded46dca30efb960edeecad6e/pyjwt-2.15.1-py3-none-any.whl", upload-time = 2026-09-28T18:40:41Z, size = 33860, hashes = { sha256 = "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193" } }]
 
 [[packages]]
 name = "pyobjc-core"
@@ -3858,4 +3852,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "ba904a2408b0091d5485f16c66538c2a3533defc52019b0e10a01bee9a51ca84"
+source-sha256 = "9dd5b261fbe3730aeea1e497d45d09c7bfaab6fe065e380c21240882fe82638a"

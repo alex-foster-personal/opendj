@@ -7,6 +7,7 @@
 // [if] the shell socket drops [then] every pending request rejects and a disconnected event is emitted
 // [if] MASTER is unpinned in the Mac app and a cue is selected [then] MASTER auto-pins to the current macOS default output, not a guessed speaker
 // [if] the current macOS default output IS the selected cue device [then] MASTER falls back to the speaker guess, never the cue device
+// [if] the shell names outputs but the webview withholds its inputs [then] the listing stays withheld and the panel asks for access
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -15,11 +16,13 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let sink;
 let sinkClient;
 let headphones;
+let ioAccess;
 
 before(async () => {
 	sink = await loadTypeScriptModule('src/lib/player/cue-native-sink.ts');
 	sinkClient = await loadTypeScriptModule('src/lib/player/cue-native-sink-client.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
+	ioAccess = await loadTypeScriptModule('src/lib/player/io-device-access.ts');
 });
 
 test('no announcement means no native route', () => {
@@ -186,5 +189,29 @@ test('control: a pinned MASTER and the Chrome call shape are unchanged', () => {
 			.masterId,
 		'native:spk',
 		'without currentRoomId the speaker guess is unchanged'
+	);
+});
+
+test('withheld webview inputs keep the Mac app listing in permission_needed', () => {
+	const outputs = [{ id: 'native:spk', label: 'MacBook Pro Speakers' }];
+	const hidden = ioAccess.listNativeShellDevices(outputs, [
+		{ kind: 'audioinput', deviceId: '', label: '' },
+		{ kind: 'audiooutput', deviceId: '', label: '' }
+	]);
+	assert.deepEqual(hidden.outputs, outputs);
+	assert.deepEqual(hidden.inputs, []);
+	assert.equal(hidden.names_withheld, true);
+	const access = ioAccess.ioDeviceAccessForListing({ listing: hidden, permission: 'prompt', outputPinning: true });
+	assert.equal(access.status, 'permission_needed');
+	// Control: named inputs (or a webview output placeholder alone) read as listed.
+	const named = ioAccess.listNativeShellDevices(outputs, [
+		{ kind: 'audioinput', deviceId: 'mic1', label: 'MacBook Pro Microphone' },
+		{ kind: 'audiooutput', deviceId: '', label: '' }
+	]);
+	assert.equal(named.names_withheld, false);
+	assert.deepEqual(named.inputs, [{ id: 'mic1', label: 'MacBook Pro Microphone' }]);
+	assert.equal(
+		ioAccess.ioDeviceAccessForListing({ listing: named, permission: 'prompt', outputPinning: true }).status,
+		'listed'
 	);
 });

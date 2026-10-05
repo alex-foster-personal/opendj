@@ -1,9 +1,12 @@
-"""``opendj track <verb>``: the CLI's read-only track-analysis surface.
+"""``opendj track <verb>``: the CLI's track-analysis surface.
 
 Unlike every other ``opendj`` head, ``track`` never touches the AGENT-03
-engine bus: it reads straight from the state store, the same read `/anlz`
-does, so an agent (or a human) can inspect one track's analysis without a
-running deck engine.
+engine bus. ``key-segments`` reads straight from the state store, the same
+read `/anlz` does, so an agent (or a human) can inspect one track's analysis
+without a running deck engine. The ``grid-*`` verbs (GRIDFLAG-03) are the
+exception to "no engine": they are the CLI twin of ``/api/v1/beatgrid-flags``
+and call the running engine over HTTP, because the scan and the dismissal
+write state the engine owns.
 
 ``opendj track key-segments <stable_id>`` is nav1-key-record's own scope-lock
 line (specs/native-analysis-v1-lanes/nav1-key-record.md item 3): it must
@@ -27,13 +30,25 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from apps.opendj_cli import EXIT_FAILED
+from apps.opendj_cli import EXIT_FAILED, api_cli
 from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
 
 KEY_SEGMENTS_VERB = "key-segments"
+#: GRIDFLAG-03: the CLI twin of `/api/v1/beatgrid-flags` (the Err column's
+#: beatgrid flag). These three talk to the running engine over HTTP, because
+#: the scan and the dismissal are the engine's to do; they print its JSON.
+GRID_FLAGS_VERB = "grid-flags"
+GRID_SCAN_VERB = "grid-scan"
+GRID_FLAG_VERB = "grid-flag"
+_GRID_FLAGS_PATH = "/api/v1/beatgrid-flags"
+_GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 
 _USAGE = (
-    "usage: opendj track key-segments <stable_id> [--state-db PATH] [--json]"
+    "usage: opendj track key-segments <stable_id> [--state-db PATH] [--json]\n"
+    "       opendj track grid-flags [flagged|suspect|variable_tempo|unknown|ok|all]\n"
+    "                               [include-dismissed] [all-tracks] [limit N]\n"
+    "       opendj track grid-scan [all-tracks] [no-wait]\n"
+    "       opendj track grid-flag <stable_id> dismiss|restore"
 )
 
 
@@ -49,8 +64,68 @@ def run(
     verb, *args = rest
     if verb == KEY_SEGMENTS_VERB:
         return _key_segments(args, as_json=as_json, default_state_db=state_db)
+    if verb == GRID_FLAGS_VERB:
+        return _grid_flags(args)
+    if verb == GRID_SCAN_VERB:
+        return _grid_scan(args)
+    if verb == GRID_FLAG_VERB:
+        return _grid_flag(args)
     print(f"unknown track verb: {verb!r}\n{_USAGE}", file=sys.stderr)
     return 1
+
+
+def _usage_error() -> int:
+    print(_USAGE, file=sys.stderr)
+    return 1
+
+
+def _grid_flags(args: Sequence[str]) -> int:
+    """`GET /api/v1/beatgrid-flags`: flagged tracks with their numbers.
+
+    Words, not `--options`: the top-level parser refuses options it does not
+    know before this module sees them.
+    """
+    query: list[str] = []
+    position = 0
+    while position < len(args):
+        token = args[position]
+        if token in _GRID_CLASSES:
+            query.append(f"grid_class={token}")
+        elif token == "include-dismissed":
+            query.append("include_dismissed=true")
+        elif token == "all-tracks":
+            query.append("availability=all")
+        elif token == "limit":
+            if position + 1 >= len(args) or not args[position + 1].isdigit():
+                return _usage_error()
+            query.append(f"limit={args[position + 1]}")
+            position += 1
+        else:
+            return _usage_error()
+        position += 1
+    suffix = f"?{'&'.join(query)}" if query else ""
+    return api_cli.run(["GET", f"{_GRID_FLAGS_PATH}{suffix}"], as_json=True)
+
+
+def _grid_scan(args: Sequence[str]) -> int:
+    """`POST /api/v1/beatgrid-flags/scan`: bring stored verdicts up to date."""
+    if any(token not in ("all-tracks", "no-wait") for token in args):
+        return _usage_error()
+    scope = "all" if "all-tracks" in args else "present"
+    wait = "false" if "no-wait" in args else "true"
+    return api_cli.run(
+        ["POST", f"{_GRID_FLAGS_PATH}/scan?scope={scope}&wait={wait}"], as_json=True
+    )
+
+
+def _grid_flag(args: Sequence[str]) -> int:
+    """`PUT /api/v1/beatgrid-flags/{id}/dismissed`: hide or restore one flag."""
+    if len(args) != 2 or args[1] not in ("dismiss", "restore"):
+        return _usage_error()
+    body = json.dumps({"dismissed": args[1] == "dismiss"})
+    return api_cli.run(
+        ["PUT", f"{_GRID_FLAGS_PATH}/{args[0]}/dismissed", "--json", body], as_json=True
+    )
 
 
 _RBX_SOURCE_REASON = "key lane source is rekordbox, not own"
@@ -207,4 +282,10 @@ def _key_segments(
     return 0
 
 
-__all__ = ["KEY_SEGMENTS_VERB", "run"]
+__all__ = [
+    "GRID_FLAGS_VERB",
+    "GRID_FLAG_VERB",
+    "GRID_SCAN_VERB",
+    "KEY_SEGMENTS_VERB",
+    "run",
+]

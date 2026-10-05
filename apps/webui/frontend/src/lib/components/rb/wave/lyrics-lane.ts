@@ -28,6 +28,36 @@ export function lyricLanePositionPercent({
 	return 50 + ((lineStartMs - positionMs) / (windowSeconds * pitch * 1000)) * 100;
 }
 
+/**
+ * Widest a lane entry may be, as CSS percent of the waveform window: the
+ * distance to the next entry's start. An entry is drawn from its own start
+ * rightwards, so capping it here means two entries can never overlap.
+ * null = last entry, nothing to run into.
+ */
+export function lyricLaneWidthPercent({
+	lineStartMs,
+	nextStartMs,
+	pitch,
+	windowSeconds
+}: {
+	lineStartMs: number;
+	nextStartMs: number | null;
+	pitch: number;
+	windowSeconds: number;
+}): number | null {
+	if (nextStartMs === null) return null;
+	if (!Number.isFinite(lineStartMs) || !Number.isFinite(nextStartMs)) {
+		throw new Error('lyric lane timestamps must be finite');
+	}
+	if (nextStartMs <= lineStartMs) {
+		throw new Error(`the next lyric lane entry must start later: ${nextStartMs} <= ${lineStartMs}`);
+	}
+	if (!Number.isFinite(pitch) || pitch <= 0 || !Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+		throw new Error('lyric lane requires positive pitch and windowSeconds');
+	}
+	return ((nextStartMs - lineStartMs) / (windowSeconds * pitch * 1000)) * 100;
+}
+
 /** The active line is the latest cache timestamp at or before the playhead. */
 export function activeLyricLineIndex(lines: readonly TimedLyricLine[], positionMs: number): number {
 	let activeIndex = -1;

@@ -2,7 +2,7 @@
 
 Ties to INFRA-02 (shared filesystem scanner used by locate + future tools).
 We also ship a tiny programmatically-generated MP3 (``silent.mp3``) so
-mutagen can parse it without hitting a real audio library.
+the tag reader can parse it without hitting a real audio library.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import pytest
 from apps.shared import audio_files
 
 # Minimal, valid MP3 frame generated on the fly. Tiny (~100 bytes) — good
-# enough for mutagen to identify the file as audio.
+# enough for the tag reader to identify the file as audio.
 _SILENT_MP3 = bytes.fromhex(
     # ID3v2.3 header: "ID3", version, flags, size (4-byte synchsafe) = 0
     "494433030000000000"
@@ -102,7 +102,7 @@ def test_scan_music_files_uses_default_roots_when_none(
 
 @pytest.mark.requirement("INFRA-02")
 def test_read_metadata_returns_none_for_non_audio(tmp_path: Path) -> None:
-    """mutagen can't parse a text file → return None (don't crash)."""
+    """The tag reader can't parse a text file → return None (don't crash)."""
     f = tmp_path / "not-audio.txt"
     f.write_text("hello")
     assert audio_files.read_metadata(f) is None
@@ -120,6 +120,6 @@ def test_read_metadata_handles_tiny_mp3_frame(tmp_path: Path) -> None:
     f = tmp_path / "silent.mp3"
     f.write_bytes(_SILENT_MP3)
     meta = audio_files.read_metadata(f)
-    # mutagen may or may not detect the header as valid MP3; either way,
+    # the tag reader may or may not detect the header as valid MP3; either way,
     # we must NOT crash and must return None or a populated AudioMetadata.
     assert meta is None or isinstance(meta, audio_files.AudioMetadata)

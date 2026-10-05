@@ -13,8 +13,10 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
+
+from apps.webui.server.headphone_reports import client_id_of, headphone_reports
 
 router = APIRouter(prefix="/state", tags=["agent-state"])
 
@@ -40,13 +42,30 @@ async def publish_ui_mirror(request: Request, body: dict[str, Any]) -> dict[str,
     stored = deepcopy(body)
     stored["received_at"] = _received_at()
     request.app.state.ui_mirror = stored
+    # CUEOUT-18: the mirror stays last-writer-wins; the headphone state is
+    # also kept per reporting client, so one tab cannot overwrite another's.
+    mixer = body.get("mixer")
+    headphones = mixer.get("headphones") if isinstance(mixer, dict) else None
+    if isinstance(headphones, dict):
+        headphone_reports(request.app).record(client_id_of(body), headphones)
     return {"accepted": True}
 
 
 @router.delete("/ui-mirror", status_code=204)
-async def close_ui_mirror(request: Request) -> None:
+async def close_ui_mirror(
+    request: Request,
+    client_id: str | None = Header(
+        default=None,
+        alias="x-opendj-client-id",
+        description=(
+            "The closing page's client id (CUEOUT-18). Its headphone report is "
+            "forgotten; with no id, every client's report is."
+        ),
+    ),
+) -> None:
     """Mark the performance page closed during its unmount lifecycle."""
     request.app.state.ui_mirror = None
+    headphone_reports(request.app).forget(client_id)
 
 
 @router.get("/ui-mirror", response_model=None)

@@ -15,7 +15,12 @@
 		toggleToastExpanded,
 		type Toast
 	} from '$lib/stores.svelte';
-	import { TOAST_EXIT_DURATION_MS, TOAST_EXIT_TRANSLATE_PX } from '$lib/toast-tray-policy';
+	import {
+		TOAST_COPIED_NOTE,
+		TOAST_COPIED_NOTE_MS,
+		TOAST_EXIT_DURATION_MS,
+		TOAST_EXIT_TRANSLATE_PX
+	} from '$lib/toast-tray-policy';
 
 	let { items }: { items: readonly Toast[] } = $props();
 
@@ -41,7 +46,7 @@
 			copyState[toast.logId] = 'copied';
 			setTimeout(() => {
 				delete copyState[toast.logId];
-			}, 1500);
+			}, TOAST_COPIED_NOTE_MS);
 		} catch (exc) {
 			copyState[toast.logId] = exc instanceof Error ? exc.message : String(exc);
 		}
@@ -131,7 +136,7 @@
 					<span class="toast-note" data-toast-count={toast.count}>Repeated {toast.count} times</span>
 				{/if}
 				{#if copyState[toast.logId] === 'copied'}
-					<span class="toast-note" data-toast-copied={toast.logId}>copied</span>
+					<span class="toast-note" data-toast-copied={toast.logId}>{TOAST_COPIED_NOTE}</span>
 				{:else if copyState[toast.logId] !== undefined}
 					<span class="toast-note failed" data-toast-copy-failed={toast.logId}
 						>{copyState[toast.logId]}</span

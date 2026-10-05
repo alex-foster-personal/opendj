@@ -83,6 +83,11 @@ const PAST_DBLCLICK_GUARD_MS = 700;
 
 async function _openAllTracks(page: Page): Promise<void> {
 	await page.setViewportSize(VIEWPORT);
+	// The enrich card (ENRICH-01) floats fixed bottom-right over the table and
+	// shows on this fixture's unanalyzed library. Hidden the way the user hides
+	// it (its own sessionStorage flag), so the hit tests below measure the row
+	// and the sticky header, not an overlay this spec is not about.
+	await page.addInitScript(() => sessionStorage.setItem('odj.enrich-card.hidden', '1'));
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-table"]')).toBeVisible({ timeout: 60_000 });
 	await page.getByText('All Tracks', { exact: true }).first().click();
@@ -232,7 +237,7 @@ test('the deck loader stays inert on a row that is hovered but not selected', as
 });
 
 /**
- * The picker's failure mode, one row up. Sol's P1 on this file
+ * The picker's failure mode, one row up. A review finding on this file
  * (review thread 3961773278) pointed out that a box hanging above row N lands
  * on row N-1's title, and the box was `pointer-events: auto` across its whole
  * painted area while revealed - so the fix for "the picker swallows its OWN

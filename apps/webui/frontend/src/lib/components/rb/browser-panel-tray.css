@@ -1,0 +1,38 @@
+.tray-right-cluster {
+	display: inline-flex;
+	align-items: center;
+	margin-left: auto;
+	gap: 0;
+}
+.tray-midi {
+	opacity: 0.45;
+	margin-right: 20px;
+	background: transparent;
+	border: 1px solid var(--rb-border);
+	border-radius: 3px;
+	color: var(--rb-text-dim);
+	font-size: 10px;
+	padding: 2px 8px;
+	cursor: pointer;
+}
+.tray-midi:hover {
+	opacity: 0.75;
+	color: var(--rb-text);
+}
+.tray-preview {
+	background: transparent;
+	border: 1px solid var(--rb-border);
+	border-radius: 3px;
+	color: var(--rb-text-dim);
+	font-size: 10px;
+	padding: 2px 8px;
+	cursor: pointer;
+}
+.tray-preview:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.tray-preview.active {
+	color: var(--rb-accent);
+	border-color: var(--rb-accent);
+}

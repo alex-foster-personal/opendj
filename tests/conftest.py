@@ -74,7 +74,6 @@ def _can_import(module_name: str) -> bool:
 
 # Optional-dependency gates, resolved once at collection time. Absence is a
 # SKIP (the extra is deliberately opt-in), never a silent pass or a failure.
-_HAS_MUTAGEN: bool = importlib.util.find_spec("mutagen") is not None
 _HAS_JOBLIB: bool = importlib.util.find_spec("joblib") is not None
 _HAS_AUDIO_STACK: bool = (
     _can_import("soundfile") and _can_import("librosa")
@@ -270,7 +269,6 @@ def pytest_runtestloop(session: pytest.Session) -> None:
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Skip ``requires_*``-marked items whose platform/extra is absent."""
     skip_darwin = pytest.mark.skip(reason="macOS-only")
-    skip_mutagen = pytest.mark.skip(reason="needs the tags extra (mutagen)")
     skip_joblib = pytest.mark.skip(reason="needs joblib")
     skip_madmom = pytest.mark.skip(
         reason="needs madmom (git HEAD; `pip install -r requirements.txt`)"
@@ -297,8 +295,6 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if sys.platform != "darwin" and "requires_darwin" in item.keywords:
             item.add_marker(skip_darwin)
-        if not _HAS_MUTAGEN and "requires_mutagen" in item.keywords:
-            item.add_marker(skip_mutagen)
         if not _HAS_JOBLIB and "requires_joblib" in item.keywords:
             item.add_marker(skip_joblib)
         if not _HAS_MADMOM and "requires_madmom" in item.keywords:
@@ -317,3 +313,22 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             and os.environ.get("MDT_REQUIRE_AUDIO_ENGINE_BUILD") != "1"
         ):
             item.add_marker(skip_canonical_decode)
+
+
+@pytest.fixture(autouse=True)
+def _stem_cache_budget_sees_a_roomy_disk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the suite's result independent of this machine's free space.
+
+    ``hydrate_one`` enforces the disk-aware stem cache budget against the
+    REAL volume (STEM-39). On a host under the floor, that would evict a
+    test's own R2-confirmed bundles and turn a pass into a fail by the state
+    of someone's laptop. Every test therefore sees a volume with ample room
+    unless it injects a measurement itself (``disk=`` or its own monkeypatch,
+    which runs after this fixture and wins).
+    """
+    from apps.cloud import stem_cache_budget
+
+    roomy = stem_cache_budget.DiskUsage(
+        total_bytes=1000 * stem_cache_budget.GIB, free_bytes=900 * stem_cache_budget.GIB
+    )
+    monkeypatch.setattr(stem_cache_budget, "measure_disk", lambda _path: roomy)

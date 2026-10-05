@@ -65,6 +65,7 @@ from .request_guard import (
     host_allowlist_middleware,
     origin_guard_middleware,
 )
+from .routes import ahead_analysis as ahead_analysis_routes
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -72,6 +73,7 @@ from .routes import analysis_source as analysis_source_routes
 from .routes import audio_output_health as audio_output_health_routes
 from .routes import auth as auth_routes
 from .routes import autolists as autolists_routes
+from .routes import beatgrid_flags as beatgrid_flags_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -85,15 +87,19 @@ from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
+from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
 from .routes import feedback_replies as feedback_replies_routes
+from .routes import feedback_summary as feedback_summary_routes
 from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
+from .routes import grid_provenance as grid_provenance_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_cli_procs
@@ -137,20 +143,24 @@ from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import sql_playground as sql_playground_routes
 from .routes import state as state_routes
+from .routes import stem_cache as stem_cache_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
+from .routes import track_plays as track_plays_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
+from .routes import usb_tracks as usb_tracks_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .share_gate import ShareConfig, share_gate_middleware
+from .stem_cache_enforcer import StemCacheEnforcer
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
@@ -206,9 +216,55 @@ def _resolve_ports(
     return port, frontend_port
 
 
-def _start_coverage_drain(app: FastAPI) -> None:
-    """HEALTH-05: built only on an app the daemon entry point ARMED; the
-    user setting (default on) is read by the drain itself, every tick."""
+# ----- lifespan helpers: get-or-build the workers retained on app.state -----
+# Each worker is kept ON THE APP rather than rebuilt per lifespan, for the
+# reason spelled out at the top of _lifespan_context.
+
+
+def _retained_cloudsync_scheduler_if_armed(app: FastAPI) -> CloudSyncScheduler | None:
+    if not app.state.cloudsync_scheduler_armed:
+        return None
+    scheduler: CloudSyncScheduler | None = getattr(app.state, "cloudsync_scheduler", None)
+    if scheduler is None:
+        scheduler = CloudSyncScheduler(app)
+        app.state.cloudsync_scheduler = scheduler
+    return scheduler
+
+
+def _retained_stem_cache_enforcer_if_armed(app: FastAPI) -> StemCacheEnforcer | None:
+    if not getattr(app.state, "stem_cache_enforcer_armed", False):
+        return None
+    enforcer: StemCacheEnforcer | None = getattr(app.state, "stem_cache_enforcer", None)
+    if enforcer is None:
+        enforcer = StemCacheEnforcer(app)
+        app.state.stem_cache_enforcer = enforcer
+    return enforcer
+
+
+def _retained_library_jobs_watcher(app: FastAPI) -> library_jobs_autostart.LibraryJobsWatcher:
+    jobs_watcher: library_jobs_autostart.LibraryJobsWatcher | None = getattr(
+        app.state, "library_jobs_watcher", None
+    )
+    if jobs_watcher is None:
+        db = Path(app.state.state_db_path)
+        data_dir = db.parent.parent if db.parent.name == "state" else db.parent
+        roots = getattr(app.state, "stem_roots", None)
+        stems_root = Path(roots[0]) if roots else data_dir / "state" / "stems"
+        jobs_state = getattr(app.state, "auto_user_jobs", None)
+        enabled = bool(jobs_state is not None and jobs_state.enabled)
+        jobs_watcher = library_jobs_autostart.LibraryJobsWatcher(
+            state_db=db,
+            stems_root=stems_root,
+            data_dir=data_dir,
+            enabled=enabled,
+        )
+        app.state.library_jobs_watcher = jobs_watcher
+    return jobs_watcher
+
+
+def _start_coverage_drain_if_armed(app: FastAPI) -> None:
+    # HEALTH-05: built only on an app the daemon entry point ARMED; the
+    # user setting (default on) is read by the drain itself, every tick.
     if not getattr(app.state, "coverage_drain_armed", False):
         return
     if getattr(app.state, "coverage_drain", None) is None:
@@ -216,10 +272,15 @@ def _start_coverage_drain(app: FastAPI) -> None:
     app.state.coverage_drain.start()
 
 
-def _stop_coverage_drain(app: FastAPI) -> None:
-    drain = getattr(app.state, "coverage_drain", None)
-    if drain is not None:
-        drain.stop()
+def _start_ahead_analysis_if_armed(app: FastAPI) -> None:
+    # NATIVE-21: built only on an app the daemon entry point ARMED.
+    if not getattr(app.state, "ahead_analysis_armed", False):
+        return
+    if getattr(app.state, "ahead_analysis", None) is None:
+        from . import ahead_analysis
+
+        app.state.ahead_analysis = ahead_analysis.build_for_app(app)
+    app.state.ahead_analysis.start()
 
 
 @asynccontextmanager
@@ -246,6 +307,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     # auto-analyze watcher above via the finally, not leak its thread.
     lyric_watcher: lyric_index_autostart.LyricIndexWatcher | None = None
     cloudsync_scheduler: CloudSyncScheduler | None = None
+    stem_cache_enforcer: StemCacheEnforcer | None = None
     try:
         lyric_watcher = getattr(app.state, "lyric_index_watcher", None)
         if lyric_watcher is None:
@@ -255,29 +317,17 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         # FBSYNC-01: built only on an app the daemon entry point ARMED, and
         # even then inert unless MDT_CLOUDSYNC_SCHEDULER=1 and a hub URL are
         # set; retained on the app for the reason the watchers above are.
-        if app.state.cloudsync_scheduler_armed:
-            cloudsync_scheduler = getattr(app.state, "cloudsync_scheduler", None)
-            if cloudsync_scheduler is None:
-                cloudsync_scheduler = CloudSyncScheduler(app)
-                app.state.cloudsync_scheduler = cloudsync_scheduler
+        cloudsync_scheduler = _retained_cloudsync_scheduler_if_armed(app)
+        if cloudsync_scheduler is not None:
             cloudsync_scheduler.start()
-        jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
-        if jobs_watcher is None:
-            db = Path(app.state.state_db_path)
-            data_dir = db.parent.parent if db.parent.name == "state" else db.parent
-            roots = getattr(app.state, "stem_roots", None)
-            stems_root = Path(roots[0]) if roots else data_dir / "state" / "stems"
-            jobs_state = getattr(app.state, "auto_user_jobs", None)
-            enabled = bool(jobs_state is not None and jobs_state.enabled)
-            jobs_watcher = library_jobs_autostart.LibraryJobsWatcher(
-                state_db=db,
-                stems_root=stems_root,
-                data_dir=data_dir,
-                enabled=enabled,
-            )
-            app.state.library_jobs_watcher = jobs_watcher
-        jobs_watcher.start()
-        _start_coverage_drain(app)
+        # STEM-39: armed with stem hydration. A tick evicts nothing unless a
+        # hydration source is armed AND the disk is under its floor.
+        stem_cache_enforcer = _retained_stem_cache_enforcer_if_armed(app)
+        if stem_cache_enforcer is not None:
+            stem_cache_enforcer.start()
+        _retained_library_jobs_watcher(app).start()
+        _start_coverage_drain_if_armed(app)
+        _start_ahead_analysis_if_armed(app)
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
@@ -292,7 +342,14 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         path_availability_refresh.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
-        _stop_coverage_drain(app)
+        drain = getattr(app.state, "coverage_drain", None)
+        if drain is not None:
+            drain.stop()
+        ahead = getattr(app.state, "ahead_analysis", None)
+        if ahead is not None:
+            ahead.stop()
+        if stem_cache_enforcer is not None:
+            stem_cache_enforcer.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()
@@ -393,10 +450,13 @@ def _install_armed_stem_hydration(
     source,
     start_refresh_thread: bool = True,
 ) -> None:
+    from apps.cloud import stem_hydration
     from apps.cloud.stem_source import DirectR2Source
 
     app.state.stem_hydration_source = source
     app.state.stem_hydration_data_dir = data_dir
+    # This process serves decks, so its registry is the one eviction may trust.
+    stem_hydration.OPEN_DECKS.holds_decks = True
     app.state.stem_hydration_unarmed_reason = None
     app.state.stem_hydration_unarmed_kind = None
     app.state.stem_hydration_cfg = None
@@ -434,6 +494,11 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     app.state.stem_hydration_data_dir = None
     app.state.stem_hydration_unarmed_reason = None
     app.state.stem_hydration_unarmed_kind = None
+    # STEM-39: the disk-aware cache budget is read against this data dir by
+    # the status route on every app, and enforced on a timer only on an app
+    # the daemon entry point armed for hydration.
+    app.state.stem_cache_data_dir = Path(data_dir)
+    app.state.stem_cache_enforcer_armed = enabled
     # Legacy test injection points; production uses stem_hydration_source.
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
@@ -528,6 +593,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     api_prefix = "/api/v1"
     prefixed = (
         tracks_routes.router,
+        beatgrid_flags_routes.router,
         client_errors_routes.router,
         telemetry_consent_routes.router,
         error_feed_routes.router,
@@ -554,11 +620,14 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
         feedback_replies_routes.router,
+        feedback_summary_routes.router,
         feedback_sync_routes.router,
         share_routes.router,
         rb_assets_routes.router,
+        grid_provenance_routes.router,
         search_routes.router,
         rb_hot_cues_routes.router,
+        track_plays_routes.router,
         progress_routes.router,
         quality_routes.router,
         worktree_ports_routes.router,
@@ -567,6 +636,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         autolists_routes.router,
         stems_routes.router,
         stems_assets_routes.router,
+        stem_cache_routes.router,
         stem_tiers_routes.router,
         rb_djay_sync_routes.router,
         reconcile_routes.router,
@@ -579,6 +649,9 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_queue_routes.router,
         library_jobs_routes.router,
         coverage_drain_routes.router,
+        ahead_analysis_routes.router,
+        enrich_routes.router,
+        coverage_terminal_routes.router,
         analysis_source_routes.router,
         auth_routes.router,
         ingest_routes.router,
@@ -607,6 +680,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         spotify_routes.router,
         usb_export_routes.router,
         usb_volumes_routes.router,
+        usb_tracks_routes.router,
     )
     for router in prefixed:
         app.include_router(router, prefix=api_prefix)

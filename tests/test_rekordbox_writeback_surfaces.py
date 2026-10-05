@@ -95,6 +95,11 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
         "an os.open here gains O_WRONLY/O_CREAT/O_TRUNC, or os.rename/"
         "os.unlink/os.mkdir appears"
     ),
+    "apps/webui/server/rb_vendor_pkg/row_assets.py": (
+        "names SHARE_ROOT to open it read-only and to bind its row cache to "
+        "that one root; reads analysis files through the descriptors of the "
+        "read-only containment walk and lstats artwork files, writes nothing"
+    ),
     "apps/audit/session_history.py": (
         "reads play history. SHARP EDGE, kept on purpose so the next reader "
         "sees it: open_db(REKORDBOX_LIVE_DB) hands back a READ-WRITE handle on "
@@ -114,7 +119,11 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
     "apps/sync/usb/pioneer/reader.py": "reads an exportLibrary.db",
     "apps/sync/usb/pioneer/differ.py": "diffs two exportLibrary.db reads",
     "apps/sync/usb/pioneer/__init__.py": "package docstring",
-    "apps/sync/usb/pioneer/writer_rbox.py": "reached only via the two mapped USB entrypoints",
+    "apps/sync/usb/pioneer/writer_onelibrary.py": "reached only via the two mapped USB entrypoints",
+    "apps/sync/usb/pioneer/onelibrary.py": (
+        "SQLCipher handle only; it opens whatever path its caller passes: the "
+        "writer's template copy, or readers' tempfile copies"
+    ),
     "apps/sync/usb/pioneer/value_verify.py": (
         "read-only USB stick value verify (key / PQTZ / loudness counts); "
         "never writes exportLibrary.db, ANLZ, or a desktop master.db"

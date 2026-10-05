@@ -33,8 +33,8 @@
 	<span class="lyrics-error" title={loadError.message}>LYRICS ERROR</span>
 {:else if lyrics !== null}
 	<div class="lyrics-lane" aria-label="Synced lyrics">
-		{#each groups as group, index (group.start_ms)}
-			{@const slot = slots[index]}
+		{#each groups as group, groupIndex (group.start_ms)}
+			{@const slot = slots[groupIndex]}
 			{@const active = activeIndex >= group.firstIndex && activeIndex <= group.lastIndex}
 			{@const left = lyricLanePositionPercent({
 				lineStartMs: group.start_ms,
@@ -42,15 +42,18 @@
 				pitch,
 				windowSeconds: WAVE_WINDOW_S
 			})}
-			{#if left >= -10 && left <= 110}
+			<!-- Two-row slots clamp each entry to the next entry on ITS row
+			     (i + 2), which subsumes the adjacent-entry clamp. -->
+			{@const maxWidth = Number.isFinite(slot.maxWidthPct) ? slot.maxWidthPct : null}
+			<!-- Drawn from its start rightwards, so a line stays on screen
+			     until its END leaves the left edge, not its start. -->
+			{#if left <= 110 && (maxWidth === null ? left >= -100 : left + maxWidth >= 0)}
 				<span
 					class:active
 					class="lyric-line"
 					style:left={`${left}%`}
 					style:top={`${LYRIC_ROW_CENTER_PCT[slot.row]}%`}
-					style:max-width={Number.isFinite(slot.maxWidthPct)
-						? `calc(${slot.maxWidthPct}% - ${LYRIC_ENTRY_GAP_PX}px)`
-						: undefined}
+					style:max-width={maxWidth === null ? undefined : `calc(${maxWidth}% - ${LYRIC_ENTRY_GAP_PX}px)`}
 					data-row={slot.row}
 					aria-current={active ? 'true' : undefined}
 				>{group.text}</span>
@@ -78,6 +81,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		border-radius: 2px;
 		color: color-mix(in srgb, var(--rb-text) 85%, transparent);
 		background: rgb(0 0 0 / var(--rb-lyric-box-alpha));
 		font-size: 10px;

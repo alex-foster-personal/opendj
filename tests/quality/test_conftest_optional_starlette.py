@@ -39,6 +39,7 @@ def test_conftest_loads_without_starlette() -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     output = proc.stdout + proc.stderr
     assert proc.returncode == 0, (
@@ -53,7 +54,9 @@ def test_conftest_loads_without_starlette() -> None:
 def test_testclient_default_is_loopback_when_starlette_present() -> None:
     from starlette.testclient import TestClient
 
-    base_url_default = TestClient.__init__.__defaults__[0]
+    defaults = TestClient.__init__.__defaults__
+    assert defaults is not None
+    base_url_default = defaults[0]
     assert base_url_default == "http://127.0.0.1", (
         "if the TestClient default is not loopback when starlette is present, then "
         f"the host allowlist rejects every default TestClient (got {base_url_default!r})"

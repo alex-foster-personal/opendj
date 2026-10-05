@@ -1,12 +1,13 @@
 // requirement: PERFMODE-15
 // [if] Trackify route is opened from the mode chooser [then] the listening shell renders
 // [if] a Trackify load fails [then] exactly one toast shows, the skip toast (#4036)
-//   [⛔️ if the engine's "Deck 1 could not load the track" toast shows as well, or none]
+//   [⛔️ if the engine's own load-failure toast for Deck 1 shows as well, or none]
 // [if] that engine toast is muted for Trackify [then] the real backend still stores
 //   exactly one deck-load report carrying deck and stage_failedAt
 //   [⛔️ if muting the toast drops the report]
-// [if] an ordinary (non-Trackify) load fails [then] the engine toast still shows and
-//   reports once, and its message names the error code once
+// [if] an ordinary (non-Trackify) load fails [then] the engine toast still shows,
+//   once, with the reason in its headline (pin a4898e22), and reports once, and
+//   its message names the error code once
 //   [⛔️ if the fix muted the engine toast for every caller]
 // Everything here runs against the real engine daemon and fixture library: the
 // 404 is the production track route's, and each report is read back from the
@@ -155,7 +156,7 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 	const elapsedMs = await page.evaluate((started) => performance.now() - started, startedAt);
 	expect(elapsedMs).toBeLessThan(2_000);
 	await expect(page.locator('[data-toast-dismiss]').first()).toBeVisible();
-	// #4036: the engine's own "Deck 1 could not load the track" toast used to
+	// #4036: the engine's own load-failure toast for Deck 1 used to
 	// appear beside the skip toast. One failed load, one toast. Read from the
 	// observer, not the live DOM: toHaveCount retries, and would pass once the
 	// engine toast expired.
@@ -202,9 +203,13 @@ test('control: an ordinary failed load keeps the engine toast and reports once',
 	expect(reports.deckLoad[0].stored).toBe(true);
 	const added = await _readAddedToasts(page);
 	expect(
-		added.some((text) => text.includes('Deck 1 could not load the track')),
-		`if the engine toast is muted for every caller then a Gig load fails silently: ${JSON.stringify(added)}`
-	).toBe(true);
+		added.filter((text) => text.includes('This track is no longer in the library.')),
+		`if the engine toast is muted for every caller then a Gig load fails silently, and the engine and the dispatcher must not both toast it (pin a4898e22): ${JSON.stringify(added)}`
+	).toHaveLength(1);
+	expect(
+		added.filter((text) => text.includes('Performance command failed')),
+		`the dispatcher must not toast a failure the engine already put on screen: ${JSON.stringify(added)}`
+	).toHaveLength(0);
 	const deckToast = toastLog.find((line) => line.includes('Deck 1 load failed - '));
 	expect(deckToast, JSON.stringify(toastLog)).toBeDefined();
 	expect(deckToast, 'an RbApiError message already reads CODE: detail; the toast must not repeat the code').not.toContain(

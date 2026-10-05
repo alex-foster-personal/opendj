@@ -100,6 +100,10 @@ pub enum EngineCmd {
     /// The loaded audio with a new beatgrid, built off the audio thread by
     /// `Track::with_grid` from the deck's current track.
     Regrid { deck: DeckId, track: Arc<Track> },
+    /// The whole decoded track for the head a progressive load put on the
+    /// deck (`Deck::extend`), built off the audio thread with the deck's
+    /// current grid. Refused if the deck holds anything else by then.
+    Extend { deck: DeckId, track: Arc<Track> },
     Unload { deck: DeckId },
     Play { deck: DeckId, playing: bool },
     /// Play if paused, pause if playing, decided when the engine applies it,
@@ -109,7 +113,7 @@ pub enum EngineCmd {
     Cue { deck: DeckId },
     Quantize { deck: DeckId, enabled: bool },
     QuantizeGrid { deck: DeckId, beats: u8 },
-    Seek { deck: DeckId, position_ms: f64 },
+    Seek { deck: DeckId, position_ms: f64, quantize: bool },
     Loop { deck: DeckId, bounds_ms: Option<(f64, f64)> },
     BeatLoop { deck: DeckId, beats: f64, start_ms: Option<f64> },
     BeatJump { deck: DeckId, beats: f64 },
@@ -169,6 +173,9 @@ pub struct DeckSnapshot {
     pub playing: bool,
     pub position_ms: f64,
     pub duration_ms: f64,
+    /// How much of the track is decoded: `duration_ms` once all of it is,
+    /// less while a progressive load is still decoding the rest.
+    pub decoded_ms: f64,
     pub tempo: f64,
     pub master_tempo: bool,
     pub key_shift: i32,
@@ -291,6 +298,12 @@ impl Engine {
                     Err(error) => Err(Rejected { error, track: Some(track) }),
                 }
             }
+            Extend { deck, track } => {
+                return match self.deck_mut(deck) {
+                    Ok(d) => d.extend(track).map(Some).map_err(|(error, t)| Rejected { error, track: Some(t) }),
+                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                }
+            }
             Unload { deck } => return Ok(self.deck_mut(deck)?.unload()),
             Play { deck, playing } => self.deck_mut(deck)?.play(playing)?,
             PlayToggle { deck } => {
@@ -301,7 +314,7 @@ impl Engine {
             Cue { deck } => self.deck_mut(deck)?.cue()?,
             Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
             QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
-            Seek { deck, position_ms } => self.deck_mut(deck)?.seek(position_ms)?,
+            Seek { deck, position_ms, quantize } => self.deck_mut(deck)?.seek_with_quantize(position_ms, quantize)?,
             Loop { deck, bounds_ms } => self.deck_mut(deck)?.set_loop(bounds_ms)?,
             BeatLoop { deck, beats, start_ms } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
             BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
@@ -432,6 +445,7 @@ impl Engine {
                 playing: d.playing,
                 position_ms: t.frames_to_ms(d.pos),
                 duration_ms: t.duration_ms(),
+                decoded_ms: if t.decoding { t.frames_to_ms(t.available() as f64) } else { t.duration_ms() },
                 tempo: d.tempo,
                 master_tempo: d.master_tempo,
                 key_shift: d.key_shift,
@@ -697,7 +711,7 @@ mod tests {
             let mut e = Engine::new(48000);
             e.apply(EngineCmd::Load { deck: 1, track: Arc::new(clicks(48000, 3.0, 1.0)) }).unwrap();
             e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 1, position_ms: 500.0 }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 1, position_ms: 500.0, quantize: true }).unwrap();
             e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
             let mut buf = vec![0.0f32; 48000 * 2];
             e.render(&mut buf);
@@ -945,7 +959,7 @@ mod tests {
             e.render(&mut out);
             // 300 ms in: nearest beat is 400 ms on the new grid, 500 ms on the old.
             e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 1, position_ms: 300.0 }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 1, position_ms: 300.0, quantize: true }).unwrap();
             e.apply(EngineCmd::BeatJump { deck: 1, beats: 1.0 }).unwrap();
             (out, e.snapshot().decks[0].position_ms)
         };

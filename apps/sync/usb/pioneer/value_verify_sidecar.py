@@ -46,55 +46,33 @@ def read_scalar_sidecar_from_onelibrary(
         shutil.copy2(one_lib_path, copy_path)
 
         try:
-            from rbox import OneLibrary
-        except ImportError:
-            unread.append("rbox not installed; OneLibrary loudness unread")
+            from .onelibrary import OneLibrary
+        except ImportError as exc:
+            unread.append(f"OneLibrary reader unavailable ({exc}); OneLibrary loudness unread")
             return sidecar, contents_by_filename, unread
 
         try:
-            db = OneLibrary(str(copy_path))
+            db = OneLibrary(copy_path)
         except Exception as exc:
             unread.append(f"OneLibrary open failed: {exc}")
             return sidecar, contents_by_filename, unread
 
         try:
             for content in db.get_contents():
-                fname = content.get("filename") or content.get("path")
+                fname = content.get("file_name") or content.get("path")
                 if fname:
                     contents_by_filename[str(fname)] = content
 
-            conn = getattr(db, "conn", None) or getattr(db, "_conn", None)
-            if conn is not None:
-                cur = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                    (_SCALAR_TABLE,),
-                )
-                if cur.fetchone() is None:
-                    return sidecar, contents_by_filename, unread
-                for content_id, field_name, value in conn.execute(
-                    f"SELECT ContentID, field, value FROM {_SCALAR_TABLE}"
-                ):
-                    cid = int(content_id)
-                    sidecar.setdefault(cid, {})[str(field_name)] = str(value)
+            if not db.has_table(_SCALAR_TABLE):
                 return sidecar, contents_by_filename, unread
-
-            if hasattr(db, "execute"):
-                rows = list(
-                    db.execute(
-                        f"SELECT ContentID, field, value FROM {_SCALAR_TABLE}"
-                    )
-                )
-                for content_id, field_name, value in rows:
-                    cid = int(content_id)
-                    sidecar.setdefault(cid, {})[str(field_name)] = str(value)
-                return sidecar, contents_by_filename, unread
-
-            unread.append(
-                f"{_SCALAR_TABLE} not present on stick (no SQL surface on OneLibrary)"
-            )
+            for content_id, field_name, value in db.conn.execute(
+                f"SELECT ContentID, field, value FROM {_SCALAR_TABLE}"
+            ):
+                cid = int(content_id)
+                sidecar.setdefault(cid, {})[str(field_name)] = str(value)
         except Exception as exc:
             unread.append(f"OneLibrary scalar probe failed: {exc}")
         finally:
-            del db
+            db.close()
 
     return sidecar, contents_by_filename, unread

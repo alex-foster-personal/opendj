@@ -24,6 +24,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const API_BASE = 'https://rekordbox-api.example.test';
 let api;
 let wait;
+let retry;
 let originalFetch;
 
 // Every body below is the real route's answer, captured into this fixture and
@@ -65,6 +66,7 @@ function fakeClock() {
 before(async () => {
 	api = await loadTypeScriptModule('src/lib/rb/api-rb.ts', { viteApiBase: API_BASE });
 	wait = await loadTypeScriptModule('src/lib/rb/stem-hydrate-wait.ts', { viteApiBase: API_BASE });
+	retry = await loadTypeScriptModule('src/lib/rb/stem-retry.ts', { viteApiBase: API_BASE });
 	originalFetch = globalThis.fetch;
 });
 
@@ -91,7 +93,7 @@ test('awaitStemArtifact waits through hydrating and lands the manifest', async (
 	assert.equal(probe.status, 'ready');
 	assert.equal(probe.manifest.model, 'htdemucs');
 	assert.equal(calls.length, 3, 'one GET per poll, stopping at the manifest');
-	assert.deepEqual(clock.slept, [1000, 2000]);
+	assert.deepEqual(clock.slept, [500, 1000]);
 });
 
 test('control: a track with no bundle anywhere settles at once, with no polling', async () => {
@@ -129,9 +131,10 @@ test('a download that never finishes fails loud after maxWaitMs', async () => {
 		wait.awaitStemArtifact('sid-1', { now: clock.now, sleep: clock.sleep, maxWaitMs: 20_000 }),
 		/stem bundle still downloading after 20 s/
 	);
-	// Backoff 1+2+3+5+5+4(clamped to the deadline) = 20 s, then one last look.
-	assert.deepEqual(clock.slept, [1000, 2000, 3000, 5000, 5000, 4000]);
-	assert.equal(calls.length, 7);
+	// 0.5 s, then 1 s nineteen times, then 0.5 s (clamped to the deadline)
+	// = 20 s, then one last look (PERFMODE-18 cadence).
+	assert.deepEqual(clock.slept, [500, ...Array.from({ length: 19 }, () => 1000), 500]);
+	assert.equal(calls.length, 22);
 });
 
 test('a server error while hydrating still rejects instead of settling empty', async () => {
@@ -148,4 +151,85 @@ test('a server error while hydrating still rejects instead of settling empty', a
 		// not by `instanceof` against this file's copy of RbApiError.
 		(error) => error?.status === 502 && error?.code === 'STEM_BUNDLE_HYDRATION_FAILED'
 	);
+});
+
+// ------------------------------------------------- STEM-45 / STEM-46
+//
+// [if] the hydrating envelope carries progress [then] the probe reports it and
+//   the wait hands every reading to onHydrating
+// [if] an older engine sends no progress [then] the probe reports null, and
+//   the wait still reports the fetch (with null)
+// [if] the progress is malformed [then] the probe rejects, never shows a wrong count
+// [if] a retry is requested [then] it is a POST to .../stems/hydrate, and a
+//   non-2xx rejects naming the status
+
+test('the hydrating envelope carries its progress through the probe', async () => {
+	serve([HYDRATING]);
+	const probe = await api.probeStemArtifact('sid-1');
+	assert.deepEqual(probe.progress, HYDRATING.progress);
+	assert.equal(probe.progress.files_total, 5, 'the control: the fixture progress is not empty');
+});
+
+test('an envelope with no progress field probes as null progress, still hydrating', async () => {
+	const { progress: _dropped, ...older } = HYDRATING;
+	serve([older]);
+	const probe = await api.probeStemArtifact('sid-1');
+	assert.equal(probe.status, 'hydrating');
+	assert.equal(probe.progress, null);
+});
+
+test('a malformed progress rejects rather than putting a wrong count on the deck', async () => {
+	serve([{ ...HYDRATING, progress: { files_total: 5, files_done: -1, bytes_done: 0 } }]);
+	await assert.rejects(api.probeStemArtifact('sid-1'), /files_done must be a non-negative integer/);
+});
+
+test('the wait reports every hydrating reading, in order, then stops', async () => {
+	const second = { ...HYDRATING, progress: { files_total: 5, files_done: 3, bytes_done: 900 } };
+	serve([HYDRATING, second, MANIFEST]);
+	const clock = fakeClock();
+	const seen = [];
+	await wait.awaitStemArtifact('sid-1', {
+		now: clock.now,
+		sleep: clock.sleep,
+		onHydrating: (progress) => seen.push(progress)
+	});
+	assert.deepEqual(seen, [HYDRATING.progress, second.progress]);
+});
+
+test('control: a bundle that is already local never reports a fetch', async () => {
+	serve([MANIFEST]);
+	const clock = fakeClock();
+	const seen = [];
+	await wait.awaitStemArtifact('sid-1', {
+		now: clock.now,
+		sleep: clock.sleep,
+		onHydrating: (progress) => seen.push(progress)
+	});
+	assert.deepEqual(seen, []);
+});
+
+test('a retry is a POST to the hydrate route, and a refusal rejects with its status', async () => {
+	const requests = [];
+	const ok = async (url, init) => {
+		requests.push([String(url), init?.method]);
+		return Response.json({ state: 'fetching' });
+	};
+	await retry.requestStemHydration('sid 1', ok);
+	assert.equal(requests.length, 1);
+	assert.match(requests[0][0], /\/api\/v1\/tracks\/sid%201\/stems\/hydrate$/);
+	assert.equal(requests[0][1], 'POST');
+	const refused = async () => Response.json({}, { status: 503 });
+	await assert.rejects(retry.requestStemHydration('sid-1', refused), /HTTP 503/);
+});
+
+test('[if] a stick track asks for hydration [then] it is refused before any request (control: a library id still posts)', async () => {
+	const requests = [];
+	const recording = async (url) => {
+		requests.push(String(url));
+		return Response.json({ state: 'fetching' });
+	};
+	await assert.rejects(retry.requestStemHydration('usb-abc', recording), /stem hydrate refused for stick track usb-abc/);
+	assert.deepEqual(requests, []);
+	await retry.requestStemHydration('abc', recording);
+	assert.equal(requests.length, 1);
 });

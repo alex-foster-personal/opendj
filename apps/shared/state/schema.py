@@ -226,6 +226,10 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     # apps/shared/pairings/schema_sql.py :: ensure_phase08_tables
     "pairings",
     "smartlists",
+    # apps/webui/server/pairings_sqlite.py :: ensure_http_pairings_table
+    # -- PAIR-04 HTTP pairing rows (UUID pairing_id, ->/<-> direction).
+    # Distinct from the CAT-03 pairings edge graph in schema_sql.py.
+    "http_pairings",
     # apps/shared/pairings/schema_sql.py :: apply_pairing_capture_migrations
     # -- the SECOND ladder in that same module, with its own version
     # counter, applied lazily by apps/webui/server/routes/pairing_capture.py

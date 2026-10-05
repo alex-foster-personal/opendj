@@ -5,7 +5,8 @@
 export const COL_DEFAULTS = {
 	funnel: 18,
 	err: 20,
-	cloud: 22,
+	// 12px cloud glyph + 2px gap + 9px minor-issue square + 2px padding per side.
+	cloud: 28,
 	order: 24,
 	preview: 177,
 	art: 54,

@@ -24,8 +24,8 @@ test('reconcile wiring lives in _init finally, not parallel onMount', () => {
 	const src = panelSource();
 	assert.match(
 		src,
-		/finally \{\s*playlistsLoading = false;[\s\S]*?void _loadReconcileSummary\(\);[\s\S]*?\}[\s\S]*?void _loadIngestCoverage\(\);/,
-		'reconcile must settle in _init finally before the success-only ingest tail'
+		/finally \{\s*playlistsLoading = false;[\s\S]*?void _loadReconcileSummary\(\);[\s\S]*?\}/,
+		'reconcile must settle in _init finally'
 	);
 	const onMountBlock = src.match(/onMount\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0] ?? '';
 	assert.match(onMountBlock, /void _init\(\);/);

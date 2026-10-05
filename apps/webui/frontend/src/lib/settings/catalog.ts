@@ -7,6 +7,8 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
+import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
+import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from './wave-palette-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import {
@@ -16,8 +18,8 @@ import {
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
 
-export type { SettingDef, SettingGroupId } from './catalog-types';
-import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
+export type { LinkSettingDef, SettingDef, SettingGroupId } from './catalog-types';
+import type { LinkSettingDef, SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 import { DJAY_PARITY_STUBS, REKORDBOX_PARITY_STUBS } from './catalog-parity-stubs';
 
 /** Canonical PARITY-TODO stub title. Declared here, not just in
@@ -68,6 +70,19 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			'When on, missing-file rows and empty playlists leave the browser lists. Default off (grayed but visible).',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'library_watcher_folders',
+		label: 'Watcher folders (v2)',
+		group: 'library',
+		keywords: ['watcher', 'folder', 'import', 'auto', 'monitor', 'ingest'],
+		title: 'Folder paths to watch for auto-import (v2 - not active yet)',
+		detail: 'One absolute path per line, checked to exist on save. No watcher runs until v2.',
+		implemented: true,
+		control: {
+			kind: 'path_lines',
+			v2Notice: 'v2 - folder watcher not active; paths are stored for a future release only.'
+		}
 	},
 	{
 		id: 'library_density',
@@ -201,7 +216,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Technically-working mode animation',
 		group: 'performance',
 		keywords: ['technically', 'working', 'overlay', 'animate', 'fade', 'edge', 'reveal'],
-		title: 'Fade regions in/out on edge-reveal (cmd+R overlay mode)',
+		title: 'Fade regions in/out on edge-reveal (Ctrl+R overlay mode)',
 		detail:
 			'When on (default), revealing/hiding a region in overlay mode cross-fades. Off swaps instantly, no transition.',
 		implemented: true,
@@ -218,6 +233,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
+	MIDI_ENABLED_SETTING,
 	{
 		id: 'show_stems',
 		label: 'Stem mini-waveforms',
@@ -281,12 +297,23 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	{
 		id: 'deck_right_mirror',
-		label: 'Mirror deck 2 controls',
+		label: 'Mirror deck 2 and 4 controls',
 		group: 'performance',
 		keywords: ['deck', 'mirror', 'symmetry', 'deck 2', 'layout', 'right column'],
-		title: 'Mirror deck 2 main control row for mixer-facing symmetry',
+		title: 'Mirror deck 2 and 4 main control rows for mixer-facing symmetry',
 		detail:
-			'When on, deck 2 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
+			'When on, deck 2 and 4 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_left_mirror',
+		label: 'Mirror deck 1 and 3 controls',
+		group: 'performance',
+		keywords: ['deck', 'mirror', 'symmetry', 'deck 1', 'deck 3', 'layout', 'left column'],
+		title: 'Mirror deck 1 and 3 main control rows',
+		detail:
+			'When on, deck 1 and 3 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -354,26 +381,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},
-	{
-		id: 'confirm.dblclick_load_play',
-		label: 'Confirm double-click Load+play',
-		group: 'confirmations',
-		keywords: ['confirm', 'double', 'click', 'load', 'play', 'prompt'],
-		title: 'Ask before Load+play on double-click',
-		detail: 'Off skips the prompt (do this every time). Missing/default means ask.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
-	{
-		id: 'confirm.delete_playlist',
-		label: 'Confirm playlist delete',
-		group: 'confirmations',
-		keywords: ['confirm', 'delete', 'playlist', 'remove', 'prompt'],
-		title: 'Ask before deleting a playlist',
-		detail: 'Off skips the destructive confirm forever. Missing/default means ask.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
+	...CONFIRMATION_SETTINGS,
 	{
 		id: 'auto_sync',
 		label: 'Auto-sync destinations',
@@ -585,8 +593,6 @@ function _wheelSensitivityControl(defaultValue: number): SettingControl {
 export function groupLabel(id: SettingGroupId): string {
 	return SETTING_GROUPS.find((g) => g.id === id)?.label ?? id;
 }
-
-export type LinkSettingDef = SettingDef & { control: { kind: 'link'; href: string } };
 
 /** Implemented link-kind rows in catalog order for a settings group. */
 export function catalogLinkSettings(group: SettingGroupId): LinkSettingDef[] {

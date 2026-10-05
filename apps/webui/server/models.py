@@ -6,6 +6,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .models_grid_quality import GridQualityRowOut
+from .models_tempo_pref import TempoPrefOut, TempoPrefPatch
+
+# PREFLIGHT-01's boot-gate schemas live in their own module (models.py size budget);
+# re-exported here so every existing import keeps working.
+from .models_preflight import PreflightCheckOut, PreflightOut
+
 FileAvailabilityStatus = Literal[
     "present",
     "absent",
@@ -34,31 +41,6 @@ class ProvenanceOut(BaseModel):
     reason: str | None = None
 
 
-class TempoPrefOut(BaseModel):
-    """PREF-01: a track's user-set preferred tempo plus its playable range.
-
-    Any of the three may be null (unset). Never fabricated on read - a track
-    with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
-    not this shape with all-null members (see sqlite_backend._row_to_track).
-    """
-
-    regular: float | None = None
-    min: float | None = None
-    max: float | None = None
-
-
-class TempoPrefPatch(BaseModel):
-    regular: float | None = None
-    min: float | None = None
-    max: float | None = None
-
-    @model_validator(mode="after")
-    def _min_less_than_max(self) -> TempoPrefPatch:
-        if self.min is not None and self.max is not None and self.min >= self.max:
-            raise ValueError("tempo_pref.min must be less than tempo_pref.max")
-        return self
-
-
 class TrackOut(BaseModel):
     stable_id: str
     title: str | None = None
@@ -75,7 +57,7 @@ class TrackOut(BaseModel):
     # (not vendor bpm). Null when never set for this track.
     tempo_pref: TempoPrefOut | None = None
     file_path: str | None = None
-    # Rekordbox djmdContent.DJPlayCount when hydrated via rb_vendor; 0 if unknown.
+    # Rekordbox djmdContent.DJPlayCount plus Open DJ plays (PLAYS-01); 0 if neither.
     play_count: int = 0
     created_at: str
     updated_at: str
@@ -93,9 +75,10 @@ class TrackOut(BaseModel):
     lyrics_available: bool
     auto_cues_available: bool
     stems_available: bool
-    # Same tri-state as RbMetaOut / listing: True = GET /artwork would 200,
-    # False = would 404 ARTWORK_NOT_FOUND, None = would 503
-    # ARTWORK_READER_UNAVAILABLE. Deck-load GET /tracks/{sid} carries this so
+    # Same field as RbMetaOut / listing: True = GET /artwork would 200,
+    # False = would 404 ARTWORK_NOT_FOUND. None is kept in the type for wire
+    # compatibility only: since the tag reader became a core dependency no
+    # build answers it. Deck-load GET /tracks/{sid} carries this so
     # the browser can skip the img GET (same job as has_rb_mapping /
     # lyrics_available).
     artwork_available: bool | None
@@ -190,6 +173,10 @@ class TrackListItemOut(TrackOut):
     # LIBUX-07: our own audio in non-local storage, not streaming and not
     # awaiting-volume. False (the default) is the honest common case.
     is_remote: bool = False
+    # CHROME-02: same facts TrackRowOut carries, so All Tracks and search
+    # classify an unmapped streaming row without an rb-meta FolderPath.
+    is_streaming: bool
+    streaming_provider: Literal["spotify", "tidal", "soundcloud", "unknown"] | None = None
     # LIBUX-13: a durable remote object is recorded even when local audio
     # also exists. Unlike is_remote, this does not collapse local+cloud.
     has_remote_copy: bool
@@ -207,11 +194,18 @@ class TrackListItemOut(TrackOut):
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
+    # LIBUX-34: the BPM hover's beatgrid method and confidence, the same
+    # provenance TrackRowOut carries, so All Tracks and search match playlists.
+    bpm_source: str | None = None
+    bpm_method: str | None = None
+    bpm_confidence: float | None = None
+    bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
-    # the cell is empty (missing tags extra vs no file tag vs no rekordbox genre).
+    # the cell is empty (no file tag vs no rekordbox genre).
     genre: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
@@ -323,7 +317,13 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_availability: FileAvailabilityStatus
     file_exists: bool | None
+    # Path this row's availability check looked at (rekordbox FolderPath, else
+    # the state-layer file_path). The cloud icon titles it when unavailable.
+    file_path: str | None = None
     is_streaming: bool
+    # CHROME-02: which service streams this row (null when not streaming), so
+    # an unmapped streaming row whose rb-meta never loads still shows its icon.
+    streaming_provider: Literal["spotify", "tidal", "soundcloud", "unknown"] | None = None
     # LIBUX-07: our own audio in non-local storage. False when unset.
     is_remote: bool = False
     # LIBUX-13: true whenever track_locations records a live remote object,
@@ -349,9 +349,14 @@ class TrackRowOut(BaseModel):
     key_reason: str | None
     bpm_status: Literal["ok", "failed", "missing", "available-not-selected"]
     bpm_reason: str | None = None
+    bpm_source: str | None = None
+    bpm_method: str | None = None
+    bpm_confidence: float | None = None
+    bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
 
@@ -461,6 +466,9 @@ class HealthStateDb(BaseModel):
     tracks: int
     playlists: int
     pairings: int
+    # Live rows whose track_availability is present. Streaming-service rows
+    # are not playable. Unchecked and absent rows stay in `tracks`.
+    tracks_playable: int = 0
     last_writer_hostname: str | None = None
     last_writer_at: str | None = None
 
@@ -518,59 +526,6 @@ class HealthOut(BaseModel):
     #: absence means this field was never a real environment read (a stub, a
     #: pre-OPS-32 engine with no field at all, or a malformed body).
     process_env_home_present: bool
-
-
-class PreflightCheckOut(BaseModel):
-    """One row of PREFLIGHT-01's boot gate (issue #771).
-
-    ``status`` is never a two-way pass/fail: ``pending`` covers a check that
-    genuinely could not be exercised (e.g. audio-access with no resolvable
-    track anywhere in a small sample), which is an honest denominator, never
-    a fabricated pass. ``remediation`` is null on a pass or a pending row and
-    a real sentence on a fail.
-
-    ``user_*`` fields carry plain-language copy for the boot gate (issue
-    #2722). Admin/diagnostics views keep the technical ``label``/``detail``.
-    """
-
-    id: str
-    label: str
-    status: Literal["pass", "fail", "pending"]
-    detail: str
-    remediation: str | None = None
-    user_label: str | None = None
-    user_detail: str | None = None
-    user_remediation: str | None = None
-    #: How much this check MATTERS, which is a different axis from whether it
-    #: passed (the maintainer, Wed 16 Sep 2026, after a fresh-Mac first run: "some
-    #: checks aren't so important"). ``blocking`` means the app cannot
-    #: usefully run until it passes, so the boot gate holds. ``advisory``
-    #: means the app runs fine and the user is told, so the gate does not
-    #: hold. The UI paints red for a failed blocking check and orange for a
-    #: failed or unexercised advisory one, rather than red for everything.
-    severity: Literal["blocking", "advisory"] = "blocking"
-    #: One sentence answering "what do I do about this?", shown on hover.
-    #: Distinct from ``remediation``: that is the fix for a FAILURE, this is
-    #: present on every row including passes, so a user can ask what a row
-    #: means without having to break it first.
-    explainer: str | None = None
-
-
-class PreflightOut(BaseModel):
-    """``GET /api/v1/preflight`` -- the ONE source of truth for the boot
-    gate. ``status`` is ``fail`` iff a check that is ``severity: blocking``
-    is ``fail``; a ``pending`` check never blocks it, because a check that
-    could not be exercised is not a defect on its own, and an ``advisory``
-    check never blocks it either, because the app runs without it.
-
-    ``advisories`` counts the non-blocking rows the user should still see,
-    so a caller can distinguish "everything is fine" from "running, with
-    things worth telling you" without recomputing severity for itself.
-    """
-
-    status: Literal["pass", "fail"]
-    advisories: int = 0
-    checks: list[PreflightCheckOut]
 
 
 __all__ = [

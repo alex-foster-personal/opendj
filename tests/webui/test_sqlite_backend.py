@@ -330,7 +330,12 @@ class TestRoundTripReads:
     def test_stats(self, fresh_state_db: Path) -> None:
         backend = SqliteBackend(fresh_state_db)
         s = backend.stats()
-        assert s == {"tracks": 3, "playlists": 2, "pairings": 0}
+        assert s == {
+            "tracks": 3,
+            "tracks_playable": 0,
+            "playlists": 2,
+            "pairings": 0,
+        }
 
     def test_get_file_paths_bulk_matches_tracks_bulk_file_paths(
         self, fresh_state_db: Path,
@@ -397,6 +402,22 @@ class TestRoundTripReads:
 # --- fallbacks for Phase-5-missing entities ------------------------------
 
 class TestFallbackPaths:
+    def test_list_pairings_reads_sqlite_not_fallback(
+        self, fresh_state_db: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        fallback = InMemoryBackend()
+        now = _iso_now()
+        fallback.seed_pairing(Pairing(
+            pairing_id="p-fallback-only", from_stable_id="a", to_stable_id="b",
+            direction="->", source="manual", notes=None,
+            created_at=now, updated_at=now,
+        ))
+        backend = SqliteBackend(fresh_state_db, fallback=fallback)
+        with caplog.at_level(logging.WARNING, logger=sb_mod.log.name):
+            assert backend.list_pairings() == []
+            backend.list_pairings()
+        assert not any("list_pairings" in r.getMessage() for r in caplog.records)
+
     def test_get_queue_falls_back(
         self, fresh_state_db: Path, caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -488,7 +509,10 @@ class TestFallbackPaths:
         fallback = InMemoryBackend()
         backend = SqliteBackend(db_path, fallback=fallback)
         assert backend.stats() == {
-            "tracks": 0, "playlists": 0, "pairings": 0,
+            "tracks": 0,
+            "tracks_playable": 0,
+            "playlists": 0,
+            "pairings": 0,
         }
 
     def test_update_track_writes_through_state_writer(
@@ -800,6 +824,28 @@ class TestFallbackPaths:
         assert backend.get_track("sid-002").tags == ["late"]
         assert backend.get_track("sid-001").tags == ["deep-house", "smooth"]
 
+    def test_create_and_delete_pairing_persists_in_sqlite(
+        self, fresh_state_db: Path,
+    ) -> None:
+        backend = SqliteBackend(fresh_state_db)
+        now = _iso_now()
+        p = backend.create_pairing(Pairing(
+            pairing_id="ignored", from_stable_id="sid-001",
+            to_stable_id="sid-002", direction="->",
+            source="manual", notes="test",
+            created_at=now, updated_at=now,
+        ))
+        # create_pairing stores the supplied wire id on http_pairings.
+        assert p.pairing_id == "ignored"
+        listed = backend.list_pairings()
+        assert len(listed) == 1
+        assert listed[0].notes == "test"
+        etag = compute_etag(p.pairing_id, p.updated_at)
+        backend.delete_pairing(p.pairing_id, expected_etag=etag)
+        assert backend.list_pairings() == []
+        backend2 = SqliteBackend(fresh_state_db)
+        assert backend2.list_pairings() == []
+
     def test_create_and_delete_pairing_persists_in_state_db(
         self, fresh_state_db: Path,
     ) -> None:
@@ -819,6 +865,8 @@ class TestFallbackPaths:
         etag = compute_etag(p.pairing_id, p.updated_at)
         reborn.delete_pairing(p.pairing_id, expected_etag=etag)
         assert backend.list_pairings() == []
+        backend2 = SqliteBackend(fresh_state_db)
+        assert backend2.list_pairings() == []
 
     def test_last_writer_delegates(
         self, fresh_state_db: Path,

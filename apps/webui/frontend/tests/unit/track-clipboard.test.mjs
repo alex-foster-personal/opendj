@@ -12,6 +12,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const BROWSER_PANEL = `${FRONTEND_ROOT}/src/lib/components/rb/BrowserPanel.svelte`;
+const EDIT_KEYS = `${FRONTEND_ROOT}/src/lib/components/rb/browser/library-edit-keys.ts`;
 
 let mod;
 
@@ -210,8 +211,12 @@ test('BrowserPanel installs and removes the edit-shortcut listener', () => {
 	const src = readFileSync(BROWSER_PANEL, 'utf8');
 	assert.match(src, /window\.addEventListener\('keydown', onLibraryEditKey\)/);
 	assert.match(src, /window\.removeEventListener\('keydown', onLibraryEditKey\)/);
+	assert.match(src, /const onLibraryEditKey = createLibraryEditKeys\(\{/);
+	// The handler and paste live in library-edit-keys.ts (BrowserPanel size cap).
+	const keys = readFileSync(EDIT_KEYS, 'utf8');
+	assert.ok(keys.includes('async function _pasteTracks'), '_pasteTracks missing from library-edit-keys.ts');
 	// Paste goes through the set-union transfer endpoint, not a full rewrite.
-	const paste = src.slice(src.indexOf('async function _pasteTracks'));
+	const paste = keys.slice(keys.indexOf('async function _pasteTracks'));
 	assert.match(paste.slice(0, 4000), /transferPlaylistTracks\(/);
 	assert.doesNotMatch(paste.slice(0, 4000), /replacePlaylistTracks\(/);
 	// Every pane showing the destination reloads, then the paste is revealed.

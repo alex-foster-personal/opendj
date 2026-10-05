@@ -139,7 +139,7 @@ def test_broken_playlist_filter(client: TestClient) -> None:
 
     empty = client.get("/api/v1/reconcile/broken",
                        params={"playlist_id": "pl-3"}).json()
-    assert empty == {"total": 0, "tracks": []}
+    assert empty == {"total": 0, "tracks": [], "offset": 0, "next_offset": None}
 
 
 @pytest.mark.requirement("RECON-01")
@@ -208,7 +208,7 @@ def test_empty_library(tmp_path: Path,
     app.include_router(reconcile_routes.router, prefix="/api/v1")
     with TestClient(app) as c:
         assert c.get("/api/v1/reconcile/broken").json() == {
-            "total": 0, "tracks": [],
+            "total": 0, "tracks": [], "offset": 0, "next_offset": None,
         }
         summary = c.get("/api/v1/reconcile/summary").json()
     # availability is None, not zeros: an in-memory backend has no state.db
@@ -216,3 +216,167 @@ def test_empty_library(tmp_path: Path,
     assert summary == {"total_tracks": 0, "total_broken": 0,
                        "orphan_broken": 0, "playlists": [],
                        "availability": None}
+
+
+# --- summary scan: counts without whole Track rows (HEALTH-11) ---------------------
+
+
+@pytest.fixture
+def sqlite_backend(tmp_path: Path, library: dict[str, Path]):
+    """A real state.db behind the real SqliteBackend: two present, two gone,
+    one streaming, one pathless, and one soft-deleted row whose file is gone."""
+    import sqlite3
+
+    from apps.webui.server.sqlite_backend import SqliteBackend
+    from tests.health_lights import fixtures as fx
+
+    state_db = fx.make_state_db(tmp_path / "data")
+    for stable_id, file_path in (
+        ("t-ok", str(library["present"])),
+        ("t-ok2", str(library["present2"])),
+        ("t-gone", str(library["gone"])),
+        ("t-gone2", str(library["gone2"])),
+        ("t-stream", "tidal:12345"),
+        ("t-nopath", None),
+        ("t-deleted", str(library["gone"].with_name("deleted.mp3"))),
+    ):
+        fx.seed_track(state_db, stable_id, file_path)
+    conn = sqlite3.connect(state_db)
+    conn.execute("UPDATE tracks SET deleted_at = ? WHERE stable_id = 't-deleted'", (fx.STAMP,))
+    conn.commit()
+    conn.close()
+    return SqliteBackend(state_db)
+
+
+@pytest.mark.requirement("HEALTH-11")
+def test_summary_scan_matches_the_full_scan_on_a_real_state_db(sqlite_backend) -> None:
+    """[if] the lean summary scan and the full /broken scan read the same
+    library [then] they agree on the total and on every broken id."""
+    total, broken = reconcile_routes._scan_broken(sqlite_backend)
+    lean_total, lean_ids = reconcile_routes._scan_broken_ids(sqlite_backend)
+
+    assert {b.track.stable_id for b in broken} == {"t-gone", "t-gone2"}    # the control fires
+    assert lean_ids == {"t-gone", "t-gone2"}
+    assert lean_total == total == 6          # the soft-deleted row is in neither
+
+
+@pytest.mark.requirement("HEALTH-11")
+def test_summary_does_not_read_whole_track_rows(
+    sqlite_backend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] /reconcile/summary is asked [then] it never calls list_tracks:
+    that read resolved every analysis field per track and took seconds."""
+    calls: list[tuple] = []
+    real = sqlite_backend.list_tracks
+
+    def counting(*args, **kwargs):
+        calls.append((args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite_backend, "list_tracks", counting)
+    app = create_app(backend=sqlite_backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    app.include_router(reconcile_routes.router, prefix="/api/v1")
+    with TestClient(app) as c:
+        body = c.get("/api/v1/reconcile/summary").json()
+        assert body["total_tracks"] == 6 and body["total_broken"] == 2
+        assert calls == []
+    # Control: the full scan DOES go through list_tracks, so the counter works.
+    reconcile_routes._scan_broken(sqlite_backend)
+    assert calls != []
+
+
+@pytest.mark.requirement("HEALTH-11")
+def test_summary_scan_falls_back_for_a_backend_without_a_state_db(
+    backend: InMemoryBackend,
+) -> None:
+    total, ids = reconcile_routes._scan_broken_ids(backend)
+    assert (total, ids) == (5, {"t-gone", "t-gone2"})
+
+
+# --- /broken: paged, and a page costs a page (LIBM-136) ----------------------------
+
+
+@pytest.mark.requirement("LIBM-136")
+def test_broken_pages_cover_the_listing_once_in_order(client: TestClient) -> None:
+    """[if] /broken is read one row at a time [then] the pages are the unpaged
+    listing, in order, with `total` the whole count on every page."""
+    whole = client.get("/api/v1/reconcile/broken").json()
+    assert [t["stable_id"] for t in whole["tracks"]] == ["t-gone2", "t-gone"]
+    assert (whole["offset"], whole["next_offset"]) == (0, None)
+
+    first = client.get("/api/v1/reconcile/broken", params={"limit": 1}).json()
+    assert first["total"] == 2
+    assert (first["offset"], first["next_offset"]) == (0, 1)
+    second = client.get(
+        "/api/v1/reconcile/broken", params={"limit": 1, "offset": first["next_offset"]}
+    ).json()
+    assert second["total"] == 2
+    assert (second["offset"], second["next_offset"]) == (1, None)
+    assert first["tracks"] + second["tracks"] == whole["tracks"]
+
+
+@pytest.mark.requirement("LIBM-136")
+def test_broken_page_past_the_end_is_empty_not_an_error(client: TestClient) -> None:
+    body = client.get("/api/v1/reconcile/broken", params={"limit": 5, "offset": 9}).json()
+    assert body == {"total": 2, "tracks": [], "offset": 9, "next_offset": None}
+
+
+@pytest.mark.requirement("LIBM-136")
+@pytest.mark.parametrize(
+    "params", [{"limit": 0}, {"limit": 1001}, {"offset": -1}, {"limit": "many"}]
+)
+def test_broken_rejects_a_page_it_cannot_serve(client: TestClient, params: dict) -> None:
+    assert client.get("/api/v1/reconcile/broken", params=params).status_code == 422
+
+
+@pytest.mark.requirement("LIBM-136")
+def test_broken_playlist_filter_pages_within_the_playlist(client: TestClient) -> None:
+    body = client.get(
+        "/api/v1/reconcile/broken", params={"playlist_id": "pl-1", "limit": 1}
+    ).json()
+    assert body["total"] == 1
+    assert [t["stable_id"] for t in body["tracks"]] == ["t-gone"]
+    assert body["next_offset"] is None
+
+
+@pytest.mark.requirement("LIBM-136")
+def test_a_broken_page_reads_whole_track_rows_for_that_page_only(
+    sqlite_backend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] one page of /broken is asked on a real state.db [then] whole track
+    rows are read for that page's ids only, and never through list_tracks:
+    the full-library drain is what made the page take seconds."""
+    listed: list[tuple] = []
+    hydrated: list[list[str]] = []
+    real_list, real_bulk = sqlite_backend.list_tracks, sqlite_backend.get_tracks_bulk
+
+    def counting_list(*args, **kwargs):
+        listed.append((args, kwargs))
+        return real_list(*args, **kwargs)
+
+    def counting_bulk(stable_ids):
+        hydrated.append(list(stable_ids))
+        return real_bulk(stable_ids)
+
+    # The oracle, taken BEFORE the counters go on: the old full scan's rows.
+    _total, full = reconcile_routes._scan_broken(sqlite_backend)
+    oracle = [
+        reconcile_routes._to_row(b, []).model_dump() for b in full
+    ]
+    assert [row["stable_id"] for row in oracle] == ["t-gone", "t-gone2"]
+
+    monkeypatch.setattr(sqlite_backend, "list_tracks", counting_list)
+    monkeypatch.setattr(sqlite_backend, "get_tracks_bulk", counting_bulk)
+    app = create_app(backend=sqlite_backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    app.include_router(reconcile_routes.router, prefix="/api/v1")
+    with TestClient(app) as c:
+        first = c.get("/api/v1/reconcile/broken", params={"limit": 1}).json()
+        assert hydrated == [["t-gone"]]
+        second = c.get("/api/v1/reconcile/broken", params={"limit": 1, "offset": 1}).json()
+        assert hydrated == [["t-gone"], ["t-gone2"]]
+    assert listed == []
+    assert first["total"] == second["total"] == 2
+    # Overshoot control: paging must not change what any row says.
+    assert first["tracks"] + second["tracks"] == oracle

@@ -11,7 +11,9 @@ import {
 	type DeckId as DeeplinkDeckId
 } from '$lib/rb/performance-deeplink';
 import {
+	activePerformanceCommandSession,
 	dispatchPerformanceCommand,
+	operatorMasterVolume,
 	queryPerformanceState,
 	type PerformanceCommand,
 	type PerformanceState
@@ -23,7 +25,8 @@ import {
 	type PerformanceSessionSnapshot,
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
-import type { StemControl } from '$lib/rb/stem-types';
+import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
+import { restoreStemControls } from '$lib/rb/stem-restore';
 import {
 	consumeLibraryModeExitFlag,
 	shouldSkipPerformanceSessionRestore
@@ -36,7 +39,7 @@ export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
 export const RESCUE_RESTORE_MAX_AGE_MS = 600_000;
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
-const STEM_CONTROLS: StemControl[] = ['vocal', 'instrumental', 'drums'];
+const STEM_CONTROLS = STEM_CONTROL_IDS;
 
 export interface PerformanceSessionRestoreOptions {
 	now?: () => number;
@@ -50,11 +53,16 @@ export interface PerformanceSessionRestoreOptions {
 	setInterval?: typeof globalThis.setInterval;
 	clearInterval?: typeof globalThis.clearInterval;
 	skipDeckRestore?: boolean;
+	/** The route command session this restore belongs to; the snapshot
+	 * writer stops when it ends. Defaults to the live performance IPC. */
+	commandSession?: () => number | null;
+	operatorMaster?: () => number | null;
 }
 
 function _snapshotInputFromState(
 	state: PerformanceState,
-	captured_at_ms: number
+	captured_at_ms: number,
+	operatorMaster: number | null
 ): PerformanceSessionSnapshotInput {
 	const playlist_id = state.browser.active_playlist;
 	const decks = {} as PerformanceSessionSnapshotInput['decks'];
@@ -84,8 +92,9 @@ function _snapshotInputFromState(
 			assign: channel.assign,
 			stem_eq_mode: channel.stem_eq_mode
 		};
-		const deckStems = {} as Record<StemControl, { muted: boolean; solo: boolean; gain: number }>;
+		const deckStems = {} as PerformanceSessionSnapshotInput['stems'][DeckId];
 		for (const stem of STEM_CONTROLS) {
+			if ((stem === 'bass' || stem === 'other') && !deck.stems.available_controls.includes(stem)) continue;
 			deckStems[stem] = {
 				muted: deck.stems.controls[stem].muted,
 				solo: deck.stems.controls[stem].solo,
@@ -101,7 +110,10 @@ function _snapshotInputFromState(
 		decks,
 		mixer: {
 			crossfader: state.mixer.crossfader,
-			master: state.mixer.master,
+			// The operator's own level, not the live gain: a safety mute that
+			// zeroed the mixer must not become the level the next load restores.
+			master: operatorMaster ?? state.mixer.master,
+			master_set_by_operator: operatorMaster !== null,
 			channels
 		},
 		stems
@@ -130,9 +142,10 @@ function _idsMatchQuery(
 
 export function buildPerformanceSessionSnapshot(
 	state: PerformanceState,
-	captured_at_ms: number
+	captured_at_ms: number,
+	operatorMaster: number | null
 ): string {
-	return serializePerformanceSession(_snapshotInputFromState(state, captured_at_ms));
+	return serializePerformanceSession(_snapshotInputFromState(state, captured_at_ms, operatorMaster));
 }
 
 export interface SessionSnapshotWriter {
@@ -147,6 +160,11 @@ export function createSessionSnapshotWriter(opts: {
 	location: { pathname: string; search: string; href: string };
 	replaceState: (url: string) => void;
 	query: typeof queryPerformanceState;
+	/** False once the route session that owns this writer has ended. Every
+	 * write is refused from then on, so a snapshot taken during teardown
+	 * (hard-muted master, stopped decks) is never persisted. */
+	isLive: () => boolean;
+	operatorMaster: () => number | null;
 	throttle_ms?: number;
 	document?: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>;
 	window?: Pick<Window, 'addEventListener' | 'removeEventListener'>;
@@ -159,9 +177,10 @@ export function createSessionSnapshotWriter(opts: {
 
 	const writeSnapshot = (force: boolean): void => {
 		if (opts.location?.pathname !== '/performance') return;
+		if (!opts.isLive()) return;
 		const now = opts.now();
 		if (!force && now - lastWriteAt < throttle_ms) return;
-		const serialized = buildPerformanceSessionSnapshot(opts.query(), now);
+		const serialized = buildPerformanceSessionSnapshot(opts.query(), now, opts.operatorMaster());
 		if (!force && serialized === lastSerialized) return;
 		opts.storage.setItem(PERFORMANCE_SESSION_STORAGE_KEY, serialized);
 		lastSerialized = serialized;
@@ -207,6 +226,7 @@ export function createSessionSnapshotWriter(opts: {
 
 async function _restoreDeck(
 	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
 	deckId: DeckId,
 	stable_id: string,
 	position_ms: number,
@@ -219,7 +239,7 @@ async function _restoreDeck(
 			await dispatch({ type: 'seek', deck: deckId, position_ms });
 		}
 		if (snapshot === null) return;
-		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot);
+		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot, query);
 	} catch (exc) {
 		const message = exc instanceof Error ? exc.message : String(exc);
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
@@ -229,7 +249,8 @@ async function _restoreDeck(
 export async function restoreDeckConfigFromSnapshot(
 	dispatch: typeof dispatchPerformanceCommand,
 	deckId: DeckId,
-	snapshot: PerformanceSessionSnapshot | PerformanceRescueDeckConfigSource
+	snapshot: PerformanceSessionSnapshot | PerformanceRescueDeckConfigSource,
+	query: typeof queryPerformanceState = queryPerformanceState
 ): Promise<void> {
 	const deck = snapshot.decks[deckId];
 	const channel = snapshot.mixer.channels[deckId];
@@ -249,17 +270,10 @@ export async function restoreDeckConfigFromSnapshot(
 		{ type: 'assign', deck: deckId, assign: channel.assign },
 		{ type: 'stem_eq_mode', deck: deckId, enabled: channel.stem_eq_mode ?? false }
 	];
-	for (const stem of STEM_CONTROLS) {
-		const control = snapshot.stems[deckId][stem];
-		commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
-		commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
-		if (control.gain !== undefined) {
-			commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
-		}
-	}
 	for (const command of commands) {
 		await dispatch(command);
 	}
+	await restoreStemControls(dispatch, query, deckId, snapshot.stems[deckId]);
 }
 
 type PerformanceRescueDeckConfigSource = Pick<
@@ -267,8 +281,16 @@ type PerformanceRescueDeckConfigSource = Pick<
 	'decks' | 'mixer' | 'stems'
 >;
 
+/** A master of 0 is replayed only when an operator chose it. Anything else
+ * at 0 is a safety mute captured by accident, and replaying it is what left
+ * the preview silent after a restart (demon-llama, Thu 1 Oct 2026 05:49:53Z). */
+export function shouldRestoreSessionMaster(snapshot: PerformanceSessionSnapshot): boolean {
+	return snapshot.mixer.master > 0 || snapshot.mixer.master_set_by_operator === true;
+}
+
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
 	snapshot: PerformanceSessionSnapshot | null,
 	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
 	skipDeckRestore: boolean
@@ -276,7 +298,9 @@ async function _restoreSession(
 	if (skipDeckRestore) return;
 	if (snapshot !== null) {
 		await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
-		await dispatch({ type: 'master_volume', value: snapshot.mixer.master });
+		if (shouldRestoreSessionMaster(snapshot)) {
+			await dispatch({ type: 'master_volume', value: snapshot.mixer.master });
+		}
 	}
 
 	for (const deckId of DECK_IDS) {
@@ -288,7 +312,7 @@ async function _restoreSession(
 			snapshotDeck !== null && snapshotDeck.stable_id === stable_id
 				? snapshotDeck.position_ms
 				: 0;
-		await _restoreDeck(dispatch, deckId, stable_id, position_ms, snapshot);
+		await _restoreDeck(dispatch, query, deckId, stable_id, position_ms, snapshot);
 	}
 }
 
@@ -313,6 +337,13 @@ export function installPerformanceSessionRestore(
 	}
 	const dispatch = opts.dispatch ?? dispatchPerformanceCommand;
 	const query = opts.query ?? queryPerformanceState;
+	const commandSession = opts.commandSession ?? activePerformanceCommandSession;
+	const operatorMaster = opts.operatorMaster ?? operatorMasterVolume;
+	// Bound now, not at write time: a restore installed after its route has
+	// already unmounted sees no session and never writes, and one that
+	// outlives its route stops the instant the next mount starts a new one.
+	const ownSession = commandSession();
+	const isLive = (): boolean => ownSession !== null && commandSession() === ownSession;
 	const documentRef = opts.document ?? document;
 	const windowRef = opts.window ?? window;
 
@@ -328,14 +359,25 @@ export function installPerformanceSessionRestore(
 	const skipFromLibrary = shouldSkipPerformanceSessionRestore();
 	if (skipFromLibrary) consumeLibraryModeExitFlag();
 	const skipDeckRestore = (opts.skipDeckRestore ?? false) || skipFromLibrary;
+	let disposed = false;
+	const assertActive = (): void => {
+		if (disposed) throw new Error('performance session restore was disposed');
+	};
 
-	void _restoreSession(dispatch, snapshot, urlDeckIds, skipDeckRestore).finally(() => {
+	void _restoreSession(
+		(command) => { assertActive(); return dispatch(command); },
+		() => { assertActive(); return query(); },
+		snapshot, urlDeckIds, skipDeckRestore
+	).finally(() => {
+		if (disposed) return;
 		writer = createSessionSnapshotWriter({
 			now: nowFn,
 			storage,
 			location,
 			replaceState,
 			query,
+			isLive,
+			operatorMaster,
 			document: documentRef,
 			window: windowRef,
 			...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
@@ -346,6 +388,7 @@ export function installPerformanceSessionRestore(
 	});
 
 	return () => {
+		disposed = true;
 		writer?.dispose();
 		writer = null;
 		activeSessionWriter = null;
@@ -361,7 +404,8 @@ export function flushPerformanceSessionSnapshot(): void {
 		return;
 	}
 	if (typeof window === 'undefined' || window.location.pathname !== '/performance') return;
+	if (activePerformanceCommandSession() === null) return;
 	const now = Date.now();
-	const serialized = buildPerformanceSessionSnapshot(queryPerformanceState(), now);
+	const serialized = buildPerformanceSessionSnapshot(queryPerformanceState(), now, operatorMasterVolume());
 	window.localStorage.setItem(PERFORMANCE_SESSION_STORAGE_KEY, serialized);
 }

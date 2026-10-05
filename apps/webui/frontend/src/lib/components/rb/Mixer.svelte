@@ -11,8 +11,10 @@
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */
-	import { onMount } from 'svelte';
-	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
+	import { onMount, untrack } from 'svelte';
+	import { listIoDevicesOnOpen, refreshIoDeviceList } from '$lib/rb/io-device-refresh';
+	import { ioDeviceAccessOnOpen } from '$lib/player/io-device-access';
+	import { ioSurface } from '$lib/rb/io-surface.svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
@@ -20,7 +22,7 @@
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from '$lib/rb/mixer-types';
-	import { cueAlignModal, openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
+	import { openCueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
@@ -28,7 +30,6 @@
 	import CrossfadeCurveSelect from './mixer/CrossfadeCurveSelect.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
-	import CueAlignModal from './mixer/CueAlignModal.svelte';
 
 	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). Always
 	 * 4 entries, MORE or LESS - pin 862cd3's LESS mode collapses strips 3/4
@@ -148,10 +149,17 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_input_select', device_id });
 	}
 
-	onMount(() => {
-		// The Rust engine has no Web Audio devices to list (NAE-15).
-		if (rustCommandUnsupported('headphone_outputs_refresh')) return;
-		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
+	// IOPIN-14: list the devices at mount and again whenever the I/O view opens.
+	// Neither changes a route, so they bypass the command dispatcher: its session
+	// does not exist yet at mount, which is how the old mount-time listing was
+	// refused without a word. Rescan is the operator's own command and stays on
+	// the dispatcher. Mount never asks for device access; whether OPEN may is the
+	// build's one switch, set in vite.config.ts (dev server: ask once per origin;
+	// every built app: only the grant button asks).
+	const ioOpenMode = ioDeviceAccessOnOpen(import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN);
+	onMount(() => void refreshIoDeviceList());
+	$effect(() => {
+		if (ioSurface.open) untrack(() => void listIoDevicesOnOpen(ioOpenMode));
 	});
 </script>
 
@@ -235,6 +243,7 @@
 				oninput={selectAudioInput}
 				onmode={handleHeadphoneOutputMode}
 				oncalibrate={openCueAlignModal}
+				onAlignmentMode={handleAlignmentMode}
 			/>
 		</div>
 		<div class="xfade-row">
@@ -245,10 +254,6 @@
 		</div>
 	</div>
 </section>
-
-{#if cueAlignModal.open}
-	<CueAlignModal headphones={mixerState.headphones} onmode={handleAlignmentMode} />
-{/if}
 
 <style>
 	.rb-mixer {

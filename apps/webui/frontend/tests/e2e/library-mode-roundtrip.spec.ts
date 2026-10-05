@@ -114,45 +114,6 @@ async function _seedRescueSnapshot(
 	expect(response.ok()).toBeTruthy();
 }
 
-test('library round-trip via PerformanceAppNav returns empty decks', async ({ page }) => {
-	test.skip(!HAS_MANIFEST, 'fixture manifest required for library round-trip');
-
-	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
-
-	for (const deck of [1, 2, 3, 4] as const) {
-		await page.evaluate(
-			async ({ deckId, stableId }) => {
-				const ipc = window.musicDjToolsPerformance;
-				if (ipc === undefined) throw new Error('performance IPC missing');
-				await ipc.dispatch({ type: 'load', deck: deckId, stable_id: stableId });
-			},
-			{ deckId: deck, stableId: FIXTURE_STABLE_ID }
-		);
-	}
-
-	await page.getByTestId('performance-nav-library').click();
-	await page.waitForURL((url) => url.pathname === '/');
-	await page.waitForFunction(() => window.__mdtLibraryModeIdle === true);
-
-	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
-	const emptyDecks = await page.evaluate(() => {
-		const decks = window.musicDjToolsPerformance?.query().decks;
-		return [1, 2, 3, 4].map((deckId) => {
-			const deck = decks?.[deckId as 1 | 2 | 3 | 4];
-			// `?? 'missing'` would also replace a real `null` stable_id on an empty
-			// deck, so the assertion below could never observe an actual null and
-			// would always fail wherever the fixture manifest exists (Claude review,
-			// round 4, PR #3679). Distinguish "deck object absent" (an error --
-			// surfaces loudly as the 'missing' string) from "deck object present
-			// with a null stable_id" (the expected empty-deck shape).
-			return deck === undefined ? 'missing' : deck.stable_id;
-		});
-	});
-	expect(emptyDecks).toEqual([null, null, null, null]);
-});
-
 test('library round-trip returns empty decks', async ({ page }) => {
 	test.skip(!HAS_MANIFEST, 'fixture manifest required for library round-trip');
 

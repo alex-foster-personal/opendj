@@ -54,6 +54,7 @@ from . import queue as queue_api
 from . import queue_store, queue_targets, queue_user_cli
 from .backends import get_backend
 from .backends.base import AnalyzerBackend
+from .lanes import own_backend, parse_own_backend
 from .queue_runner import drain, run_batch
 from .store import open_conn
 
@@ -86,6 +87,23 @@ def resolve_backend(spec: str) -> type[AnalyzerBackend]:
         raise KeyError(
             f"module {module_name!r} has no attribute {class_name!r}"
         ) from exc
+
+
+def backend_for_lane(run_backend: type[AnalyzerBackend], lane: str) -> type[AnalyzerBackend]:
+    """The producer a ``run`` uses for ``lane``: its own backend for its own
+    lane, else that lane's backfill producer.
+
+    A cascade batch is for the DEPENDENT lane (beatgrid moved, key re-queues).
+    Handing it the run's beatgrid backend enqueued key items under
+    ``own_beatgrid.backfill``, which the runner then skipped as
+    ``already_current`` because the beatgrid record it checked was the one
+    that had just been written: 348 key items on demon-llama, Thu 1 Oct 2026,
+    and not one key computed.
+    """
+    parsed = parse_own_backend(run_backend.name)
+    if parsed is None or parsed.lane == lane:
+        return run_backend
+    return get_backend(own_backend(lane, "backfill"))
 
 
 def _conn(db: str | None) -> sqlite3.Connection:
@@ -233,13 +251,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             backend: str | None = None,
         ) -> list:
             return queue_targets.candidates_from_state(
-                conn_, stable_ids, lane=lane, backend=backend or backend_cls.name
+                conn_, stable_ids, lane=lane,
+                backend=backend or backend_for_lane(backend_cls, lane).name,
             )
 
         summaries = drain(
             conn,
             args.batch_id,
-            backend_for_lane=lambda _lane: backend_cls,
+            backend_for_lane=lambda lane: backend_for_lane(backend_cls, lane),
             cascade_resolver=cascade_resolver,
         )
         summary = summaries[-1] if summaries else None

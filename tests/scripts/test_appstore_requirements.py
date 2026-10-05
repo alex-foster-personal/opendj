@@ -82,6 +82,20 @@ def test_entitlements_templates_are_present_and_are_templates(
     assert data.get(expected_key) is True, f"{name} must set {expected_key}"
 
 
+def test_the_store_parent_grants_audio_input_for_set_recording() -> None:
+    """SET-11: REC records through odj-audio, which inherits the parent's sandbox.
+
+    The engine executables carry only com.apple.security.inherit in the store
+    build, so the microphone grant must be on the parent or REC records nothing.
+    """
+    data = plistlib.loads((TAURI_DIR / "Entitlements.appstore.template.plist").read_bytes())
+    assert data.get("com.apple.security.device.audio-input") is True, (
+        "the App Store parent entitlements must set "
+        "com.apple.security.device.audio-input: set recording captures in a "
+        "payload executable that inherits this sandbox"
+    )
+
+
 def test_the_inherit_template_carries_exactly_one_entitlement() -> None:
     """macOS rejects a binary that pairs com.apple.security.inherit with anything.
 

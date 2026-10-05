@@ -28,7 +28,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { API_BASE } from '$lib/api';
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
-const STEM_CONTROLS = ['vocal', 'instrumental', 'drums'] as const;
+import { restoreStemControls } from '$lib/rb/stem-restore';
 
 export type RescueDeckOutcome = 'resumed' | 'paused' | 'missing';
 
@@ -114,6 +114,7 @@ function _rescueSeekMs(
 
 async function _restoreRescueDeckConfig(
 	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
 	deckId: DeckId,
 	snapshot: RescueSnapshot
 ): Promise<void> {
@@ -135,15 +136,10 @@ async function _restoreRescueDeckConfig(
 		{ type: 'assign', deck: deckId, assign: channel.assign },
 		{ type: 'channel_cue', deck: deckId, enabled: channel.cue_enabled }
 	];
-	for (const stem of STEM_CONTROLS) {
-		const control = deck.stems[stem];
-		commands.push({ type: 'stem_mute', deck: deckId, stem, muted: control.muted });
-		commands.push({ type: 'stem_solo', deck: deckId, stem, solo: control.solo });
-		commands.push({ type: 'stem_gain', deck: deckId, stem, value: control.gain });
-	}
 	for (const command of commands) {
 		await dispatch(command);
 	}
+	await restoreStemControls(dispatch, query, deckId, deck.stems);
 }
 
 //----------------------------------------------------------------- sinks (RESCUE-05)
@@ -308,7 +304,7 @@ async function _restoreLayoutOnlyDeck(
 		if (seekMs > 0) {
 			await dispatch({ type: 'seek', deck: deckId, position_ms: seekMs });
 		}
-		await _restoreRescueDeckConfig(dispatch, deckId, snapshot);
+		await _restoreRescueDeckConfig(dispatch, query, deckId, snapshot);
 		return 'paused';
 	} catch {
 		return 'missing';

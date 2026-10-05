@@ -1,4 +1,4 @@
-// requirement: CUEOUT-11
+// requirement: CUEOUT-11, IOPIN-08
 // (CUEOUT-14 replaced the first-select auto-chirp with the CALIBRATE modal; the
 // shouldCalibrateCueLatency / label-skip lines moved to cueout-14-alignment-modes.)
 // [if] a delayed chirp is captured at N ms with a strong peak [then] measureCueLatencyMs returns N
@@ -149,4 +149,12 @@ test('DSP guards fail fast on empty, short, or silent input', () => {
 		/shorter than the reference/
 	);
 	assert.throws(() => cueLatency.cueLatencyCaptureMs(-1), /capture window/);
+});
+
+test('captured signal level is calculated from the received samples, with no output claim', () => {
+	assert.deepEqual(cueLatency.capturedSignalLevel(new Float32Array([0, 1, -1, 0])), {
+		rms: Math.sqrt(0.5),
+		peak: 1
+	});
+	assert.deepEqual(cueLatency.capturedSignalLevel(new Float32Array(8)), { rms: 0, peak: 0 });
 });

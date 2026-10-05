@@ -19,6 +19,7 @@
 	} from '$lib/rb/fader-ghost.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import type { DeckId } from '$lib/rb/deck-slots';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
 	interface Props {
 		/** 0..1; 1 = full (thumb at top). */
@@ -46,6 +47,10 @@
 	let dragReleaseValue = value;
 
 	const thumbTopPx = $derived((1 - value) * Math.max(1, trackH - THUMB_H));
+	const takeoverGhost = $derived(midiTakeoverGhost(`mixer:${deckId}:fader`));
+	const takeoverGhostTopPx = $derived(
+		takeoverGhost === null ? null : (1 - takeoverGhost.value) * Math.max(1, trackH - THUMB_H)
+	);
 	const ghostTopPx = $derived(ghostThumbTopPx(deckId, trackH, THUMB_H));
 	const showGuidance = $derived(guidanceVisible(deckId));
 	const rejoinGlow = $derived(rejoinGlowActive(deckId));
@@ -144,6 +149,7 @@
 	aria-label={label}
 	title={label}
 	data-testid={`channel-${deckId}-fader`}
+	data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
 	aria-orientation="vertical"
 	aria-valuemin={0}
 	aria-valuemax={1}
@@ -170,6 +176,8 @@
 	<ChannelLevelMeter {deckId} {playing} />
 	{#if ghostTopPx !== null}
 		<div class="rb-fader-ghost-thumb" style={`top: ${ghostTopPx}px;`}></div>
+	{:else if takeoverGhostTopPx !== null}
+		<div class="rb-fader-ghost" style={`top: ${takeoverGhostTopPx}px;`}></div>
 	{/if}
 	<div class="rb-fader-thumb" style={`top: ${thumbTopPx}px;`}></div>
 	{#if showGuidance && ghostTopPx !== null}
@@ -188,5 +196,14 @@
 	}
 	.rb-fader:focus-visible .rb-fader-thumb {
 		box-shadow: 0 0 4px var(--rb-accent-glow);
+	}
+	.rb-fader-ghost {
+		position: absolute;
+		left: 2px;
+		right: 2px;
+		height: 10px;
+		border: 1px dashed #f2b84b;
+		border-radius: 2px;
+		pointer-events: none;
 	}
 </style>

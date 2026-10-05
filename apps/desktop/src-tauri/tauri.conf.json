@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Open DJ",
-  "version": "0.1.5",
+  "version": "1.0.0-alpha.1",
   "identifier": "com.opendj.desktop",
   "build": {
     "frontendDist": "../setup"
@@ -28,7 +28,8 @@
       "payload": "payload"
     },
     "macOS": {
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "14.0",
+      "bundleVersion": "1.0.0",
       "entitlements": "./Entitlements.app.plist"
     }
   },

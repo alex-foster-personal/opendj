@@ -5,7 +5,7 @@
 	// from the row a user actually right-clicks instead of only from a
 	// disconnected page they'd have to already know the URL of.
 	import { onMount, tick } from 'svelte';
-	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
+	import { pointFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import { getTrack } from '$lib/api';
 	import {
 		applyRelocate,
@@ -26,7 +26,6 @@
 	} = $props();
 
 	let menu = $state<HTMLDivElement | null>(null);
-	let position = $state({ x: 0, y: 0 });
 	let loading = $state(true);
 	let applying = $state(false);
 	let candidates = $state<RelocateCandidate[]>([]);
@@ -38,23 +37,20 @@
 	// database, so it is inert whenever the daemon is in one-way import mode.
 	const writebackRefusal = $derived(rekordboxWritebackRefusal());
 
-	async function placeMenu(): Promise<void> {
+	// Placement is pointFloatingAction's job, not a one-shot clamp here: the
+	// menu opens on a single loading row and grows once its items arrive, so
+	// a clamp measured at open left the grown menu hanging off the viewport
+	// bottom (unclickable - a fixed node cannot be scrolled into view). The
+	// action re-clamps from (x, y) on every size change.
+	async function focusMenu(): Promise<void> {
 		await tick();
-		if (menu === null) return;
-		const rect = menu.getBoundingClientRect();
-		position = clampToViewport(
-			x,
-			y,
-			{ width: rect.width, height: rect.height },
-			{ width: window.innerWidth, height: window.innerHeight }
-		);
-		menu.focus();
+		menu?.focus();
 	}
 
 	$effect(() => {
 		void x;
 		void y;
-		void placeMenu();
+		void focusMenu();
 	});
 
 	onMount(() => {
@@ -117,7 +113,7 @@
 	data-testid="track-relocate-menu"
 	role="menu"
 	tabindex="-1"
-	style={`left:${position.x}px;top:${position.y}px`}
+	use:pointFloatingAction={{ x, y }}
 >
 	{#if writebackRefusal !== null}
 		<button type="button" role="menuitem" disabled title={writebackRefusal}>{writebackRefusal}</button>

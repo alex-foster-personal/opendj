@@ -131,13 +131,13 @@ FILE_CLASSES: tuple[DataClass, ...] = (
     ),
     fixed(
         "cue-points",
-        "Hot cues and memory cues",
-        files("<data>/master.plain.db (djmdCue)", "<data>/state/anlz-cache/*.json"),
-        "not_yet_built",
-        "DJ-critical but machine-bound: cues live in each machine's rekordbox DB "
-        "and ANLZ files. provenance reserves track_fields 'cue_points' but no "
-        "state.db writer exists, so cues do not sync.",
-        (logical("rekordbox-plain-db"), logical("library-tracks")),
+        "Hot cues, memory cues and loops",
+        files("<data>/state/state.db (track_fields row 'cue_points')"),
+        "sync_hub_changelog",
+        "Open DJ's own cue store (CUES-01): one provenance-wrapped track_fields "
+        "row per track, so cues move with the track-fields class. Rekordbox "
+        "cues are copied in at import; djmdCue itself stays machine-local.",
+        (logical("track-fields"), logical("library-tracks")),
     ),
     fixed(
         "vendor-working-copies",
@@ -463,6 +463,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "*.pyc",
         ".mypy_cache/",
         ".pnpm-store/",
+        ".xdg-cache/",
         ".venv/",
         "*.egg-info/",
         "/dist/",

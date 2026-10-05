@@ -29,7 +29,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.0.0"
+#: 1.1.0 (Fri 2 Oct 2026): the no_tonal_center margin threshold moved from the
+#: 0.02 placeholder to the round-1 measured 0.005 (`flags.py`), which changes
+#: what this producer publishes, so every key record re-queues.
+PRODUCER_VERSION = "1.1.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record
 #: contract parses the backend name and checks it against the record body, so

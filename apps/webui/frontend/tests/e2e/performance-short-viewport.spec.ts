@@ -34,8 +34,9 @@ async function assertCenterInViewport(
 	expect(elementHandle, `${label} elementHandle`).not.toBeNull();
 
 	// Issue #3097: `hit.ok` alone passes whenever ANY element sits at the
-	// center - including one that covers the real target, like the fixed
-	// PerformanceAppNav. The check must confirm the element AT the center
+	// center - including one that covers the real target, as the fixed
+	// bottom-left link strip did before PERF-UI-07 removed it. The check must
+	// confirm the element AT the center
 	// IS the target (or is contained by it, e.g. an inner span/svg).
 	const hit = await page.evaluate(
 		({ x, y, el }) => {

@@ -38,7 +38,7 @@ from tests.opendj_cli import ts_contract
 _SAMPLE_TOKENS = (
     "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
-    "beatgrid", "own", "practice", "hybrid", "tri-band", "mono-dev", "mono", "auto",
+    "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto",
 )
 
 
@@ -66,6 +66,13 @@ def test_every_command_on_the_bus_has_a_verb() -> None:
     declared = set(ts_contract.command_fields())
     named = {verb.command_type for verb in VERBS.values()}
     assert declared - named == set(), "commands with no opendj verb"
+
+
+@pytest.mark.parametrize("beats", ["0.0625", "0.125", "0.25", "0.5", "4"])
+def test_fractional_beat_loop_cli_preserves_the_requested_length(beats: str) -> None:
+    assert parse_invocation(["beat_loop", "2", beats, "1000"]).command == {
+        "type": "beat_loop", "deck": 2, "beats": float(beats), "start_ms": 1000,
+    }
 
 
 def test_no_verb_names_a_command_the_bus_does_not_declare() -> None:

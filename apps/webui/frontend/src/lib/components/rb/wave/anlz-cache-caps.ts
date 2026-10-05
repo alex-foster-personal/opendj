@@ -56,12 +56,44 @@ export function evictAnlzLru<T extends AnlzLruEntry>(
 	}
 }
 
+/**
+ * Entry caps held by a surface that needs fewer ANLZ entries than its tier
+ * allows. Trackify (PERFMODE-15) paints no waveform rows, so it holds the
+ * cache to its one deck's track: the tier caps (8/32/64) are sized for
+ * browsing a library, and under Trackify they only accumulated every played
+ * track's waveform and beatgrid, about 1.25 MB of JS heap a track (measured
+ * Thu 1 Oct 2026 on silver: 8.7 -> 46.6 MB over 29 loads, flat after the cap).
+ */
+const _heldCaps: number[] = [];
+
+/** The tier's entry cap, lowered to the smallest cap currently held. */
+export function effectiveAnlzEntryCap(): number {
+	return Math.min(anlzEntryCap(), ..._heldCaps);
+}
+
+/**
+ * Hold the ANLZ cache at or below `cap` ready entries until the returned
+ * release runs. Evicts at once when the cache is bound; a release restores
+ * the next smallest hold (or the tier cap) for later inserts.
+ */
+export function holdAnlzEntryCap(cap: number): () => void {
+	if (!Number.isInteger(cap) || cap < 1) throw new RangeError(`anlz cap hold ${cap}`);
+	_heldCaps.push(cap);
+	if (_boundCache !== null) applyAnlzCaps();
+	let held = true;
+	return () => {
+		if (!held) throw new Error('anlz cap released twice');
+		held = false;
+		_heldCaps.splice(_heldCaps.indexOf(cap), 1);
+	};
+}
+
 export function applyAnlzCapsToCache<T extends AnlzLruEntry>(
 	cache: Record<string, T>,
 	isReady: (entry: T) => boolean
 ): void {
 	evictAnlzLru(cache, {
-		entryCap: anlzEntryCap(),
+		entryCap: effectiveAnlzEntryCap(),
 		byteCap: anlzByteCap(),
 		estimateBytes: () => ANLZ_ESTIMATE_BYTES,
 		isReady

@@ -4,7 +4,7 @@
 	import {
 		applyRelocate,
 		getRelocateCandidates,
-		listBroken,
+		listBrokenPage,
 		RelocateApplyError,
 		type BrokenTrack,
 		type RelocateCandidate
@@ -13,6 +13,14 @@
 		rekordboxWriteback,
 		rekordboxWritebackRefusal
 	} from '$lib/rb/rekordbox-writeback.svelte';
+	import {
+		MISSING_PAGE_SIZE,
+		loadBrokenRows,
+		missingCountLabel,
+		missingCountTitle,
+		missingMoreLabel,
+		missingView
+	} from '$lib/reconcile-paging';
 	import { removeFromLibrary } from '$lib/rb/track-library';
 	import {
 		removeFromLibraryConfirmMessage,
@@ -22,6 +30,13 @@
 
 	let broken = $state<BrokenTrack[]>([]);
 	let loading = $state(true);
+	// The whole count of missing rows, which is not `broken.length`: the page
+	// holds one page at a time. `nextOffset` is null once every row is loaded.
+	let total = $state(0);
+	let nextOffset = $state<number | null>(null);
+	let loadError = $state<string | null>(null);
+	let measuredAt = $state<Date | null>(null);
+	const view = $derived(missingView({ loading, error: loadError, loaded: broken.length }));
 	let expanded = $state<string | null>(null);
 	let candidates = $state<RelocateCandidate[]>([]);
 	let candidateOriginalPath = $state<string | null>(null);
@@ -36,13 +51,50 @@
 	// button can never disagree with the reason it is disabled.
 	const writebackRefusal = $derived(rekordboxWritebackRefusal());
 
+	/**
+	 * Load from the top. The first load asks for one page; a reload after a
+	 * relocate or a removal asks for as many rows as were already on screen,
+	 * so an edit never collapses what the user had paged in.
+	 */
 	async function load(): Promise<void> {
 		loading = true;
 		try {
-			const page = await listBroken();
-			broken = page.tracks;
+			const got = await loadBrokenRows(
+				listBrokenPage,
+				Math.max(MISSING_PAGE_SIZE, broken.length)
+			);
+			broken = got.tracks;
+			total = got.total;
+			nextOffset = got.nextOffset;
+			measuredAt = new Date();
+			loadError = null;
 		} catch (exc) {
-			pushToast(`Failed to load broken tracks: ${exc}`, 'error');
+			loadError = String(exc);
+			console.error('[reconcile] loading missing tracks failed', exc);
+			pushToast(`Failed to load missing tracks: ${exc}`, 'error');
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function loadMore(): Promise<void> {
+		if (nextOffset === null || loading) return;
+		loading = true;
+		try {
+			const got = await loadBrokenRows(listBrokenPage, MISSING_PAGE_SIZE, nextOffset);
+			// The listing can shift between requests (a file comes back, a row
+			// is removed elsewhere), so a row may arrive twice. Keyed rows must
+			// be unique, and the first copy is the one already on screen.
+			const seen = new Set(broken.map((t) => t.stable_id));
+			broken = [...broken, ...got.tracks.filter((t) => !seen.has(t.stable_id))];
+			total = got.total;
+			nextOffset = got.nextOffset;
+			measuredAt = new Date();
+			loadError = null;
+		} catch (exc) {
+			loadError = String(exc);
+			console.error('[reconcile] loading more missing tracks failed', exc);
+			pushToast(`Failed to load more missing tracks: ${exc}`, 'error');
 		} finally {
 			loading = false;
 		}
@@ -130,11 +182,33 @@
 	track from OpenDJ only; the file stays on disk.
 </p>
 
-{#if loading}
-	<p style="color: var(--muted); margin-top: 1rem;">Loading...</p>
-{:else if broken.length === 0}
-	<p style="color: var(--muted); margin-top: 1rem;">No broken tracks. Library is clean.</p>
+{#if view === 'loading'}
+	<p style="color: var(--muted); margin-top: 1rem;" data-testid="missing-loading">
+		Checking the first {MISSING_PAGE_SIZE} recorded paths...
+	</p>
+{:else if view === 'error'}
+	<p style="color: var(--danger); margin-top: 1rem;" data-testid="missing-error">
+		Could not load missing tracks, so nothing is known about the library yet: {loadError}
+		<button onclick={() => void load()}>Retry</button>
+	</p>
+{:else if view === 'empty'}
+	<p style="color: var(--muted); margin-top: 1rem;" data-testid="missing-empty">
+		No missing tracks. Every recorded local path resolves on this machine.
+	</p>
 {:else}
+	<p style="color: var(--muted); margin-top: 1rem;" data-testid="missing-count">
+		<span title={measuredAt ? missingCountTitle(total, measuredAt) : undefined}>
+			{missingCountLabel(broken.length, total)}
+		</span>
+		{#if loading}
+			<span>- loading...</span>
+		{:else if loadError !== null}
+			<span style="color: var(--danger);">
+				- the last load failed ({loadError}); the rows below are from before it.
+			</span>
+			<button onclick={() => void load()}>Retry</button>
+		{/if}
+	</p>
 	<table class="library" style="margin-top: 1rem;">
 		<thead>
 			<tr>
@@ -199,6 +273,18 @@
 			{/each}
 		</tbody>
 	</table>
+	{#if nextOffset !== null}
+		<p style="margin-top: 0.75rem;">
+			<button
+				onclick={() => void loadMore()}
+				disabled={loading}
+				data-testid="missing-more"
+				title={`Loads the next ${MISSING_PAGE_SIZE} missing tracks. ${broken.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} are loaded.`}
+			>
+				{loading ? 'Loading...' : missingMoreLabel(broken.length, total)}
+			</button>
+		</p>
+	{/if}
 {/if}
 
 <style>

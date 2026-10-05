@@ -6,13 +6,14 @@
  * `preventDefault()` and returned - the drag simply never started, with no
  * cursor change, no toast, nothing - so it read as "can't click and drag from
  * library, deck". Double-clicking the SAME row explained itself properly
- * ("streaming track - deck load not implemented"), which is how the second pin
+ * ("Tidal streaming track: Open DJ can't play streaming services"), which is how the second pin
  * arrived carrying its own diagnosis.
  *
  * One condition, two levels of honesty. The reasons live here so both paths
  * give the same answer in the same words, rather than one path being mute.
  */
 
+import { libraryAudioLoadRefusal } from '$lib/components/rb/browser/browser-row-wire';
 import type { FileAvailabilityStatus } from './api-rb';
 
 export interface DraggableRow {
@@ -22,6 +23,8 @@ export interface DraggableRow {
 	 * and the rest of the code tests `=== true`, so null is treated as "not
 	 * streaming" here too rather than as a third state. */
 	is_streaming?: boolean | null;
+	file_path?: string | null;
+	streaming_provider?: string | null;
 }
 
 /**
@@ -34,17 +37,8 @@ export interface DraggableRow {
  * nothing. A duplicated string with a test on it is the cheaper trade here.
  */
 export function trackDragRefusal(row: DraggableRow): string | null {
-	// The server's own availability status names a streaming URI too, so a row
-	// whose is_streaming flag has not hydrated yet is still refused as streaming
-	// up front, never as a "missing on disk" broken link (issue #3934).
-	if (row.is_streaming === true || row.file_availability === 'streaming') {
-		return 'streaming track - deck load not implemented (see PARITY-TODO)';
-	}
-	if (row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null) {
-		return 'cannot load: availability still checking (wait for disk probe)';
-	}
-	if (row.file_exists === false) {
-		return 'cannot load: audio file missing on disk (broken link)';
-	}
-	return null;
+	// Pending (file_exists null) is refused too. An unchecked row outside the
+	// stat budget must not reach the deck, where a missing file becomes
+	// CLOUD_ASSET_UNAVAILABLE. Present audio still drags.
+	return libraryAudioLoadRefusal(row);
 }

@@ -113,10 +113,10 @@ test('applyHeadphoneMix ramps split gains with setTargetAtTime, not hard gain.va
 
 test('HeadphoneCluster exposes split-cable mode label, warning, and SPLIT control', async () => {
 	const clusterSrc = await readFile('src/lib/components/rb/mixer/HeadphoneCluster.svelte', 'utf8');
-	assert.match(clusterSrc, /data-output-mode=\{state\.output_mode\}/);
+	assert.match(clusterSrc, /data-output-mode=\{headphoneState\.output_mode\}/);
 	assert.match(clusterSrc, /split cable/);
-	assert.match(clusterSrc, /aria-pressed=\{state\.output_mode === 'split_cable'\}/);
-	assert.match(clusterSrc, /Room feed is mono/);
-	assert.match(clusterSrc, /splitter cable, not a Y cable/);
-	assert.match(clusterSrc, />SPLIT</);
+	assert.match(clusterSrc, /aria-pressed=\{headphoneState\.output_mode === 'split_cable'\}/);
+	assert.match(clusterSrc, /mono master on LEFT, mono cue on RIGHT/);
+	assert.match(clusterSrc, /a Y cable will not separate the legs/);
+	assert.match(clusterSrc, />SPLIT cable</);
 });

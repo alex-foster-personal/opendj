@@ -21,5 +21,11 @@ fn main() {
     ] {
         println!("cargo:rerun-if-env-changed={variable}");
     }
-    tauri_build::build()
+    tauri_build::try_build(
+        tauri_build::Attributes::new().app_manifest(
+            tauri_build::AppManifest::new()
+                .commands(&["native_midi_snapshot", "native_midi_send"]),
+        ),
+    )
+    .expect("failed to build Tauri application metadata")
 }

@@ -18,12 +18,18 @@
 		onspotify,
 		recording = false,
 		recordingBusy = false,
+		recordingWaiting = false,
+		recordingTip = null,
 		onrecord = () => {}
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
 		recording?: boolean;
 		recordingBusy?: boolean;
+		/** REC pressed, but audio is not being written yet (mic prompt up). */
+		recordingWaiting?: boolean;
+		/** Overrides the REC tooltip, e.g. while waiting for permission. */
+		recordingTip?: string | null;
 		onrecord?: () => void;
 	} = $props();
 
@@ -79,9 +85,8 @@
 		{@const isRecord = icon.action === 'record'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}
 		{@const tip = isRecord
-			? recording
-				? 'Stop set recording'
-				: (icon.tip ?? 'Start set recording')
+			? (recordingTip ??
+				(recording ? 'Stop set recording' : (icon.tip ?? 'Start set recording')))
 			: isInert && icon.plannedId !== undefined
 				? plannedTitle(icon.plannedId)
 				: (icon.tip ?? '')}
@@ -89,6 +94,7 @@
 			class="rail-btn"
 			class:rb-inert={isInert}
 			class:recording={isRecord && recording}
+			class:waiting={isRecord && recordingWaiting}
 			class:active={icon.source === 'spotify' && source === 'spotify'}
 			disabled={isInert || (isRecord && recordingBusy)}
 			title={tip}
@@ -152,6 +158,15 @@
 	.rail-btn.recording {
 		background: #4a1717;
 		box-shadow: inset 2px 0 #d0342c;
+	}
+	.rail-btn.waiting {
+		box-shadow: inset 2px 0 #d09a2c;
+		animation: rec-waiting 1.2s ease-in-out infinite;
+	}
+	@keyframes rec-waiting {
+		50% {
+			box-shadow: inset 2px 0 transparent;
+		}
 	}
 	/* Horizontal section labels below the rail groups (SCREENSHOT-SPEC 5a) -
 	 * NOT rotated; the rail is narrow so the type is tiny like rekordbox's. */

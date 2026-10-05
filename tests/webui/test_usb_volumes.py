@@ -127,13 +127,33 @@ def test_skip_system_volume_names() -> None:
 
 def test_classify_role_usb_removable_vs_fixed() -> None:
     assert (
-        classify_role(protocol="USB", removable=True, internal=False) == "usb_stick"
+        classify_role(
+            protocol="USB", removable=True, has_dj_export=False, internal=False
+        )
+        == "usb_stick"
     )
     assert (
-        classify_role(protocol="USB", removable=False, internal=False)
+        classify_role(
+            protocol="USB", removable=False, has_dj_export=False, internal=False
+        )
         == "mounted_drive"
     )
-    assert classify_role(protocol="Disk Image", removable=True) == "disk_image"
+    assert (
+        classify_role(
+            protocol="USB", removable=False, has_dj_export=True, internal=False
+        )
+        == "usb_stick"
+    )
+    assert (
+        classify_role(protocol="Disk Image", removable=True, has_dj_export=True)
+        == "disk_image"
+    ), "if a disk image with PIONEER/ becomes a stick then the dmg fold is broken"
+    assert (
+        classify_role(
+            protocol="Thunderbolt", removable=False, has_dj_export=True, internal=False
+        )
+        == "mounted_drive"
+    ), "if a non-USB fixed drive becomes a stick then the promotion leaked off USB"
 
 
 def test_music_kind_survives_missing_diskutil_metadata() -> None:
@@ -353,6 +373,49 @@ def test_real_volumes_are_authoritative_during_adversarial_merge() -> None:
         usb_mod._fakes[fake.id] = fake
 
     assert usb_mod._with_simulations([real]) == [real]
+
+
+def test_fixed_usb_drive_with_a_dj_export_is_shown_and_backup_drive_is_not(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A USB SSD reports RemovableMedia=false (Fixed), exactly like a USB
+    backup disk. Live case Fri 25 Sep 2026: an SSK USB SSD holding a
+    rekordbox export (PIONEER/rekordbox/export.pdb) was hidden as
+    "not-usb(mounted drive - USB)". A DJ export at the root must promote it
+    to a usb_stick; a fixed USB drive without one must stay hidden."""
+    volumes_root = tmp_path / "Volumes"
+    dj_ssd = volumes_root / "SSK Drive "
+    (dj_ssd / "PIONEER" / "rekordbox").mkdir(parents=True)
+    (dj_ssd / "PIONEER" / "rekordbox" / "export.pdb").write_bytes(b"\0")
+    backup = volumes_root / "MaintainerBackup"
+    (backup / "Backups.backupdb").mkdir(parents=True)
+    (backup / "song.mp3").write_bytes(b"\0")
+    fixed_usb = usb_mod.DiskutilInfo(protocol="USB", removable=False, internal=False)
+    monkeypatch.setattr(usb_mod, "_diskutil_info", lambda _mount, _cmd: fixed_usb)
+    discovery = usb_mod.UsbDiscovery(
+        volumes_root=volumes_root,
+        diskutil_command="/usr/bin/diskutil",
+    )
+
+    by_name = {
+        v.name: usb_mod._to_out(v)
+        for v in usb_mod._scan_volumes(force=True, discovery=discovery)
+    }
+
+    ssd = by_name["SSK Drive "]
+    assert (ssd.role, ssd.kind, ssd.is_music, ssd.hide_reason) == (
+        "usb_stick",
+        "rekordbox",
+        True,
+        None,
+    ), "if a fixed USB SSD with PIONEER/ is hidden then USB SSD export sticks are broken"
+    kept_hidden = by_name["MaintainerBackup"]
+    assert (kept_hidden.role, kept_hidden.kind, kept_hidden.is_music) == (
+        "mounted_drive",
+        "unknown",
+        False,
+    ), "if a fixed USB backup disk shows as music then the mounted-drive fold is broken"
 
 
 def test_simulated_state_never_leaks_into_a_real_scan(

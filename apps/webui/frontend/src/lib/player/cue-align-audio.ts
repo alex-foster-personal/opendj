@@ -17,8 +17,10 @@ import type {
 } from '$lib/player/cue-align.svelte';
 import {
 	applyUnsavedAlignmentDelays,
+	clearCalibrationInputSignal,
 	liveCalibrationGraph,
 	masterDelayNode,
+	publishCalibrationInputSignal,
 	requireHeadphoneDeviceApi,
 	setHeadDelayMs,
 	setMasterDelayMs,
@@ -28,6 +30,9 @@ import {
 } from '$lib/player/headphones';
 import { persistMixerConfig } from '$lib/player/mixer-config';
 import { mixerState } from '$lib/player/state.svelte';
+
+export { disposeHeadphoneMonitor, selectMasterOutput } from '$lib/player/headphones';
+export { mixerState };
 
 /** Which node a calibration chirp is injected at, for the given bus and purpose. This is
  * the actual routing decision `_cueAlignChirpTarget` resolves to a node from, not a
@@ -174,6 +179,7 @@ function _openChirpCapture(
 	silent.connect(ctx.destination);
 
 	const teardown = (): void => {
+		clearCalibrationInputSignal();
 		processor.onaudioprocess = null;
 		processor.disconnect();
 		src.disconnect(processor);
@@ -214,6 +220,7 @@ function _openChirpCapture(
 					resolveOpen({ startedAtSec: event.playbackTime, samples });
 				}
 				const input = event.inputBuffer.getChannelData(0);
+				publishCalibrationInputSignal(input);
 				const n = Math.min(input.length, frames - offset);
 				out.set(input.subarray(0, n), offset);
 				offset += n;
@@ -268,6 +275,17 @@ export function cueAlignAudioEffects(): Pick<
 	}
 	if (ctx === null || nodes === null || cueId === null) {
 		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
+	}
+	const selectedMaster = mixerState.headphones.selected_master_output_device_id;
+	const masterRoute = mixerState.headphones.routes.master;
+	if (selectedMaster !== null && masterRoute.state !== 'selected') {
+		const detail =
+			masterRoute.state === 'default'
+				? 'a MAIN device is selected but the route is still marked default, so the pin was never recorded'
+				: `route capability is ${masterRoute.state}`;
+		throw new Error(
+			`cue alignment cannot measure the selected MASTER route: ${detail}. Select a supported MAIN route before calibrating.`
+		);
 	}
 	return {
 		sampleRate: () => ctx.sampleRate,

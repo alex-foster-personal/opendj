@@ -335,16 +335,26 @@ export function startBootstrap({
 	};
 }
 
-function parseFatalQuery(search) {
+/**
+ * The shell's health port travels in this page's own URL (`health=`). A JS
+ * global set before navigating here does not survive the navigation, which is
+ * why Relaunch said "never told which port" every time in the Tauri shell
+ * (Thu 1 Oct 2026). The injected global stays as the Electron preload's path.
+ */
+export function parseFatalQuery(search) {
 	const params = new URLSearchParams(search);
 	if (params.get('fatal') !== '1') {
 		return null;
 	}
+	const fromUrl = Number(params.get('health') ?? 0);
 	return {
 		exit_code: Number(params.get('exit') ?? -1),
 		lock_pid: Number(params.get('pid') ?? 0),
 		lock_port: Number(params.get('port') ?? 0),
-		health_port: globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.health_port ?? null
+		health_port:
+			Number.isInteger(fromUrl) && fromUrl > 0
+				? fromUrl
+				: (globalThis.__OPENDJ_ENGINE_SUPERVISOR__?.health_port ?? null)
 	};
 }
 

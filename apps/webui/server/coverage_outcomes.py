@@ -41,7 +41,7 @@ from typing import Any
 
 SCHEMA: int = 1
 FILENAME: str = "coverage-outcomes.json"
-STEPS: tuple[str, ...] = ("vocals", "stems", "lyrics")
+STEPS: tuple[str, ...] = ("vocals", "stems", "lyrics", "analysis")
 KINDS: tuple[str, ...] = ("no_source", "failed")
 MAX_ATTEMPTS: int = 3
 BACKOFF_BASE_S: float = 60.0

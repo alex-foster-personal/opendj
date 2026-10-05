@@ -69,7 +69,7 @@ def decoded_locally(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         ],
         axis=1,
     )
-    local_waveform._store_peaks(SID, local_waveform._source_key(source), peaks)
+    local_waveform._store_peaks(SID, local_waveform._decode_key(source), peaks)
     assert local_waveform.local_preview_strip(SID)[0] is not None
 
 

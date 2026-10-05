@@ -36,6 +36,7 @@ from typing import Any
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
+from apps.sync_hub import config as sync_config
 from apps.sync_hub import (
     enrollment,
     enrollment_credentials,
@@ -108,6 +109,8 @@ def local_machine_row(data_dir: Path, *, name: str | None = None) -> protocol.Ma
     native Windows install on the same box would collide on the hub.
     """
     stamp = sync_stamp.canonical_now()
+    if name is None:
+        name = sync_config.configured_machine_name(Path(data_dir))
     return protocol.MachineRow(
         machine_id=machine_identity.get_or_create_machine_id(Path(data_dir)),
         name=name if name is not None else machine_identity.default_machine_name(),

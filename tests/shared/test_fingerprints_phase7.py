@@ -1,10 +1,10 @@
 """Tests for :mod:`apps.shared.fingerprints` (Phase 7 dedup).
 
-These tests do not require the external ``fpcalc`` CLI: we monkeypatch
-the pyacoustid entrypoint so runs work in CI environments where
-chromaprint is not installed. One smoke test (``test_live_compute``)
-is wrapped in a ``pytest.importorskip`` so it exercises the real path
-only when fpcalc is actually available on the developer's machine.
+These tests do not require a fingerprint backend: we monkeypatch the
+engine lookup off and the pyacoustid entrypoint to a fake that emits
+real-format fingerprints. The decoder is held to recorded ``fpcalc``
+output; the real engine is exercised in
+``tests/dedup/test_engine_fingerprint_real.py``.
 """
 from __future__ import annotations
 
@@ -15,12 +15,17 @@ import pytest
 
 from apps.shared import fingerprints as fp_mod
 from apps.shared.fingerprints import (
+    MIN_OVERLAP_WORDS,
     ChromaprintMissing,
     FingerprintCache,
     compare,
     compute,
+    decode_fingerprint,
+    encode_fingerprint,
     load_or_compute,
+    match,
 )
+from tests.fingerprint_fakes import fake_fingerprint
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
@@ -49,20 +54,17 @@ class _FakeAcoustid:
     def fingerprint_file(self, path: str):  # type: ignore[no-untyped-def]
         if not self.backend_ok:
             raise self.NoBackendError("no fpcalc")
-        import hashlib
-
         data = Path(path).read_bytes()
         # Fake fp: sha256 of a 4-second "summary" of the file. For our
         # ffmpeg-generated fixtures, the same source encoded at 320/128/
         # 192 kbps yields distinct byte content, so we DO differ. To
         # simulate real chromaprint behaviour (stable first 64 chars on
         # cross-bitrate twins) we include the file extension-independent
-        # ``audio_prefix`` derived from mutagen duration/format.
+        # ``audio_prefix`` derived from tinytag duration.
         try:
-            import mutagen
+            from tinytag import TinyTag
 
-            meta = mutagen.File(path)
-            duration = meta.info.length if meta and meta.info else 0.0
+            duration = TinyTag.get(path).duration or 0.0
         except Exception:
             duration = 0.0
         # Bucket the duration so round-off does not break same-source ids.
@@ -71,16 +73,15 @@ class _FakeAcoustid:
         # across our fixtures all start with "src") + duration bucket.
         stem_key = Path(path).stem.split("-")[0].lower()
         prefix_seed = f"{stem_key}|{dur_bucket}".encode()
-        prefix = hashlib.sha256(prefix_seed).hexdigest()
         # Unique tail: hash the full bytes so cache key differs per bitrate.
-        tail = hashlib.sha256(data).hexdigest()
-        return duration, (prefix[:64] + tail).encode("ascii")
+        return duration, fake_fingerprint(prefix_seed, data).encode("ascii")
 
 
 @pytest.fixture
 def fake_backend(monkeypatch):
     """Install the fake acoustid module on fp_mod for this test."""
     fake = _FakeAcoustid(backend_ok=True)
+    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
     monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: fake)
     return fake
 
@@ -94,6 +95,7 @@ def fake_backend_missing(monkeypatch):
         "FingerprintGenerationError": _FakeAcoustid.FingerprintGenerationError,
         "fingerprint_file": fake.fingerprint_file,
     })
+    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
     monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: fake_mod)
     return fake
 
@@ -127,13 +129,62 @@ def test_fpcalc_missing_raises(tmp_path, fake_backend_missing) -> None:
         compute(src)
 
 
+@pytest.mark.requirement("META-09")
+def test_an_engine_build_without_fingerprint_falls_back_to_fpcalc(
+    tmp_path: Path, fake_backend, monkeypatch
+) -> None:
+    """[if] the engine build predates the fingerprint command [then] fpcalc still answers, [else stop]."""
+    old = tmp_path / "odj-audio"
+    old.write_text("#!/bin/sh\necho 'unknown command fingerprint' >&2\nexit 2\n")
+    old.chmod(0o755)
+    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: old)
+    src = FIXTURE_ROOT / "src-320.mp3"
+    assert compute(src).fp_str == fake_fingerprint_for(src)
+    # Control: with no fpcalc either, the failure still says no backend.
+    monkeypatch.setattr(fp_mod, "_require_acoustid", _no_acoustid)
+    with pytest.raises(ChromaprintMissing):
+        compute(src)
+
+
+def fake_fingerprint_for(path: Path) -> str:
+    return _FakeAcoustid(backend_ok=True).fingerprint_file(str(path))[1].decode("ascii")
+
+
+def _no_acoustid():
+    raise ChromaprintMissing("no fpcalc")
+
+
 # ------------------------------------------------------------------ compare
 
 
 @pytest.mark.requirement("META-03")
 def test_compare_identical_is_one() -> None:
-    fp = "AQAAAAABCDEFGHIJKLMN"
+    fp = fake_fingerprint(b"one", b"")
     assert compare(fp, fp) == 1.0
+
+
+@pytest.mark.requirement("META-09")
+def test_compare_refuses_too_short_an_overlap() -> None:
+    """A few shared silence frames are not a recording: under
+    MIN_OVERLAP_WORDS sub-fingerprints the answer is 0, never a match."""
+    # One second of audio (8 sub-fingerprints) that nearly agrees is never
+    # enough on its own; the same overlap at full length is a match.
+    assert MIN_OVERLAP_WORDS > 8
+    assert compare(encode_fingerprint([0] * 8), encode_fingerprint([1] + [0] * 7)) == 0.0
+    long_a = encode_fingerprint([0] * MIN_OVERLAP_WORDS)
+    long_b = encode_fingerprint([1] + [0] * (MIN_OVERLAP_WORDS - 1))
+    assert compare(long_a, long_b) > 0.99
+
+
+@pytest.mark.requirement("META-09")
+def test_compare_identical_short_fingerprints_is_one() -> None:
+    """[if] two files give the identical fingerprint string [then] 1.0 even when short, [else stop].
+
+    A re-upload of the same 3 s clip is the same file; the overlap guard
+    is for partial agreement only.
+    """
+    short = encode_fingerprint([5, 6, 7])
+    assert compare(short, short) == 1.0
 
 
 @pytest.mark.requirement("META-03")
@@ -147,12 +198,10 @@ def test_compare_cross_bitrate_twin(fake_backend) -> None:
     a = compute(FIXTURE_ROOT / "src-320.mp3")
     b = compute(FIXTURE_ROOT / "src-128.mp3")
     sim = compare(a, b)
-    # Our fake shares the first 64 chars (prefix_seed only uses stem); the
-    # remaining tail differs. For 64 matching out of N hex chars, Hamming
-    # fraction of matching bits is high. Require >= 0.5 here (the exact
-    # value depends on tail length); the real chromaprint signal is
-    # validated by the live-only test below.
-    assert sim >= 0.5, f"cross-bitrate sim {sim}"
+    # The fake shares its first 60 of 64 sub-fingerprints (prefix_seed only
+    # uses stem); the tail differs, so twins land just under 1.0. The real
+    # chromaprint signal is validated by the live tests below.
+    assert 0.92 <= sim < 1.0, f"cross-bitrate sim {sim}"
 
 
 @pytest.mark.requirement("META-03")
@@ -230,19 +279,52 @@ def test_cache_force_recomputes(tmp_path: Path, fake_backend) -> None:
     assert fp1.fp_str == fp2.fp_str
 
 
-# --------------------------------------------------------- live-only smoke
+# ------------------------------------------------- the compressed format
 
 
-@pytest.mark.requirement("META-03")
-def test_live_compute_cross_bitrate() -> None:
-    """If fpcalc is actually installed, real chromaprint cross-bitrate sim >= 0.9.
+# ``fpcalc -plain`` and ``fpcalc -plain -raw`` (chromaprint 1.5.1) on the same
+# 8 s mp3, so the decoder is held to chromaprint's own output.
+FPCALC_CLICK_PLAIN = (
+    "AQAAK0nSJUwUSUH_wk0YPDiOh6ii4s7RZ8fxAMcfNMkD9C_chMHx47hDVPlxB312"
+    "HA9w_EGTPED_wk0YHD_wEwWf5KioJHkBIYyIEigBEIJAECGQcdAABARACAJBhEDG"
+    "GQAUAA"
+)
+FPCALC_CLICK_RAW = [
+    896416015, 931014943, 930952511, 930951999, 939340607,
+    939356991, 938275647, 938258927, 904692143, 896381375,
+    896382399, 896383423, 896383423, 896399807, 896350719,
+    896416015, 896416015, 931014943, 930952511, 930951487,
+    939340607, 939356991, 938275135, 904704495, 904692143,
+    896381375, 896382399, 896383423, 896383423, 896399807,
+    896350719, 896416015, 896416015, 931014943, 930952511,
+    930951487, 939340607, 939340607, 938225983, 938225967,
+    904662311, 627964279, 627964279,
+]
 
-    Skipped in CI without chromaprint. This is the "real signal" test that
-    validates our fake backend matches real behaviour closely enough.
-    """
-    if shutil.which("fpcalc") is None:
-        pytest.skip("fpcalc not installed; brew install chromaprint to enable")
-    a = compute(FIXTURE_ROOT / "src-320.mp3")
-    b = compute(FIXTURE_ROOT / "src-128.mp3")
-    sim = compare(a, b)
-    assert sim >= 0.85, f"real cross-bitrate sim unexpectedly low: {sim}"
+
+@pytest.mark.requirement("META-09")
+def test_decoder_matches_fpcalc_raw_output() -> None:
+    got, algorithm = decode_fingerprint(FPCALC_CLICK_PLAIN)
+    assert algorithm == 1
+    assert got == FPCALC_CLICK_RAW
+    # And back again, byte for byte.
+    assert encode_fingerprint(got, algorithm) == FPCALC_CLICK_PLAIN
+
+
+@pytest.mark.requirement("META-09")
+def test_decoder_rejects_a_string_that_is_not_a_fingerprint() -> None:
+    with pytest.raises(ValueError, match="not a chromaprint fingerprint"):
+        decode_fingerprint("AQAAhexgarbage")
+
+
+@pytest.mark.requirement("META-09")
+def test_match_finds_a_shifted_copy() -> None:
+    """The same audio starting later (trimmed silence, encoder delay) is
+    found at its offset, where a plain index-0 compare scores ~0.5."""
+    base = fake_fingerprint(b"song", b"")
+    ws, _ = decode_fingerprint(base)
+    shifted = encode_fingerprint(ws[5:])
+    assert compare(base, shifted) < 0.7
+    sim, offset = match(base, shifted)
+    assert offset == 5
+    assert sim == 1.0

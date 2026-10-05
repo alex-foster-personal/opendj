@@ -125,7 +125,7 @@ test('every quantized seek/cue/pause/loop call site threads the deck\'s own sele
 		// threads _quantizeGridBeats(st) rather than a hardcoded default.
 		/quantizedSeekDecisionMs\(seekBeats, ms, _quantizeGridBeats\(st\), skipGridQuantize, st\.loop\)/,
 		/quantizedPositionMs\(cueBeats, st\.position_ms, true, _quantizeGridBeats\(st\)\)/,
-		/quantizedLoopEndpointsMs\(loopBeats, loop, true, _quantizeGridBeats\(st\)\)/
+		/resolvedLoopState\([\s\S]{0,160}loopBeats !== null && beatLength === null \? _quantizeGridBeats\(st\) : null/
 	];
 	for (const pattern of callSites) {
 		assert.match(AUDIO_ENGINE, pattern, `missing grid-aware call: ${pattern}`);
@@ -138,4 +138,5 @@ test('every quantized seek/cue/pause/loop call site threads the deck\'s own sele
 	// quantizedSeekDecisionMs (the moved seek call site) must actually pass
 	// gridBeats into the snap, not a hardcoded 1.
 	assert.match(LOOPS, /quantizeToNearestGridBeat\(beats, ms \/ 1000, gridBeats\)/);
+	assert.match(LOOPS, /quantizedLoopEndpointsMs\(beats, loop, true, gridBeats\)/);
 });

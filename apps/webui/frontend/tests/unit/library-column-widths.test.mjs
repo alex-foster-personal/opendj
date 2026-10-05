@@ -6,7 +6,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 test('compact utility columns fit real analysis grids and keep room for row numbers', async () => {
 	const { compactUtilityWidths } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
-	assert.deepEqual(compactUtilityWidths(19), { funnel: 18, err: 20, cloud: 22, order: 24 });
+	assert.deepEqual(compactUtilityWidths(19), { funnel: 18, err: 20, cloud: 28, order: 24 });
 	assert.equal(compactUtilityWidths(8558).order, 32);
 	assert.equal(compactUtilityWidths(100000).order, 42);
 	assert.equal(compactUtilityWidths(0).order, 24);

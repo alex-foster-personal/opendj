@@ -16,6 +16,7 @@
 </script>
 
 <script lang="ts">
+	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
 	// Column view (browser-surface unit, Miller-column lane, PlaylistTree's
 	// long-inert 'Column View' tab). Self-contained like PlaylistTree's
 	// smartlist fetch: this component fetches the WHOLE library (artist +
@@ -85,12 +86,9 @@
 				album: t.album ?? null,
 				file_exists: t.file_exists,
 				file_availability: t.file_availability,
-				// Bulk listing has no is_streaming (same gap as All Tracks
-				// table rows before their lazy rb-meta hydrates, contract
-				// point 1) - null here means the SAME "unknown, treat as
-				// loadable" fallback loadRow's ?? chain already applies to
-				// unhydrated table rows, not a new risk this view invents.
-				is_streaming: null
+				// CHROME-02: the bulk listing carries is_streaming, so a
+				// streaming row here gets the same inert load as the table.
+				is_streaming: t.is_streaming
 			}));
 		} catch (exc) {
 			loadError = exc instanceof RbApiError ? exc.code : String(exc);
@@ -121,7 +119,11 @@
 	// broken track can't still surface as an otherwise-empty artist/album
 	// bucket.
 	const visibleRows = $derived<ColumnTrackRow[]>(
-		rows === null ? [] : uiPrefs.hide_broken_links ? rows.filter((r) => r.file_exists !== false) : rows
+		rows === null
+			? []
+			: uiPrefs.hide_broken_links
+				? rows.filter((r) => !rowRendersUnavailable(r))
+				: rows
 	);
 	const artistList = $derived<ColumnBucket[]>(artistBuckets(visibleRows));
 	const albumList = $derived<ColumnBucket[]>(albumBuckets(visibleRows, artist));
@@ -205,11 +207,9 @@
 							<div
 								class="row"
 								class:selected={selectedId === row.stable_id}
-								class:broken={row.file_exists === false}
+								class:broken={rowRendersUnavailable(row)}
 								class:pending={row.file_availability === 'AVAILABILITY_PENDING'}
-								title={row.file_availability === 'AVAILABILITY_PENDING'
-									? 'availability still checking (wait for disk probe)'
-									: undefined}
+								title={libraryRowHoverTitle(row)}
 								role="button"
 								tabindex="0"
 								onclick={() => _selectTrack(row)}

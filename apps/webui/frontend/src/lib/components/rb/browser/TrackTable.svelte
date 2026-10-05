@@ -26,6 +26,8 @@
 	import {
 		artworkUrl,
 		artworkStatusLabel,
+		decodePreviewStrip,
+		fetchPreviewStrips,
 		type PreviewStripData,
 		type Vocals
 	} from '$lib/rb/api-rb';
@@ -34,8 +36,15 @@
 		shouldFetchArtwork
 	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
+	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
+	import { isPairedRow } from '$lib/rb/pairing-row';
 	import {
 		analysisIssuesFor,
+		bpmGridHoverText,
+		errColumnTitle,
+		gridFlagFor,
+		gridProvenanceFor,
+		requestGridProvenance,
 		camelotKeyColor,
 		camelotKeyHoverLabel,
 		columnHeaderTitle,
@@ -49,6 +58,7 @@
 		installTrackDragGhost,
 		removeTrackDragGhost,
 		trackDragRefusal,
+		libraryWheelScroll,
 		bpmHeatColor,
 		bpmHeatLabel,
 		classifyBpmHeat,
@@ -56,6 +66,8 @@
 		columnExplainer,
 		type TrackEditModalKind
 	} from './track-table-support';
+	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
+	import { ensureGridQualityScan, setGridFlagDismissed } from '$lib/rb/api-grid-flags';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
@@ -76,6 +88,7 @@
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
+	import { PreviewStripFiller } from '$lib/rb/preview-strip-fill';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
@@ -97,10 +110,16 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
-	import RelocatePopover from './RelocatePopover.svelte';
+	import SpinnerIcon from './SpinnerIcon.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
-	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
+	import TrackRowPopovers, { type PlaylistsMenuAnchor, type RelocateMenuAnchor } from './TrackRowPopovers.svelte';
 	import { trackCloudView } from './track-cloud-state';
+	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
+	import CloudStatusIcon from './CloudStatusIcon.svelte';
+	import MinorIssueSquare from './MinorIssueSquare.svelte';
+	import SortArrowIcon from './SortArrowIcon.svelte';
+	import { minorIssuesFor } from '$lib/rb/track-minor-issues';
+	import { PLAY_TRIANGLE_PATH } from '$lib/ui/icon-glyphs';
 	import {
 		nextTrackTableIndex,
 		resolveActiveRowIndex,
@@ -166,10 +185,8 @@
 		})();
 	});
 	let trackContextMenu = $state<TrackContextMenu | null>(null);
-	let playlistsMenu = $state<{ x: number; y: number; stableId: string } | null>(null);
-	let relocateMenu = $state<{ x: number; y: number; stableId: string; title: string | null } | null>(
-		null
-	);
+	let playlistsMenu = $state<PlaylistsMenuAnchor | null>(null);
+	let relocateMenu = $state<RelocateMenuAnchor | null>(null);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -240,6 +257,10 @@
 		return classifyBpmHeat(bpm, masterBpm);
 	}
 
+	function bpmCellCompatibility(bpm: number | null) {
+		return classifyBpmCompatibility(bpm, masterBpm);
+	}
+
 	function bpmCellStyle(bpm: number | null): string | undefined {
 		const heat = bpmCellHeat(bpm);
 		return heat === null ? undefined : `color:${heat.color}`;
@@ -263,7 +284,9 @@
 		if (row.bpm_status === 'available-not-selected') {
 			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
 		}
-		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`;
+		// buildBpmCellTitle carries method and confidence (LIBUX-34). The grid
+		// sentence stays inline so the hover still names the stored verdict.
+		return `${buildBpmCellTitle(row, masterBpm)} ${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row, gridProvenanceFor(row.stable_id))}`;
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer
@@ -307,6 +330,22 @@
 		return analysisIssuesFor(row);
 	}
 
+	// GRIDFLAG-02: the beatgrid verdicts on the rows are stored server-side.
+	// Ask once per page session for them to be brought up to date; the engine
+	// skips every unchanged grid and announces any change on library.changed.
+	$effect(() => {
+		void ensureGridQualityScan();
+	});
+
+	/** GRIDFLAG-04: hide or restore one row's beatgrid flag (a persisted user
+	 * track field). The row is updated only after the engine confirmed it; a
+	 * failure rejects, and the popover that asked reports it. */
+	async function _setGridFlagDismissed(row: BrowserRow, dismissed: boolean): Promise<void> {
+		const result = await setGridFlagDismissed(row.stable_id, dismissed);
+		if (row.grid_quality) row.grid_quality = { ...row.grid_quality, dismissed: result.dismissed };
+		if (row.etag !== '') row.etag = result.etag;
+	}
+
 	function _jobRowStyle(stableId: string): string | undefined {
 		const job = jobProgress.activeFor(stableId);
 		if (job === null) return undefined;
@@ -330,6 +369,7 @@
 		filterBypassNote = null,
 		restoreKey,
 		scrollTop,
+		browseScroll = null,
 		removable = false,
 		reorderable = false,
 		onscrollcursor,
@@ -351,6 +391,7 @@
 		findQuery = '',
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId = null as string | null,
+		pairedPartnerIds = new Set<string>() as ReadonlySet<string>,
 		/** pin 02717d4ea496. Rendered INSIDE the table region, pinned just
 		 * below the sticky column-header row, so a panel-owned status
 		 * surface (the library load indicator) cannot push the headers down
@@ -397,6 +438,10 @@
 		restoreKey: string | number;
 		/** Pane's persisted scroll cursor (PaneStore.scroll_top). */
 		scrollTop: number;
+		/** IOPIN-01 controller/keyboard selection scroll request. A revision
+		 * makes repeated encoder steps observable even if they land on the same
+		 * row at a list boundary. */
+		browseScroll?: { order: number; direction: -1 | 1; revision: number } | null;
 		/** add-remove-reorder-tracks: true when the pane is a real playlist
 		 * (not All Tracks / blank) - shows the per-row remove control. */
 		removable?: boolean;
@@ -469,6 +514,8 @@
 		findQuery?: string;
 		/** Suggest-next hover: temporarily highlight + scroll to this row. */
 		suggestHoverId?: string | null;
+		/** Purple pairing underline: partner ids of the current master. */
+		pairedPartnerIds?: ReadonlySet<string>;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
 		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
@@ -583,6 +630,11 @@
 			.split(',')
 			.map((t) => t.trim())
 			.filter((t) => t !== '');
+	}
+
+	/** The Genre cell's raw text: the listing's own genre, else rekordbox's. */
+	function genreText(row: BrowserRow): string {
+		return row.genre ?? row.rb_meta?.genre ?? '';
 	}
 
 	function genreTagStyle(tag: string): string | undefined {
@@ -975,6 +1027,28 @@
 		}
 	});
 
+	/** Keep controller/keyboard selection in view in a virtual table. Forward
+	 * movement leaves room below the selected row; backward leaves room above.
+	 * Mouse selection intentionally does not reposition the operator's list. */
+	$effect(() => {
+		const request = browseScroll;
+		if (request === null) return;
+		const el = wrapEl;
+		if (el === null) return;
+		const index = rows.findIndex((row) => row.order === request.order);
+		if (index < 0) return;
+		const offset = request.direction > 0 ? viewportHeight * 0.35 : viewportHeight * 0.65;
+		const target = scrollTopForRowIndex({
+			rowIndex: index,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			offsetFromTopPx: offset
+		});
+		el.scrollTop = target;
+		liveScrollTop = target;
+		onscrollcursor(target);
+	});
+
 	// ------------------------------------------------- DOM row virtualization
 	$effect(() => {
 		const layout = uiPrefs.deck_layout;
@@ -1045,6 +1119,32 @@
 
 	$effect(() => {
 		onrenderedrowcapacity?.(renderedRowCapacity);
+	});
+
+	// Strips for rows in view (+ one screen of margin) that were listed without
+	// one: asked for in debounced batches, never per row (NATIVE-21).
+	let filledStrips: Record<string, PreviewStripData | null> = $state({});
+	const stripFiller = new PreviewStripFiller({
+		fetchBatch: fetchPreviewStrips,
+		onStrip: (id, wire) => {
+			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
+		},
+		onError: (error) => console.warn('[preview-strips] batch read failed; retrying with backoff', error),
+		now: () => Date.now(),
+		setTimer: (fn, ms) => setTimeout(fn, ms),
+		clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+	});
+	$effect(() => () => stripFiller.dispose());
+	$effect(() => {
+		const margin = renderedRowCapacity;
+		const near = rows.slice(
+			Math.max(0, windowInfo.startIndex - margin),
+			windowInfo.endIndex + margin
+		);
+		const missing = near
+			.filter((r) => r.strip === null && previewStripById[r.stable_id] == null)
+			.map((r) => r.stable_id);
+		untrack(() => stripFiller.setVisible(missing.filter((id) => filledStrips[id] == null)));
 	});
 
 	/** Jump to first in-place find match when the query becomes active. */
@@ -1224,6 +1324,7 @@
 		beginTrackDrag(ids, {
 			[row.stable_id]: {
 				file_exists: row.file_exists,
+				file_availability: row.file_availability,
 				is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
 			}
 		});
@@ -1284,7 +1385,7 @@
 		<span class="th-label">
 			<span>{label}</span>
 			{#if sortKey === key}
-				<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+				<SortArrowIcon asc={sortDir === 1} />
 			{/if}
 		</span>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1323,24 +1424,8 @@
 			relocateMenu = { x, y, stableId: row.stable_id, title: row.title };
 		}}
 	/>
-	{#if playlistsMenu !== null}
-		<TrackPlaylistsPopover
-			stableId={playlistsMenu.stableId}
-			x={playlistsMenu.x}
-			y={playlistsMenu.y}
-			onclose={() => (playlistsMenu = null)}
-		/>
-	{/if}
-	{#if relocateMenu !== null}
-		<RelocatePopover
-			stableId={relocateMenu.stableId}
-			trackTitle={relocateMenu.title}
-			x={relocateMenu.x}
-			y={relocateMenu.y}
-			onclose={() => (relocateMenu = null)}
-			onrelocated={() => onrelocated?.()}
-		/>
-	{/if}
+	<!-- TrackPlaylistsPopover and RelocatePopover, fetched by the pick that opens them. -->
+	<TrackRowPopovers bind:playlistsMenu bind:relocateMenu {onrelocated} />
 	{#if masterFold === 'above'}
 		<button
 			type="button"
@@ -1350,7 +1435,7 @@
 			title="Master track is above - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
 		>
-			▲ MASTER
+			<SortArrowIcon asc={true} /> MASTER
 		</button>
 	{/if}
 	{#if masterFold === 'below'}
@@ -1362,7 +1447,7 @@
 			title="Master track is below - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
 		>
-			▼ MASTER
+			<SortArrowIcon asc={false} /> MASTER
 		</button>
 	{/if}
 	{#if bodyOverlay !== undefined}
@@ -1382,6 +1467,7 @@
 	<div
 		class="table-wrap"
 		bind:this={wrapEl}
+		use:libraryWheelScroll
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
 			liveScrollTop = top;
@@ -1444,10 +1530,19 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<th
 						class="h-icon h-err"
+						class:sorted={sortKey === 'grid'}
 						style={`width:${colWidths.err}px`}
-						use:columnExplainer={{ text: 'Err - detected analysis data-quality issues, hover a square for detail' }}
+						use:columnExplainer={{
+							text: 'Err - detected analysis data-quality issues, hover a square for detail. Orange: uneven beatgrid, Beat Sync may wander. Gray: variable tempo. Hollow: beatgrid not checked. Click to sort flagged beatgrids to the top (asc → desc → clear).'
+						}}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('grid');
+						}}
 					>
 						Err
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1584,7 +1679,7 @@
 								<span>K</span>
 							{/if}
 							{#if sortKey === 'key'}
-								<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
 						</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1624,7 +1719,7 @@
 								<span>B</span>
 							{/if}
 							{#if sortKey === 'bpm'}
-								<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
 						</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1636,7 +1731,33 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					{@render sortableTh('plays', '▶', 'plays')}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<th
+						class="h-plays"
+						class:h-icon={true}
+						class:sortable={true}
+						style={`width:${colWidths.plays}px`}
+						use:columnExplainer={{ text: columnHeaderTitle('plays', 'Sort by plays (asc → desc → clear)') }}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('plays');
+						}}
+					>
+						<span class="th-label"
+							><svg class="plays-icon" aria-hidden="true" viewBox="0 0 14 14"
+								><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg
+							>{#if sortKey === 'plays'}<SortArrowIcon asc={sortDir === 1} />{/if}</span
+						>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'plays')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					{@render sortableTh('rating', 'Rating', 'rating')}
 					{@render sortableTh('comments', 'Comments', 'comments')}
 					{@render sortableTh('time', 'Time', 'time')}
@@ -1669,7 +1790,7 @@
 						title="Energy 1-9, from Mixed In Key - sort ascending, descending, then clear"
 						aria-label="Energy 1-9, from Mixed In Key"
 					>
-						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg><span class="energy-glyph" aria-hidden="true">⚡</span>{#if sortKey === 'energy'}<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>{/if}</span>
+						<span class="th-label"><svg class="energy-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z" /></svg>{#if sortKey === 'energy'}<SortArrowIcon asc={sortDir === 1} />{/if}</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -1711,6 +1832,11 @@
 						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
+						spotifyPending: row.spotify_pending === true,
+						provider: row.streaming_provider,
+						folderPath: row.rb_meta?.folder_path ?? null,
+						filePath: row.file_path ?? row.rb_meta?.folder_path ?? null,
+						fileAvailability: row.file_availability,
 						transfer:
 							row.cloud_transfer === null || row.cloud_transfer === undefined
 								? null
@@ -1720,6 +1846,7 @@
 										bytesTotal: row.cloud_transfer.bytes_total
 									}
 					})}
+					{@const minorIssues = minorIssuesFor(row)}
 					{@const rowIndex = windowInfo.startIndex + i}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1744,7 +1871,10 @@
 						class:dblclick-guard-active={dblclickGuardRowIds.has(row.stable_id)}
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
+						class:rb-row-mix-compatible={keyCompat(row.key) &&
+							bpmCellCompatibility(row.bpm)?.compatible === true}
 						class:rb-row-key-compat={keyCompat(row.key)}
+						class:rb-row-paired={isPairedRow(pairedPartnerIds, row.stable_id)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
@@ -1755,17 +1885,10 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={row.file_exists === false &&
-							row.file_availability !== 'AVAILABILITY_PENDING' &&
-							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
-							row.is_remote !== true &&
-							row.spotify_pending !== true &&
-							!row.stable_id.startsWith('spotify-pending:')}
+						class:broken={rowRendersUnavailable(row)}
 						class:rb-row-availability-pending={row.file_availability ===
 							'AVAILABILITY_PENDING'}
-						title={row.file_availability === 'AVAILABILITY_PENDING'
-							? 'availability still checking (wait for disk probe)'
-							: undefined}
+						title={libraryRowHoverTitle(row)}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
@@ -1799,50 +1922,22 @@
 							<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />
 						</td>
 						<td class="c-err">
-							<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />
+							<AnalysisDotsPopover
+								issues={_issuesFor(row)}
+								mode="issues"
+								stableId={row.stable_id}
+								title={errColumnTitle(row)}
+								gridFlag={gridFlagFor(row)}
+								ongridflagdismiss={(dismissed) => _setGridFlagDismissed(row, dismissed)}
+							/>
 						</td>
 						<!-- CloudSync presence, local availability, and transfer bytes are
 						     separate backend facts; this cell never guesses a percentage. -->
 						<td class="c-cloud">
 							{#if cloudView.showIcon}
 								<span class="cloud-state-wrap" data-cloud-state={cloudView.kind}>
-									{#if cloudView.kind === 'streaming'}
-										<span class="cloud" title={cloudView.title} aria-label={cloudView.title}>
-											<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-												<path
-													d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
-													fill="currentColor"
-												/>
-											</svg>
-										</span>
-									{:else}
-										<span
-											class="cloud-copy"
-											class:not-on-cloud={cloudView.kind === 'not-on-cloud'}
-											class:on-cloud-not-local={cloudView.kind === 'on-cloud-not-local'}
-											class:on-cloud-and-local={cloudView.kind === 'on-cloud-and-local'}
-											title={cloudView.title}
-											aria-label={cloudView.title}
-										>
-											<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-												<path
-													d="M4.5 12a3 3 0 0 1-.4-5.97A4 4 0 0 1 12 6.5 2.75 2.75 0 0 1 11.5 12z"
-													fill={cloudView.kind === 'not-on-cloud' ? 'none' : 'currentColor'}
-													stroke="currentColor"
-													stroke-width="1.25"
-												/>
-												{#if cloudView.kind === 'not-on-cloud'}
-													<path
-														d="M3 13 13 3"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="1.5"
-														stroke-linecap="round"
-													/>
-												{/if}
-											</svg>
-										</span>
-									{/if}
+									<CloudStatusIcon view={cloudView} />
+									<MinorIssueSquare issues={minorIssues} />
 									{#if cloudView.transfer !== null}
 										<span
 											class="cloud-transfer-track"
@@ -1916,7 +2011,7 @@
 						{/if}
 						<td class="c-preview">
 							<PreviewStrip
-								strip={row.strip ?? previewStripById[row.stable_id] ?? null}
+								strip={row.strip ?? previewStripById[row.stable_id] ?? filledStrips[row.stable_id] ?? null}
 								stripLoading={stripLoadingById[row.stable_id] ?? false}
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
@@ -2033,10 +2128,15 @@
 							class="c-bpm"
 							class:bpm-sweet={bpmCellHeat(row.bpm)?.lane === 'sweet'}
 							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
+							class:bpm-compatible={bpmCellCompatibility(row.bpm)?.compatible === true}
+							class:bpm-warn={bpmCellCompatibility(row.bpm)?.severity === 'warn'}
+							class:bpm-danger={bpmCellCompatibility(row.bpm)?.severity === 'danger'}
+							class:bpm-critical={bpmCellCompatibility(row.bpm)?.severity === 'critical'}
 							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
 							class:bpm-inert={bpmCellInert(row)}
 							style={bpmCellStyle(row.bpm)}
 							title={bpmCellTitle(row)}
+							onpointerenter={() => requestGridProvenance(row.stable_id)}
 						>
 							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
 								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
@@ -2048,7 +2148,7 @@
 						</td>
 						<td
 							class="c-plays"
-							title="play count (rekordbox history + djay)"
+							title="play count: rekordbox plays plus Open DJ plays heard for 60 s or more"
 						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
 						<!-- The cell hands its own width to CSS so the stars can
 						     tighten then shrink to fit it (pin 8f60606750c6). -->
@@ -2067,9 +2167,11 @@
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
 						</td>
-						<td class="c-genre">
-							{#if splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '').length > 0}
-								{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
+						<!-- LIBUX-36: a missing genre is a blank cell; why it is missing
+						     (STANDALONE-05) is the hover title, never cell text. -->
+						<td class="c-genre" title={genreText(row) || row.genre_reason || undefined}>
+							{#if splitGenreTags(genreText(row)).length > 0}
+								{#each splitGenreTags(genreText(row)) as tag, i (tag + String(i))}
 									{#if i > 0}<span class="genre-sep">, </span>{/if}
 									<button
 										type="button"
@@ -2098,8 +2200,6 @@
 									title={`JEV guess, ${Math.round(row.genre_guess.confidence * 100)}% sure; not a file tag`}
 									>{row.genre_guess.family}?</span
 								>
-							{:else if row.genre_reason}
-								<span class="genre-reason" title={row.genre_reason}>{row.genre_reason}</span>
 							{/if}
 						</td>
 						<td class="c-stems">
@@ -2413,6 +2513,10 @@
 		font-size: 9px;
 		font-weight: 600;
 		letter-spacing: 0.02em;
+		cursor: pointer;
+	}
+	.h-err.sorted {
+		color: var(--rb-accent, #3d7dd9);
 	}
 	thead th:nth-child(-n + 3),
 	.c-funnel,
@@ -2617,13 +2721,14 @@
 			background: color-mix(in srgb, rgba(255, 255, 255, 0.14) 100%, transparent);
 		}
 	}
-	/* Camelot-compatible / suggested-next: faint green (go / mixable). */
-	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
+	/* IOPIN-11: a row is green only when both Camelot key and closest
+	 * raw/half/double BPM relationship are compatible. */
+	tbody tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
 			.rb-row-spotify-pending
 		) {
 		background: color-mix(in srgb, var(--rb-green) 9%, transparent);
 	}
-	tbody tr.rb-row-key-compat:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+	tbody tr.rb-row-mix-compatible:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
 		):not(.rb-row-spotify-pending) {
 		background: color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised));
@@ -2685,7 +2790,14 @@
 	.master-fold.below {
 		bottom: 4px;
 	}
-	td {
+	/* LIBUX-35: every cell clips to its own column. A column may only set
+	 * `overflow: visible` when an inner element clips its text instead
+	 * (.c-title -> .title-text); tests/unit/track-table-cell-clip.test.mjs
+	 * holds that list. `:global(td)` because a cell can be rendered by a
+	 * child component (LyricColumn's td never matched a scoped `td`, so it
+	 * did not clip either); `:where()` keeps the rule at a bare td's
+	 * specificity so every `.c-*` column rule below still overrides it. */
+	:where(tbody > tr) > :global(td) {
 		padding: 0 var(--tt-td-pad-x);
 		border-bottom: none;
 		white-space: nowrap;
@@ -2742,7 +2854,7 @@
 	 * and only shrink the glyphs once there is no gap left to give. Both
 	 * measure against --rating-w, which the cell publishes from colWidths -
 	 * state the table already owns, so no ResizeObserver and no layout read.
-	 * STAR_ADV (1.2em) is the ★ glyph's advance, which is wider than 1em; using
+	 * STAR_ADV (1.2em) is the filled star glyph's advance, which is wider than 1em; using
 	 * 1em here would under-measure and let the overflow back in. */
 	.c-rating {
 		--rating-avail: calc(var(--rating-w, 80px) - 2 * var(--tt-td-pad-x));
@@ -2824,7 +2936,9 @@
 	.key-status {
 		opacity: 0.85;
 	}
-	/* Sweet BPM: green wash only (no border). Half = purple wash. */
+	/* Existing heat washes remain secondary. IOPIN-11's border is the
+	 * actionable master-relative verdict and uses the nearest raw/half/double
+	 * relationship from bpm-heat.ts. */
 	.c-bpm.bpm-sweet {
 		border-radius: 2px;
 		background: color-mix(in srgb, var(--rb-green) 18%, transparent);
@@ -2832,6 +2946,13 @@
 	.c-bpm.bpm-half {
 		border-radius: 2px;
 		background: color-mix(in srgb, #a855f7 12%, transparent);
+	}
+	.c-bpm.bpm-compatible { box-shadow: inset 0 0 0 1px var(--rb-green); }
+	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px #d45a4f; }
+	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px #e14238; }
+	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px #ff2f25; }
+	tr.rb-row-paired td {
+		box-shadow: inset 0 -2px 0 color-mix(in srgb, #a855f7 85%, transparent);
 	}
 	.c-bpm.bpm-far {
 		border-radius: 2px;
@@ -2843,7 +2964,8 @@
 	.cloud-state-wrap {
 		position: relative;
 		display: inline-flex;
-		width: 18px;
+		/* Grows to hold the minor-issue square beside the cloud (CHROME-03). */
+		min-width: 18px;
 		height: 18px;
 		align-items: flex-start;
 		justify-content: center;
@@ -2958,16 +3080,11 @@
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
 	}
-	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
+	/* Inherits the td nowrap + ellipsis: a wrapping guess grows the
 	 * fixed-height row (22.5px -> 25px), which the virtualization math and
 	 * right-click anchored popovers both assume never happens. */
 	.genre-guess {
 		color: var(--text-muted, #8b949e);
-		font-style: italic;
-	}
-	.genre-reason {
-		color: var(--text-muted, #8b949e);
-		font-size: 0.85em;
 		font-style: italic;
 	}
 	.genre-tag.active {
@@ -3221,11 +3338,6 @@
 		border-bottom: none;
 		overflow: visible;
 		vertical-align: middle;
-	}
-	/* Clips with the td ellipsis; min-width 0 keeps a long artist from
-	   widening its fixed-layout column. */
-	.c-artist {
-		min-width: 0;
 	}
 	.art-slate {
 		display: block;

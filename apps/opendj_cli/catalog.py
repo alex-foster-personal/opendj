@@ -51,6 +51,7 @@ VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs")
 HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
+MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
@@ -179,7 +180,7 @@ _VERBS: tuple[Verb, ...] = (
     Verb("loop_exit", "loop", (_DECK,), fixed=(("loop", None),), quick_draws=("loop.exit",)),
     Verb("beat_loop", "beat_loop", (
         _DECK,
-        arg("beats", "int", int_value),
+        arg("beats", "number", number_value),
         arg("start_ms", "number", number_value, optional=True),
     ), quick_draws=("loop.start_4", "loop.start_8", "loop.start_16")),
     Verb("beat_jump", "beat_jump", (_DECK, arg("beats", "int", int_value))),
@@ -206,6 +207,8 @@ _VERBS: tuple[Verb, ...] = (
     Verb("master_tempo", "master_tempo", (_DECK, _ENABLED), quick_draws=("master_tempo.toggle",)),
     Verb("stem_mute", "stem_mute", (_DECK, _STEM, arg("muted", "bool", bool_value, "true|false"))),
     Verb("stem_solo", "stem_solo", (_DECK, _STEM, arg("solo", "bool", bool_value, "true|false"))),
+    Verb("stem_load", "stem_load", (_DECK,),
+         note="STEM-46/47: get the deck's stems now (retry a failed load, start a held one)."),
     Verb("stem_eq_mode", "stem_eq_mode", (_DECK, _ENABLED),
          observes=(Observe(("mixer", "channels", "{deck}", "stem_eq_mode"), "enabled"),)),
     Verb("stem_gain", "stem_gain", (_DECK, _STEM, _UNIT),
@@ -275,6 +278,9 @@ _VERBS: tuple[Verb, ...] = (
     Verb("output_mode", "output_mode", (
         arg("mode", "enum", enum_value(OUTPUT_MODE_VALUES), "practice|two_outputs"),
     ), note="CUEOUT-01: practice blends PFL into the main output; two_outputs is the split."),
+    Verb("midi_takeover_mode", "midi_takeover_mode", (
+        arg("mode", "enum", enum_value(MIDI_TAKEOVER_MODE_VALUES), "pickup|jump"),
+    ), note="IOPIN-06: pickup holds a MIDI dial until the hardware crosses the software value."),
     Verb("analysis_source", "analysis_source", (
         arg("feature", "enum", enum_value(ANALYSIS_SOURCE_FEATURES), "beatgrid"),
         arg("source", "enum", enum_value(ANALYSIS_SOURCE_VALUES), "rekordbox|own"),
@@ -309,6 +315,9 @@ _VERBS: tuple[Verb, ...] = (
     #   opendj audio_switch_output --confirm
     #   opendj api GET /api/v1/audio/output-health
     #   opendj api POST /api/v1/audio/switch-output
+    # FB-20 HTTP parity (issue #4085, not command-bus verbs):
+    #   opendj feedback comments summary
+    #   opendj api GET /api/v1/feedback/comments/summary
     # ----- safety loop and hot cues -------------------------------------
     Verb("safety_loop_save", "safety_loop_save", (_DECK,)),
     Verb("safety_loop_arm", "safety_loop_arm",

@@ -9,7 +9,7 @@ matrix runner over N fixtures.
 Here we split the work into three layers:
 
 1. :func:`snapshot_onelibrary` — open a ``exportLibrary.db`` via the
-   ``rbox`` Rust binding against a safe tempfile copy (never mutate the
+   own SQLCipher handle (:mod:`.onelibrary`) against a safe tempfile copy (never mutate the
    input) and capture the bits that matter for structural comparison:
    per-table row counts + playlist name list.
 
@@ -26,7 +26,7 @@ Here we split the work into three layers:
    ``expected_overlay_delta``, or ``unexpected_divergence``.
 
 3. :func:`round_trip_via_writer` — given a fixture's OneLibrary path,
-   run it through :func:`writer_rbox.write_onelibrary` (with or without
+   run it through :func:`writer_onelibrary.write_onelibrary` (with or without
    an overlay) and return the path to the writer's output, so callers
    can snapshot + diff without duplicating the fixture-safety dance.
 
@@ -80,7 +80,7 @@ __all__ = [
 class OneLibraryTableStats:
     """Per-table stats from a OneLibrary snapshot.
 
-    ``distinct_ids`` is ``None`` when the underlying rbox accessor does
+    ``distinct_ids`` is ``None`` when the underlying accessor does
     not expose a stable integer primary key (we don't enforce it today,
     but the field is reserved for future drift checks).
     """
@@ -95,7 +95,7 @@ class OneLibrarySchemaSnapshot:
     """Cheap, structural fingerprint of a ``exportLibrary.db`` file.
 
     Byte-level details (size, head, sha256) are *not* part of this
-    snapshot: rbox/SQLCipher rewrite the page MACs on every open, so
+    snapshot: SQLCipher rewrites the page MACs on every open, so
     any writer-touched DB is byte-different even when structurally
     equivalent. We compare what's stable across writes.
     """
@@ -162,11 +162,10 @@ def _relative_files(root: Path) -> set[Path]:
 
 
 def snapshot_onelibrary(path: Path) -> OneLibrarySchemaSnapshot:
-    """Open a OneLibrary file via rbox and extract row counts + playlists.
+    """Open a OneLibrary file and extract row counts + playlists.
 
-    IMPORTANT: ``rbox.OneLibrary(path)`` opens the DB read-write and may
-    checkpoint the WAL (folding pending pages into the main file) on
-    close. Any fixture we point it at would therefore change byte
+    IMPORTANT: a read/write open may checkpoint the WAL (folding pending
+    pages into the main file) on close. Any fixture we point it at would therefore change byte
     content on every call, which breaks fixture-safety. To avoid that
     we always copy the DB (plus any ``-wal`` / ``-shm`` sidecars) into
     a throwaway temp directory and snapshot *that* copy.
@@ -176,13 +175,13 @@ def snapshot_onelibrary(path: Path) -> OneLibrarySchemaSnapshot:
     are empty, so callers can still render a partial report.
     """
     try:
-        from rbox import OneLibrary  # type: ignore[import-not-found]
+        from .onelibrary import OneLibrary
     except Exception as exc:  # noqa: BLE001
         return OneLibrarySchemaSnapshot(
             path=path,
             tables=(),
             playlist_names=(),
-            error=f"rbox not importable: {exc}",
+            error=f"OneLibrary reader not importable: {exc}",
         )
 
     with tempfile.TemporaryDirectory(prefix="onelib-snap-") as tdir:
@@ -196,60 +195,61 @@ def snapshot_onelibrary(path: Path) -> OneLibrarySchemaSnapshot:
                 )
 
         try:
-            db = OneLibrary(str(tmp_db))
+            db = OneLibrary(tmp_db)
         except Exception as exc:  # noqa: BLE001
             return OneLibrarySchemaSnapshot(
                 path=path,
                 tables=(),
                 playlist_names=(),
-                error=f"rbox.OneLibrary open failed: {exc}",
+                error=f"OneLibrary open failed: {exc}",
             )
 
-        playlist_names: list[str] = []
-        row_counts: dict[str, int] = {}
+        with db:
+            playlist_names: list[str] = []
+            row_counts: dict[str, int] = {}
 
-        # Playlists — treated as a first-class table for the matrix.
-        try:
-            playlists = list(db.get_playlists())
-            playlist_names = [str(p["name"]) for p in playlists]
-            row_counts["playlist"] = len(playlist_names)
-        except Exception as exc:  # noqa: BLE001
-            # Record the problem, but keep scanning the other accessors
-            # so we still return something useful.
-            return OneLibrarySchemaSnapshot(
-                path=path,
-                tables=(),
-                playlist_names=(),
-                error=f"get_playlists failed: {exc}",
-            )
-
-        for attr, tbl in (
-            ("get_contents", "content"),
-            ("get_artists", "artist"),
-            ("get_albums", "album"),
-            ("get_genres", "genre"),
-            ("get_keys", "key"),
-            ("get_labels", "label"),
-            ("get_colors", "color"),
-        ):
-            fn = getattr(db, attr, None)
-            if fn is None:
-                continue
+            # Playlists — treated as a first-class table for the matrix.
             try:
-                row_counts[tbl] = sum(1 for _ in fn())
-            except Exception:  # noqa: BLE001
-                # Best-effort — skip tables that rbox refuses on this DB.
-                continue
+                playlists = list(db.get_playlists())
+                playlist_names = [str(p["name"]) for p in playlists]
+                row_counts["playlist"] = len(playlist_names)
+            except Exception as exc:  # noqa: BLE001
+                # Record the problem, but keep scanning the other accessors
+                # so we still return something useful.
+                return OneLibrarySchemaSnapshot(
+                    path=path,
+                    tables=(),
+                    playlist_names=(),
+                    error=f"get_playlists failed: {exc}",
+                )
 
-        tables = tuple(
-            OneLibraryTableStats(table_name=name, row_count=count)
-            for name, count in sorted(row_counts.items())
-        )
-        return OneLibrarySchemaSnapshot(
-            path=path,
-            tables=tables,
-            playlist_names=tuple(playlist_names),
-        )
+            for attr, tbl in (
+                ("get_contents", "content"),
+                ("get_artists", "artist"),
+                ("get_albums", "album"),
+                ("get_genres", "genre"),
+                ("get_keys", "key"),
+                ("get_labels", "label"),
+                ("get_colors", "color"),
+            ):
+                fn = getattr(db, attr, None)
+                if fn is None:
+                    continue
+                try:
+                    row_counts[tbl] = sum(1 for _ in fn())
+                except Exception:  # noqa: BLE001
+                    # Best-effort: skip tables this DB does not have.
+                    continue
+
+            tables = tuple(
+                OneLibraryTableStats(table_name=name, row_count=count)
+                for name, count in sorted(row_counts.items())
+            )
+            return OneLibrarySchemaSnapshot(
+                path=path,
+                tables=tables,
+                playlist_names=tuple(playlist_names),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +406,7 @@ def round_trip_via_writer(
     ``fixture_pioneer`` must point at a ``PIONEER/`` directory (the
     reader-facing root of a USB export). We read
     ``<PIONEER>/rekordbox/exportLibrary.db`` via the writer
-    (passing it through :func:`writer_rbox.write_onelibrary` with the
+    (passing it through :func:`writer_onelibrary.write_onelibrary` with the
     given overlay playlists) and return the path to the writer's
     output file.
 
@@ -416,9 +416,9 @@ def round_trip_via_writer(
     writer's own fixture-safety guard enforces this as belt-and-
     braces.
     """
-    # Lazy import so callers without rbox installed can still import
+    # Lazy import so callers without sqlcipher3 installed can still import
     # this module (e.g. to read the typed dataclasses).
-    from .writer_rbox import (  # type: ignore[import-not-found]
+    from .writer_onelibrary import (  # type: ignore[import-not-found]
         OneLibraryWriteError,
         PlaylistSpec,
         write_onelibrary,
@@ -446,20 +446,18 @@ def round_trip_via_writer(
 
     # If the fixture ships a WAL (the big one does: 4 MB of pending
     # pages), we must fold it into the main file before handing the
-    # path to ``write_onelibrary``. The writer internally only does
-    # ``shutil.copyfile(template, output)`` which copies the main DB
-    # without the WAL — so any pending pages would be silently lost
-    # and the writer's output would be missing dozens of rows (=76 in
-    # our big fixture). Opening + dropping an rbox handle against the
-    # copy forces SQLite's normal WAL-checkpoint on close, which
-    # rewrites the main file to contain everything.
+    # path to ``write_onelibrary``. Copying the main DB without the WAL
+    # silently loses the pending pages (=76 rows in our big fixture).
+    # Checkpointing the copy rewrites the main file to contain
+    # everything. (The writer now also carries sidecars itself; folding
+    # here keeps the copy self-contained.)
     try:
-        from rbox import OneLibrary as _OL  # type: ignore[import-not-found]
+        from .onelibrary import OneLibrary as _OL
 
-        _h = _OL(str(template_copy))
-        del _h
+        with _OL(template_copy) as _h:
+            _h.checkpoint()
     except Exception:  # noqa: BLE001
-        # If rbox isn't importable we'll fail later with a clearer
+        # If the reader can't open it we'll fail later with a clearer
         # error from write_onelibrary; don't mask that here.
         pass
 
@@ -522,13 +520,13 @@ def _diff_onelibrary_markdown(
         f"* Header-bytes match: **{'yes' if bytes_eq else 'no'}** "
         f"(SQLCipher rewrites header + re-salts page MACs on every write, "
         f"so byte-level inequality is expected for any DB touched by "
-        f"rbox)",
+        f"a writer)",
         "",
     ]
     if a.error:
-        out.append(f"* ⚠️ A could not be fully opened via rbox: {a.error}")
+        out.append(f"* ⚠️ A could not be fully opened: {a.error}")
     if b.error:
-        out.append(f"* ⚠️ B could not be fully opened via rbox: {b.error}")
+        out.append(f"* ⚠️ B could not be fully opened: {b.error}")
     if a.error or b.error:
         out.append("")
 
@@ -813,7 +811,7 @@ def _overlay_spec_for_fixture(pioneer: Path, workdir: Path) -> list[tuple[str, l
     empty overlay spec as "identity" effectively and will skip).
     """
     try:
-        from rbox import OneLibrary  # type: ignore[import-not-found]
+        from .onelibrary import OneLibrary
     except Exception:  # noqa: BLE001
         return []
     # Read IDs from a safe copy of the DB so we don't mutate the fixture.
@@ -828,7 +826,7 @@ def _overlay_spec_for_fixture(pioneer: Path, workdir: Path) -> list[tuple[str, l
         if side.is_file():
             shutil.copyfile(side, tmp.with_name(tmp.name + suffix))
     try:
-        db = OneLibrary(str(tmp))
+        db = OneLibrary(tmp)
     except Exception:  # noqa: BLE001
         return []
     ids: list[int] = []
@@ -843,7 +841,7 @@ def _overlay_spec_for_fixture(pioneer: Path, workdir: Path) -> list[tuple[str, l
     except Exception:  # noqa: BLE001
         ids = []
     finally:
-        del db
+        db.close()
     if not ids:
         return []
     return [("diff-matrix-test-playlist", ids)]

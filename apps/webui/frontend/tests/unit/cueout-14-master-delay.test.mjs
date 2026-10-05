@@ -138,14 +138,15 @@ describe('the room delay node', () => {
 		headphones.disposeHeadphoneMonitor();
 	});
 
-	test('engine wiring (source guard): mute -> room delay -> destination in BOTH routing branches, no createDelay in the engine', async () => {
+	test('output topology (source guard): mute -> room delay -> destination in every branch', async () => {
 		const engine = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
+		const topology = await readFile('src/lib/rb/audio-output-topology.ts', 'utf8');
 		assert.match(engine, /_masterDelay = createMasterDelayNode\(_ctx\)/);
-		assert.match(engine, /_masterMuteGain\.connect\(_masterDelay\)/);
-		assert.match(engine, /_masterDelay\.connect\(_ctx\.destination\)/, 'default routing: delay is the last node before the destination');
-		assert.match(engine, /_masterDelay\.connect\(dest\)/, 'extroute routing: delay is the last node before the multichannel destination');
-		assert.doesNotMatch(engine, /_masterMuteGain\.connect\(_ctx\.destination\)/, 'if the mute still connects straight to the destination then the room has an undelayed path beside the delayed one - broken');
-		assert.doesNotMatch(engine, /_masterMuteGain\.connect\(dest\)/);
+		assert.match(topology, /masterMuteGain\.connect\(masterDelay\)/);
+		assert.match(topology, /masterDelay\.connect\(context\.destination\)/, 'default routing: delay is the last node before the destination');
+		assert.match(topology, /masterDelay\.connect\(dest\)/, 'extroute routing: delay is the last node before the multichannel destination');
+		assert.doesNotMatch(topology, /masterMuteGain\.connect\(context\.destination\)/, 'if the mute still connects straight to the destination then the room has an undelayed path beside the delayed one - broken');
+		assert.doesNotMatch(topology, /masterMuteGain\.connect\(dest\)/);
 		assert.doesNotMatch(engine, /createDelay/);
 		assert.match(engine, /export function masterDelayNode\(\)/);
 		assert.match(engine, /masterDelaySeconds\(mixerState\.headphones\.master_delay_ms\)/, 'if the engine does not hand the room delay to the presentation clock then the playhead leads the room - broken');

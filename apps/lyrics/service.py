@@ -23,6 +23,7 @@ from apps.lyrics.asr_source import (
 )
 from apps.lyrics.cache import LyricLine, Lyrics
 from apps.lyrics.fetch_verdicts import FetchVerdict, utc_now_iso, write_verdict
+from apps.lyrics.lookup_metadata import lookup_metadata_problem
 
 LRCLIB_GET_URL = "https://lrclib.net/api/get"
 USER_AGENT = "music-dj-tools-lyrics/1.0"
@@ -296,12 +297,10 @@ def load_track(state_db: Path, stable_id: str) -> Track:
     if row is None:
         raise ValueError(f"unknown stable_id {stable_id!r}")
     title, artists_json, duration_ms = row
-    if not isinstance(title, str) or not title.strip():
-        raise ValueError(f"track {stable_id!r} has no title")
-    artist = _first_artist(artists_json, stable_id)
-    if not isinstance(duration_ms, int) or duration_ms <= 0:
-        raise ValueError(f"track {stable_id!r} has invalid duration_ms")
-    return Track(stable_id, artist, title, round(duration_ms / 1000))
+    problem = lookup_metadata_problem(title, artists_json, duration_ms)
+    if problem is not None:
+        raise ValueError(f"track {stable_id!r} {problem}")
+    return Track(stable_id, _first_artist(artists_json, stable_id), title, round(duration_ms / 1000))
 
 
 def _first_artist(artists_json: object, stable_id: str) -> str:

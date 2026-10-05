@@ -14,11 +14,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.fingerprints import ChromaprintMissing
+from apps.shared.fingerprints import ChromaprintMissing, Fingerprint
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.shared.state.db import open_rw as open_state_rw
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import ingest_upload as ingest_upload_mod
+from tests.fingerprint_fakes import fake_fingerprint
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
@@ -63,8 +64,8 @@ def _seed_track(app, sid, path, duration_ms=200_000):
 @pytest.mark.requires_audio_stack
 def test_possible_dup_held_as_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    from tinytag import TinyTag
+    dur_ms = int(TinyTag.get(src).duration * 1000)
     other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near01", other, duration_ms=dur_ms)
 
@@ -92,8 +93,8 @@ def test_possible_dup_held_as_part(client, app, monkeypatch):
 @pytest.mark.requires_audio_stack
 def test_decide_accept_renames_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    from tinytag import TinyTag
+    dur_ms = int(TinyTag.get(src).duration * 1000)
     other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near02", other, duration_ms=dur_ms)
 
@@ -124,8 +125,8 @@ def test_decide_accept_renames_part(client, app, monkeypatch):
 @pytest.mark.requires_audio_stack
 def test_decide_reject_unlinks_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    from tinytag import TinyTag
+    dur_ms = int(TinyTag.get(src).duration * 1000)
     other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near03", other, duration_ms=dur_ms)
 
@@ -159,11 +160,23 @@ def test_decide_reject_unlinks_part(client, app, monkeypatch):
 
 
 @pytest.mark.requires_audio_stack
-def test_confirmed_dup_still_skips_unless_forced(client, app):
+def test_confirmed_dup_still_skips_unless_forced(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    from tinytag import TinyTag
+    dur_ms = int(TinyTag.get(src).duration * 1000)
     _seed_track(app, "dup01", src, duration_ms=dur_ms)
+    # The route's decision, not the fingerprint backend, is under test here:
+    # a runner with neither the engine nor fpcalc would otherwise fall back
+    # to the duration-only verdict. Same bytes give the same real-format
+    # fingerprint; the engine itself is covered in
+    # tests/dedup/test_engine_fingerprint_real.py.
+    monkeypatch.setattr(
+        ingest_upload_mod, "compute",
+        lambda p: Fingerprint(
+            path=Path(p), duration=3.0, size=0, mtime=0.0,
+            fp_str=fake_fingerprint(Path(p).read_bytes(), b""),
+        ),
+    )
 
     r = client.post(
         "/api/v1/ingest/upload",

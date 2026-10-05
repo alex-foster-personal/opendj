@@ -74,6 +74,8 @@ def _wiring_failures(sources: dict[str, str]) -> list[str]:
         failures.append("audio-engine setCrossfader does not accept pressT0Ms")
     if not re.search(r"setStemMute\([^)]*pressT0Ms", engine):
         failures.append("audio-engine setStemMute does not accept pressT0Ms")
+    if not re.search(r"setStemSolo\([^)]*pressT0Ms", engine):
+        failures.append("audio-engine setStemSolo does not accept pressT0Ms")
 
     if "engine.setFilter(command.deck, command.value, pressT0Ms)" not in ipc:
         failures.append("performance-ipc does not forward pressT0Ms into setFilter")
@@ -83,7 +85,13 @@ def _wiring_failures(sources: dict[str, str]) -> list[str]:
         failures.append("performance-ipc does not forward pressT0Ms into setCrossfader")
     if "engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms)" not in ipc:
         failures.append("performance-ipc does not forward pressT0Ms into setStemMute")
-    if "engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms)" not in ipc:
+    # Exclusive solo is an optional fifth argument. The event timestamp must
+    # remain fourth; accepting an arbitrary trailing argument would hide drift.
+    solo_call = (
+        r"engine\.setStemSolo\(command\.deck, command\.stem, command\.solo, "
+        r"pressT0Ms(?:, command\.exclusive)?\)"
+    )
+    if not re.search(solo_call, ipc):
         failures.append("performance-ipc does not forward pressT0Ms into setStemSolo")
 
     if "'mixer-apply'" not in buckets:

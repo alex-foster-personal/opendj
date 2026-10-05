@@ -28,6 +28,8 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 let vite;
 let webmidi; // webmidi.svelte.ts module
 let glue; // action-glue.svelte.ts module
+let padRuntime; // controller-pad-runtime.svelte.ts module
+let browseAdapter; // shared library-selection registry
 let stores; // $lib/stores.svelte
 let audioEngine; // $lib/rb/audio-engine.svelte
 let performanceIpc;
@@ -48,6 +50,8 @@ before(async () => {
 	});
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	glue = await vite.ssrLoadModule('/src/lib/rb/midi/action-glue.svelte.ts');
+	padRuntime = await vite.ssrLoadModule('/src/lib/rb/midi/controller-pad-runtime.svelte.ts');
+	browseAdapter = await vite.ssrLoadModule('/src/lib/rb/midi/browse-adapter.ts');
 	stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
 	audioEngine = await vite.ssrLoadModule('/src/lib/rb/audio-engine.svelte.ts');
 	performanceIpc = await vite.ssrLoadModule('/src/lib/rb/performance-ipc.svelte.ts');
@@ -169,6 +173,13 @@ test('pitchRatioFromFader maps 0..1 onto the +-range window', () => {
 	assert.throws(() => glue.pitchRatioFromFader(Number.NaN, 16), RangeError);
 });
 
+test('midiMeterValue maps the real ten-segment meter onto Mixtour Pro 0..6', () => {
+	assert.equal(glue.midiMeterValue(0, 6), 0);
+	assert.equal(glue.midiMeterValue(5, 6), 3);
+	assert.equal(glue.midiMeterValue(10, 6), 6);
+	assert.throws(() => glue.midiMeterValue(11, 6), RangeError);
+});
+
 test('transport action on an empty deck toasts instead of throwing', () => {
 	const beforeCount = stores.toasts.length;
 	glue.handleMidiAction(
@@ -233,6 +244,92 @@ test('mixer_channel actions dispatch through the performance command bus', async
 	assert.equal(audioEngine.mixerState.channels[4].fader, 0.5);
 });
 
+// [if] an absolute MIDI fader is away from a software edit [then] it must
+// not jump until it reaches/crosses that value, [else stop].
+test('IOPIN-06 pickup gates real action-glue scalar dispatch while relative browse stays immediate', async () => {
+	audioEngine.mixerState.channels[2].trim = 0.75;
+	glue.handleMidiAction(
+		{ type: 'mixer_channel', deck: 2, target: 'trim' },
+		{ kind: 'continuous', value01: 0.1, raw: 13 },
+		'pickup-test-device',
+		undefined,
+		'cc:1:11'
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].trim, 0.75, 'far physical position must be held');
+	glue.handleMidiAction(
+		{ type: 'mixer_channel', deck: 2, target: 'trim' },
+		{ kind: 'continuous', value01: 0.8, raw: 102 },
+		'pickup-test-device',
+		undefined,
+		'cc:1:11'
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(audioEngine.mixerState.channels[2].trim, 0.8, 'crossing target must pick up');
+
+	const calls = [];
+	const unregister = browseAdapter.registerBrowseAdapter({
+		moveSelection: (delta) => calls.push(delta), loadSelected: () => {}
+	});
+	glue.handleMidiAction(
+		{ type: 'browse_encoder' },
+		{ kind: 'relative', delta: -1 },
+		'pickup-test-device',
+		undefined,
+		'cc:1:12'
+	);
+	assert.deepEqual(calls, [-1], 'relative browse is not subject to absolute pickup');
+	unregister();
+});
+
+// Review thread on takeover-engine-sync.svelte.ts:67 (PR #3837), replayed on
+// the real glue, policy, dispatcher and preset lifecycle lock: a fader value
+// acknowledged while the lock rejects its command must not let the next
+// movement jump the scalar once the lock is released.
+test('IOPIN-06 a MIDI value rejected by the preset lifecycle lock does not bypass pickup afterwards', async () => {
+	const trimAction = { type: 'mixer_channel', deck: 3, target: 'trim' };
+	const send = async (value01) => {
+		glue.handleMidiAction(
+			trimAction,
+			{ kind: 'continuous', value01, raw: Math.round(value01 * 127) },
+			'lock-test-device',
+			undefined,
+			'cc:3:11'
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+	};
+	const trim = () => audioEngine.mixerState.channels[3].trim;
+	const rejections = [];
+	const onRejection = (reason) => rejections.push(String(reason?.message ?? reason));
+	const runnerListeners = process.listeners('unhandledRejection');
+	process.removeAllListeners('unhandledRejection');
+	process.on('unhandledRejection', onRejection);
+	const presetId = 'takeover-lock-test';
+	try {
+		audioEngine.mixerState.channels[3].trim = 0.5;
+		await send(0.5);
+		await send(0.52);
+		assert.equal(trim(), 0.52, 'control: an unlocked, picked-up fader tracks');
+
+		await performanceIpc.preparePerformancePresetTransaction(presetId, async () => {});
+		await send(0.7);
+		assert.equal(trim(), 0.52, 'control: the lock rejected the command');
+		assert.equal(rejections.length, 1, `the rejection is the lock's: ${rejections}`);
+		assert.match(rejections[0], /owns controls at awaiting_audio; command trim rejected/);
+		performanceIpc.abortPreparedPerformancePreset(presetId, 'test release');
+
+		await send(0.9);
+		assert.equal(trim(), 0.52, 'the next movement must be held, not jump to 0.9');
+		await send(0.5);
+		assert.equal(trim(), 0.5, 'coming back across the engine value picks up again');
+		assert.equal(rejections.length, 1, 'nothing else was rejected');
+	} finally {
+		performanceIpc.abortPreparedPerformancePreset(presetId, 'test cleanup');
+		process.off('unhandledRejection', onRejection);
+		for (const listener of runnerListeners) process.on('unhandledRejection', listener);
+	}
+});
+
 test('eq action without band fails fast', () => {
 	assert.throws(
 		() =>
@@ -284,6 +381,119 @@ test('ledTriggerActive reflects deck store state', () => {
 	audioEngine.deckStates[1].hot_cues = [];
 });
 
+test('controller pad mode is per device/deck and drives mode LED truth', () => {
+	glue._resetControllerStateForTests();
+	assert.equal(glue.controllerPadMode('pro-a', 1), 'hot_cue');
+	glue.handleMidiAction(
+		{ type: 'controller_pad_mode', deck: 1, mode: 'auto_loop' },
+		{ kind: 'button', pressed: true, velocity: 127 },
+		'pro-a'
+	);
+	assert.equal(glue.controllerPadMode('pro-a', 1), 'auto_loop');
+	assert.equal(glue.controllerPadMode('pro-a', 2), 'hot_cue');
+	assert.equal(glue.controllerPadMode('pro-b', 1), 'hot_cue');
+	assert.equal(
+		glue.ledTriggerActive({ kind: 'pad_mode_selected', deck: 1, mode: 'auto_loop' }, 'pro-a'),
+		true
+	);
+	assert.equal(
+		glue.ledTriggerActive({ kind: 'pad_mode_selected', deck: 1, mode: 'hot_cue' }, 'pro-a'),
+		false
+	);
+	glue._resetControllerStateForTests();
+});
+
+test('controller hot-cue pad rounds the presented position to persistent milliseconds', () => {
+	assert.equal(padRuntime.persistentCuePositionMs(1234.75), 1235);
+	assert.equal(padRuntime.persistentCuePositionMs(0.4), 0);
+	assert.throws(() => padRuntime.persistentCuePositionMs(Number.NaN), RangeError);
+	assert.throws(() => padRuntime.persistentCuePositionMs(-0.1), RangeError);
+});
+
+// [if] a stick deck's empty hot-cue pad is pressed [then] hot_cue_save is
+// dispatched and reaches the stick session-edit store; [if] the deck is a
+// loaded library track with no rekordbox mapping [then] CUES-01 still
+// dispatches the save (only an empty deck is refused).
+//
+// No track was loaded here, so the real session store answers the stick save
+// with its own "slots were never read" refusal. That refusal is the evidence
+// the command passed the pad gate. The pad fires without awaiting, so the
+// rejection is unhandled by design; the runner's listener is parked to read it.
+test('controller hot-cue pad saves on a stick deck and on an unmapped library deck', async () => {
+	glue._resetControllerStateForTests();
+	const deck = audioEngine.deckStates[1];
+	const stickId = 'usb-AAAAAAAA-0000-4000-8000-00000000000A-7';
+	const notes = [];
+	const notify = (message, tone) => notes.push({ message, tone });
+	const rejections = [];
+	const onRejection = (reason) => rejections.push(String(reason?.message ?? reason));
+	const runnerListeners = process.listeners('unhandledRejection');
+	process.removeAllListeners('unhandledRejection');
+	process.on('unhandledRejection', onRejection);
+	const priorRevisions = deck.hot_cue_revisions;
+	try {
+		deck.has_rb_mapping = false;
+		deck.hot_cues = [];
+		deck.position_ms = 1234.4;
+		deck.hot_cue_revisions = { ...priorRevisions, A: 'rev-0' };
+
+		deck.stable_id = stickId;
+		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
+		const deadline = Date.now() + 5000;
+		while (rejections.length === 0 && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.deepEqual(notes, [], 'a stick deck must not be told its cue cannot persist');
+		assert.deepEqual(
+			rejections,
+			[`hot cue A: the stick's own slots for ${stickId} were never read`],
+			'the save must reach the stick session store (past the pad gate and the IPC mapping gate)'
+		);
+
+		deck.stable_id = 'b'.repeat(40);
+		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
+		const libraryDeadline = Date.now() + 5000;
+		while (rejections.length < 2 && Date.now() < libraryDeadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.deepEqual(notes, [], 'CUES-01: an unmapped loaded library deck is not refused');
+		assert.equal(rejections.length, 2, 'the library save is dispatched, past the pad gate');
+		assert.match(rejections[1], /bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/, 'the dispatched save names the library id');
+	} finally {
+		process.off('unhandledRejection', onRejection);
+		for (const listener of runnerListeners) process.on('unhandledRejection', listener);
+		deck.stable_id = null;
+		deck.hot_cues = [];
+		deck.position_ms = 0;
+		deck.hot_cue_revisions = priorRevisions;
+		glue._resetControllerStateForTests();
+	}
+});
+
+test('unsupported pad mode warns once and pad input stays inert', () => {
+	glue._resetControllerStateForTests();
+	const beforeCount = stores.toasts.length;
+	glue.handleMidiAction(
+		{ type: 'controller_pad_mode', deck: 2, mode: 'instant_fx' },
+		{ kind: 'button', pressed: true, velocity: 127 },
+		'pro-a'
+	);
+	assert.equal(stores.toasts.length, beforeCount + 1);
+	assert.match(lastToast().message, /instant fx pads are not available/);
+	const afterWarning = stores.toasts.length;
+	glue.handleMidiAction(
+		{ type: 'controller_pad', deck: 2, pad: 1, shifted: false },
+		{ kind: 'button', pressed: true, velocity: 127 },
+		'pro-a'
+	);
+	// Empty-deck protection remains visible, but no unrelated hot-cue or loop
+	// action is dispatched. A loaded deck is covered by the static mode/action
+	// map test and physical acceptance.
+	assert.equal(stores.toasts.length, afterWarning + 1);
+	assert.match(lastToast().message, /Deck 2 is empty/);
+	glue._resetControllerStateForTests();
+});
+
 test('browse actions without a BrowseAdapter are loud (toast), not silent', () => {
 	const beforeCount = stores.toasts.length;
 	glue.handleMidiAction({ type: 'browse_encoder' }, { kind: 'relative', delta: 3 });
@@ -293,7 +503,7 @@ test('browse actions without a BrowseAdapter are loud (toast), not silent', () =
 
 test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 	const calls = [];
-	glue.registerBrowseAdapter({
+	const unregister = browseAdapter.registerBrowseAdapter({
 		moveSelection: (delta) => calls.push(['move', delta]),
 		loadSelected: (deck) => calls.push(['load', deck])
 	});
@@ -306,7 +516,10 @@ test('registerBrowseAdapter wires encoder + load and rejects doubles', () => {
 		['move', -2],
 		['load', 2]
 	]);
-	assert.throws(() => glue.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
+	assert.throws(() => browseAdapter.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} }), /already registered/);
+	unregister();
+	const unregisterRemount = browseAdapter.registerBrowseAdapter({ moveSelection: () => {}, loadSelected: () => {} });
+	unregisterRemount();
 });
 
 function _restoreCueGlueState() {

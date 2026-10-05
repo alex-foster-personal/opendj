@@ -42,29 +42,30 @@ const rowCloudView = template.slice(
 test('the cloud-presence glyph lives in the existing LHS status cell, not a new column', () => {
 	assert.match(rowCloudView, /row\.has_remote_copy/);
 	assert.match(cloudCell, /cloudView\./);
-	assert.match(cloudCell, /class="cloud-copy"/);
+	assert.match(cloudCell, /<CloudStatusIcon\b/);
 	assert.doesNotMatch(template, /class="c-remote"/);
 });
 
 test('cloud-presence states stay distinct from streaming', () => {
-	assert.match(cloudCell, /class="cloud"/);
-	assert.match(cloudCell, /class="cloud-copy"/);
-	assert.notEqual(
-		cloudCell.indexOf('class="cloud-copy"'),
-		cloudCell.indexOf('class="cloud"'),
-		'CloudSync presence and service streaming must not share one class'
+	const iconSource = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/CloudStatusIcon.svelte', import.meta.url)),
+		'utf8'
 	);
+	assert.match(iconSource, /class:streaming=/);
+	assert.match(iconSource, /class:not-on-cloud=/);
 });
 
 test('every CloudSync glyph carries the production helper title', () => {
-	assert.match(cloudCell, /class="cloud-copy"[^>]*title=\{cloudView\.title\}/);
+	assert.match(cloudCell, /<CloudStatusIcon[^>]*view=\{cloudView\}/);
 	assert.match(stateSource, /Not on CloudSync/);
 	assert.match(stateSource, /On CloudSync but not stored locally/);
 	assert.match(stateSource, /On CloudSync and stored locally/);
 });
 
 test('streaming rows take precedence over CloudSync storage state', () => {
-	const streamingAt = stateSource.indexOf('if (input.isStreaming)');
+	// Unmatched Spotify placeholders (spotifyPending) stream too, so they share
+	// the streaming branch that must come first.
+	const streamingAt = stateSource.indexOf('if (input.isStreaming || input.spotifyPending)');
 	const remoteAt = stateSource.indexOf('if (input.hasRemoteCopy');
 	assert.ok(streamingAt >= 0 && remoteAt > streamingAt);
 });
@@ -76,10 +77,48 @@ test('a remote copy takes precedence over an absent local file, so cloud-only is
 });
 
 test('a remote row is not classed broken the way a missing local file is', () => {
-	assert.match(source, /row\.is_remote !== true/);
+	assert.match(source, /class:broken=\{rowRendersUnavailable\(row\)\}/);
+	const wire = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/browser-row-wire.ts', import.meta.url)),
+		'utf8'
+	);
+	const fn = wire.slice(
+		wire.indexOf('export function rowRendersUnavailable'),
+		wire.indexOf('export function libraryAudioLoadRefusal')
+	);
+	assert.match(fn, /row\.is_remote === true\) return false/);
 });
 
 test('local-only uses a crossed-out cloud instead of the old blank cell', () => {
-	assert.match(cloudCell, /class:not-on-cloud=/);
-	assert.match(cloudCell, /d="M3 13 13 3"/);
+	const iconSource = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/CloudStatusIcon.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(iconSource, /class:not-on-cloud=/);
+	assert.match(iconSource, /d="M3 13 13 3"/);
+	assert.match(iconSource, /tick-blue/);
+});
+
+test('every cloud state that is not the dim column color is styled inside CloudStatusIcon', () => {
+	// [if] a cloud state needs its own color [then] CloudStatusIcon styles it,
+	// because TrackTable's scoped rules cannot reach the child component,
+	// [else stop]. The states come from the icon's own class: bindings.
+	const iconSource = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/CloudStatusIcon.svelte', import.meta.url)),
+		'utf8'
+	).replaceAll('\r\n', '\n');
+	const iconStyle = iconSource.slice(iconSource.indexOf('<style>'));
+	const tableStyle = source.slice(source.lastIndexOf('<style'));
+	const states = [...iconSource.matchAll(/class:([a-z-]+)=\{view\.kind === '\1'\}/g)].map((m) => m[1]);
+	// Control: the parse found the four states, so the loop below is not vacuous.
+	assert.deepEqual(states.sort(), ['not-on-cloud', 'on-cloud-and-local', 'on-cloud-not-local', 'streaming']);
+	const colored = states.filter((state) => {
+		const rule = tableStyle.match(new RegExp(`\\n\\t\\.${state} \\{\\n\\t\\tcolor: ([^;]+);`));
+		return rule !== null && rule[1] !== 'var(--rb-text-dim)';
+	});
+	assert.ok(colored.includes('on-cloud-and-local'), `expected TrackTable to color on-cloud-and-local: ${colored}`);
+	for (const state of colored) {
+		assert.match(iconStyle, new RegExp(`\\.${state} \\{\\n\\t\\tcolor: `), `${state} has no color in CloudStatusIcon`);
+	}
+	assert.match(iconStyle, /\.on-cloud-and-local \{\n\t\tcolor: var\(--rb-text\);/);
 });

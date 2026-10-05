@@ -38,7 +38,11 @@
  *
  *   1. after a quiet period (BOOT_QUIET_MS) from the first deferral, and
  *   2. after the browser reports an idle frame, and
- *   3. after any in-flight deck load has settled.
+ *   3. after any in-flight deck load has settled, and
+ *   4. after the boot All Tracks walk has settled (LIBM-138): the listing is
+ *      the page's primary content and every deferred request runs on the
+ *      same single-worker engine, so a request let through mid-walk slows
+ *      the rows a person is watching fill.
  *
  * NOTHING IS EVER DROPPED. This is a scheduler, not a filter. Every deferred
  * task runs: the deck-load yield has a ceiling (DECK_LOAD_YIELD_MAX_MS) so a
@@ -106,6 +110,11 @@ export interface BootScheduler {
 	/** Tell the scheduler a deck load has begun. Call the returned function
 	 * when it settles, success or failure. Calling it twice is harmless. */
 	deckLoadStarted: () => () => void;
+	/** Tell the scheduler the boot All Tracks walk has begun. Call the returned
+	 * function when it ends: last page, failure, or a boot that opens another
+	 * pane. Shares the deck-load yield and its ceiling, so an abandoned walk
+	 * cannot strand the queue. Calling it twice is harmless. */
+	listingWalkStarted: () => () => void;
 	/** Open the window explicitly and return its teardown. `defer` also opens
 	 * it, because child components mount before the root layout does. */
 	start: () => () => void;
@@ -125,8 +134,20 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 	let released = false;
 	let armed = false;
 	let timer: number | null = null;
-	let decksLoading = 0;
+	// Deck loads and the boot listing walk, counted together: either one in
+	// flight means deferred work would compete with something a person feels.
+	let holds = 0;
 	let yieldedMs = 0;
+
+	function _hold(): () => void {
+		holds += 1;
+		let settled = false;
+		return () => {
+			if (settled) return;
+			settled = true;
+			holds -= 1;
+		};
+	}
 
 	function _cancelTimer(): void {
 		if (timer === null) return;
@@ -159,7 +180,7 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 
 	function _releaseOnceDecksAreFree(): void {
 		timer = null;
-		if (decksLoading === 0 || yieldedMs >= DECK_LOAD_YIELD_MAX_MS) {
+		if (holds === 0 || yieldedMs >= DECK_LOAD_YIELD_MAX_MS) {
 			_release();
 			return;
 		}
@@ -192,15 +213,8 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 			_arm();
 		},
 
-		deckLoadStarted(): () => void {
-			decksLoading += 1;
-			let settled = false;
-			return () => {
-				if (settled) return;
-				settled = true;
-				decksLoading -= 1;
-			};
-		},
+		deckLoadStarted: _hold,
+		listingWalkStarted: _hold,
 
 		start(): () => void {
 			_arm();

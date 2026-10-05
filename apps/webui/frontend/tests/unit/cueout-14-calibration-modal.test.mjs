@@ -1,4 +1,4 @@
-// requirement: CUEOUT-14 (calibration state machine, injected effects, nothing performed)
+// requirement: CUEOUT-14, IOPIN-07 (calibration state machine, injected effects, nothing performed)
 // [if] the mic cannot hear the speakers [then] the modal fails at mic_check_master with the measured peak in the message, and paused decks resume
 // [if] a bus is only audible above some chirp level [then] stage one climbs the gain ladder, stops at the first comfortable rung, and stage two reuses that rung
 // [if] a single stage-two capture falls short [then] one retry at full level rescues the run instead of refusing it
@@ -258,6 +258,8 @@ describe('createCueAlignController', () => {
 			'a bus heard faintly under noise is a volume problem and must be reported as one');
 		assert.deepEqual(h.gains.master, [...cueLatency.CUE_LATENCY_GAIN_STEPS],
 			'if the ramp gives up before full level then a bus that only needed more gain is failed - broken');
+		assert.equal(h.calibration.diagnostics.failure, 'weak_correlation',
+			'a bus heard only as noise is a correlation failure, not a dead input');
 		assert.equal(h.calibration.master_latency_ms, null);
 		assert.ok(!h.calls.includes('play:cue:measure'), 'a failed speaker check must not go on to chirp the phones');
 		assert.ok(h.calls.includes('resume:1,3'), 'if a failed check leaves the decks paused then calibration stopped the set - broken');
@@ -286,6 +288,8 @@ describe('createCueAlignController', () => {
 			'if a dead acoustic path is reported as "turn it up" then the operator raises the volume of a device nobody is listening to - broken');
 		assert.match(h.calibration.error, /the room output really is the speakers and not a headphone jack/,
 			'the exact fault seen in the field: MASTER pointed at an unplugged jack, so no level could ever have helped');
+		assert.equal(h.calibration.diagnostics.failure, 'no_input_signal',
+			'if a digitally silent capture is not classed as no input then the IO panel blames the room - broken');
 	});
 
 	test('a bus audible only above 0.5: stage one climbs to 0.5, stops there, and stage two reuses it', async () => {
@@ -362,9 +366,20 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /measurement unstable \(spread 15 ms\), try again with less room noise/);
+		assert.match(h.calibration.error, /^measurement unstable \(spread 15 ms\): the headphones latency itself changed between runs/,
+			'if the unstable error does not name the measured reason then every cause reads as the same failure - broken');
+		assert.doesNotMatch(h.calibration.error, /less room noise/,
+			'pin 9a722fd1: a quiet room with clearly heard chirps must not be told to reduce room noise - broken');
 		assert.match(h.calibration.error, /\(speakers 200, 200, 200 ms; headphones 900, 915, 900 ms\)/,
 			'if the unstable error hides the per-bus lags then nobody can tell which bus wandered - broken');
+		assert.deepEqual(h.calibration.diagnostics, {
+			probe: 'chirp',
+			alternate_probe: 'unavailable',
+			failure: 'inconsistent_measurements',
+			master_measurements_ms: [200, 200, 200],
+			cue_measurements_ms: [900, 915, 900],
+			spread_ms: 15
+		});
 		assert.ok(!h.calls.includes('persist'), 'if an unstable measurement is applied then a noisy room writes a wrong room delay - broken');
 		assert.ok(h.calls.includes('resume:1,3'));
 	});
@@ -710,6 +725,10 @@ describe('IPC parity (headphone_calibrate / headphone_calibrate_abort drive the 
 			// the output mode sent a reader to the I/O pane to fix something that was
 			// not broken.
 			assert.match(calibration.error, /the audio graph is not built yet/);
+			assert.equal(calibration.diagnostics.failure, 'route_or_operation');
+			assert.deepEqual(calibration.diagnostics.master_measurements_ms, []);
+			assert.deepEqual(calibration.diagnostics.cue_measurements_ms, []);
+			assert.equal(calibration.diagnostics.spread_ms, null);
 		} finally {
 			uninstall();
 		}

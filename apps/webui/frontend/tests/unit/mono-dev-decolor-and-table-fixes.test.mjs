@@ -23,10 +23,12 @@ function themeBlock(selector) {
 const zIndexOf = (body) => Number(body.match(/z-index:\s*(-?\d+)/)?.[1]);
 
 test('if an artist cell lets text spill past its column (overflow visible) then the artist ellipsis is broken', () => {
-	const bodies = ruleBodies(TABLE, '.c-artist');
-	assert.ok(bodies.length > 0, 'expected a .c-artist rule');
-	for (const body of bodies) assert.doesNotMatch(body, /overflow:\s*visible/);
-	const td = ruleBodies(TABLE, 'td')[0];
+	// Any rule naming the artist cell must leave the td clip alone.
+	for (const m of TABLE.matchAll(/\n\s*[^\n{}]*\.c-artist[^\n{]*\{([^}]*)\}/g)) {
+		assert.doesNotMatch(m[1], /overflow:\s*visible/);
+	}
+	assert.match(TABLE, /<td class="c-artist"/);
+	const td = ruleBodies(TABLE, ':where(tbody > tr) > :global(td)')[0];
 	assert.match(td, /overflow:\s*hidden/);
 	assert.match(td, /text-overflow:\s*ellipsis/);
 	assert.match(td, /white-space:\s*nowrap/);

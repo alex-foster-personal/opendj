@@ -9,6 +9,7 @@
 	import {
 		COPY_PATH_TITLE,
 		loadDeckTitle,
+		menuItemsForTrack,
 		menuTargetIds,
 		REANALYZE_TITLE,
 		runCopyPaths,
@@ -104,7 +105,7 @@
 		// than shown inert (JIK, Thu 1 Oct 2026). Rows whose `run` is undefined
 		// only in context (Remove from playlist outside a playlist, Stems/Lyrics
 		// when the host passes no handler) stay, since the feature is real.
-		return [
+		return menuItemsForTrack(row.stable_id, [
 			...DECKS.map((deck) => ({
 				id: `load-${deck}`,
 				label: `Load to deck ${deck}`,
@@ -153,7 +154,7 @@
 				run: removable ? () => onremoverow?.(row) : undefined
 			},
 			removeFromLibraryMenuItem(targetIds, onremovefromlibrary)
-		];
+		]);
 	}
 </script>
 

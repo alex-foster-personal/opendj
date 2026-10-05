@@ -58,8 +58,8 @@ Authoritative source:
 
 ## Known gaps (Phase 16 scope)
 
-- Per-file GEOB write is wired through `SeratoAdapter.write()` via mutagen as
-  of v1.0-rc2 (commit `d883089`); cues and beatgrid now round-trip through the
+- Per-file GEOB write is wired through `SeratoAdapter.write()` (in-house
+  `apps.shared.id3v2` since Thu 1 Oct 2026, mutagen before) as of v1.0-rc2 (commit `d883089`); cues and beatgrid now round-trip through the
   adapter, and the `03-8-hot-cues` conformance fixture no longer masks `cues`.
 - Smart crates are opaque passthrough only.
 - Real-world sign-off deferred.

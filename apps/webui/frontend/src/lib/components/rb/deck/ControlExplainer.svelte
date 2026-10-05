@@ -1,14 +1,10 @@
 <script lang="ts">
-	// Hover/focus teaching chrome for performance controls. Native `title` stays
-	// on the wrapped control by convention; this popover adds short bullets +
-	// optional SVG demos. UI-only - does not invent engine behavior. Copy must
-	// match audio-engine.
-	//
-	// A caller whose wrapped control would otherwise show BOTH the native
-	// title and this popover at once (the overlap pin dd4f0f5ae33f flagged)
-	// should drop that control's own `title` and keep only `aria-label` -
-	// this component's own `title` prop still reaches screen readers via the
-	// popover's heading and, on slow/no-hover, is unaffected either way.
+	// Hover/focus teaching chrome for performance controls. This popover is the
+	// one visual tooltip. `data-custom-tip` tells the document hover layer
+	// (single-hover-tooltip.ts) to park any live `title` on the control so
+	// WKWebView does not add its native tooltip beside this popover. The
+	// parked string is restored on pointer leave. UI-only. Copy must match
+	// audio-engine.
 	import { onDestroy, onMount, tick } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { placeFloating, type Size } from '$lib/ui/clamp-to-viewport';
@@ -42,6 +38,10 @@
 		placement = 'auto',
 		showDelayMs = 0,
 		pinOnClick = false,
+		compact = false,
+		disabled = false,
+		programmaticOpen = false,
+		onProgrammaticClose = undefined,
 		dismiss = undefined,
 		children
 	}: {
@@ -70,6 +70,13 @@
 		/** Click pins the popover open until Escape or an outside click. Native
 		 * selects in the action slot need this; hover-only would close them. */
 		pinOnClick?: boolean;
+		/** Small one-line help, used by the I/O entry before the settings panel opens. */
+		compact?: boolean;
+		/** Suppress hover help while the control's separate persistent panel is open. */
+		disabled?: boolean;
+		/** Parent-driven pin (e.g. bottom-tray I/O entry). Opens and pins until dismissed. */
+		programmaticOpen?: boolean;
+		onProgrammaticClose?: (() => void) | undefined;
 		/**
 		 * `instant`: informational, click-through, closes the moment the pointer
 		 * leaves the trigger so it never blocks the control underneath; an action
@@ -89,7 +96,10 @@
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
+	const hasRich: boolean = $derived(!disabled && (bullets.length > 0 || warning !== null || action !== null || demo !== null));
+	$effect(() => {
+		if (disabled) _close();
+	});
 	const dismissMode: ExplainerDismiss = $derived(resolveExplainerDismiss(dismiss, action !== null));
 	const showAction: boolean = $derived(explainerShowsAction(dismissMode, action !== null, pinned));
 	const popInteractive: boolean = $derived(explainerPopInteractive(dismissMode, pinned));
@@ -132,7 +142,7 @@
 	}
 
 	function _placeFromPop(): void {
-		if (popEl === undefined) return;
+		if (popEl == null) return;
 		const width = popEl.offsetWidth;
 		const height = popEl.offsetHeight;
 		if (width <= 0 || height <= 0) return;
@@ -165,8 +175,10 @@
 		hideTimer = undefined;
 		if (showTimer !== undefined) clearTimeout(showTimer);
 		showTimer = undefined;
+		const wasProgrammatic = pinned && programmaticOpen;
 		pinned = false;
 		open = false;
+		if (wasProgrammatic) onProgrammaticClose?.();
 	}
 
 	function _hide(event: FocusEvent | PointerEvent): void {
@@ -230,7 +242,19 @@
 	onDestroy(_close);
 
 	$effect(() => {
-		if (!open || popEl === undefined) return;
+		// The parent unpinned it (openMidiDrawer -> closeIoView): close here too.
+		// Writes only, not _close(): no second onProgrammaticClose, and no read
+		// that would rerun this on a hover or click pin and close that as well.
+		if (!programmaticOpen) {
+			pinned = open = false;
+			return;
+		}
+		pinned = true;
+		void _openNow();
+	});
+
+	$effect(() => {
+		if (!open || popEl == null) return;
 		_placeFromPop();
 		const ro = new ResizeObserver(() => _placeFromPop());
 		ro.observe(popEl);
@@ -248,6 +272,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	class="explainer"
+	data-custom-tip={hasRich ? '' : undefined}
 	bind:this={wrapEl}
 	onpointerenter={_show}
 	onpointerleave={_hide}
@@ -262,11 +287,12 @@
 			class="pop"
 			class:has-action={showAction}
 			class:click-through={!popInteractive}
+			class:compact
 			data-dismiss={dismissMode}
 			bind:this={popEl}
 			style={popStyle}
 			role={showAction ? 'dialog' : 'tooltip'}
-			aria-label={showAction ? title : undefined}
+			aria-label={title}
 			onpointerenter={_show}
 			onpointerleave={_hide}
 		>
@@ -333,8 +359,17 @@
 						<circle cx="24" cy="24" r="10" class="mix-cap" />
 						<line x1="24" y1="24" x2="24" y2="14" class="mix-pointer" />
 					</g>
-					<path d="M44 30 L72 30" class="hp-path cue-path" />
-					<path d="M44 18 L72 18" class="hp-path master-path" />
+					<!-- pin b90e675a: each route is an arrow that scales from its
+					     tail with the knob turn, so the cue arrow shrinks as the
+					     master arrow grows. -->
+					<g class="hp-arrow cue-arrow">
+						<path d="M44 30 L67 30" class="hp-path cue-path" />
+						<path d="M66 26.5 L72 30 L66 33.5 Z" class="hp-head cue-head" />
+					</g>
+					<g class="hp-arrow master-arrow">
+						<path d="M44 18 L67 18" class="hp-path master-path" />
+						<path d="M66 14.5 L72 18 L66 21.5 Z" class="hp-head master-head" />
+					</g>
 					<circle cx="44" cy="30" r="2.5" class="hp-dot cue-dot" />
 					<text x="76" y="22" class="label">M</text>
 					<text x="76" y="34" class="label">C</text>
@@ -411,6 +446,18 @@
 	}
 	.pop.has-action {
 		max-width: 280px;
+	}
+	.pop.compact {
+		max-width: 185px;
+		padding: 5px 7px;
+		font-size: 9px;
+	}
+	.pop.compact .head {
+		display: none;
+	}
+	.pop.compact ul {
+		list-style: none;
+		padding: 0;
 	}
 	.head {
 		margin: 0 0 4px;
@@ -576,6 +623,25 @@
 	.master-path {
 		stroke: var(--rb-accent);
 	}
+	.cue-head {
+		fill: var(--rb-orange);
+	}
+	.master-head {
+		fill: var(--rb-accent);
+	}
+	.hp-arrow {
+		will-change: transform;
+	}
+	/* Same duration and easing as mix-knob-turn: the knob sits at its CUE end
+	   at 0/100% and its MASTER end at 50%. */
+	.cue-arrow {
+		transform-origin: 44px 30px;
+		animation: hp-arrow-cue 3s ease-in-out infinite;
+	}
+	.master-arrow {
+		transform-origin: 44px 18px;
+		animation: hp-arrow-master 3s ease-in-out infinite;
+	}
 	.hp-dot {
 		fill: var(--rb-orange);
 		animation: hp-route-dot 3s ease-in-out infinite;
@@ -638,6 +704,24 @@
 		}
 		50% {
 			transform: rotate(45deg);
+		}
+	}
+	@keyframes hp-arrow-cue {
+		0%,
+		100% {
+			transform: scale(1);
+		}
+		50% {
+			transform: scale(0.4);
+		}
+	}
+	@keyframes hp-arrow-master {
+		0%,
+		100% {
+			transform: scale(0.4);
+		}
+		50% {
+			transform: scale(1);
 		}
 	}
 	@keyframes hp-route-dot {

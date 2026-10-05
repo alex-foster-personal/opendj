@@ -54,9 +54,17 @@ function _proposedPosition(
 	}
 }
 
-/** Overflow along the placement's OWN axis. The cross axis never decides a
- * flip: the clamp fixes it by sliding, without moving the box onto its trigger. */
-function _overflows(
+/**
+ * Whether a box at pos crosses the inset viewport along the axis that
+ * `placement` moves it on. Only that axis can be fixed by flipping to the
+ * opposite side; the cross axis is clampToViewport's job, so it must not veto
+ * a flip. It used to: a trigger in the bottom-right corner whose tile
+ * overflowed the right edge had its flip to `above` refused for that sideways
+ * overflow, stayed `below`, and was clamped up over its own trigger, where the
+ * tile swallowed the trigger's clicks (the app-shell comment-pin button in the
+ * feedback dock, PR #4094).
+ */
+function _overflowsMainAxis(
 	pos: FloatingBox,
 	size: Size,
 	viewport: ViewportSize,
@@ -104,9 +112,9 @@ export function placeFloating(input: {
 	} = input;
 
 	let pos = _proposedPosition(trigger, size, preferred, gap);
-	if (_overflows(pos, size, viewport, margin, preferred)) {
+	if (_overflowsMainAxis(pos, size, viewport, margin, preferred)) {
 		const flipped = _proposedPosition(trigger, size, OPPOSITE[preferred], gap);
-		if (!_overflows(flipped, size, viewport, margin, OPPOSITE[preferred])) {
+		if (!_overflowsMainAxis(flipped, size, viewport, margin, OPPOSITE[preferred])) {
 			pos = flipped;
 		}
 	}
@@ -166,6 +174,62 @@ export function triggerFloatingAction(
 			ro.disconnect();
 			window.removeEventListener('resize', onViewportChange);
 			window.removeEventListener('scroll', onViewportChange, true);
+		}
+	};
+}
+
+export interface PointFloatingOptions {
+	/** Requested top-left, usually the pointer position that opened the surface. */
+	x: number;
+	y: number;
+}
+
+/**
+ * Keep a fixed node's full box inside the viewport, anchored at a point, for
+ * EVERY size the node takes - not only its first one.
+ *
+ * A menu that opens on a "Loading..." row and then fills with its real items
+ * grows after its first placement. Clamping once against the loading size
+ * left the grown menu hanging below the viewport bottom (Show in playlists
+ * opened near the bottom of the track list put its third item at y=736 in a
+ * 720px window, where nothing can click it; a fixed node cannot be scrolled
+ * into view). Re-clamping from the ORIGINAL point on every resize also lets a
+ * menu that shrinks back return to the requested point rather than stay
+ * pushed up.
+ */
+export function pointFloatingAction(
+	node: HTMLElement,
+	options: PointFloatingOptions
+): { update: (next: PointFloatingOptions) => void; destroy: () => void } {
+	let config = options;
+
+	function place(): void {
+		const width = node.offsetWidth;
+		const height = node.offsetHeight;
+		if (width <= 0 || height <= 0) return;
+		const box = clampToViewport(
+			config.x,
+			config.y,
+			{ width, height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		node.style.left = `${Math.round(box.x)}px`;
+		node.style.top = `${Math.round(box.y)}px`;
+	}
+
+	const ro = new ResizeObserver(() => place());
+	ro.observe(node);
+	window.addEventListener('resize', place);
+	place();
+
+	return {
+		update(next: PointFloatingOptions): void {
+			config = next;
+			place();
+		},
+		destroy(): void {
+			ro.disconnect();
+			window.removeEventListener('resize', place);
 		}
 	};
 }

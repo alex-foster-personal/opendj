@@ -133,66 +133,32 @@ test('LibraryLoadIndicator keeps an honest visible track for determinate and ind
 });
 
 // pin 02717d4ea496: "loading bug - appears above col titles". The indicator
-// was a plain sibling rendered immediately before <TrackTable>, so it sat
-// above the column-header row and pushed it down the page while a load was in
-// flight. It is now handed to TrackTable's `bodyOverlay` slot, which pins it
-// inside the table region below the sticky headers.
+// was a CONDITIONAL sibling rendered before <TrackTable>, so it pushed the
+// column-header row down the page for the length of every load. The fix at
+// the time moved it into TrackTable's `bodyOverlay` slot, which stopped the
+// headers moving but painted the indicator over the first track rows (pins
+// 1f9711b7, dd5fad7f, e452be6b). It is now a reserved, always-present strip:
+// see pin-1f9711b7-library-load-reserved-strip.test.mjs for that contract.
 //
-// - if BrowserPanel renders <LibraryLoadIndicator> as a bare sibling of
-//   <TrackTable> again then the headers move on every load -> broken.
-// - if TrackTable positions the overlay with a hardcoded offset instead of the
-//   measured header height then a density change drifts it into or away from
-//   the headers -> broken.
-// - if the overlay is not pointer-events: none then it swallows clicks meant
-//   for the rows underneath it -> broken.
-// - if an unmeasured overlay paints anyway then the first frame of a pane that
-//   is already loading at mount lands it ON the sticky header -> broken.
-test('the library load indicator is pinned inside the table, below the column headers', () => {
-	const panel = stripComments(readFileSync(browserPanelPath, 'utf8'));
-	const table = stripComments(readFileSync(path.join(componentsDir, 'TrackTable.svelte'), 'utf8'));
-
-	assert.match(
-		panel,
-		/\{#snippet\s+libraryLoadOverlay\(\)\}[\s\S]*?<LibraryLoadIndicator[\s\S]*?\{\/snippet\}/,
-		'the indicator must be rendered through a snippet, not as a sibling above the table'
+// What this pin still owns is its original complaint: the headers must not
+// move when a load starts or ends.
+//
+// - if the strip root is rendered only while loading then the headers move on
+//   every load, which is the original bug -> broken.
+test('the library load strip never moves the column headers', () => {
+	const src = stripComments(
+		readFileSync(path.join(componentsDir, 'LibraryLoadIndicator.svelte'), 'utf8')
 	);
-	// Deliberately not anchored to attribute ORDER: a cosmetic reorder of the
-	// props is not a regression in the wiring (blinded review, PR #1672).
+	const markup = src.slice(src.indexOf('</script>'), src.indexOf('<style>'));
 	assert.match(
-		panel,
-		/<TrackTable[\s\S]*?bodyOverlay=\{libraryLoadOverlay\}/,
-		'that snippet must be handed to TrackTable as its bodyOverlay'
-	);
-	assert.ok(
-		!/<LibraryLoadIndicator[^>]*\/>\s*<TrackTable/.test(panel),
-		'the indicator must no longer render immediately before <TrackTable>'
+		markup,
+		/^<\/script>\s*<div class="lli-root"[^>]*>\s*\{#if /,
+		'the strip root must be unconditional, with the conditional INSIDE it'
 	);
 	assert.match(
-		table,
-		/<thead bind:clientHeight=\{theadHeightPx\}>/,
-		'the overlay offset must be the MEASURED header height, not a constant'
-	);
-	// Whitespace/order tolerant for the same reason as the TrackTable match
-	// above: reformatting the attribute list is not a regression.
-	assert.match(
-		table,
-		/class="tt-body-overlay"[\s\S]{0,240}?style=\{`top:\$\{theadHeightPx\}px`\}/,
-		'the overlay must be positioned at the measured header height'
-	);
-	assert.match(
-		table,
-		/class:measured=\{theadHeightPx > 0\}/,
-		'the overlay must carry whether the header height has been measured yet'
-	);
-	assert.match(
-		table,
-		/\.tt-body-overlay \{[\s\S]*?visibility: hidden;[\s\S]*?\}\s*\.tt-body-overlay\.measured \{[\s\S]*?visibility: visible;/,
-		'an unmeasured overlay must stay invisible rather than paint over the header'
-	);
-	assert.match(
-		table,
-		/\.tt-body-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\}/,
-		'the overlay must not swallow clicks meant for the rows underneath'
+		src,
+		/\.lli-root \{[\s\S]*?height: var\(--lli-strip-h\);/,
+		'the strip must hold one fixed height whether or not a load is in flight'
 	);
 });
 

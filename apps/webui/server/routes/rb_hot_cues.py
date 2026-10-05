@@ -1,7 +1,10 @@
-"""Hot-cue SAVE/CLEAR write endpoints -- the edit-write-path lane's first
-consumer of the rb_vendor.py write surface (djmdCue Kind 1-8 only; see
-:func:`apps.webui.server.rb_vendor.save_hot_cue` for the Kind 9-11
-rationale -- this router never exposes slots beyond H).
+"""Hot-cue SAVE/CLEAR/RESTORE endpoints over Open DJ's own cue store (CUES-01).
+
+Cues live in ``state.db`` (``apps/shared/state/cue_store.py``), not in
+rekordbox's ``djmdCue``, so every track can keep cues, rekordbox-mapped or
+not. A track whose cues were never copied in falls back to its rekordbox cues
+for reads, and its first edit seeds the own set from them. Nothing here writes
+to rekordbox; write-back is the separate write-back-rekordbox-djay node.
 
 Contract:
 
@@ -24,16 +27,24 @@ alongside the existing rb_assets router (same ``/tracks`` prefix)::
 """
 from __future__ import annotations
 
-from typing import Any, Literal
+import sqlite3
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.shared.events import publish
+from apps.shared.state import cue_store
+from apps.shared.state import db as state_db
+from apps.shared.state.sync_stamp import canonical_now
+from apps.shared.state.writer import StateWriter
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_write_state
+from ..deps import get_read_state, get_write_state
 
 router = APIRouter(prefix="/tracks", tags=["rb-hot-cues"])
 
@@ -119,21 +130,108 @@ def _mutation_response(result: dict[str, Any], response: Response) -> HotCueMuta
     return HotCueMutationOut(**{**result, "revision": revision})
 
 
+def _raise_store_error(exc: cue_store.CueStoreError) -> NoReturn:
+    headers = (
+        {"ETag": exc.current_revision} if exc.current_revision is not None else None
+    )
+    raise HTTPException(status_code=exc.status, detail=exc.detail(), headers=headers) from exc
+
+
+def _state_db_path(request: Request) -> Path:
+    path = getattr(request.app.state, "state_db_path", None)
+    return Path(path) if path is not None else rb_config.STATE_DB
+
+
+def _rekordbox_content(stable_id: str) -> rb_vendor.RbContent | None:
+    """The track's rekordbox row, ``None`` when it has no mapping.
+
+    Raises 404 ``TRACK_NOT_FOUND`` for an unknown or removed track, exactly as
+    the rekordbox-only surface did. ``MASTER_DB_UNAVAILABLE`` (no rekordbox
+    database on this machine, e.g. a CloudSync-delivered mapping) means no
+    vendor cues, not an error: own cues never need rekordbox. The track check
+    runs before the master DB is opened, so an unknown track is still a 404.
+    """
+    try:
+        return rb_vendor.resolve_content(stable_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") not in ("VENDOR_MAPPING_NOT_FOUND", "MASTER_DB_UNAVAILABLE"):
+            raise
+        return None
+
+
+def _vendor_cues(content: rb_vendor.RbContent | None) -> cue_store.VendorCues:
+    """The rekordbox cues a track with no own row falls back to (and seeds from)."""
+    if content is None:
+        return list
+    vendor_id = content.vendor_id
+    return lambda: rb_vendor.fetch_cues(vendor_id)
+
+
+def _duration_ms(conn: sqlite3.Connection, stable_id: str, content: Any) -> int | None:
+    row = conn.execute(
+        "SELECT duration_ms FROM tracks WHERE stable_id = ? AND deleted_at IS NULL", (stable_id,)
+    ).fetchone()
+    # 0 is how an unanalyzed import records "length unknown", not a real
+    # length: bounding by it would refuse every cue on the track.
+    if row is not None and row[0]:
+        return int(row[0])
+    length_s = getattr(content, "length_s", None)
+    return int(length_s) * 1000 if length_s is not None else None
+
+
+def _write_op(
+    request: Request,
+    stable_id: str,
+    op: Callable[[sqlite3.Connection, cue_store.StoredCues, Any, cue_store.WriteBlob], dict[str, Any]],
+) -> dict[str, Any]:
+    """Run one read-modify-write of the track's cue set under BEGIN IMMEDIATE."""
+    content = _rekordbox_content(stable_id)
+    conn = state_db.open_rw(_state_db_path(request))
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        with StateWriter(conn, actor="webui") as writer:
+            state = cue_store.load(conn, stable_id, _vendor_cues(content))
+
+            def write(blob: dict[str, Any]) -> None:
+                writer.set_field(
+                    stable_id,
+                    cue_store.CUE_FIELD,
+                    blob,
+                    source=cue_store.OWN_SOURCE,
+                    modified_at=canonical_now(),
+                )
+
+            result = op(conn, state, content, write)
+        conn.commit()
+    except cue_store.CueStoreError as exc:
+        conn.rollback()
+        _raise_store_error(exc)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
+    return result
+
+
 @router.get("/{stable_id}/hot-cues", response_model=list[HotCueSlotOut])
 def list_hot_cue_slots(
     stable_id: str,
-    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+    request: Request,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> list[HotCueSlotOut]:
+    content = _rekordbox_content(stable_id)
+    conn = state_db.open_ro(_state_db_path(request))
     try:
-        content = rb_vendor.resolve_content(stable_id)
-        slots = rb_vendor.fetch_hot_cue_slots(content.vendor_id)
-    except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
-            raise
-        # Locally imported track (no rekordbox mapping): eight empty slots so
-        # the deck-load path gets a non-null list instead of a 404.
-        slots = rb_vendor.empty_hot_cue_slots()
+        state = cue_store.load(conn, stable_id, _vendor_cues(content))
+    finally:
+        conn.close()
+    try:
+        slots = cue_store.hot_cue_slots(state)
+    except cue_store.CueStoreError as exc:
+        _raise_store_error(exc)
     return [HotCueSlotOut(**slot) for slot in slots]
 
 
@@ -147,21 +245,26 @@ def save_hot_cue(
     stable_id: str,
     slot: HotCueSlot,
     body: HotCueSaveIn,
+    request: Request,
     response: Response,
     if_match: str = Depends(_require_if_match),
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> HotCueMutationOut:
-    content = rb_vendor.resolve_content(stable_id)
-    row = rb_vendor.save_hot_cue(
-        content.vendor_id,
-        slot,
-        body.in_ms,
-        expected_revision=if_match,
-        comment=body.comment,
-        color_table_index=body.color_table_index,
+    result = _write_op(
+        request,
+        stable_id,
+        lambda conn, state, content, write: cue_store.save_hot_cue(
+            state,
+            slot,
+            body.in_ms,
+            expected_revision=if_match,
+            comment=body.comment,
+            color_table_index=body.color_table_index,
+            duration_ms=_duration_ms(conn, stable_id, content),
+            write=write,
+        ),
     )
-    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
-    return _mutation_response(row, response)
+    return _mutation_response(result, response)
 
 
 @router.delete(
@@ -173,15 +276,18 @@ def save_hot_cue(
 def clear_hot_cue(
     stable_id: str,
     slot: HotCueSlot,
+    request: Request,
     response: Response,
     if_match: str = Depends(_require_if_match),
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> HotCueMutationOut:
-    content = rb_vendor.resolve_content(stable_id)
-    result = rb_vendor.clear_hot_cue(
-        content.vendor_id, slot, expected_revision=if_match,
+    result = _write_op(
+        request,
+        stable_id,
+        lambda _conn, state, _content, write: cue_store.clear_hot_cue(
+            state, slot, expected_revision=if_match, write=write
+        ),
     )
-    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
     return _mutation_response(result, response)
 
 
@@ -195,19 +301,23 @@ def restore_hot_cue(
     stable_id: str,
     slot: HotCueSlot,
     body: HotCueRestoreIn,
+    request: Request,
     response: Response,
     if_match: str = Depends(_require_if_match),
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> HotCueMutationOut:
-    content = rb_vendor.resolve_content(stable_id)
-    result = rb_vendor.restore_hot_cue(
-        content.vendor_id,
-        slot,
-        expected_revision=if_match,
-        reversal_id=body.reversal_id,
+    result = _write_op(
+        request,
+        stable_id,
+        lambda _conn, state, _content, write: cue_store.restore_hot_cue(
+            state,
+            slot,
+            expected_revision=if_match,
+            reversal_id=body.reversal_id,
+            write=write,
+        ),
     )
-    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
     return _mutation_response(result, response)
 
 
-__all__ = ["router", "HotCueSaveIn", "AnlzCueOut", "HotCueMutationOut", "HotCueSlotOut"]
+__all__ = ["AnlzCueOut", "HotCueMutationOut", "HotCueSaveIn", "HotCueSlotOut", "router"]

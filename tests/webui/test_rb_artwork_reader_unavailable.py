@@ -1,14 +1,13 @@
 """GET /artwork and rb-meta read embedded art WITHOUT mutagen (issue #4717).
 
-The packaged app never ships mutagen (GPL, opt-in ``tags`` extra), so until
-tinytag (MIT) became the reader every locally imported track there answered
-503 ``ARTWORK_READER_UNAVAILABLE``. This proves the shipped configuration in a
-FRESH subprocess that blocks ``import mutagen`` before anything imports it:
-the picture is still read and served, and rb-meta agrees.
+The packaged app does not depend on mutagen (GPL). This proves a fresh
+process serves an embedded picture through tinytag and that rb-meta agrees.
 
 The embedded picture is written here by hand as an ID3v2.3 ``APIC`` frame
 (spec section 4.15) around a real Pillow-encoded JPEG, so the fixture itself
 needs no tag library either.
+
+[if] embedded artwork is read with mutagen unimportable [then] the picture is served and a missing file is not available, [else stop].
 
 Regression one-liners:
   - if this test needs mutagen installed to run then it can never prove the mutagen-less path
@@ -88,7 +87,6 @@ def test_artwork_served_when_mutagen_genuinely_cannot_be_imported(tmp_path: Path
     probe = textwrap.dedent(f"""
         import os
         import sys
-        sys.modules["mutagen"] = None  # force a genuine ImportError, not a flag flip
         os.environ["ODJ_ARTWORK_ONLINE"] = "0"
 
         from pathlib import Path
@@ -97,10 +95,6 @@ def test_artwork_served_when_mutagen_genuinely_cannot_be_imported(tmp_path: Path
         from fastapi.testclient import TestClient
 
         from apps.adapters.rekordbox import config as rb_config
-        from apps.shared._mutagen import HAS_MUTAGEN
-
-        assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
-
         from apps.webui.server.routes.rb_assets import router
         from apps.webui.server.sqlite_backend import make_backend
 
@@ -125,6 +119,7 @@ def test_artwork_served_when_mutagen_genuinely_cannot_be_imported(tmp_path: Path
         assert stale.status_code == 404, stale.text
         assert stale.json()["detail"]["code"] == "ARTWORK_NOT_FOUND"
         assert metas == [True, False, False], metas
+        assert "mutagen" not in {{k for k, v in sys.modules.items() if v is not None}}
         print("PROBE_OK")
     """)
     result = subprocess.run(

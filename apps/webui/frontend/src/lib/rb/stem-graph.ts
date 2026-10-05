@@ -13,8 +13,12 @@
  *     [if] any group is soloed [then] non-solo groups gain 0; mute wins
  */
 
-import { decodeStemParts, stemDecodeLabels } from '$lib/player/decode/flac-stem-decode';
-import { awaitEagerStemDecodeSlot } from '$lib/rb/stem-decode-shed';
+import {
+	decodeStemParts,
+	stemDecodeLabels,
+	stemDecodeWidth
+} from '$lib/player/decode/flac-stem-decode';
+import { awaitEagerStemDecodeSlot, eagerStemDecodeIsLive } from '$lib/rb/stem-decode-shed';
 import { assertUnitRange, stemLinearFromKnob } from '$lib/player/constants';
 import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
 import {
@@ -27,10 +31,13 @@ import type {
 	StemControl,
 	StemControlState,
 	StemDeckState,
+	StemLoadDetail,
 	StemLayout
 } from '$lib/rb/stem-types';
+import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
+import type { PcmHandoff } from '$lib/rb/stretch-pcm-handoff';
 
-export const STEM_CONTROLS: readonly StemControl[] = ['vocal', 'instrumental', 'drums'];
+export const STEM_CONTROLS = STEM_CONTROL_IDS;
 export const DEMUCS_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
 export type DemucsPart = (typeof DEMUCS_PARTS)[number];
 
@@ -51,7 +58,7 @@ export const STEM_LAYOUT_PARTS: Record<StemLayout, readonly StemPart[]> = {
  * here could only ever do nothing, and a button that does nothing is worse
  * than a button that is visibly unavailable. */
 export const STEM_LAYOUT_CONTROLS: Record<StemLayout, readonly StemControl[]> = {
-	demucs4: ['vocal', 'instrumental', 'drums'],
+	demucs4: STEM_CONTROL_IDS,
 	roformer2: ['vocal', 'instrumental']
 };
 
@@ -94,20 +101,45 @@ function _exactKeys(name: string, value: object, keys: readonly string[]): void 
 export async function decodeStemBuffers(
 	ctx: BaseAudioContext,
 	encoded: Partial<Record<StemPart, ArrayBuffer>>,
-	parts: readonly StemPart[]
+	parts: readonly StemPart[],
+	hooks: { deck?: number; stale?: () => boolean; onDeferred?: () => void; onStart?: () => void } = {}
 ): Promise<{ buffers: StemBuffers; labels: Record<string, string> }> {
 	// PERFMODE-04 (eager-stem-decode): the deck is already playable on its mix
 	// buffer at this point, so yielding here under pressure never blocks audio.
-	await awaitEagerStemDecodeSlot();
-	const decoded = await decodeStemParts(ctx, encoded, parts);
-	return { buffers: decoded.buffers, labels: stemDecodeLabels(decoded.reports) };
+	// STEM-47: the hold is bounded and named on the deck (`onDeferred`).
+	const waitStartedMs = performance.now();
+	const decodeStart = await awaitEagerStemDecodeSlot({
+		...(hooks.deck === undefined ? {} : { deck: hooks.deck }),
+		...(hooks.stale === undefined ? {} : { stale: hooks.stale }),
+		...(hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred })
+	});
+	const decodeWaitMs = Math.round(performance.now() - waitStartedMs);
+	// A hold can outlive its load (the deck loaded another track): the bound or
+	// the shed still ends the wait, and the decode must not run for nothing.
+	if (hooks.stale?.() === true) throw new Error('stem decode: the load it belongs to is gone');
+	hooks.onStart?.();
+	// PERF-STEMDEC-04: one part at a time while a deck is audible, read per part.
+	const decoded = await decodeStemParts(ctx, encoded, parts, {
+		width: () => stemDecodeWidth(parts.length, eagerStemDecodeIsLive())
+	});
+	return {
+		buffers: decoded.buffers,
+		labels: {
+			...stemDecodeLabels(decoded.reports),
+			decode_width: String(decoded.width),
+			decode_start: decodeStart,
+			decode_wait_ms: String(decodeWaitMs)
+		}
+	};
 }
 
 export function createDefaultStemControls(): StemControls {
 	return {
 		vocal: { muted: false, solo: false, gain: 0.5 },
 		instrumental: { muted: false, solo: false, gain: 0.5 },
-		drums: { muted: false, solo: false, gain: 0.5 }
+		drums: { muted: false, solo: false, gain: 0.5 },
+		bass: { muted: false, solo: false, gain: 0.5 },
+		other: { muted: false, solo: false, gain: 0.5 }
 	};
 }
 
@@ -120,7 +152,8 @@ export function unavailableStemDeckState(error: string | null = null): StemDeckS
 		available_controls: [],
 		alignment: null,
 		controls: createDefaultStemControls(),
-		error
+		error,
+		load: null
 	};
 }
 
@@ -129,7 +162,9 @@ export function unavailableStemDeckState(error: string | null = null): StemDeckS
  * answer (this track has no bundle), `loading` is "not settled yet", and only
  * the second one justifies an on-deck spinner. Controls stay empty so a stem
  * button cannot be armed against a processor that has not arrived. */
-export function loadingStemDeckState(): StemDeckState {
+export function loadingStemDeckState(
+	load: StemLoadDetail = { phase: 'probing', progress: null, reason: null }
+): StemDeckState {
 	return {
 		status: 'loading',
 		source: null,
@@ -138,7 +173,8 @@ export function loadingStemDeckState(): StemDeckState {
 		available_controls: [],
 		alignment: null,
 		controls: createDefaultStemControls(),
-		error: null
+		error: null,
+		load: { ...load, progress: load.progress === null ? null : { ...load.progress } }
 	};
 }
 
@@ -154,7 +190,8 @@ export function readyStemDeckState(
 		available_controls: [...STEM_LAYOUT_CONTROLS[identity.layout]],
 		alignment: { ...alignment },
 		controls: createDefaultStemControls(),
-		error: null
+		error: null,
+		load: null
 	};
 }
 
@@ -186,10 +223,11 @@ export function stemPartGains(
 	// -- a control the layout cannot drive must not be able to mute the deck.
 	const owned = STEM_LAYOUT_CONTROLS[layout];
 	const anySolo = owned.some((stem) => controls[stem].solo);
-	const gain = (stem: StemControl): number => {
+	const gain = (stem: StemControl, parent?: StemControl): number => {
 		const state = controls[stem];
-		const gate = !state.muted && (!anySolo || state.solo) ? 1 : 0;
-		return gate * stemLinearFromKnob(state.gain);
+		const group = parent === undefined ? undefined : controls[parent];
+		const gate = !state.muted && !group?.muted && (!anySolo || state.solo || group?.solo) ? 1 : 0;
+		return gate * stemLinearFromKnob(state.gain) * (group === undefined ? 1 : stemLinearFromKnob(group.gain));
 	};
 	if (layout === 'roformer2') {
 		return { vocals: gain('vocal'), instrumental: gain('instrumental') };
@@ -197,9 +235,21 @@ export function stemPartGains(
 	return {
 		vocals: gain('vocal'),
 		drums: gain('drums'),
-		bass: gain('instrumental'),
-		other: gain('instrumental')
+		bass: gain('bass', 'instrumental'),
+		other: gain('other', 'instrumental')
 	};
+}
+
+/** Intentional zero gains are not a dropout. Every transporting deck must
+ * have a ready graph with every real branch gated off; an unavailable graph
+ * or a different live deck keeps the normal output watchdog armed. */
+export function playingStemsIntentionallySilent(
+	decks: readonly { playing: boolean; audible: boolean; transport_pending: boolean; stems: StemDeckState }[]
+): boolean {
+	const live = decks.filter((deck) => deck.playing || deck.audible || deck.transport_pending);
+	return live.length > 0 && live.every(({ stems }) =>
+		stems.status === 'ready' && stems.layout !== null &&
+		Object.values(stemPartGains(stems.controls, stems.layout)).every((gain) => gain === 0));
 }
 
 export function validateStemBufferAlignment(buffers: StemBuffers): StemAlignment {
@@ -312,16 +362,20 @@ export class AlignedStemDeckProcessor {
 		context: AudioContext,
 		buffers: StemBuffers,
 		options: StretchAdapterOptions
-	): Promise<{ processor: AlignedStemDeckProcessor; alignment: StemAlignment }> {
+	): Promise<{ processor: AlignedStemDeckProcessor; alignment: StemAlignment; pcmHandoff: PcmHandoff }> {
 		const alignment = validateStemBufferAlignment(buffers);
 		const layout = layoutOfBuffers(buffers);
 		const parts = STEM_LAYOUT_PARTS[layout];
 		const processors: Partial<Record<StemPart, StretchDeckProcessor>> = {};
 		const gains: Partial<Record<StemPart, GainNode>> = {};
+		const handoffs: PcmHandoff[] = [];
 		try {
 			for (const part of parts) {
 				const processor = await StretchDeckProcessor.create(context, options);
-				await processor.load(buffers[part] as AudioBuffer);
+				// PERF-STEMDEC-05: `buffers` is CONSUMED. Nothing reads a stem
+				// AudioBuffer after its processor holds the PCM, so the channels
+				// move instead of being copied on the main thread.
+				handoffs.push(await processor.load(buffers[part] as AudioBuffer, 'transfer'));
 				processors[part] = processor;
 				const gain = context.createGain();
 				gain.gain.value = 1;
@@ -355,7 +409,8 @@ export class AlignedStemDeckProcessor {
 				processor: new AlignedStemDeckProcessor(
 					context, processors, gains, latencySec, layout
 				),
-				alignment
+				alignment,
+				pcmHandoff: handoffs.every((handoff) => handoff === 'transfer') ? 'transfer' : 'copy'
 			};
 		} catch (error) {
 			const cleanupFailures: unknown[] = [];
@@ -462,7 +517,9 @@ export class AlignedStemDeckProcessor {
 		this.#controls = {
 			vocal: { ...controls.vocal },
 			instrumental: { ...controls.instrumental },
-			drums: { ...controls.drums }
+			drums: { ...controls.drums },
+			bass: { ...controls.bass },
+			other: { ...controls.other }
 		};
 	}
 
@@ -470,7 +527,9 @@ export class AlignedStemDeckProcessor {
 		return {
 			vocal: { ...this.#controls.vocal },
 			instrumental: { ...this.#controls.instrumental },
-			drums: { ...this.#controls.drums }
+			drums: { ...this.#controls.drums },
+			bass: { ...this.#controls.bass },
+			other: { ...this.#controls.other }
 		};
 	}
 }

@@ -97,11 +97,14 @@ test.describe('comment pin on Audio I/O modal', () => {
 			.toMatch(/hp-menu|hp-device|master output device/i);
 	});
 
-	test('an ordinary click outside the open I/O menu (not pin chrome) still closes it', async ({
+	test('an ordinary click outside the open I/O panel (not pin chrome) neither closes it nor arms a pin; Esc does close it', async ({
 		page
 	}) => {
-		// Opposite-direction control for the pin-arm exemption: only pin chrome
-		// may keep the pinned I/O menu open; any other outside press closes it.
+		// IOPIN-03 (#3837) made I/O a separate persistent panel dismissed by X or
+		// Esc, replacing the pinned explainer menu this test was written for
+		// (#3888), which closed on any outside press. What still holds from the
+		// original control: an ordinary outside press is not pin chrome, so it
+		// must not arm placement, and the panel still has a real dismissal.
 		const ioButton = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
 		await ioButton.click({ timeout: 5_000 });
 		const masterSelect = page.getByLabel('master output device');
@@ -124,7 +127,7 @@ test.describe('comment pin on Audio I/O modal', () => {
 				const el = document.elementFromPoint(x, y);
 				return {
 					pinChrome: el?.closest('.fb-place-skip, .fb-pin, .fb-cluster') != null,
-					inMenu: el?.closest('.hp-menu, .explainer') != null
+					inMenu: el?.closest('.hp-panel, .hp-menu, .explainer') != null
 				};
 			},
 			spot!
@@ -132,8 +135,11 @@ test.describe('comment pin on Audio I/O modal', () => {
 		expect(hit).toEqual({ pinChrome: false, inMenu: false });
 
 		await page.mouse.click(spot!.x, spot!.y);
-		await expect(masterSelect).toHaveCount(0);
+		await expect(masterSelect).toBeVisible();
 		expect((await readFeedbackState(page)).placementArmed).toBe(false);
+
+		await page.keyboard.press('Escape');
+		await expect(masterSelect).toHaveCount(0);
 	});
 
 	test('placement on open Settings overlay anchors inside the dialog, not main chrome', async ({

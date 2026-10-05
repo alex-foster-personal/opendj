@@ -1,8 +1,10 @@
 /**
  * Comment pin board draw rules (issue #3782, FB-15).
  *
- * Pixel position (x_pct/y_pct) is canonical. Anchor and page are diagnostic;
- * mismatches surface badges instead of hiding or moving the pin.
+ * Pixel position (x_pct/y_pct) is canonical. The anchor is diagnostic: a
+ * mismatch surfaces a badge instead of hiding or moving the pin. The page is
+ * a draw rule (pin 4860c440): a pin is drawn only on the route it was placed
+ * on, see isPinOnPage.
  */
 
 import { describeAnchor, pinStatus, type AnchorishElement, type LifecyclePin } from "./feedback";
@@ -30,6 +32,22 @@ export function isPinRegressed(pin: LifecyclePin): boolean {
 
 export function isRouteMoved(pin: LifecyclePin, pathname: string): boolean {
   return pin.page !== pathname;
+}
+
+function _routeKey(pathname: string): string {
+  // The router ignores trailing slashes (routes/+layout.ts), so `/x` and
+  // `/x/` are one page.
+  return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+/** True when the pin belongs on the current route (pin 4860c440). A pin's
+ * x_pct/y_pct only mean something against the page it was placed on, so the
+ * global layer draws it there and nowhere else. A pin with no recorded page
+ * cannot be attributed to any route; it is drawn everywhere, because hiding
+ * it everywhere would lose the feedback silently. */
+export function isPinOnPage(pin: LifecyclePin, pathname: string): boolean {
+  if (pin.page === undefined || pin.page === "") return true;
+  return _routeKey(pin.page) === _routeKey(pathname);
 }
 
 /** Browser-only: re-resolve anchor at stored pixel position. */

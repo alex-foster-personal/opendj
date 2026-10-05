@@ -76,12 +76,15 @@
 		}
 	}
 	import UserBauble from '$lib/components/UserBauble.svelte';
+	import TopBarAccountCluster from './TopBarAccountCluster.svelte';
+	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
 	import GigHelperMonitor from './GigHelperMonitor.svelte';
 	import GigHelperPrompt from './GigHelperPrompt.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
+	import { pairingUnavailableReason } from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -92,11 +95,9 @@
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
-	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
-	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
-	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
-	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
-	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import MidiPanelLoader from '$lib/components/rb/midi/MidiPanelLoader.svelte';
+	import { maybeAutoEnableMidi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import {
@@ -120,6 +121,21 @@
 
 	let pairingOpen = $state(false);
 	let pairingSnapshot = $state<PairingSnapshot | null>(null);
+	// Disabled with the reason as its tooltip, never a failure after the click.
+	const pairingBlocked = $derived(
+		pairingUnavailableReason(
+			DECK_IDS.map((deckId) => {
+				const deck = getDeckState(deckId);
+				return {
+					deckId,
+					loaded: deck.stable_id !== null,
+					beatCount: deck.anlz?.beatgrid.beats.length ?? 0,
+					stableId: deck.stable_id
+				};
+			}),
+			uiPrefs.beat_sync_max
+		)
+	);
 	/** The capture sheet loads on its first open, so it stays out of the
 	 * /performance route's initial bundle (budget in scripts/bundle-budget.mjs). */
 	let PairingSheet = $state<typeof import('./CreatePairingSheet.svelte').default | null>(null);
@@ -262,19 +278,15 @@
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
-	/** MIDI label status (build unit: midi panel): grey = unsupported /
-	 * denied / idle, amber pulse = permission prompt pending, green = at
-	 * least one mapped device connected. Logic lives in midi-format.ts
-	 * (pure, unit-tested); this is just the reactive plumbing. */
-	const midiMappedCount = $derived(
-		midiState.devices.filter((d) => d.mapVendor !== null).length
-	);
-	const midiStatus = $derived(
-		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
-	);
-	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
-	const midiTitle = $derived(
-		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+	// Relayed up from TopBarAccountCluster's bindable rather than importing
+	// `auth` directly here, which is what keeps this file's own import
+	// fan-out inside the quality ratchet (CHROME-05/06).
+	let signedIn = $state(false);
+	// The bauble's account menu, relayed so the account explainer hides while it is open.
+	let baubleMenuOpen = $state(false);
+
+	const showClock = $derived(
+		signedIn || cloudSyncChipState.value !== 'off'
 	);
 
 	// Re-run the access request on load IFF the user opted in before (persisted
@@ -349,6 +361,7 @@
 	// armAudioContextWatchdog's arm predicate (anyDeckPlaying is the one
 	// shared source of truth for "is this session live").
 	const masterMeterActive = $derived(anyDeckPlaying());
+	const masterTakeoverGhost = $derived(midiTakeoverGhost('mixer:global:master'));
 
 	/** Stage overlay target: first playing/audible loaded deck, else first loaded deck. */
 	const stageTarget = $derived.by((): { deck: StageDeck; stableId: string } | null => {
@@ -537,11 +550,12 @@
 	<button
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
-		title="Create pairing from two decks"
 		aria-label="Create pairing"
+		title={pairingBlocked ?? 'Create pairing from two decks'}
+		disabled={pairingBlocked !== null}
 		onclick={() => void _openPairing()}
 	>
-		Create pairing
+		<span class="pair-long">Create pairing</span><span class="pair-short" aria-hidden="true">Pair</span>
 	</button>
 
 	<button
@@ -671,49 +685,7 @@
 	</span>
 
 	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
-	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
-	<button
-		class="midi-label topbar-slot-midi"
-		class:st-grey={midiStatus === 'grey'}
-		class:st-green={midiStatus === 'green'}
-		class:st-amber={midiStatus === 'amber'}
-		class:st-red={midiStatus === 'red'}
-		title={midiTitle}
-		aria-label="MIDI panel"
-		aria-expanded={midiUi.panelOpen}
-		onclick={toggleMidiPanel}
-	>
-		MIDI{#if midiGlyph === 'check'}<svg
-				class="midi-glyph"
-				data-icon="check"
-				width="8"
-				height="8"
-				viewBox="0 0 8 8"
-				aria-hidden="true"
-				><path
-					d="M1 4.2 3.1 6.3 7 1.8"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				/></svg
-			>{:else if midiGlyph === 'cross'}<svg
-				class="midi-glyph"
-				data-icon="cross"
-				width="8"
-				height="8"
-				viewBox="0 0 8 8"
-				aria-hidden="true"
-				><path
-					d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linecap="round"
-				/></svg
-			>{/if}
-	</button>
+	<!-- MIDI moved to settings, I/O view, and bottom tray (issue #3886). -->
 
 	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
 	     Inert on a daemon with no jobs API, and the title says which. -->
@@ -796,6 +768,7 @@
 			aria-valuemax={1}
 			aria-valuenow={mixerState.master}
 			tabindex="0"
+			data-takeover-ghost={masterTakeoverGhost === null ? undefined : masterTakeoverGhost.value}
 			use:wheelAdjust={{
 				step: WHEEL_STEP.fader,
 				get: () => mixerState.master,
@@ -808,6 +781,9 @@
 		>
 			<div class="master-track"></div>
 			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+			{#if masterTakeoverGhost !== null}
+				<div class="master-takeover-ghost" style={`left: calc(${masterTakeoverGhost.value * 100}% - 4px);`}></div>
+			{/if}
 			<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 		</div>
 
@@ -886,31 +862,29 @@
 		{/if}
 	</button>
 
-	<!-- clock: REAL, local time HH:MM -->
-	<span class="clock">{clock}</span>
-
-	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
-	     reachable from performance mode too - the shell topbar is not
-	     rendered on this route. Sized down to fit --rb-topbar-h, and labelled
-	     because on this route it is the only sign-in affordance there is
-	     (issue #2357). -->
 	<CloudSyncStatusChip />
-	<UserBauble size={20} showLabel />
+	<!-- Labeled signed out too: it is the only sign-in control on this route (AUTH-02). -->
+	<TopBarAccountCluster bind:signedIn menuOpen={baubleMenuOpen}>
+		<UserBauble size={20} showLabel bind:menuOpen={baubleMenuOpen} />
+	</TopBarAccountCluster>
+	{#if showClock}
+		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
+		<span class="clock">{clock}</span>
+	{/if}
 </header>
 
 {#if PairingSheet}
 	<PairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
 {/if}
 
-<!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
-<MidiPanel />
+<!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen. -->
+<MidiPanelLoader />
 
 <!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
 <JobsDrawer />
 
-<!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
-     panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
-<MidiLearnLogPopout />
+<!-- The MIDI learn-log pop-out is hosted by MidiPanel (lazy, with the drawer),
+     so its failure shows an error there instead of nothing here. -->
 
 <style>
 	.rb-topbar {
@@ -1086,10 +1060,11 @@
 	   What pays, in the order it yields. Read-only STATUS yields before any
 	   control, which is the same ranking the 1530px note above states: the
 	   live perf readout, the Gig/Prep posture chip and the CloudSync status
-	   chip REPORT state and operate nothing, so the 1125px tier is where they
+	   chip REPORT state and operate nothing, so the 1160px tier is where they
 	   go. Below that the inert/duplicated chrome goes, then the clock, then
 	   the free badge and the utility icons, then - only on a window too narrow
-	   for the row to be honest about it - pairing and the vibe meter.
+	   for the row to be honest about it - the vibe meter (Create pairing
+	   shortens to "Pair" at that tier instead, see below).
 
 	   Deliberately NOT evicted, because each is the only door to something:
 	   the compact lyric chip (the one surface that says the word lane is
@@ -1115,14 +1090,17 @@
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
-	@media (max-width: 1125px) {
+	@media (max-width: 1160px) {
 		/* New tier. Status first (see the note above), and the chrome the 825px
 		   tier used to evict, which now has to go 300px earlier because the label
-		   is still in the row at those widths. */
+		   is still in the row at those widths. Was 1125px: keeping Create pairing
+		   in the row at every width (PR #4014, as "Pair" below 1740px) crushed
+		   the command entry across [1126px, 1133px] in a 1px elementFromPoint
+		   sweep (tests/e2e/topbar-source-toggle.spec.ts failed at 1130px), so
+		   1160px is that last failing width plus the same ~25px margin. */
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.posture-chip),
 		.rb-topbar :global(.cloudsync-status),
-		.rb-topbar .topbar-slot-midi,
 		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
 	}
 	@media (max-width: 1023px) {
@@ -1139,22 +1117,27 @@
 	   its label at every width; tests/e2e/performance-topbar-responsive.spec.ts
 	   asserts it visible, labelled and hittable at 800x600. */
 
+	/* The vibe meter is decoration and yields at 1740px. Create pairing is a
+	   real control (the only door to DECKUX-12), so it shortens to the Pair
+	   span instead of leaving with the vibe meter. It leaves the row only at
+	   1160px, where that short label still crushed the command input. */
+	.rb-topbar .topbar-slot-pairing {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+	.rb-topbar .pair-short { display: none; }
 	@media (max-width: 1740px) {
 		.rb-topbar .topbar-slot-vibe { display: none; }
-		/* Create pairing is the ONLY door to the pairing capture sheet, not
-		   read-only status, so it shrinks to a PAIR label (same idiom as STG,
-		   BSM and AP) instead of leaving with the vibe meter. Hiding it here
-		   hid it on every Mac laptop window (1470-1728px). Measured Fri 2 Oct
-		   2026 (playwright, chromium, fixture library, 10px sweep 780-1780px
-		   plus 2px across 1100-1260px): 34px wide, no row overflow at any
-		   width, and the command input stays hittable everywhere except
-		   1126-1136px, which the tier below covers. */
-		.rb-topbar .topbar-slot-pairing { font-size: 0; }
-		.rb-topbar .topbar-slot-pairing::after { content: 'PAIR'; font-size: 9px; }
+		/* Shorten in the DOM (pair-long / pair-short) rather than a ::after
+		   label. Hiding the control at this width hid it on every Mac laptop
+		   window (1470-1728px). */
+		.rb-topbar .pair-long { display: none; }
+		.rb-topbar .pair-short { display: inline; }
 	}
 	@media (max-width: 1160px) {
-		/* 1136px (the last width where PAIR crushed the command input) + the
-		   same 25px margin the other tiers use. */
+		/* 1136px (the last width where the short label crushed the command
+		   input; playwright, chromium, fixture library, Fri 2 Oct 2026) plus
+		   the same 25px margin the other tiers use. */
 		.rb-topbar .topbar-slot-pairing { display: none; }
 	}
 
@@ -1638,6 +1621,15 @@
 		border-radius: 50%;
 		background: var(--rb-chrome);
 		border: 1px solid var(--rb-border);
+	}
+	.master-takeover-ghost {
+		position: absolute;
+		top: 3px;
+		width: 8px;
+		height: 8px;
+		border: 1px dashed #f2b84b;
+		border-radius: 50%;
+		pointer-events: none;
 	}
 	.master-slider:focus-visible .master-thumb {
 		box-shadow: 0 0 4px var(--rb-accent-glow);

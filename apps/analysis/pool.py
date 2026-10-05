@@ -69,13 +69,28 @@ def analyze_one(
     return stable_id, rec, None
 
 
+class AnalysisProcessPoolExecutor(ProcessPoolExecutor):
+    """Refresh the manager's sentinel set after each spawned worker is registered.
+
+    CPython 3.11 wakes the manager before dynamically spawning on submission.
+    It can consume that wakeup before the new process enters ``_processes`` and
+    then wait on only older workers, missing a new worker's fatal exit. Notify
+    after the stdlib spawn has registered the child; keep its spawning, queue,
+    failure handling and teardown unchanged on every supported platform.
+    """
+
+    def _spawn_process(self) -> None:
+        super()._spawn_process()
+        self._executor_manager_thread_wakeup.wakeup()
+
+
 def spawn_pool(workers: int) -> ProcessPoolExecutor:
     """The analysis worker pool: spawned workers, thread pins, parent watch.
 
     Both pool owners (:func:`run_pool` and the queue runner) build it here,
     so the initializer wiring the quit tests exercise is the one they run.
     """
-    return ProcessPoolExecutor(
+    return AnalysisProcessPoolExecutor(
         max_workers=workers,
         mp_context=multiprocessing.get_context("spawn"),
         initializer=init_worker,

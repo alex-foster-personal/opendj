@@ -26,15 +26,13 @@
   --success: #4ade80;
   --info: #276e86;
   --on-info: #ffffff;
-  /* PerformanceAppNav (issue #3097): fixed bottom-left, `<nav>` outside
-     `.perf-root`'s own scope (a sibling in +layout.svelte, so theme.css's
-     .perf-root-scoped vars can't reach it) - defined here instead so both
-     the nav and BrowserPanel's `.bottom-bar` share one width. Measured
-     rendered width is ~214px (5 links + gaps + padding); rounded up with a
-     buffer so a future label edit doesn't silently reopen the overlap -
-     tests/e2e/performance-app-nav-overlap.spec.ts is the real regression
-     guard, not this number. */
-  --rb-perf-nav-w: 232px;
+  /* Left inset of /performance's bottom bar (BrowserPanel's `.bottom-bar`
+     reads this as its `padding-left`). It used to reserve 232px for a fixed
+     link strip that sat over the bar's left end; the strip is gone
+     (PERF-UI-07), so the inset is the bar's own 6px side padding. Kept as a
+     variable only because the rule that reads it lives in a single-owner
+     file; fold it into that rule the next time its owner is in there. */
+  --rb-perf-nav-w: 6px;
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text",
     "Segoe UI", Roboto, sans-serif;
@@ -268,4 +266,29 @@ textarea {
 }
 .toast.error {
   border-color: var(--danger);
+}
+
+/* Replaces the native WKWebView tooltip while a control's title is parked. */
+.single-hover-tip {
+  position: fixed;
+  z-index: 400;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 4px 8px;
+  background: var(--surface-raised);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.single-hover-tip-sr {
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }

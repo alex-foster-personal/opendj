@@ -103,6 +103,12 @@ export default {
 		'tests/live/cue-{align,bridge}-*.mjs',
 		// Same shape: the RESCUE-05 cross-origin sink probe (real outputs, real origins).
 		'tests/live/rescue-output-device-origin.mjs',
+		// Same shape: the Beat Sync phase-lock workload, run directly against a live
+		// engine's real beatgrids (read-only).
+		'tests/live/phase-lock-jitter-workload.mjs',
+		// Same shape: the stem-load-under-playback scorer, imported into an open
+		// /performance page by a person or an agent (PERF-STEMDEC-04 rounds).
+		'tests/live/stem-load-under-playback-scorer.js',
 		'tests/unit/fixtures/**/*.ts',
 		'tests/e2e/fixtures/**/*.ts',
 		'tests/manual/wkwebview-spike/inject.mjs',

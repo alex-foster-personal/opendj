@@ -40,6 +40,12 @@ import {
 	makeLibraryFilterSetters,
 	validateLibraryFilterPrefFields
 } from './library-filter-prefs';
+import {
+	COMPATIBLE_FILTER_DEFAULTS,
+	validateCompatibleFilterPrefs,
+	type CompatibleFilterPrefs
+} from './compatible-filter-prefs';
+import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import {
 	LYRICS_PREF_DEFAULTS,
@@ -83,6 +89,7 @@ import {
 	makePrefsHydrator,
 	setLibraryBrowserDiskPref,
 	setTopbarDiskPref,
+	putDiskPrefsVerified,
 	syncDiskPrefs
 } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
@@ -219,6 +226,10 @@ export interface RbUiPrefs
 	show_agent_pins: boolean;
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
+	/** Compatible-filter range knobs (LIBUX-32). */
+	compatible_filter: CompatibleFilterPrefs;
+	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
+	library_watcher_folders: string[];
 	/** DECKUX-20: tri-band, mono envelope, or line outline for waveforms. */
 	waveform_design: WaveformDesign;
 	/** Issue #4219: waveform band colors. 'rekordbox' (default) is CDJ 3Band:
@@ -256,6 +267,8 @@ export interface RbUiPrefs
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	/** Mirror deck 2 control row horizontally for mixer-facing symmetry (issue #3983). */
 	deck_right_mirror: boolean;
+	/** Mirror deck 1 and 3 control rows (local-only pref). */
+	deck_left_mirror: boolean;
 	/** Playlist sidebar: tree list vs column browser (issue #3983). */
 	playlist_tree_view: PlaylistTreeViewMode;
 	level_calibration: LevelCalibrationPrefs;
@@ -286,6 +299,8 @@ const DEFAULTS: RbUiPrefs = {
 	jog_radial_waveform: false,
 	show_agent_pins: true,
 	show_stems: false,
+	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
+	library_watcher_folders: [],
 	waveform_design: WAVEFORM_DESIGN_DEFAULT,
 	wave_palette: WAVE_PALETTE_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
@@ -297,6 +312,7 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
 	deck_right_mirror: false,
+	deck_left_mirror: false,
 	playlist_tree_view: 'tree',
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	crossfade_curve: 'magic',
@@ -523,6 +539,13 @@ function _load(): RbUiPrefs {
 		deck_layout_duration_ms: deckLayoutDurationMs,
 		deck_right_mirror: deckRightMirror
 	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	if (parsed.deck_left_mirror !== undefined && typeof parsed.deck_left_mirror !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (deck_left_mirror is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const deckLeftMirror = parsed.deck_left_mirror ?? DEFAULTS.deck_left_mirror;
 	const playlistTreeView = validatePlaylistTreeViewField(parsed.playlist_tree_view, STORAGE_KEY);
 	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
@@ -576,6 +599,7 @@ function _load(): RbUiPrefs {
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
 		deck_right_mirror: deckRightMirror ?? DEFAULTS.deck_right_mirror,
+		deck_left_mirror: deckLeftMirror,
 		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
@@ -591,6 +615,13 @@ function _load(): RbUiPrefs {
 		...mergeGigHelperPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
 		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY),
+		compatible_filter: {
+			...COMPATIBLE_FILTER_DEFAULTS,
+			...validateCompatibleFilterPrefs(parsed.compatible_filter, STORAGE_KEY)
+		},
+		library_watcher_folders: Array.isArray(parsed.library_watcher_folders)
+			? parsed.library_watcher_folders.filter((p): p is string => typeof p === 'string')
+			: DEFAULTS.library_watcher_folders,
 		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
@@ -770,7 +801,8 @@ export const {
 	toggleDeckLayoutMode,
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
-	setDeckRightMirror
+	setDeckRightMirror,
+	setDeckLeftMirror
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export const { setPlaylistTreeView, togglePlaylistTreeView } = makePlaylistTreeViewSetters(
@@ -817,18 +849,52 @@ export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeL
 	(patch) => void _syncDiskPrefs(patch)
 );
 
-/** Persist a confirm skip / remembered choice. Pass `undefined` to clear. */
+/** Verified disk writes (PR #4014): each commits only after its PUT lands and
+ * rejects otherwise; see verified-pref-writes.ts. Loaded on first use, since
+ * nothing at first paint writes (library bundle budget). */
+type VerifiedWriters = ReturnType<typeof import('./verified-pref-writes').makeVerifiedPrefWriters>;
+let _verifiedLoad: Promise<VerifiedWriters> | null = null;
+function _verified(): Promise<VerifiedWriters> {
+	_verifiedLoad ??= import('./verified-pref-writes').then((m) =>
+		m.makeVerifiedPrefWriters({
+			uiPrefs,
+			persist: _persist,
+			sync: _syncDiskPrefs,
+			put: putDiskPrefsVerified,
+			unsavedConfirm: _unsavedConfirm
+		})
+	);
+	return _verifiedLoad;
+}
+/** Confirm keys disk has not acknowledged yet, by write revision; hydration keeps them. */
+const _unsavedConfirm = new Map<string, number>();
+let _confirmRev = 0;
+export const patchCompatibleFilter = (patch: Partial<CompatibleFilterPrefs>): Promise<void> =>
+	_verified().then((v) => v.patchCompatibleFilter(patch));
+/** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
+export const setLibraryWatcherFolders = (paths: readonly string[]): Promise<void> =>
+	_verified().then((v) => v.setLibraryWatcherFolders(paths));
+/** Reset a remembered confirm choice to "ask". Rejects (and keeps the
+ * remembered choice) when the disk delete fails, so the caller can show it. */
+export function clearConfirmPref(key: keyof RbUiPrefs['confirm']): Promise<void> {
+	const rev = _unsavedConfirm.get(key);
+	return _verified().then((v) => v.clearConfirmPref(key, rev));
+}
+
+/** Remember a confirm choice (resetting to "ask" is `clearConfirmPref`): live at
+ * once, and unsaved until disk acknowledges it, so a failed PUT is resent by
+ * the next confirm write and hydration cannot drop it. A failed save is shown
+ * through the settings save-error sink (an error toast; Sol P1, PR #4014). */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
-	value: RbUiPrefs['confirm'][K] | undefined
+	value: Exclude<RbUiPrefs['confirm'][K], undefined>
 ): void {
-	if (value === undefined) {
-		delete uiPrefs.confirm[key];
-	} else {
-		uiPrefs.confirm[key] = value;
-	}
+	uiPrefs.confirm[key] = value;
 	_persist();
-	void _syncDiskPrefs({ confirm: uiPrefs.confirm });
+	_unsavedConfirm.set(key, ++_confirmRev);
+	_verified()
+		.then((v) => v.saveUnsavedConfirm())
+		.catch((err: unknown) => reportSettingSaveError(`Confirmation choice not saved to disk: ${err}`, err));
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
@@ -837,7 +903,8 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	persist: _persist,
 	applyThemeDom: _applyThemeDom,
 	storageKey: STORAGE_KEY,
-	defaults: DEFAULTS
+	defaults: DEFAULTS,
+	isConfirmUnsaved: (key) => _unsavedConfirm.has(key)
 });
 
 export function setUiSkin(next: UiSkin): void {

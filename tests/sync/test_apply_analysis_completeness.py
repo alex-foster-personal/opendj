@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import os
 import sqlite3
 from pathlib import Path
 
@@ -24,6 +25,17 @@ from apps.sync.apply_analysis import (
     live_run,
     main,
 )
+
+
+@pytest.fixture(autouse=True)
+def _owned_rollout_directory(tmp_path: Path):
+    """Relative production rollout stamps belong to one test, not all workers."""
+    previous = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def _write_state_db(path: Path) -> sqlite3.Connection:

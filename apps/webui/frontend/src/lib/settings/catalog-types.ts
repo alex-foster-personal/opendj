@@ -41,7 +41,9 @@ export type SettingControl =
 			defaultValue: number;
 			/** Rendered after the readout, e.g. 'x'. */
 			unit: string;
-	  };
+	  }
+	// One path per line; saved via overlay Apply (async existence check on server).
+	| { kind: 'path_lines'; v2Notice: string };
 
 export interface SettingDef {
 	id: string;
@@ -59,3 +61,6 @@ export interface SettingDef {
 	devOnly?: boolean;
 	control: SettingControl;
 }
+
+/** A catalog row whose control is a link, as `catalogLinkSettings` narrows to. */
+export type LinkSettingDef = SettingDef & { control: { kind: 'link'; href: string } };

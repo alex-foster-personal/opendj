@@ -18,7 +18,7 @@ from apps.feature_flags import load_flags
 from apps.feature_flags.profiles import BUILD_PROFILE_ENV, STORE_PROFILE
 from apps.shared.sandbox import STORE_BUILD_REFUSAL_CODE, STORE_BUILD_REFUSAL_TITLE
 from apps.sync.usb.pioneer import export_workflow as workflow
-from apps.sync.usb.pioneer import writer_rbox
+from apps.sync.usb.pioneer import writer_onelibrary
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import usb_export
 from tests.fixtures.conftest import resolve_required_fixture
@@ -97,13 +97,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(app)
 
 
-def _require_rbox_runtime() -> None:
+def _require_writer_runtime() -> None:
     """Fail HTTP parity at the USB runtime dependency contract boundary."""
-    if not writer_rbox.RBOX_AVAILABLE:
+    if not writer_onelibrary.WRITER_AVAILABLE:
         pytest.fail(
-            "USB export HTTP parity requires the pinned runtime dependency "
-            "rbox==0.1.7. Install the repository dependency contract before "
-            f"running these tests: {writer_rbox.RBOX_IMPORT_ERROR}",
+            "USB export HTTP parity requires the runtime dependency "
+            "sqlcipher3-wheels. Install the repository dependency contract before "
+            f"running these tests: {writer_onelibrary.WRITER_IMPORT_ERROR}",
             pytrace=False,
         )
 
@@ -136,7 +136,7 @@ def test_the_legacy_app_always_wires_a_flag_store() -> None:
 def test_http_plan_apply_readback_matches_core_schema(
     client: TestClient, target: Path
 ) -> None:
-    _require_rbox_runtime()
+    _require_writer_runtime()
     plan_response = client.post(
         "/api/v1/usb-export/plan",
         json={

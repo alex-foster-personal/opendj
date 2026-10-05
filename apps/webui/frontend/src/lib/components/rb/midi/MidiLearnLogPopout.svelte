@@ -16,6 +16,7 @@
 		toggleLogPopoutMinimized
 	} from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import MidiLearnLogRows from '$lib/components/rb/midi/MidiLearnLogRows.svelte';
+	import { CLOSE_PATH, MINIMIZE_PATH, RESTORE_PATH } from '$lib/ui/icon-glyphs';
 </script>
 
 {#if midiUi.logPopoutOpen}
@@ -25,23 +26,27 @@
 			<span class="popout-count" title="MIDI messages in the learn log (last 50 kept)">{learnLog.length}</span>
 			<span class="popout-spacer"></span>
 			<button
+				type="button"
 				class="popout-btn"
 				aria-label={midiUi.logPopoutMinimized ? 'restore MIDI log' : 'minimize MIDI log'}
 				title={midiUi.logPopoutMinimized ? 'restore' : 'minimize'}
 				onclick={toggleLogPopoutMinimized}
 			>
-				{#if midiUi.logPopoutMinimized}
-					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" data-icon="restore">
-						<rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.2" />
-					</svg>
-				{:else}
-					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" data-icon="minimize">
-						<path d="M1.5 5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-					</svg>
-				{/if}
+				<svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+					<path
+						d={midiUi.logPopoutMinimized ? RESTORE_PATH : MINIMIZE_PATH}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.4"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
 			</button>
-			<button class="popout-btn" aria-label="close MIDI log" title="close" onclick={closeLogPopout}>
-				&times;
+			<button type="button" class="popout-btn" aria-label="close MIDI log" title="close" onclick={closeLogPopout}>
+				<svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+					<path d={CLOSE_PATH} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+				</svg>
 			</button>
 		</header>
 		{#if !midiUi.logPopoutMinimized}
@@ -106,6 +111,9 @@
 		line-height: 1;
 		padding: 0 4px;
 		cursor: pointer;
+	}
+	.popout-btn svg {
+		display: block;
 	}
 	.popout-btn:hover {
 		color: var(--rb-text);

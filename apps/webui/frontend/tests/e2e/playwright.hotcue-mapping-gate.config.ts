@@ -1,15 +1,11 @@
 /**
- * End-to-end UI evidence for the hot-cue mapping gate (#736): a deck with no
- * live rekordbox mapping renders its empty hot-cue pads inert and dimmed with
- * the "cues need a rekordbox mapping" tooltip, and clicking one fires no
- * network request.
+ * End-to-end UI evidence that a deck with no rekordbox mapping saves hot cues
+ * into Open DJ's own cue store (CUES-01; it replaced the #736 inert gate), and
+ * that a deck with nothing loaded stays inert (#804).
  *
- * The unit suite (tests/unit/hot-cue-mapping-gate.test.mjs) pins the source
- * text; the dispatcher suite (tests/unit/performance-ipc.test.mjs) pins the
- * shared-dispatcher guard. Neither proves the pad actually RENDERS dimmed
- * with the tooltip in a browser, or that a real click never reaches the
- * network -- source presence is not the same as rendered behavior. This is
- * that proof, against a real backend and a real (throwaway) library.
+ * The unit suites pin the source text and the dispatcher; neither proves a
+ * real click reaches the server and the pad renders filled. This is that
+ * proof, against a real backend and a real (throwaway) library.
  *
  * Library: the same generator deckload_fixture.py uses for the webkit suite
  * (support/deckload_fixture.py) -- real audio, real folder ingest, so both
@@ -81,7 +77,8 @@ export default defineConfig({
 			env: {
 				...process.env,
 				MDT_DATA_DIR: FIXTURE_DATA_DIR,
-				MDT_LIBRARY_MODE: 'local'
+				MDT_LIBRARY_MODE: 'local',
+				MUSIC_DJ_FRONTEND_PORT: String(HOTCUE_MAPPING_GATE_FRONTEND_PORT)
 			}
 		},
 		{

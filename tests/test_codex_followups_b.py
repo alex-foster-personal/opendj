@@ -1,8 +1,7 @@
 """Regression tests for codex CONFIRMED-FOLLOWUP findings, group B.
 
 Covers:
-* P06-F02 -- :func:`apps.analysis.write_tags._write_reversal_script`
-  produces a standalone script (no project imports).
+* P06-F02 -- ``apps.analysis.write_tags`` refuses tag writes (exit 2).
 * P06-F03 -- :func:`apps.analysis.auto_cues._label_cues` labels the
   "break" cue based on bin adjacency to the drop bin, not list order.
 * P07-02 -- ``apps.tags.apply.apply_one`` tolerates a provenance-insert
@@ -39,29 +38,15 @@ from apps.tags import apply as tags_apply
 # -- P06-F02 --------------------------------------------------------------
 
 @pytest.mark.requirement("META-01")
-def test_p06_f02_reversal_script_is_standalone(tmp_path: Path) -> None:
-    delta = wt.TagDelta(
-        path=tmp_path / "track.mp3",
-        stable_id="sid-standalone",
-        old={"BPM": "120"},
-        new={"BPM": "123"},
-    )
-    backup = tmp_path / "backup.json"
-    backup.write_text("{}", encoding="utf-8")
-    out_dir = tmp_path / "reversal"
-    wt.REVERSAL_ROOT = out_dir  # type: ignore[assignment]
-
-    rp = wt._write_reversal_script(delta, "2026-04-17T00-00-00", backup)
-    text = rp.read_text(encoding="utf-8")
-    # The reversal script MUST NOT import anything from the project.
-    import_lines = [
-        ln for ln in text.splitlines()
-        if ln.lstrip().startswith(("import ", "from "))
-    ]
-    bad = [ln for ln in import_lines if "apps." in ln or "music_dj_tools" in ln]
-    assert not bad, f"reversal script must not import project modules: {bad}"
-    # It must still be syntactically valid Python.
-    compile(text, str(rp), "exec")
+def test_p06_f02_reversal_script_is_standalone(tmp_path: Path, capsys) -> None:
+    audio = tmp_path / "track.mp3"
+    audio.write_bytes(b"not-a-real-mp3")
+    before = audio.read_bytes()
+    with pytest.raises(wt.TagWriteRemoved):
+        wt._write_tags(audio)
+    assert wt.main([]) == 2
+    assert "GPL" in capsys.readouterr().err
+    assert audio.read_bytes() == before
 
 
 # -- P06-F03 --------------------------------------------------------------

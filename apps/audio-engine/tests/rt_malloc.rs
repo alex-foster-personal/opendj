@@ -131,7 +131,7 @@ fn stretching_decks_do_not_allocate_in_c_or_rust() {
         }
         if i == 600 {
             e.apply(EngineCmd::MasterTempo { deck: 1, enabled: true }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 2, position_ms: 5000.0 }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 2, position_ms: 5000.0, quantize: true }).unwrap();
             e.apply(EngineCmd::KeyNudge { deck: 2, semitones: -1 }).unwrap();
         }
         e.render(&mut buf);

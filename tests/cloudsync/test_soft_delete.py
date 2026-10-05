@@ -490,6 +490,11 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # is _full_table_group's f-string for pairings/smartlists; the guard
     # cannot resolve which table and flags all dynamic DELETE targets.
     ("apps/shared/state_authoritative_backup.py", "dynamic:name"),
+    # Same restore path, the pairings group's optional tables
+    # (_restore_optional_tables): http_pairings is replaced wholesale beside
+    # the pairings graph when the backup holds it (PR #4014). dynamic:extra.name
+    # is the OptionalRestoreTable name; same disaster-recovery scope replace.
+    ("apps/shared/state_authoritative_backup.py", "dynamic:extra.name"),
     # Same restore path, scoped replace for track_fields notes/tags only
     # (rating and other field_name rows are untouched). Tombstones would break
     # count parity and leave ghosts; see track_fields_notes_tags group in

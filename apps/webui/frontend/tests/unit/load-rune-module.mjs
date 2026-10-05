@@ -48,6 +48,11 @@ function _bundle(entry, { stdin = false, keepSvelteImports = false } = {}) {
 		absWorkingDir: FRONTEND_ROOT,
 		alias: { $lib: LIB_ROOT },
 		bundle: true,
+		// compileModule must see application runes, not Svelte's own runtime
+		// internals. A production module may import `untrack` from `svelte`;
+		// inlining that package here exposes runtime names such as `$window` to
+		// the application rune compiler, which correctly rejects them. Link the
+		// real runtime only in the second bundle, after rune compilation.
 		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://rune-harness.example.test') },
 		format: 'esm',
 		logLevel: 'silent',

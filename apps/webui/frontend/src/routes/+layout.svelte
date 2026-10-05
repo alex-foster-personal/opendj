@@ -60,10 +60,10 @@
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
-	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
+	import { installSingleHoverTooltip } from '$lib/ui/single-hover-tooltip';
 
 	const visibleToasts = $derived(selectVisibleToasts(toasts));
 
@@ -294,7 +294,9 @@
 			}
 		);
 		const id = setInterval(refreshHealth, 30_000);
+		const uninstallHoverTooltip = installSingleHoverTooltip();
 		return () => {
+			uninstallHoverTooltip();
 			uninstallSettings();
 			uninstallHotkeysOverlay();
 			uninstallQuitGate();
@@ -325,10 +327,9 @@
 {/if}
 
 {#if isFullBleedRoute}
+	<!-- Nothing but the route: the way out of /performance is the top bar's
+	     mode picker (Library), and the app-shell sidebar from there. -->
 	{@render children()}
-	{#if isPerformance}
-		<PerformanceAppNav />
-	{/if}
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
@@ -368,7 +369,7 @@
 		<div class="topbar">
 			<div class="status-strip" data-testid="header-status-strip">
 				{#if health.data}
-					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
+					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks, health.data.state_db.tracks_playable ?? 0)}>{health.data.state_db.tracks} tracks ({health.data.state_db.tracks_playable ?? 0} playable)</span>
 					<span class="sep" aria-hidden="true"> · </span>
 					<span class="readout readout-numeric" title={headerPlaylistCountTitle(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
 					<span class="sep" aria-hidden="true"> · </span>

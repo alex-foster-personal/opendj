@@ -9,10 +9,10 @@ at lowered scheduling priority. Exits non-zero with the reason on stderr.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
+from apps.shared.process_priority import lower_own_priority
 from apps.vocals import from_stems
 
 NICENESS: int = 10
@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--audio-path", type=Path, required=True)
     parser.add_argument("--stem-root", type=Path, action="append", required=True)
     args = parser.parse_args(argv)
-    os.nice(NICENESS)
+    lower_own_priority(NICENESS)
     entry = from_stems.write_from_bundle(
         args.data_dir, args.stable_id, args.audio_path, stem_roots=args.stem_root
     )

@@ -178,6 +178,37 @@ test('pairing snapshot falls back to time units when a deck has no beat to stamp
 	}
 });
 
+test('pairing snapshot captures a beat for decks parked in the lead-in before their first beat (Mac check, PR #4014)', async () => {
+	// A freshly loaded deck sits at 0:00 and its first grid beat is a few ms
+	// in, so "the last beat at or before the playhead" used to be nothing and
+	// Create pairing failed with "CH1 has no beatgrid timestamp".
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		pairing.uiPrefs.beat_sync_max = true;
+		for (const deckId of [1, 2, 3, 4]) {
+			const deck = pairing.deckStates[deckId];
+			deck.stable_id = deckId <= 2 ? `track-lead-in-${deckId}` : null;
+			deck.title = deckId <= 2 ? `Lead-in ${deckId}` : null;
+			deck.position_ms = deckId === 1 ? 0 : 1000;
+			deck.anlz = deckId <= 2
+				? { beatgrid: { beats: [
+						{ n: 1, bpm: 120, t: 0.05 }, { n: 2, bpm: 120, t: 0.55 }, { n: 3, bpm: 120, t: 1.05 }
+					] } }
+				: null;
+		}
+		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		const decks = pairing.queryPerformanceState().pairing_snapshot.decks;
+		assert.deepEqual(decks.map((deck) => [deck.deck_id, deck.timestamp]), [
+			[1, { unit: 'beats', value: 4 }],
+			[2, { unit: 'beats', value: 2 }]
+		]);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('a beatgrid-landed resync claims only its own deck, and widening never makes that claim wait on the wide work', () => {
 	// PARITY-09 / PR #765 P1 ("Route deferred resync through the scoped
 	// scheduler") + three further BLOCKING findings on the fix itself ("Claim
@@ -665,7 +696,6 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
 		refresh: async () => {},
-		hasRbMapping: () => true
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -701,18 +731,17 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 	}
 });
 
-test('hot_cue_save rejects for an unmapped deck before reaching the network, same as HotCueBank (#736)', async () => {
+test('hot_cue_save reaches the network for any loaded deck, mapped or not (CUES-01)', async () => {
 	const originalFetch = globalThis.fetch;
 	let fetchCalls = 0;
 	globalThis.fetch = async () => {
 		fetchCalls += 1;
-		throw new Error('saveHotCue must not reach the network for an unmapped deck');
+		throw new Error('network reached');
 	};
 	globalThis.window = {};
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
 		refresh: async () => {},
-		hasRbMapping: () => false
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -720,9 +749,12 @@ test('hot_cue_save rejects for an unmapped deck before reaching the network, sam
 			window.musicDjToolsPerformance.dispatch({
 				type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag'
 			}),
-			/no live rekordbox mapping/i
+			(error) => {
+				assert.doesNotMatch(String(error), /rekordbox mapping/i);
+				return true;
+			}
 		);
-		assert.equal(fetchCalls, 0, 'hot_cue_save must reject before calling saveHotCue');
+		assert.ok(fetchCalls >= 1, 'hot_cue_save must reach saveHotCue with no rekordbox-mapping gate');
 	} finally {
 		uninstall();
 		resetDriver();
@@ -754,7 +786,6 @@ function triggerDriverStub({ playing, loopEngaged, positionSec, contextTimeNowSe
 		driver: {
 			stableId: () => 'loaded-track',
 			refresh: async () => {},
-			hasRbMapping: () => true,
 			triggerState: () => ({ cue, playing, loopEngaged, positionSec, beats: TRIGGER_PQTZ_BEATS }),
 			jump: async (deck, positionMs) => {
 				jumpCalls.push({ deck, positionMs });
@@ -915,7 +946,9 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		assert.deepEqual(state.decks[1].stems.controls, {
 			vocal: { muted: false, solo: false, gain: 0.5 },
 			instrumental: { muted: false, solo: false, gain: 0.5 },
-			drums: { muted: false, solo: false, gain: 0.5 }
+			drums: { muted: false, solo: false, gain: 0.5 },
+			bass: { muted: false, solo: false, gain: 0.5 },
+			other: { muted: false, solo: false, gain: 0.5 }
 		});
 
 		await assert.rejects(
@@ -925,7 +958,7 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				stem: 'mix',
 				muted: true
 			}),
-			/stem must be vocal, instrumental, or drums/i
+			/unknown stem control: mix/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
@@ -935,6 +968,12 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				solo: 'yes'
 			}),
 			/solo must be boolean/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_solo', deck: 1, stem: 'bass', solo: true, exclusive: 'yes'
+			}),
+			/exclusive must be boolean/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
@@ -960,7 +999,7 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				stem: 'mix',
 				value: 0.5
 			}),
-			/stem must be vocal, instrumental, or drums/i
+			/unknown stem control: mix/i
 		);
 	} finally {
 		uninstall();
@@ -1038,10 +1077,32 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				offset_ms: null,
 				verify_residual_ms: null,
 				probe: null,
-				error: null
+				error: null,
+				diagnostics: {
+					probe: 'chirp', alternate_probe: 'unavailable', failure: null,
+					master_measurements_ms: [], cue_measurements_ms: [], spread_ms: null
+				}
 			},
+			routes: {
+				master: { state: 'default', selected: false },
+				cue: { state: 'default', selected: false }
+			},
+			signals: Object.fromEntries(['master', 'cue', 'input'].map((bus) => [bus, {
+				state: bus === 'input' ? 'inactive' : 'unavailable',
+				rms: null, peak: null, measured_at: null,
+				source: bus === 'input' ? 'captured_input' : 'application_bus',
+				physical_output_proven: false
+			}])),
 			outputs: [],
 			inputs: [],
+			device_access: {
+				status: 'not_checked',
+				action: 'retry',
+				message: 'Audio devices have not been checked yet. Audio plays through the system default output.',
+				detail: null,
+				output_pinning: true,
+				notices: []
+			},
 			supported: false,
 			active: false,
 			error: null
@@ -1129,13 +1190,14 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'headphone_output_select'/);
 	assert.match(mixer, /type: 'headphone_master_select'/);
 	assert.match(mixer, /type: 'headphone_input_select'/);
-	// Pin 894af5672c3b: SET OUTPUTS records the session click, then acquires.
-	assert.match(headphones, /function handleSetOutputs\(\): void \{[^}]*onacquire\(\);/);
-	// bf60d7d67 feat(webui): pin master and cue sinks from I/O menu (#2409)
-	// replaced the "+ OUT" grant button (title "Grant browser access to a second
-	// audio output") with the I/O button, which still calls onacquire.
+	assert.match(headphones, /onclick=\{onacquire\}/);
+	// Opening settings is read-only; permission/chooser is a separate explicit
+	// action. Both still reach the typed dispatcher via Mixer callbacks.
+	// Pin 894af5672c3b: SET OUTPUTS records the session click, then opens the panel.
+	assert.match(headphones, /function handleSetOutputs\(\): void \{[^}]*openIo\(\);/);
 	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{handleSetOutputs\}/);
-	assert.match(headphones, /I\/O briefly uses the built-in mic so device names appear/);
+	assert.match(headphones, /Choose output \/ allow device access/);
+	assert.match(headphones, /Device access can open an output chooser or microphone permission prompt/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);
@@ -1381,6 +1443,36 @@ test('master mute and browser playlist selection are bus commands with queryable
 		uninstall();
 		delete globalThis.window;
 	}
+});
+
+test('IOPIN-06 takeover mode is a strict dispatcher command with a query-visible result', async () => {
+	// [if] MIDI settings choose Jump [then] IPC reports Jump, [else stop].
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const originalMode = ipc.queryPerformanceState().midi_takeover.mode;
+	try {
+		const jumped = await window.musicDjToolsPerformance.dispatch({
+			type: 'midi_takeover_mode',
+			mode: 'jump'
+		});
+		assert.equal(jumped.midi_takeover.mode, 'jump');
+		assert.equal(ipc.queryPerformanceState().midi_takeover.mode, 'jump');
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'midi_takeover_mode', mode: 'teleport' }),
+			/midi takeover mode must be pickup or jump/
+		);
+	} finally {
+		await ipc.dispatchPerformanceCommand({ type: 'midi_takeover_mode', mode: originalMode });
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('IOPIN-06 MIDI panel sends takeover radios through the typed dispatcher', async () => {
+	// [if] a takeover radio changes [then] it dispatches the shared command, [else stop].
+	const source = await readFile('src/lib/components/rb/MidiPanel.svelte', 'utf8');
+	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'midi_takeover_mode', mode \}\)/);
+	assert.doesNotMatch(source, /setMidiTakeoverMode\(/);
 });
 
 // ----- pin 88e3abec02a0: "show other users' pins" is stubbed, not silent --

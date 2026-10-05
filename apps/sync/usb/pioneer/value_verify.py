@@ -1,14 +1,14 @@
 """Read key, grid, and loudness values back from a rekordbox-exported USB stick.
 
-Must not import ``writer_rbox`` or ``export_workflow`` (overlay-only writers).
+Must not import ``writer_onelibrary`` or ``export_workflow`` (overlay-only writers).
 """
 from __future__ import annotations
 
 import enum
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import asdict, dataclass, field
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from apps.shared.harmonic import key_to_camelot
@@ -171,11 +171,22 @@ def _compare_grid(
     pioneer: Path, anlz_path: str | None, expected_grid: ExpectedGrid | None
 ) -> FieldObservation:
     expected_repr = (
-        json.dumps(expected_grid.__dict__, sort_keys=True) if expected_grid else None
+        json.dumps(asdict(expected_grid), sort_keys=True) if expected_grid else None
     )
     if not anlz_path:
         return _obs(FieldStatus.ABSENT, None, expected_repr, "USBANLZ")
-    anlz_dir = Path(anlz_path) if anlz_path.startswith("/") else pioneer / anlz_path
+    device_path = PurePosixPath(anlz_path)
+    if device_path.parts[:3] == ("/", "PIONEER", "USBANLZ"):
+        # PDB paths are rooted at the USB volume, not the host filesystem.
+        anlz_dir = pioneer.joinpath(*device_path.parts[2:])
+        if not anlz_dir.resolve().is_relative_to(pioneer.resolve()):
+            return _obs(
+                FieldStatus.UNREAD, None, expected_repr, "USBANLZ",
+                "device ANLZ path escapes the inspected Pioneer root",
+            )
+    else:
+        local_path = Path(anlz_path)
+        anlz_dir = local_path if local_path.is_absolute() else pioneer / local_path
     summary = grid_summary_from_anlz(anlz_dir)
     if summary is None:
         return _obs(FieldStatus.ABSENT, None, expected_repr, "USBANLZ")

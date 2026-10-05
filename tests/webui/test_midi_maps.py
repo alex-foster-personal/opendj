@@ -276,14 +276,36 @@ def test_invalid_name_match_regex_is_refused(midi_client: TestClient) -> None:
     assert "nameMatch" in r.json()["detail"]["message"]
 
 
-def test_deck_beat_loop_fractional_beats_is_refused(midi_client: TestClient) -> None:
-    # exactBeatLoopRangeMs() and the beat_loop dispatcher command both require
-    # a positive integer; a fractional value used to pass here and only fail
-    # as a command error at press time - see PR #511 review thread.
-    doc = _doc()
-    doc["bindings"][0]["action"] = {"type": "deck_beat_loop", "deck": 1, "beats": 0.5}
-    r = midi_client.put("/api/v1/midi/maps/test-device", json=doc)
-    assert r.status_code == 422
+@pytest.mark.parametrize("beats", [0.0625, 0.125, 0.25, 0.5, 4])
+def test_deck_beat_loop_fractional_beats_validate(beats: float) -> None:
+    from apps.webui.server.routes.midi_maps import DeckBeatLoop
+
+    action = DeckBeatLoop.model_validate({"type": "deck_beat_loop", "deck": 1, "beats": beats})
+    assert action.beats == beats
+
+
+@pytest.mark.parametrize("deck", [1, 2, 3, 4])
+@pytest.mark.parametrize("action_type", ["deck_stem_eq_toggle", "deck_auto_loop_toggle"])
+def test_controller_toggle_validates_on_all_decks(deck: int, action_type: str) -> None:
+    from pydantic import TypeAdapter
+
+    from apps.webui.server.routes.midi_maps import MidiActionModel
+
+    action = TypeAdapter(MidiActionModel).validate_python(
+        {"type": action_type, "deck": deck}
+    )
+    assert action.type == action_type
+    assert action.deck == deck
+
+
+@pytest.mark.parametrize("beats", [0, -0.5, float("inf"), float("nan")])
+def test_deck_beat_loop_invalid_beats_are_refused(beats: float) -> None:
+    from pydantic import ValidationError
+
+    from apps.webui.server.routes.midi_maps import DeckBeatLoop
+
+    with pytest.raises(ValidationError):
+        DeckBeatLoop.model_validate({"type": "deck_beat_loop", "deck": 1, "beats": beats})
 
 
 def test_deck_beat_loop_integer_beats_still_installs(midi_client: TestClient) -> None:

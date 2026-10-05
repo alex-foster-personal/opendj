@@ -8,11 +8,11 @@ import { test } from 'node:test';
 
 const SOURCE = new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url);
 
-test('if CALIBRATE is only rendered in two_outputs then the operator cannot find it in practice mode', () => {
+test('CALIBRATE stays inside I/O but outside the two_outputs-only section', () => {
 	const source = readFileSync(SOURCE, 'utf8');
-	const twoOutputsBlock = source.indexOf("{#if state.output_mode === 'two_outputs'}");
-	const calibrate = source.indexOf('aria-label="CALIBRATE CUE ALIGNMENT"');
-	assert.ok(twoOutputsBlock > 0 && calibrate > 0, 'both markers must exist');
-	assert.ok(calibrate < twoOutputsBlock, 'CALIBRATE must be rendered outside (before) the two_outputs-only block');
+	assert.match(source, /\{#if ioSurface\.open\}[\s\S]*?class="hp-panel"/);
+	assert.match(source, /\{#if headphoneState\.output_mode === 'two_outputs'\}[\s\S]*?<\/section>\s*\{\/if\}\s*<section class="hp-section hp-calibration-section"/,
+		'CALIBRATE must be rendered after the two_outputs-only section, still within I/O');
+	assert.match(source, /aria-label="CALIBRATE CUE ALIGNMENT"/);
 	assert.match(source, /disabled=\{!calibrateEnabled\}/, 'it stays disabled until a cue device is selected');
 });

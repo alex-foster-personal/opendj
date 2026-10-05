@@ -153,7 +153,7 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         "quantize" | "master_tempo" => &["type", "deck", "enabled"],
         "key_nudge" => &["type", "deck", "semitones"],
         "quantize_grid" | "beat_jump" => &["type", "deck", "beats"],
-        "seek" => &["type", "deck", "position_ms"],
+        "seek" => &["type", "deck", "position_ms", "quantize"],
         "loop" => &["type", "deck", "loop"],
         "beat_loop" => &["type", "deck", "beats", "start_ms"],
         "tempo" => &["type", "deck", "ratio"],
@@ -546,7 +546,8 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             if position_ms < 0.0 {
                 return Err(invalid(format!("seek.position_ms must be >= 0, got {position_ms}")));
             }
-            apply(EngineCmd::Seek { deck, position_ms })
+            let quantize = opt_bool(o, ty, "quantize")?.unwrap_or(true);
+            apply(EngineCmd::Seek { deck, position_ms, quantize })
         }
         "loop" => {
             let deck = deck_of(o, ty)?;
@@ -751,6 +752,20 @@ pub fn result_json(id: Option<&Value>, res: &Result<(), ProtoError>) -> Value {
     }
 }
 
+/// Sent to every client when the rest of a progressive load's file fails to
+/// decode after its head was loaded (and its `load` answered ok): the deck
+/// has been emptied rather than left playing a track cut short. `path` is
+/// that load's file, as its `load` gave it, so a client with a newer load
+/// in flight on the deck can tell this one ends an earlier load.
+pub fn load_failed_json(deck: u8, path: &str, e: &ProtoError) -> Value {
+    json!({
+        "type": "load_failed",
+        "deck": deck,
+        "path": path,
+        "error": {"code": e.code.as_str(), "message": e.message},
+    })
+}
+
 /// When a threaded engine's snapshot is heard, on the engine's own monotonic
 /// clock. That clock's origin is private to the engine process, so the feed
 /// also carries `sent_ns`, the same clock read as the line is written: a
@@ -789,6 +804,7 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value
                 "playing": d.playing,
                 "position_ms": d.position_ms,
                 "duration_ms": d.duration_ms,
+                "decoded_ms": d.decoded_ms,
                 "rate": if d.playing { d.tempo } else { 0.0 },
                 "tempo": d.tempo,
                 "master_tempo": d.master_tempo,
@@ -1267,7 +1283,7 @@ mod tests {
         assert!(e.message.contains("unexpected fields: quantise"), "{}", e.message);
         // Every command, and the objects nested in one.
         for c in [
-            json!({"type": "seek", "deck": 1, "position_ms": 10, "quantize": false}),
+            json!({"type": "seek", "deck": 1, "position_ms": 10, "quantise": false}),
             json!({"type": "fader", "deck": 1, "value": 0.5, "ramp_ms": 100}),
             json!({"type": "crossfader", "value": 0.5, "deck": 1}),
             json!({"type": "engine_state", "verbose": true}),
@@ -1364,6 +1380,20 @@ mod tests {
             let (_, c) = parse_line(&json!({"cmd": {"type": "load", "deck": 1, "path": "a.wav", key: grid}}).to_string());
             let Ok(Command::Load(spec)) = c else { panic!("{c:?}") };
             assert_eq!((spec.beats.len(), spec.beats.capacity()), (5, 5), "{key}");
+        }
+    }
+
+    #[test]
+    fn seek_quantize_is_optional_and_strictly_boolean() {
+        for (flag, expected) in [(None, true), (Some(json!(true)), true), (Some(json!(false)), false)] {
+            let mut value = json!({"type": "seek", "deck": 1, "position_ms": 1500.5});
+            if let Some(flag) = flag { value["quantize"] = flag; }
+            assert!(matches!(cmd(value), Ok(Command::Apply(EngineCmd::Seek { quantize, .. })) if quantize == expected));
+        }
+        for flag in [Value::Null, json!(0), json!("false")] {
+            let error = cmd(json!({"type": "seek", "deck": 1, "position_ms": 1500.5, "quantize": flag})).unwrap_err();
+            assert_eq!(error.code, ErrorCode::Invalid);
+            assert!(error.message.contains("quantize"));
         }
     }
 

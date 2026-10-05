@@ -285,6 +285,36 @@ def load_cached_index(data_dir: Path) -> StemAssetIndex:
         raise StemIndexError(f"{path} is unreadable: {exc}") from exc
 
 
+_memo_lock = threading.Lock()
+_memo: dict[Path, tuple[tuple[int, int] | None, StemAssetIndex]] = {}
+
+
+def load_cached_index_memo(data_dir: Path) -> StemAssetIndex:
+    """:func:`load_cached_index`, re-parsed only when the cache file changes.
+
+    For readers that run on every poll (the coverage snapshot): decoding and
+    validating about 1600 bundles costs 24 ms, a stat costs microseconds. The
+    key is the file's (mtime_ns, size); an absent file is keyed ``None`` and
+    reads as empty, exactly like the uncached loader, and a corrupt file
+    raises every time (a failure is never memoized). The returned mapping is
+    SHARED: callers must not mutate it.
+    """
+    path = local_index_cache_path(data_dir)
+    try:
+        stat = path.stat()
+        signature: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
+    except FileNotFoundError:
+        signature = None
+    with _memo_lock:
+        cached = _memo.get(path)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+    index = load_cached_index(data_dir)
+    with _memo_lock:
+        _memo[path] = (signature, index)
+    return index
+
+
 def save_cached_index(data_dir: Path, index: StemAssetIndex) -> Path:
     validated = _decode(_encode(index))
     path = local_index_cache_path(data_dir)
@@ -381,6 +411,7 @@ __all__ = [
     "fetch_index",
     "is_allowed_stem_filename",
     "load_cached_index",
+    "load_cached_index_memo",
     "local_index_cache_path",
     "publish_index",
     "refresh_error",

@@ -45,7 +45,7 @@ from scripts.build_engine_payload import stage_app_source
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SID = "c" * 40
 
-pytestmark = pytest.mark.requirement("STEM-39")
+pytestmark = pytest.mark.requirement("STEM-52")
 
 
 @pytest.fixture(scope="module")

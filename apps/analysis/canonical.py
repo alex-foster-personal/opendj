@@ -28,7 +28,7 @@ no own value can enter ``track_field_history`` or the sync path.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -234,6 +234,28 @@ def canonical_pointer(
         (stable_id, lane),
     ).fetchone()
     return (row[0], row[1]) if row is not None else None
+
+
+def canonical_pointed_ids(
+    conn: sqlite3.Connection, stable_ids: Sequence[str], lane: str,
+) -> set[str]:
+    """The subset of ``stable_ids`` that has a stored pointer for ``lane``.
+
+    The batched twin of :func:`canonical_pointer` for callers that need only
+    "is there one": one statement per 500 ids instead of one per track.
+    """
+    pointed: set[str] = set()
+    for start in range(0, len(stable_ids), 500):
+        chunk = stable_ids[start:start + 500]
+        placeholders = ",".join("?" * len(chunk))
+        pointed.update(
+            str(row[0]) for row in conn.execute(
+                "SELECT stable_id FROM analysis_canonical "
+                f"WHERE lane = ? AND stable_id IN ({placeholders})",
+                (lane, *chunk),
+            )
+        )
+    return pointed
 
 
 #-----------------------------------------------------------------------------
@@ -464,6 +486,7 @@ __all__ = [
     "FIELDS_BY_LANE",
     "PROJECTION_FIELDS",
     "CanonicalError",
+    "canonical_pointed_ids",
     "canonical_pointer",
     "rebuild_projection",
     "recompute_canonical",

@@ -42,7 +42,9 @@ The gate fails closed: a pipeline path with no parseable hunks (binary, or a
 name list with no diff text), or whose diff carries behavioral metadata (a
 mode change, a rename or copy, a created or deleted code file), is a
 mutation. ``gh pr view`` / ``gh api`` / ``gh pr diff`` / ``git diff`` failing
-prints UNKNOWN and exits 2, never a silent pass.
+prints UNKNOWN and exits 2, never a silent pass. One refusal is answered
+rather than reported: GitHub renders no diff over 300 files (HTTP 406), so
+the gate then reads the same merge-base-to-head diff from the checkout.
 
 The path policy (pipeline prefixes, file-level exemptions, measurement-only
 prefixes) is declared in ``perfbatch_policy.toml`` next to this module and
@@ -273,8 +275,59 @@ def pr_diff_names(pr: int, repo: str = DEFAULT_REPO) -> list[str]:
     return sorted({line.strip() for line in out.splitlines() if line.strip()})
 
 
-def pr_diff_text(pr: int, repo: str = DEFAULT_REPO) -> str:
-    return _run(["gh", "pr", "diff", str(pr), "--repo", repo])
+#: What ``gh pr diff`` reports when GitHub refuses to render a diff of more than
+#: 300 files. It is the one failure the checkout can answer instead.
+DIFF_TOO_LARGE = "HTTP 406"
+
+
+def pr_merge_base(view: dict, repo: str = DEFAULT_REPO) -> str:
+    """The commit a PR's diff is taken from.
+
+    A PR's ``baseRefOid`` is the base branch tip, not that point, so the
+    compare API is asked for the merge base of the two.
+    """
+    compare = f"repos/{repo}/compare/{view['baseRefOid']}...{view['headRefOid']}"
+    merge_base = _run(["gh", "api", compare, "--jq", ".merge_base_commit.sha"]).strip()
+    if not merge_base:
+        raise RuntimeError(f"compare API returned no merge base for {compare}")
+    return merge_base
+
+
+def git_diff_text(merge_base: str, head: str, repo_root: Path = REPO_ROOT) -> str:
+    """The pipeline hunks between two commits, read from this checkout.
+
+    Limited to the pipeline prefixes, the only paths whose hunks the gate
+    judges. A candidate that falls outside the pathspec gets no hunks, which
+    the classifier already treats as a mutation. A commit this checkout does
+    not hold raises, so the caller prints UNKNOWN.
+    """
+    for sha in (merge_base, head):
+        present = subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+            cwd=repo_root,
+            capture_output=True,
+            check=False,
+        )
+        if present.returncode != 0:
+            raise RuntimeError(f"commit {sha[:12]} is not in the checkout at {repo_root}")
+    argv = ["git", "diff", "--no-ext-diff", "--no-color", merge_base, head, "--"]
+    return _run([*argv, *PIPELINE_PREFIXES], cwd=repo_root)
+
+
+def pr_diff_text(pr: int, repo: str = DEFAULT_REPO, repo_root: Path = REPO_ROOT) -> str:
+    """The PR's unified diff: from GitHub, or from the checkout when GitHub refuses the size.
+
+    The checkout holds the same two commits in CI (full-history checkout of
+    the PR merge ref), so the diff of merge base to head is the same
+    measurement by another transport. Any other failure still raises.
+    """
+    try:
+        return _run(["gh", "pr", "diff", str(pr), "--repo", repo])
+    except RuntimeError as exc:
+        if DIFF_TOO_LARGE not in str(exc):
+            raise
+    view = pr_view(pr, repo)
+    return git_diff_text(pr_merge_base(view, repo), view["headRefOid"], repo_root)
 
 
 def _merge_base(repo_root: Path, base: str) -> str:
@@ -328,11 +381,8 @@ def pr_sources(pr: int, repo: str = DEFAULT_REPO, view: dict | None = None) -> S
     raises so the gate prints UNKNOWN rather than guessing.
     """
     pr_json = view if view is not None else pr_view(pr, repo)
-    head, base = pr_json["headRefOid"], pr_json["baseRefOid"]
-    compare = f"repos/{repo}/compare/{base}...{head}"
-    merge_base = _run(["gh", "api", compare, "--jq", ".merge_base_commit.sha"]).strip()
-    if not merge_base:
-        raise RuntimeError(f"compare API returned no merge base for {compare}")
+    head = pr_json["headRefOid"]
+    merge_base = pr_merge_base(pr_json, repo)
 
     def contents(ref: str, path: str) -> bytes | None:
         proc = subprocess.run(

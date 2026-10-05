@@ -393,6 +393,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ahead-analysis/bump/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Bump */
+        post: operations["post_bump_api_v1_ahead_analysis_bump__stable_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ahead-analysis/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Coverage */
+        get: operations["get_coverage_api_v1_ahead_analysis_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ahead-analysis/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Retry */
+        post: operations["post_retry_api_v1_ahead_analysis_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analysis-queue": {
         parameters: {
             query?: never;
@@ -956,6 +1007,73 @@ export interface paths {
         /** Availability Status */
         get: operations["availability_status_api_v1_availability_status_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Beatgrid Flags
+         * @description Tracks by beatgrid class, with the numbers behind each verdict.
+         *
+         *     `counts` cover the whole denominator whatever the filter and limit.
+         */
+        get: operations["list_beatgrid_flags_api_v1_beatgrid_flags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan Status */
+        get: operations["get_scan_status_api_v1_beatgrid_flags_scan_get"];
+        put?: never;
+        /**
+         * Start Scan
+         * @description Bring stored verdicts up to date. Incremental: an unchanged grid is
+         *     skipped after one stat. `wait=true` returns when the scan has finished;
+         *     otherwise it runs on a background thread and `GET /scan` reports it.
+         */
+        post: operations["start_scan_api_v1_beatgrid_flags_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags/{stable_id}/dismissed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Flag Dismissed
+         * @description Hide (or restore) one track's beatgrid flag. Stored as the user track
+         *     field `grid_flag_dismissed` (source `webui`), the same path rating and
+         *     comments take, so it carries provenance and travels with them.
+         */
+        put: operations["set_flag_dismissed_api_v1_beatgrid_flags__stable_id__dismissed_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1710,6 +1828,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/coverage-outcomes/stems/no-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Stems No Source */
+        get: operations["list_stems_no_source_api_v1_coverage_outcomes_stems_no_source_get"];
+        put?: never;
+        /** Mark Stems No Source */
+        post: operations["mark_stems_no_source_api_v1_coverage_outcomes_stems_no_source_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-outcomes/stems/no-source/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear Stems No Source */
+        delete: operations["clear_stems_no_source_api_v1_coverage_outcomes_stems_no_source__stable_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dedup/clusters": {
         parameters: {
             query?: never;
@@ -1781,6 +1934,67 @@ export interface paths {
          * @description Restore playlist memberships from the apply journal for this cluster.
          */
         post: operations["post_dedup_undo_api_v1_dedup_clusters__cluster_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dedup/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dedup Scan
+         * @description Where the library fingerprint scan is (idle until first started).
+         */
+        get: operations["get_dedup_scan_api_v1_dedup_scan_get"];
+        put?: never;
+        /**
+         * Post Dedup Scan
+         * @description Start fingerprinting the library and rebuilding duplicate clusters.
+         *
+         *     Local only: the engine fingerprints each track's own file, nothing is
+         *     looked up online, and no audio file is written, moved or deleted.
+         */
+        post: operations["post_dedup_scan_api_v1_dedup_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/enrich/decisions/{lane}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Decision */
+        put: operations["put_decision_api_v1_enrich_decisions__lane__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/enrich/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Summary */
+        get: operations["get_summary_api_v1_enrich_summary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1901,6 +2115,23 @@ export interface paths {
         put?: never;
         /** Create Comment */
         post: operations["create_comment_api_v1_feedback_comments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/comments/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Comments Summary */
+        get: operations["comments_summary_api_v1_feedback_comments_summary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2573,6 +2804,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/preview-strips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Preview Strips
+         * @description Re-read the Preview strip of up to 200 rows a listing already returned (NATIVE-21).
+         *
+         *     Same reads as a listing row, never a decode. A long-lived page's rows
+         *     keep the strip they were listed with; this is how rows in view catch up
+         *     with strips written since, without a click or a full re-list.
+         */
+        post: operations["post_preview_strips_api_v1_library_preview_strips_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/readiness": {
         parameters: {
             query?: never;
@@ -2605,6 +2860,41 @@ export interface paths {
         get: operations["get_library_readiness_api_v1_library_readiness_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/share-root/reanchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reanchor Share Root
+         * @description Trust the rekordbox share root as it is now, and forget what was read under it.
+         *
+         *     The engine remembers which directory the share root was when it first
+         *     read it, and refuses to read below a root that has since become a
+         *     different one (LIBM-137): a volume mounted again at the same path, a
+         *     directory swapped in by rename, a symlinked share root pointed somewhere
+         *     else. Nothing re-trusts it on its own, because each of those is also what
+         *     an attack looks like. This call is how the root's owner says the new
+         *     directory is intended; it records that directory's identity and empties
+         *     the listing's row memory.
+         *
+         *     ``exists`` is false, and nothing changes, when the share root is not there.
+         *     The call is refused with 409, and ``detail`` says why, when a directory
+         *     ABOVE the share root is a symlink: only the share root itself may be one.
+         *     It is 501 on a platform with no anchored walk (Windows), where the share
+         *     root is never anchored and so there is nothing to re-trust.
+         */
+        post: operations["reanchor_share_root_api_v1_library_share_root_reanchor_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3052,7 +3342,11 @@ export interface paths {
         };
         /**
          * Get Headphones
-         * @description Return the live headphone state from the attached performance page.
+         * @description Return the live headphone state from the best-informed open performance page.
+         *
+         *     With several pages open, a page whose device lists were read (`listed`) is
+         *     not replaced by another page whose lists were not; `reporting_client_id`
+         *     and `report_age_ms` say which page answered and how fresh it is.
          */
         get: operations["get_headphones_api_v1_performance_headphones_get"];
         put?: never;
@@ -4801,6 +5095,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/cache/enforce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enforce Stem Cache
+         * @description Run the engine's enforcement pass now. Evicts only bundles the R2
+         *     index holds byte for byte, least recently used first, and stops at the
+         *     floor; ``dry_run`` reports the plan without removing anything.
+         */
+        post: operations["enforce_stem_cache_api_v1_stems_cache_enforce_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/cache/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stem Cache Settings */
+        get: operations["get_stem_cache_settings_api_v1_stems_cache_settings_get"];
+        /**
+         * Put Stem Cache Settings
+         * @description Override the floor, the optional cap, the tick interval or auto-evict.
+         *     Omitted fields keep their stored value; ``clear_max_cache_gib`` removes
+         *     the cap (``null`` cannot, because it already means "leave unchanged").
+         */
+        put: operations["put_stem_cache_settings_api_v1_stems_cache_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/cache/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Cache Status
+         * @description Where the stem cache stands against the free-disk floor. Read-only.
+         */
+        get: operations["get_stem_cache_status_api_v1_stems_cache_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/estimate": {
         parameters: {
             query?: never;
@@ -5641,6 +6000,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/grid-provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Track Grid Provenance */
+        get: operations["get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/hot-cues": {
         parameters: {
             query?: never;
@@ -5782,6 +6158,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/plays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Track Plays */
+        get: operations["get_track_plays_api_v1_tracks__stable_id__plays_get"];
+        put?: never;
+        /** Record Track Play */
+        post: operations["record_track_play_api_v1_tracks__stable_id__plays_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -5868,6 +6262,57 @@ export interface paths {
          *     references (e.g. two decks on the same track) both need closing.
          */
         post: operations["mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hydrate Stem Bundle
+         * @description Fetch this track's stem bundle from the cloud now, and retry a failure.
+         *
+         *     The manifest route records a failed fetch and answers 502 from then on so
+         *     a hot loop cannot hammer R2 with the same doomed request. This is the
+         *     explicit way back: it drops that record and starts a fresh fetch through
+         *     the same single-flight path, so the cache floor and the evictor apply
+         *     exactly as they do for a deck load. A bundle already on disk is a no-op.
+         *     Returns at once with the resulting state; poll ``.../stems/state``.
+         */
+        post: operations["hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem State
+         * @description Name this track's stem state. Read-only: never starts a download.
+         *
+         *     Agent-native parity for what the deck's stem row shows. Registered BEFORE
+         *     the ``{part}`` route on purpose, which would otherwise read ``state`` as a
+         *     stem part name.
+         */
+        get: operations["get_stem_state_api_v1_tracks__stable_id__stems_state_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6002,6 +6447,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ui-prefs/watcher-folders:validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Watcher Folders
+         * @description LIBM-129 v1: existence check only; no watcher daemon.
+         */
+        post: operations["validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/update/apply": {
         parameters: {
             query?: never;
@@ -6104,6 +6569,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usb/tracks/{track_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track
+         * @description The library's TrackOut for a stick track, so the deck loads it unchanged.
+         *
+         *     The flags predict the stick routes: no lyrics, auto-cues or stems route
+         *     exists under ``/usb/tracks``, so those are False; ``has_rb_mapping`` is
+         *     False because ``/hot-cues`` is read only and ``rb-meta`` cannot resolve a
+         *     stick id; ``artwork_available`` is True only when both served sizes
+         *     exist. ``/anlz`` and ``/hot-cues`` answer for every track whose export
+         *     row names no analysis (empty) or a readable one (the stick's own).
+         */
+        get: operations["get_usb_track_api_v1_usb_tracks__track_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/anlz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track Anlz
+         * @description The stick's own waveform / beatgrid / cues / phrases, in the library
+         *     ``/anlz`` shape, decoded from this track's exact ANLZ files.
+         *
+         *     ``vocals`` is always ``not_analyzed`` (a PVDI tag is listed in
+         *     ``unreadable_anlz``); ``beatgrid.source`` and ``beatgrid_source`` are
+         *     always ``rekordbox``. Same ``points`` bounds, ETag and
+         *     ``private, no-cache`` revalidation as the library route; the client's
+         *     ``gen`` cache-buster is ignored here as it is there.
+         */
+        get: operations["get_usb_track_anlz_api_v1_usb_tracks__track_id__anlz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/artwork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track Artwork
+         * @description The pdb's pre-rendered jpg: ``s`` as named, ``m``/``orig`` its ``_m``
+         *     sibling (the largest rendering rekordbox writes to a stick).
+         */
+        get: operations["get_usb_track_artwork_api_v1_usb_tracks__track_id__artwork_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Track Audio
+         * @description Stream the stick's file. FileResponse handles Range/206 and HEAD, as
+         *     the library's ``/tracks/{id}/audio`` does.
+         *
+         *     A subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,
+         *     so a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)
+         *     answers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.
+         */
+        get: operations["get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Get Usb Track Audio
+         * @description Stream the stick's file. FileResponse handles Range/206 and HEAD, as
+         *     the library's ``/tracks/{id}/audio`` does.
+         *
+         *     A subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,
+         *     so a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)
+         *     answers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.
+         */
+        head: operations["head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head"];
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/tracks/{track_id}/hot-cues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Usb Track Hot Cue Slots
+         * @description Eight slots from the stick's own cues, the library's shape. Read only:
+         *     no PUT/DELETE/restore exists here, so a revision is only an identity for
+         *     the slot's current state and edits stay in the deck's session.
+         */
+        get: operations["list_usb_track_hot_cue_slots_api_v1_usb_tracks__track_id__hot_cues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/usb/volumes": {
         parameters: {
             query?: never;
@@ -6133,6 +6729,29 @@ export interface paths {
          * @description SSE: keep the scanner warm while a client is subscribed.
          */
         get: operations["usb_volume_events_api_v1_usb_volumes_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/usb/volumes/{volume_id}/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usb Stick Library
+         * @description The stick's rekordbox library from ``export.pdb`` alone (no ANLZ read).
+         *
+         *     Cached per VolumeUUID while ``export.pdb``'s size and mtime are
+         *     unchanged; ``cache_hit`` and ``read_ms`` say which path this was.
+         */
+        get: operations["get_usb_stick_library_api_v1_usb_volumes__volume_id__library_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7226,6 +7845,93 @@ export interface components {
             stable_id: string;
         };
         /**
+         * BeatgridFlagCounts
+         * @description Every count is over the response's `denominator`. The four classes sum
+         *     to it; `dismissed` counts flagged tracks whose flag the user hid.
+         */
+        BeatgridFlagCounts: {
+            /** Dismissed */
+            dismissed: number;
+            /** Ok */
+            ok: number;
+            /** Suspect */
+            suspect: number;
+            /** Unknown */
+            unknown: number;
+            /** Variable Tempo */
+            variable_tempo: number;
+        };
+        /** BeatgridFlagItem */
+        BeatgridFlagItem: {
+            /** Artist */
+            artist: string | null;
+            /** Computed At */
+            computed_at: string | null;
+            /** Dismissed */
+            dismissed: boolean;
+            /**
+             * Grid Class
+             * @enum {string}
+             */
+            grid_class: "ok" | "suspect" | "variable_tempo" | "unknown";
+            /** Grid Source */
+            grid_source: string | null;
+            /** Interval Count */
+            interval_count: number;
+            /** Median Bpm */
+            median_bpm: number | null;
+            /** Message */
+            message: string;
+            /** Reason */
+            reason: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Steady Coverage */
+            steady_coverage: number | null;
+            /** Steady Line Bpm */
+            steady_line_bpm: number | null;
+            /** Steady On Line */
+            steady_on_line: number | null;
+            /** Tempo Marker Count */
+            tempo_marker_count: number | null;
+            /** Title */
+            title: string | null;
+            /** Uneven Interval Count */
+            uneven_interval_count: number;
+            /** Worst At Sec */
+            worst_at_sec: number;
+            /** Worst Deviation Ms */
+            worst_deviation_ms: number;
+        };
+        /** BeatgridFlagRule */
+        BeatgridFlagRule: {
+            /** Thresholds */
+            thresholds: {
+                [key: string]: number;
+            };
+            /** Version */
+            version: string;
+        };
+        /** BeatgridFlagsOut */
+        BeatgridFlagsOut: {
+            counts: components["schemas"]["BeatgridFlagCounts"];
+            /**
+             * Denominator
+             * @enum {string}
+             */
+            denominator: "present" | "all_tracks";
+            /** Items */
+            items: components["schemas"]["BeatgridFlagItem"][];
+            /** Present */
+            present: number;
+            rule: components["schemas"]["BeatgridFlagRule"];
+            scan: components["schemas"]["BeatgridScanStatus"];
+            /** Unknown Reasons */
+            unknown_reasons: {
+                [key: string]: number;
+            };
+        };
+        /**
          * BeatgridIssueOut
          * @description A real, already-detected PQTZ field-vs-interval BPM disagreement.
          *
@@ -7248,10 +7954,26 @@ export interface components {
              */
             severity: "warning" | "error";
         };
+        /** BeatgridScanStatus */
+        BeatgridScanStatus: {
+            /** Last Error */
+            last_error: string | null;
+            /** Last Result */
+            last_result: {
+                [key: string]: unknown;
+            } | null;
+            /** Running Scope */
+            running_scope: ("present" | "all") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "running";
+        };
         /** Binding */
         Binding: {
             /** Action */
-            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
+            action: components["schemas"]["DeckPlayToggle"] | components["schemas"]["DeckCue"] | components["schemas"]["DeckHotCue"] | components["schemas"]["DeckBeatLoop"] | components["schemas"]["DeckAutoLoopToggle"] | components["schemas"]["DeckLoopExit"] | components["schemas"]["DeckStemEqToggle"] | components["schemas"]["MixerChannel"] | components["schemas"]["MixerGlobal"] | components["schemas"]["ChannelCue"] | components["schemas"]["DeckPitch"] | components["schemas"]["BrowseEncoder"] | components["schemas"]["BrowseLoad"] | components["schemas"]["ShiftModifier"];
             /**
              * Invert
              * @default false
@@ -7301,6 +8023,13 @@ export interface components {
         };
         /** BrokenTrackList */
         BrokenTrackList: {
+            /** Next Offset */
+            next_offset?: number | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
             /** Total */
             total: number;
             /** Tracks */
@@ -7969,6 +8698,9 @@ export interface components {
              * @enum {string}
              */
             author?: "operator" | "agent";
+            element_offset?: components["schemas"]["PinElementOffset"] | null;
+            /** Nearby Anchors */
+            nearby_anchors?: components["schemas"]["PinNearbyAnchor"][];
             /** Page */
             page: string;
             /** Text */
@@ -7978,6 +8710,7 @@ export interface components {
              * @enum {string}
              */
             ui: "chrome-loop" | "packaged-app";
+            ui_config?: components["schemas"]["PinUiConfig"] | null;
             /** Viewport Height */
             viewport_height: number;
             /** Viewport Width */
@@ -8019,6 +8752,7 @@ export interface components {
             build: components["schemas"]["BuildStampOut"];
             /** Created At */
             created_at: string;
+            element_offset?: components["schemas"]["PinElementOffset"] | null;
             environment?: components["schemas"]["PinEnvironmentOut"] | null;
             /** Fixed At */
             fixed_at?: string | null;
@@ -8030,6 +8764,8 @@ export interface components {
             id: string;
             /** Issue Url */
             issue_url?: string | null;
+            /** Nearby Anchors */
+            nearby_anchors?: components["schemas"]["PinNearbyAnchor"][];
             /** Page */
             page: string;
             /** Replies */
@@ -8074,6 +8810,16 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** CommentSummaryOut */
+        CommentSummaryOut: {
+            /**
+             * Fleet Correlation
+             * @enum {string}
+             */
+            fleet_correlation: "ok" | "ledger_missing" | "ledger_unreadable";
+            lifecycle: components["schemas"]["PinStatusSummaryOut"];
+            operator: components["schemas"]["PinOperatorBreakdownOut"];
+        };
         /** CommentUpdateIn */
         CommentUpdateIn: {
             /** Agent Note */
@@ -8093,6 +8839,39 @@ export interface components {
             note: string;
             /** Sha */
             sha: string;
+        };
+        /**
+         * CompatibleFilterOut
+         * @description Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.
+         */
+        CompatibleFilterOut: {
+            /**
+             * Allow Half Double
+             * @default true
+             */
+            allow_half_double: boolean;
+            /**
+             * Bpm Direction
+             * @default both
+             * @enum {string}
+             */
+            bpm_direction: "both" | "above" | "below" | "same";
+            /**
+             * Bpm Enabled
+             * @default true
+             */
+            bpm_enabled: boolean;
+            /**
+             * Bpm Window Bpm
+             * @default 20
+             */
+            bpm_window_bpm: number;
+            /**
+             * Camelot Steps
+             * @default 1
+             * @enum {integer}
+             */
+            camelot_steps: 0 | 1 | 2;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -8176,10 +8955,14 @@ export interface components {
          *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
          */
         CoverageOut: {
+            /** Age S */
+            age_s: number;
             /** Availability */
             availability: {
                 [key: string]: number;
             };
+            /** Awaiting Stem Download */
+            awaiting_stem_download: number;
             /** Corrupt */
             corrupt: {
                 [key: string]: number;
@@ -8194,6 +8977,14 @@ export interface components {
             };
             /** Generated At */
             generated_at: number;
+            /** In Cloud */
+            in_cloud: {
+                [key: string]: number;
+            };
+            /** Local */
+            local: {
+                [key: string]: number;
+            };
             /** Missing */
             missing: {
                 [key: string]: number;
@@ -8203,6 +8994,14 @@ export interface components {
             /** Pending */
             pending: {
                 [key: string]: number;
+            };
+            /** Refresh Error */
+            refresh_error: string | null;
+            /** Refreshing */
+            refreshing: boolean;
+            /** Stems Index */
+            stems_index: {
+                [key: string]: string | null;
             };
             /** Stems Source Refusal */
             stems_source_refusal: string | null;
@@ -8390,18 +9189,6 @@ export interface components {
             /** Filename */
             filename: string;
         };
-        /** DecisionIn */
-        DecisionIn: {
-            /**
-             * Action
-             * @enum {string}
-             */
-            action: "merge" | "keep-all" | "skip";
-            /** Cluster Key */
-            cluster_key: string;
-            /** Survivor */
-            survivor: string;
-        };
         /** DecisionOut */
         DecisionOut: {
             /**
@@ -8440,6 +9227,19 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /** DeckAutoLoopToggle */
+        DeckAutoLoopToggle: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_auto_loop_toggle";
         };
         /** DeckBeatLoop */
         DeckBeatLoop: {
@@ -8592,6 +9392,19 @@ export interface components {
              */
             type: "deck_play_toggle";
         };
+        /** DeckStemEqToggle */
+        DeckStemEqToggle: {
+            /**
+             * Deck
+             * @enum {integer}
+             */
+            deck: 1 | 2 | 3 | 4;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "deck_stem_eq_toggle";
+        };
         /** DeletedPlaylistOut */
         DeletedPlaylistOut: {
             /** Deleted At */
@@ -8667,10 +9480,33 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** DrainConfigIn */
+        /** DismissIn */
+        DismissIn: {
+            /** Dismissed */
+            dismissed: boolean;
+        };
+        /** DismissOut */
+        DismissOut: {
+            /** Dismissed */
+            dismissed: boolean;
+            /** Etag */
+            etag: string;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /**
+         * DrainConfigIn
+         * @description Partial update: an omitted key keeps its stored value.
+         */
         DrainConfigIn: {
             /** Enabled */
-            enabled: boolean;
+            enabled?: boolean | null;
+            /** Steps */
+            steps?: {
+                [key: string]: boolean;
+            } | null;
+            /** Transient Bundle Cap */
+            transient_bundle_cap?: number | null;
         };
         /** DrainRetryOut */
         DrainRetryOut: {
@@ -8680,11 +9516,23 @@ export interface components {
         };
         /** DrainStatusOut */
         DrainStatusOut: {
+            /** Cloud Vocals */
+            cloud_vocals: {
+                [key: string]: unknown;
+            };
             /** Enabled */
             enabled: boolean;
             /** Failed */
             failed: {
                 [key: string]: number;
+            };
+            /** Farm Only Pending */
+            farm_only_pending: {
+                [key: string]: number;
+            };
+            /** Farm Only Stages */
+            farm_only_stages: {
+                [key: string]: string;
             };
             /** Jobs Failed */
             jobs_failed: number;
@@ -8694,6 +9542,8 @@ export interface components {
             last_job: {
                 [key: string]: unknown;
             } | null;
+            /** Memory Pressure */
+            memory_pressure: string | null;
             /** Next Retry At */
             next_retry_at: number | null;
             /** Pending */
@@ -8704,10 +9554,28 @@ export interface components {
             reason: string | null;
             /** State */
             state: string;
+            /** Stems Check */
+            stems_check: {
+                [key: string]: unknown;
+            };
+            /** Stems In Cloud */
+            stems_in_cloud: number;
+            /** Stems Index Reason */
+            stems_index_reason: string | null;
+            /** Stems Index State */
+            stems_index_state: string;
             /** Stems Needing Farm */
             stems_needing_farm: string[];
             /** Stems Needing Farm Count */
             stems_needing_farm_count: number;
+            /** Stems No Source */
+            stems_no_source: number;
+            /** Stems Unclassified */
+            stems_unclassified: number;
+            /** Steps Enabled */
+            steps_enabled: {
+                [key: string]: boolean;
+            };
             /** Stop Requested */
             stop_requested: boolean;
             /** Ticks */
@@ -9424,6 +10292,58 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** GridProvenanceOut */
+        GridProvenanceOut: {
+            /** Backend */
+            backend: string | null;
+            /** Backend Version */
+            backend_version: string | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "selection" | "unmapped-default";
+            /** Bpm */
+            bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence: number | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "rekordbox" | "own";
+            /** Stable Id */
+            stable_id: string;
+            /** Status */
+            status: ("ok" | "failed" | "missing") | null;
+        };
+        /**
+         * GridQualityRowOut
+         * @description A track row's stored beatgrid verdict (GRIDFLAG-02).
+         *
+         *     Read back from the grid-quality store; a listing never parses a grid.
+         *     ``unknown`` means nobody could judge the grid (``reason`` says why) and
+         *     must never be drawn as ``ok`` or as a flag. ``message`` is the sentence
+         *     the deck's Beat Sync badge shows for the same grid; null for ``ok``.
+         */
+        GridQualityRowOut: {
+            /**
+             * Dismissed
+             * @default false
+             */
+            dismissed: boolean;
+            /**
+             * Grid Class
+             * @enum {string}
+             */
+            grid_class: "ok" | "suspect" | "variable_tempo" | "unknown";
+            /** Message */
+            message?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -9496,6 +10416,7 @@ export interface components {
             /** Alignment Mode */
             alignment_mode: string;
             calibration: components["schemas"]["HeadphoneCalibrationOut"];
+            device_access: components["schemas"]["IoDeviceAccessOut"];
             /** Error */
             error: string | null;
             /** Head Delay Ms */
@@ -9512,6 +10433,10 @@ export interface components {
             output_mode: string;
             /** Outputs */
             outputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
+            /** Report Age Ms */
+            report_age_ms?: number | null;
+            /** Reporting Client Id */
+            reporting_client_id?: string | null;
             /** Selected Input Device Id */
             selected_input_device_id: string | null;
             /** Selected Master Output Device Id */
@@ -9546,6 +10471,11 @@ export interface components {
             playlists: number;
             /** Tracks */
             tracks: number;
+            /**
+             * Tracks Playable
+             * @default 0
+             */
+            tracks_playable: number;
         };
         /** HealthSyncthing */
         HealthSyncthing: {
@@ -9771,6 +10701,29 @@ export interface components {
             survivor_pk: string;
             /** Table */
             table: string;
+        };
+        /**
+         * IoDeviceAccessOut
+         * @description IOPIN-14: whether the device lists could be read, and what to do if not.
+         *
+         *     `status` is one of not_checked, listed, permission_needed, permission_denied,
+         *     api_missing, enumeration_failed, timeout. Only `listed` means `outputs` and
+         *     `inputs` are the machine's real device names; an agent must read this before
+         *     treating a short list as a machine with few devices.
+         */
+        IoDeviceAccessOut: {
+            /** Action */
+            action: string;
+            /** Detail */
+            detail: string | null;
+            /** Message */
+            message: string | null;
+            /** Notices */
+            notices: string[];
+            /** Output Pinning */
+            output_pinning: boolean;
+            /** Status */
+            status: string;
         };
         /** JobIn */
         JobIn: {
@@ -11149,6 +12102,40 @@ export interface components {
             /** Tracks Updated */
             tracks_updated: number;
         };
+        /** NoSourceClearOut */
+        NoSourceClearOut: {
+            /** Cleared */
+            cleared: boolean;
+            /** Keep Pending */
+            keep_pending: boolean;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** NoSourceListOut */
+        NoSourceListOut: {
+            /** Keep Pending */
+            keep_pending: string[];
+            /** Marks */
+            marks: components["schemas"]["NoSourceMarkOut"][];
+        };
+        /** NoSourceMarkIn */
+        NoSourceMarkIn: {
+            /** Reason */
+            reason: string;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** NoSourceMarkOut */
+        NoSourceMarkOut: {
+            /** Applies */
+            applies: boolean | null;
+            /** Reason */
+            reason: string;
+            /** Recorded At */
+            recorded_at: number;
+            /** Stable Id */
+            stable_id: string;
+        };
         /** NodePatch */
         NodePatch: {
             build?: components["schemas"]["BuildPatchIn"] | null;
@@ -11518,13 +12505,28 @@ export interface components {
             playlist_id: string;
         };
         /**
+         * PinElementOffset
+         * @description The click point inside the ``anchor`` element's box, 0..100 per axis.
+         */
+        PinElementOffset: {
+            /** Dx Pct */
+            dx_pct: number;
+            /** Dy Pct */
+            dy_pct: number;
+        };
+        /**
          * PinEnvironmentOut
-         * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
+         * @description Runtime facts needed to reproduce a pinned UI defect.
          *
          *     ``machine`` and ``release_version`` are already exposed by the running
-         *     daemon's settings/health surfaces. The browser contributes only its UI
-         *     kind and viewport dimensions: no username, user agent, URL query, or
-         *     other new personal data enters the pin store.
+         *     daemon's settings/health surfaces. The browser contributes its UI kind,
+         *     viewport dimensions and a closed ``ui_config`` snapshot (see
+         *     ``PinUiConfig``): no user agent, URL query, file path or track title.
+         *
+         *     ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
+         *     it from the session cookie, the same identity ``GET /api/v1/auth/me``
+         *     already returns to this browser; a request body cannot set it. It is null
+         *     when nobody is signed in, and absent on pins older than this field.
          */
         PinEnvironmentOut: {
             /** Machine */
@@ -11536,6 +12538,9 @@ export interface components {
              * @enum {string}
              */
             ui: "chrome-loop" | "packaged-app";
+            ui_config?: components["schemas"]["PinUiConfig"] | null;
+            /** User Email */
+            user_email?: string | null;
             /** Viewport Height */
             viewport_height: number;
             /** Viewport Width */
@@ -11547,6 +12552,56 @@ export interface components {
             machine_id: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /**
+         * PinNearbyAnchor
+         * @description A stable neighbour of the pinned element and the pin's px offset from it.
+         */
+        PinNearbyAnchor: {
+            /** Dx Px */
+            dx_px: number;
+            /** Dy Px */
+            dy_px: number;
+            /** Selector */
+            selector: string;
+        };
+        /** PinOperatorBreakdownOut */
+        PinOperatorBreakdownOut: {
+            /** Blocked */
+            blocked: number;
+            /** Delegated */
+            delegated: number;
+            /** Fixed */
+            fixed: number;
+            /** Harvested */
+            harvested: number;
+            /** In Progress */
+            in_progress: number;
+            /** Merged */
+            merged: number;
+            /** Sent To Queue */
+            sent_to_queue: number;
+            /** Total */
+            total: number;
+        };
+        /** PinStatusSummaryOut */
+        PinStatusSummaryOut: {
+            /** Blocked */
+            blocked: number;
+            /** Fixed */
+            fixed: number;
+            /** Harvested */
+            harvested: number;
+            /** Issued */
+            issued: number;
+            /** Merged */
+            merged: number;
+            /** Open */
+            open: number;
+            /** Total */
+            total: number;
+            /** Untriaged */
+            untriaged: number;
         };
         /**
          * PinSyncOut
@@ -11572,6 +12627,30 @@ export interface components {
             state: "synced" | "pending_push" | "unreconciled" | "harvested";
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * PinUiConfig
+         * @description Compact UI configuration at the moment a pin was dropped (pin 49f9d217).
+         *
+         *     Closed by construction: unknown keys are refused, every mode is a short
+         *     lowercase slug, every switch is a boolean, and the route is an app route
+         *     with no query string. That is what keeps a secret, a path under the
+         *     user's home, or a track title out of the pin store: there is no field
+         *     free text could travel in.
+         */
+        PinUiConfig: {
+            /** App Mode */
+            app_mode: string;
+            /** Engine Mode */
+            engine_mode: string;
+            /** Perf Tier */
+            perf_tier: string;
+            /** Route */
+            route: string;
+            /** Switches */
+            switches: {
+                [key: string]: boolean;
+            };
         };
         /** PlanEntryOut */
         PlanEntryOut: {
@@ -12186,6 +13265,37 @@ export interface components {
              */
             status: "pass" | "fail";
         };
+        /** PreviewStripOut */
+        PreviewStripOut: {
+            /** Preview B64 */
+            preview_b64: string;
+            /** Preview Max */
+            preview_max: number;
+        };
+        /**
+         * PreviewStripsIn
+         * @description Body of ``POST /library/preview-strips``.
+         */
+        PreviewStripsIn: {
+            /** Ids */
+            ids: string[];
+        };
+        /**
+         * PreviewStripsOut
+         * @description ``strips`` has every asked id: its strip, or null when none is on disk yet.
+         *
+         *     ``pending`` lists the null ids the ahead-analysis drain was bumped for and
+         *     will write, so asking again later can fill them. A null id not in
+         *     ``pending`` stays null until something else analyzes it.
+         */
+        PreviewStripsOut: {
+            /** Pending */
+            pending: string[];
+            /** Strips */
+            strips: {
+                [key: string]: components["schemas"]["PreviewStripOut"] | null;
+            };
+        };
         /**
          * Provenance
          * @description Where one binding's wire numbers came from. Required on every binding:
@@ -12494,7 +13604,7 @@ export interface components {
          *     :func:`_local_rb_meta`.
          *
          *     ``artwork_available`` is tri-state (``bool | None``) rather than a plain
-         *     bool: for a local-vendor row it is ``None`` when the optional ``mutagen``
+         *     bool: for a local-vendor row it is ``None`` when the tinytag
          *     tag reader was never available to check with, distinct from a checked
          *     ``False`` (no embedded picture). A rekordbox-vendor row never needs the
          *     reader, so it is always a definite ``True``/``False`` there. See
@@ -12674,6 +13784,17 @@ export interface components {
         RecorderStatus: {
             /** Active */
             active: boolean;
+            /**
+             * Capture
+             * @description The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).
+             * @enum {string}
+             */
+            capture: "none" | "unknown" | "starting" | "waiting_permission" | "recording" | "stopped" | "failed";
+            /**
+             * Capture Error
+             * @description Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).
+             */
+            capture_error?: string | null;
             /** Owned */
             owned: boolean;
             /** Pid */
@@ -12957,6 +14078,39 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["SyncRowSampleModel"][];
         };
+        /**
+         * ScanStatusOut
+         * @description Progress of the on-device library fingerprint scan.
+         */
+        ScanStatusOut: {
+            /** Cache Hits */
+            cache_hits: number;
+            /** Clusters */
+            clusters: number | null;
+            /** Computed */
+            computed: number;
+            /** Done */
+            done: number;
+            /** Error */
+            error: string | null;
+            /** Error Samples */
+            error_samples: string[];
+            /** Errors */
+            errors: number;
+            /** Finished At */
+            finished_at: string | null;
+            /** Not Local */
+            not_local: number;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "running" | "done" | "failed";
+            /** Total */
+            total: number;
+        };
         /** SchedulerResumeOut */
         SchedulerResumeOut: {
             /** Ok */
@@ -12978,8 +14132,16 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
             /** Bpm Reason */
             bpm_reason?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             /**
              * Bpm Status
              * @enum {string}
@@ -13005,11 +14167,14 @@ export interface components {
             file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
             file_exists: boolean | null;
+            /** File Path */
+            file_path?: string | null;
             /** Genre */
             genre: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -13075,6 +14240,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /** Title */
             title: string | null;
             /** Vocals */
@@ -13178,6 +14345,14 @@ export interface components {
             state_db: components["schemas"]["FileProbeOut"];
             /** Tracks */
             tracks: number;
+        };
+        /**
+         * ShareRootReanchorOut
+         * @description Answer of ``POST /library/share-root/reanchor``.
+         */
+        ShareRootReanchorOut: {
+            /** Exists */
+            exists: boolean;
         };
         /** ShiftModifier */
         ShiftModifier: {
@@ -13512,6 +14687,175 @@ export interface components {
             /** Stable Id */
             stable_id: string;
         };
+        /** StemCacheEnforceIn */
+        StemCacheEnforceIn: {
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+        };
+        /** StemCacheEnforcementOut */
+        StemCacheEnforcementOut: {
+            /** At Utc */
+            at_utc: string;
+            /** Blocked Reason */
+            blocked_reason: string | null;
+            /** Budget Bytes */
+            budget_bytes: number;
+            /** Bytes Freed */
+            bytes_freed: number;
+            /** Cache Bytes */
+            cache_bytes: number;
+            /** Disk Free Bytes */
+            disk_free_bytes: number;
+            /** Disk Total Bytes */
+            disk_total_bytes: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Evicted Stable Ids */
+            evicted_stable_ids: string[];
+            /** Floor Bytes */
+            floor_bytes: number;
+            /** Protected Count */
+            protected_count: number;
+            /** Queued For Upload */
+            queued_for_upload: string[];
+            /** Shortfall Bytes */
+            shortfall_bytes: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "healthy" | "low_disk";
+        };
+        /**
+         * StemCacheSettingsIn
+         * @description Partial update: omitted fields keep their stored value.
+         */
+        StemCacheSettingsIn: {
+            /** Auto Evict */
+            auto_evict?: boolean | null;
+            /**
+             * Clear Max Cache Gib
+             * @default false
+             */
+            clear_max_cache_gib: boolean;
+            /** Enforce Interval S */
+            enforce_interval_s?: number | null;
+            /** Floor Fraction */
+            floor_fraction?: number | null;
+            /** Floor Gib */
+            floor_gib?: number | null;
+            /** Max Cache Gib */
+            max_cache_gib?: number | null;
+        };
+        /** StemCacheSettingsOut */
+        StemCacheSettingsOut: {
+            /**
+             * Auto Evict
+             * @description Whether low disk evicts R2-confirmed bundles
+             */
+            auto_evict: boolean;
+            /**
+             * Enforce Interval S
+             * @description Seconds between engine enforcement ticks
+             */
+            enforce_interval_s: number;
+            /**
+             * Floor Fraction
+             * @description Free-space floor as a fraction of the volume
+             */
+            floor_fraction: number;
+            /**
+             * Floor Gib
+             * @description Absolute free-space floor, GiB
+             */
+            floor_gib: number;
+            /**
+             * Max Cache Gib
+             * @description Optional hard cap on the cache, GiB
+             */
+            max_cache_gib: number | null;
+        };
+        /** StemCacheStatusOut */
+        StemCacheStatusOut: {
+            /**
+             * Blocked Reason
+             * @description Why low disk is not being relieved, or null
+             */
+            blocked_reason: string | null;
+            /**
+             * Budget Bytes
+             * @description Largest cache that still leaves the floor free
+             */
+            budget_bytes: number;
+            /** Bundle Count */
+            bundle_count: number;
+            /** Cache Bytes */
+            cache_bytes: number;
+            /**
+             * Can Rehydrate
+             * @description Whether a hydration source is armed
+             */
+            can_rehydrate: boolean;
+            /** Disk Free Bytes */
+            disk_free_bytes: number;
+            /** Disk Total Bytes */
+            disk_total_bytes: number;
+            /** Enforcer Running */
+            enforcer_running: boolean;
+            /**
+             * Evictable Bundle Count
+             * @description In the R2 index and not on a deck
+             */
+            evictable_bundle_count: number;
+            /** Evictable Bytes */
+            evictable_bytes: number;
+            /** Floor Bytes */
+            floor_bytes: number;
+            last_enforcement: components["schemas"]["StemCacheEnforcementOut"] | null;
+            /** Last Error */
+            last_error: string | null;
+            /** Local Only Bytes */
+            local_only_bytes: number;
+            /**
+             * Local Only Count
+             * @description Not covered by the R2 index; never evicted
+             */
+            local_only_count: number;
+            /** Local Only Stable Ids */
+            local_only_stable_ids: string[];
+            /** Over Budget Bytes */
+            over_budget_bytes: number;
+            /**
+             * Protected Count
+             * @description Loaded or playing; never evicted
+             */
+            protected_count: number;
+            settings: components["schemas"]["StemCacheSettingsOut"];
+            /**
+             * Shortfall Bytes
+             * @description Bytes short of the floor; 0 when healthy
+             */
+            shortfall_bytes: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "healthy" | "low_disk";
+            /** Stems Dir */
+            stems_dir: string;
+            /** Upload Queue Count */
+            upload_queue_count: number;
+            /** Would Evict Bytes */
+            would_evict_bytes: number;
+            /**
+             * Would Evict Count
+             * @description Least-recently-used bundles that reaching the floor would remove; each stays in R2 and is fetched back on demand
+             */
+            would_evict_count: number;
+        };
         /** StemHydrateIn */
         StemHydrateIn: {
             /** Data Dir */
@@ -13523,6 +14867,18 @@ export interface components {
             dry_run: boolean;
             /** Manifest Path */
             manifest_path: string;
+        };
+        /**
+         * StemHydrationProgressOut
+         * @description How far an in-flight cloud fetch has got, read from its temp directory.
+         */
+        StemHydrationProgressOut: {
+            /** Bytes Done */
+            bytes_done: number;
+            /** Files Done */
+            files_done: number;
+            /** Files Total */
+            files_total: number;
         };
         /** StemIndexBuildIn */
         StemIndexBuildIn: {
@@ -13619,6 +14975,36 @@ export interface components {
             dry_run: boolean;
         };
         /**
+         * StemStateOut
+         * @description One track's stem bundle, named: where it is and what is happening to it.
+         *
+         *     ``local`` is on this machine and playable; ``cloud`` is only in the R2
+         *     index and a hydrate will fetch it; ``fetching`` is being downloaded now;
+         *     ``error`` is a bundle that should exist and could not be produced;
+         *     ``none`` is no bundle anywhere this engine can see.
+         */
+        StemStateOut: {
+            /**
+             * Deck Open
+             * @default false
+             */
+            deck_open: boolean;
+            /** Error Code */
+            error_code?: string | null;
+            /** Hydration Armed */
+            hydration_armed: boolean;
+            /** Message */
+            message: string;
+            progress?: components["schemas"]["StemHydrationProgressOut"] | null;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "local" | "cloud" | "fetching" | "error" | "none";
+        };
+        /**
          * StemTierOut
          * @description One real separation rung, straight out of apps.stems.tiers.
          */
@@ -13652,6 +15038,7 @@ export interface components {
             hydrating: boolean;
             /** Message */
             message: string;
+            progress?: components["schemas"]["StemHydrationProgressOut"] | null;
             /** Stable Id */
             stable_id: string;
             /**
@@ -14251,6 +15638,14 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;
@@ -14276,6 +15671,7 @@ export interface components {
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -14295,6 +15691,8 @@ export interface components {
              * @default false
              */
             is_remote: boolean;
+            /** Is Streaming */
+            is_streaming: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
@@ -14331,6 +15729,8 @@ export interface components {
             };
             /** Stems Available */
             stems_available: boolean;
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /**
              * Tags
              * @default []
@@ -14438,6 +15838,23 @@ export interface components {
             tags_remove?: string[] | null;
             tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
         };
+        /** TrackPlayIn */
+        TrackPlayIn: {
+            /**
+             * Audible S
+             * @description Seconds the room heard this load (master-routed, above silence).
+             */
+            audible_s: number;
+            /** Deck */
+            deck?: number | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /**
+             * Play Id
+             * @description Client-minted id of this deck load; a retry with the same id is not counted twice.
+             */
+            play_id: string;
+        };
         /** TrackPlaylistOut */
         TrackPlaylistOut: {
             /** Name */
@@ -14448,6 +15865,27 @@ export interface components {
             positions: number[];
             /** Vendor */
             vendor: string;
+        };
+        /** TrackPlaysOut */
+        TrackPlaysOut: {
+            /** Opendj Last Played At */
+            opendj_last_played_at: string | null;
+            /** Opendj Play Count */
+            opendj_play_count: number;
+            /**
+             * Play Count
+             * @description rekordbox_play_count + opendj_play_count
+             */
+            play_count: number;
+            /**
+             * Recorded
+             * @description POST only: false when this play_id was already logged.
+             */
+            recorded?: boolean | null;
+            /** Rekordbox Play Count */
+            rekordbox_play_count: number;
+            /** Stable Id */
+            stable_id: string;
         };
         /**
          * TrackRowOut
@@ -14472,8 +15910,16 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
             /** Bpm Reason */
             bpm_reason?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             /**
              * Bpm Status
              * @enum {string}
@@ -14499,11 +15945,14 @@ export interface components {
             file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
             file_exists: boolean | null;
+            /** File Path */
+            file_path?: string | null;
             /** Genre */
             genre: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -14567,6 +16016,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /** Title */
             title: string | null;
             /** Vocals */
@@ -14631,6 +16082,7 @@ export interface components {
              * @default true
              */
             beat_sync_max: boolean;
+            compatible_filter?: components["schemas"]["CompatibleFilterOut"];
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -14668,6 +16120,8 @@ export interface components {
              * @enum {string}
              */
             library_density: "compact" | "cosy";
+            /** Library Watcher Folders */
+            library_watcher_folders?: string[];
             /**
              * Lyrics Deck Line
              * @default true
@@ -14775,6 +16229,7 @@ export interface components {
             available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
+            compatible_filter?: components["schemas"]["CompatibleFilterOut"] | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -14792,6 +16247,8 @@ export interface components {
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Library Density */
             library_density?: ("compact" | "cosy") | null;
+            /** Library Watcher Folders */
+            library_watcher_folders?: string[] | null;
             /** Lyrics Deck Line */
             lyrics_deck_line?: boolean | null;
             /** Lyrics Global */
@@ -15015,8 +16472,125 @@ export interface components {
         UsbCapabilityErrorOut: {
             detail: components["schemas"]["UsbCapabilityDetail"];
         };
+        /** UsbStickCountsOut */
+        UsbStickCountsOut: {
+            /** History Playlists */
+            history_playlists: number;
+            /** Playlist Entries */
+            playlist_entries: number;
+            /** Playlists */
+            playlists: number;
+            /** Tracks */
+            tracks: number;
+        };
+        /** UsbStickErrorDetail */
+        UsbStickErrorDetail: {
+            /** Code */
+            code: ("USB_TRACK_ID_INVALID" | "USB_VOLUME_ID_INVALID" | "USB_VOLUME_HAS_NO_UUID" | "USB_STICK_NOT_MOUNTED" | "USB_STICK_ACCESS_BLOCKED" | "USB_TRACK_NOT_FOUND" | "USB_PATH_OUTSIDE_VOLUME" | "USB_FILE_MISSING") | ("AUDIO_ACCESS_BLOCKED" | "ANALYSIS_NOT_FOUND");
+            /** Message */
+            message: string;
+            /** Reason */
+            reason?: string | null;
+            /** Volume Id */
+            volume_id?: string | null;
+            /** Volume Uuid */
+            volume_uuid?: string | null;
+        };
+        /** UsbStickErrorOut */
+        UsbStickErrorOut: {
+            detail: components["schemas"]["UsbStickErrorDetail"];
+        };
+        /** UsbStickHistoryOut */
+        UsbStickHistoryOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Track Ids */
+            track_ids: string[];
+        };
+        /** UsbStickLibraryOut */
+        UsbStickLibraryOut: {
+            /** Cache Hit */
+            cache_hit: boolean;
+            counts: components["schemas"]["UsbStickCountsOut"];
+            /** History */
+            history: components["schemas"]["UsbStickHistoryOut"][];
+            /** Mount Path */
+            mount_path: string;
+            /** Name */
+            name: string;
+            /** Playlists */
+            playlists: components["schemas"]["UsbStickPlaylistOut"][];
+            /** Read Ms */
+            read_ms: number;
+            /** Tracks */
+            tracks: components["schemas"]["UsbStickTrackOut"][];
+            /** Volume Id */
+            volume_id: string;
+            /** Volume Uuid */
+            volume_uuid: string;
+        };
+        /** UsbStickPlaylistOut */
+        UsbStickPlaylistOut: {
+            /** Id */
+            id: string;
+            /** Is Folder */
+            is_folder: boolean;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Pdb Id */
+            pdb_id: number;
+            /** Sort Order */
+            sort_order: number;
+            /** Track Ids */
+            track_ids: string[];
+        };
+        /** UsbStickTrackOut */
+        UsbStickTrackOut: {
+            /** Album */
+            album: string | null;
+            /** Artist */
+            artist: string | null;
+            /** Bpm */
+            bpm: number | null;
+            /** Date Added */
+            date_added: string | null;
+            /** Duration S */
+            duration_s: number | null;
+            /** File Path */
+            file_path: string;
+            /** File Present */
+            file_present: boolean;
+            /** Genre */
+            genre: string | null;
+            /** Has Analysis */
+            has_analysis: boolean;
+            /** Has Artwork */
+            has_artwork: boolean;
+            /** Id */
+            id: string;
+            /** Key */
+            key: string | null;
+            /** Pdb Id */
+            pdb_id: number;
+            /** Play Count */
+            play_count: number;
+            /** Rating */
+            rating: number;
+            /** Title */
+            title: string;
+        };
         /** UsbVolumeOut */
         UsbVolumeOut: {
+            /**
+             * Access
+             * @default unknown
+             * @enum {string}
+             */
+            access: "ok" | "pending" | "denied" | "unknown";
             /** Hide Reason */
             hide_reason?: string | null;
             /** Id */
@@ -15183,6 +16757,11 @@ export interface components {
             };
             /** Transcript */
             transcript: string;
+        };
+        /** WatcherFoldersValidateIn */
+        WatcherFoldersValidateIn: {
+            /** Paths */
+            paths?: string[];
         };
         /** WheelSensitivityOut */
         WheelSensitivityOut: {
@@ -15402,6 +16981,23 @@ export interface components {
              * @enum {string}
              */
             vendor: "rekordbox" | "djay";
+        };
+        /** DecisionIn */
+        apps__webui__server__routes__dedup_review__DecisionIn: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "merge" | "keep-all" | "skip";
+            /** Cluster Key */
+            cluster_key: string;
+            /** Survivor */
+            survivor: string;
+        };
+        /** DecisionIn */
+        apps__webui__server__routes__enrich__DecisionIn: {
+            /** Answer */
+            answer: string;
         };
     };
     responses: never;
@@ -15755,7 +17351,7 @@ export interface operations {
             header?: never;
             path: {
                 session_id: string;
-                /** @description audio_<iso>.mp3 */
+                /** @description audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg) */
                 segment: string;
             };
             cookie?: never;
@@ -16135,6 +17731,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_bump_api_v1_ahead_analysis_bump__stable_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_coverage_api_v1_ahead_analysis_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    post_retry_api_v1_ahead_analysis_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -17008,6 +18681,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AvailabilityStatusOut"];
+                };
+            };
+        };
+    };
+    list_beatgrid_flags_api_v1_beatgrid_flags_get: {
+        parameters: {
+            query?: {
+                grid_class?: "flagged" | "suspect" | "variable_tempo" | "unknown" | "ok" | "all";
+                include_dismissed?: boolean;
+                availability?: "present" | "all";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridFlagsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_status_api_v1_beatgrid_flags_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+        };
+    };
+    start_scan_api_v1_beatgrid_flags_scan_post: {
+        parameters: {
+            query?: {
+                scope?: "present" | "all";
+                wait?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_flag_dismissed_api_v1_beatgrid_flags__stable_id__dismissed_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -18527,6 +20321,90 @@ export interface operations {
             };
         };
     };
+    list_stems_no_source_api_v1_coverage_outcomes_stems_no_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoSourceListOut"];
+                };
+            };
+        };
+    };
+    mark_stems_no_source_api_v1_coverage_outcomes_stems_no_source_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoSourceMarkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoSourceMarkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_stems_no_source_api_v1_coverage_outcomes_stems_no_source__stable_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoSourceClearOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_dedup_clusters_api_v1_dedup_clusters_get: {
         parameters: {
             query?: never;
@@ -18626,7 +20504,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DecisionIn"];
+                "application/json": components["schemas"]["apps__webui__server__routes__dedup_review__DecisionIn"];
             };
         };
         responses: {
@@ -18721,6 +20599,112 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_dedup_scan_api_v1_dedup_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatusOut"];
+                };
+            };
+        };
+    };
+    post_dedup_scan_api_v1_dedup_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatusOut"];
+                };
+            };
+            /** @description A scan is already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_decision_api_v1_enrich_decisions__lane__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["apps__webui__server__routes__enrich__DecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_summary_api_v1_enrich_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -18918,6 +20902,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    comments_summary_api_v1_feedback_comments_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentSummaryOut"];
                 };
             };
         };
@@ -19557,7 +21561,10 @@ export interface operations {
     };
     get_coverage_api_v1_ingest_coverage_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request. */
+                cached?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -19571,6 +21578,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -19708,7 +21724,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Optional mutagen tag reader ([tags] extra) is not installed. */
+            /** @description The tinytag tag reader is not importable. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -19718,7 +21734,7 @@ export interface operations {
                      * @example {
                      *       "detail": {
                      *         "code": "TAG_READER_UNAVAILABLE",
-                     *         "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                     *         "message": "ingest upload requires the 'tinytag' tag reader (a core dependency) for duration-based duplicate detection; reinstall the environment (uv sync)"
                      *       }
                      *     }
                      */
@@ -20072,6 +22088,39 @@ export interface operations {
             };
         };
     };
+    post_preview_strips_api_v1_library_preview_strips_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewStripsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewStripsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_library_readiness_api_v1_library_readiness_get: {
         parameters: {
             query?: {
@@ -20102,6 +22151,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reanchor_share_root_api_v1_library_share_root_reanchor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareRootReanchorOut"];
                 };
             };
         };
@@ -22758,6 +24827,10 @@ export interface operations {
             query?: {
                 /** @description Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing. */
                 playlist_id?: string | null;
+                /** @description Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library. */
+                limit?: number | null;
+                /** @description Rows to skip in the (title, stable_id) ordering. */
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -23800,7 +25873,10 @@ export interface operations {
     close_ui_mirror_api_v1_state_ui_mirror_delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The closing page's client id (CUEOUT-18). Its headphone report is forgotten; with no id, every client's report is. */
+                "x-opendj-client-id"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -23812,6 +25888,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -23869,6 +25954,150 @@ export interface operations {
             };
             /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    enforce_stem_cache_api_v1_stems_cache_enforce_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemCacheEnforceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheEnforcementOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_cache_settings_api_v1_stems_cache_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheSettingsOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_stem_cache_settings_api_v1_stems_cache_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemCacheSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheSettingsOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_cache_status_api_v1_stems_cache_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheStatusOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -25406,6 +27635,37 @@ export interface operations {
             };
         };
     };
+    get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridProvenanceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_hot_cue_slots_api_v1_tracks__stable_id__hot_cues_get: {
         parameters: {
             query?: never;
@@ -25726,6 +27986,72 @@ export interface operations {
             };
         };
     };
+    get_track_plays_api_v1_tracks__stable_id__plays_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaysOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_track_play_api_v1_tracks__stable_id__plays_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackPlayIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaysOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get: {
         parameters: {
             query?: never;
@@ -25855,6 +28181,82 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_state_api_v1_tracks__stable_id__stems_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemStateOut"];
                 };
             };
             /** @description Validation Error */
@@ -26102,6 +28504,41 @@ export interface operations {
             };
         };
     };
+    validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatcherFoldersValidateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_apply_api_v1_update_apply_post: {
         parameters: {
             query?: never;
@@ -26288,6 +28725,408 @@ export interface operations {
             };
         };
     };
+    get_usb_track_api_v1_usb_tracks__track_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackOut"];
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_track_anlz_api_v1_usb_tracks__track_id__anlz_get: {
+        parameters: {
+            query?: {
+                /** @description Max length of each waveform band array after downsampling */
+                points?: number;
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_track_artwork_api_v1_usb_tracks__track_id__artwork_get: {
+        parameters: {
+            query?: {
+                /** @description s=80x80 browser rows; m and orig = the 240x240 _m jpg */
+                size?: "s" | "m" | "orig";
+            };
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
+    list_usb_track_hot_cue_slots_api_v1_usb_tracks__track_id__hot_cues_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HotCueSlotOut"][];
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+        };
+    };
     get_usb_volumes_api_v1_usb_volumes_get: {
         parameters: {
             query?: never;
@@ -26342,6 +29181,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsbCapabilityErrorOut"];
+                };
+            };
+        };
+    };
+    get_usb_stick_library_api_v1_usb_volumes__volume_id__library_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                volume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickLibraryOut"];
+                };
+            };
+            /** @description USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbStickErrorOut"];
+                };
+            };
+            /** @description usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbCapabilityErrorOut"] | components["schemas"]["UsbStickErrorOut"];
                 };
             };
         };

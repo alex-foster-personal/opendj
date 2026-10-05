@@ -14,8 +14,12 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
          insert with reason ``empty file``
     [if] a wav has no PCM frames or truncates on read [then ⛔️] reject
     [if] container magic does not match the extension [then ⛔️] reject
-    [if] mutagen is installed and claims absurd duration or bitrate [then ⛔️]
+    [if] the tag reader (tinytag) claims absurd duration or bitrate [then ⛔️]
          reject
+    [if] the tag reader cannot parse a file whose magic checks passed
+         [then] it is NOT rejected: the decoder, not the tag reader, is the
+         authority on playability, and a library must never lose a track to a
+         metadata parser's blind spot
 
   -> full decode, ffmpeg, librosa, or soundfile. Header + one frame only.
   -> rekordbox adapter ingest (follow-up).
@@ -26,8 +30,8 @@ from __future__ import annotations
 import wave
 from pathlib import Path
 
-from apps.shared._mutagen import HAS_MUTAGEN
-from apps.shared import paths
+from apps.shared import _tagreader, paths
+from apps.shared._tagreader import HAS_TAG_READER
 
 __all__ = ["UnplayableAudioError", "probe_playable_audio"]
 
@@ -66,8 +70,14 @@ def probe_playable_audio(path: Path) -> None:
     elif ext in {".aiff", ".aif"}:
         _probe_aiff_header(header, size_bytes)
 
-    if HAS_MUTAGEN:
-        _probe_mutagen(path, size_bytes)
+    # The tag reader cross-checks duration only for formats it can parse.
+    # tinytag has no raw ADTS reader, so a raw .aac gets the stdlib frame walk
+    # instead: a stream with no whole frame is not playable audio. An MP4
+    # container named .aac (ftyp) still goes to the tag reader.
+    if ext == ".aac":
+        _probe_aac(path, header, size_bytes)
+    elif HAS_TAG_READER and _tagreader.can_read(path):
+        _probe_tags(path, size_bytes)
 
 
 # ----- header helpers -------------------------------------------------------
@@ -93,9 +103,7 @@ def _check_container_magic(ext: str, header: bytes) -> None:
         return
 
     if ext == ".aac":
-        if not _adts_sync_ok(header) and not (
-            len(header) >= 12 and header[4:8] == b"ftyp"
-        ):
+        if not _aac_magic_ok(header):
             raise UnplayableAudioError("missing aac/adts magic")
         return
 
@@ -122,6 +130,14 @@ def _mp3_magic_ok(header: bytes) -> bool:
         layer = (header[1] >> 1) & 0x03
         return layer != 0
     return False
+
+
+def _aac_magic_ok(header: bytes) -> bool:
+    # A raw ADTS stream may open with an ID3v2 tag; the frame walk in
+    # _probe_adts skips it and refuses the file if no ADTS follows.
+    if _adts_sync_ok(header) or header.startswith(b"ID3"):
+        return True
+    return len(header) >= 12 and header[4:8] == b"ftyp"
 
 
 def _adts_sync_ok(header: bytes) -> bool:
@@ -185,20 +201,28 @@ def _check_duration_size(duration_s: float, size_bytes: int) -> None:
             )
 
 
-# ----- mutagen cross-check --------------------------------------------------
-def _probe_mutagen(path: Path, size_bytes: int) -> None:
-    import mutagen  # type: ignore  # guarded by HAS_MUTAGEN
+# ----- tag-reader cross-check -----------------------------------------------
+def _probe_aac(path: Path, header: bytes, size_bytes: int) -> None:
+    if header[4:8] != b"ftyp":
+        _probe_adts(path, size_bytes)
+    elif HAS_TAG_READER:
+        _probe_tags(path, size_bytes)
 
+
+def _probe_adts(path: Path, size_bytes: int) -> None:
+    length = _tagreader.adts_duration(path)
+    if not length:
+        raise UnplayableAudioError("no complete aac/adts frames")
+    _check_duration_size(length, size_bytes)
+
+
+def _probe_tags(path: Path, size_bytes: int) -> None:
     try:
-        tagged = mutagen.File(str(path))
-    except Exception as exc:
-        raise UnplayableAudioError(f"mutagen parse failed: {exc}") from exc
+        tag = _tagreader.read(path)
+    except _tagreader.TagReadError as exc:
+        raise UnplayableAudioError(f"tag reader parse failed: {exc}") from exc
 
-    if tagged is None:
-        raise UnplayableAudioError("mutagen could not identify format")
-
-    info = getattr(tagged, "info", None)
-    length = getattr(info, "length", None) if info is not None else None
+    length = tag.duration
     if length is None or length <= 0:
         raise UnplayableAudioError("missing or zero duration")
 

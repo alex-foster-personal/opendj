@@ -342,7 +342,7 @@ function main(): void {
 					},
 					navigateFatal: ({ exitCode, pid, port, healthPort }) => {
 						page.supervisor = { engine: 'dead', exit_code: exitCode, lock_pid: pid, lock_port: port, health_port: healthPort };
-						void window?.loadURL(`${APP_ORIGIN}/index.html?fatal=1&exit=${exitCode}&pid=${pid}&port=${port}`);
+						void window?.loadURL(`${APP_ORIGIN}/index.html?fatal=1&exit=${exitCode}&pid=${pid}&port=${port}&health=${healthPort}`);
 					},
 					showFatalDialog: async (detail) => {
 						const options = {

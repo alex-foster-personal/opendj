@@ -79,9 +79,10 @@ from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
-from . import register
+from . import own_beatgrid_input, register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
 from .genre_hint import library_genre
+from .grid_fit_setting import grid_fit_mode
 
 log = logging.getLogger("apps.analysis.backends.own_beatgrid")
 
@@ -107,13 +108,6 @@ DEFAULT_DEVICE = "cpu"
 #: never returns is worse than one that says which track it stopped on.
 TIMEOUT_ENV = "MDT_BEATGRID_TIMEOUT_S"
 
-#: Which grid the lane serves: `raw` (the model's peak times, the default until
-#: the grid-fit bench round is reviewed) or `line` (the fitted, BPM-rounded,
-#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`) or
-#: `const_regions` (the same, with the line chosen by the constant-region
-#: recipe in `apps.analysis_beatgrid.const_regions`). A fitted record says
-#: which in its payload's `grid_fit` block.
-GRID_FIT_ENV = "MDT_BEATGRID_GRID_FIT"
 DEFAULT_TIMEOUT_S = 1800
 
 
@@ -171,10 +165,13 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
     """
     timeout = float(os.environ.get(TIMEOUT_ENV) or DEFAULT_TIMEOUT_S)
     activations_dir = activations.default_activations_dir()
-    with tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch:
+    with (
+        own_beatgrid_input.runner_input(audio_path) as runner_input,
+        tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch,
+    ):
         out_path = Path(scratch) / "beats.json"
         command = runner_command(
-            audio_path, out_path, checkpoint, device=device, activations_dir=activations_dir
+            runner_input, out_path, checkpoint, device=device, activations_dir=activations_dir
         )
         log.info("own_beatgrid: %s", " ".join(command))
         try:
@@ -280,6 +277,17 @@ def _duration_s(
     if fps <= 0:
         raise RunnerPayloadError(f"runner payload declares fps {fps!r}, which is not a rate")
     return float(n_frames) / fps
+
+
+def _drop_beats_past(payload: dict[str, Any], duration_s: float) -> None:
+    """Drop beats and tempo markers past ``duration_s`` (= ``n_frames / fps``,
+    which truncates the last partial frame a fitted line can still place a
+    beat in: live 268.11095 s vs 268.1 s). The contract refuses them, and a
+    beat in the last 20 ms is not one anybody can play against."""
+    payload["beats"] = [beat for beat in payload["beats"] if float(beat["t"]) <= duration_s]
+    payload["tempo_changes"] = [
+        marker for marker in payload.get("tempo_changes", ()) if float(marker["at_s"]) <= duration_s
+    ]
 
 
 def _sample_rate(
@@ -394,6 +402,8 @@ def record_from_payload(
     # decode.
     _require(result, "decode_fingerprint")
     duration_s = _duration_s(result, lane_ok=lane.ok, fps=fps, audio_path=audio_path)
+    if lane.ok:
+        _drop_beats_past(lane.payload, duration_s)
     sample_rate = _sample_rate(result, lane_ok=lane.ok, audio_path=audio_path)
 
     features_blob: dict[str, Any] = {}
@@ -494,6 +504,8 @@ class OwnBeatgridBackfillBackend:
                 f"the canonical decode fingerprint cannot be taken on this host: {exc}"
             ) from exc
         device = os.environ.get(DEVICE_ENV, "").strip() or DEFAULT_DEVICE
+        # Before the runner, so a bad setting fails before a model run is spent.
+        grid_fit = grid_fit_mode()
         # Fingerprint BEFORE the runner, because the record must name the
         # bytes the beats were derived FROM. Taken afterwards it names
         # whatever is on disk when the runner happens to finish, which for a
@@ -534,7 +546,7 @@ class OwnBeatgridBackfillBackend:
                 audio_path=audio_path,
                 model_sha256=model_sha256,
                 decode_fingerprint=decode_fingerprint,
-                grid_fit=os.environ.get(GRID_FIT_ENV, "").strip() or GRID_FIT_RAW,
+                grid_fit=grid_fit,
                 genre=library_genre(stable_id),
             )
         except TrackUnreadable:

@@ -1,9 +1,10 @@
 // requirement: PERF-UI-05
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { THRESHOLDS_P50_MS } from '../e2e/support/playlist-switch-bench-stats.mjs';
 
@@ -100,10 +101,24 @@ if (!isRegressionChild) {
 				all_tracks_first_rows_ms: { p50: 99999, p95: 99999 }
 			}
 		};
-		writeFileSync(fixturePath, `${JSON.stringify(poisoned, null, 2)}\n`);
+		const disposableRoot = mkdtempSync(join(tmpdir(), 'playlist-bench-control-'));
+		const relativeInputs = [
+			'tests/unit/library-playlist-switch-bench.test.mjs',
+			'tests/fixtures/library-playlist-switch-bench.json',
+			'tests/e2e/library-playlist-switch-latency.spec.ts',
+			'tests/e2e/support/playlist-switch-bench-stats.mjs',
+			'tests/e2e/support/playlist-switch-bench-stats.d.mts'
+		];
+		for (const relativePath of relativeInputs) {
+			const destination = join(disposableRoot, relativePath);
+			mkdirSync(dirname(destination), { recursive: true });
+			copyFileSync(join(FRONTEND_ROOT, relativePath), destination);
+		}
+		const disposableFixture = join(disposableRoot, 'tests/fixtures/library-playlist-switch-bench.json');
+		writeFileSync(disposableFixture, `${JSON.stringify(poisoned, null, 2)}\n`);
 		try {
-			execSync('node --test tests/unit/library-playlist-switch-bench.test.mjs', {
-				cwd: FRONTEND_ROOT,
+			execFileSync(process.execPath, ['--test', 'tests/unit/library-playlist-switch-bench.test.mjs'], {
+				cwd: disposableRoot,
 				stdio: 'pipe',
 				env: {
 					...process.env,
@@ -111,7 +126,8 @@ if (!isRegressionChild) {
 				}
 			});
 		} finally {
-			writeFileSync(fixturePath, original);
+			rmSync(disposableRoot, { recursive: true, force: true });
 		}
+		assert.equal(readFileSync(fixturePath, 'utf8'), original);
 	});
 }

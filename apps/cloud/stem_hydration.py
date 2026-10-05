@@ -2,8 +2,8 @@
 
 Composes existing primitives rather than duplicating them: content-address
 fetch is :func:`apps.cloud.asset_store.fetch_asset`, the mapping is
-:mod:`apps.cloud.stem_index`, the budget comes from
-:data:`apps.cloud.policy.CFG`, and the strict re-verify after writing is
+:mod:`apps.cloud.stem_index`, the budget is derived from free disk by
+:mod:`apps.cloud.stem_cache_budget`, and the strict re-verify after writing is
 :func:`apps.stems.artifacts.load_stem_bundle` -- ``_load_v1_bundle``
 itself is never touched; this module only ever calls the public loader.
 
@@ -26,22 +26,34 @@ Two entry points:
   ``"reserved"``.
 * [if] a bundle is open on a deck [then] budget enforcement never evicts it,
   regardless of its recency.
+* [if] a hydrate is about to publish a bundle [then] it pins it first, so no
+  eviction pass in any process removes it between the publishing rename, the
+  verify and the post-hydrate pass; a deck-load hydrate marks it served before
+  the pin is dropped (STEM-42).
+* [if] a hydrate lands [then] the disk-aware budget is enforced at once, and
+  only bundles the R2 index holds byte for byte are ever removed (STEM-39,
+  STEM-40). Supersedes: the fixed-budget ``enforce_budget`` this module used
+  to carry, which read 102400 MB from the policy and evicted any directory
+  under the stems root, local-only renders included.
 """
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from apps.cloud import asset_store, policy, stem_index
-from apps.cloud.eviction import BYTES_PER_MB, HydrationError
+from apps.cloud import asset_store, stem_cache_budget, stem_index
+from apps.cloud.eviction import HydrationError
+from apps.cloud.stem_bundles import pin_for_hydrate, unpin_hydrate
 from apps.cloud.stem_source import (
     STEM_HUB_INDEX_FAILED,
     STEM_HUB_UNREACHABLE,
@@ -49,6 +61,7 @@ from apps.cloud.stem_source import (
     StemSourceError,
     hub_transport_failure_kind,
 )
+from apps.cloud.stem_upload_queue import exclusive_file_lock
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -118,6 +131,11 @@ class OpenDeckRegistry:
         self._lock = threading.Lock()
         self._open: dict[str, int] = {}
         self._served_at: dict[str, float] = {}
+        #: True only in the process that serves decks (the engine, set when it
+        #: arms hydration). Any other process (a hydrate worker, a CLI) sees an
+        #: empty registry, so it must never evict: its post-hydrate pass only
+        #: refreshes the upload queue and leaves eviction to the engine.
+        self.holds_decks: bool = False
 
     def mark_open(self, stable_id: str) -> None:
         with self._lock:
@@ -163,6 +181,10 @@ class OpenDeckRegistry:
 #: Process-wide registry shared by the deck-load route and eviction.
 OPEN_DECKS = OpenDeckRegistry()
 
+#: Infix of a fetch's temp directory (``<stable_id>.tmp-hydrate-*``) while it
+#: is in flight; a progress read lists that directory by this name.
+IN_FLIGHT_MARKER: str = ".tmp-hydrate-"
+
 _hydrate_locks_guard = threading.Lock()
 _hydrate_locks: dict[str, threading.Lock] = {}
 
@@ -173,6 +195,27 @@ def _hydrate_lock(stable_id: str) -> threading.Lock:
     instead of racing on the same destination directory."""
     with _hydrate_locks_guard:
         return _hydrate_locks.setdefault(stable_id, threading.Lock())
+
+
+#: Stripes of the cross-process hydrate lock. Bounded so the lock files never
+#: grow with the library; two ids sharing a stripe only wait on each other.
+HYDRATE_LOCK_STRIPES: int = 256
+
+
+def hydrate_lock_path(data_dir: Path, stable_id: str) -> Path:
+    """The OS lock file a hydrate of ``stable_id`` holds, in every process."""
+    stripe = int(hashlib.sha256(stable_id.encode("utf-8")).hexdigest(), 16) % HYDRATE_LOCK_STRIPES
+    return Path(data_dir) / "state" / "stem-hydrate-locks" / f"{stripe:03d}.lock"
+
+
+@contextlib.contextmanager
+def _hydrate_locks_held(data_dir: Path, stable_id: str) -> Iterator[None]:
+    """The in-process lock, then the cross-process one. The engine and a
+    ``hydrate_runner`` job can hydrate the same id at once; with only the
+    in-process lock both could judge an old bundle invalid and each remove
+    the other's freshly published copy (Codex P1 on #4974)."""
+    with _hydrate_lock(stable_id), exclusive_file_lock(hydrate_lock_path(data_dir, stable_id)):
+        yield
 
 
 # --- outcomes -------------------------------------------------------------------
@@ -191,14 +234,6 @@ class BulkHydrateReport:
     fetched: tuple[HydrationOutcome, ...]
     skipped: tuple[HydrationOutcome, ...]
     bytes_fetched: int
-
-
-@dataclass(frozen=True)
-class EvictionOutcome:
-    evicted_stable_ids: tuple[str, ...]
-    bytes_freed: int
-    bytes_remaining: int
-    budget_bytes: int
 
 
 # --- single-bundle hydration ----------------------------------------------------
@@ -221,8 +256,14 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
     stems_dir: Path | None = None,
     skip_reserved: bool = False,
     reserved_ids: frozenset[str] | None = None,
+    hand_off_to_deck: bool = False,
 ) -> HydrationOutcome:
     """Hydrate one bundle from R2, or explain precisely why it did not.
+
+    ``hand_off_to_deck`` is the deck-load path's flag: the bundle is marked
+    served (``OPEN_DECKS``) before its hydrate pin is dropped, so the deck's
+    next read finds it. Bulk and drain callers leave it off, so the bundle is
+    evictable as soon as this call returns.
 
     ``skip_reserved`` is the BULK-path-only guard: the on-demand deck-load
     caller must always pass ``False`` (its default) because opening a deck
@@ -230,8 +271,16 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
     protects, not something to skip.
     """
     root = stems_dir or DEFAULT_STEMS_DIR
-    if _is_local(stable_id, root):
+
+    def already_local() -> HydrationOutcome:
+        # Another hydrator (maybe another process) published it: the deck that
+        # asked still needs the served lease before that hydrator's pin drops.
+        if hand_off_to_deck:
+            OPEN_DECKS.mark_served(stable_id)
         return HydrationOutcome(stable_id, "already_local")
+
+    if _is_local(stable_id, root):
+        return already_local()
 
     if skip_reserved:
         reserved = (
@@ -267,29 +316,37 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         )
 
     bundle_dir = root / stable_id
-    with _hydrate_lock(stable_id):
-        # Double-checked: another in-process call may have just published
-        # this bundle while we were waiting for the lock.
+    with _hydrate_locks_held(data_dir, stable_id):
+        # Double-checked: another call, in this process or another, may have
+        # just published this bundle while we were waiting for the lock.
         if _is_local(stable_id, root):
-            return HydrationOutcome(stable_id, "already_local")
+            return already_local()
         root.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(
-            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}.tmp-hydrate-")
+            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}")
         )
         renamed = False
+        pin: Path | None = None
         try:
             total = source.fetch_bundle_files(
                 stable_id=stable_id,
                 file_hashes=file_hashes,
                 tmp_dir=tmp_dir,
             )
+            # Pin BEFORE publishing: an eviction pass in any process may scan
+            # the bundle the moment the rename lands, before the verify below
+            # and before any deck registry names it. The pin is this call's
+            # own file, so another process's hydrate of this id cannot drop it.
+            pin = pin_for_hydrate(bundle_dir)
             if bundle_dir.exists():
                 # Cross-process race: something else already published a
                 # valid bundle while we were fetching. Keep the winner,
                 # discard our own copy rather than clobbering it.
                 if _is_local(stable_id, root):
                     shutil.rmtree(tmp_dir, ignore_errors=True)
-                    return HydrationOutcome(stable_id, "already_local")
+                    outcome = already_local()
+                    unpin_hydrate(pin)
+                    return outcome
                 shutil.rmtree(bundle_dir)
             bundle_dir.parent.mkdir(parents=True, exist_ok=True)
             tmp_dir.rename(bundle_dir)
@@ -300,6 +357,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 shutil.rmtree(bundle_dir, ignore_errors=True)
             else:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+            unpin_hydrate(pin)
             status = (
                 "hub_error"
                 if hub_transport_failure_kind(exc) is not None
@@ -322,9 +380,30 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 # Fetch failed before publish: remove only OUR OWN temp
                 # dir, never bundle_dir (which we never touched).
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+            unpin_hydrate(pin)
             return HydrationOutcome(stable_id, "error", reason=str(exc))
 
-    enforce_budget(root, protected=OPEN_DECKS.open_ids() | {stable_id})
+    # A hydrate just succeeded, so this machine can demonstrably get an
+    # evicted bundle back: that is what ``can_rehydrate`` asserts.
+    try:
+        stem_cache_budget.enforce(
+            root,
+            data_dir=data_dir,
+            index=index,
+            protected=OPEN_DECKS.open_ids() | {stable_id},
+            can_rehydrate=True,
+            # Give back only what this hydrate took. A deck is waiting on this
+            # call, and confirming a bundle against R2 means hashing it; the
+            # engine timer clears any larger backlog off the request path.
+            # Outside the engine nothing is evicted: this process cannot see
+            # which bundles the engine's decks hold.
+            max_evict_bytes=total if OPEN_DECKS.holds_decks else 0,
+            live_protected=lambda: OPEN_DECKS.open_ids() | {stable_id},
+        )
+        if hand_off_to_deck:
+            OPEN_DECKS.mark_served(stable_id)
+    finally:
+        unpin_hydrate(pin)
     return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
 
 
@@ -443,76 +522,17 @@ def bulk_hydrate(
     )
 
 
-# --- budget-bounded LRU eviction, bundle-granular --------------------------------
-
-
-def enforce_budget(
-    stems_dir: Path,
-    *,
-    protected: frozenset[str] = frozenset(),
-    budget_mb: int | None = None,
-) -> EvictionOutcome:
-    """LRU-evict whole bundle directories over the policy budget.
-
-    Bundle-granular, unlike :func:`apps.cloud.eviction.evict_cache`'s
-    file-granular LRU: a stem bundle is 4-5 files that must survive or die
-    together, so evicting half of one would leave an unloadable directory
-    that the strict loader reports as CORRUPT, not simply absent. A
-    bundle's recency is its newest file's atime, so soloing one stem still
-    counts the whole bundle as recently used. ``protected`` (the open-deck
-    set) is never evicted regardless of recency.
-    """
-    budget = (
-        budget_mb
-        if budget_mb is not None
-        else policy.CFG.artifacts[STEM_ASSET_KIND].cache_budget_mb
-    )
-    budget_bytes = budget * BYTES_PER_MB
-    root = Path(stems_dir)
-    if not root.is_dir():
-        return EvictionOutcome((), 0, 0, budget_bytes)
-
-    bundles: list[tuple[float, str, Path, int]] = []
-    total = 0
-    for child in sorted(root.iterdir()):
-        if not child.is_dir() or child.is_symlink():
-            continue
-        newest_atime = 0.0
-        size = 0
-        for file_path in child.rglob("*"):
-            if file_path.is_file():
-                stat_result = file_path.stat()
-                size += stat_result.st_size
-                newest_atime = max(newest_atime, stat_result.st_atime)
-        total += size
-        bundles.append((newest_atime, child.name, child, size))
-
-    bundles.sort(key=lambda item: (item[0], item[1]))
-    evicted: list[str] = []
-    freed = 0
-    for _atime, stable_id, path, size in bundles:
-        if total - freed <= budget_bytes:
-            break
-        if stable_id in protected:
-            continue
-        shutil.rmtree(path)
-        evicted.append(stable_id)
-        freed += size
-    return EvictionOutcome(tuple(evicted), freed, total - freed, budget_bytes)
-
-
 __all__ = [
+    "IN_FLIGHT_MARKER",
     "OPEN_DECKS",
     "OPEN_DECK_SERVED_TTL_S",
     "RESERVATION_FILENAME",
     "STEM_ASSET_KIND",
     "BulkHydrateReport",
-    "EvictionOutcome",
     "HydrationOutcome",
     "HydrationStatus",
     "OpenDeckRegistry",
     "bulk_hydrate",
-    "enforce_budget",
     "hydrate_one",
     "load_reserved_ids",
     "reservation_file_path",

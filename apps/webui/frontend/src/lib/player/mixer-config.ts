@@ -17,6 +17,7 @@ import {
 	assertMasterDelayMs,
 	type HeadphoneAlignmentMode
 } from '$lib/player/constants';
+import { assertSavedIoDevice, type SavedIoDevice } from '$lib/player/io-device-access';
 
 const MIXER_CONFIG_STORAGE_KEY = 'mdt.rb.mixer-config.v1';
 
@@ -36,13 +37,22 @@ export interface MixerConfig {
 	alignment_mode: HeadphoneAlignmentMode;
 	master_delay_ms: number;
 	last_calibration: CueCalibrationRecord | null;
+	/** IOPIN-14: the outputs the operator last picked, by browser device id
+	 * and name, so a later session can say what became of them. */
+	saved_outputs: SavedOutputs;
+}
+
+export interface SavedOutputs {
+	master: SavedIoDevice | null;
+	cue: SavedIoDevice | null;
 }
 
 const DEFAULT_MIXER_CONFIG: Readonly<MixerConfig> = Object.freeze({
 	head_delay_ms: 0,
 	alignment_mode: 'hybrid',
 	master_delay_ms: 0,
-	last_calibration: null
+	last_calibration: null,
+	saved_outputs: Object.freeze({ master: null, cue: null })
 });
 
 function _storage(): Storage | null {
@@ -83,6 +93,18 @@ function _assertMixerConfigPatch(patch: Partial<MixerConfig>): void {
 	if (patch.last_calibration !== undefined && patch.last_calibration !== null) {
 		assertCueCalibrationRecord(patch.last_calibration);
 	}
+	if (patch.saved_outputs !== undefined) assertSavedOutputs(patch.saved_outputs);
+}
+
+export function assertSavedOutputs(saved: unknown): asserts saved is SavedOutputs {
+	if (saved === null || typeof saved !== 'object') {
+		throw new TypeError(`saved_outputs must be an object, got ${String(saved)}`);
+	}
+	const candidate = saved as Record<string, unknown>;
+	for (const role of ['master', 'cue'] as const) {
+		if (!(role in candidate)) throw new TypeError(`saved_outputs.${role} is missing`);
+		if (candidate[role] !== null) assertSavedIoDevice(`saved_outputs.${role}`, candidate[role]);
+	}
 }
 
 function _malformed(cause: string): Error {
@@ -117,7 +139,11 @@ export function loadMixerConfig(): MixerConfig {
 		alignment_mode: stored.alignment_mode ?? DEFAULT_MIXER_CONFIG.alignment_mode,
 		master_delay_ms: stored.master_delay_ms ?? DEFAULT_MIXER_CONFIG.master_delay_ms,
 		last_calibration:
-			stored.last_calibration === undefined ? DEFAULT_MIXER_CONFIG.last_calibration : stored.last_calibration
+			stored.last_calibration === undefined ? DEFAULT_MIXER_CONFIG.last_calibration : stored.last_calibration,
+		saved_outputs:
+			stored.saved_outputs === undefined
+				? { ...DEFAULT_MIXER_CONFIG.saved_outputs }
+				: { master: stored.saved_outputs.master, cue: stored.saved_outputs.cue }
 	};
 }
 

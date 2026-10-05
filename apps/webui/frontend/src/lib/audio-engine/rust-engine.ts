@@ -5,11 +5,13 @@
  * with the mode (see `rust-mode.svelte.ts`).
  */
 import { API_BASE } from '$lib/api/base';
+import { runAutomaticMasterElection, runAutomaticRejoin } from '$lib/rb/master-election';
 import { getTrack } from '$lib/api';
 import { fetchAnlzForDeckLoad } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
+import { createFrameBackstop } from '$lib/rb/frame-backstop';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import {
@@ -20,11 +22,20 @@ import {
 	AUDIO_ENGINE_PATH,
 	AudioEngineClient,
 	type AudioEngineStatus,
+	type EngineLoadFailed,
 	type EngineState
 } from './client';
 import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToast } from './rust-link';
 import { PAGE_DECIDED, rustMode } from './rust-mode.svelte';
-import { cancelArmedJump, decideOnPage, electIfAuto, rustHotCueDriver, rustMaster } from './rust-transport';
+import {
+	cancelArmedJump,
+	decideOnPage,
+	electAndRejoin,
+	phaseLockTick,
+	invalidateRustPhaseLocks,
+	rustHotCueDriver,
+	rustMaster
+} from './rust-transport';
 
 let rafId: number | null = null;
 let connecting: Promise<AudioEngineClient> | null = null;
@@ -94,6 +105,7 @@ export async function connectRustEngine(): Promise<AudioEngineClient> {
 				if (loadFences[k] !== Infinity) loadFences[k] = -1;
 			}
 			c.onState(mirrorEngineState);
+			c.onLoadFailed(applyLoadFailed);
 			// The engine outlives the page: after a reload it still holds the
 			// previous page's decks. Silence what this page does not show.
 			await Promise.all(
@@ -137,7 +149,7 @@ export async function executeRustCommand(command: PerformanceCommand): Promise<v
 	applyAcknowledged(command);
 	if (command.type === 'unload') {
 		cancelArmedJump(command.deck);
-		if (rustMaster.deck === command.deck) electIfAuto({ force: true });
+		if (rustMaster.deck === command.deck) await electAndRejoin({ force: true });
 	}
 }
 
@@ -161,15 +173,22 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 /** Load a library track: the page's metadata fetches plus the engine load. */
 export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<void> {
 	if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+	invalidateRustPhaseLocks(deck);
+	deckStates[deck].load_generation += 1;
 	loadFences[deck] = Infinity;
-	let trackRes, anlz, slots;
+	holdLoadFailures(deck);
+	let trackRes, anlz, slots, loaded: unknown;
 	try {
-		[trackRes, anlz, slots] = await Promise.all([
+		[trackRes, anlz, slots, loaded] = await Promise.all([
 			getTrack(stable_id),
 			fetchAnlzForDeckLoad(stable_id),
 			fetchHotCueSlots(stable_id),
 			_post(`${AUDIO_ENGINE_PATH}/load`, { deck, stable_id })
 		]);
+	} catch (error) {
+		// The deck still shows the earlier track: a failure that ended it lands now.
+		releaseLoadFailures(deck, null);
+		throw error;
 	} finally {
 		loadFences[deck] = link.lastState?.frame ?? -1;
 	}
@@ -193,8 +212,35 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.has_rb_mapping = track.has_rb_mapping;
 	st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
 	displayLoops[deck] = st.loop;
-	st.load_generation += 1;
+	const loadedPath =
+		typeof loaded === 'object' && loaded !== null && 'path' in loaded && typeof loaded.path === 'string'
+			? loaded.path
+			: null;
+	releaseLoadFailures(deck, loadedPath);
 	link.client?.send({ type: 'engine_state' }).catch(() => {});
+}
+
+/** Per deck, while a load is in flight there: the late decode failures heard
+ * meanwhile. The engine can answer a load on its head and fail its rest
+ * before the page has published that load, so a failure is held until then
+ * rather than dropped against a deck that shows no track yet. */
+const heldLoadFailures: Partial<Record<DeckId, EngineLoadFailed[]>> = {};
+
+/** A load starts on `deck`: hold the failures heard until it is published. */
+export function holdLoadFailures(deck: DeckId): void {
+	heldLoadFailures[deck] = [];
+}
+
+/** The load on `deck` is settled. Published with the engine's file `path`,
+ * the held failures for that file end it; one naming another file ended
+ * the earlier load this one replaced, and is dropped. Not published (`null`),
+ * every held failure lands on the earlier track the deck still shows. */
+export function releaseLoadFailures(deck: DeckId, path: string | null): void {
+	const held = heldLoadFailures[deck] ?? [];
+	delete heldLoadFailures[deck];
+	for (const e of held) {
+		if (path === null || e.path === undefined || e.path === path) applyLoadFailed(e);
+	}
 }
 
 /** Reset what a load publishes. Rust-mode twin of the Web Audio engine's
@@ -256,17 +302,44 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 	}
 }
 
+/** A decode that failed after the head loaded: the engine has already
+ * unloaded the deck, so the page clears it too and says why, rather than
+ * showing a track whose audio is gone. */
+export function applyLoadFailed(e: EngineLoadFailed): void {
+	const held = heldLoadFailures[e.deck as DeckId];
+	if (held !== undefined) {
+		held.push(e);
+		return;
+	}
+	const st = deckStates[e.deck as DeckId];
+	if (st === undefined || st.stable_id === null) return;
+	clearRustDeck(st);
+	st.processor_error = `${e.error.code}: ${e.error.message}`;
+	// As an explicit unload does: no armed jump survives, and a master that
+	// lost its audio hands sync to the next deck rather than lingering.
+	const deck = e.deck as DeckId;
+	cancelArmedJump(deck);
+	if (rustMaster.deck === deck) void runAutomaticRejoin(async () => {
+		if (rustMaster.deck !== deck || deckStates[deck].stable_id !== null || loadFences[deck] === Infinity) return;
+		await electAndRejoin({ force: true });
+	}).catch((error: unknown) => {
+		st.sync_error = `Beat Sync re-join failed: ${error instanceof Error ? error.message : String(error)}`;
+	});
+}
+
 /** Transport truth from the engine: play state, tempo, loop, length, key. */
 export function mirrorEngineState(s: EngineState): void {
 	link.lastState = s;
-	let masterStopped = false;
+	let masterStopped: { deck: DeckId; stableId: string; generation: number } | null = null;
 	for (const d of s.decks) {
 		const deck = d.deck as DeckId;
 		const st = deckStates[deck];
 		if (st === undefined || st.stable_id === null) continue;
 		if (s.frame <= (loadFences[deck] ?? -1)) continue;
 		// A track that plays out stops in the engine, not on a command.
-		if (st.playing && !d.playing && rustMaster.deck === deck) masterStopped = true;
+		if (st.playing && !d.playing && rustMaster.deck === deck) {
+			masterStopped = { deck, stableId: st.stable_id, generation: st.load_generation };
+		}
 		st.playing = d.playing;
 		st.audible = d.playing;
 		st.transport_pending = false;
@@ -290,7 +363,40 @@ export function mirrorEngineState(s: EngineState): void {
 			: (displayLoops[d.deck as DeckId] ?? null);
 		if (!d.playing) st.position_ms = d.position_ms;
 	}
-	if (masterStopped) electIfAuto();
+	// Not awaited: a state frame must not wait on a re-join. Main's election
+	// runner owns this path (staleness guards skip a handoff whose deck
+	// reloaded, resumed, or is mid-load). Load failure uses the counted
+	// re-join runner instead; nesting both on one turn deadlocks the scheduler.
+	// `_reanchor` reports a follower that cannot lock in its own sync_error.
+	if (masterStopped !== null) {
+		const ended = masterStopped;
+		// Not awaited: a state frame must not wait on a re-join; `_reanchor`
+		// reports a follower that cannot lock in its own sync_error. The
+		// election runner still serializes the handoff, and a stale frame
+		// (replacement load, or the master already playing again) is ignored.
+		void runAutomaticMasterElection(async () => {
+			const st = deckStates[ended.deck];
+			if (
+				rustMaster.deck !== ended.deck ||
+				st.playing ||
+				st.stable_id !== ended.stableId ||
+				st.load_generation !== ended.generation ||
+				loadFences[ended.deck] === Infinity
+			) {
+				return;
+			}
+			await electAndRejoin();
+		}).catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			rustMode.error = message;
+			const master = rustMaster.deck;
+			if (master !== null) {
+				deckStates[master].sync_error = `Beat Sync re-join failed: ${message}`;
+			}
+		});
+	}
+	// Each frame is a fresh playhead for both decks: keep followers on phase.
+	phaseLockTick();
 }
 
 function _startRaf(): void {
@@ -308,4 +414,13 @@ function _startRaf(): void {
 		}
 	};
 	rafId = requestAnimationFrame(tick);
+	// AUDIOLIVE-11: AutoPlay and the IPC snapshot read this mirror, and an
+	// occluded window delivers no frames, so a stalled frame is run from a timer.
+	createFrameBackstop(
+		() => rafId,
+		() => {
+			if (rafId !== null) cancelAnimationFrame(rafId);
+			tick();
+		}
+	).arm();
 }

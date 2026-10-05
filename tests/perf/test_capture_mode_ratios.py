@@ -13,6 +13,9 @@ regression that pins sampling to the browser subprocess's own pid.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from pathlib import Path
+from collections.abc import Iterator
 import subprocess
 import sys
 import threading
@@ -122,70 +125,124 @@ def test_first_sample_after_a_process_appears_does_not_inflate_cpu() -> None:
         child.wait()
 
 
+_NATIVE_CHILD = """
+import os, sys
+allocation = bytearray(16 * 1024 * 1024)
+for offset in range(0, len(allocation), 4096):
+    allocation[offset] = 1
+print(os.getpid(), flush=True)
+sys.stdin.read()
+"""
+_NATIVE_LAUNCHER = """
+import subprocess, sys
+allocation = bytearray(64 * 1024 * 1024)
+for offset in range(0, len(allocation), 4096):
+    allocation[offset] = 1
+child = subprocess.Popen([sys.argv[1], '-c', sys.argv[2]],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+try:
+    print(child.stdout.readline().strip(), flush=True)
+    sys.stdin.read()
+finally:
+    try:
+        child.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.terminate()
+        child.wait(timeout=5)
+"""
+
+
+@contextmanager
+def _isolated_native_tree() -> Iterator[tuple[subprocess.Popen[str], psutil.Process]]:
+    """Own an isolated launcher and one real child, outside pytest's process family."""
+    python = str(Path(sys.executable).resolve())
+    root = subprocess.Popen(
+        [python, "-c", _NATIVE_LAUNCHER, python, _NATIVE_CHILD],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    lines: list[str] = []
+    assert root.stdout is not None
+    reader = threading.Thread(target=lambda: lines.append(root.stdout.readline()), daemon=True)
+    reader.start()
+    try:
+        reader.join(timeout=10)
+        assert not reader.is_alive(), "isolated native child did not become ready"
+        assert lines and lines[0].strip().isdigit(), "launcher did not report a real child PID"
+        child = psutil.Process(int(lines[0]))
+        assert child.ppid() == root.pid
+        assert {p.pid for p in psutil.Process(root.pid).children(recursive=True)} == {child.pid}
+        yield root, child
+    finally:
+        # Snapshot owned descendants before closing stdin; never touch pytest's children.
+        try:
+            owned = psutil.Process(root.pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            owned = []
+        try:
+            root.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            root.terminate()
+            try:
+                root.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                root.kill()
+                root.wait(timeout=5)
+        for proc in owned:
+            if proc.is_running():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        reader.join(timeout=5)
+        assert not reader.is_alive(), "launcher stdout reader survived owned cleanup"
+
+
+def _native_sample_bracket(root_pid: int, child: psutil.Process) -> tuple[float, int, int]:
+    native = DarwinProcessMetrics()
+    sampler = cmr._ProcessTreeSampler(root_pid)
+    assert {proc.pid for proc in sampler._live_tree()} == {root_pid, child.pid}
+    before = native.read(child.pid).phys_footprint
+    sample = sampler.sample()
+    after = native.read(child.pid).phys_footprint
+    value = sample["physical_footprint_mb"] * 1024 * 1024
+    assert min(before, after) <= value <= max(before, after)
+    assert sample["engine_pid_count"] == 0
+    return value, before, after
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="proc_pid_rusage native physical-footprint counters are unavailable off macOS",
+)
 @pytest.mark.requirement("PERFMODE-15")
 def test_footprint_comes_from_the_native_reader_not_psutil_rss() -> None:
-    """[if] the native reader reports a footprint [then] sample() reports it, [else stop].
-
-    Direct regression test for the codex-review finding: summing
-    `psutil`'s `memory_info().rss` across a multi-process Chromium tree
-    double-counts pages the processes share, so footprint must come from
-    the real per-process `phys_footprint` counter (DarwinProcessMetrics)
-    instead. `distinctive_mb` is a value this test process's real RSS could
-    never coincidentally match, so this fails loud if the sampler reverts
-    to reading psutil's memory_info() for footprint.
-    """
-    distinctive_mb = 777.0
-
-    class _FixedFootprintNative:
-        def read(self, pid: int) -> SimpleNamespace:
-            return SimpleNamespace(phys_footprint=int(distinctive_mb * 1024 * 1024))
-
-    child = _spawn_sleeper(2.0)
-    try:
-        sampler = cmr._ProcessTreeSampler(
-            os.getpid(), native=cast(DarwinProcessMetrics, _FixedFootprintNative())
-        )
-        result = sampler.sample()
-        # Root (this test process) is excluded from the sample, so the only
-        # contributor is the one spawned child -- exactly one reading of
-        # `distinctive_mb`, not the launcher's own footprint added in too.
-        assert result["physical_footprint_mb"] == pytest.approx(distinctive_mb)
-    finally:
-        child.kill()
-        child.wait()
+    """[if] the native reader reports a footprint [then] sample() reports it, [else stop]."""
+    with _isolated_native_tree() as (root, child):
+        rss_before = child.memory_info().rss
+        value, before, after = _native_sample_bracket(root.pid, child)
+        rss_after = child.memory_info().rss
+        # Independent actual counters must discriminate the RSS regression.
+        assert (max(before, after) < min(rss_before, rss_after)
+                or max(rss_before, rss_after) < min(before, after))
+        assert not min(rss_before, rss_after) <= value <= max(rss_before, rss_after)
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="proc_pid_rusage native physical-footprint counters are unavailable off macOS",
+)
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_excludes_the_root_launcher_pid_from_the_browser_only_kpi() -> None:
-    """[if] the root pid reports a footprint [then] sample() excludes it, [else stop].
-
-    Direct regression test for the Sol-review finding: `root_pid` is the
-    Node `mode_ratio_browser.mjs` launcher that SPAWNS Chromium via
-    Playwright, not a member of the Chromium browser/renderer family the
-    KPI card and `_METHOD` claim to measure. Two DIFFERENT distinctive
-    values (root vs. child) mean this fails loud in EITHER wrong direction:
-    if root's value leaked into the sum, the total would exceed the child's
-    alone; if the child were dropped instead, the total would be 0, not the
-    child's value.
-    """
-    root_only_mb = 111.0
-    child_only_mb = 222.0
-
-    class _PerPidNative:
-        def read(self, pid: int) -> SimpleNamespace:
-            value_mb = root_only_mb if pid == os.getpid() else child_only_mb
-            return SimpleNamespace(phys_footprint=int(value_mb * 1024 * 1024))
-
-    child = _spawn_sleeper(2.0)
-    try:
-        sampler = cmr._ProcessTreeSampler(
-            os.getpid(), native=cast(DarwinProcessMetrics, _PerPidNative())
-        )
-        result = sampler.sample()
-        assert result["physical_footprint_mb"] == pytest.approx(child_only_mb)
-    finally:
-        child.kill()
-        child.wait()
+    """[if] the root pid reports a footprint [then] sample() excludes it, [else stop]."""
+    with _isolated_native_tree() as (root, child):
+        root_before = DarwinProcessMetrics().read(root.pid).phys_footprint
+        value, before, after = _native_sample_bracket(root.pid, child)
+        root_after = DarwinProcessMetrics().read(root.pid).phys_footprint
+        # The touched real launcher allocation makes mistaken inclusion observable.
+        assert min(root_before, root_after) > max(before, after)
+        assert value < min(root_before, root_after) + min(before, after)
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -224,7 +281,7 @@ def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
 def test_sample_steady_rejects_a_duration_below_the_floor() -> None:
     """[if] duration_s is below the floor [then] _sample_steady raises first, [else stop]."""
     with pytest.raises(ValueError, match="at least"):
-        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1)
+        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1, None)
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -236,8 +293,8 @@ def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
     `trackify_mode_footprint_slope_mb_per_10min` with a note implying a 1h
     leak slope.
     """
-    with pytest.raises(ValueError, match="1 h unattended"):
-        cmr._sample_leak(os.getpid(), cmr._MIN_LEAK_DURATION_S - 1)
+    with subprocess.Popen([sys.executable, "-c", "pass"], text=True) as proc, pytest.raises(ValueError, match="1 h unattended"):
+        cmr._sample_leak(proc, cmr._MIN_LEAK_DURATION_S - 1)
 
 
 _PROTOCOL_CHILD = """

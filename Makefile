@@ -90,7 +90,7 @@ clean:
 # `release-check` is the single command CI and humans run before cutting a
 # release tag. It runs the standard gates in sequence:
 #   1. test        -- full pytest suite
-#   2. lint        -- ruff check across apps/tests/scripts
+#   2. quality     -- full enforced quality ratchet (absolute lint reports debt)
 #   3. build-dist  -- python -m build (wheel + sdist)
 #   4. reqs-check  -- verify reqs.json is fresh vs REQUIREMENTS.md
 #   5. prior-tag   -- best-effort `gh release view v1.0.1` sanity check (non-fatal)
@@ -133,7 +133,7 @@ quality-baseline:
 
 build-dist:
 	rm -rf dist build
-	$(PY) -m build
+	$(PY) -m build --installer uv
 
 # The native extension is part of the normal server distribution. Keep this
 # target wheel-based so the gate tests what consumers install, not a source-tree
@@ -171,7 +171,7 @@ waveform-native-verify: require-venv-py
 
 waveform-native-release-check: waveform-native-wheel waveform-native-verify
 
-release-check: test lint build-dist waveform-native-verify reqs-check
+release-check: test quality build-dist waveform-native-verify reqs-check
 	@echo "[release-check] verifying prior release tag (non-fatal)..."
 	@gh release view v1.0.1 >/dev/null 2>&1 \
 		&& echo "[release-check] prior release v1.0.1 found." \

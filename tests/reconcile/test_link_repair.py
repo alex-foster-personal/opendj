@@ -464,7 +464,7 @@ def test_index_cache_reuses_unchanged_files_and_rereads_changed_ones(
     _, second = index_disk.build_index([root], cache_path=cache)
     assert second.reused == 2 and second.tag_reads == 0, (
         "if an unchanged file is re-tagged then a rescan costs a full "
-        "7k-file mutagen pass every time"
+        "7k-file tag-read pass every time"
     )
 
     (root / "one.mp3").write_bytes(b"a" * 64)

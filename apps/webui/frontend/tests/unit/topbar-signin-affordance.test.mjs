@@ -51,7 +51,7 @@ function mediaBlock(source, query) {
 	throw new Error(`@media ${query} is not brace-balanced`);
 }
 
-const NARROW = mediaBlock(topbar, '(max-width: 1125px)');
+const NARROW = mediaBlock(topbar, '(max-width: 1160px)');
 const COMMAND = mediaBlock(topbar, '(max-width: 1023px)');
 
 test('TopBar.svelte still compiles', () => {
@@ -76,7 +76,10 @@ test('no tier evicts the sign-in control', () => {
 });
 
 test('the narrow tier still evicts the chrome it always did', () => {
-	for (const selector of ['topbar-slot-midi', 'refresh-analysis']) {
+	// CHROME-07 (issue #3886) moved MIDI out of the top bar to settings, the
+	// I/O view and the bottom tray, so there is no MIDI slot left to evict.
+	assert.doesNotMatch(topbar, /topbar-slot-midi/, 'the top bar MIDI slot came back (CHROME-07)');
+	for (const selector of ['refresh-analysis']) {
 		assert.match(NARROW, new RegExp(selector.replace(/[[\]"]/g, '\\$&')), `${selector} left the narrow tier`);
 	}
 	// The free badge and the utility icons moved from 1400px to 1530px with the
@@ -114,7 +117,7 @@ test('every other-component slot in the eviction lists is :global', () => {
 
 test('the command entry yields only below 1024px, where the e2e gate stops asserting it', () => {
 	assert.match(COMMAND, /\.cmd-entry/);
-	assert.match(NARROW, /topbar-slot-midi/);
+	assert.match(NARROW, /refresh-analysis/);
 });
 
 
