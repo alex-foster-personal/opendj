@@ -282,6 +282,7 @@
 		border-color: var(--rb-text-dim);
 	}
 	.drawer-title {
+		font-family: var(--rb-font-brand);
 		color: var(--rb-text);
 		font-size: var(--rb-fs-deck-title);
 		font-weight: 600;

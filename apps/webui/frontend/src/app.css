@@ -1,7 +1,23 @@
 /* Minimal baseline styles for the music-dj-tools web UI.
  * Full Tailwind wiring lives in a follow-on PR; v1 uses vanilla CSS so
  * the bundle stays tiny for the localhost use-case. */
+
+/* OSSPUB-07: the Open DJ brand face, Anybody 800 at width 150 (SIL OFL 1.1,
+ * licence beside the file in static/fonts/). Offline subset: A-Z, a-z,
+ * digits, basic punctuation; anything else falls back to the system face.
+ * For brand and title surfaces only, never tables or numeric readouts. */
+@font-face {
+  font-family: "Anybody";
+  src: url("/fonts/anybody-800-w150-headline.woff2") format("woff2");
+  font-weight: 800;
+  font-stretch: 150%;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
+  --rb-font-brand: "Anybody", -apple-system, BlinkMacSystemFont, "Inter",
+    "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   --bg: #0b0d11;
   --fg: #e6e9ef;
   --muted: #9aa4b2;

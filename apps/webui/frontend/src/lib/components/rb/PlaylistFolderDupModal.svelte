@@ -106,6 +106,7 @@
 		color: var(--text, #eee);
 	}
 	.m-title {
+		font-family: var(--rb-font-brand);
 		font-weight: 600;
 		margin-bottom: 12px;
 	}
