@@ -206,12 +206,13 @@ function fakeEngine() {
 			const holderDoc = current !== null && state.mirror?.client_id === current.holder ? state.mirror : null;
 			const handover =
 				holderDoc !== null &&
-				((state.rules.audible && claimant.playing === true && holderDoc.playing !== true) ||
+				((state.rules.audible && claimant.playing === true && holderDoc.playing !== true && current.operator !== true) ||
 					(holderDoc.visible === false && holderDoc.playing !== true && claimant.visible !== false));
 			if (current !== null && current.holder !== id && headers['x-opendj-lease-takeover'] !== '1' && !handover) {
 				return json(409, { accepted: false, reason: 'lease_held', held: true, holder: current.holder });
 			}
-			state.lease = { holder: id, expires: clockMs + TTL_MS };
+			const operator = headers['x-opendj-lease-takeover'] === '1' || (current !== null && current.holder === id && current.operator === true);
+			state.lease = { holder: id, expires: clockMs + TTL_MS, operator };
 			state.mirror = JSON.parse(init.body);
 			return json(202, { accepted: true });
 		}
@@ -230,7 +231,8 @@ function fakeEngine() {
 				held: current !== null,
 				holder: current?.holder ?? null,
 				holder_playing: doc === null ? null : doc.playing === true,
-				holder_yieldable: doc === null ? null : doc.visible === false && doc.playing !== true
+				holder_yieldable: doc === null ? null : doc.visible === false && doc.playing !== true,
+				holder_operator_claimed: current === null ? null : current.operator === true
 			});
 		}
 		if (url === NEXT) return json(200, null);
@@ -416,6 +418,11 @@ test('decideFollowerClaim: the claim rules, each with its control', () => {
 	assert.deepEqual(claim(free), { claim: false }, 'a lockless sibling never races the lock holder at open');
 	assert.equal(claim(free, { holdsLocalLock: true }).why, 'free');
 	assert.deepEqual(claim({ held: true, holder: 'me' }), { claim: false }, 'our stale lease is not a reason to steal back');
+	assert.deepEqual(
+		claim({ ...idleHolder, holder_operator_claimed: true }, { playing: true }),
+		{ claim: false },
+		'bug #31: the old leader, still playing for a moment, never takes Take control back'
+	);
 });
 
 test('two browsers: a playing follower takes over from an idle leader within one lease period', async () => {
@@ -531,4 +538,19 @@ test('a tab refused by the lease never opens the leader-only gate, not even brie
 	assert.equal(b.leadership.holdsLocalLock(), true, 'precondition: b holds its own browser lock');
 	assert.equal(installs, 0, 'restore and shared writers never ran in the refused tab');
 	assert.ok(a);
+});
+
+test('bug #31: Take control from a playing leader in another browser sticks', async () => {
+	const playing = page(fakeLocks(), 'core-pane', { playing: true });
+	await flush();
+	const chrome = page(fakeLocks(), 'maintainer-chrome');
+	await flush();
+	assert.equal(chrome.role(), 'follower', 'precondition: the playing pane leads');
+	chrome.leadership.takeControl();
+	await flush();
+	// The old leader is still playing until its silencer runs; it must not win it back.
+	await run(4, playing, chrome);
+	assert.equal(engine.lease.holder, 'maintainer-chrome');
+	assert.equal(playing.role(), 'follower');
+	assert.equal(chrome.leadership.isConfirmedLeader(), true);
 });

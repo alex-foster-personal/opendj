@@ -37,6 +37,10 @@ LEASE_TTL_S = 10.0
 class MirrorLease:
     holder: str
     expires_monotonic: float
+    # Bug #31: taken with Take control. An operator's explicit choice is never handed
+    # back to a playing tab by the audible rule (the old leader is still playing for
+    # the moment it takes to go silent). It lasts while the same holder renews it.
+    operator_claimed: bool = False
 
 
 def _live_lease(request: Request) -> MirrorLease | None:
@@ -103,6 +107,7 @@ def _lease_body(request: Request, lease: MirrorLease | None) -> dict[str, Any]:
             "ttl_ms": ttl_ms,
             "holder_playing": None,
             "holder_yieldable": None,
+            "holder_operator_claimed": None,
         }
     holder_doc = _holder_document(request, lease)
     return {
@@ -112,6 +117,7 @@ def _lease_body(request: Request, lease: MirrorLease | None) -> dict[str, Any]:
         "ttl_ms": ttl_ms,
         "holder_playing": None if holder_doc is None else _audible(holder_doc),
         "holder_yieldable": None if holder_doc is None else _yieldable(holder_doc),
+        "holder_operator_claimed": lease.operator_claimed,
     }
 
 
@@ -128,7 +134,7 @@ def _handover_reason(request: Request, lease: MirrorLease, body: dict[str, Any])
         return None
     claimant_tab = body.get("tab")
     claimant_visible = not (isinstance(claimant_tab, dict) and claimant_tab.get("visible") is False)
-    if _audible(body) and not _audible(holder_doc):
+    if _audible(body) and not _audible(holder_doc) and not lease.operator_claimed:
         return "audible_over_silent"
     if _yieldable(holder_doc) and claimant_visible:
         return "visible_over_hidden_idle"
@@ -204,7 +210,15 @@ async def publish_ui_mirror(
             )
         elif current is not None and current.holder != lease_id:
             _LOG.warning("ui-mirror lease takeover: from=%s to=%s", current.holder, lease_id)
-        request.app.state.ui_mirror_lease = MirrorLease(lease_id, monotonic() + LEASE_TTL_S)
+        if takeover == "1":
+            operator_claimed = True
+        elif current is not None and current.holder == lease_id:
+            operator_claimed = current.operator_claimed
+        else:
+            operator_claimed = False
+        request.app.state.ui_mirror_lease = MirrorLease(
+            lease_id, monotonic() + LEASE_TTL_S, operator_claimed=operator_claimed
+        )
     stored = deepcopy(body)
     stored["received_at"] = _received_at()
     request.app.state.ui_mirror = stored

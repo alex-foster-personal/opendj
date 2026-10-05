@@ -286,3 +286,19 @@ def test_a_visible_idle_holder_is_not_displaced_by_an_idle_tab(monkeypatch: pyte
         assert (await _put_tab(client, "b", playing=False)).status_code == 409
 
     _run(monkeypatch, body)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_take_control_is_not_handed_back_to_a_playing_tab(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] a silent tab took control from a playing one [then] the playing tab is refused, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_tab(client, "core-pane", playing=True)).status_code == 202
+        assert (await _put_tab(client, "maintainer-chrome", playing=False, takeover=True)).status_code == 202
+        assert (await client.get("/api/v1/state/ui-mirror/lease")).json()["holder_operator_claimed"] is True
+        clock.now_s += 1
+        assert (await _put_tab(client, "maintainer-chrome", playing=False)).status_code == 202
+        assert (await _put_tab(client, "core-pane", playing=True)).status_code == 409
+        assert (await client.get("/api/v1/state/ui-mirror/lease")).json()["holder"] == "maintainer-chrome"
+
+    _run(monkeypatch, body)
