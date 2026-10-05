@@ -599,9 +599,12 @@ def resolve_playable_audio(
             if share_policy is not None and source.origin == "local"
             else None
         )
-        local_only = (
-            _local_only_pick(state, stable_id, share_policy, source.reason)
-            if source.origin == "unavailable" and source.policy_source == "unconfigured"
+        # Issue #3934: believed state never tries rekordbox's FolderPath,
+        # which the tree and rows count first, so a copy that is on disk here
+        # wins over "unavailable" and over hydrating a remote object.
+        local_copy = (
+            _local_copy_pick(state, stable_id, share_policy)
+            if source.origin in ("unavailable", "presigned")
             else None
         )
     finally:
@@ -627,9 +630,18 @@ def resolve_playable_audio(
             else "believed-state-cache",
         )
 
+    if local_copy is not None and local_copy.pick is not None:
+        return local_copy.pick
+
     if source.origin == "unavailable":
-        if local_only is not None:
-            return local_only
+        if source.policy_source == "unconfigured":
+            # CLOUDSYNC-33: a local-only deck says why rekordbox's file will
+            # not play, else plainly that it is not here.
+            if local_copy is not None and local_copy.rekordbox_refusal is not None:
+                raise local_copy.rekordbox_refusal
+            raise not_found(
+                "AUDIO_NOT_ON_THIS_MACHINE", source.reason or hydration.NOT_ON_THIS_MACHINE
+            )
         raise not_found(
             "CLOUD_ASSET_UNAVAILABLE",
             source.reason
