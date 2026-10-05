@@ -651,12 +651,18 @@ impl Deck {
     /// track, and so must the snapped one: a last grid beat past the decoded
     /// end is refused, not clamped.
     pub fn seek(&mut self, ms: f64) -> Result<(), EngineError> {
+        self.seek_with_quantize(ms, true)
+    }
+
+    /// A page-planned target is already quantized or phase-aligned. Preserve
+    /// it when requested without changing this deck's saved Quantize choice.
+    pub fn seek_with_quantize(&mut self, ms: f64, quantize: bool) -> Result<(), EngineError> {
         let t = self.track()?;
         let dur = t.duration_ms();
         if !ms.is_finite() || ms < 0.0 || ms > dur {
             return Err(EngineError::new(ErrorCode::Invalid, "seek position must be within the track"));
         }
-        let to_ms = self.quantized_ms(ms);
+        let to_ms = if quantize { self.quantized_ms(ms) } else { ms };
         if to_ms > dur {
             return Err(EngineError::new(ErrorCode::Invalid, "the quantized seek target is past the end of the track"));
         }
