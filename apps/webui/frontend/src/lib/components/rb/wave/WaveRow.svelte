@@ -380,12 +380,15 @@
 	// A synced-but-not-master follower riding the master's motion, so it must
 	// keep painting while `deck.playing` is false. Read by both effects below.
 	const masterMoving = $derived(deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false));
+	// Split row: the partner (top half) scrolls on its own clock, so keep
+	// painting while it plays even when this deck is paused.
+	const partnerMoving = $derived(splitPartner !== null && (partnerState?.playing ?? false));
 
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
 		const pulse = syncPlayheadTone === 'drift';
 		const hovered = deckHoverUi.deckId === deckId;
-		if (!(deck.playing || seeking || waveformSeekArmed !== null || (hovered && (pulse || masterMoving)))) return;
+		if (!(deck.playing || seeking || waveformSeekArmed !== null || partnerMoving || (hovered && (pulse || masterMoving)))) return;
 		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
 			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);
@@ -408,7 +411,7 @@
 	// early return keeps position_ms untracked during playback so this
 	// effect stays quiet while the rAF loop owns the canvas.
 	$effect(() => {
-		if (deck.playing || seeking || syncPlayheadTone === 'drift' || masterMoving) return;
+		if (deck.playing || seeking || syncPlayheadTone === 'drift' || masterMoving || partnerMoving) return;
 		void deck.stable_id;
 		void deck.position_ms;
 		void deck.pitch;
