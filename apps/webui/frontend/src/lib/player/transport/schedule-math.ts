@@ -507,10 +507,18 @@ export function pausedSeekClock(
 	if (!Number.isFinite(durationMs) || durationMs <= 0) {
 		throw new RangeError(`duration must be finite and positive, got ${durationMs}`);
 	}
-	if (!Number.isFinite(positionMs) || positionMs < 0 || positionMs > durationMs) {
+	// Route through the shared end-of-track tolerance (see clampSeekTargetMs):
+	// a paused position saved from a deck that played to completion can read
+	// up to 1ms past this raw decoded-buffer duration. Re-thrown with this
+	// function's own wording so a position genuinely outside the track still
+	// reports "position ... duration", not the generic helper's message.
+	let clampedMs: number;
+	try {
+		clampedMs = clampSeekTargetMs(positionMs, durationMs, 'pausedSeekClock');
+	} catch {
 		throw new RangeError(`position must be within track duration 0..${durationMs}, got ${positionMs}`);
 	}
-	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
+	return { position_ms: clampedMs, start_offset_sec: clampedMs / 1000 };
 }
 
 /**

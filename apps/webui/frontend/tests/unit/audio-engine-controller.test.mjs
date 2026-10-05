@@ -896,6 +896,25 @@ test('session restore clamps a saved position that lands exactly at the end, ins
 	assert.throws(() => audio.clampSeekTargetMs(Number.NaN, rawDurationMs, 'cueJump'), /cueJump: ms must be within/);
 });
 
+test('a paused position that lands exactly at the end of a raw-float duration clamps, instead of throwing', () => {
+	// Same shape as cueJump's end-of-track repro, for the pause side of the
+	// contract: a deck that played to completion and was then paused there
+	// (or restored into a paused state) persists an integer position rounded
+	// UP from the raw decoded-buffer duration.
+	const rawDurationMs = 248058.6;
+	const savedPositionMs = 248059; // Math.round(rawDurationMs)
+	assert.deepEqual(audio.pausedSeekClock(savedPositionMs, rawDurationMs), {
+		position_ms: rawDurationMs,
+		start_offset_sec: rawDurationMs / 1000
+	});
+
+	// MUTATION CONTROL: a position genuinely past the end still throws, and
+	// still with pausedSeekClock's own "duration" wording, not the shared
+	// helper's "ms must be within" wording - clampSeekTargetMs's error is
+	// caught and re-thrown, not left to leak through.
+	assert.throws(() => audio.pausedSeekClock(rawDurationMs + 5000, rawDurationMs), /duration/i);
+});
+
 test('decoded audio duration is the canonical waveform and transport duration', () => {
 	assert.equal(audio.decodedTransportDurationMs(123.4567), 123456.7);
 	assert.throws(() => audio.decodedTransportDurationMs(0), /positive/i);
