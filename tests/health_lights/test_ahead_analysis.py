@@ -290,3 +290,68 @@ def test_a_declined_key_is_counted_apart_from_done_and_never_rerun() -> None:
     key = drain.coverage()["lanes"]["key"]
     assert (key["done"], key["declined"], key["missing"]) == (1, 1, 0)
     assert key["declined_reasons"] == {"no_tonal_center: ambiguous_margin": 1}
+
+
+#-----------------------------------------------------------------------------
+# one track never closes a lane (demon-llama, Fri 2 to Mon 5 Oct 2026)
+#-----------------------------------------------------------------------------
+#: What a queue run that one track aborts reports for EVERY id in its chunk.
+RUN_ABORT = (
+    "queue run exit 5: beatgrid.beats[545].t is 268.11095, beyond the record's duration_s 268.1"
+)
+
+
+def _one_bad_track_world(bad: str) -> World:
+    """A run containing ``bad`` aborts and every id in it gets the same fallback reason."""
+    world = World([f"t{i}" for i in range(4)])
+    world.strips = set(world.present)
+
+    def run_lane(lane: str, _backend: str, ids: list[str]) -> dict[str, str]:
+        world.lane_runs.append((lane, list(ids)))
+        if bad in ids:
+            return dict.fromkeys(ids, RUN_ABORT)
+        world.done[lane].update(ids)
+        return {}
+
+    world.run_lane = run_lane  # type: ignore[method-assign]
+    return world
+
+
+def test_one_track_that_aborts_its_run_fails_alone_and_the_lane_stays_open() -> None:
+    """[if] one track aborts a chunk's run [then] only it fails, the lane stays open, [else stop]."""
+    world = _one_bad_track_world("t2")
+    drain = world.drain()
+    drain.tick()
+    cov = drain.coverage()["lanes"]["loudness"]
+    assert cov["unavailable"] is None, "if one track's abort closes the lane then broken"
+    assert cov["failed"] == 1 and cov["done"] == 3, "if siblings of the bad track are not produced then broken"
+    assert world.lane_runs[1:] == [("loudness", [sid]) for sid in world.present]
+
+
+def test_a_shared_reason_every_track_reproduces_alone_closes_the_lane() -> None:
+    """[if] every track alone fails one unknown way [then] the lane is unavailable once, [else stop]."""
+    world = World([f"t{i}" for i in range(8)])
+    world.strips = set(world.present)
+    world.lane_error = "BackendNotAvailable: no checkpoint"
+    drain = world.drain()
+    _run_to_green(drain)
+    cov = drain.coverage()["lanes"]
+    assert all(cov[lane]["unavailable"] == world.lane_error for lane, _b in aa.LANE_ORDER)
+    # one chunk plus its four solo reruns per lane, then never again
+    assert len(world.lane_runs) == len(aa.LANE_ORDER) * (1 + aa.LANE_CHUNK)
+
+
+def test_solo_reruns_stop_when_a_deck_starts_playing() -> None:
+    """[if] a deck starts during the solo reruns [then] no further track runs, [else stop]."""
+    world = _one_bad_track_world("t0")
+
+    def run_lane(lane: str, _backend: str, ids: list[str]) -> dict[str, str]:
+        world.lane_runs.append((lane, list(ids)))
+        world.playing = True
+        return dict.fromkeys(ids, RUN_ABORT)
+
+    world.run_lane = run_lane  # type: ignore[method-assign]
+    drain = world.drain()
+    drain.tick()
+    assert world.lane_runs == [("loudness", ["t0", "t1", "t2", "t3"])]
+    assert drain.coverage()["lanes"]["loudness"]["unavailable"] is None
