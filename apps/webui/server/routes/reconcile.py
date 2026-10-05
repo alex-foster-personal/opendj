@@ -30,6 +30,11 @@ Endpoints
     ``orphan_broken`` (broken tracks in no playlist), and a
     ``playlists`` list with ``track_count`` / ``broken_count`` for every
     playlist (zero counts included so the tree can badge everything).
+    ``?cached=true`` (HEALTH-15, what the browser asks) answers from the last
+    scan in milliseconds with ``age_s`` / ``refreshing`` / ``refresh_error``
+    and never scans in the request: a stale scan is redone behind it (one at
+    a time), and before the first scan finishes the answer is 503
+    ``RECONCILE_SUMMARY_WARMING`` with ``Retry-After``.
 
 Availability semantics (mirror of ``apps.reconcile.list_broken``)
 -----------------------------------------------------------------
@@ -65,16 +70,17 @@ their unavailable styling unchanged).
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.shared.platform_paths import is_unplayable_path
 from apps.shared.state.db import open_ro
 
-from .. import library_playable, rb_vendor
+from .. import coverage_cache, library_playable, rb_vendor
 from ..backend import MAX_LIMIT, Playlist, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
 from ..sqlite_backend import SqliteBackend
@@ -86,6 +92,20 @@ router = APIRouter(prefix="/reconcile", tags=["reconcile"])
 # Full-library scan guard: 1000 pages x MAX_LIMIT (1000) = 1M tracks. A scan
 # that deep means a pagination bug (cursor not advancing) -- fail loudly.
 _MAX_SCAN_PAGES: int = 1000
+
+#: A ``cached`` summary read older than this starts one background rescan.
+#: The scan took 39 to 61 s on the silver preview beside the analysis drain
+#: (Mon 5 Oct 2026), so it must not run on every read (HEALTH-15).
+SUMMARY_MAX_AGE_S: float = 60.0
+#: How long a reader that found no summary yet should wait before asking again.
+SUMMARY_WARMING_RETRY_S: int = 5
+SUMMARY_CACHED_HELP = (
+    "Answer at once from the last library scan instead of scanning for this "
+    "request. `age_s` says how old it is; when `refreshing` is true a newer "
+    "scan is running. With no scan yet the answer is 503 "
+    "RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. "
+    "Without this the library is scanned for this request."
+)
 
 
 # ----- response models (route-local: models.py is a hotspot file) -----------
@@ -146,6 +166,13 @@ class ReconcileSummary(BaseModel):
     #: broken_here, off_machine, awaiting_volume, streaming, pathless.
     #: ``None`` = unknown (the backend has no state.db to scan), never zero.
     availability: dict[str, int] | None = None
+    #: Seconds since this scan ran; 0 unless ``cached`` was asked.
+    age_s: float = 0.0
+    #: A newer scan is running behind a ``cached`` read; ask again shortly.
+    refreshing: bool = False
+    #: Why the latest background scan failed. The counts are then the last
+    #: good scan, ``age_s`` old, and must not be shown as current.
+    refresh_error: str | None = None
 
 
 # ----- scan core -------------------------------------------------------------
@@ -405,10 +432,67 @@ def list_broken_tracks(
     )
 
 
-@router.get("/summary", response_model=ReconcileSummary)
+_summary_cache_lock = threading.Lock()
+
+
+def summary_cache_for(app: FastAPI) -> coverage_cache.CoverageCache:
+    """One summary cache per app, so a second app in the process shares nothing."""
+    with _summary_cache_lock:
+        cache = getattr(app.state, "reconcile_summary_cache", None)
+        if cache is None:
+            cache = app.state.reconcile_summary_cache = coverage_cache.CoverageCache(
+                max_age_s=SUMMARY_MAX_AGE_S
+            )
+        return cache
+
+
+@router.get(
+    "/summary",
+    response_model=ReconcileSummary,
+    responses={503: {"description": "`cached` was asked and no scan has finished yet"}},
+)
 def reconcile_summary(
+    request: Request,
+    cached: bool = Query(False, description=SUMMARY_CACHED_HELP),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> ReconcileSummary:
+    """Scan now, or (``cached``) answer from the last scan without ever
+    scanning in the request (HEALTH-15). The browser asks ``cached``; a caller
+    that acts on the counts asks without it."""
+    cache = summary_cache_for(request.app)
+
+    def scan() -> dict[str, object]:
+        return scan_summary(backend)
+
+    if not cached:
+        reading = cache.measure(scan)
+    else:
+        peeked = cache.peek(scan)
+        if peeked is None:
+            failed = cache.last_refresh_error
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "RECONCILE_SUMMARY_WARMING",
+                    "message": (
+                        "the first library scan is running; ask again shortly"
+                        if failed is None
+                        else f"the last library scan failed ({failed}); a new one is running"
+                    ),
+                },
+                headers={"Retry-After": str(SUMMARY_WARMING_RETRY_S)},
+            )
+        reading = peeked
+    return ReconcileSummary.model_validate({
+        **reading.fields,
+        "age_s": reading.age_s,
+        "refreshing": reading.refreshing,
+        "refresh_error": reading.refresh_error,
+    })
+
+
+def scan_summary(backend: StateBackend) -> dict[str, object]:
+    """The full library scan behind the summary: every row's path, stat'd."""
     total_tracks, broken_ids = _scan_broken_ids(backend)
     playlists = backend.list_playlists()
 
@@ -426,13 +510,13 @@ def reconcile_summary(
 
     referenced = {sid for pl in playlists for sid in pl.items}
     orphan_broken = sum(1 for sid in broken_ids if sid not in referenced)
-    return ReconcileSummary(
-        total_tracks=total_tracks,
-        total_broken=len(broken_ids),
-        orphan_broken=orphan_broken,
-        playlists=per_playlist,
-        availability=_availability(backend),
-    )
+    return {
+        "total_tracks": total_tracks,
+        "total_broken": len(broken_ids),
+        "orphan_broken": orphan_broken,
+        "playlists": [p.model_dump() for p in per_playlist],
+        "availability": _availability(backend),
+    }
 
 
 __all__ = [
@@ -440,5 +524,8 @@ __all__ = [
     "BrokenTrackOut",
     "PlaylistBrokenSummary",
     "ReconcileSummary",
+    "SUMMARY_MAX_AGE_S",
+    "scan_summary",
+    "summary_cache_for",
     "router",
 ]

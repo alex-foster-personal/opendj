@@ -165,7 +165,7 @@ async function stubPerformanceApis(
 			json: { total_tracks: 3, on_disk: 1, unreachable: 2, missing: { vocals: 1, stems: 1 }, generated_at: 0 }
 		})
 	);
-	await page.route('**/api/v1/reconcile/summary', (route) =>
+	await page.route('**/api/v1/reconcile/summary**', (route) =>
 		route.fulfill({ json: { total_tracks: 3, total_broken: 2, orphan_broken: 1, playlists: [] } })
 	);
 	await page.route('**/api/v1/reconcile/broken**', (route) =>

@@ -40,6 +40,8 @@
  * audio resolves on this machine right now.
  */
 
+import { coalesce } from './coalesce';
+
 export type LibraryHealthDot = {
 	label:
 		| 'Frontend'
@@ -214,19 +216,30 @@ export function coverageAgeText(ageS: number): string {
  */
 export const COVERAGE_RECHECK_DELAYS_MS: readonly number[] = [3000, 3000, 6000, 12000, 24000];
 
+/**
+ * The reconcile summary's re-asks (HEALTH-15). Its scan is far slower than
+ * coverage's (39 to 61 s on the silver preview beside the analysis drain), so
+ * the schedule reaches further, about two minutes, before it stops and waits
+ * for the next library event.
+ */
+export const RECONCILE_RECHECK_DELAYS_MS: readonly number[] = [3000, 5000, 10000, 15000, 30000, 60000];
+
 export function coverageRecheckDelayMs(
-	outcome: { ok: true; refreshing: boolean; refresh_error: string | null } | { ok: false },
-	rechecks: number
+	outcome: CoverageOutcome,
+	rechecks: number,
+	delays: readonly number[] = COVERAGE_RECHECK_DELAYS_MS
 ): number | null {
 	const settled = outcome.ok && !outcome.refreshing && outcome.refresh_error === null;
 	if (settled) return null;
-	return COVERAGE_RECHECK_DELAYS_MS[rechecks] ?? null;
+	return delays[rechecks] ?? null;
 }
 
 /** Regular coverage refetch while the library view is mounted (HEALTH-12). */
 export const HEALTH_REFETCH_MS = 60_000;
 
-type CoverageOutcome =
+/** What one read told the re-ask schedule. A summary still being taken for
+ * the first time (HEALTH-15) is `refreshing` with no counts painted. */
+export type CoverageOutcome =
 	| { ok: true; refreshing: boolean; refresh_error: string | null }
 	| { ok: false };
 
@@ -237,18 +250,24 @@ export type CoverageRefresh = {
 };
 
 /**
- * Early re-asks for the coverage dots. The panel measures and paints; this
- * only decides when to ask again, then backs off and stops.
+ * Early re-asks for the coverage dots and the reconcile summary. The panel
+ * measures and paints; this only decides when to ask again, then backs off
+ * and stops. One read at a time (HEALTH-15): a load while one is in flight
+ * books one trailing read instead of a second concurrent request.
  */
-export function createCoverageRefresh(run: () => Promise<CoverageOutcome>): CoverageRefresh {
+export function createCoverageRefresh(
+	run: () => Promise<CoverageOutcome>,
+	delays: readonly number[] = COVERAGE_RECHECK_DELAYS_MS
+): CoverageRefresh {
 	let rechecks = 0;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let alive = true;
+	const load = coalesce(readOnce);
 
-	async function load(): Promise<void> {
+	async function readOnce(): Promise<void> {
 		const outcome = await run();
 		if (outcome.ok && !outcome.refreshing && outcome.refresh_error === null) rechecks = 0;
-		const delay = coverageRecheckDelayMs(outcome, rechecks);
+		const delay = coverageRecheckDelayMs(outcome, rechecks, delays);
 		if (delay === null || !alive) return;
 		rechecks += 1;
 		if (timer !== null) clearTimeout(timer);

@@ -384,7 +384,7 @@ test('null artwork availability identifies an unavailable reader without request
 			}
 		})
 	);
-	await page.route('**/api/v1/reconcile/summary', (route) =>
+	await page.route('**/api/v1/reconcile/summary**', (route) =>
 		route.fulfill({ json: { total_tracks: 1, total_broken: 0, orphan_broken: 0, playlists: [] } })
 	);
 	await page.route('**/api/sets/recorder', (route) =>

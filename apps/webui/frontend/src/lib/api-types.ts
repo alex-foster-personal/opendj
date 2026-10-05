@@ -4503,7 +4503,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Reconcile Summary */
+        /**
+         * Reconcile Summary
+         * @description Scan now, or (``cached``) answer from the last scan without ever
+         *     scanning in the request (HEALTH-15). The browser asks ``cached``; a caller
+         *     that acts on the counts asks without it.
+         */
         get: operations["reconcile_summary_api_v1_reconcile_summary_get"];
         put?: never;
         post?: never;
@@ -13720,6 +13725,11 @@ export interface components {
         };
         /** ReconcileSummary */
         ReconcileSummary: {
+            /**
+             * Age S
+             * @default 0
+             */
+            age_s: number;
             /** Availability */
             availability?: {
                 [key: string]: number;
@@ -13728,6 +13738,13 @@ export interface components {
             orphan_broken: number;
             /** Playlists */
             playlists: components["schemas"]["PlaylistBrokenSummary"][];
+            /** Refresh Error */
+            refresh_error?: string | null;
+            /**
+             * Refreshing
+             * @default false
+             */
+            refreshing: boolean;
             /** Total Broken */
             total_broken: number;
             /** Total Tracks */
@@ -24880,7 +24897,10 @@ export interface operations {
     };
     reconcile_summary_api_v1_reconcile_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. With no scan yet the answer is 503 RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. Without this the library is scanned for this request. */
+                cached?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -24895,6 +24915,22 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ReconcileSummary"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description `cached` was asked and no scan has finished yet */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
