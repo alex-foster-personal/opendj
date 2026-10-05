@@ -58,21 +58,76 @@ test('the local filter debounce is shorter than the whole-collection one', () =>
 	);
 });
 
-test('playlist tree readiness is a positive navigation-relative duration', () => {
-	assert.equal(
+test('playlist tree readiness classifies a clean duration with no anomaly', () => {
+	assert.deepEqual(
 		lib.measurePlaylistTreeReadyMs(125),
-		125,
-		'a real tree-ready measurement must be positive and preserve milliseconds'
+		{ ms: 125, anomaly: null },
+		'a real tree-ready measurement must preserve milliseconds and carry no anomaly'
 	);
-	assert.throws(
-		() => lib.measurePlaylistTreeReadyMs(0),
-		/positive/,
-		'a zero duration would hide a clock mismatch'
+});
+
+test('playlist tree readiness flags a clock-mismatch value and never throws (#5469)', () => {
+	// #5469: "browser init failed: ... playlist tree ready duration must be
+	// below 60 seconds, got 68271.9" was an unhandled rejection that aborted
+	// BrowserPanel's whole boot. measurePlaylistTreeReadyMs must never throw -
+	// a bad SAMPLE is not a reason to fail the measured app.
+	assert.doesNotThrow(() => lib.measurePlaylistTreeReadyMs(0));
+	assert.deepEqual(
+		lib.measurePlaylistTreeReadyMs(0),
+		{ ms: null, anomaly: 'epoch-mismatch' },
+		'a zero duration hides a clock mismatch and is unusable, but must not throw'
 	);
-	assert.throws(
-		() => lib.measurePlaylistTreeReadyMs(60_000),
-		/60 seconds/,
-		'an epoch timestamp must not be accepted as a tree duration'
+	assert.doesNotThrow(() => lib.measurePlaylistTreeReadyMs(lib.PLAYLIST_TREE_READY_EPOCH_MIN_MS));
+	assert.deepEqual(
+		lib.measurePlaylistTreeReadyMs(1_700_000_000_000),
+		{ ms: null, anomaly: 'epoch-mismatch' },
+		'an actual epoch timestamp (ms since 1970) must be rejected as unusable, not thrown'
+	);
+});
+
+test('playlist tree readiness records a slow-but-real duration instead of throwing (#5469)', () => {
+	// The real incident value: a genuinely slow tree-ready (background tab,
+	// cold big library, loaded box) that is nowhere near epoch scale. It must
+	// be classified 'slow' and KEPT, not discarded as if it were corrupt -
+	// epoch-mismatch detection must distinguish the two, not conflate them.
+	assert.doesNotThrow(() => lib.measurePlaylistTreeReadyMs(68_271.9));
+	assert.deepEqual(
+		lib.measurePlaylistTreeReadyMs(68_271.9),
+		{ ms: 68272, anomaly: 'slow' },
+		'a slow-but-real duration must still be recorded, flagged as slow, never thrown'
+	);
+	// Mutation control: a value just under the slow threshold must stay clean,
+	// so the boundary is the MAX_MS constant and not an off-by-something.
+	assert.deepEqual(
+		lib.measurePlaylistTreeReadyMs(lib.PLAYLIST_TREE_READY_MAX_MS - 1),
+		{ ms: lib.PLAYLIST_TREE_READY_MAX_MS - 1, anomaly: null },
+		'just under the slow threshold must be clean, proving the slow flag is not firing unconditionally'
+	);
+});
+
+test('recordPlaylistTreeReadyMs skips an unusable sample and records a slow one (#5469)', () => {
+	const mark = ringMark();
+	lib.recordPlaylistTreeReadyMs(lib.measurePlaylistTreeReadyMs(1_700_000_000_000));
+	const afterEpoch = rowsSince(mark);
+	assert.ok(
+		afterEpoch.every((row) => row.kind !== 'library-playlist-tree-ready'),
+		'an epoch-mismatch sample must never be recorded as a timing'
+	);
+	assert.ok(
+		afterEpoch.some((row) => row.kind === 'library-playlist-tree-ready-anomaly'),
+		'an epoch-mismatch sample must still be logged as a named perf-event warning'
+	);
+
+	const mark2 = ringMark();
+	lib.recordPlaylistTreeReadyMs(lib.measurePlaylistTreeReadyMs(68_271.9));
+	const afterSlow = rowsSince(mark2);
+	assert.ok(
+		afterSlow.some((row) => row.kind === 'library-playlist-tree-ready' && row.stages?.ready_ms === 68272),
+		'a slow-but-real sample must still land in the timing ring'
+	);
+	assert.ok(
+		afterSlow.some((row) => row.kind === 'library-playlist-tree-ready-anomaly'),
+		'a slow-but-real sample must also be flagged so it is findable without scanning every row'
 	);
 });
 
