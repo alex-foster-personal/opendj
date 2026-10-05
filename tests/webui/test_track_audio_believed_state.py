@@ -10,6 +10,7 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -357,13 +358,25 @@ def test_rekordbox_lookup_failure_is_not_reported_as_absence(
     assert excinfo.value.detail["code"] == "STATE_DB_UNAVAILABLE"
 
 
+def _assert_believed_state_plays_the_alternate(played: httpx.Response) -> None:
+    """The 206 serves the on-disk alternate (REAL_AUDIO), found by believed
+    state: the dead primary no longer shadows it (PR #5435), so the route
+    needs no local-only fallback for it. The share cap is unaffected: a share
+    audience still re-picks an origin=local answer through pick_playable."""
+    assert played.status_code == 206
+    assert played.headers["content-range"] == f"bytes 0-0/{REAL_AUDIO.stat().st_size}"
+    assert played.content == REAL_AUDIO.read_bytes()[:1]
+    assert played.headers.get("x-audio-source") == "believed-state-local"
+
+
 @pytest.mark.requirement("CLOUDSYNC-33")
 def test_unconfigured_machine_plays_a_working_alternate_location(
     unconfigured_client: TestClient,
 ) -> None:
     """[if] a local-only machine's primary location is gone but another
     location row for the track is on disk [then] the deck plays that copy,
-    chosen by the same picker the share cap uses, [else stop]."""
+    found by believed state itself, which walks every local location row,
+    [else stop]."""
     state = state_db.open_rw(rb_config.STATE_DB)
     try:
         machine_id = sync_stamp.ensure_local_machine(state)
@@ -380,8 +393,7 @@ def test_unconfigured_machine_plays_a_working_alternate_location(
     played = unconfigured_client.get(
         f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
     )
-    assert played.status_code == 206
-    assert played.headers.get("x-audio-source", "").startswith("location:")
+    _assert_believed_state_plays_the_alternate(played)
 
 
 @pytest.mark.requirement("CLOUDSYNC-33")
@@ -403,8 +415,7 @@ def test_unconfigured_machine_keeps_rekordboxs_reason_for_a_file_that_is_here(
     played = unconfigured_client.get(
         f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
     )
-    assert played.status_code == 206
-    assert played.headers.get("x-audio-source", "").startswith("location:")
+    _assert_believed_state_plays_the_alternate(played)
 
 
 @pytest.mark.requirement("CLOUDSYNC-33")
