@@ -13,6 +13,6 @@ test.describe('CAT-05a track detail page', () => {
 		await page.goto('/');
 		await page.locator('table.library tbody tr').first().click();
 		await expect(page.locator('h2')).toBeVisible();
-		await expect(page.locator('.star')).toHaveCount(5);
+		await expect(page.getByRole('radio', { name: /^Set rating [1-5]$/ })).toHaveCount(5);
 	});
 });

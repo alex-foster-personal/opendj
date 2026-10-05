@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["tinytag>=2.2.1,<3", "httpx"]
+# dependencies = ["tinytag>=2.3.2,<3", "httpx"]
 # ///
 """Add the 100 clubsauna acapella vocal stems to open-dj as a playlist.
 
@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-from tinytag import TinyTag
+from tinytag import TinyTag, TinyTagException
 
 REPO = Path(__file__).resolve().parents[1]
 DB = REPO / "data" / "state" / "state.db"
@@ -68,10 +68,10 @@ def parse(fp: Path) -> dict:
     artists = [a.strip() for a in artist.split(",")] if artist else []
     dur_ms = None
     try:
-        length = TinyTag.get(str(fp)).duration
-        if length:
-            dur_ms = round(length * 1000)
-    except Exception as e:
+        duration_s = TinyTag.get(str(fp)).duration
+        if duration_s:
+            dur_ms = round(duration_s * 1000)
+    except (TinyTagException, OSError) as e:
         print(f"  warn: no duration for {fp.name}: {e}", file=sys.stderr)
     sid = hashlib.sha1(str(fp).encode("utf-8")).hexdigest()
     return dict(pos=pos, stable_id=sid, title=title.strip(),

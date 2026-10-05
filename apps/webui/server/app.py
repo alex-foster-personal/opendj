@@ -25,6 +25,7 @@ from apps.sets.share import SetShareConfig
 from apps.sets.share_page import router as set_share_page_router
 
 from . import (
+    ahead_analysis,
     analysis_autostart,
     analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
     coverage_drain,
@@ -82,6 +83,7 @@ def create_app(  # noqa: PLR0913
     lyric_index: bool = False,
     auto_user_jobs: bool = False,
     auto_coverage_drain: bool = False,
+    auto_ahead_analysis: bool = False,
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
     stem_hydration: bool = False,
@@ -159,6 +161,7 @@ def create_app(  # noqa: PLR0913
     app.state.cloudsync_scheduler_armed = cloudsync_scheduler
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     app.state.coverage_drain_armed = auto_coverage_drain
+    app.state.ahead_analysis_armed = auto_ahead_analysis
     _install_exception_handlers(app)
     install_request_guard(
         app,
@@ -228,6 +231,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
             ingest_routes.RefreshIn(scope="unmapped"),
             ingest_routes._stem_roots(app),
             lambda: guard(last_attempted_queue()),
+            stem_cloud=ingest_routes.stem_cloud_for(app),
         )
 
         def consumed() -> str | None:
@@ -418,6 +422,8 @@ def _build_default_app() -> FastAPI:
         cloudsync_scheduler=True,
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
         auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
+        # NATIVE-21: the ahead-of-time analysis drain; create_app leaves it off.
+        auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
         stem_hydration=True,
     )
 

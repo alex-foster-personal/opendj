@@ -6,6 +6,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .models_grid_quality import GridQualityRowOut
+from .models_tempo_pref import TempoPrefOut, TempoPrefPatch
+
 # PREFLIGHT-01's boot-gate schemas live in their own module (models.py size budget);
 # re-exported here so every existing import keeps working.
 from .models_preflight import PreflightCheckOut, PreflightOut
@@ -36,31 +39,6 @@ class ProvenanceOut(BaseModel):
     modified_at: str
     status: Literal["ok", "failed", "missing", "available-not-selected"]
     reason: str | None = None
-
-
-class TempoPrefOut(BaseModel):
-    """PREF-01: a track's user-set preferred tempo plus its playable range.
-
-    Any of the three may be null (unset). Never fabricated on read - a track
-    with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
-    not this shape with all-null members (see sqlite_backend._row_to_track).
-    """
-
-    regular: float | None = None
-    min: float | None = None
-    max: float | None = None
-
-
-class TempoPrefPatch(BaseModel):
-    regular: float | None = None
-    min: float | None = None
-    max: float | None = None
-
-    @model_validator(mode="after")
-    def _min_less_than_max(self) -> TempoPrefPatch:
-        if self.min is not None and self.max is not None and self.min >= self.max:
-            raise ValueError("tempo_pref.min must be less than tempo_pref.max")
-        return self
 
 
 class TrackOut(BaseModel):
@@ -97,9 +75,10 @@ class TrackOut(BaseModel):
     lyrics_available: bool
     auto_cues_available: bool
     stems_available: bool
-    # Same tri-state as RbMetaOut / listing: True = GET /artwork would 200,
-    # False = would 404 ARTWORK_NOT_FOUND, None = would 503
-    # ARTWORK_READER_UNAVAILABLE. Deck-load GET /tracks/{sid} carries this so
+    # Same field as RbMetaOut / listing: True = GET /artwork would 200,
+    # False = would 404 ARTWORK_NOT_FOUND. None is kept in the type for wire
+    # compatibility only: since the tag reader became a core dependency no
+    # build answers it. Deck-load GET /tracks/{sid} carries this so
     # the browser can skip the img GET (same job as has_rb_mapping /
     # lyrics_available).
     artwork_available: bool | None
@@ -194,6 +173,10 @@ class TrackListItemOut(TrackOut):
     # LIBUX-07: our own audio in non-local storage, not streaming and not
     # awaiting-volume. False (the default) is the honest common case.
     is_remote: bool = False
+    # CHROME-02: same facts TrackRowOut carries, so All Tracks and search
+    # classify an unmapped streaming row without an rb-meta FolderPath.
+    is_streaming: bool
+    streaming_provider: Literal["spotify", "tidal", "soundcloud", "unknown"] | None = None
     # LIBUX-13: a durable remote object is recorded even when local audio
     # also exists. Unlike is_remote, this does not collapse local+cloud.
     has_remote_copy: bool
@@ -218,10 +201,11 @@ class TrackListItemOut(TrackOut):
     bpm_confidence: float | None = None
     bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
-    # the cell is empty (missing tags extra vs no file tag vs no rekordbox genre).
+    # the cell is empty (no file tag vs no rekordbox genre).
     genre: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
@@ -334,6 +318,9 @@ class TrackRowOut(BaseModel):
     file_availability: FileAvailabilityStatus
     file_exists: bool | None
     is_streaming: bool
+    # CHROME-02: which service streams this row (null when not streaming), so
+    # an unmapped streaming row whose rb-meta never loads still shows its icon.
+    streaming_provider: Literal["spotify", "tidal", "soundcloud", "unknown"] | None = None
     # LIBUX-07: our own audio in non-local storage. False when unset.
     is_remote: bool = False
     # LIBUX-13: true whenever track_locations records a live remote object,
@@ -366,6 +353,7 @@ class TrackRowOut(BaseModel):
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
 

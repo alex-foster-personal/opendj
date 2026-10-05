@@ -70,6 +70,24 @@ export const BPM_HALF_ABS = 15.0;
 export const BPM_FAR_BELOW = 25.0;
 /** Above-master absolute BPM past which the cell goes far/red. */
 export const BPM_FAR_ABOVE = 30.0;
+/**
+ * IOPIN-11's default master-relative compatibility tolerance.  This is an
+ * absolute distance after choosing the closest of raw, half and double tempo;
+ * eight exactly is intentionally not compatible (the pin says "under 8").
+ */
+export const BPM_COMPATIBILITY_ABS = 8.0;
+
+export type BpmCompatibilitySeverity = 'compatible' | 'neutral' | 'warn' | 'danger' | 'critical';
+
+export type BpmCompatibility = {
+	/** 1 = raw tempo, 0.5 = half, 2 = double. */
+	fold: number;
+	/** Distance from the closest raw/half/double master relationship. */
+	absDelta: number;
+	compatible: boolean;
+	/** Red-border escalation after 8, 16 and 24 BPM. */
+	severity: BpmCompatibilitySeverity;
+};
 
 export type BpmHeatLane = 'sweet' | 'half' | 'mid' | 'far';
 
@@ -130,6 +148,30 @@ function _bestFold(bpm: number, master: number): { fold: number; absDelta: numbe
 		if (abs < best.absDelta) best = { fold, absDelta: abs };
 	}
 	return best;
+}
+
+/**
+ * IOPIN-11 compatibility is deliberately distinct from the old heat lanes:
+ * it evaluates the nearest musically useful relationship, then applies the
+ * user-visible absolute thresholds.  This makes 64.1 vs 128 compatible while
+ * keeping a raw 64 BPM mismatch red when it is not a close half-time match.
+ */
+export function classifyBpmCompatibility(
+	bpm: number | null,
+	masterBpm: number | null
+): BpmCompatibility | null {
+	if (bpm === null || masterBpm === null || !(bpm > 0) || !(masterBpm > 0)) return null;
+	const nearest = _bestFold(bpm, masterBpm);
+	const absDelta = nearest.absDelta;
+	if (absDelta < BPM_COMPATIBILITY_ABS) {
+		return { fold: nearest.fold, absDelta, compatible: true, severity: 'compatible' };
+	}
+	if (absDelta <= BPM_COMPATIBILITY_ABS) {
+		return { fold: nearest.fold, absDelta, compatible: false, severity: 'neutral' };
+	}
+	if (absDelta <= 16) return { fold: nearest.fold, absDelta, compatible: false, severity: 'warn' };
+	if (absDelta <= 24) return { fold: nearest.fold, absDelta, compatible: false, severity: 'danger' };
+	return { fold: nearest.fold, absDelta, compatible: false, severity: 'critical' };
 }
 
 /**

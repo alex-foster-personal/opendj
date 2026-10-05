@@ -101,18 +101,36 @@ test('TrackTable row artwork stays thumbnail-sized', () => {
 	assert.doesNotMatch(src, /artworkUrl\(row\.stable_id, 'orig'\)/);
 });
 
-test('BrowserPanel loads ingestion coverage after primary browser initialization', () => {
+// HEALTH-14 reverses the earlier ordering on purpose: the cached coverage read
+// answers in milliseconds and was waiting about 17.6 s behind the paged
+// listing. What this test still holds is the part that mattered: the boot
+// path never WAITS on coverage. The ordering itself is asserted in
+// health-14-coverage-at-mount.test.mjs.
+test('BrowserPanel sends ingestion coverage at mount and never awaits it on the boot path', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /import \{ _pingBackend, _pingFrontend, _coverageDot \} from '\$lib\/rb\/browser-health-probes';/);
+	assert.match(src, /import \{ _pingBackend, _pingFrontend \} from '\$lib\/rb\/browser-health-probes';/);
 	assert.match(src, /import \{ getIngestCoverage \} from '\$lib\/rb\/api-ingest';/);
-	assert.match(
-		src,
-		/await _restoreBootPane\(\);[\s\S]*?finally \{[\s\S]*?playlistsLoading = false;[\s\S]*?\}[\s\S]*?void _loadIngestCoverage\(\);/,
-		'ingest coverage must start only after the playlists and initial pane settle, never on boot critical path'
-	);
-	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
+	// HEALTH-14: the cached read leaves at mount, ahead of the listing. It is
+	// still never awaited on the boot path.
+	assert.match(src, /void _loadIngestCoverage\(\);\s*void _init\(\);/);
+	assert.match(src, /getIngestCoverage\(\{ cached: true \}\)/, 'the mount read must be the cached one');
+	const init = src.slice(src.indexOf('async function _init()'), src.indexOf('async function _restoreBootPane'));
+	assert.ok(init.includes('await _restoreBootPane();'), 'control: the _init() body was found');
+	assert.doesNotMatch(init, /_loadIngestCoverage/, 'tree and first pane must never wait on ingestion accounting');
+	const popover = src.slice(src.indexOf('class="health-popover"'), src.indexOf('tray-right-cluster'));
+	assert.match(popover, /\{dot\.label\}/, 'the health detail popover must print each dot label');
+	for (const meaning of ['Vocals completion', 'Stems completion']) {
 		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
 	}
+	// Present-track verdicts live in the pure module (HEALTH-01/03/04). The
+	// extracted probe module still owns the on-disk corrupt/missing readout.
+	const rules = source('src/lib/rb/library-health-dots.ts');
+	assert.ok(rules.includes("label = 'Library health'"), 'the health detail popover must retain Library health');
+	assert.match(rules, /state: pending === 0 && failed === 0 \? 'complete' : 'incomplete'/);
+	assert.match(rules, /state: 'unavailable'/);
+	assert.match(rules, /state: 'error'/);
+	assert.match(src, /vocalsCompletion = _unknownDot\('Vocals completion', why\);/);
+	assert.doesNotMatch(src, /function _coverageDot\(/, 'the panel must not keep its own copy of the rule');
 	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: missing === 0 \? 'complete' : 'incomplete'/);
 	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: 'unavailable'/);
 	assert.match(source('src/lib/rb/browser-health-probes.ts'), /state: 'error'/);
@@ -120,6 +138,15 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 
 test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
+	const rules = source('src/lib/rb/library-health-dots.ts');
+	assert.match(rules, /done \+ terminal \+ failed \+ pending !== present/);
+	assert.match(rules, /of \$\{present\} present tracks/);
+	assert.match(
+		src,
+		/const healthRefetchTimer = setInterval\(\(\) => void _loadIngestCoverage\(\), HEALTH_REFETCH_MS\);/,
+		'the dots must re-ask on their own clock while the drain works'
+	);
+	assert.match(src, /clearInterval\(healthRefetchTimer\);/);
 	assert.match(source('src/lib/rb/browser-health-probes.ts'), /const completed = coverage\.on_disk - missing;/);
 	assert.match(source('src/lib/rb/browser-health-probes.ts'), /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
 	assert.match(

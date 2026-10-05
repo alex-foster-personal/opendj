@@ -205,7 +205,18 @@ function _harness({ outputs = BF1_OUTPUTS, refuse = () => null } = {}) {
 	};
 	// duration_ms: a restore that clamps the seek into the loaded track reads it,
 	// and without it every deck lands `missing`, hiding the "restore continued" check.
-	const idle = { playing: false, audible: false, beatgrid: [], duration_ms: 300_000 };
+	// load_generation, stable_id and stems: the stem-control restore (#3837) reads
+	// them to confirm the deck did not change under it and which controls the
+	// bundle offers. A settled no-bundle deck, so the neutral saved stems are skipped.
+	const idle = {
+		playing: false,
+		audible: false,
+		beatgrid: [],
+		duration_ms: 300_000,
+		load_generation: 1,
+		stable_id: null,
+		stems: { status: 'unavailable', available_controls: [], error: null }
+	};
 	const query = () => ({
 		decks: { 1: idle, 2: idle, 3: idle, 4: idle },
 		mixer: { headphones: { ...headphones } }
@@ -489,6 +500,7 @@ function _captureState(headphones) {
 		loop: null,
 		hot_cue_armed: null,
 		stems: {
+			available_controls: ['vocal', 'instrumental', 'drums'],
 			controls: {
 				vocal: { muted: false, solo: false, gain: 0.5 },
 				instrumental: { muted: false, solo: false, gain: 0.5 },

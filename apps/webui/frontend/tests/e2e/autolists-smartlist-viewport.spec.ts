@@ -1,7 +1,11 @@
 /**
  * PERF-UI-01 / issue #4051: Autolists smartlist scroller stays usable at 1280x720.
  *
- * [if] Autolists tab at 720p [then] scroll area and rows sit above app nav [else stop].
+ * [if] Autolists tab at 720p [then] scroll area and rows sit inside the window [else stop].
+ *
+ * The bottom-left link strip the rows once had to clear is gone (PERF-UI-07,
+ * tests/e2e/performance-no-app-nav.spec.ts), so the bound is the window's own
+ * bottom edge, and the hit test below proves nothing else covers the row.
  */
 import { expect, test } from '@playwright/test';
 
@@ -9,7 +13,7 @@ test.use({ viewport: { width: 1280, height: 720 } });
 
 const ROW = '[data-testid="smartlist-row"]';
 
-test('autolists: smartlist scroll height and rows stay above performance app nav at 720p', async ({
+test('autolists: smartlist scroll height and rows stay inside the window at 720p', async ({
 	page
 }) => {
 	const name = `Autolists viewport ${Date.now()}`;
@@ -36,17 +40,15 @@ test('autolists: smartlist scroll height and rows stay above performance app nav
 		await expect(row).toBeVisible({ timeout: 30_000 });
 
 		const geometry = await page.evaluate(() => {
-			const nav = document.querySelector('[data-testid="performance-app-nav"]');
 			const scroll = document.querySelector('[data-testid="autolists-scroll"]');
 			const smartRow = document.querySelector('[data-testid="smartlist-row"]');
-			if (nav === null || scroll === null || smartRow === null) {
-				throw new Error('missing autolists or nav elements');
+			if (scroll === null || smartRow === null) {
+				throw new Error('missing autolists elements');
 			}
-			const navBox = nav.getBoundingClientRect();
-			const rowBox = smartRow.getBoundingClientRect();
-			return { navTop: navBox.top, rowBottom: rowBox.bottom, scrollHeight: scroll.getBoundingClientRect().height };
+			return { windowBottom: window.innerHeight, rowBottom: smartRow.getBoundingClientRect().bottom };
 		});
-		expect(geometry.rowBottom).toBeLessThanOrEqual(geometry.navTop - 2);
+		expect(geometry.windowBottom, 'the 720p viewport this test sets').toBe(720);
+		expect(geometry.rowBottom, 'smartlist row bottom edge').toBeLessThanOrEqual(geometry.windowBottom);
 
 		const hit = await row.evaluate((el) => {
 			const box = el.getBoundingClientRect();

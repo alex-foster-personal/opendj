@@ -201,3 +201,47 @@ def test_reconcile_summary_and_coverage_agree_on_playable(
     assert summary["availability"]["off_machine"] == 1
     assert summary["availability"]["streaming"] == 1
     assert summary["availability"]["total"] == summary["total_tracks"] == 6
+
+
+@pytest.mark.requirement("TAGIO-06")
+def test_a_missing_artist_is_terminal_only_while_it_is_missing(library: Library) -> None:
+    """Live on demon-llama, Thu 1 Oct 2026: every row was stored as lyrics
+    no_source "has no artist" keyed on the audio file, so rows whose artist
+    came back later stayed terminal for good and lyrics never ran.
+
+    [if] a row's artist comes back [then] its lyrics step is pending again, [else stop]
+    """
+    audio = _seed_present(library, "blank")
+    _seed_present(library, "untried")
+    conn = sqlite3.connect(library.state_db)
+    conn.execute("UPDATE tracks SET artists_json = '[]' WHERE stable_id = 'blank'")
+    conn.commit()
+    store = coverage_outcomes.OutcomeStore(coverage_outcomes.store_path(library.data_dir))
+    store.record_no_source(
+        "lyrics", "blank", coverage_outcomes.audio_token(audio), "track 'blank' has no artist", now=1.0
+    )
+    before = _coverage(library)
+    assert before["terminal"]["lyrics"] == 1 and before["pending"]["lyrics"] == 1
+
+    conn.execute("UPDATE tracks SET artists_json = '[\"AVIRA\"]' WHERE stable_id = 'blank'")
+    conn.commit()
+    conn.close()
+
+    after = _coverage(library)
+    assert after["terminal"]["lyrics"] == 0, "if a fixed artist stays lyrics-terminal then broken"
+    assert after["pending"]["lyrics"] == 2
+
+
+@pytest.mark.requirement("TAGIO-06")
+def test_a_blank_row_with_no_ledger_entry_is_still_terminal(library: Library) -> None:
+    """Control: the live check alone must keep a row with no artist out of
+    pending, or the drain would re-run its lookup every cycle.
+
+    [if] a row has no artist and no ledger entry [then] its lyrics step is terminal, [else stop]
+    """
+    _seed_present(library, "blank")
+    conn = sqlite3.connect(library.state_db)
+    conn.execute("UPDATE tracks SET artists_json = '[]' WHERE stable_id = 'blank'")
+    conn.commit()
+    conn.close()
+    assert _coverage(library)["terminal"]["lyrics"] == 1

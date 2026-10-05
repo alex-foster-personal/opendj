@@ -29,7 +29,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "remixes_filter",
         "vocals_filter",
         "available_offline_filter",
-        "midi_enabled",
+        "rb.midi_enabled",
         "hide_todo_settings",
         "jog_radial_waveform",
         "auto_sync.rekordbox",
@@ -37,12 +37,14 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "auto_sync.open_dj",
         "confirm.delete_playlist",
         "confirm.dblclick_load_play",
+        "confirm.playlist_drop_mode",
     }
 )
 
 _ENUM_VALUES: dict[str, frozenset[str]] = {
     "theme": frozenset({"dark", "light"}),
     "library_density": frozenset({"compact", "cosy"}),
+    "confirm.playlist_drop_mode": frozenset({"ask", "add", "move"}),
 }
 
 

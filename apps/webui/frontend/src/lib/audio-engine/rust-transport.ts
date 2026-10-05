@@ -1,5 +1,3 @@
-import { phaseLocks, type PhaseLock } from './rust-phase-lock';
-export { phaseLocksForTest, invalidateRustPhaseLocks } from './rust-phase-lock';
 /**
  * Rust engine mode's page-decided commands: play, pause, CUE, seek, tempo,
  * Beat Sync, master and quantize, plus the hot-cue driver. Each is DECIDED on
@@ -24,6 +22,9 @@ import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/perfor
 import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
+import { phaseLocks, type PhaseLock } from './rust-phase-lock';
+
+export { phaseLocksForTest, invalidateRustPhaseLocks } from './rust-phase-lock';
 import { DECKS, type DeckId, displayLoops, loadFences, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
@@ -61,10 +62,13 @@ export function electIfAuto(options?: { force?: boolean }): void {
 }
 
 /**
- * An AUTOMATIC master change (paused, CUE'd, played out, unloaded) re-joins
- * every playing synced deck to the new master, as `_setDeckMaster` does;
- * otherwise `_lockHolds` drops each lock and the decks free-run. A re-anchor
- * only seeks a follower that is off phase, so this is normally tempo-only.
+ * An AUTOMATIC master change - the master paused, CUE'd, played out or was
+ * unloaded - re-joins every playing synced deck to the new master, as the
+ * manual `_setDeckMaster` does. Without it each follower's phase lock is
+ * dropped as soon as the master moves (`_lockHolds`) and nothing records a
+ * new one, so the decks free-run and drift. A re-anchor join only seeks a
+ * follower that is off phase; the new master was itself locked to the old
+ * one, so this is normally a tempo-only re-lock.
  */
 export async function electAndRejoin(options?: { force?: boolean }): Promise<void> {
 	const previous = rustMaster.deck;
@@ -102,6 +106,9 @@ function _setPlaying(deck: DeckId, playing: boolean): void {
 	st.transport_pending = false;
 }
 
+/** The page clock, in seconds. */
+const _nowSec = (): number => performance.now() / 1000;
+
 /**
  * Lock `follower` to `master`. `play` starts it on the lock; `reanchor`
  * re-phases a follower that is already locked, seeking only when its phase
@@ -115,34 +122,33 @@ async function _join(
 		reanchor?: boolean;
 		masterAtSec?: number | undefined;
 		followerAtSec?: number;
+		/** A user seek: join on the beat nearest `followerAtSec`, not the nearest phased landing. */
 		anchorOnBeat?: boolean;
 	} = {}
 ): Promise<void> {
 	const st = deckStates[follower];
+	// No phase-lock trim may land between this join's tempo and the lock it
+	// records: the trim would be relative to the old base.
+	delete phaseLocks[follower];
 	const masterState = deckStates[master];
 	if (loadFences[follower] === Infinity || loadFences[master] === Infinity) {
 		throw new Error('Beat Sync: cannot join while either deck is loading');
 	}
 	const followerGeneration = st.load_generation;
 	const masterGeneration = masterState.load_generation;
-	const followerTrack = st.stable_id;
-	const masterTrack = masterState.stable_id;
-	const current = (): boolean =>
-		st.load_generation === followerGeneration &&
+	const followerId = st.stable_id;
+	const masterId = masterState.stable_id;
+	const current = () => st.load_generation === followerGeneration &&
 		masterState.load_generation === masterGeneration &&
-		st.stable_id === followerTrack &&
-		masterState.stable_id === masterTrack &&
-		loadFences[follower] !== Infinity &&
-		loadFences[master] !== Infinity;
-	// No phase-lock trim may land between this join's tempo and the lock it
-	// records: the trim would be relative to the old base.
-	delete phaseLocks[follower];
+		st.stable_id === followerId && masterState.stable_id === masterId &&
+		loadFences[follower] !== Infinity && loadFences[master] !== Infinity;
 	const fv = _view(follower);
 	const join = planRustFollowerJoin(_view(master, options.masterAtSec), fv, {
 		leadSec: SYNC_LEAD_SEC,
 		mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode),
 		pitchRangePct: pitchRanges[follower],
-		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec, anchorOnBeat: options.anchorOnBeat === true })
+		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec }),
+		...(options.anchorOnBeat === undefined ? {} : { anchorOnBeat: options.anchorOnBeat })
 	});
 	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
 	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
@@ -152,12 +158,7 @@ async function _join(
 	// Sent together: the engine applies what arrives before its next block
 	// in that block, so tempo, position and start land as one.
 	if (!current()) throw new Error('Beat Sync: join superseded by a replacement load');
-	try {
-		await Promise.all(cmds.map(send));
-	} catch (error) {
-		if (!current()) return;
-		throw error;
-	}
+	await Promise.all(cmds.map(send));
 	if (!current()) throw new Error('Beat Sync: join superseded by a replacement load');
 	st.pitch = join.tempo;
 	st.sync_error = null;
@@ -169,10 +170,12 @@ async function _join(
 		base: join.tempo,
 		normalization: join.plan.tempoNormalization,
 		sent: join.tempo,
-		busy: false
+		busy: false,
+		joinedAtSec: _nowSec(),
+		overLineTicks: 0,
+		userOffsetMs: 0
 	};
 }
-
 
 function _lockHolds(deck: DeckId, lock: PhaseLock, master: DeckId): boolean {
 	const st = deckStates[deck];
@@ -238,10 +241,21 @@ export function phaseLockTick(): void {
 				followerPositionSec: playheadMs(deck) / 1000,
 				followerBaseTempo: lock.base,
 				normalization: lock.normalization,
-				pitchRangePct: pitchRanges[deck]
+				pitchRangePct: pitchRanges[deck],
+				sinceJoinSec: _nowSec() - lock.joinedAtSec,
+				overLineTicks: lock.overLineTicks,
+				userOffsetMs: lock.userOffsetMs
 			};
-			lock.base = phaseLockFeedForwardBase(input); // follows a grid tempo change (F4)
-			decision = phaseLockDecision({ ...input, followerBaseTempo: lock.base, trimming: lock.sent !== lock.base });
+			// Feed-forward may rewrite the base this tick. `trimming` is whether a
+			// trim is already on the wire (sent !== the base the last tick settled),
+			// not whether this tick's candidate base differs: using the candidate
+			// made an in-phase follower look mid-trim and send on the next frame.
+			const forwarded = phaseLockFeedForwardBase(input); // follows a grid tempo change (F4)
+			decision = phaseLockDecision({
+				...input,
+				followerBaseTempo: forwarded,
+				trimming: lock.sent !== lock.base
+			});
 		} catch (e) {
 			// Thrown inside the state mirror: drop this lock and say why rather
 			// than stop mirroring every deck.
@@ -249,6 +263,10 @@ export function phaseLockTick(): void {
 			st.sync_error = `phase lock: ${e instanceof Error ? e.message : String(e)}`;
 			continue;
 		}
+		// On an uneven grid the base follows the local tempo; every trim and the
+		// release are relative to the base now.
+		lock.base = decision.base;
+		lock.overLineTicks = decision.overLineTicks;
 		if (decision.action === 'reseek') {
 			// A follower in its own loop is the DJ's: it is not seeked out of it.
 			if (st.loop?.engaged) continue;
@@ -419,7 +437,7 @@ async function _seek(deck: DeckId, ms: number, options: { quantize: boolean }): 
 	}
 	const master = _syncMaster();
 	if (st.playing && effectiveBeatSync(st) && master !== null && master !== deck) {
-		await _join(master, deck, { followerAtSec: targetMs / 1000, anchorOnBeat: options.quantize }); // a user seek: the clicked beat
+		await _join(master, deck, { followerAtSec: targetMs / 1000, anchorOnBeat: options.quantize });
 		st.position_ms = targetMs;
 		return;
 	}
@@ -577,8 +595,6 @@ export function cancelArmedJump(deck: DeckId): void {
 	if (t !== undefined) clearTimeout(t);
 	delete armedJumps[deck];
 }
-
-const _nowSec = (): number => performance.now() / 1000;
 
 /**
  * The page's hot-cue logic (`hot_cue_*` in performance-ipc) driving this

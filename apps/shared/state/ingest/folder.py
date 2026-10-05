@@ -4,7 +4,9 @@ The rekordbox adapter is the rich path. This is the honest poor one: walk a
 directory, read what the tags say, and write tracks with NO analysis at all.
 It does not invent a BPM, a key or a beatgrid, and it does not pretend the
 result is an analysed library -- the report says how many tracks carry no
-analysed field, and that number is the whole point.
+analysed field, and that number is the whole point. A BPM or key the FILE'S
+OWN TAGS carry is recorded (``source="inferred"``) only where the track has
+no value yet, so a rescan can never overwrite an analysed or edited one.
 
 Three things it refuses to be vague about:
 
@@ -46,6 +48,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
+from apps.shared.state import provenance as state_provenance
 from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
@@ -75,6 +78,9 @@ class FolderIngestReport:
     #: Files whose tags could not be read at all (tag reader absent, or the file
     #: is not parseable). They are still imported, titled from the filename.
     files_without_tags: int = 0
+    #: Tracks whose file tags carried a BPM / a key that was recorded.
+    tracks_with_tag_bpm: int = 0
+    tracks_with_tag_key: int = 0
     #: Allowlisted files that failed the playable-audio probe. Never imported.
     files_rejected_unplayable: int = 0
     tracks_inserted: int = 0
@@ -276,9 +282,9 @@ def _write_tracks(
         else:
             report.tracks_unchanged += 1
         report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
-        _write_file_tag_metadata(writer, stable_id, metadata)
-        # A folder import knows no bpm, no key and no rating. It retains only
-        # genre and comment read from the file tags, with explicit provenance.
+        write_file_tag_metadata(writer, stable_id, metadata, report)
+        # A folder import analyses nothing. A tag BPM / key is the file's own
+        # claim, recorded with "inferred" provenance, not an analysis result.
         report.tracks_without_analysis += 1
 
         if on_progress is not None:
@@ -346,12 +352,19 @@ def _artists(metadata: audio_files.AudioMetadata | None) -> list[str]:
     return [artist] if artist else []
 
 
-def _write_file_tag_metadata(
+def write_file_tag_metadata(
     writer: StateWriter,
     stable_id: str,
     metadata: audio_files.AudioMetadata | None,
+    report: FolderIngestReport,
 ) -> None:
-    """Persist the non-analysis file tags needed by unmapped browser rows."""
+    """Persist the file's own tags that unmapped browser rows display.
+
+    genre / comments follow the tag on every import. bpm / key are written
+    only when the track has NO value for that field yet: those fields are also
+    written by analysis, rekordbox and webui edits, and a rescan of the same
+    folder must never replace one of those with the file's tag.
+    """
     if metadata is None:
         return
     modified_at = _dt.datetime.now(_dt.UTC).isoformat()
@@ -365,6 +378,23 @@ def _write_file_tag_metadata(
             stable_id, field_name, value, source="inferred",
             confidence=0.7, modified_at=modified_at,
         )
+    analysed: tuple[tuple[str, float | str | None], ...] = (
+        ("bpm", metadata.bpm),
+        ("key", metadata.key),
+    )
+    for field_name, tag_value in analysed:
+        if tag_value is None:
+            continue
+        if state_provenance.read_field(writer.raw_conn, stable_id, field_name) is not None:
+            continue
+        writer.set_field(
+            stable_id, field_name, tag_value, source="inferred",
+            confidence=0.7, modified_at=modified_at,
+        )
+        if field_name == "bpm":
+            report.tracks_with_tag_bpm += 1
+        elif field_name == "key":
+            report.tracks_with_tag_key += 1
 
 
 # ----- CLI ---------------------------------------------------------------
@@ -377,6 +407,8 @@ def _print_summary(report: FolderIngestReport) -> None:
     print(f"  audio files seen:   {report.files_seen}")
     print(f"  icloud placeholders skipped: {report.files_dataless}")
     print(f"  files without tags: {report.files_without_tags}")
+    print(f"  tracks with tag bpm: {report.tracks_with_tag_bpm}")
+    print(f"  tracks with tag key: {report.tracks_with_tag_key}")
     print(f"  files rejected (unplayable): {report.files_rejected_unplayable}")
     print(f"  tracks inserted:    {report.tracks_inserted}")
     print(f"  tracks unchanged:   {report.tracks_unchanged}")
@@ -431,4 +463,5 @@ __all__ = [
     "collect_audio",
     "ingest_folder",
     "run_cli",
+    "write_file_tag_metadata",
 ]

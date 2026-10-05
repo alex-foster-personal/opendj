@@ -20,6 +20,9 @@
  * - if hide-broken hides pending rows then most of a cold playlist vanishes
  * - if deck load / preview / drag call a pending row "missing on disk" then
  *   the operator goes hunting for a file that is fine -> broken
+ * - if deck load / preview / drag refuse a pending row at all then a new
+ *   user is told to wait for a probe they never asked for -> broken
+ *   (pin c90b8036d495)
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -32,8 +35,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const read = (p) => readFileSync(fileURLToPath(new URL(`../../${p}`, import.meta.url)), 'utf8');
 const FIXTURE = 'tests/unit/fixtures/playlist-pending-availability-captured.json';
 const MANIFEST = 'tests/unit/fixtures/playlist-pending-availability-captured.manifest.json';
-const PENDING_LOAD = 'cannot load: availability still checking (wait for disk probe)';
-const PENDING_PREVIEW = 'preview: availability still checking (wait for disk probe)';
+const PENDING_PHRASE = 'availability still checking (wait for disk probe)';
+const MISSING_LOAD = 'cannot load: audio file missing on disk (broken link)';
+const MISSING_PREVIEW = 'preview: audio file missing on disk (broken link)';
 
 let wire;
 let contract;
@@ -119,11 +123,13 @@ describe('the mapper still refuses a broken contract', () => {
 	});
 });
 
-describe('pending rows have their own reason, not "missing"', () => {
-	it('drag refuses a pending row as pending', () => {
+// Pin c90b8036d495: a pending row is a row nobody has stat'ed yet, which is
+// not a reason to refuse it. The load itself is the probe.
+describe('pending rows load; only a known-absent file is refused', () => {
+	it('drag allows a pending row', () => {
 		const row = wire.rowFromPlaylistWire(pendingOf(captured)[0], 1);
-		assert.equal(refusal.trackDragRefusal(row), PENDING_LOAD);
-		assert.doesNotMatch(refusal.trackDragRefusal(row), /missing/);
+		assert.equal(row.file_exists, null);
+		assert.equal(refusal.trackDragRefusal(row), null);
 	});
 
 	it('drag still calls an absent row missing (control)', () => {
@@ -132,24 +138,32 @@ describe('pending rows have their own reason, not "missing"', () => {
 			/missing on disk/
 		);
 	});
+
+	it('drag still refuses a streaming row (control)', () => {
+		assert.match(
+			refusal.trackDragRefusal({ file_exists: null, is_streaming: true }),
+			/streaming track/
+		);
+	});
 });
 
 // REQ: PERF-RB-02
-test('BrowserPanel maps through the shared module and words pending refusals', () => {
+test('BrowserPanel maps through the shared module and never refuses a pending row', () => {
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.ok(!panel.includes('function _rowFromPlaylistWire('), 'a private mapper came back');
 	assert.ok(!panel.includes('function _rowFromListWire('), 'a private mapper came back');
 	assert.match(panel, /rowFromPlaylistWire as _rowFromPlaylistWire/);
-	assert.ok(panel.includes(PENDING_LOAD), 'deck load lost its pending reason');
-	assert.ok(panel.includes(PENDING_PREVIEW), 'preview lost its pending reason');
-	// Pending is checked BEFORE the missing-file branch in both paths, or a
-	// null file_exists falls into "missing on disk".
-	for (const [pendingPhrase, missingPhrase] of [
-		[PENDING_LOAD, 'cannot load: audio file missing on disk (broken link)'],
-		[PENDING_PREVIEW, 'preview: audio file missing on disk (broken link)']
-	]) {
-		assert.ok(panel.indexOf(pendingPhrase) < panel.indexOf(missingPhrase), pendingPhrase);
+	assert.ok(!panel.includes(PENDING_PHRASE), 'a pending row is refused with a toast again');
+	// The missing-file refusal is still there (control), and it fires on a
+	// KNOWN-absent file only: `!row.file_exists` would call a pending row
+	// (file_exists null) missing.
+	for (const missingPhrase of [MISSING_LOAD, MISSING_PREVIEW]) {
+		const at = panel.indexOf(missingPhrase);
+		assert.ok(at > 0, missingPhrase);
+		const guard = panel.slice(panel.lastIndexOf('if (', at), at);
+		assert.match(guard, /row\.file_exists === false/, missingPhrase);
 	}
+	assert.ok(!panel.includes('!row.file_exists'), 'a null file_exists reads as missing');
 	const support = read('src/lib/components/rb/browser/browser-panel-support.ts');
 	assert.match(support, /rowFromPlaylistWire.*from '\.\/browser-row-wire'/);
 });
@@ -162,4 +176,64 @@ test('pending rows are styled and titled as pending in both browser views', () =
 	const column = read('src/lib/components/rb/browser/ColumnBrowser.svelte');
 	assert.match(column, /class:broken=\{row\.file_exists === false\}/);
 	assert.match(column, /class:pending=/);
+});
+
+/*
+ * Found driving the real shell on demon-llama (Thu 1 Oct 2026): All Tracks
+ * hydrated 7,986 of 8,558 rows as AVAILABILITY_PENDING and NOTHING ever
+ * settled them, so "wait for disk probe" was a wait with no end. Every
+ * visible row already fetches /rb-meta, whose file_exists is a full stat
+ * (an API whose type cannot say pending runs a FULL scan), so that answer
+ * settles the row.
+ *
+ * Regression lines:
+ * - if a pending row with rb-meta file_exists true stays pending then it can
+ *   never be loaded or previewed -> broken
+ * - if a SETTLED row is rewritten from rb-meta then the listing's typed
+ *   status (awaiting_volume, streaming) is overwritten -> broken
+ */
+describe('a pending row settles from its rb-meta disk truth', () => {
+	const pending = { file_exists: null, file_availability: 'AVAILABILITY_PENDING' };
+	it('present on disk settles as present', () => {
+		assert.deepEqual(
+			wire.settledAvailabilityFromRbMeta(pending, { file_exists: true, is_streaming: false }),
+			{ file_exists: true, file_availability: 'present' }
+		);
+	});
+	it('missing on disk settles as absent', () => {
+		assert.deepEqual(
+			wire.settledAvailabilityFromRbMeta(pending, { file_exists: false, is_streaming: false }),
+			{ file_exists: false, file_availability: 'absent' }
+		);
+	});
+	it('a streaming row settles as streaming', () => {
+		assert.deepEqual(
+			wire.settledAvailabilityFromRbMeta(pending, { file_exists: false, is_streaming: true }),
+			{ file_exists: false, file_availability: 'streaming' }
+		);
+	});
+	it('a settled row is never rewritten (control)', () => {
+		const settled = { file_exists: false, file_availability: 'awaiting_volume' };
+		assert.equal(
+			wire.settledAvailabilityFromRbMeta(settled, { file_exists: true, is_streaming: false }),
+			null
+		);
+	});
+	it('a pending row with no rb-meta stays pending', () => {
+		assert.equal(wire.settledAvailabilityFromRbMeta(pending, null), null);
+	});
+});
+
+// Regression line: a visible row's rb-meta fetch is a full stat, so its answer
+// must land on the row. Deck load and preview no longer wait on it: a pending
+// row loads (pin c90b8036d495), which the "never refuses" test above pins.
+test('BrowserPanel settles a visible pending row from the rb-meta it fetched', () => {
+	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
+	assert.match(
+		panel,
+		/row\.rb_meta = await _fetchRbMetaWithRetry\(row\.stable_id\);\s*_applySettledAvailability\(row\);/,
+		'a visible row never settles from the rb-meta it already fetched'
+	);
+	// Control: settling goes through the pure mapper, which never rewrites a settled row.
+	assert.match(panel, /function _applySettledAvailability\(row: LoadableRow\): void \{\s*const settled = settledAvailabilityFromRbMeta\(/);
 });

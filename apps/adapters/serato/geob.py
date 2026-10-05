@@ -343,7 +343,8 @@ class SeratoGEOB:
 # Frame layout comes from ``encode_markers2`` / ``encode_beatgrid`` (see
 # above). Writing those bytes into an ID3 GEOB frame used mutagen, which
 # this Apache-2.0 product does not depend on. ``write_geob_frames`` refuses
-# without touching the file. ``read_geob_frames`` returns an empty bundle.
+# without touching the file. ``read_geob_frames`` reads GEOB frames with the
+# in-house ID3 parser, so a read does not need mutagen importable.
 
 
 GEOB_OWNER: str = "DJ Pool"
@@ -382,13 +383,36 @@ def write_geob_frames(
 
 
 def read_geob_frames(audio_path) -> SeratoGEOB:
-    """Return an empty :class:`SeratoGEOB`.
+    """Read Serato GEOB frames from an MP3 with the in-house ID3 parser.
 
-    Reading ID3 GEOB frames required mutagen. Serato database reads do not
-    go through this function. ``audio_path`` is unused.
+    A missing file, a non-MP3 path, or a file with no ID3 tag returns an
+    empty bundle. This does not import mutagen.
     """
-    del audio_path
-    return SeratoGEOB()
+    from pathlib import Path as _Path
+
+    from apps.shared.id3v2 import Id3Error, read_tag
+
+    path = _Path(audio_path)
+    if not path.is_file() or not _is_mp3(path):
+        return SeratoGEOB()
+    try:
+        tag = read_tag(path)
+    except (Id3Error, OSError):
+        return SeratoGEOB()
+    if tag is None:
+        return SeratoGEOB()
+    markers2 = Markers2()
+    beatgrid = BeatGrid(markers=())
+    opaque: dict[str, bytes] = {}
+    for mime, _filename, desc, payload in tag.geob():
+        del mime
+        if desc == GEOB_MARKERS2_DESC:
+            markers2 = parse_markers2(payload)
+        elif desc == GEOB_BEATGRID_DESC:
+            beatgrid = parse_beatgrid(payload)
+        elif desc.startswith("Serato "):
+            opaque[desc] = payload
+    return SeratoGEOB(markers2=markers2, beatgrid=beatgrid, opaque_frames=opaque)
 
 
 def is_mp3_like_path(audio_path) -> bool:

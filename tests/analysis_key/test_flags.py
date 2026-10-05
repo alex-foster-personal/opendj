@@ -64,3 +64,12 @@ def test_confidence_threshold_is_above_the_scorers_provable_floor() -> None:
     module docstring for the derivation). A CONFIDENCE_THRESHOLD at or below
     that floor can mathematically never fire for real (nonzero) input."""
     assert CONFIDENCE_THRESHOLD > 0.489
+
+
+def test_the_measured_median_margin_publishes() -> None:
+    """Round 1 (Fri 2 Oct 2026): the median margin over 60 real tracks was
+    0.0097. The 0.02 placeholder declined it, and 88% of tracks with it."""
+    estimate = KeyEstimate(key=_KEY, confidence=0.95, margin=0.0097)
+    assert evaluate_tonal_center(estimate).no_tonal_center is False, (
+        "if a median-margin track is declined then broken"
+    )

@@ -5,6 +5,7 @@
  * loads it; the root layout and stores need just the route predicates.
  */
 import type { PerformanceCommand, PerformanceState } from '$lib/rb/performance-ipc.svelte';
+import { frameOrTimeout } from '$lib/rb/frame-backstop';
 import { MUTED_MASTER_VOLUME } from '$lib/rb/performance-preset-constants';
 import {
 	DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS,
@@ -289,9 +290,7 @@ export function assertPerformancePresetPresented(
 	}
 }
 
-function _nextAnimationFrame(): Promise<void> {
-	return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
+
 
 export async function waitForPerformancePresetPresented(
 	preset: PerformancePreset,
@@ -314,7 +313,7 @@ export async function waitForPerformancePresetPresented(
 			if (!(error instanceof PerformancePresetPendingError)) throw error;
 			lastPending = error;
 		}
-		await _nextAnimationFrame();
+		await frameOrTimeout();
 		assertCurrent();
 	}
 	throw new Error(
@@ -367,7 +366,7 @@ export async function waitForPerformancePresetStopped(
 			if (!(error instanceof PerformancePresetPendingError)) throw error;
 			lastPending = error;
 		}
-		await _nextAnimationFrame();
+		await frameOrTimeout();
 	}
 	throw new Error(
 		`performance preset ${preset.id} did not stop within ${timeoutMs}ms: ` +

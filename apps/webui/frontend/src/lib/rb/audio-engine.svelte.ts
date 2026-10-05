@@ -97,17 +97,12 @@ import {
 	beginDeckLoad,
 	failedDeckLoadMessage,
 	recordDeckLoad,
+	rethrowLibraryTrackLookupError,
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import {
-	noteMasterSilence,
-	notePresentationClock,
-	notePresentationTickFailure,
-	readOutputTimestamp as _readOutputTimestamp,
-	resetMasterSilenceWatch,
-	resetPresentationClockStall
-} from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -123,7 +118,7 @@ import {
 	setPlayingPositionReader,
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
-import { buildDeckChannelGraph, recreateFromEngineAccess } from '$lib/rb/deck-channel-graph';
+import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
@@ -134,7 +129,7 @@ import {
 	fetchStemAudioArrayBuffers,
 	STEM_LAYOUT_PART_NAMES,
 	getTrack,
-	patchTrack,
+	saveTrackRating,
 	RbApiError
 } from '$lib/rb/api-rb';
 import { awaitStemArtifact, landHeldStemsOrSettle, landStemsOnDeck, retryDeckStems, stemBlockCheck, stemsBlockedState, STEM_HELD_BY_PRESSURE, STEM_HELD_BY_TRANSPORT, type StemLandingOutcome } from '$lib/rb/stem-hydrate-wait';
@@ -185,16 +180,15 @@ import {
 	hasTrustedBeatGrid
 } from '$lib/player/grid-features';
 import {
-	beatFourLeadInSec,
 	beatSyncMaxFollowers,
 	planSeekSync,
 	seekSyncMaster,
 	syncChangeRequiresReschedule,
 	syncMayWriteTempo,
 	syncModeForBeatSyncMax,
-	syncSeekBlendDurationSec,
 	type SeekSyncPlan
 } from '$lib/rb/sync-seek-blend';
+import { scheduleFollowerBackwardBlend } from '$lib/rb/follower-backward-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	StretchDeckProcessor,
@@ -206,7 +200,7 @@ import {
 	decodeStemBuffers,
 	DEMUCS_PARTS,
 	loadingStemDeckState,
-	readyStemDeckState,
+	readyStemDeckState, playingStemsIntentionallySilent,
 	STEM_CONTROLS,
 	unavailableStemDeckState,
 	type StemBuffers
@@ -215,11 +209,11 @@ import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls'
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
-import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
+import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
-import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/rb/context-time-wait';
+import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/player/transport/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState, StemFetchProgress, StemLoadPhase } from '$lib/rb/stem-types';
 import {
@@ -254,6 +248,8 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	requestIoDeviceNames as requestMonitorDeviceNames,
+	releaseHeadphoneGraphOfFailedBuild,
 	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
 	selectMasterOutput as selectMonitorMasterOutput,
@@ -261,6 +257,7 @@ import {
 	setHeadDelayMs as setMonitorHeadDelay,
 	setHeadphoneOutputMode as setMonitorOutputMode,
 	setMasterDelayMs as setMonitorMasterDelay,
+	setMultichannelMonitorActive,
 	wirePracticeBlendIntoMasterPath,
 	wireSplitCableIntoMasterPath
 } from '$lib/player/headphones';
@@ -287,6 +284,7 @@ import {
 	quantizedPositionMs,
 	quantizedSeekDecisionMs,
 	replaceMatchingSafetyLoopSnapshot,
+	resolvedLoopState,
 	shiftLiveBeatLoopRangeMs,
 	targetWithinShiftedLiveLoopMs
 } from '$lib/player/transport/loops';
@@ -463,6 +461,8 @@ let _masterMuteGain: GainNode | null = null;
  * owns its delayTime; the engine only wires it. */
 let _masterDelay: DelayNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
+let _djOutputNodes: AudioNode[] = [];
+let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
@@ -563,19 +563,14 @@ export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	};
 }
 
-/** Estimated decoded PCM retained for memory tracking.
- * Mix buffer always; when stems are ready, add 4 aligned part buffers
- * (AlignedStemDeckProcessor keeps vocals/drums/bass/other at the same geometry). */
+/** See {@link estimateDeckPcmBytes} in deck-audio-snapshot.ts for the accounting. */
 export function deckPcmEstimatedBytes(): number {
-	let total = 0;
-	for (const deck of DECK_IDS) {
-		const buffer = _rt[deck].audioBuffer;
-		if (buffer === null) continue;
-		const mixBytes = buffer.length * buffer.numberOfChannels * 4;
-		total += mixBytes;
-		if (deckStates[deck].stems.status === 'ready') total += mixBytes * 4;
-	}
-	return total;
+	return estimateDeckPcmBytes(
+		DECK_IDS.map((deck) => ({
+			audioBuffer: _rt[deck].audioBuffer,
+			stemsReady: deckStates[deck].stems.status === 'ready'
+		}))
+	);
 }
 export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
 
@@ -606,20 +601,14 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 		disarmInstrumentation: () => disarmContextInstrumentation(),
 		muteNode: () => _masterMuteGain,
 		disposeResources: ({ processors, nodes }) =>
-			disposeAudioResources({ rafId: _rafId, processors, nodes, masterGain: _masterGain, context: _ctx }),
-		resetGraphState: () => {
-			disposeHeadphoneMonitor();
-			_rafId = null;
-			_masterGain = null;
-			releaseMasterMeterTap();
-			attachMasterMuteNode(null);
-			_masterMuteGain = null;
-			_masterDelay = null;
-			_externalMerger = _externalRouteAnalyser = null;
-			_ctx = null;
-			resetMasterSilenceWatch();
-			resetPresentationClockStall();
-		},
+			disposeAudioResources({
+				rafId: _rafId,
+				processors,
+				nodes: [...nodes, ..._djOutputNodes],
+				masterGain: _masterGain,
+				context: _ctx
+			}),
+		resetGraphState: () => _resetGraphState(disposeHeadphoneMonitor),
 		ensureGraph: () => _ensureGraph(),
 		resetPresentation: (deck, positionSec) => {
 			_rt[deck].presentation = createPresentedTransportTimeline(positionSec);
@@ -652,8 +641,60 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
 			}
 		}
-	});
+	}).catch(_unloadDecksOrphanedByFailedRebuild);
 	await _resumeContext();
+}
+
+/** IOPIN-12: a failed rebuild leaves each deck it detached with a buffer but no processor, so the deck
+ * showed its track while play() rejected "no track loaded". Unload those decks with the cause on the
+ * deck, then rethrow for the stall recovery's own report. */
+function _unloadDecksOrphanedByFailedRebuild(error: unknown): never {
+	const cause = error instanceof Error ? error.message : String(error);
+	for (const deck of DECK_IDS) {
+		if (_rt[deck].audioBuffer === null || _rt[deck].processor !== null) continue;
+		_recordProcessorFailure(deck, new Error(`audio graph recreate failed, reload the track: ${cause}`));
+	}
+	throw error;
+}
+
+/** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing, and unregister the
+ * dropped context (PERFMODE-14 counts registered contexts). A rebuild passes disposeHeadphoneMonitor
+ * (retires in-flight headphone operations); a failed build must not (IOPIN-12). */
+function _resetGraphState(releaseHeadphones: () => void): void {
+	releaseHeadphones();
+	if (_ctx !== null) unregisterAudioContext(_ctx);
+	_rafId = null;
+	_masterGain = null;
+	releaseMasterMeterTap();
+	attachMasterMuteNode(null);
+	_masterMuteGain = null;
+	_masterDelay = null;
+	_externalMerger = _externalRouteAnalyser = null;
+	_djOutputNodes = [];
+	_djOutputProfileActive = null;
+	clearDjOutputResolution();
+	_ctx = null;
+	resetMasterSilenceWatch();
+	resetPresentationClockStall();
+}
+
+/** IOPIN-12: release whatever a throwing `_ensureGraph()` built, deck nodes included,
+ * and close its context. Loaded processors are untouched: none exists before a graph. */
+function _discardFailedGraph(): void {
+	const failed = _ctx;
+	const nodes: AudioNode[] = [..._djOutputNodes];
+	for (const deck of DECK_IDS) {
+		const deckNodes = _rt[deck].nodes;
+		if (deckNodes !== null) nodes.push(...Object.values(deckNodes).filter((node): node is AudioNode => node !== null));
+		_rt[deck].nodes = null;
+		_meterTaps[deck] = null;
+	}
+	if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
+	if (_masterDelay !== null) nodes.push(_masterDelay);
+	disarmContextInstrumentation();
+	const closing = disposeAudioResources({ rafId: _rafId, processors: [], nodes, masterGain: _masterGain, context: failed });
+	_resetGraphState(releaseHeadphoneGraphOfFailedBuild);
+	void closing.catch((error: unknown) => recordPerfEvent('audio-graph-discard-failed', `failed graph teardown: ${String(error)}`, null, 'error'));
 }
 
 function _ensureGraph(): AudioContext {
@@ -661,112 +702,104 @@ function _ensureGraph(): AudioContext {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
 	}
 	if (_ctx !== null) return _ctx;
-	// Construction options travel through ONE named constant so a future
-	// user-facing buffer/latency setting has a single place to write to.
-	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
-	registerAudioContext(_ctx);
-	stampContextDeviceFloors(_ctx);
-	// A context that is allowed to start running immediately never fires
-	// statechange, so the build stamp above already caught it; one that starts
-	// suspended is re-stamped the moment it runs, whichever path resumed it.
-	// The watchdog owns that re-stamp AND every non-running state: suspended,
-	// interrupted and closed used to fall through in silence, which is how
-	// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
-	armAudioContextWatchdog(
-		_ctx,
-		() => DECK_IDS.some((deck) => deckStates[deck].playing),
-		rebuildAudioGraphKeepingDecks
-	);
-	setPlayingPositionReader(() =>
-		DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
-			deck: d,
-			position_ms: deckStates[d].position_ms,
-			decoded_duration_ms: deckStates[d].duration_ms,
-			metadata_duration_ms: _rt[d].metadataDurationMs
-		}))
-	);
-	_masterGain = _ctx.createGain();
-	_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
-	// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
-	// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
-	_masterGain.connect((_masterAnalyser = _ctx.createAnalyser()));
-	resetMasterSilenceWatch(); resetPresentationClockStall();
-	// Silence belt for headless test agents (`?muted=1`): the LAST node before
-	// the destination, so a mute is one gain value and every node upstream --
-	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
-	// identically. See player/master-mute.svelte.ts.
-	_masterMuteGain = _ctx.createGain();
-	attachMasterMuteNode(_masterMuteGain);
-	// CUEOUT-14: the room delay is the ONLY node after the mute. Everything the
-	// operator hears in the phones was tapped upstream at _masterGain.
-	_masterDelay = createMasterDelayNode(_ctx);
-	const routing = parseExternalRouting();
-	if (routing === null) {
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(_ctx.destination);
-	} else {
-		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
-		const dest = _ctx.destination;
-		if (dest.maxChannelCount < highestUsbChannel) {
-			throw new Error(
-				`extroute needs ${highestUsbChannel} output channels but the current output device exposes ` +
-					`${dest.maxChannelCount} - select the multichannel interface as the system output device and reload`
-			);
-		}
-		dest.channelCount = dest.maxChannelCount;
-		dest.channelInterpretation = 'discrete';
-		// The mute node inherits the discrete multichannel contract, otherwise
-		// the default speakers interpretation would downmix the per-deck USB
-		// pairs on their way through it.
-		_masterMuteGain.channelCount = dest.channelCount;
-		_masterMuteGain.channelCountMode = 'explicit';
-		_masterMuteGain.channelInterpretation = 'discrete';
-		_masterDelay.channelCount = dest.channelCount;
-		_masterDelay.channelCountMode = 'explicit';
-		_masterDelay.channelInterpretation = 'discrete';
-		_masterMuteGain.connect(_masterDelay);
-		_masterDelay.connect(dest);
-		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
-		_externalMerger.channelInterpretation = 'discrete';
-		_externalMerger.connect(_masterMuteGain);
-		_externalMerger.connect((_externalRouteAnalyser = _ctx.createAnalyser()));
-	}
-	const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
-	if (routing === null) {
-		wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
-		wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
-	}
-	// Post-fader channel tap points, one per deck, PLUS one master tap sourced
-	// from `_masterGain` itself (post master gain, so the master volume
-	// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
-	// Collected here and armed after the loop because addModule is async and
-	// the graph build is not.
-	const meterSources: MeterTapSource[] = [];
-	meterSources.push(createMasterMeterSource(_masterGain));
-	meterSources.push(
-		...buildDeckChannelGraph({
-			ctx: _ctx,
-			mixerState,
-			masterGain: _masterGain,
-			externalMerger: _externalMerger,
-			routing,
-			cueSum: headphones.cueSum,
-			xfGainFor: _xfGainFor,
-			onDeck: (deck, nodes, tap) => {
-				_rt[deck].nodes = nodes;
-				_meterTaps[deck] = tap;
-			}
-		})
-	);
-	void ensureStretchWorkletReady(_ctx).catch((error: unknown) => {
-		recordPerfEvent(
-			'stretch-worklet-preload-failed',
-			`Signalsmith worklet did not become ready during graph build: ${String(error)}`
+	try {
+		// Construction options travel through ONE named constant so a future
+		// user-facing buffer/latency setting has a single place to write to.
+		_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
+		registerAudioContext(_ctx);
+		stampContextDeviceFloors(_ctx);
+		// A context that is allowed to start running immediately never fires
+		// statechange, so the build stamp above already caught it; one that starts
+		// suspended is re-stamped the moment it runs, whichever path resumed it.
+		// The watchdog owns that re-stamp AND every non-running state: suspended,
+		// interrupted and closed used to fall through in silence, which is how
+		// Wed 2 Sep 2026 cost ~24 minutes of audio with nothing on screen.
+		armAudioContextWatchdog(
+			_ctx,
+			() => DECK_IDS.some((deck) => deckStates[deck].playing),
+			rebuildAudioGraphKeepingDecks
 		);
-	});
-	armXrunSentinel(_ctx);
-	armDeckMeters(_ctx, meterSources);
-	return _ctx;
+		setPlayingPositionReader(() =>
+			DECK_IDS.filter((d) => deckStates[d].playing).map((d) => ({
+				deck: d,
+				position_ms: deckStates[d].position_ms,
+				decoded_duration_ms: deckStates[d].duration_ms,
+				metadata_duration_ms: _rt[d].metadataDurationMs
+			}))
+		);
+		_masterGain = _ctx.createGain();
+		_masterGain.gain.value = mixerState.master * _ceilingGainMultiplier();
+		// Silence watchdog tap: an AnalyserNode with nothing downstream is a pure
+		// observer, and it sits BEFORE _masterMuteGain so `?muted=1` is not a dropout.
+		_masterGain.connect((_masterAnalyser = _ctx.createAnalyser()));
+		resetMasterSilenceWatch(); resetPresentationClockStall();
+		// Silence belt for headless test agents (`?muted=1`): the LAST node before
+		// the destination, so a mute is one gain value and every node upstream --
+		// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
+		// identically. See player/master-mute.svelte.ts.
+		_masterMuteGain = _ctx.createGain();
+		attachMasterMuteNode(_masterMuteGain);
+		_masterDelay = createMasterDelayNode(_ctx);
+		const routing = parseExternalRouting();
+		// IOPIN-12: a djio request on an output with < 4 channels plays stereo master.
+		const djio = resolveDjOutputProfile(parseDjOutputProfile(window.location.search), _ctx.destination.maxChannelCount);
+		_djOutputProfileActive = djio.profile;
+		const headphones = ensureHeadphoneGraph(_ctx, _masterGain);
+		const output = wireAudioOutputTopology({
+			context: _ctx,
+			routing,
+			profile: _djOutputProfileActive,
+			masterGain: _masterGain,
+			masterMuteGain: _masterMuteGain,
+			masterDelay: _masterDelay,
+			headphoneDelay: headphones.delay
+		});
+		_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser;
+		_djOutputNodes = output.ownedNodes;
+		setMultichannelMonitorActive(output.multichannelMonitorActive);
+		if (routing === null && _djOutputProfileActive === null) {
+			wirePracticeBlendIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+			wireSplitCableIntoMasterPath(_masterGain, _masterMuteGain, headphones);
+		}
+		// Post-fader channel tap points, one per deck, PLUS one master tap sourced
+		// from `_masterGain` itself (post master gain, so the master volume
+		// control genuinely moves it - pin 5a5c3b8033d8's still-open half).
+		// Collected here and armed after the loop because addModule is async and
+		// the graph build is not.
+		const meterSources: MeterTapSource[] = [];
+		meterSources.push(createMasterMeterSource(_masterGain));
+		meterSources.push(
+			...buildDeckChannelGraph({
+				ctx: _ctx,
+				mixerState,
+				masterGain: _masterGain,
+				externalMerger: _externalMerger,
+				routing,
+				cueSum: headphones.cueSum,
+				xfGainFor: _xfGainFor,
+				onDeck: (deck, nodes, tap) => {
+					_rt[deck].nodes = nodes;
+					_meterTaps[deck] = tap;
+				}
+			})
+		);
+		void ensureStretchWorkletReady(_ctx).catch((error: unknown) => {
+			recordPerfEvent(
+				'stretch-worklet-preload-failed',
+				`Signalsmith worklet did not become ready during graph build: ${String(error)}`
+			);
+		});
+		armXrunSentinel(_ctx);
+		armDeckMeters(_ctx, meterSources);
+		publishDjOutputResolution(djio, (message, dismissMs, groupKey) => pushToast(message, 'warn', dismissMs, undefined, {}, groupKey));
+		return _ctx;
+	} catch (error) {
+		// IOPIN-12: `_ctx !== null` is the early return above, so a half-built graph
+		// kept here hands every later load a context with no deck nodes ("load: deck
+		// N audio graph is missing") for the rest of the page session.
+		_discardFailedGraph();
+		throw error;
+	}
 }
 
 /** Equal-power crossfade gain for one bus assignment at position x (0..1). */
@@ -890,15 +923,15 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
  * (BrowserPanel._patchRating) - deck-header just has no ETag of its own to
  * carry, so it always fetches one fresh first. A race where a different
  * track loads onto this deck while the request is in flight is guarded by
- * re-checking stable_id before writing the result back. */
+ * re-checking stable_id before writing the result back. A USB stick track's
+ * rating is a session edit with no request (USB Play spec decision 2). */
 export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
 	const stable_id = deckStates[deck].stable_id;
 	if (stable_id === null) return;
 	try {
-		const etag = (await getTrack(stable_id)).etag;
-		const { track, etag: fresh } = await patchTrack(stable_id, etag, { rating: next });
-		void fresh;
-		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = track.rating ?? null;
+		const rating = await saveTrackRating(stable_id, next);
+		// Every path awaits (a request, or the stick store's on-demand import).
+		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = rating;
 	} catch (exc) {
 		if (exc instanceof ConflictError) {
 			if (deckStates[deck].stable_id === stable_id) {
@@ -1483,6 +1516,7 @@ async function _scheduleDeckSerial(
 		_reanchorRampPending(rt);
 	_commitPendingIfDue(deck);
 	_ensureRaf();
+	_frameBackstop.wake(_ctx, effectiveWhen + masterDelaySeconds(mixerState.headphones.master_delay_ms));
 	return scheduledInputSec;
 }
 
@@ -1900,8 +1934,9 @@ function _tick(): void {
 		}
 		_phaseLock.tick(_ctx.currentTime); // NAE-19: keep Beat Sync followers on phase (throttled to 30 Hz)
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());
-		if (anyTransport) noteAudioPresentationTick();
+		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
+		if (anyTransport && !_offFrame) noteAudioPresentationTick(); // a paint-rate meter: a backstop run is not a painted frame
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
 		// Unconditional, and through the guarded entry point: the throw may have
@@ -1915,7 +1950,16 @@ function _tick(): void {
 
 function _ensureRaf(): void {
 	if (_rafId === null) _rafId = requestAnimationFrame(_tick);
+	_frameBackstop.arm();
 }
+
+/** `_tick` off the frame clock (AUDIOLIVE-11): a hidden tab delivers no frames, and deck state must not wait for one. The pending frame is cancelled first so the loop cannot double up. */
+let _offFrame = false;
+function _tickNow(): void {
+	if (_rafId !== null) cancelAnimationFrame(_rafId);
+	_offFrame = true; _tick(); _offFrame = false;
+}
+const _frameBackstop = createFrameBackstop(() => _rafId, _tickNow);
 
 function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
@@ -2021,7 +2065,7 @@ function _scheduleSyncDeck(
 	);
 }
 
-async function _scheduleFollowerBackwardBlend(
+function _scheduleFollowerBackwardBlend(
 	deck: DeckId,
 	syncAt: number,
 	landingSec: number,
@@ -2035,94 +2079,16 @@ async function _scheduleFollowerBackwardBlend(
 		throw new Error(`sync seek blend: engine session changed before deck ${deck} scheduled`);
 	}
 	const { st, rt } = _requireLoaded(deck, 'sync seek blend');
-	const ctx = _ctx;
-	const buffer = rt.audioBuffer;
-	const nodes = rt.nodes;
-	const processor = rt.processor;
-	if (
-		ctx === null ||
-		buffer === null ||
-		nodes === null ||
-		processor === null ||
-		processor instanceof AlignedStemDeckProcessor || masterTempoEnabled ||
-		landingSec >= currentSec - 0.08
-	) {
-		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
-	}
-
-	const beats = st.anlz?.beatgrid.beats ?? null;
-	const beat4 =
-		beats !== null && beats.length >= 2 ? beatFourLeadInSec(beats, landingSec) : null;
-	const incomingSec =
-		beat4 !== null && beat4 < landingSec - 0.05 && landingSec - beat4 <= 2.2
-			? beat4
-			: landingSec;
-	const blendDur = syncSeekBlendDurationSec(incomingSec, landingSec, tempoRatio);
-	const t0 = Math.max(ctx.currentTime + 0.02, syncAt - blendDur);
-	const tEnd = t0 + blendDur;
-
-	processor.disconnect();
-	const mainGain = ctx.createGain();
-	const outGain = ctx.createGain();
-	processor.connect(mainGain);
-	mainGain.connect(nodes.analyser);
-	outGain.connect(nodes.analyser);
-
-	const outSrc = ctx.createBufferSource();
-	outSrc.buffer = buffer;
-	outSrc.playbackRate.value = tempoRatio;
-	outSrc.connect(outGain);
-
-	mainGain.gain.setValueAtTime(0.0001, t0);
-	mainGain.gain.linearRampToValueAtTime(1, tEnd);
-	outGain.gain.setValueAtTime(1, t0);
-	outGain.gain.linearRampToValueAtTime(0.0001, tEnd);
-
-	const startOffset = Math.min(Math.max(0, currentSec), Math.max(0, buffer.duration - 0.01));
-	try {
-		outSrc.start(t0, startOffset);
-	} catch {
-		try {
-			mainGain.disconnect();
-			outGain.disconnect();
-		} catch {
-			/* ignore */
-		}
-		try {
-			processor.connect(nodes.analyser);
-		} catch {
-			/* ignore */
-		}
-		return _scheduleSyncDeck(deck, syncAt, landingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
-	}
-
-	const scheduled = await _scheduleSyncDeck(deck, t0, incomingSec, tempoRatio, masterTempoEnabled, pressT0Ms);
-
-	const token = rt.loadToken;
-	const delayMs = Math.max(0, (tEnd - ctx.currentTime) * 1000) + 50;
-	window.setTimeout(() => {
-		try {
-			outSrc.stop();
-		} catch {
-			/* already ended */
-		}
-		try {
-			outSrc.disconnect();
-			outGain.disconnect();
-			mainGain.disconnect();
-		} catch {
-			/* ignore */
-		}
-		if (rt.loadToken !== token || rt.processor !== processor || rt.nodes === null) return;
-		try {
-			processor.disconnect();
-			processor.connect(rt.nodes.analyser);
-		} catch {
-			/* ignore */
-		}
-	}, delayMs);
-
-	return scheduled;
+	return scheduleFollowerBackwardBlend(
+		{
+			context: _ctx,
+			state: st,
+			runtime: rt,
+			scheduleSync: (when, inputSec) =>
+				_scheduleSyncDeck(deck, when, inputSec, tempoRatio, masterTempoEnabled, pressT0Ms)
+		},
+		{ syncAt, landingSec, tempoRatio, masterTempoEnabled, currentSec }
+	);
 }
 
 /**
@@ -2693,6 +2659,7 @@ function _landHeldStems(
 	});
 }
 
+
 /**
  * LAZY-STEMS. The whole secondary load: probe, fetch, decode, build, swap.
  * Runs AFTER the deck is playable and is never awaited by `load`.
@@ -2781,7 +2748,7 @@ async function _upgradeDeckStems(
 		built = null; // landed, held as pendingStemUpgrade, or retired as stale: no longer this function's to free
 		if (landed === 'deferred') stages.deferredToStop = 1;
 		stages.total = Math.round(performance.now() - t0);
-		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, { ...decoded.labels, landed });
+		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, { ...decoded.labels, landed, pcm_handoff: created.pcmHandoff });
 	} catch (error) {
 		if (built !== null) _retireProcessor(built);
 		if (stale()) return;
@@ -2844,6 +2811,7 @@ class RbAudioEngine implements AudioEngine {
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		if (_masterDelay !== null) nodes.push(_masterDelay);
+		nodes.push(..._djOutputNodes);
 		const closingContext = _ctx;
 		const closing = disposeAudioResources({
 			rafId: _rafId,
@@ -2862,6 +2830,9 @@ class RbAudioEngine implements AudioEngine {
 		_masterMuteGain = null;
 		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
+		_djOutputNodes = [];
+		_djOutputProfileActive = null;
+		clearDjOutputResolution();
 		if (closingContext !== null) unregisterAudioContext(closingContext);
 		_ctx = null;
 		_masterDeck = null;
@@ -2931,7 +2902,7 @@ class RbAudioEngine implements AudioEngine {
 			// 1-9ms endpoint). It now runs after the swap, in _upgradeDeckStems.
 			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] =
 				await Promise.all([
-					time('getTrack', (trackRequest = getTrack(stable_id))),
+					time('getTrack', (trackRequest = getTrack(stable_id)).catch(rethrowLibraryTrackLookupError)),
 					time(audio.fetchStage, audio.bytes),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
 					time('fetchHotCues', fetchHotCueSlots(stable_id))
@@ -3527,6 +3498,14 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {
+		await this._setLoop(deck, loop, null);
+	}
+
+	/** Beat-loop callers already resolved endpoints from PQTZ. Do not re-snap
+	 * those to the manual loop grid: that would collapse fractional loops. */
+	private async _setLoop(
+		deck: DeckId, loop: { in_ms: number; out_ms: number } | null, beatLength: number | null
+	): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setLoop');
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
@@ -3552,16 +3531,11 @@ class RbAudioEngine implements AudioEngine {
 			}
 			return;
 		}
-		const durMs = _durationSec(deck) * 1000;
-		// Same rule as the rest of transport: quantize with a grid, exact
-		// endpoints without one. A manual in/out loop is not grid-dependent.
 		const loopBeats = _quantizeGrid(st);
-		const snapped =
-			loopBeats !== null
-				? quantizedLoopEndpointsMs(loopBeats, loop, true, _quantizeGridBeats(st))
-				: quantizedLoopEndpointsMs([], loop, false);
-		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
-		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
+		const nextLoop = resolvedLoopState(
+			loop, beatLength, _durationSec(deck) * 1000, loopBeats,
+			loopBeats !== null && beatLength === null ? _quantizeGridBeats(st) : null
+		);
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 			const activateSlip = shouldActivateSlip(st.playing, st.slip_enabled) && !st.slip_active;
@@ -3640,13 +3614,9 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		const previousLoop = st.loop === null ? null : { ...st.loop };
-		await this.setLoop(deck, range);
-		if (st.loop !== null) st.loop.beat_length = beats;
+		await this._setLoop(deck, range, beats);
 		const pending = _rt[deck].pending;
 		const pendingLoop = pending[pending.length - 1]?.loop;
-		if (pendingLoop !== null && pendingLoop !== undefined) {
-			pendingLoop.beat_length = beats;
-		}
 		const nextLoop = pendingLoop ?? st.loop;
 		if (previousLoop !== null && nextLoop !== null) {
 			st.safety_loop = replaceMatchingSafetyLoopSnapshot(st.safety_loop, previousLoop, nextLoop);
@@ -3894,24 +3864,19 @@ class RbAudioEngine implements AudioEngine {
 		const rt = _rt[deck];
 		if (st.stable_id === null && rt.processor === null) return;
 		if (rt.desiredActive) await this.pause(deck);
-		const deadline = performance.now() + 2000;
-		while (performance.now() < deadline) {
+		const stopped = (): boolean => {
+			_tickNow(); // publish from the audio clock: no frame is coming in a hidden tab
 			try {
-				assertDeckReplacementAllowed(deck, {
-					playing: st.playing,
-					audible: st.audible,
-					transportPending: st.transport_pending,
-					controlActive: rt.controlActive,
-					pendingScheduleCount: rt.pending.length,
-					scheduleIntentCount: rt.scheduleIntentCount
-				});
-				break;
+				assertDeckReplacementAllowed(deck, { playing: st.playing, audible: st.audible, transportPending: st.transport_pending, controlActive: rt.controlActive, pendingScheduleCount: rt.pending.length, scheduleIntentCount: rt.scheduleIntentCount });
+				return true;
 			} catch {
-				await new Promise<void>((resolve) => {
-					requestAnimationFrame(() => resolve());
-				});
+				return false;
 			}
-		}
+		};
+		await awaitPresentedStop(stopped, _ctx).catch((error: unknown) => {
+			if (!(error instanceof PresentedStopTimeoutError)) throw error;
+			recordPerfEvent('deck-unload-stop-timeout', `deck ${deck}: ${error.message}; unloading anyway`, deck, 'error');
+		});
 		rt.loadToken += 1;
 		_releasePendingStemUpgrade(rt);
 		const processor = detachProcessorForDisposal(rt);
@@ -4037,9 +4002,9 @@ class RbAudioEngine implements AudioEngine {
 		if (_ctx !== null) logMixerApply(STEM_MUTE_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
-	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void {
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
+		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive });
 		if (_ctx !== null) logMixerApply(STEM_SOLO_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
@@ -4191,6 +4156,8 @@ class RbAudioEngine implements AudioEngine {
 	setMasterDelayMs = setMonitorMasterDelay;
 	setHeadphoneAlignmentMode = setMonitorAlignmentMode;
 	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
+	/** IOPIN-14: the I/O-open listing of a dev-server build; asks for device access once per origin. */
+	requestIoDeviceNames = (): Promise<void> => requestMonitorDeviceNames(_monitorSource);
 	/** Must be called from a visible user gesture. May briefly open the
 	 * microphone to label output devices when selectAudioOutput is missing. */
 	acquireHeadphoneOutput = (): Promise<void> => acquireMonitorOutput(_monitorSource);

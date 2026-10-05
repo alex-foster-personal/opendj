@@ -108,6 +108,11 @@ function run(masterGrid, followerGrid, seconds, { fixedBase = false, masterTempo
 	let flamSec = 0;
 	let sends = 0;
 	let baseMoves = 0;
+	// The merged decision refuses a missing join age or a non-integer confirm
+	// count, and a re-seek waits for both the confirm ticks and the minimum
+	// interval. The loop clock is that age; a re-seek starts it over.
+	let sinceJoinSec = 0;
+	let overLineTicks = 0;
 	for (let k = 0; k < seconds * 30; k++) {
 		const input = {
 			masterBeats: masterGrid,
@@ -117,7 +122,9 @@ function run(masterGrid, followerGrid, seconds, { fixedBase = false, masterTempo
 			followerPositionSec: f,
 			followerBaseTempo: base,
 			normalization,
-			pitchRangePct: 8
+			pitchRangePct: 8,
+			sinceJoinSec,
+			overLineTicks
 		};
 		if (!fixedBase) {
 			const next = pl.phaseLockFeedForwardBase(input);
@@ -125,11 +132,15 @@ function run(masterGrid, followerGrid, seconds, { fixedBase = false, masterTempo
 			base = next;
 		}
 		const d = pl.phaseLockDecision({ ...input, followerBaseTempo: base, trimming: sent !== base });
+		overLineTicks = d.overLineTicks;
+		sinceJoinSec += tick;
 		if (d.action === 'unmeasured') break;
 		if (d.action === 'reseek') {
 			reseeks += 1;
 			rejoin();
 			sent = base;
+			sinceJoinSec = 0;
+			overLineTicks = 0;
 			continue;
 		}
 		if (Math.abs(d.errorMs) >= 10) flamSec += tick;
@@ -176,9 +187,17 @@ test('a master step and a double-tempo follower step are followed too', () => {
 	assert.deepEqual([pitched.reseeks, pitched.flamSec < 1], [0, true]);
 });
 
-test('control: the base fixed at the join (the unfixed engines) re-seeks on the same grids', () => {
-	assert.ok(run(RAMP(), grid(126, 0.05, 1500), 120, { fixedBase: true }).reseeks > 0);
-	assert.ok(run(grid(128, 0.1, 1500), STEP(), 120, { fixedBase: true }).reseeks > 0);
+test('control: feed-forward off still holds phase, because the decision follows a smoothed local tempo', () => {
+	// Before the smoothed follow lived in phaseLockDecision, freezing the base
+	// re-seeked these grids (2 reseeks and tens of seconds of flam). The follow
+	// now retunes inside the decision, so the same freeze seeks nothing and
+	// flams nothing, and the retune is the sends.
+	const ramp = run(RAMP(), grid(126, 0.05, 1500), 120, { fixedBase: true });
+	assert.deepEqual([ramp.reseeks, ramp.flamSec, ramp.baseMoves], [0, 0, 0]);
+	assert.ok(ramp.sendsPerSec > 0.5, `${ramp.sendsPerSec} sends/s, the follow did not retune`);
+	const step = run(grid(128, 0.1, 1500), STEP(), 120, { fixedBase: true });
+	assert.deepEqual([step.reseeks, step.flamSec, step.baseMoves], [0, 0, 0]);
+	assert.ok(step.sendsPerSec > 0, `${step.sendsPerSec} sends/s`);
 });
 
 test('control: constant grids never move the base, exact or ms-rounded (no dither-driven commands)', () => {
@@ -214,7 +233,11 @@ test('the feed-forward base: unchanged off the grid, inside the hysteresis, and 
 test('SOURCE: both engines take the feed-forward base on every lock tick', () => {
 	for (const file of ['src/lib/rb/phase-lock-webaudio.ts', 'src/lib/audio-engine/rust-transport.ts']) {
 		const src = readFrontendSource(file);
-		assert.match(src, /lock\.base = phaseLockFeedForwardBase\(input\);/, file);
-		assert.match(src, /phaseLockDecision\(\{ \.\.\.input, followerBaseTempo: lock\.base, trimming: lock\.sent !== lock\.base \}\)/, file);
+		assert.match(src, /const forwarded = phaseLockFeedForwardBase\(input\);/, file);
+		assert.match(
+			src,
+			/phaseLockDecision\(\{\s*\.\.\.input,\s*followerBaseTempo: forwarded,\s*trimming: lock\.sent !== lock\.base\s*\}\)/,
+			file
+		);
 	}
 });

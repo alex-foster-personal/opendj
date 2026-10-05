@@ -10,6 +10,7 @@ Homebrew and no dev toolchain::
       bin/opendj-engine      the ONE entry point the Tauri shell knows about
       bin/opendj             the agent CLI launcher (same env contract)
       bin/odj-audio          the Rust audio engine, device-output build (NAE-13)
+      bin/ffmpeg             pinned LGPL ffmpeg (build_ffmpeg_lgpl); licenses/ffmpeg/
       runtime/               relocatable CPython (python-build-standalone)
       pylib/                 the engine's dependency closure
       app/apps/...           engine source, including the built SPA
@@ -116,6 +117,7 @@ try:
         lane_product_name,
         validate_label,
     )
+    from scripts.payload_ffmpeg import FFMPEG_RELATIVE, stage_ffmpeg
     from scripts.payload_launchers import write_payload_launcher
     from scripts.payload_runtime_allowlist import RUNTIME_LOAD_ALLOWLIST
 except ModuleNotFoundError as exc:
@@ -237,7 +239,7 @@ REQUESTED_OPTIONAL_EXTRAS: dict[str, str] = {
 # `uv export` (no --extra/--all-extras below), keyed by extra name with the
 # reason each omission is a standing decision rather than an oversight.
 # "all" is the only unaudited name: it is a pure aggregate of the others
-# ("music-dj-tools[tags,analysis,...]") with no packages of its own, so it
+# ("music-dj-tools[analysis,voice,...]") with no packages of its own, so it
 # cannot itself leak into the export. Every real extra IS audited here,
 # including "dev" -- `--no-dev` disables uv's own dev-dependencies/
 # dependency-groups mechanism, NOT a PEP 621 [project.optional-dependencies]
@@ -250,7 +252,7 @@ REQUESTED_OPTIONAL_EXTRAS: dict[str, str] = {
 # fails the build if pyproject.toml grows an extra this registry does not
 # name, or if a package belonging to an audited extra shows up in the
 # export anyway, which is exactly the "nobody re-checked this" failure
-# mode issue #795 found for the "tags" extra.
+# mode issue #795 found for the omitted "tags" extra.
 OMITTED_OPTIONAL_EXTRAS: dict[str, str] = {
     "voice": (
         "openwakeword/sounddevice/webrtcvad back Phase 14 voice commands and "
@@ -295,6 +297,10 @@ OMITTED_OPTIONAL_EXTRAS: dict[str, str] = {
 # full resolved closure regardless of which extras were requested, because
 # the packages named here can never be safe to ship under any combination.
 NEVER_SHIP: dict[str, str] = {
+    "mutagen": (
+        "GPL-2.0-or-later. Tag writing is not a product feature (ADR-0122); "
+        "a mutagen in the closure, directly or transitively, is a licensing regression."
+    ),
     "rbox": (
         "GPL-3.0-only, so the Apache-2.0 payload must not distribute it. "
         "USB export fetches rbox==0.1.7 on first use (issue #5143)."
@@ -1288,7 +1294,8 @@ def _verify_omitted_extras(
     package belonging to an audited extra shows up in the export anyway (a
     stray direct dependency, an extra added elsewhere without updating this
     record). Either is exactly the unaudited-omission failure issue #795
-    found for "tags"/mutagen, generalised to every extra the export omits.
+    found for the since-removed "tags" extra, generalised to every extra the
+    export omits.
 
     A package listed under an audited extra can ALSO be a core (hard)
     dependency -- numpy is both a core dep (the Rekordbox waveform path) and
@@ -1866,6 +1873,8 @@ export MDT_STEM_WORKER_PYTHON
 # Tauri shell, the CLI) find the build it shipped, never a repo build.
 ODJ_AUDIO_BIN="$payload/bin/odj-audio"
 export ODJ_AUDIO_BIN
+ODJ_FFMPEG_BIN="$payload/bin/ffmpeg"
+export ODJ_FFMPEG_BIN
 
 # The beatgrid backfill producer (NATIVE-10) runs Beat This! in its OWN pinned
 # site on the checkpoint bundled below, with no uv and no network.
@@ -2472,6 +2481,7 @@ def build(
     audio_start = time.monotonic()
     audio_engine_hello = stage_audio_engine(repo_root, output_dir)
     print(f"[TIMING] audio_engine {time.monotonic() - audio_start:.2f}s", file=sys.stderr)
+    ffmpeg_staged = stage_ffmpeg(output_dir)
     from scripts.payload_google_oauth import PayloadOAuthError, bake_google_oauth
 
     try:
@@ -2530,6 +2540,7 @@ def build(
         report=report,
     )
     manifest["beatgrid_runner"] = beatgrid_runner
+    manifest["ffmpeg"] = {**ffmpeg_staged, "sha256": sha256_file(output_dir / FFMPEG_RELATIVE)}
     manifest["third_party_licenses"] = licenses_summary
     (output_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"

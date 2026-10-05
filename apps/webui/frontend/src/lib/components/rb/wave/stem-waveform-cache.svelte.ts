@@ -3,8 +3,9 @@
  *
  * Fetches server-produced mono peaks only - never stem PCM or decodeAudioData.
  */
-import { fetchRbJson, RbApiError } from '$lib/rb/api-rb';
+import { fetchRbJson, RbApiError } from '$lib/rb/api-rb-json';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
+import { refuseStickRead } from '$lib/rb/track-source';
 import {
 	applyStemWaveformCaps,
 	bindStemWaveformCapCache,
@@ -25,6 +26,8 @@ interface StemWaveformEnvelope {
  * Lives here, not in api-rb.ts, so it ships with /performance rather than in
  * the library page's first-paint bundle. */
 async function fetchStemWaveform(stable_id: string, part: string): Promise<StemWaveformEnvelope> {
+	// Spec 4b: stick tracks have no stems, so no stem waveform either.
+	refuseStickRead(stable_id, `stem ${part} waveform`);
 	const data = await fetchRbJson<StemWaveformEnvelope>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/stems/${encodeURIComponent(part)}/waveform`
 	);

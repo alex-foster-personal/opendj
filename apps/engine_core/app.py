@@ -87,7 +87,12 @@ from apps.stems.live_capability_api import router as live_stems_capability_route
 from apps.sync_hub import first_run as cloudsync_first_run
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
-from apps.webui.server import analysis_autostart, coverage_drain, library_jobs_autostart
+from apps.webui.server import (
+    ahead_analysis,
+    analysis_autostart,
+    coverage_drain,
+    library_jobs_autostart,
+)
 from apps.webui.server.app import _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
 from apps.webui.server.backend import StateBackend
@@ -314,6 +319,9 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # are green. MUSIC_DJ_COVERAGE_DRAIN (on/off) arms the loop; the user
         # setting in coverage-drain.json (default on) decides whether it runs.
         auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
+        # NATIVE-21: fill Preview strips and own_* lanes ahead of use.
+        # MUSIC_DJ_AHEAD_ANALYSIS (on/off, default on).
+        auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
         # STEM-31 / ADR-0051: on-demand stem hydration (ADR-0024). Armed is not
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,

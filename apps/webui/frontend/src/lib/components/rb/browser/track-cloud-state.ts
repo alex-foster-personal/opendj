@@ -8,6 +8,10 @@ export type TrackCloudKind =
 	| 'on-cloud-and-local'
 	| 'streaming';
 
+export type StreamingProvider = 'spotify' | 'tidal' | 'soundcloud' | 'unknown';
+
+export type CloudTickOverlay = 'none' | 'green-tick' | 'blue-tick';
+
 export interface TrackCloudTransferInput {
 	direction: 'upload' | 'download';
 	bytesTransferred: number;
@@ -25,14 +29,32 @@ export interface TrackCloudView {
 	title: string;
 	showIcon: boolean;
 	transfer: TrackCloudTransferView | null;
+	provider: StreamingProvider | null;
+	overlay: CloudTickOverlay;
 }
 
 export interface TrackCloudInput {
 	fileExists: boolean;
 	isStreaming: boolean;
 	hasRemoteCopy: boolean;
+	/** Inline row fact (TrackRowOut.spotify_pending): an unmatched Spotify
+	 * placeholder. It has no rekordbox mapping, so rb_meta and its
+	 * folder_path never arrive; this flag alone names the provider. */
+	spotifyPending: boolean;
+	/** Inline row provider; wins over folderPath, which only rb_meta carries. */
+	provider?: StreamingProvider | null | undefined;
+	folderPath?: string | null;
 	/** Real bytes from the backend's in-process transfer ledger. */
 	transfer: TrackCloudTransferInput | null;
+}
+
+export function streamingProviderFromPath(folderPath: string | null | undefined): StreamingProvider {
+	if (folderPath === null || folderPath === undefined || folderPath === '') return 'unknown';
+	const lower = folderPath.toLowerCase();
+	if (lower.startsWith('spotify:')) return 'spotify';
+	if (lower.startsWith('tidal:')) return 'tidal';
+	if (lower.startsWith('soundcloud:')) return 'soundcloud';
+	return 'unknown';
 }
 
 function transferView(input: TrackCloudTransferInput | null): TrackCloudTransferView | null {
@@ -59,23 +81,35 @@ function transferView(input: TrackCloudTransferInput | null): TrackCloudTransfer
 function withTransfer(
 	kind: TrackCloudKind,
 	title: string,
-	transfer: TrackCloudTransferView | null
+	transfer: TrackCloudTransferView | null,
+	provider: StreamingProvider | null,
+	overlay: CloudTickOverlay
 ): TrackCloudView {
 	return {
 		kind,
 		title: transfer === null ? title : `${title} ${transfer.label}`,
 		showIcon: true,
-		transfer
+		transfer,
+		provider,
+		overlay
 	};
+}
+
+function overlayForKind(kind: TrackCloudKind, fileExists: boolean): CloudTickOverlay {
+	if (kind === 'on-cloud-and-local') return 'green-tick';
+	if (kind === 'not-on-cloud' && fileExists) return 'blue-tick';
+	return 'none';
 }
 
 export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 	const transfer = transferView(input.transfer);
-	if (input.isStreaming) {
+	if (input.isStreaming || input.spotifyPending) {
 		return withTransfer(
 			'streaming',
 			'Streaming-service track; it is not part of CloudSync audio storage.',
-			transfer
+			transfer,
+			input.spotifyPending ? 'spotify' : (input.provider ?? streamingProviderFromPath(input.folderPath)),
+			'none'
 		);
 	}
 
@@ -83,7 +117,9 @@ export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 		return withTransfer(
 			'on-cloud-and-local',
 			'On CloudSync and stored locally on this machine.',
-			transfer
+			transfer,
+			null,
+			overlayForKind('on-cloud-and-local', input.fileExists)
 		);
 	}
 
@@ -91,7 +127,9 @@ export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 		return withTransfer(
 			'on-cloud-not-local',
 			'On CloudSync but not stored locally on this machine.',
-			transfer
+			transfer,
+			null,
+			'none'
 		);
 	}
 
@@ -100,6 +138,8 @@ export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 		input.fileExists
 			? 'Not on CloudSync; audio is available only on this machine.'
 			: 'Not on CloudSync and missing on this machine (broken link).',
-		transfer
+		transfer,
+		null,
+		overlayForKind('not-on-cloud', input.fileExists)
 	);
 }

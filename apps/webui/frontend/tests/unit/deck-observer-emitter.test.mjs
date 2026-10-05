@@ -640,16 +640,19 @@ test('a deck with every stem part gained to zero was not heard', () => {
 	// 3504858fa feat(mixer): remap EQ dials to stem levels (MIXUX-04) made gain
 	// a required key of every stem control, so fixtures carry it explicitly.
 	const muted = { muted: true, solo: false, gain: 0.5 };
+	// A ready deck always exposes the complete public control record. The
+	// layout says which controls are active in its signal path.
+	const controls = (vocal, instrumental) => ({
+		vocal,
+		instrumental,
+		drums: off,
+		bass: off,
+		other: off
+	});
 
 	const silent = live.toWireSnapshot(
 		liveState({
-			stems: roformer({
-				vocal: muted,
-				instrumental: muted,
-				// roformer2 owns no drums control, so this flag must not count
-				// either way. Left unmuted precisely to prove that.
-				drums: off
-			})
+			stems: roformer(controls(muted, muted))
 		}),
 		new Date()
 	);
@@ -657,7 +660,7 @@ test('a deck with every stem part gained to zero was not heard', () => {
 
 	const audible = live.toWireSnapshot(
 		liveState({
-			stems: roformer({ vocal: off, instrumental: muted, drums: off })
+			stems: roformer(controls(off, muted))
 		}),
 		new Date()
 	);
@@ -680,13 +683,12 @@ test('solo can silence a deck whose controls are mostly unmuted', () => {
 		error: null
 	});
 	const off = { muted: false, solo: false, gain: 0.5 };
+	const controls = (vocal) => ({ vocal, instrumental: off, drums: off, bass: off, other: off });
 
-	const soloedAndMuted = demucs({
+	const soloedAndMuted = demucs(controls(
 		// gain is required since 3504858fa (MIXUX-04).
-		vocal: { muted: true, solo: true, gain: 0.5 },
-		instrumental: off,
-		drums: off
-	});
+		{ muted: true, solo: true, gain: 0.5 }
+	));
 	assert.equal(
 		live.everyStemPartSilent({ stems: soloedAndMuted }),
 		true,
@@ -696,7 +698,7 @@ test('solo can silence a deck whose controls are mostly unmuted', () => {
 
 	// Control: the same solo without the mute is the ordinary isolate, and it
 	// is very much heard.
-	const soloed = demucs({ vocal: { muted: false, solo: true, gain: 0.5 }, instrumental: off, drums: off });
+	const soloed = demucs(controls({ muted: false, solo: true, gain: 0.5 }));
 	assert.equal(live.everyStemPartSilent({ stems: soloed }), false);
 	assert.equal(live.toWireSnapshot(liveState({ stems: soloed }), new Date()).decks['1'].audible, true);
 });
@@ -710,9 +712,11 @@ test('stem mutes only gate a bundle that is actually in the path', () => {
 		available_controls: [],
 		alignment: null,
 		controls: {
-			vocal: { muted: true, solo: false },
-			instrumental: { muted: true, solo: false },
-			drums: { muted: true, solo: false }
+			vocal: { muted: true, solo: false, gain: 0.5 },
+			instrumental: { muted: true, solo: false, gain: 0.5 },
+			drums: { muted: true, solo: false, gain: 0.5 },
+			bass: { muted: true, solo: false, gain: 0.5 },
+			other: { muted: true, solo: false, gain: 0.5 }
 		},
 		error: null
 	};

@@ -317,6 +317,22 @@ def test_browser_row_gains_the_decoded_strip(
     assert max(raw[: 180]) > max(raw[180:]), "loud half then silent half"
 
 
+@pytest.mark.requires_ffmpeg
+@pytest.mark.requirement("NATIVE-21")
+def test_a_lost_strip_is_republished_from_cached_peaks(
+    client: TestClient, audio_file: Path
+) -> None:
+    """[if] the strip sidecar is lost but peaks are cached [then] it comes back, [else stop]."""
+    from apps.analysis_waveform import local_waveform
+
+    _anlz(client, LOCAL_SID)
+    strip = rb_config.LOCAL_WAVEFORM_CACHE_DIR / f"{LOCAL_SID}.strip.json"
+    strip.unlink()
+    assert _row(LOCAL_SID, str(audio_file))["preview_b64"] is None
+    local_waveform.ensure_local_peaks(LOCAL_SID)
+    assert _row(LOCAL_SID, str(audio_file))["preview_b64"] is not None
+
+
 # ----- the cache, with no ffmpeg in sight -------------------------------------
 # The peak arithmetic, the band split and the cache VERSION key live in
 # tests/analysis_waveform/ with the package that owns them (NATIVE-06); what

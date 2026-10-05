@@ -44,7 +44,8 @@ class TestClientTransport:
     @property
     def app_state(self) -> Any:
         """The hub app's ``state``, for a test that must reach its resources."""
-        return self._http.app.state
+        app: Any = self._http.app
+        return app.state
 
     def _decoded(self, response: Any, label: str) -> dict[str, Any]:
         if response.status_code >= 400:

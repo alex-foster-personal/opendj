@@ -1,0 +1,80 @@
+/* The Audio I/O panel's class-only layout rules, @imported by
+   HeadphoneCluster.svelte's <style>. Svelte does NOT scope an imported
+   stylesheet: Vite inlines it as global CSS. So every rule here is rooted at
+   the panel's own .hp-panel[data-audio-io-panel] element, and only rules that
+   no scoped rule competes with move here. A selector with an element type
+   (`h3 span`, `button`, `select`, `input`) would reach into child components
+   such as ControlExplainer, and a class rule that a scoped rule overrides on
+   the same element (`.hp-delay-step` under `.hp-section button`) would change
+   which one wins, so both kinds stay scoped in the .svelte.
+   tests/unit/headphone-io-panel-css-scope.test.mjs holds the rooting. */
+
+.hp-panel[data-audio-io-panel] {
+	position: fixed;
+	z-index: 140;
+	top: max(12px, var(--rb-topbar-h, 50px));
+	right: 12px;
+	width: min(450px, calc(100vw - 24px));
+	max-height: calc(100vh - 24px);
+	display: flex;
+	flex-direction: column;
+	background: var(--rb-panel, #14171b);
+	color: var(--rb-text, #c8cdd2);
+	border: 1px solid var(--rb-border, #333);
+	border-radius: 8px;
+	box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+	font-size: 11px;
+}
+.hp-panel[data-audio-io-panel] .hp-panel-header, .hp-panel[data-audio-io-panel] .hp-section-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.hp-panel[data-audio-io-panel] .hp-panel-header {
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--rb-border, #333);
+}
+.hp-panel[data-audio-io-panel] .hp-panel-close {
+	background: transparent;
+	border: 0;
+	color: var(--rb-text, #c8cdd2);
+	line-height: 0;
+	cursor: pointer;
+}
+.hp-panel[data-audio-io-panel] .hp-panel-body { overflow: auto; padding: 10px 14px 14px; }
+.hp-panel[data-audio-io-panel] .hp-section { padding: 8px 0; border-bottom: 1px solid var(--rb-border, #333); }
+.hp-panel[data-audio-io-panel] .hp-section:last-child { border-bottom: 0; }
+.hp-panel[data-audio-io-panel] .hp-mode-choices { display: flex; flex-wrap: wrap; gap: 5px; }
+.hp-panel[data-audio-io-panel] .hp-context { color: var(--rb-text-dim, #838990); font-size: 10px; line-height: 1.35; margin: 5px 0; }
+.hp-panel[data-audio-io-panel] .hp-future { display: flex; justify-content: space-between; align-items: center; color: var(--rb-text-dim, #838990); margin: 3px 0; }
+.hp-panel[data-audio-io-panel] .hp-delay-visual { display: flex; flex-direction: column; gap: 2px; color: var(--rb-accent, #4fb3ff); font-size: 9px; letter-spacing: .05em; margin: 5px 0; }
+.hp-panel[data-audio-io-panel] .hp-calibration-section { display: block; }
+.hp-panel[data-audio-io-panel] .hp-menu {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+.hp-panel[data-audio-io-panel] .hp-pick {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	color: var(--rb-text-dim, #838990);
+}
+.hp-panel[data-audio-io-panel] .hp-delay {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 10px;
+	color: var(--rb-text-dim, #838990);
+}
+.hp-panel[data-audio-io-panel] .hp-delay-stepper {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.hp-panel[data-audio-io-panel] .hp-access { display: grid; gap: 4px; justify-items: start; }
+.hp-panel[data-audio-io-panel] .hp-access-detail { opacity: 0.75; }

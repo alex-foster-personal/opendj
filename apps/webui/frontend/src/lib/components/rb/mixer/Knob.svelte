@@ -32,6 +32,7 @@
 		unregisterKnob
 	} from '$lib/rb/knob-control.svelte';
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
 	interface Props {
 		/** Stable control id from knobId(deckId, role) - the knob-control registry key. */
@@ -113,6 +114,17 @@
 
 	const selected = $derived(live && isKnobSelected(knobId));
 	const linked = $derived(live && isKnobLinked(knobId));
+	const takeoverFunction = $derived.by(() => {
+		const [scope, role] = knobId.split(':');
+		if (scope === 'hp' && role === 'hp-mix') return 'headphones:mix';
+		if (scope === 'hp' && role === 'hp-level') return 'headphones:level';
+		if (!/^[1-4]$/.test(scope)) return null;
+		if (role === 'trim' || role === 'filter') return `mixer:${scope}:${role}`;
+		if (role === 'high' || role === 'mid' || role === 'low') return `mixer:${scope}:eq:${role}`;
+		return null;
+	});
+	const takeoverGhost = $derived(takeoverFunction === null ? null : midiTakeoverGhost(takeoverFunction));
+	const ghostAngleDeg = $derived(takeoverGhost === null ? 0 : (takeoverGhost.value - 0.5) * SWEEP_DEG);
 
 	const angleDeg = $derived((value - 0.5) * SWEEP_DEG);
 	/** |offset| from center: >0.15 (~30% of half-throw) orange, >0.25 (~50%) red. */
@@ -206,8 +218,10 @@
 	class:warn-orange={warn === 'orange'}
 	class:warn-red={warn === 'red'}
 	class:knob-stem-accent={accentColor !== undefined}
+	class:takeover-armed={takeoverGhost !== null}
 	data-knob-id={knobId}
 	data-testid={`knob-${knobId}`}
+	data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
 	role="slider"
 	aria-label={accessibleLabel ?? label}
 	aria-valuemin={0}
@@ -253,7 +267,18 @@
 				class:rainbow={tone === 'rainbow'}
 			/>
 		</g>
+		{#if takeoverGhost !== null}
+			<g
+				class="pickup-ghost-indicator"
+				style={`transform: rotate(${ghostAngleDeg}deg); transform-origin: 15px 15px;`}
+			>
+				<line x1="15" y1="2.5" x2="15" y2="7" />
+			</g>
+		{/if}
 	</svg>
+	{#if takeoverGhost !== null}
+		<span class="sr-only">Hardware at {(takeoverGhost.value * 100).toFixed(0)}%; move to {(takeoverGhost.target * 100).toFixed(0)}% to pick up.</span>
+	{/if}
 	<span class="label">{label}</span>
 </div>
 
@@ -269,6 +294,12 @@
 		touch-action: none;
 		outline: none;
 	}
+	.pickup-ghost-indicator line {
+		stroke: #f2b84b;
+		stroke-width: 1.5;
+		stroke-dasharray: 1.5 1;
+	}
+	.takeover-armed .ring { stroke: #f2b84b; }
 	.knob.warn-orange .cap {
 		stroke: color-mix(in srgb, var(--rb-orange) 70%, #101318);
 		fill: color-mix(in srgb, var(--rb-orange) 18%, #23272f);

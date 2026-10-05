@@ -15,12 +15,17 @@
  *     [if] describeSource(null) is empty or '-' [then] broken (silent gap)
  *   ✔︎ 🎯 midiLabelStatus: single source of truth for the TopBar label
  *     colour. green = granted AND >=1 mapped device; amber = permission
- *     request in flight; grey = everything else.
+ *     request in flight; grey = everything else, including MIDI the user
+ *     turned off (the rb.midi_enabled choice) while the grant still stands
+ *     or while its superseded permission prompt is still open.
  *     [if] granted with only UNMAPPED devices shows green [then ⛔️] broken
+ *     [if] granted but turned off shows red [then ⛔️] broken (Codex P2, PR #3896)
+ *     [if] turned off while its prompt is pending shows amber [then ⛔️] broken
  */
 
 import type { DeviceMap, MidiAction, MidiSource } from '$lib/rb/midi/midi-types';
 import type { MidiPermission } from '$lib/rb/midi/webmidi.svelte';
+import { midiLabelGlyphKind } from '$lib/ui/icon-glyphs';
 
 export type MidiLabelStatus = 'green' | 'amber' | 'grey' | 'red';
 
@@ -59,8 +64,13 @@ export function formatLogTs(tsMs: number): string {
 // ------------------------------------------------------- label status logic
 
 /** TopBar MIDI label colour + glyph (unit spec):
- * grey  = unsupported / denied / idle-prompt (MIDI not enabled yet)
- * amber = a permission request is currently in flight (prompt pending)
+ * grey  = unsupported / denied / idle-prompt (MIDI not enabled yet), or turned
+ *         off by the user, which wins over everything else: releaseMidiInputs()
+ *         keeps the browser's grant and empties the device list, which is not a
+ *         lost device, and a prompt still open when MIDI was turned off belongs
+ *         to a superseded request whose late grant attaches nothing (Codex P2
+ *         4131292220)
+ * amber = a permission request for MIDI the user turned on is in flight
  * green = granted AND at least one connected device matched a DeviceMap (tick)
  * red   = granted but NO mapped device bound - access was granted and the
  *         controller then disconnected (or nothing recognised is plugged in);
@@ -68,35 +78,30 @@ export function formatLogTs(tsMs: number): string {
 export function midiLabelStatus(
 	permission: MidiPermission,
 	requestPending: boolean,
-	hasMappedDevice: boolean
+	hasMappedDevice: boolean,
+	enabled: boolean
 ): MidiLabelStatus {
+	if (!enabled) return 'grey';
 	if (requestPending) return 'amber';
 	if (permission === 'granted') return hasMappedDevice ? 'green' : 'red';
 	return 'grey';
 }
 
-/** Which inline SVG icon sits next to the TopBar MIDI label. Icons, never
- * emoji or text-symbol glyphs (issue #3886 criterion 1). */
-export type MidiLabelIcon = 'check' | 'cross' | null;
-
-/** The icon shown next to the TopBar MIDI label for a given status: a check
- * when a controller is bound, a cross when access is granted but
- * disconnected, nothing otherwise (amber pulses; grey is idle). */
-export function midiLabelGlyph(status: MidiLabelStatus): MidiLabelIcon {
-	if (status === 'green') return 'check';
-	if (status === 'red') return 'cross';
-	return null;
-}
+/** The glyph kind shown next to the MIDI label for a given status (an alias,
+ * so the bundle carries no wrapper around it). */
+export { midiLabelGlyphKind as midiLabelGlyph };
 
 /** Tooltip for the TopBar MIDI label - states WHY the colour is what it is. */
 export function midiLabelTitle(
 	permission: MidiPermission,
 	requestPending: boolean,
 	mappedDeviceCount: number,
-	deviceCount: number
+	deviceCount: number,
+	enabled: boolean
 ): string {
+	if (!enabled && (requestPending || permission === 'granted')) return 'MIDI: off - turn it on in Settings';
 	if (requestPending) return 'MIDI: permission request pending in the browser';
-	if (permission === 'unsupported') return 'MIDI: not supported here - WebMIDI needs Chrome or Edge, and the desktop app has no MIDI yet';
+	if (permission === 'unsupported') return 'MIDI: WebMIDI not supported in this browser (use Chrome or Edge)';
 	if (permission === 'denied') return 'MIDI: permission denied - re-enable in browser site settings';
 	if (permission === 'prompt') return 'MIDI: click to open the panel and request access';
 	if (permission === 'granted') {
@@ -125,8 +130,28 @@ export function friendlyLabel(action: MidiAction): string {
 			return `Hot cue ${action.slot} (deck ${action.deck})`;
 		case 'deck_beat_loop':
 			return `Beat loop ${action.beats} (deck ${action.deck})`;
+		case 'deck_auto_loop_toggle':
+			return `Auto loop toggle (deck ${action.deck})`;
 		case 'deck_loop_exit':
 			return `Loop exit (deck ${action.deck})`;
+		case 'deck_sync_toggle':
+			return `Beat sync (deck ${action.deck})`;
+		case 'deck_manual_loop_cycle':
+			return `Loop in / out / exit (deck ${action.deck})`;
+		case 'deck_loop_scale':
+			return `Loop ${action.factor === 0.5 ? 'half' : 'double'} (deck ${action.deck})`;
+		case 'deck_key_sync_toggle':
+			return `Key sync (deck ${action.deck})`;
+		case 'deck_stem_eq_toggle':
+			return `Stem EQ (deck ${action.deck})`;
+		case 'deck_key_nudge':
+			return `Key ${action.semitones < 0 ? 'down' : 'up'} (deck ${action.deck})`;
+		case 'deck_tempo_nudge':
+			return `Tempo ${action.direction < 0 ? '-0.1' : '+0.1'} BPM (deck ${action.deck})`;
+		case 'controller_pad_mode':
+			return `${action.mode.replaceAll('_', ' ')} mode (deck ${action.deck})`;
+		case 'controller_pad':
+			return `${action.shifted ? 'Shift ' : ''}pad ${action.pad} (deck ${action.deck})`;
 		case 'mixer_channel': {
 			if (action.target === 'trim') return `Trim (deck ${action.deck})`;
 			if (action.target === 'fader') return `Channel fader (deck ${action.deck})`;

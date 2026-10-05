@@ -28,10 +28,12 @@ import { DDJ400_MAP } from './ddj-400';
 import { FLX4_MAP } from './ddj-flx4';
 import { FLX10_MAP } from './ddj-flx10';
 import { RELOOP_MIXTOUR_MAP } from './reloop-mixtour';
+import { RELOOP_MIXTOUR_PRO_MAP } from './reloop-mixtour-pro';
 
 export const DEVICE_MAP_REGISTRY: readonly DeviceMap[] = [
 	FLX10_MAP,
 	DDJ400_MAP,
+	RELOOP_MIXTOUR_PRO_MAP,
 	RELOOP_MIXTOUR_MAP,
 	FLX4_MAP
 ];

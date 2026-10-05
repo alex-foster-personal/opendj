@@ -61,3 +61,6 @@ export interface SettingDef {
 	devOnly?: boolean;
 	control: SettingControl;
 }
+
+/** A catalog row whose control is a link, as `catalogLinkSettings` narrows to. */
+export type LinkSettingDef = SettingDef & { control: { kind: 'link'; href: string } };

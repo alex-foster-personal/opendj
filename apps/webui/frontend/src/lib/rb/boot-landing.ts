@@ -1,6 +1,6 @@
 /**
  * PERFMODE-11: one-shot cold-open redirect from `/` to the boot landing route.
- * Session-gated so PERF-UI-02 Library navigation after first open is untouched.
+ * Session-gated so Library navigation after first open (the mode picker) is untouched.
  */
 import { resolveBootLandingRoute } from './app-mode-landing';
 

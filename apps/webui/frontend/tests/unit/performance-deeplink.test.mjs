@@ -290,6 +290,7 @@ test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushe
 				master_tempo_enabled: true,
 				key_sync_enabled: false,
 				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
 					controls: {
 						vocal: { muted: false, solo: false, gain: 0.5 },
 						instrumental: { muted: false, solo: false, gain: 0.5 },
@@ -307,6 +308,7 @@ test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushe
 				master_tempo_enabled: true,
 				key_sync_enabled: false,
 				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
 					controls: {
 						vocal: { muted: false, solo: false, gain: 0.5 },
 						instrumental: { muted: false, solo: false, gain: 0.5 },
@@ -324,6 +326,7 @@ test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushe
 				master_tempo_enabled: true,
 				key_sync_enabled: false,
 				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
 					controls: {
 						vocal: { muted: false, solo: false, gain: 0.5 },
 						instrumental: { muted: false, solo: false, gain: 0.5 },
@@ -341,6 +344,7 @@ test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushe
 				master_tempo_enabled: true,
 				key_sync_enabled: false,
 				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
 					controls: {
 						vocal: { muted: false, solo: false, gain: 0.5 },
 						instrumental: { muted: false, solo: false, gain: 0.5 },
@@ -366,6 +370,8 @@ test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushe
 		location,
 		replaceState: (url) => replaceCalls.push(url),
 		query,
+		isLive: () => true,
+		operatorMaster: () => null,
 		throttle_ms: 10_000,
 		document: {
 			hidden: false,

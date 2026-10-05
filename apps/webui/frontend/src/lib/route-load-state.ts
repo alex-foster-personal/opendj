@@ -7,7 +7,7 @@
  * (an unknown track id). These pure helpers decide what the page says instead,
  * so the wording and the not-found rule are unit tested without a component.
  */
-import { readApiErrorStatus } from './api/client';
+import { readApiErrorStatus } from './api/errors';
 
 /** What a route shows after its load settles. */
 export type RouteLoadError = {

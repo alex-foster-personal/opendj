@@ -28,10 +28,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 const FRONTEND_ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const EXPORT_PATH = resolve(FRONTEND_ROOT, '../../audio-engine/maps/device-maps.json');
 const REGISTRY = '/src/lib/rb/midi/maps/index.ts';
+const WEBMIDI = '/src/lib/rb/midi/webmidi.svelte.ts';
 
-/** Render the registry as the exact bytes the engine embeds. */
-export async function renderExport() {
-	const vite = await createServer({
+function _viteServer() {
+	return createServer({
 		root: FRONTEND_ROOT,
 		configFile: false,
 		appType: 'custom',
@@ -43,6 +43,24 @@ export async function renderExport() {
 			conditions: ['browser']
 		}
 	});
+}
+
+/** The registry plus the page's own resolver, loaded together so a test can
+ * ask the real matcher what a port name resolves to. */
+export async function loadRegistry() {
+	const vite = await _viteServer();
+	try {
+		const { DEVICE_MAP_REGISTRY } = await vite.ssrLoadModule(REGISTRY);
+		const webmidi = await vite.ssrLoadModule(WEBMIDI);
+		return { DEVICE_MAP_REGISTRY, webmidi };
+	} finally {
+		await vite.close();
+	}
+}
+
+/** Render the registry as the exact bytes the engine embeds. */
+export async function renderExport() {
+	const vite = await _viteServer();
 	try {
 		const { DEVICE_MAP_REGISTRY } = await vite.ssrLoadModule(REGISTRY);
 		if (!Array.isArray(DEVICE_MAP_REGISTRY) || DEVICE_MAP_REGISTRY.length === 0) {

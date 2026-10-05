@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import os
 import struct
+import subprocess
 import wave
 from pathlib import Path
 
+import pytest
 
+
+from apps.shared import flac_meta
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder
 from apps.shared.state.writer import StateWriter
@@ -121,3 +125,35 @@ def test_folder_import_rejects_corrupt_wav_with_tag_reader_installed(
     assert _track_count(state_path) == 1
     assert report.files_rejected_unplayable == 6
     assert report.files_without_tags == 1
+
+
+def _flac_claiming_hours(path: Path) -> Path:
+    """A real ffmpeg FLAC whose STREAMINFO then claims ~10 hours of samples."""
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=duration=0.2", str(path)],
+        check=True,
+    )
+    meta = flac_meta.read(path)
+    info = bytearray(meta.blocks[0].data)
+    # STREAMINFO bytes 13-17 hold the low 36 bits of the total sample count.
+    total = 44100 * 36_000
+    info[13] = (info[13] & 0xF0) | ((total >> 32) & 0x0F)
+    info[14:18] = (total & 0xFFFFFFFF).to_bytes(4, "big")
+    meta.blocks[0] = flac_meta.Block(flac_meta.BLOCK_STREAMINFO, bytes(info))
+    flac_meta.save(path, meta)
+    return path
+
+
+# REQ: SETUP-16
+@pytest.mark.requires_ffmpeg
+def test_a_stated_duration_the_bytes_cannot_hold_is_rejected(tmp_path: Path) -> None:
+    """[if] a file states hours of audio in a few KB [then] it is rejected [else stop]."""
+    root = tmp_path / "music"
+    root.mkdir()
+    _flac_claiming_hours(root / "liar.flac")
+    state_path = tmp_path / "state.db"
+
+    report = _ingest(root, state_path)
+
+    assert report.files_rejected_unplayable == 1
+    assert _track_count(state_path) == 0

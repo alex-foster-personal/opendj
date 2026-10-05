@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.cloud import stem_hydration, stem_index
+from apps.cloud import stem_cache_budget, stem_hydration, stem_index
 from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
 from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
@@ -317,6 +317,7 @@ def _run_hydration(
             index=index,
             stems_dir=stems_dir,
             skip_reserved=False,  # on-demand deck load NEVER skips reserved ids (D5)
+            hand_off_to_deck=True,  # the deck polls for this bundle next
         )
     except StemSourceError as exc:
         with _INFLIGHT_LOCK:

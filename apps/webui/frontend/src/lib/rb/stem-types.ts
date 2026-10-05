@@ -5,9 +5,10 @@
  * Split out of the former lib/rb/types.ts god module.
  */
 
-/** Rekordbox's three user-facing stem groups. Instrumental is the real
- * Demucs bass + other pair, never source-audio subtraction. */
-export type StemControl = 'vocal' | 'instrumental' | 'drums';
+/** Instrumental remains the real Demucs bass + other parent group. Its
+ * children can also be controlled independently, never by subtraction. */
+export type StemControl = 'vocal' | 'instrumental' | 'drums' | 'bass' | 'other';
+export const STEM_CONTROL_IDS: readonly StemControl[] = ['vocal', 'instrumental', 'drums', 'bass', 'other'];
 
 export interface StemControlState {
 	muted: boolean;

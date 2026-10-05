@@ -56,15 +56,25 @@ export function releaseEagerStemDecodeNow(deck?: number): number {
  */
 let _shed: BackgroundDemandShed | null = null;
 let _kernelPressure: (() => boolean) | null = null;
+let _isLive: (() => boolean) | null = null;
 
 /** `kernelPressure` reads whether the kernel itself reports memory pressure
- * (PERFMODE-18); without it every hold takes the early-warning bound. */
+ * (PERFMODE-18); without it every hold takes the early-warning bound. `isLive`
+ * reads whether any deck is audible (PERF-STEMDEC-04). */
 export function setEagerStemDecodeShed(
 	shed: BackgroundDemandShed | null,
-	kernelPressure: (() => boolean) | null = null
+	kernelPressure: (() => boolean) | null = null,
+	isLive: (() => boolean) | null = null
 ): void {
 	_shed = shed;
 	_kernelPressure = shed === null ? null : kernelPressure;
+	_isLive = shed === null ? null : isLive;
+}
+
+/** PERF-STEMDEC-04: a deck is audible right now, so a stem decode must leave
+ * the cores to the audio thread. False until app-init.ts arms the probe. */
+export function eagerStemDecodeIsLive(): boolean {
+	return _isLive?.() === true;
 }
 
 /**

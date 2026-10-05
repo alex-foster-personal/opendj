@@ -172,6 +172,7 @@ def _start_engine(
     line = engine.stdout.readline()
     if not line:
         engine.kill()
+        assert engine.stderr is not None
         raise AssertionError(
             f"engine never reported a running worker: {engine.stderr.read()}"
         )

@@ -2,7 +2,10 @@
 
 Mini-PRD
 --------
-R1 ok   Resolve the ffmpeg binary honoring ``MDT_FFMPEG`` first, then PATH.
+R1 ok   Resolve the ffmpeg binary: ``MDT_FFMPEG`` first, then the payload's
+        bundled build (``ODJ_FFMPEG_BIN``, exported by the payload launcher the
+        same way ``ODJ_AUDIO_BIN`` locates ``bin/odj-audio``), then PATH.
+        PATH is never preferred over the bundled build.
 R2 ok   Fail loudly: an absent binary, or a set-but-unusable ``MDT_FFMPEG``,
         raises :class:`FfmpegUnavailable`. There is no second decoder to fall
         back to and no silent PATH lookup behind a broken override.
@@ -16,7 +19,9 @@ Acceptance
 [if] MDT_FFMPEG names an executable file       [then] it is returned, PATH unread
 [if] MDT_FFMPEG is a relative path             [then] an ABSOLUTE path is returned
 [if] MDT_FFMPEG is set but not executable      [then] FfmpegUnavailable names MDT_FFMPEG
-[if] MDT_FFMPEG is unset and ffmpeg is on PATH [then] the PATH hit is returned
+[if] MDT_FFMPEG is unset and ODJ_FFMPEG_BIN is executable [then] the bundled one wins over PATH
+[if] ODJ_FFMPEG_BIN is set but not executable  [then] FfmpegUnavailable names it, PATH unread
+[if] both are unset and ffmpeg is on PATH      [then] the PATH hit is returned
 [if] neither is available                      [then] FfmpegUnavailable names the override
 
 Why this is shared rather than private to one module: ffmpeg is the only
@@ -46,7 +51,12 @@ import subprocess
 from pathlib import Path
 
 FFMPEG_BINARY = "ffmpeg"
-"""PATH name looked up when ``MDT_FFMPEG`` is unset."""
+"""PATH name looked up when neither override is set."""
+
+OVERRIDE_ENV = "MDT_FFMPEG"
+"""Operator override; always wins."""
+BUNDLED_ENV = "ODJ_FFMPEG_BIN"
+"""The payload's own LGPL build (``payload/bin/ffmpeg``), set by the launcher."""
 
 
 class FfmpegUnavailable(RuntimeError):
@@ -54,7 +64,7 @@ class FfmpegUnavailable(RuntimeError):
 
 
 def resolve_ffmpeg() -> str:
-    """Path to the ffmpeg executable: ``MDT_FFMPEG`` override, else PATH.
+    """Path to the ffmpeg executable: ``MDT_FFMPEG``, else bundled, else PATH.
 
     A packaged/GUI-launched app does not inherit Homebrew's PATH the way a
     shell does, so a bare PATH lookup can find nothing even with ffmpeg
@@ -68,27 +78,36 @@ def resolve_ffmpeg() -> str:
     one caller is a long-lived multi-threaded server, where a process-wide
     PATH mutation on a request path would race every concurrent caller.
     """
-    override = os.environ.get("MDT_FFMPEG")
-    if override:
-        # Absolute, because subprocess hands a bare basename to a PATH search.
-        # A relative override such as "customff" that sits in the working
-        # directory passes the checks below and is then either not found at
-        # all or resolved to a DIFFERENT binary on PATH, which is the one
-        # failure mode an explicit override exists to rule out. abspath rather
-        # than resolve: this fixes the lookup, it does not silently follow a
-        # symlink the operator deliberately pointed at.
-        resolved = os.path.abspath(override)
-        if Path(resolved).is_file() and os.access(resolved, os.X_OK):
-            return resolved
-        raise FfmpegUnavailable(f"MDT_FFMPEG={override!r} is not an executable file")
+    for env_name in (OVERRIDE_ENV, BUNDLED_ENV):
+        configured = os.environ.get(env_name)
+        if configured:
+            return _executable_or_raise(env_name, configured)
     exe = shutil.which(FFMPEG_BINARY)
     if exe is None:
         raise FfmpegUnavailable(
             "ffmpeg is not on PATH, so no audio can be decoded "
-            "(set MDT_FFMPEG to an ffmpeg executable path to override - a "
+            f"(set {OVERRIDE_ENV} to an ffmpeg executable path to override - a "
             "packaged app launch does not inherit Homebrew's PATH)"
         )
     return exe
+
+
+def _executable_or_raise(env_name: str, configured: str) -> str:
+    """``configured`` as an absolute executable path, or raise naming ``env_name``.
+
+    Absolute, because subprocess hands a bare basename to a PATH search. A
+    relative override such as "customff" that sits in the working directory
+    passes the checks below and is then either not found at all or resolved
+    to a DIFFERENT binary on PATH, which is the one failure mode an explicit
+    override exists to rule out. abspath rather than resolve: this fixes the
+    lookup, it does not silently follow a symlink the operator deliberately
+    pointed at. A set-but-broken bundled path raises too: a packaged app that
+    lost its own ffmpeg must say so, not quietly decode with whatever PATH has.
+    """
+    resolved = os.path.abspath(configured)
+    if Path(resolved).is_file() and os.access(resolved, os.X_OK):
+        return resolved
+    raise FfmpegUnavailable(f"{env_name}={configured!r} is not an executable file")
 
 
 #: Where Homebrew installs ffmpeg (Apple silicon, then Intel). A Finder-launched
@@ -106,8 +125,8 @@ def resolve_ffmpeg_including_homebrew() -> str:
     try:
         return resolve_ffmpeg()
     except FfmpegUnavailable:
-        if os.environ.get("MDT_FFMPEG"):
-            raise
+        if os.environ.get(OVERRIDE_ENV) or os.environ.get(BUNDLED_ENV):
+            raise  # a set-but-broken override or bundled path never falls through
         for candidate in HOMEBREW_FFMPEG_PATHS:
             if Path(candidate).is_file() and os.access(candidate, os.X_OK):
                 return candidate
@@ -146,8 +165,10 @@ def probe_duration_s(path: Path) -> float | None:
 
 
 __all__ = [
+    "BUNDLED_ENV",
     "FFMPEG_BINARY",
     "HOMEBREW_FFMPEG_PATHS",
+    "OVERRIDE_ENV",
     "FfmpegUnavailable",
     "probe_duration_s",
     "resolve_ffmpeg",

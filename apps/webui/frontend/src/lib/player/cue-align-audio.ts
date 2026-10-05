@@ -17,8 +17,10 @@ import type {
 } from '$lib/player/cue-align.svelte';
 import {
 	applyUnsavedAlignmentDelays,
+	clearCalibrationInputSignal,
 	liveCalibrationGraph,
 	masterDelayNode,
+	publishCalibrationInputSignal,
 	requireHeadphoneDeviceApi,
 	setHeadDelayMs,
 	setMasterDelayMs,
@@ -174,6 +176,7 @@ function _openChirpCapture(
 	silent.connect(ctx.destination);
 
 	const teardown = (): void => {
+		clearCalibrationInputSignal();
 		processor.onaudioprocess = null;
 		processor.disconnect();
 		src.disconnect(processor);
@@ -214,6 +217,7 @@ function _openChirpCapture(
 					resolveOpen({ startedAtSec: event.playbackTime, samples });
 				}
 				const input = event.inputBuffer.getChannelData(0);
+				publishCalibrationInputSignal(input);
 				const n = Math.min(input.length, frames - offset);
 				out.set(input.subarray(0, n), offset);
 				offset += n;
@@ -268,6 +272,13 @@ export function cueAlignAudioEffects(): Pick<
 	}
 	if (ctx === null || nodes === null || cueId === null) {
 		throw new Error('cue alignment calibration: a precondition is null that calibrationBlockers passed');
+	}
+	const selectedMaster = mixerState.headphones.selected_master_output_device_id;
+	const masterRoute = mixerState.headphones.routes.master;
+	if (selectedMaster !== null && masterRoute.state !== 'selected') {
+		throw new Error(
+			`cue alignment cannot measure the selected MASTER route: route capability is ${masterRoute.state}. Clear MAIN to use the OS default, or select a supported MAIN route.`
+		);
 	}
 	return {
 		sampleRate: () => ctx.sampleRate,

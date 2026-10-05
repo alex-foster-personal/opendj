@@ -2560,6 +2560,292 @@
         "title": "BeatgridFallbackOut",
         "type": "object"
       },
+      "BeatgridFlagCounts": {
+        "description": "Every count is over the response's `denominator`. The four classes sum\nto it; `dismissed` counts flagged tracks whose flag the user hid.",
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "integer"
+          },
+          "suspect": {
+            "title": "Suspect",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          },
+          "variable_tempo": {
+            "title": "Variable Tempo",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "suspect",
+          "variable_tempo",
+          "unknown",
+          "dismissed"
+        ],
+        "title": "BeatgridFlagCounts",
+        "type": "object"
+      },
+      "BeatgridFlagItem": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "computed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "grid_class": {
+            "enum": [
+              "ok",
+              "suspect",
+              "variable_tempo",
+              "unknown"
+            ],
+            "title": "Grid Class",
+            "type": "string"
+          },
+          "grid_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Source"
+          },
+          "interval_count": {
+            "title": "Interval Count",
+            "type": "integer"
+          },
+          "median_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Bpm"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "steady_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steady Coverage"
+          },
+          "steady_line_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steady Line Bpm"
+          },
+          "steady_on_line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steady On Line"
+          },
+          "tempo_marker_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo Marker Count"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uneven_interval_count": {
+            "title": "Uneven Interval Count",
+            "type": "integer"
+          },
+          "worst_at_sec": {
+            "title": "Worst At Sec",
+            "type": "number"
+          },
+          "worst_deviation_ms": {
+            "title": "Worst Deviation Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "grid_class",
+          "reason",
+          "dismissed",
+          "grid_source",
+          "interval_count",
+          "uneven_interval_count",
+          "worst_deviation_ms",
+          "worst_at_sec",
+          "median_bpm",
+          "tempo_marker_count",
+          "steady_coverage",
+          "steady_on_line",
+          "steady_line_bpm",
+          "computed_at",
+          "message"
+        ],
+        "title": "BeatgridFlagItem",
+        "type": "object"
+      },
+      "BeatgridFlagRule": {
+        "properties": {
+          "thresholds": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Thresholds",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "thresholds"
+        ],
+        "title": "BeatgridFlagRule",
+        "type": "object"
+      },
+      "BeatgridFlagsOut": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/BeatgridFlagCounts"
+          },
+          "denominator": {
+            "enum": [
+              "present",
+              "all_tracks"
+            ],
+            "title": "Denominator",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BeatgridFlagItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/BeatgridFlagRule"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/BeatgridScanStatus"
+          },
+          "unknown_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Unknown Reasons",
+            "type": "object"
+          }
+        },
+        "required": [
+          "denominator",
+          "present",
+          "counts",
+          "unknown_reasons",
+          "rule",
+          "scan",
+          "items"
+        ],
+        "title": "BeatgridFlagsOut",
+        "type": "object"
+      },
       "BeatgridIssueOut": {
         "description": "A real, already-detected PQTZ field-vs-interval BPM disagreement.\n\nSee ``rb_vendor.cached_beatgrid_issue`` for the caching tradeoff: this is\nNone both when the grid is clean AND when it has never been evaluated\nyet - never a guessed verdict.",
         "properties": {
@@ -2598,6 +2884,64 @@
         "title": "BeatgridIssueOut",
         "type": "object"
       },
+      "BeatgridScanStatus": {
+        "properties": {
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "running_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "present",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Scope"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "running_scope",
+          "last_result",
+          "last_error"
+        ],
+        "title": "BeatgridScanStatus",
+        "type": "object"
+      },
       "Binding": {
         "additionalProperties": false,
         "properties": {
@@ -2607,12 +2951,14 @@
                 "browse_encoder": "#/components/schemas/BrowseEncoder",
                 "browse_load": "#/components/schemas/BrowseLoad",
                 "channel_cue": "#/components/schemas/ChannelCue",
+                "deck_auto_loop_toggle": "#/components/schemas/DeckAutoLoopToggle",
                 "deck_beat_loop": "#/components/schemas/DeckBeatLoop",
                 "deck_cue": "#/components/schemas/DeckCue",
                 "deck_hot_cue": "#/components/schemas/DeckHotCue",
                 "deck_loop_exit": "#/components/schemas/DeckLoopExit",
                 "deck_pitch": "#/components/schemas/DeckPitch",
                 "deck_play_toggle": "#/components/schemas/DeckPlayToggle",
+                "deck_stem_eq_toggle": "#/components/schemas/DeckStemEqToggle",
                 "mixer_channel": "#/components/schemas/MixerChannel",
                 "mixer_global": "#/components/schemas/MixerGlobal",
                 "shift_modifier": "#/components/schemas/ShiftModifier"
@@ -2633,7 +2979,13 @@
                 "$ref": "#/components/schemas/DeckBeatLoop"
               },
               {
+                "$ref": "#/components/schemas/DeckAutoLoopToggle"
+              },
+              {
                 "$ref": "#/components/schemas/DeckLoopExit"
+              },
+              {
+                "$ref": "#/components/schemas/DeckStemEqToggle"
               },
               {
                 "$ref": "#/components/schemas/MixerChannel"
@@ -2760,6 +3112,22 @@
       },
       "BrokenTrackList": {
         "properties": {
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "default": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -4764,6 +5132,24 @@
             "title": "Author",
             "type": "string"
           },
+          "element_offset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinElementOffset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nearby_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/PinNearbyAnchor"
+            },
+            "maxItems": 3,
+            "title": "Nearby Anchors",
+            "type": "array"
+          },
           "page": {
             "minLength": 1,
             "title": "Page",
@@ -4781,6 +5167,16 @@
             ],
             "title": "Ui",
             "type": "string"
+          },
+          "ui_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinUiConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "viewport_height": {
             "maximum": 100000.0,
@@ -4924,6 +5320,16 @@
             "title": "Created At",
             "type": "string"
           },
+          "element_offset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinElementOffset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment": {
             "anyOf": [
               {
@@ -4981,6 +5387,13 @@
               }
             ],
             "title": "Issue Url"
+          },
+          "nearby_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/PinNearbyAnchor"
+            },
+            "title": "Nearby Anchors",
+            "type": "array"
           },
           "page": {
             "title": "Page",
@@ -5506,12 +5919,20 @@
       "CoverageOut": {
         "description": "Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.\n\n``on_disk`` is the denominator (``availability.present``). Per step,\n``done + terminal + failed + pending == on_disk``. ``missing`` and\n``corrupt`` keep their artifact meaning for the refresh job's targeting:\n``corrupt`` (structurally invalid entries) is a subset of ``missing``.",
         "properties": {
+          "age_s": {
+            "title": "Age S",
+            "type": "number"
+          },
           "availability": {
             "additionalProperties": {
               "type": "integer"
             },
             "title": "Availability",
             "type": "object"
+          },
+          "awaiting_stem_download": {
+            "title": "Awaiting Stem Download",
+            "type": "integer"
           },
           "corrupt": {
             "additionalProperties": {
@@ -5538,6 +5959,20 @@
             "title": "Generated At",
             "type": "number"
           },
+          "in_cloud": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "In Cloud",
+            "type": "object"
+          },
+          "local": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Local",
+            "type": "object"
+          },
           "missing": {
             "additionalProperties": {
               "type": "integer"
@@ -5554,6 +5989,35 @@
               "type": "integer"
             },
             "title": "Pending",
+            "type": "object"
+          },
+          "refresh_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Error"
+          },
+          "refreshing": {
+            "title": "Refreshing",
+            "type": "boolean"
+          },
+          "stems_index": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Stems Index",
             "type": "object"
           },
           "stems_source_refusal": {
@@ -5599,8 +6063,15 @@
           "failed",
           "pending",
           "waiting_on_stems",
+          "local",
+          "in_cloud",
+          "awaiting_stem_download",
+          "stems_index",
           "stems_source_refusal",
-          "generated_at"
+          "generated_at",
+          "age_s",
+          "refreshing",
+          "refresh_error"
         ],
         "title": "CoverageOut",
         "type": "object"
@@ -5993,35 +6464,6 @@
         "title": "DecideIn",
         "type": "object"
       },
-      "DecisionIn": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "enum": [
-              "merge",
-              "keep-all",
-              "skip"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "cluster_key": {
-            "title": "Cluster Key",
-            "type": "string"
-          },
-          "survivor": {
-            "title": "Survivor",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cluster_key",
-          "survivor",
-          "action"
-        ],
-        "title": "DecisionIn",
-        "type": "object"
-      },
       "DecisionOut": {
         "properties": {
           "action": {
@@ -6108,13 +6550,39 @@
         "title": "DecisionRecordOut",
         "type": "object"
       },
+      "DeckAutoLoopToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_auto_loop_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckAutoLoopToggle",
+        "type": "object"
+      },
       "DeckBeatLoop": {
         "additionalProperties": false,
         "properties": {
           "beats": {
             "exclusiveMinimum": 0.0,
             "title": "Beats",
-            "type": "integer"
+            "type": "number"
           },
           "deck": {
             "enum": [
@@ -6481,6 +6949,32 @@
         "title": "DeckPlayToggle",
         "type": "object"
       },
+      "DeckStemEqToggle": {
+        "additionalProperties": false,
+        "properties": {
+          "deck": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "title": "Deck",
+            "type": "integer"
+          },
+          "type": {
+            "const": "deck_stem_eq_toggle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "deck"
+        ],
+        "title": "DeckStemEqToggle",
+        "type": "object"
+      },
       "DeletedPlaylistOut": {
         "properties": {
           "deleted_at": {
@@ -6652,16 +7146,83 @@
         "title": "DigestResponse",
         "type": "object"
       },
-      "DrainConfigIn": {
+      "DismissIn": {
         "properties": {
-          "enabled": {
-            "title": "Enabled",
+          "dismissed": {
+            "title": "Dismissed",
             "type": "boolean"
           }
         },
         "required": [
-          "enabled"
+          "dismissed"
         ],
+        "title": "DismissIn",
+        "type": "object"
+      },
+      "DismissOut": {
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "dismissed",
+          "etag"
+        ],
+        "title": "DismissOut",
+        "type": "object"
+      },
+      "DrainConfigIn": {
+        "additionalProperties": false,
+        "description": "Partial update: an omitted key keeps its stored value.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "transient_bundle_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transient Bundle Cap"
+          }
+        },
         "title": "DrainConfigIn",
         "type": "object"
       },
@@ -6684,6 +7245,11 @@
       },
       "DrainStatusOut": {
         "properties": {
+          "cloud_vocals": {
+            "additionalProperties": true,
+            "title": "Cloud Vocals",
+            "type": "object"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -6693,6 +7259,20 @@
               "type": "integer"
             },
             "title": "Failed",
+            "type": "object"
+          },
+          "farm_only_pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Farm Only Pending",
+            "type": "object"
+          },
+          "farm_only_stages": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Farm Only Stages",
             "type": "object"
           },
           "jobs_failed": {
@@ -6714,6 +7294,17 @@
               }
             ],
             "title": "Last Job"
+          },
+          "memory_pressure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Pressure"
           },
           "next_retry_at": {
             "anyOf": [
@@ -6748,6 +7339,30 @@
             "title": "State",
             "type": "string"
           },
+          "stems_check": {
+            "additionalProperties": true,
+            "title": "Stems Check",
+            "type": "object"
+          },
+          "stems_in_cloud": {
+            "title": "Stems In Cloud",
+            "type": "integer"
+          },
+          "stems_index_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stems Index Reason"
+          },
+          "stems_index_state": {
+            "title": "Stems Index State",
+            "type": "string"
+          },
           "stems_needing_farm": {
             "items": {
               "type": "string"
@@ -6758,6 +7373,21 @@
           "stems_needing_farm_count": {
             "title": "Stems Needing Farm Count",
             "type": "integer"
+          },
+          "stems_no_source": {
+            "title": "Stems No Source",
+            "type": "integer"
+          },
+          "stems_unclassified": {
+            "title": "Stems Unclassified",
+            "type": "integer"
+          },
+          "steps_enabled": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Steps Enabled",
+            "type": "object"
           },
           "stop_requested": {
             "title": "Stop Requested",
@@ -6793,6 +7423,7 @@
         "required": [
           "state",
           "enabled",
+          "steps_enabled",
           "stop_requested",
           "reason",
           "pending",
@@ -6800,7 +7431,17 @@
           "waiting_on_stems",
           "stems_needing_farm",
           "stems_needing_farm_count",
+          "stems_in_cloud",
+          "stems_no_source",
+          "stems_index_state",
+          "stems_index_reason",
+          "stems_unclassified",
+          "cloud_vocals",
+          "stems_check",
+          "memory_pressure",
           "unavailable_steps",
+          "farm_only_stages",
+          "farm_only_pending",
           "next_retry_at",
           "last_job",
           "jobs_run",
@@ -8506,6 +9147,161 @@
         "title": "GrantOut",
         "type": "object"
       },
+      "GridProvenanceOut": {
+        "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "backend_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Version"
+          },
+          "basis": {
+            "enum": [
+              "selection",
+              "unmapped-default"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "enum": [
+              "rekordbox",
+              "own"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "failed",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "basis",
+          "status",
+          "reason",
+          "backend",
+          "backend_version",
+          "bpm",
+          "bpm_confidence"
+        ],
+        "title": "GridProvenanceOut",
+        "type": "object"
+      },
+      "GridQualityRowOut": {
+        "description": "A track row's stored beatgrid verdict (GRIDFLAG-02).\n\nRead back from the grid-quality store; a listing never parses a grid.\n``unknown`` means nobody could judge the grid (``reason`` says why) and\nmust never be drawn as ``ok`` or as a flag. ``message`` is the sentence\nthe deck's Beat Sync badge shows for the same grid; null for ``ok``.",
+        "properties": {
+          "dismissed": {
+            "default": false,
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "grid_class": {
+            "enum": [
+              "ok",
+              "suspect",
+              "variable_tempo",
+              "unknown"
+            ],
+            "title": "Grid Class",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "grid_class"
+        ],
+        "title": "GridQualityRowOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -8730,6 +9526,9 @@
           "calibration": {
             "$ref": "#/components/schemas/HeadphoneCalibrationOut"
           },
+          "device_access": {
+            "$ref": "#/components/schemas/IoDeviceAccessOut"
+          },
           "error": {
             "anyOf": [
               {
@@ -8774,6 +9573,28 @@
             },
             "title": "Outputs",
             "type": "array"
+          },
+          "report_age_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Age Ms"
+          },
+          "reporting_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporting Client Id"
           },
           "selected_input_device_id": {
             "anyOf": [
@@ -8828,7 +9649,8 @@
           "inputs",
           "supported",
           "active",
-          "error"
+          "error",
+          "device_access"
         ],
         "title": "HeadphoneStateOut",
         "type": "object"
@@ -9544,6 +10366,62 @@
           "survivor_pk"
         ],
         "title": "IdentityRejectModel",
+        "type": "object"
+      },
+      "IoDeviceAccessOut": {
+        "description": "IOPIN-14: whether the device lists could be read, and what to do if not.\n\n`status` is one of not_checked, listed, permission_needed, permission_denied,\napi_missing, enumeration_failed, timeout. Only `listed` means `outputs` and\n`inputs` are the machine's real device names; an agent must read this before\ntreating a short list as a machine with few devices.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notices",
+            "type": "array"
+          },
+          "output_pinning": {
+            "title": "Output Pinning",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "action",
+          "message",
+          "detail",
+          "output_pinning",
+          "notices"
+        ],
+        "title": "IoDeviceAccessOut",
         "type": "object"
       },
       "JobIn": {
@@ -12851,6 +13729,110 @@
         "title": "MyTagSweepOut",
         "type": "object"
       },
+      "NoSourceClearOut": {
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          },
+          "keep_pending": {
+            "title": "Keep Pending",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "cleared",
+          "keep_pending"
+        ],
+        "title": "NoSourceClearOut",
+        "type": "object"
+      },
+      "NoSourceListOut": {
+        "properties": {
+          "keep_pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keep Pending",
+            "type": "array"
+          },
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/NoSourceMarkOut"
+            },
+            "title": "Marks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "marks",
+          "keep_pending"
+        ],
+        "title": "NoSourceListOut",
+        "type": "object"
+      },
+      "NoSourceMarkIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "reason"
+        ],
+        "title": "NoSourceMarkIn",
+        "type": "object"
+      },
+      "NoSourceMarkOut": {
+        "properties": {
+          "applies": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "recorded_at": {
+            "title": "Recorded At",
+            "type": "number"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "reason",
+          "recorded_at",
+          "applies"
+        ],
+        "title": "NoSourceMarkOut",
+        "type": "object"
+      },
       "NodePatch": {
         "additionalProperties": false,
         "properties": {
@@ -13912,8 +14894,31 @@
         "title": "PinCellIn",
         "type": "object"
       },
+      "PinElementOffset": {
+        "description": "The click point inside the ``anchor`` element's box, 0..100 per axis.",
+        "properties": {
+          "dx_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Dx Pct",
+            "type": "number"
+          },
+          "dy_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Dy Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dx_pct",
+          "dy_pct"
+        ],
+        "title": "PinElementOffset",
+        "type": "object"
+      },
       "PinEnvironmentOut": {
-        "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
+        "description": "Runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes its UI kind,\nviewport dimensions and a closed ``ui_config`` snapshot (see\n``PinUiConfig``): no user agent, URL query, file path or track title.\n\n``user_email`` is the one personal field (pin 49f9d217). The daemon stamps\nit from the session cookie, the same identity ``GET /api/v1/auth/me``\nalready returns to this browser; a request body cannot set it. It is null\nwhen nobody is signed in, and absent on pins older than this field.",
         "properties": {
           "machine": {
             "title": "Machine",
@@ -13930,6 +14935,27 @@
             ],
             "title": "Ui",
             "type": "string"
+          },
+          "ui_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinUiConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
           },
           "viewport_height": {
             "title": "Viewport Height",
@@ -13967,6 +14993,36 @@
           "playlist_id"
         ],
         "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinNearbyAnchor": {
+        "description": "A stable neighbour of the pinned element and the pin's px offset from it.",
+        "properties": {
+          "dx_px": {
+            "maximum": 100000.0,
+            "minimum": -100000.0,
+            "title": "Dx Px",
+            "type": "number"
+          },
+          "dy_px": {
+            "maximum": 100000.0,
+            "minimum": -100000.0,
+            "title": "Dy Px",
+            "type": "number"
+          },
+          "selector": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Selector",
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector",
+          "dx_px",
+          "dy_px"
+        ],
+        "title": "PinNearbyAnchor",
         "type": "object"
       },
       "PinOperatorBreakdownOut": {
@@ -14136,6 +15192,48 @@
           "attachment_bytes"
         ],
         "title": "PinSyncOut",
+        "type": "object"
+      },
+      "PinUiConfig": {
+        "additionalProperties": false,
+        "description": "Compact UI configuration at the moment a pin was dropped (pin 49f9d217).\n\nClosed by construction: unknown keys are refused, every mode is a short\nlowercase slug, every switch is a boolean, and the route is an app route\nwith no query string. That is what keeps a secret, a path under the\nuser's home, or a track title out of the pin store: there is no field\nfree text could travel in.",
+        "properties": {
+          "app_mode": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "title": "App Mode",
+            "type": "string"
+          },
+          "engine_mode": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "title": "Engine Mode",
+            "type": "string"
+          },
+          "perf_tier": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "title": "Perf Tier",
+            "type": "string"
+          },
+          "route": {
+            "pattern": "^/[A-Za-z0-9/_.-]{0,119}$",
+            "title": "Route",
+            "type": "string"
+          },
+          "switches": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Switches",
+            "type": "object"
+          }
+        },
+        "required": [
+          "route",
+          "app_mode",
+          "engine_mode",
+          "perf_tier",
+          "switches"
+        ],
+        "title": "PinUiConfig",
         "type": "object"
       },
       "PlanEntryOut": {
@@ -15716,6 +16814,75 @@
           "checks"
         ],
         "title": "PreflightOut",
+        "type": "object"
+      },
+      "PreviewStripOut": {
+        "properties": {
+          "preview_b64": {
+            "title": "Preview B64",
+            "type": "string"
+          },
+          "preview_max": {
+            "title": "Preview Max",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "preview_b64",
+          "preview_max"
+        ],
+        "title": "PreviewStripOut",
+        "type": "object"
+      },
+      "PreviewStripsIn": {
+        "description": "Body of ``POST /library/preview-strips``.",
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "PreviewStripsIn",
+        "type": "object"
+      },
+      "PreviewStripsOut": {
+        "description": "``strips`` has every asked id: its strip, or null when none is on disk yet.\n\n``pending`` lists the null ids the ahead-analysis drain was bumped for and\nwill write, so asking again later can fill them. A null id not in\n``pending`` stays null until something else analyzes it.",
+        "properties": {
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          },
+          "strips": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PreviewStripOut"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Strips",
+            "type": "object"
+          }
+        },
+        "required": [
+          "strips",
+          "pending"
+        ],
+        "title": "PreviewStripsOut",
         "type": "object"
       },
       "Provenance": {
@@ -18082,6 +19249,16 @@
             ],
             "title": "Genre Reason"
           },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -18241,6 +19418,23 @@
             "additionalProperties": true,
             "title": "Stems",
             "type": "object"
+          },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
           },
           "title": {
             "anyOf": [
@@ -18555,6 +19749,20 @@
           "permissions"
         ],
         "title": "SetupStatusOut",
+        "type": "object"
+      },
+      "ShareRootReanchorOut": {
+        "description": "Answer of ``POST /library/share-root/reanchor``.",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "exists"
+        ],
+        "title": "ShareRootReanchorOut",
         "type": "object"
       },
       "ShiftModifier": {
@@ -19364,6 +20572,393 @@
           "files"
         ],
         "title": "StemBundlePresignResponse",
+        "type": "object"
+      },
+      "StemCacheEnforceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemCacheEnforceIn",
+        "type": "object"
+      },
+      "StemCacheEnforcementOut": {
+        "properties": {
+          "at_utc": {
+            "title": "At Utc",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "budget_bytes": {
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "bytes_freed": {
+            "title": "Bytes Freed",
+            "type": "integer"
+          },
+          "cache_bytes": {
+            "title": "Cache Bytes",
+            "type": "integer"
+          },
+          "disk_free_bytes": {
+            "title": "Disk Free Bytes",
+            "type": "integer"
+          },
+          "disk_total_bytes": {
+            "title": "Disk Total Bytes",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "evicted_stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evicted Stable Ids",
+            "type": "array"
+          },
+          "floor_bytes": {
+            "title": "Floor Bytes",
+            "type": "integer"
+          },
+          "protected_count": {
+            "title": "Protected Count",
+            "type": "integer"
+          },
+          "queued_for_upload": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queued For Upload",
+            "type": "array"
+          },
+          "shortfall_bytes": {
+            "title": "Shortfall Bytes",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "healthy",
+              "low_disk"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at_utc",
+          "state",
+          "dry_run",
+          "disk_total_bytes",
+          "disk_free_bytes",
+          "floor_bytes",
+          "shortfall_bytes",
+          "cache_bytes",
+          "budget_bytes",
+          "evicted_stable_ids",
+          "bytes_freed",
+          "queued_for_upload",
+          "protected_count",
+          "blocked_reason"
+        ],
+        "title": "StemCacheEnforcementOut",
+        "type": "object"
+      },
+      "StemCacheSettingsIn": {
+        "additionalProperties": false,
+        "description": "Partial update: omitted fields keep their stored value.",
+        "properties": {
+          "auto_evict": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Evict"
+          },
+          "clear_max_cache_gib": {
+            "default": false,
+            "title": "Clear Max Cache Gib",
+            "type": "boolean"
+          },
+          "enforce_interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforce Interval S"
+          },
+          "floor_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Fraction"
+          },
+          "floor_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Gib"
+          },
+          "max_cache_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cache Gib"
+          }
+        },
+        "title": "StemCacheSettingsIn",
+        "type": "object"
+      },
+      "StemCacheSettingsOut": {
+        "properties": {
+          "auto_evict": {
+            "description": "Whether low disk evicts R2-confirmed bundles",
+            "title": "Auto Evict",
+            "type": "boolean"
+          },
+          "enforce_interval_s": {
+            "description": "Seconds between engine enforcement ticks",
+            "title": "Enforce Interval S",
+            "type": "number"
+          },
+          "floor_fraction": {
+            "description": "Free-space floor as a fraction of the volume",
+            "title": "Floor Fraction",
+            "type": "number"
+          },
+          "floor_gib": {
+            "description": "Absolute free-space floor, GiB",
+            "title": "Floor Gib",
+            "type": "number"
+          },
+          "max_cache_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional hard cap on the cache, GiB",
+            "title": "Max Cache Gib"
+          }
+        },
+        "required": [
+          "floor_gib",
+          "floor_fraction",
+          "max_cache_gib",
+          "enforce_interval_s",
+          "auto_evict"
+        ],
+        "title": "StemCacheSettingsOut",
+        "type": "object"
+      },
+      "StemCacheStatusOut": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why low disk is not being relieved, or null",
+            "title": "Blocked Reason"
+          },
+          "budget_bytes": {
+            "description": "Largest cache that still leaves the floor free",
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "bundle_count": {
+            "title": "Bundle Count",
+            "type": "integer"
+          },
+          "cache_bytes": {
+            "title": "Cache Bytes",
+            "type": "integer"
+          },
+          "can_rehydrate": {
+            "description": "Whether a hydration source is armed",
+            "title": "Can Rehydrate",
+            "type": "boolean"
+          },
+          "disk_free_bytes": {
+            "title": "Disk Free Bytes",
+            "type": "integer"
+          },
+          "disk_total_bytes": {
+            "title": "Disk Total Bytes",
+            "type": "integer"
+          },
+          "enforcer_running": {
+            "title": "Enforcer Running",
+            "type": "boolean"
+          },
+          "evictable_bundle_count": {
+            "description": "In the R2 index and not on a deck",
+            "title": "Evictable Bundle Count",
+            "type": "integer"
+          },
+          "evictable_bytes": {
+            "title": "Evictable Bytes",
+            "type": "integer"
+          },
+          "floor_bytes": {
+            "title": "Floor Bytes",
+            "type": "integer"
+          },
+          "last_enforcement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemCacheEnforcementOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "local_only_bytes": {
+            "title": "Local Only Bytes",
+            "type": "integer"
+          },
+          "local_only_count": {
+            "description": "Not covered by the R2 index; never evicted",
+            "title": "Local Only Count",
+            "type": "integer"
+          },
+          "local_only_stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Local Only Stable Ids",
+            "type": "array"
+          },
+          "over_budget_bytes": {
+            "title": "Over Budget Bytes",
+            "type": "integer"
+          },
+          "protected_count": {
+            "description": "Loaded or playing; never evicted",
+            "title": "Protected Count",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/StemCacheSettingsOut"
+          },
+          "shortfall_bytes": {
+            "description": "Bytes short of the floor; 0 when healthy",
+            "title": "Shortfall Bytes",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "healthy",
+              "low_disk"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stems_dir": {
+            "title": "Stems Dir",
+            "type": "string"
+          },
+          "upload_queue_count": {
+            "title": "Upload Queue Count",
+            "type": "integer"
+          },
+          "would_evict_bytes": {
+            "title": "Would Evict Bytes",
+            "type": "integer"
+          },
+          "would_evict_count": {
+            "description": "Least-recently-used bundles that reaching the floor would remove; each stays in R2 and is fetched back on demand",
+            "title": "Would Evict Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "stems_dir",
+          "disk_total_bytes",
+          "disk_free_bytes",
+          "floor_bytes",
+          "shortfall_bytes",
+          "cache_bytes",
+          "budget_bytes",
+          "over_budget_bytes",
+          "bundle_count",
+          "evictable_bundle_count",
+          "evictable_bytes",
+          "would_evict_count",
+          "would_evict_bytes",
+          "local_only_count",
+          "local_only_bytes",
+          "local_only_stable_ids",
+          "upload_queue_count",
+          "protected_count",
+          "can_rehydrate",
+          "blocked_reason",
+          "settings",
+          "enforcer_running",
+          "last_enforcement",
+          "last_error"
+        ],
+        "title": "StemCacheStatusOut",
         "type": "object"
       },
       "StemHydrateIn": {
@@ -21479,6 +23074,16 @@
             ],
             "title": "Genre Reason"
           },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -21500,6 +23105,10 @@
           "is_remote": {
             "default": false,
             "title": "Is Remote",
+            "type": "boolean"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
             "type": "boolean"
           },
           "key": {
@@ -21611,6 +23220,23 @@
             "title": "Stems Available",
             "type": "boolean"
           },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -21663,6 +23289,7 @@
           "preview_max",
           "file_availability",
           "file_exists",
+          "is_streaming",
           "has_remote_copy",
           "quality",
           "vocals",
@@ -22368,6 +23995,16 @@
             ],
             "title": "Genre Reason"
           },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -22523,6 +24160,23 @@
             "additionalProperties": true,
             "title": "Stems",
             "type": "object"
+          },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
           },
           "title": {
             "anyOf": [
@@ -23835,8 +25489,413 @@
         "title": "UsbCapabilityErrorOut",
         "type": "object"
       },
+      "UsbStickCountsOut": {
+        "properties": {
+          "history_playlists": {
+            "title": "History Playlists",
+            "type": "integer"
+          },
+          "playlist_entries": {
+            "title": "Playlist Entries",
+            "type": "integer"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tracks",
+          "playlists",
+          "playlist_entries",
+          "history_playlists"
+        ],
+        "title": "UsbStickCountsOut",
+        "type": "object"
+      },
+      "UsbStickErrorDetail": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USB_TRACK_ID_INVALID",
+                  "USB_VOLUME_ID_INVALID",
+                  "USB_VOLUME_HAS_NO_UUID",
+                  "USB_STICK_NOT_MOUNTED",
+                  "USB_STICK_ACCESS_BLOCKED",
+                  "USB_TRACK_NOT_FOUND",
+                  "USB_PATH_OUTSIDE_VOLUME",
+                  "USB_FILE_MISSING"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "AUDIO_ACCESS_BLOCKED",
+                  "ANALYSIS_NOT_FOUND"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "volume_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Id"
+          },
+          "volume_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Uuid"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "UsbStickErrorDetail",
+        "type": "object"
+      },
+      "UsbStickErrorOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UsbStickErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbStickErrorOut",
+        "type": "object"
+      },
+      "UsbStickHistoryOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "track_ids"
+        ],
+        "title": "UsbStickHistoryOut",
+        "type": "object"
+      },
+      "UsbStickLibraryOut": {
+        "properties": {
+          "cache_hit": {
+            "title": "Cache Hit",
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/UsbStickCountsOut"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/UsbStickHistoryOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/UsbStickPlaylistOut"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "read_ms": {
+            "title": "Read Ms",
+            "type": "number"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/UsbStickTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "volume_id": {
+            "title": "Volume Id",
+            "type": "string"
+          },
+          "volume_uuid": {
+            "title": "Volume Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume_id",
+          "volume_uuid",
+          "name",
+          "mount_path",
+          "tracks",
+          "playlists",
+          "history",
+          "counts",
+          "read_ms",
+          "cache_hit"
+        ],
+        "title": "UsbStickLibraryOut",
+        "type": "object"
+      },
+      "UsbStickPlaylistOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_folder": {
+            "title": "Is Folder",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "pdb_id": {
+            "title": "Pdb Id",
+            "type": "integer"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "pdb_id",
+          "name",
+          "parent_id",
+          "is_folder",
+          "sort_order",
+          "track_ids"
+        ],
+        "title": "UsbStickPlaylistOut",
+        "type": "object"
+      },
+      "UsbStickTrackOut": {
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "date_added": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Added"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "file_present": {
+            "title": "File Present",
+            "type": "boolean"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "has_analysis": {
+            "title": "Has Analysis",
+            "type": "boolean"
+          },
+          "has_artwork": {
+            "title": "Has Artwork",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "pdb_id": {
+            "title": "Pdb Id",
+            "type": "integer"
+          },
+          "play_count": {
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pdb_id",
+          "title",
+          "artist",
+          "album",
+          "genre",
+          "key",
+          "bpm",
+          "duration_s",
+          "rating",
+          "play_count",
+          "file_path",
+          "file_present",
+          "has_analysis",
+          "has_artwork",
+          "date_added"
+        ],
+        "title": "UsbStickTrackOut",
+        "type": "object"
+      },
       "UsbVolumeOut": {
         "properties": {
+          "access": {
+            "default": "unknown",
+            "enum": [
+              "ok",
+              "pending",
+              "denied",
+              "unknown"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
           "hide_reason": {
             "anyOf": [
               {
@@ -24808,6 +26867,48 @@
         ],
         "title": "WritebackTargetsOut",
         "type": "object"
+      },
+      "apps__webui__server__routes__dedup_review__DecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "merge",
+              "keep-all",
+              "skip"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_key",
+          "survivor",
+          "action"
+        ],
+        "title": "DecisionIn",
+        "type": "object"
+      },
+      "apps__webui__server__routes__enrich__DecisionIn": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "DecisionIn",
+        "type": "object"
       }
     }
   },
@@ -25748,6 +27849,96 @@
         "summary": "Sql Query",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/ahead-analysis/bump/{stable_id}": {
+      "post": {
+        "operationId": "post_bump_api_v1_ahead_analysis_bump__stable_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Bump Api V1 Ahead Analysis Bump  Stable Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Bump",
+        "tags": [
+          "ahead-analysis"
+        ]
+      }
+    },
+    "/api/v1/ahead-analysis/coverage": {
+      "get": {
+        "operationId": "get_coverage_api_v1_ahead_analysis_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Coverage Api V1 Ahead Analysis Coverage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coverage",
+        "tags": [
+          "ahead-analysis"
+        ]
+      }
+    },
+    "/api/v1/ahead-analysis/retry": {
+      "post": {
+        "operationId": "post_retry_api_v1_ahead_analysis_retry_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Retry Api V1 Ahead Analysis Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Retry",
+        "tags": [
+          "ahead-analysis"
         ]
       }
     },
@@ -26832,6 +29023,224 @@
         "summary": "Availability Status",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags": {
+      "get": {
+        "description": "Tracks by beatgrid class, with the numbers behind each verdict.\n\n`counts` cover the whole denominator whatever the filter and limit.",
+        "operationId": "list_beatgrid_flags_api_v1_beatgrid_flags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "grid_class",
+            "required": false,
+            "schema": {
+              "default": "flagged",
+              "enum": [
+                "flagged",
+                "suspect",
+                "variable_tempo",
+                "unknown",
+                "ok",
+                "all"
+              ],
+              "title": "Grid Class",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_dismissed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Dismissed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "availability",
+            "required": false,
+            "schema": {
+              "default": "present",
+              "enum": [
+                "present",
+                "all"
+              ],
+              "title": "Availability",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 20000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridFlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Beatgrid Flags",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags/scan": {
+      "get": {
+        "operationId": "get_scan_status_api_v1_beatgrid_flags_scan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scan Status",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      },
+      "post": {
+        "description": "Bring stored verdicts up to date. Incremental: an unchanged grid is\nskipped after one stat. `wait=true` returns when the scan has finished;\notherwise it runs on a background thread and `GET /scan` reports it.",
+        "operationId": "start_scan_api_v1_beatgrid_flags_scan_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "present",
+              "enum": [
+                "present",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Scan",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags/{stable_id}/dismissed": {
+      "put": {
+        "description": "Hide (or restore) one track's beatgrid flag. Stored as the user track\nfield `grid_flag_dismissed` (source `webui`), the same path rating and\ncomments take, so it carries provenance and travels with them.",
+        "operationId": "set_flag_dismissed_api_v1_beatgrid_flags__stable_id__dismissed_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Flag Dismissed",
+        "tags": [
+          "beatgrid-flags"
         ]
       }
     },
@@ -28656,6 +31065,108 @@
         ]
       }
     },
+    "/api/v1/coverage-outcomes/stems/no-source": {
+      "get": {
+        "operationId": "list_stems_no_source_api_v1_coverage_outcomes_stems_no_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoSourceListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Stems No Source",
+        "tags": [
+          "coverage-drain"
+        ]
+      },
+      "post": {
+        "operationId": "mark_stems_no_source_api_v1_coverage_outcomes_stems_no_source_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoSourceMarkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoSourceMarkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Stems No Source",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-outcomes/stems/no-source/{stable_id}": {
+      "delete": {
+        "operationId": "clear_stems_no_source_api_v1_coverage_outcomes_stems_no_source__stable_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoSourceClearOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Stems No Source",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
     "/api/v1/dedup/clusters": {
       "get": {
         "operationId": "get_dedup_clusters_api_v1_dedup_clusters_get",
@@ -28800,7 +31311,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DecisionIn"
+                "$ref": "#/components/schemas/apps__webui__server__routes__dedup_review__DecisionIn"
               }
             }
           },
@@ -28982,6 +31493,83 @@
         "summary": "Post Dedup Scan",
         "tags": [
           "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/enrich/decisions/{lane}": {
+      "put": {
+        "operationId": "put_decision_api_v1_enrich_decisions__lane__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "title": "Lane",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/apps__webui__server__routes__enrich__DecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Decision Api V1 Enrich Decisions  Lane  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Decision",
+        "tags": [
+          "enrich"
+        ]
+      }
+    },
+    "/api/v1/enrich/summary": {
+      "get": {
+        "operationId": "get_summary_api_v1_enrich_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Summary Api V1 Enrich Summary Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Summary",
+        "tags": [
+          "enrich"
         ]
       }
     },
@@ -30103,6 +32691,20 @@
     "/api/v1/ingest/coverage": {
       "get": {
         "operationId": "get_coverage_api_v1_ingest_coverage_get",
+        "parameters": [
+          {
+            "description": "Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request.",
+            "in": "query",
+            "name": "cached",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request.",
+              "title": "Cached",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -30113,6 +32715,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Get Coverage",
@@ -30804,6 +33416,48 @@
         ]
       }
     },
+    "/api/v1/library/preview-strips": {
+      "post": {
+        "description": "Re-read the Preview strip of up to 200 rows a listing already returned (NATIVE-21).\n\nSame reads as a listing row, never a decode. A long-lived page's rows\nkeep the strip they were listed with; this is how rows in view catch up\nwith strips written since, without a click or a full re-list.",
+        "operationId": "post_preview_strips_api_v1_library_preview_strips_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewStripsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewStripsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Preview Strips",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/library/readiness": {
       "get": {
         "description": "Per-present-track readiness across beatgrid, waveform, stems, analysis, sync.\n\nRequirements (mini-PRD):\n  READY-01: GET /api/v1/library/readiness reports per-present-track and\n  aggregate readiness. Counts use the present (materialized local audio)\n  denominator, never all tracks rows.\n    [if] a track's file is not materialized [then] it is absent from\n    present, items, and every count\n    [if] a present track has no PQTZ, no own beatgrid lane ok, and no\n    usable downbeats_s [then] counts.beatgrid_missing includes it and an\n    axis=beatgrid item names it\n    [if] a present track has a stems directory that load_stem_bundle\n    rejects and no valid bundle in any configured root [then]\n    stems == corrupt on the item and both counts.stems_corrupt and\n    /ingest/coverage corrupt.stems are >= 1\n    [if] limit is 1 and many present tracks are not ready [then] items\n    has 1 row and counts.not_ready is still the full population\n    [if] a present track has a validateBeatGrid-passing grid [then]\n    sync_compatible is true without anyone engaging Beat Sync",
@@ -30869,6 +33523,28 @@
           }
         },
         "summary": "Get Library Readiness",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/library/share-root/reanchor": {
+      "post": {
+        "description": "Trust the rekordbox share root as it is now, and forget what was read under it.\n\nThe engine remembers which directory the share root was when it first\nread it, and refuses to read below a root that has since become a\ndifferent one (LIBM-137): a volume mounted again at the same path, a\ndirectory swapped in by rename, a symlinked share root pointed somewhere\nelse. Nothing re-trusts it on its own, because each of those is also what\nan attack looks like. This call is how the root's owner says the new\ndirectory is intended; it records that directory's identity and empties\nthe listing's row memory.\n\n``exists`` is false, and nothing changes, when the share root is not there.\nThe call is refused with 409, and ``detail`` says why, when a directory\nABOVE the share root is a symlink: only the share root itself may be one.\nIt is 501 on a platform with no anchored walk (Windows), where the share\nroot is never anchored and so there is nothing to re-trust.",
+        "operationId": "reanchor_share_root_api_v1_library_share_root_reanchor_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareRootReanchorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reanchor Share Root",
         "tags": [
           "library"
         ]
@@ -32186,7 +34862,7 @@
     },
     "/api/v1/performance/headphones": {
       "get": {
-        "description": "Return the live headphone state from the attached performance page.",
+        "description": "Return the live headphone state from the best-informed open performance page.\n\nWith several pages open, a page whose device lists were read (`listed`) is\nnot replaced by another page whose lists were not; `reporting_client_id`\nand `report_age_ms` say which page answered and how fresh it is.",
         "operationId": "get_headphones_api_v1_performance_headphones_get",
         "responses": {
           "200": {
@@ -35168,6 +37844,39 @@
               "description": "Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing.",
               "title": "Playlist Id"
             }
+          },
+          {
+            "description": "Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip in the (title, stable_id) ordering.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip in the (title, stable_id) ordering.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -36510,9 +39219,39 @@
       "delete": {
         "description": "Mark the performance page closed during its unmount lifecycle.",
         "operationId": "close_ui_mirror_api_v1_state_ui_mirror_delete",
+        "parameters": [
+          {
+            "description": "The closing page's client id (CUEOUT-18). Its headphone report is forgotten; with no id, every client's report is.",
+            "in": "header",
+            "name": "x-opendj-client-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The closing page's client id (CUEOUT-18). Its headphone report is forgotten; with no id, every client's report is.",
+              "title": "X-Opendj-Client-Id"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Close Ui Mirror",
@@ -36634,6 +39373,135 @@
           }
         },
         "summary": "Bulk Hydrate Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/cache/enforce": {
+      "post": {
+        "description": "Run the engine's enforcement pass now. Evicts only bundles the R2\nindex holds byte for byte, least recently used first, and stops at the\nfloor; ``dry_run`` reports the plan without removing anything.",
+        "operationId": "enforce_stem_cache_api_v1_stems_cache_enforce_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemCacheEnforceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheEnforcementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Enforce Stem Cache",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/cache/settings": {
+      "get": {
+        "operationId": "get_stem_cache_settings_api_v1_stems_cache_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Get Stem Cache Settings",
+        "tags": [
+          "stems"
+        ]
+      },
+      "put": {
+        "description": "Override the floor, the optional cap, the tick interval or auto-evict.\nOmitted fields keep their stored value; ``clear_max_cache_gib`` removes\nthe cap (``null`` cannot, because it already means \"leave unchanged\").",
+        "operationId": "put_stem_cache_settings_api_v1_stems_cache_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemCacheSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Put Stem Cache Settings",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/cache/status": {
+      "get": {
+        "description": "Where the stem cache stands against the free-disk floor. Read-only.",
+        "operationId": "get_stem_cache_status_api_v1_stems_cache_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Get Stem Cache Status",
         "tags": [
           "stems"
         ]
@@ -38882,6 +41750,48 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/grid-provenance": {
+      "get": {
+        "operationId": "get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridProvenanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Grid Provenance",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/hot-cues": {
       "get": {
         "operationId": "list_hot_cue_slots_api_v1_tracks__stable_id__hot_cues_get",
@@ -40302,6 +43212,562 @@
         ]
       }
     },
+    "/api/v1/usb/tracks/{track_id}": {
+      "get": {
+        "description": "The library's TrackOut for a stick track, so the deck loads it unchanged.\n\nThe flags predict the stick routes: no lyrics, auto-cues or stems route\nexists under ``/usb/tracks``, so those are False; ``has_rb_mapping`` is\nFalse because ``/hot-cues`` is read only and ``rb-meta`` cannot resolve a\nstick id; ``artwork_available`` is True only when both served sizes\nexist. ``/anlz`` and ``/hot-cues`` answer for every track whose export\nrow names no analysis (empty) or a readable one (the stick's own).",
+        "operationId": "get_usb_track_api_v1_usb_tracks__track_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Api V1 Usb Tracks  Track Id  Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/anlz": {
+      "get": {
+        "description": "The stick's own waveform / beatgrid / cues / phrases, in the library\n``/anlz`` shape, decoded from this track's exact ANLZ files.\n\n``vocals`` is always ``not_analyzed`` (a PVDI tag is listed in\n``unreadable_anlz``); ``beatgrid.source`` and ``beatgrid_source`` are\nalways ``rekordbox``. Same ``points`` bounds, ETag and\n``private, no-cache`` revalidation as the library route; the client's\n``gen`` cache-buster is ignored here as it is there.",
+        "operationId": "get_usb_track_anlz_api_v1_usb_tracks__track_id__anlz_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max length of each waveform band array after downsampling",
+            "in": "query",
+            "name": "points",
+            "required": false,
+            "schema": {
+              "default": 38400,
+              "description": "Max length of each waveform band array after downsampling",
+              "maximum": 38400,
+              "minimum": 100,
+              "title": "Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Anlz Api V1 Usb Tracks  Track Id  Anlz Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Anlz",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/artwork": {
+      "get": {
+        "description": "The pdb's pre-rendered jpg: ``s`` as named, ``m``/``orig`` its ``_m``\nsibling (the largest rendering rekordbox writes to a stick).",
+        "operationId": "get_usb_track_artwork_api_v1_usb_tracks__track_id__artwork_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "s=80x80 browser rows; m and orig = the 240x240 _m jpg",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "s",
+              "description": "s=80x80 browser rows; m and orig = the 240x240 _m jpg",
+              "enum": [
+                "s",
+                "m",
+                "orig"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Artwork Api V1 Usb Tracks  Track Id  Artwork Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Artwork",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/audio": {
+      "get": {
+        "description": "Stream the stick's file. FileResponse handles Range/206 and HEAD, as\nthe library's ``/tracks/{id}/audio`` does.\n\nA subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,\nso a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)\nanswers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.",
+        "operationId": "get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Audio Api V1 Usb Tracks  Track Id  Audio Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Audio",
+        "tags": [
+          "usb"
+        ]
+      },
+      "head": {
+        "description": "Stream the stick's file. FileResponse handles Range/206 and HEAD, as\nthe library's ``/tracks/{id}/audio`` does.\n\nA subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,\nso a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)\nanswers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.",
+        "operationId": "head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Head Usb Track Audio Api V1 Usb Tracks  Track Id  Audio Head"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Audio",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/hot-cues": {
+      "get": {
+        "description": "Eight slots from the stick's own cues, the library's shape. Read only:\nno PUT/DELETE/restore exists here, so a revision is only an identity for\nthe slot's current state and edits stay in the deck's session.",
+        "operationId": "list_usb_track_hot_cue_slots_api_v1_usb_tracks__track_id__hot_cues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HotCueSlotOut"
+                  },
+                  "title": "Response List Usb Track Hot Cue Slots Api V1 Usb Tracks  Track Id  Hot Cues Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 List Usb Track Hot Cue Slots Api V1 Usb Tracks  Track Id  Hot Cues Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "List Usb Track Hot Cue Slots",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
     "/api/v1/usb/volumes": {
       "get": {
         "operationId": "get_usb_volumes_api_v1_usb_volumes_get",
@@ -40360,6 +43826,97 @@
           }
         },
         "summary": "Usb Volume Events",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes/{volume_id}/library": {
+      "get": {
+        "description": "The stick's rekordbox library from ``export.pdb`` alone (no ANLZ read).\n\nCached per VolumeUUID while ``export.pdb``'s size and mtime are\nunchanged; ``cache_hit`` and ``read_ms`` say which path this was.",
+        "operationId": "get_usb_stick_library_api_v1_usb_volumes__volume_id__library_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "volume_id",
+            "required": true,
+            "schema": {
+              "title": "Volume Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickLibraryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Stick Library Api V1 Usb Volumes  Volume Id  Library Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Stick Library",
         "tags": [
           "usb"
         ]

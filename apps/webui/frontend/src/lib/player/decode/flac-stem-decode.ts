@@ -60,9 +60,10 @@ import {
 	settledLane,
 	type StemDecodeCodec
 } from './stem-decode-lane';
+import { settleWithWidth, stemDecodeWidth } from './stem-decode-width';
 
 export type { DecodedStemAudio, StemFlacDecoderFactory };
-export { isFlacContainer };
+export { isFlacContainer, stemDecodeWidth };
 
 /** Why a part did NOT take the worker path. `null` means it did. */
 export type StemDecodeRefusal =
@@ -124,11 +125,16 @@ export interface StemDecodeOptions {
 	makeDecoder?: StemFlacDecoderFactory;
 	decodeFallback?: (bytes: ArrayBuffer) => Promise<AudioBuffer>;
 	now?: () => number;
+	/** PERF-STEMDEC-04: parts decoded at once, read before each part starts.
+	 * Defaults to every part at once. */
+	width?: () => number;
 }
 
 export interface StemDecodeResult<P extends string> {
 	buffers: Record<P, AudioBuffer>;
 	reports: StemPartDecodeReport[];
+	/** The smallest decode width in force when any part started. */
+	width: number;
 }
 
 export async function decodeStemParts<P extends string>(
@@ -142,10 +148,15 @@ export async function decodeStemParts<P extends string>(
 		options.decodeFallback ??
 		((bytes: ArrayBuffer): Promise<AudioBuffer> => ctx.decodeAudioData(bytes));
 
+	const width = options.width ?? ((): number => parts.length);
 	const bundleCodec = _bundleCodec(encoded, parts);
+	// A narrowed load is never a lane trial: its wall time measures the width,
+	// not the lane, and would settle the verdict on the wrong number.
 	const claim = claimLane(
 		parts.length,
-		bundleCodec !== null && parts.every((part) => _headerRefusal(ctx, encoded[part], bundleCodec) === null),
+		width() >= parts.length &&
+			bundleCodec !== null &&
+			parts.every((part) => _headerRefusal(ctx, encoded[part], bundleCodec) === null),
 		bundleCodec ?? 'flac'
 	);
 	const poolKey = claim.codec;
@@ -166,8 +177,15 @@ export async function decodeStemParts<P extends string>(
 		const loadStarted = now();
 		const mainThreadRefusal = _mainThreadRefusal(claim);
 		const reports: StemPartDecodeReport[] = [];
-		const settled = await Promise.allSettled(
-			parts.map(async (part) => {
+		let narrowed = false;
+		const { settled, narrowest } = await settleWithWidth(
+			parts,
+			() => {
+				const limit = width();
+				if (limit < parts.length) narrowed = true;
+				return limit;
+			},
+			async (part) => {
 				const started = now();
 				const bytes = encoded[part] as ArrayBuffer;
 				const byteLength = bytes === undefined ? 0 : bytes.byteLength;
@@ -188,7 +206,7 @@ export async function decodeStemParts<P extends string>(
 					codec: _partCodec(bytes)
 				});
 				return [part, outcome.buffer] as const;
-			})
+			}
 		);
 		const failure = settled.find((result) => result.status === 'rejected');
 		if (failure !== undefined) throw (failure as PromiseRejectedResult).reason;
@@ -200,9 +218,19 @@ export async function decodeStemParts<P extends string>(
 			claim.lane === 'main-thread'
 				? reports.every((r) => r.refusal === 'calibrating')
 				: reports.every((r) => r.refusal === null);
-		releaseLane(claim, clean, reports.reduce((sum, r) => sum + r.bytes, 0), now() - loadStarted);
+		// A deck that started playing mid-trial narrowed the tail: not a measurement.
+		releaseLane(
+			claim,
+			clean && !narrowed,
+			reports.reduce((sum, r) => sum + r.bytes, 0),
+			now() - loadStarted
+		);
 		claimReleased = true;
-		return { buffers: Object.fromEntries(decoded) as Record<P, AudioBuffer>, reports };
+		return {
+			buffers: Object.fromEntries(decoded) as Record<P, AudioBuffer>,
+			reports,
+			width: Math.min(narrowest, parts.length)
+		};
 	} finally {
 		if (!claimReleased) releaseLane(claim, false, 0, 0);
 	}

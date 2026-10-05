@@ -26,6 +26,9 @@ class AudioMetadata:
     album: str | None = None
     genre: str | None = None
     comment: str | None = None
+    bpm: float | None = None
+    key: str | None = None
+    isrc: str | None = None
     duration_s: float | None = None
     bitrate_kbps: int | None = None
     sample_rate: int | None = None
@@ -88,6 +91,9 @@ def read_metadata(path: Path) -> AudioMetadata | None:
         album=_text(tag.album),
         genre=_text(tag.genre),
         comment=_text(tag.comment),
+        bpm=_parse_bpm(_tagreader.first_other(tag, "bpm")),
+        key=_text(_tagreader.first_other(tag, "initial_key")),
+        isrc=_text(_tagreader.first_other(tag, "isrc")),
         duration_s=float(tag.duration) if tag.duration else None,
         bitrate_kbps=int(bitrate) if bitrate else None,
         sample_rate=int(tag.samplerate) if tag.samplerate else None,
@@ -190,6 +196,16 @@ def _first_safe_picture(
 def _has_safe_picture(candidates: Iterator[tuple[object, str, int | None]]) -> bool:
     """Whether a bounded, safe embedded picture exists without copying it."""
     return any(_safe_picture_mime(data, mime) is not None for data, mime, _ in candidates)
+
+
+def _parse_bpm(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    try:
+        number = float(raw.replace(",", "."))
+    except ValueError:
+        return None
+    return number if number > 0 else None
 
 
 def _picture_candidates(tag: object) -> Iterator[tuple[object, str, int | None]]:

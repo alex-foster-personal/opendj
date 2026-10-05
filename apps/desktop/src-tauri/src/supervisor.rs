@@ -248,7 +248,7 @@ fn lock_within<T>(mutex: &Mutex<T>, wait: Duration) -> Option<MutexGuard<'_, T>>
     }
 }
 
-/// SIGTERM a process group, wait up to 5s, then SIGKILL it. Never waits
+/// SIGTERM a process group, wait up to SHUTDOWN_GRACE, then SIGKILL it. Never waits
 /// after the SIGKILL: this runs on the quit path without the child handle,
 /// so a spawned engine's zombie cannot be reaped here and the process is
 /// about to exit anyway.
@@ -286,9 +286,36 @@ fn runtime_loop(app: AppHandle, supervisor: Arc<EngineSupervisor>) {
         }
         tick(&app, supervisor.as_ref());
         if supervisor.shell_health.take_relaunch_request() {
-            supervisor.request_relaunch(&app);
+            let phase = supervisor.inner.lock().expect("supervisor mutex").phase;
+            if relaunch_applies(phase) {
+                engine::append_shell_log(
+                    "INFO",
+                    &format!("relaunch requested over shell health (phase {phase:?})"),
+                );
+                supervisor.request_relaunch(&app);
+            } else {
+                engine::append_shell_log(
+                    "INFO",
+                    &format!("relaunch request ignored: engine is {phase:?}"),
+                );
+            }
         }
         thread::sleep(POLL_INTERVAL);
+    }
+}
+
+/// Whether a user's Relaunch should start a fresh engine in this phase.
+///
+/// Every post-death phase does. A running engine is left alone: a stale tab
+/// still showing the fatal page must not be able to kill a healthy set.
+fn relaunch_applies(phase: SupervisorPhase) -> bool {
+    match phase {
+        SupervisorPhase::Running | SupervisorPhase::Reaping => false,
+        SupervisorPhase::Dead
+        | SupervisorPhase::Restarting
+        | SupervisorPhase::AwaitingDiskSpace
+        | SupervisorPhase::Fatal
+        | SupervisorPhase::AwaitingRelaunch => true,
     }
 }
 
@@ -388,6 +415,33 @@ struct DeathInfo {
     unresponsive: bool,
 }
 
+/// What one supervision poll concluded about the engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Liveness {
+    Alive,
+    Gone,
+    Unresponsive,
+}
+
+/// Judge one poll, returning the verdict and the new failed-poll count.
+///
+/// A process that is still there is only declared hung after
+/// [`UNRESPONSIVE_AFTER_MISSES`] consecutive failed probes; one is noise.
+fn judge_liveness(alive: bool, healthy: bool, unhealthy_polls: u32) -> (Liveness, u32) {
+    if !alive {
+        return (Liveness::Gone, 0);
+    }
+    if healthy {
+        return (Liveness::Alive, 0);
+    }
+    let polls = unhealthy_polls + 1;
+    if unresponsive_after(polls) {
+        (Liveness::Unresponsive, polls)
+    } else {
+        (Liveness::Alive, polls)
+    }
+}
+
 impl DeathInfo {
     /// `engine-exited(signal N)` / `engine-exited(code N)`, matching the
     /// naming the shell log uses for every other exit trigger, so a reader
@@ -436,32 +490,33 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
         Some(Supervised::Adopted { pid, port, .. }) => (*pid, *port),
         None => return None,
     };
-    if !launch::pid_can_act(pid) {
-        guard.health_misses = 0;
-        return Some(DeathInfo {
-            exit_code: Some(1),
-            signal: None,
-            lock_pid: Some(pid),
-            lock_port: Some(port),
-            unresponsive: false,
-        });
+    let alive = launch::pid_can_act(pid);
+    let healthy = alive && engine::health_ok(port);
+    let (verdict, misses) = judge_liveness(alive, healthy, guard.health_misses);
+    guard.health_misses = misses;
+    match verdict {
+        Liveness::Gone => {
+            return Some(DeathInfo {
+                exit_code: Some(1),
+                signal: None,
+                lock_pid: Some(pid),
+                lock_port: Some(port),
+                unresponsive: false,
+            });
+        }
+        Liveness::Alive => {
+            if misses > 0 {
+                engine::append_shell_log(
+                    "WARN",
+                    &format!(
+                        "engine health check missed ({misses}/{UNRESPONSIVE_AFTER_MISSES}) pid={pid} port={port}; pid alive, not restarting yet"
+                    ),
+                );
+            }
+            return None;
+        }
+        Liveness::Unresponsive => guard.health_misses = 0,
     }
-    if engine::health_ok(port) {
-        guard.health_misses = 0;
-        return None;
-    }
-    guard.health_misses += 1;
-    if !unresponsive_after(guard.health_misses) {
-        engine::append_shell_log(
-            "WARN",
-            &format!(
-                "engine health check missed ({}/{UNRESPONSIVE_AFTER_MISSES}) pid={pid} port={port}; pid alive, not restarting yet",
-                guard.health_misses
-            ),
-        );
-        return None;
-    }
-    guard.health_misses = 0;
     Some(DeathInfo {
         exit_code: None,
         signal: None,
@@ -486,11 +541,10 @@ fn unresponsive_after(misses: u32) -> bool {
 /// a SIGKILLed child always satisfies) and reaps either way.
 fn reap_child(guard: &mut RuntimeState) {
     guard.phase = SupervisorPhase::Reaping;
+    guard.health_misses = 0;
     if let Some(Supervised::Spawned(engine)) = guard.supervised.as_mut() {
-        if engine.try_reap().is_none() {
-            engine::append_shell_log("WARN", "engine pid still alive at reap; stopping it");
-            engine.shutdown();
-        }
+        // Stop a live child and sweep workers left by an already exited leader.
+        engine.shutdown();
     }
     engine::append_shell_log("INFO", "engine child reaped");
 }
@@ -743,19 +797,22 @@ fn set_window_title(app: &AppHandle, title: &str) {
     });
 }
 
+/// The fatal screen's URL. Everything the page needs travels IN it: a global
+/// eval'd before `navigate` belongs to the old document and is gone by the time
+/// the fatal page runs, which left Relaunch with no health port every time.
+fn fatal_query(exit_code: i32, pid: u32, port: u16, health_port: u16) -> String {
+    format!("index.html?fatal=1&exit={exit_code}&pid={pid}&port={port}&health={health_port}")
+}
+
 fn navigate_fatal_bootstrap(app: &AppHandle, guard: &RuntimeState, health_port: u16) {
     let exit_code = guard.exit_code.unwrap_or(-1);
     let pid = guard.lock_pid.unwrap_or(0);
     let port = guard.lock_port.unwrap_or(0);
     let product = guard.paths.product_name.clone();
-    let script = format!(
-        "globalThis.__OPENDJ_ENGINE_SUPERVISOR__ = {{ engine: 'dead', exit_code: {exit_code}, lock_pid: {pid}, lock_port: {port}, health_port: {health_port} }};"
-    );
-    let query = format!("index.html?fatal=1&exit={exit_code}&pid={pid}&port={port}");
+    let query = fatal_query(exit_code, pid, port, health_port);
     let handle = app.clone();
     let _ = handle.clone().run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(WINDOW_LABEL) {
-            let _ = window.eval(&script);
             let target = Url::parse(&format!("tauri://localhost/{query}")).expect("fatal url");
             let _ = window.navigate(target);
             let dead_title = format!("{product} - engine dead");
@@ -828,6 +885,14 @@ pub struct RuntimeSupervisorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::CommandExt;
+
+    #[test]
+    fn fatal_url_carries_the_health_port() {
+        let q = fatal_query(1, 4242, 8685, 51999);
+        assert!(q.contains("&health=51999"), "{q}");
+        assert!(q.starts_with("index.html?fatal=1&"), "{q}");
+    }
 
     #[test]
     fn supervisor_phase_dead_is_distinct_from_running() {
@@ -856,6 +921,119 @@ mod tests {
             lock_port: None,
             unresponsive: false,
         }
+    }
+
+    // - if one failed health probe on a live engine is declared a death then
+    //   a box in swap shows the fatal screen over an engine that is serving
+    //   (demon-llama, Thu 1 Oct 2026: "engine-exited(code 1)" for pid 86496,
+    //   still answering five minutes later) -> broken
+    // - if reaping a declared-dead engine can block on a live child then the
+    //   poll thread parks forever and Relaunch returns 202 into a void
+    //   -> broken
+    // - if a shell-initiated stop is logged as the engine's own exit then the
+    //   log cannot say why the engine went away -> broken
+
+    #[test]
+    fn one_failed_probe_on_a_live_engine_is_not_a_death() {
+        assert_eq!(judge_liveness(true, false, 0), (Liveness::Alive, 1));
+    }
+
+    #[test]
+    fn a_live_engine_is_declared_hung_only_after_the_full_budget() {
+        let mut polls = 0;
+        for _ in 1..UNRESPONSIVE_AFTER_MISSES {
+            let (verdict, next) = judge_liveness(true, false, polls);
+            assert_eq!(verdict, Liveness::Alive);
+            polls = next;
+        }
+        assert_eq!(
+            judge_liveness(true, false, polls),
+            (Liveness::Unresponsive, UNRESPONSIVE_AFTER_MISSES)
+        );
+    }
+
+    #[test]
+    fn a_healthy_probe_resets_the_count_and_a_vanished_pid_is_gone_at_once() {
+        assert_eq!(judge_liveness(true, true, 5), (Liveness::Alive, 0));
+        assert_eq!(judge_liveness(false, false, 0), (Liveness::Gone, 0));
+    }
+
+    #[test]
+    fn a_shell_stop_is_named_as_unresponsive_not_as_an_exit_code() {
+        let mut info = death(Some(1), None);
+        info.unresponsive = true;
+        assert_eq!(
+            info.exit_reason(),
+            "engine-unresponsive(pid alive, 6 health checks missed)"
+        );
+    }
+
+    #[test]
+    fn relaunch_applies_in_every_post_death_phase_and_never_to_a_running_engine() {
+        for phase in [
+            SupervisorPhase::Dead,
+            SupervisorPhase::Fatal,
+            SupervisorPhase::Restarting,
+            SupervisorPhase::AwaitingRelaunch,
+            SupervisorPhase::AwaitingDiskSpace,
+        ] {
+            assert!(relaunch_applies(phase), "{phase:?}");
+        }
+        assert!(!relaunch_applies(SupervisorPhase::Running));
+    }
+
+    #[test]
+    fn reaping_a_declared_dead_engine_that_is_still_alive_is_bounded() {
+        let directory =
+            std::env::temp_dir().join(format!("opendj-reap-bounded-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let child = std::process::Command::new("/bin/sleep")
+            .arg("120")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut state = RuntimeState {
+            supervised: Some(Supervised::Spawned(engine::Engine::for_test(
+                child, &directory,
+            ))),
+            phase: SupervisorPhase::Dead,
+            dead_at: None,
+            exit_code: Some(1),
+            unresponsive: false,
+            lock_pid: None,
+            lock_port: None,
+            auto_restart_attempted: false,
+            health_misses: 0,
+            paths: SupervisorPaths {
+                payload: directory.clone(),
+                data_dir: directory.clone(),
+                log_path: directory.join("engine.log"),
+                product_name: "test".into(),
+            },
+        };
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            reap_child(&mut state);
+            let _ = done_tx.send(());
+            // Keep the engine out of Drop's own shutdown on this thread.
+            std::mem::forget(state);
+        });
+
+        let finished = done_rx.recv_timeout(engine::SHUTDOWN_GRACE + Duration::from_secs(5)).is_ok();
+        if !finished {
+            unsafe {
+                libc::killpg(pid as i32, libc::SIGKILL);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&directory);
+        assert!(
+            finished,
+            "reap_child blocked on a live child: the poll thread would park forever"
+        );
     }
 
     #[test]

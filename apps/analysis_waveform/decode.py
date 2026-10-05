@@ -445,7 +445,7 @@ def _decode_peaks_engine(path: Path, profile: DecodeProfile) -> tuple[np.ndarray
 def resolve_ffmpeg() -> str:
     """ffmpeg executable path, as this module's own failure type.
 
-    The lookup itself (MDT_FFMPEG override, else PATH, never a silent
+    The lookup itself (MDT_FFMPEG, else the bundled ODJ_FFMPEG_BIN, else PATH, never a silent
     fallback behind a broken override) lives in :mod:`apps.shared.ffmpeg`,
     because more than one caller needs the same answer to "where is ffmpeg"
     and two copies of that rule would drift. All this adds is the translation

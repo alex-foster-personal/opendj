@@ -7,6 +7,8 @@ The embedded picture is written here by hand as an ID3v2.3 ``APIC`` frame
 (spec section 4.15) around a real Pillow-encoded JPEG, so the fixture itself
 needs no tag library either.
 
+[if] embedded artwork is read with mutagen unimportable [then] the picture is served and a missing file is not available, [else stop].
+
 Regression one-liners:
   - if this test needs mutagen installed to run then it can never prove the mutagen-less path
   - if a track with a real embedded cover 503s or 404s without mutagen then broken

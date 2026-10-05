@@ -33,9 +33,17 @@ test('TrackContextMenu wires the popover and menu helper without BrowserPanel ed
 		path.join(FRONTEND_ROOT, 'src/lib/components/rb/BrowserPanel.svelte'),
 		'utf8'
 	);
+	// TrackTable mounts the popover through TrackRowPopovers, which fetches it
+	// with a dynamic import on the pick that opens it (#3886 bundle budget).
+	const trackRowPopovers = fs.readFileSync(
+		path.join(FRONTEND_ROOT, 'src/lib/components/rb/browser/TrackRowPopovers.svelte'),
+		'utf8'
+	);
 
 	assert.match(trackContextMenu, /showInPlaylistsMenuItem/);
-	assert.match(trackTable, /TrackPlaylistsPopover/);
+	assert.match(trackTable, /<TrackRowPopovers bind:playlistsMenu/);
+	assert.match(trackRowPopovers, /import\('\.\/TrackPlaylistsPopover\.svelte'\)/);
+	assert.match(trackRowPopovers, /<PlaylistsPopover/);
 	assert.match(trackTable, /TrackContextMenu/);
 	assert.doesNotMatch(browserPanel, /Show in playlists/);
 });

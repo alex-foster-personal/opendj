@@ -59,6 +59,9 @@ function simulateStep(stepBeats) {
 	let sent = BASE;
 	let flamSec = 0;
 	let reseeks = 0;
+	// The lock is long past its join when the step lands (the minimum interval
+	// after a join has its own tests in phase-lock-jitter.test.mjs).
+	let overLineTicks = 0;
 	for (let k = 0; k < 30 * 120; k++) {
 		const d = pl.phaseLockDecision({
 			masterBeats: MASTER,
@@ -68,14 +71,18 @@ function simulateStep(stepBeats) {
 			followerPositionSec: f,
 			followerBaseTempo: BASE,
 			pitchRangePct: 8,
-			trimming: sent !== BASE
+			trimming: sent !== BASE,
+			sinceJoinSec: 600,
+			overLineTicks
 		});
+		overLineTicks = d.overLineTicks;
 		if (d.action === 'reseek') {
 			reseeks += 1;
 			const b = pl.gridBeatPosition(MASTER, m);
 			const j = Math.floor(b);
 			f = FOLLOWER[j].t + (b - j) * (FOLLOWER[j + 1].t - FOLLOWER[j].t);
 			sent = BASE;
+			overLineTicks = 0;
 			continue;
 		}
 		if (Math.abs(d.errorMs) >= AUDIBLE_FLAM_MS) flamSec += TICK_SEC;
@@ -99,7 +106,7 @@ for (const stepBeats of [0.05, 0.1, 0.2, 0.24]) {
 	});
 }
 
-test('control: a 0.3-beat step is re-seeked at once (the existing quarter-beat rule)', () => {
+test('control: a 0.3-beat step is re-seeked as soon as it is confirmed (the existing quarter-beat rule)', () => {
 	const { flamSec, reseeks } = simulateStep(0.3);
 	assert.equal(reseeks, 1);
 	assert.ok(flamSec < 0.1, `${flamSec}`);

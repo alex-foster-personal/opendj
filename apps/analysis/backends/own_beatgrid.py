@@ -279,6 +279,17 @@ def _duration_s(
     return float(n_frames) / fps
 
 
+def _drop_beats_past(payload: dict[str, Any], duration_s: float) -> None:
+    """Drop beats and tempo markers past ``duration_s`` (= ``n_frames / fps``,
+    which truncates the last partial frame a fitted line can still place a
+    beat in: live 268.11095 s vs 268.1 s). The contract refuses them, and a
+    beat in the last 20 ms is not one anybody can play against."""
+    payload["beats"] = [beat for beat in payload["beats"] if float(beat["t"]) <= duration_s]
+    payload["tempo_changes"] = [
+        marker for marker in payload.get("tempo_changes", ()) if float(marker["at_s"]) <= duration_s
+    ]
+
+
 def _sample_rate(
     result: dict[str, Any], *, lane_ok: bool, audio_path: Path
 ) -> int:
@@ -391,6 +402,8 @@ def record_from_payload(
     # decode.
     _require(result, "decode_fingerprint")
     duration_s = _duration_s(result, lane_ok=lane.ok, fps=fps, audio_path=audio_path)
+    if lane.ok:
+        _drop_beats_past(lane.payload, duration_s)
     sample_rate = _sample_rate(result, lane_ok=lane.ok, audio_path=audio_path)
 
     features_blob: dict[str, Any] = {}

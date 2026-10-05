@@ -48,7 +48,10 @@ const MIXER_SETTERS = [
 	{ name: 'setFader', anchor: 'setFader(deck: DeckId, value: number, pressT0Ms?: number): void {' },
 	{ name: 'setCrossfader', anchor: 'setCrossfader(value: number, pressT0Ms?: number): void {' },
 	{ name: 'setStemMute', anchor: 'setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void {' },
-	{ name: 'setStemSolo', anchor: 'setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number): void {' }
+	{
+		name: 'setStemSolo',
+		anchor: 'setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {'
+	}
 ];
 
 for (const { name, anchor } of MIXER_SETTERS) {
@@ -74,7 +77,7 @@ test('performance-ipc forwards pressT0Ms into mixer setters', () => {
 	assert.ok(src.includes('engine.setFader(command.deck, command.value, pressT0Ms)'));
 	assert.ok(src.includes('engine.setCrossfader(command.value, pressT0Ms)'));
 	assert.ok(src.includes('engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms)'));
-	assert.ok(src.includes('engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms)'));
+	assert.ok(src.includes('engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive)'));
 });
 
 test('MIDI mixer_channel filter and fader forward pressT0Ms', () => {

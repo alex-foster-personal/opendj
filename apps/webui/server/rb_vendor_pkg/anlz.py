@@ -30,7 +30,7 @@ import logging
 import struct
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
@@ -53,6 +53,12 @@ if TYPE_CHECKING:
     from apps.shared.platform_paths import AssetResolver
 
 log = logging.getLogger(__name__)
+
+
+class BytesSource(Protocol):
+    """A ``Path``, or bytes already read through a containment walk (row_assets)."""
+
+    def read_bytes(self) -> bytes: ...
 
 # --- preview strip (SPIKE-A1 / SPIKE-SUMMARY section 2) ---
 # One width for every preview source, owned by apps.analysis_waveform.bands so
@@ -96,7 +102,7 @@ def _iter_pmai_sections(buf: bytes) -> Iterator[tuple[bytes, int, int, int]]:
         off += total_len
 
 
-def _read_pwv6_tri(path: Path) -> np.ndarray | None:
+def _read_pwv6_tri(path: BytesSource) -> np.ndarray | None:
     """.2EX PWV6 -> ``(n, 3)`` uint8 columns [low, mid, hi], or None if absent."""
     buf = path.read_bytes()
     for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
@@ -111,7 +117,7 @@ def _read_pwv6_tri(path: Path) -> np.ndarray | None:
     return None
 
 
-def _read_pwv4_mono(path: Path) -> np.ndarray | None:
+def _read_pwv4_mono(path: BytesSource) -> np.ndarray | None:
     """.EXT PWV4 luminance byte (0..127) duplicated to 3 bands, or None.
 
     PWV4 is an RGB *colour* preview (6 bytes/col); its r/g/b bytes are display
@@ -134,7 +140,7 @@ def _read_pwv4_mono(path: Path) -> np.ndarray | None:
     return None
 
 
-def _read_pwav_mono(path: Path) -> np.ndarray | None:
+def _read_pwav_mono(path: BytesSource) -> np.ndarray | None:
     """.DAT PWAV heights (low 5 bits, 0..31) duplicated to 3 bands, or None."""
     buf = path.read_bytes()
     for fourcc, off, head_len, total_len in _iter_pmai_sections(buf):
@@ -173,6 +179,12 @@ _PREVIEW_SOURCES: tuple[tuple[str, Any], ...] = (
     (".EXT", _read_pwv4_mono),
     (".DAT", _read_pwav_mono),
 )
+
+
+def encode_preview_strip(cols: np.ndarray) -> tuple[str, int]:
+    """``(preview_b64, preview_max)`` for one decoded preview tag."""
+    strip = _peak_downsample_cols(cols, PREVIEW_COLUMNS)
+    return base64.b64encode(strip.tobytes()).decode("ascii"), int(strip.max())
 
 
 def preview_strip(
@@ -232,10 +244,8 @@ def preview_strip(
         cols = reader(source)
         if cols is None:
             continue
-        strip = _peak_downsample_cols(cols, PREVIEW_COLUMNS)
-        b64 = base64.b64encode(strip.tobytes()).decode("ascii")
         return _PREVIEW_CACHE.put(
-            analysis_data_path, str(source), mtime, (b64, int(strip.max()))
+            analysis_data_path, str(source), mtime, encode_preview_strip(cols)
         )
     log.warning("preview_strip: no preview in PWV6/PWV4/PWAV for %s -- (None, None)", analysis_data_path)
     return None, None
@@ -244,7 +254,7 @@ def preview_strip(
 # ----- vocals (PVDI -- SPIKE-B1 decode, SPIKE-B2 calibrated params) -----------
 
 
-def read_pvdi(path_2ex: Path) -> tuple[float, bytes] | None:
+def read_pvdi(path_2ex: BytesSource) -> tuple[float, bytes] | None:
     """Return ``(fps, envelope)`` from a .2EX, or None when PVDI is absent.
 
     Absence is a real state, including tracks analyzed before rekordbox 7.
@@ -310,7 +320,7 @@ def _vocal_regions(envelope: bytes, fps: float) -> list[dict[str, Any]]:
     return regions
 
 
-def _decode_vocals_payload(path_2ex: Path) -> dict[str, Any]:
+def _decode_vocals_payload(path_2ex: BytesSource) -> dict[str, Any]:
     """The three PVDI states, decoded from the file with no caching."""
     pvdi = read_pvdi(path_2ex)
     if pvdi is None:
@@ -359,13 +369,13 @@ def demucs_vocals_payload(content: RbContent) -> dict[str, Any] | None:
 
     if content.folder_path is None or is_streaming_path(content.folder_path):
         return None
+    entry_path = VOCAL_CACHE_DIR / f"{content.stable_id}.json"
+    if not entry_path.is_file():
+        return None  # no entry: skip resolving the audio path it would be checked against
     mapped = resolve_asset_path(content.folder_path)
     if mapped.resolved is None:
         return None  # unmapped on this platform: audio is not locatable
-    entry = vocal_cache.load_valid_entry(
-        VOCAL_CACHE_DIR / f"{content.stable_id}.json",
-        mapped.resolved,
-    )
+    entry = vocal_cache.load_valid_entry(entry_path, mapped.resolved)
     if entry is None:
         return None
     return vocal_cache.anlz_vocals_of(entry)
@@ -400,20 +410,9 @@ def vocals_for_content(
     ``resolver``: see :func:`preview_strip`'s docstring (pin ad59ac) --
     same per-call memo, threaded through by the same caller.
     """
-    from apps.adapters.rekordbox.paths import _asset_sibling, resolve_asset_path
+    from .row_assets import pvdi_vocals
 
-    path_2ex: Path | None = None
-    if content.analysis_data_path:
-        mapped = resolve_asset_path(content.analysis_data_path, resolver=resolver)
-        if mapped.resolved is not None:
-            mapped_twoex = _asset_sibling(
-                mapped, mapped.resolved.with_suffix(".2EX"), resolver=resolver
-            )
-            if mapped_twoex.resolved is not None:
-                path_2ex = mapped_twoex.resolved
-    vocals = (
-        vocals_payload(path_2ex) if path_2ex is not None else {"status": "not_analyzed"}
-    )
+    vocals = pvdi_vocals(content.analysis_data_path, resolver=resolver)
     if vocals["status"] != "not_analyzed":
         return vocals
     demucs = demucs_vocals_payload(content)

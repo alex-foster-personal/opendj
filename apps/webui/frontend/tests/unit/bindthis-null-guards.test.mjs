@@ -186,12 +186,21 @@ test('QuickDrawMenu.svelte: onMount outside-pointerdown handler does not throw o
 // The null guard now lives in two pieces, both exercised for real: the
 // component's own getTrigger arrow (extracted verbatim) must map an unmounted
 // wrapEl to null, and the real action's place() must return on a null trigger.
+// The popover itself is lazily loaded from RefreshAnalysisPopover.svelte
+// (issue #3886), which is handed wrapEl as a prop; the button keeps the same
+// placement for its load-error box. Both getTrigger arrows are checked.
 test('RefreshAnalysisButton.svelte: popover placement does not throw once wrapEl has unmounted to null', async () => {
-	const source = readSource('RefreshAnalysisButton.svelte');
-	const getTriggerText = /getTrigger:\s*(\(\)\s*=>\s*wrapEl\s*\?\?\s*null)/.exec(source);
-	assert.ok(getTriggerText, 'getTrigger: () => wrapEl ?? null not found in RefreshAnalysisButton.svelte');
-	const getTrigger = new Function('wrapEl', `return ${compile(getTriggerText[1])}`)(null);
-	assert.equal(getTrigger(), null, 'an unmounted wrapEl must reach the action as null, not undefined');
+	let getTrigger;
+	for (const file of ['RefreshAnalysisPopover.svelte', 'RefreshAnalysisButton.svelte']) {
+		const source = readSource(file);
+		const getTriggerText = /getTrigger:\s*(\(\)\s*=>\s*wrapEl\s*\?\?\s*null)/.exec(source);
+		assert.ok(getTriggerText, `getTrigger: () => wrapEl ?? null not found in ${file}`);
+		getTrigger = new Function('wrapEl', `return ${compile(getTriggerText[1])}`)(null);
+		assert.equal(getTrigger(), null, `${file}: an unmounted wrapEl must reach the action as null, not undefined`);
+		// A wrapEl prop not yet bound arrives as undefined; it must also be null.
+		const unbound = new Function('wrapEl', `return ${compile(getTriggerText[1])}`)(undefined);
+		assert.equal(unbound(), null, `${file}: an unbound wrapEl must reach the action as null`);
+	}
 
 	const { triggerFloatingAction } = await loadTypeScriptModule('src/lib/ui/clamp-to-viewport.ts');
 	const saved = {

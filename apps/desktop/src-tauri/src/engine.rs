@@ -143,6 +143,20 @@ impl Engine {
         self.child.try_wait().ok().flatten()
     }
 
+    /// A test-only engine around an arbitrary child, so supervision can be
+    /// exercised against a real process without a payload.
+    #[cfg(test)]
+    pub(crate) fn for_test(child: Child, data_dir: &Path) -> Self {
+        let log_path = data_dir.join("engine.log");
+        Self {
+            child,
+            port: 1,
+            data_dir: data_dir.to_path_buf(),
+            log_path: log_path.clone(),
+            log_sink: Arc::new(LogSink::new(log_path)),
+        }
+    }
+
     /// Wait for the engine to answer its own health route.
     ///
     /// Polling health rather than trusting the spawn is the whole point: a
@@ -216,11 +230,18 @@ impl Engine {
     /// leaves orphans holding the data dir's lock and a tester's next launch
     /// fails for no visible reason. The child was placed in its own process
     /// group at spawn precisely so one signal can reach all of it.
+    ///
+    /// Bounded on every path: SIGTERM, SHUTDOWN_GRACE, then SIGKILL. Callers that
+    /// must not hang (the supervisor's poll thread above all) rely on that.
     pub fn shutdown(&mut self) {
+        let pid = self.child.id() as i32;
         if self.child.try_wait().ok().flatten().is_some() {
+            // The leader is gone but its group may not be: a `kill -9` of the
+            // engine alone leaves its analysis workers running, reparented to
+            // launchd, for as long as their batch takes.
+            sweep_orphaned_group(pid);
             return;
         }
-        let pid = self.child.id() as i32;
         append_shell_log("shutdown", &format!("stopping engine pgid {pid}: SIGTERM"));
         // SAFETY: killpg on a pgid this process created. A negative or zero
         // pid is impossible here because Child::id() is the spawned pid.
@@ -242,6 +263,7 @@ impl Engine {
                             sigterm_sent.elapsed().as_millis()
                         ),
                     );
+                    sweep_orphaned_group(pid);
                     return;
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -631,6 +653,22 @@ fn stop_process_group(pgid: i32) {
     // can never reach the shell's own group.
     unsafe {
         libc::killpg(pgid, libc::SIGTERM);
+    }
+}
+
+/// SIGKILL whatever is left in a group whose leader has already exited.
+///
+/// Called right after the leader is reaped. A pgid is not reissued while any
+/// process still belongs to that group, so a surviving member keeps this
+/// signal aimed at the dead engine's own workers; an empty group is ESRCH.
+fn sweep_orphaned_group(pgid: i32) {
+    // SAFETY: killpg on the pgid this shell created at spawn (see above).
+    let swept = unsafe { libc::killpg(pgid, libc::SIGKILL) } == 0;
+    if swept {
+        append_shell_log(
+            "shutdown",
+            &format!("engine pgid {pgid}: SIGKILLed processes left behind by the exited engine"),
+        );
     }
 }
 
@@ -1025,6 +1063,59 @@ mod tests {
             "SIGKILL should terminate the child promptly once sent, took {elapsed:?}"
         );
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    // - if an engine that was `kill -9`ed alone leaves its own workers alive
+    //   after the shell reaps it then every crash leaks an analysis pool onto
+    //   a machine that may already be swapping -> broken
+
+    fn group_is_gone(pgid: i32) -> bool {
+        // -1 with ESRCH (empty) or, on macOS, EPERM (only zombies left).
+        let probe = unsafe { libc::killpg(pgid, 0) };
+        probe == -1
+    }
+
+    #[test]
+    fn shutdown_of_an_already_dead_engine_kills_its_orphaned_workers() {
+        let directory = scratch_dir("orphan-sweep");
+        // The backgrounded sleep is the worker: same group, different pid.
+        let child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("/bin/sleep 120 & exec /bin/sleep 120")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = child.id() as i32;
+        let mut engine = Engine::for_test(child, &directory);
+        std::thread::sleep(Duration::from_millis(200));
+        unsafe {
+            libc::kill(pgid, libc::SIGKILL);
+        }
+        while engine.try_reap().is_none() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !group_is_gone(pgid),
+            "fixture: the worker must outlive its leader"
+        );
+
+        engine.shutdown();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !group_is_gone(pgid) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let gone = group_is_gone(pgid);
+        if !gone {
+            unsafe {
+                libc::killpg(pgid, libc::SIGKILL);
+            }
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+        assert!(gone, "shutdown left the dead engine's worker running");
     }
 
     #[test]

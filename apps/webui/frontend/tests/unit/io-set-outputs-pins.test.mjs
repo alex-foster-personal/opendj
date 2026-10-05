@@ -7,7 +7,11 @@
  * double-height SET OUTPUTS button that pulses and glows red while outputs are
  * unset until clicked once this session (reduced motion: glow, no pulse).
  * d529a7e80a4e: the rescan button and its hover explainer live inside the I/O
- * click menu, not in the `.hp` row.
+ * surface, not in the `.hp` row.
+ *
+ * Preview integration (Fri 2 Oct 2026): main's I/O click menu became the
+ * Preview's persistent Audio I/O panel. SET OUTPUTS opens that panel, MAIN /
+ * SPLIT and Rescan live inside it, and the hover is the compact summary.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -31,21 +35,23 @@ before(async () => {
 });
 
 function ioExplainerTag() {
-	const start = CLUSTER.indexOf('title="Audio I/O"');
+	const start = CLUSTER.indexOf('title="Audio I/O quick settings"');
 	assert.ok(start > 0, 'the Audio I/O explainer must exist');
 	const open = CLUSTER.lastIndexOf('<ControlExplainer', start);
 	return CLUSTER.slice(open, CLUSTER.indexOf('>', start) + 1);
 }
 
-function menuSnippet() {
-	const start = CLUSTER.indexOf('{#snippet outputMenu()}');
-	assert.ok(start > 0, 'outputMenu snippet must exist');
-	return CLUSTER.slice(start, CLUSTER.indexOf('{/snippet}', start));
+function ioPanel() {
+	const start = CLUSTER.indexOf('{#if ioSurface.open}');
+	assert.ok(start > 0, 'the Audio I/O panel block must exist');
+	const end = CLUSTER.indexOf('{#snippet outputMenu()}', start);
+	assert.ok(end > start, 'the panel block ends before the output menu snippet');
+	return CLUSTER.slice(start, end);
 }
 
-function markupOutsideMenu() {
+function markupOutsidePanel() {
 	const markup = CLUSTER.slice(CLUSTER.indexOf('</script>'), CLUSTER.indexOf('<style>'));
-	return markup.replace(menuSnippet(), '');
+	return markup.replace(ioPanel(), '');
 }
 
 // ---- explainer dismiss categories ----
@@ -79,12 +85,13 @@ test('ControlExplainer wires the dismiss mode into the popover', () => {
 	assert.doesNotMatch(EXPLAINER, /event instanceof PointerEvent && action !== null/);
 });
 
-test('the I/O hover is instant-dismiss and still click-pins the device menu', () => {
+test('the I/O hover is the compact instant-dismiss summary; the click opens the panel instead of pinning', () => {
 	const tag = ioExplainerTag();
 	assert.match(tag, /dismiss="instant"/);
-	assert.match(tag, /pinOnClick=\{true\}/);
-	assert.match(tag, /action=\{outputMenu\}/);
+	assert.match(tag, /compact=\{true\}/);
+	assert.match(tag, /disabled=\{ioSurface\.open\}/);
 	assert.match(tag, /bullets=\{ioBullets\}/);
+	assert.doesNotMatch(tag, /pinOnClick/);
 	assert.match(CLUSTER, /const ioBullets = \$derived\(\[ioSummary\.sentence, \.\.\.ioSummary\.devices, ioSummary\.cta\]\)/);
 });
 
@@ -166,12 +173,13 @@ test('the session click flag round-trips through sessionStorage and survives a t
 	assert.equal(io.readIoClickedThisSession(null), false);
 });
 
-test('SET OUTPUTS is a double-height button bound to the alert, marking the click before acquiring', () => {
+test('SET OUTPUTS is a double-height button bound to the alert, marking the click before opening the panel', () => {
 	assert.match(CLUSTER, /aria-label="SHOW AUDIO I\/O"/);
-	assert.match(CLUSTER, /class="hp-btn hp-btn-io"\s*class:io-alert=\{ioAlert\}/);
-	assert.match(CLUSTER, /const ioAlert = \$derived\(ioShouldAlert\(outputsUnset\(state\), ioOutputsSession\.clicked\)\)/);
+	assert.match(CLUSTER, /class="hp-btn hp-io-trigger hp-btn-io"\s*class:io-alert=\{ioAlert\}/);
+	assert.match(CLUSTER, /const ioAlert = \$derived\(ioShouldAlert\(outputsUnset\(headphoneState\), ioOutputsSession\.clicked\)\)/);
 	assert.match(CLUSTER, /onclick=\{handleSetOutputs\}><span>SET<\/span><span>OUTPUTS<\/span><\/button/);
-	assert.match(CLUSTER, /function handleSetOutputs\(\): void \{\s*noteSetOutputsClicked\(\);\s*onacquire\(\);/);
+	// opening the panel stays side-effect free: no device acquire on this click
+	assert.match(CLUSTER, /function handleSetOutputs\(\): void \{\s*noteSetOutputsClicked\(\);\s*openIo\(\);\s*\}/);
 	assert.match(CLUSTER, /\.hp-btn-io \{[^}]*flex-direction: column;[^}]*min-height: 23px;/);
 	const session = source('../../src/lib/rb/io-outputs-session.svelte.ts');
 	assert.match(session, /\$state\(\{ clicked: readIoClickedThisSession\(\) \}\)/);
@@ -193,29 +201,30 @@ test('the alert glows red and pulses, and reduced motion keeps the glow without 
 
 // ---- layout ----
 
-test('MAIN stacks above SPLIT in a vertical column; practice mode is still offered', () => {
-	const stack = CLUSTER.slice(CLUSTER.indexOf('<div class="hp-mode-stack"'), CLUSTER.indexOf('title="Audio I/O"'));
-	const main = stack.indexOf('title="MAIN"');
-	const split = stack.indexOf('title="SPLIT"');
-	assert.ok(main > 0 && split > main, 'MAIN then SPLIT inside .hp-mode-stack');
-	assert.match(CLUSTER, /\.hp-mode-stack \{\s*display: flex;\s*flex-direction: column;/);
-	assert.match(CLUSTER, /onclick=\{\(\) => onmode\('practice'\)\}>MAIN</);
+test('MAIN comes before SPLIT in the panel routing choices; practice mode is still offered', () => {
+	const panel = ioPanel();
+	const start = panel.indexOf('<div class="hp-mode-choices"');
+	assert.ok(start > 0, '.hp-mode-choices must sit inside the I/O panel');
+	const choices = panel.slice(start, panel.indexOf('</div>', start));
+	const main = choices.indexOf('title="MAIN"');
+	const split = choices.indexOf('title="SPLIT"');
+	assert.ok(main > 0 && split > main, 'MAIN then SPLIT inside .hp-mode-choices');
+	assert.match(choices, /onclick=\{\(\) => onmode\('practice'\)\}>MAIN \/ practice</);
 });
 
 // ---- pin d529a7e80a4e: rescan explainer lives in the I/O menu ----
 
-test('the rescan button and its explainer are inside the I/O click menu', () => {
-	const menu = menuSnippet();
+test('the rescan button and its explainer are inside the Audio I/O panel', () => {
 	assert.match(
-		menu,
-		/<ControlExplainer title="Rescan" bullets=\{rescanBullets\}[^>]*placement="right"[^>]*>\s*<button[\s\S]*?aria-label="Rescan available headphone output devices"[\s\S]*?onclick=\{onrefresh\}/
+		ioPanel(),
+		/<ControlExplainer title="Rescan" bullets=\{rescanBullets\}[^>]*>\s*<button[\s\S]*?aria-label="Rescan available headphone output devices"[\s\S]*?onclick=\{onrefresh\}/
 	);
 });
 
-test('the .hp row outside the menu no longer carries the rescan button or its explainer', () => {
-	const outside = markupOutsideMenu();
+test('the .hp row outside the panel no longer carries the rescan button or its explainer', () => {
+	const outside = markupOutsidePanel();
 	assert.ok(outside.includes('class="hp"'), 'control: the slice must contain the .hp row');
-	assert.ok(outside.includes('title="Audio I/O"'), 'control: the slice must contain the I/O explainer');
+	assert.ok(outside.includes('title="Audio I/O quick settings"'), 'control: the slice must contain the I/O explainer');
 	assert.doesNotMatch(outside, /title="Rescan"/);
 	assert.doesNotMatch(outside, /Rescan available headphone output devices/);
 });

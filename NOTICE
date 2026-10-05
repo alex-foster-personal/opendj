@@ -27,6 +27,18 @@ Notices that Apache-2.0 section 4(d) requires us to reproduce, from
 bundled components that ship a NOTICE file (the full set, regenerated on
 every build, is the NOTICES section of THIRD-PARTY-LICENSES.txt):
 
+* tinytag
+    Homepage: https://github.com/tinytag/tinytag
+    License:  MIT (Copyright (c) 2014-2026 Tom Wallroth, Mat (mathiascode),
+              et al.)
+    Role:     audio tag reads (title / artist / album / genre / comment /
+              BPM / key / ISRC / artwork / duration) for MP3, FLAC, MP4,
+              AIFF, WAV, OGG and Opus. Its LICENSE ships in its wheel's
+              dist-info, which the packaged app keeps.
+
+Writing tags into audio files is not a product feature. mutagen is not a
+dependency; see the note on mutagen below.
+
 * requests (Apache-2.0)
     Requests
     Copyright 2019 Kenneth Reitz

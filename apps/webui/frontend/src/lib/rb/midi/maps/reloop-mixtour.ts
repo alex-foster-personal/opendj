@@ -14,13 +14,8 @@
  *   [SPIKE 2b] Mixtour transport is plain Note/CC, VU meter feedback is
  *        Note-On velocity = signal level (0x00-0x7F).
  *
- * Mixtour Pro: the spike documents NO separate MIDI identity or message map
- * for the Pro (spike 1b/3b only lists hardware diffs: deck 3/4 paddles,
- * split pad layout, STEMS pads - the latter BLOCKED, spike 3b row 16).
- * nameMatch 'Mixtour' therefore intentionally also matches 'Mixtour Pro'
- * port names; Pro-only controls (deck 3/4 layer) arrive unmapped and land
- * in the learn log, which is exactly the tool for capturing their numbers
- * before a cited Pro variant map can exist. No fabricated Pro rows.
+ * MIXTOUR PRO: deliberately excluded by nameMatch. Its transport, load,
+ * mixer, pad and global addresses differ and live in reloop-mixtour-pro.ts.
  *
  * Requirements (mini-PRD):
  *   ✔︎ 2-deck transport (play/cue), 4 hot cues per deck, beat-loop +
@@ -190,10 +185,19 @@ export const MIXTOUR_VU_VELOCITY_STEPS: ReadonlyArray<{ min01: number; velocity:
 
 // -------------------------------------------------------------- device map
 
-/** Reloop Mixtour (and Mixtour Pro - see header) P0 map. */
+/** Matches `Mixtour` unless whitespace and the whole word `Pro` follow it.
+ * Written WITHOUT lookaround on purpose: the Rust engine compiles nameMatch
+ * with regex_lite, which has no lookahead, so `(?!\s+Pro\b)` loads in the
+ * page and is refused by the engine. The alternation spells out every way the
+ * text after `Mixtour` can fail to be `\s+Pro\b`, so both engines agree and
+ * the exclusion holds whatever order the maps are registered in. */
+const _CLASSIC_NAME_MATCH = '\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))';
+
+/** Reloop Mixtour classic P0 map. Excluding the Pro is a safety boundary:
+ * broad `Mixtour` matching used to route Pro SYNC as classic LOAD. */
 export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	vendor: 'Reloop',
-	nameMatch: 'Mixtour',
+	nameMatch: _CLASSIC_NAME_MATCH,
 	bindings: [..._deckBindings(1, 1), ..._deckBindings(2, 2), ..._GLOBAL_BINDINGS],
 	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)],
 	hints: [..._deckHints(1, 1), ..._deckHints(2, 2)]

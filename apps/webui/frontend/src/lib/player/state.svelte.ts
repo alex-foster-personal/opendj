@@ -104,6 +104,7 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 }
 
 import { loadMixerConfig } from '$lib/player/mixer-config';
+import { ioDeviceAccessNotChecked } from '$lib/player/io-device-access';
 
 /** Exported (name kept) so dispose resets headphones through one definition. */
 export function _defaultHeadphones(): HeadphoneState {
@@ -126,10 +127,28 @@ export function _defaultHeadphones(): HeadphoneState {
 			offset_ms: last === null ? null : last.cue_latency_ms - last.master_latency_ms,
 			verify_residual_ms: null,
 			probe: null,
-			error: null
+			error: null,
+			diagnostics: {
+				probe: 'chirp',
+				alternate_probe: 'unavailable',
+				failure: null,
+				master_measurements_ms: [],
+				cue_measurements_ms: [],
+				spread_ms: null
+			}
+		},
+		signals: {
+			master: { state: 'unavailable', rms: null, peak: null, measured_at: null, source: 'application_bus', physical_output_proven: false },
+			cue: { state: 'unavailable', rms: null, peak: null, measured_at: null, source: 'application_bus', physical_output_proven: false },
+			input: { state: 'inactive', rms: null, peak: null, measured_at: null, source: 'captured_input', physical_output_proven: false }
+		},
+		routes: {
+			master: { state: 'default', selected: false },
+			cue: { state: 'default', selected: false }
 		},
 		outputs: [],
 		inputs: [],
+		device_access: ioDeviceAccessNotChecked(),
 		supported: false,
 		active: false,
 		error: null

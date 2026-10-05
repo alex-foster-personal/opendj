@@ -35,27 +35,46 @@
  *     staying stale until another edit or a page reload.
  *     [if] the socket reconnects after a missed midi_maps PUT and the
  *       registry is not reloaded [then ⛔️] broken
- *   ✔︎ 🎯 A WebMIDI-less window (the macOS desktop app) keeps the shared
- *     midi_enabled opt-in: maybeAutoEnableMidi() does not request, and an
- *     'unsupported' failure does not clear it. A denial still clears it.
- *     [if] opening the desktop app turns MIDI off in the Chrome tab
- *       [then ⛔️] broken
- *     [if] a Chrome denial leaves the opt-in set [then ⛔️] broken
  */
 
-import { initMidi, webMidiSupported } from '$lib/rb/midi/webmidi.svelte';
-import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
-import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
-import { loadInstalledDeviceMaps } from '$lib/rb/midi/installed-maps';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { coalesce } from '$lib/rb/coalesce';
 import { api } from '$lib/api/client';
 import { makeDiskWriteChain } from '$lib/rb/disk-write-chain';
 import {
-	MIDI_ENABLED_KEY,
+	midiEnabledPersisted,
 	onMidiEnabledHydrated,
 	persistMidiEnabled
 } from './midi-enabled-choice';
+
+export { midiEnabledPersisted };
+
+/** True when this window can reach MIDI at all: WebMIDI (Chrome/Edge) or the
+ * installed macOS app's native CoreMIDI bridge. Mirrors initMidi()'s own
+ * transport choice in webmidi.svelte.ts without loading the MIDI engine. */
+export function midiRuntimeAvailable(): boolean {
+	if (typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined) return true;
+	return (
+		typeof window !== 'undefined' &&
+		typeof (globalThis as Record<string, unknown>)['__TAURI_INTERNALS__'] === 'object'
+	);
+}
+
+// The MIDI engine (device-map registry, action glue, takeover policy, installed
+// maps) is fetched on demand, not on first paint: nothing in it can act until
+// requestMidiAccess() has granted access, and most boots never connect a
+// controller. Every use below awaits this BEFORE initMidi() installs the port
+// message handlers, so the maps are registered and the glue is attached before
+// any MIDI message can be dispatched, exactly as with a static import. The
+// import() promise is module-cached, so this costs one fetch per page.
+type MidiEngine = typeof import('$lib/rb/midi/midi-engine');
+// Kept once loaded so the synchronous disableMidi() can release inputs. Only a
+// loaded engine ever attaches input listeners, so null means none to release.
+let _loadedMidiEngine: MidiEngine | null = null;
+async function _loadMidiEngine(): Promise<MidiEngine> {
+	_loadedMidiEngine = await import('$lib/rb/midi/midi-engine');
+	return _loadedMidiEngine;
+}
 
 // Device maps must be registered before initMidi resolves connected ports
 // (else every device is "no map - learn log only"), and attachMidiGlue must
@@ -74,6 +93,7 @@ let _installedMapsLiveRefreshArmed = false;
 // writing the same registry.
 const _reloadInstalledMaps = coalesce(async () => {
 	try {
+		const { loadInstalledDeviceMaps } = await _loadMidiEngine();
 		await loadInstalledDeviceMaps();
 		midiUi.installedMapsError = null;
 	} catch (exc) {
@@ -93,8 +113,11 @@ function _reloadInstalledMapsAfterLibraryChange(): void {
 // because this is the one call site that attaches it.
 let _detachMidiGlue: (() => void) | null = null;
 
+export type MidiPanelWidthMode = 'compact' | 'expanded' | 'floating';
+
 export const midiUi: {
 	panelOpen: boolean;
+	widthMode: MidiPanelWidthMode;
 	requestPending: boolean;
 	/** Last permission-request failure, shown red in the panel. null = none. */
 	lastError: string | null;
@@ -108,6 +131,7 @@ export const midiUi: {
 	installedMapsError: string | null;
 } = $state({
 	panelOpen: false,
+	widthMode: 'compact' as MidiPanelWidthMode,
 	requestPending: false,
 	lastError: null,
 	logPopoutOpen: false,
@@ -117,6 +141,18 @@ export const midiUi: {
 
 export function toggleMidiPanel(): void {
 	midiUi.panelOpen = !midiUi.panelOpen;
+}
+
+export function setMidiPanelWidthMode(mode: MidiPanelWidthMode): void {
+	midiUi.widthMode = mode;
+}
+
+export function toggleMidiPanelExpanded(): void {
+	midiUi.widthMode = midiUi.widthMode === 'expanded' ? 'compact' : 'expanded';
+}
+
+export function floatMidiPanel(): void {
+	midiUi.widthMode = 'floating';
 }
 
 // -------------------------------------------------------- learn-log pop-out
@@ -158,23 +194,16 @@ export function setMidiEnabledChoice(enabled: boolean): void {
 	_syncMidiEnabledToDisk(enabled);
 }
 
-/** True if the user previously enabled MIDI (persisted choice). */
-export function midiEnabledPersisted(): boolean {
-	if (typeof localStorage === 'undefined') return false;
-	return localStorage.getItem(MIDI_ENABLED_KEY) === '1';
-}
-
 /** On page load, re-run the access request IFF the user opted in before. Goes
  * through requestMidiAccess() (the single init trigger that also registers
  * device maps + attaches the glue) so the invariant holds. No-op when the
  * choice was never made or a request is already in flight. */
 export async function maybeAutoEnableMidi(): Promise<void> {
-	// A WebMIDI-less window (the macOS desktop app) has nothing to request.
-	// Asking anyway would fail and clear the opt-in, which lives on disk and
-	// is shared with the Chrome tab, so opening the desktop app would switch
-	// MIDI off in Chrome.
-	if (!webMidiSupported()) return;
 	if (!midiEnabledPersisted()) return;
+	// CTRL-06: a window with neither WebMIDI nor the macOS app's native bridge
+	// (Safari) has no MIDI to ask for on boot. Requesting would only fail and
+	// clear the on-disk opt-in that a Chrome tab on this machine shares.
+	if (!midiRuntimeAvailable()) return;
 	if (midiUi.requestPending) return;
 	await requestMidiAccess();
 }
@@ -187,6 +216,12 @@ onMidiEnabledHydrated((enabled) => {
 	if (enabled) void maybeAutoEnableMidi();
 });
 
+// Every request takes a generation; disableMidi() bumps it. A grant that
+// resolves after MIDI was turned off (the prompt was still open) belongs to a
+// superseded generation, so it neither attaches nor persists anything.
+let _requestGeneration = 0;
+let _inFlight: { generation: number; done: Promise<void> } | null = null;
+
 /** Request WebMIDI access via the core runtime. The catch is NOT silent
  * handling: the error lands in midiUi.lastError (rendered red in the panel)
  * and console.error - the panel IS the failure surface. */
@@ -194,23 +229,53 @@ export async function requestMidiAccess(): Promise<void> {
 	if (midiUi.requestPending) {
 		throw new Error('requestMidiAccess: a request is already pending');
 	}
+	const generation = ++_requestGeneration;
+	const done = _requestMidiAccess(generation);
+	const entry = { generation, done };
+	_inFlight = entry;
+	try {
+		await done;
+	} finally {
+		if (_inFlight === entry) _inFlight = null;
+	}
+}
+
+async function _requestMidiAccess(generation: number): Promise<void> {
 	midiUi.lastError = null;
 	midiUi.requestPending = true;
+	let attachedForThisRequest = false;
 	try {
+		const {
+			initMidi,
+			releaseMidiInputs,
+			registerAllDeviceMaps,
+			attachMidiGlue,
+			loadInstalledDeviceMaps
+		} = await _loadMidiEngine();
 		if (!_mapsRegistered) {
 			registerAllDeviceMaps();
 			_mapsRegistered = true;
+		}
+		await initMidi();
+		if (generation !== _requestGeneration) {
+			// MIDI was turned off while this request was pending: undo the
+			// late grant's listeners and leave the choice as the user set it.
+			releaseMidiInputs();
+			return;
 		}
 		// Deliberately a SEPARATE condition from _mapsRegistered above: maps
 		// register once per page lifetime, but the glue's LED effect + meter
 		// pump stop on every /performance unmount (detachMidiGlueForRouteUnmount)
 		// and must re-arm on the next grant/remount rather than staying dead
 		// until a full reload. attachMidiGlue() itself is safe to call again -
-		// see its own docstring.
+		// see its own docstring. Attached only once access is granted and
+		// current: a denied, unsupported or superseded request has nothing for
+		// the glue to drive. No MIDI message can land between initMidi()
+		// resolving and this line (it is the same microtask continuation).
 		if (_detachMidiGlue === null) {
 			_detachMidiGlue = attachMidiGlue();
+			attachedForThisRequest = true;
 		}
-		await initMidi();
 		// Access granted: remember the choice so a reload auto-re-requests.
 		setMidiEnabledChoice(true);
 		// Controllers onboarded in the app live in the daemon, not the bundle.
@@ -242,13 +307,21 @@ export async function requestMidiAccess(): Promise<void> {
 			console.error('[midi-panel] installed device maps failed to load', exc);
 		}
 	} catch (exc) {
+		// A denied or unsupported request never owns an active MIDI route. Tear
+		// down the glue this attempt attached, including the 20 Hz meter timer,
+		// so failure cannot leak work for the lifetime of the page/process. Do
+		// not detach a pre-existing route if a later re-request failed.
+		if (attachedForThisRequest && _detachMidiGlue !== null) {
+			_detachMidiGlue();
+			_detachMidiGlue = null;
+		}
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
 		console.error('[midi-panel] permission request failed', exc);
-		// Denied: forget the choice so we don't nag on every reload (the user
-		// re-opts-in from the panel when ready). Fail-fast, no retry.
-		// Unsupported keeps it: this window cannot answer for the Chrome tab
-		// that shares the on-disk choice (see maybeAutoEnableMidi).
-		if (webMidiSupported()) setMidiEnabledChoice(false);
+		// Denied/unsupported: forget the choice so we don't nag on every reload
+		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
+		// A superseded request leaves the choice alone: the user has already
+		// set it since, and a re-enable must not be clobbered by a stale failure.
+		if (generation === _requestGeneration) setMidiEnabledChoice(false);
 	} finally {
 		midiUi.requestPending = false;
 	}
@@ -264,6 +337,45 @@ export function detachMidiGlueForRouteUnmount(): void {
 	if (_detachMidiGlue === null) return;
 	_detachMidiGlue();
 	_detachMidiGlue = null;
+}
+
+/** Turn live MIDI off: stop the glue (action handler, LED effect, meter
+ * pump) and detach every input listener. Permission state is not touched:
+ * the browser still holds whatever grant it gave. */
+export function disableMidi(): void {
+	_requestGeneration += 1;
+	detachMidiGlueForRouteUnmount();
+	_loadedMidiEngine?.releaseMidiInputs();
+}
+
+/** The rb.midi_enabled setting, runtime-aware (settings/apply.ts). Enabling
+ * persists the choice and then goes through the same request path as the
+ * page-load auto-enable, so maps register, access is requested and the glue
+ * attaches on grant; a denial clears the choice again (requestMidiAccess's
+ * catch). Disabling persists the choice, supersedes any pending request and
+ * tears the live MIDI runtime down. */
+export async function applyMidiEnabledSetting(enabled: boolean): Promise<void> {
+	if (!enabled) {
+		setMidiEnabledChoice(false);
+		disableMidi();
+		return;
+	}
+	const pending = _inFlight;
+	if (pending !== null) {
+		// A current request already carries this enable to its end (it persists
+		// on grant and clears on denial). A superseded one (turned off while
+		// pending) is let settle, then access is requested afresh.
+		if (pending.generation === _requestGeneration) return;
+		const waitedFrom = _requestGeneration;
+		await pending.done;
+		// Turned off again while waiting: that later choice stands.
+		if (_requestGeneration !== waitedFrom) return;
+	}
+	setMidiEnabledChoice(true);
+	// An explicit enable always asks, even where no MIDI exists, so the user
+	// sees why it failed; only the boot path skips (CTRL-06).
+	if (midiUi.requestPending) return;
+	await requestMidiAccess();
 }
 
 /** TEST-ONLY: forget the one-time live-refresh arming (pair with

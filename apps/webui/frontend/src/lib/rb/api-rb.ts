@@ -13,19 +13,23 @@
  * fallbacks, no invented data.
  */
 
-import { API_BASE, timeoutSignal } from '$lib/api';
+import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
-import type { AnlzCue, AnlzData } from './anlz-types';
+import type { AnlzCue, AnlzData, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { HotCueSlot } from './hot-cue-types';
+export type { HotCueReversal, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
+import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
+import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
 import { stemWorkSignal } from './stem-decode-policy';
+import type { PreviewStripBatch } from './preview-strip-fill';
 import type { StemFetchProgress } from './stem-types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
@@ -52,12 +56,8 @@ export const RB_API_BASE: string = API_BASE;
 
 export { RbApiError } from './api-rb-error';
 
-export type FileAvailabilityStatus =
-	| 'present'
-	| 'absent'
-	| 'AVAILABILITY_PENDING'
-	| 'streaming'
-	| 'awaiting_volume';
+import type { FileAvailabilityStatus } from './file-availability';
+export type { FileAvailabilityStatus } from './file-availability';
 
 export type TrackLyrics = {
 	stable_id: string;
@@ -152,7 +152,8 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 
 /** GET cached line-synced lyrics. A 404 is the explicit no-lyrics state. */
 export async function fetchTrackLyrics(stableId: string): Promise<TrackLyrics | null> {
-	if (optionalResources(stableId).lyrics === false) return null;
+	// Spec 4b: a stick track has no lyrics route, so it is the no-lyrics state.
+	if (isUsbTrackId(stableId) || optionalResources(stableId).lyrics === false) return null;
 	try {
 		return _parseTrackLyrics(
 			await _fetchJson<unknown>(`/api/v1/tracks/${encodeURIComponent(stableId)}/lyrics`),
@@ -284,6 +285,12 @@ export interface PreviewStripData {
 	max: number;
 }
 
+/** Re-read the Preview strips of up to 200 listed rows (NATIVE-21). Never a
+ * decode: null is "nothing on disk yet"; `pending` ids are being written. */
+export async function fetchPreviewStrips(ids: string[]): Promise<PreviewStripBatch> {
+	return unwrap(api.POST('/api/v1/library/preview-strips', { body: { ids } }));
+}
+
 /** Decode one row's preview pair. null preview_b64 = the real "no ANLZ
  * preview" state (fallback chain PWV6 -> PWV4 -> PWAV -> null exhausted)
  * and renders the explicit dash - never an invented strip. Any half-set
@@ -401,7 +408,7 @@ export interface PlaylistTrackRowWire {
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
-	/** When genre is null, names why (missing tags extra, no file tag, etc.). */
+	/** When genre is null, names why (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
 	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
 	genre_guess?: GenreGuess | null;
@@ -420,6 +427,9 @@ export interface PlaylistTrackRowWire {
 	cloud_transfer: CloudTransferWire | null;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
+	/** CHROME-02: the streaming service for a streaming row, from the row's own
+	 * path (null when not streaming). Optional for older payloads. */
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	quality: TrackQuality;
 	play_count: number;
 	/** Same four-status vocals as /anlz - drives PreviewStrip blue bars. */
@@ -434,6 +444,8 @@ export interface PlaylistTrackRowWire {
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	lyrics?: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
+	grid_quality?: GridQualityRow | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 }
@@ -587,9 +599,11 @@ export async function listPlaylistTracksPage(
 /** Validated generated-contract summary of playable and broken library rows. */
 export type ReconcileSummary = components['schemas']['ReconcileSummary'];
 
-/** Fetch aggregate reconciliation counts without inventing a usable library state. */
+/** The summary scans every row; past this the Library health dot goes grey
+ * "unknown" instead of waiting on a request that may never answer. */
 export const RECONCILE_SUMMARY_TIMEOUT_MS = 30_000;
 
+/** Fetch aggregate reconciliation counts without inventing a usable library state. */
 export async function getReconcileSummary(
 	timeoutMs: number = RECONCILE_SUMMARY_TIMEOUT_MS
 ): Promise<ReconcileSummary> {
@@ -599,7 +613,9 @@ export async function getReconcileSummary(
 		summary = await unwrap(api.GET('/api/v1/reconcile/summary', { signal }));
 	} catch (error: unknown) {
 		if (signal.aborted) {
-			throw new Error(`reconcile summary request timed out after ${timeoutMs / 1000} s`, { cause: error });
+			throw new Error(`reconcile summary request timed out after ${timeoutMs / 1000} s`, {
+				cause: error
+			});
 		}
 		throw error;
 	} finally {
@@ -621,9 +637,10 @@ export async function getReconcileSummary(
 }
 
 /** Track listing item + contract point 1's per-row fields. STANDALONE-05
- * adds inline genre/genre_reason; is_streaming is not on the wire: the row
- * mapper settles it from `file_availability === 'streaming'` (issue #3934)
- * and otherwise leaves it lazy via rb-meta. */
+ * adds inline genre/genre_reason; CHROME-02 adds is_streaming and its
+ * provider, so an unmapped streaming row needs no rb-meta to classify. The
+ * row mapper also settles it from `file_availability === 'streaming'`
+ * (issue #3934), so a payload whose flag disagrees still reads as streaming. */
 /** GENRE-02 guess: never a tag, never written anywhere. */
 export type GenreGuess = { family: string; confidence: number; source: 'jev' };
 
@@ -646,6 +663,8 @@ export type TrackListItemWire = Track & {
 	file_exists: boolean | null;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
+	is_streaming: boolean;
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy: boolean;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */
@@ -659,6 +678,8 @@ export type TrackListItemWire = Track & {
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	lyrics?: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
+	grid_quality?: GridQualityRow | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 };
@@ -743,12 +764,9 @@ export async function fetchAnlz(
 		if (existing !== undefined) return existing;
 	}
 	const pending = _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, gen)}`,
+		trackApiPath(stable_id, `/anlz?${anlzQuery(points, gen)}`),
 		'no-store'
-	).then((data) => {
-		vocalsOf(data);
-		return data;
-	});
+	).then((data) => _checkedAnlz(stable_id, data));
 	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
 		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
@@ -783,11 +801,25 @@ export async function fetchAnlzBypassingHttpCache(
 	points: number | null = defaultAnlzPoints()
 ): Promise<AnlzWithVocals> {
 	const data = await _fetchJson<AnlzWithVocals>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`,
+		trackApiPath(stable_id, `/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`),
 		'reload'
 	);
+	return _checkedAnlz(stable_id, data);
+}
+
+/** Validates the vocals contract (priming vocalsOf's memo), and for a stick
+ * id also that the payload names that id: anlz-cache exempts stick payloads
+ * from the analysis-source confirmation loop by `data.stable_id`, so a stick
+ * payload stamped with any other id would make that loop spin (spec 4b). A
+ * stick payload also carries this session's hot cue edits (decision 2), so
+ * the waveform markers and the display loop match the pads. */
+async function _checkedAnlz(stable_id: string, data: AnlzWithVocals): Promise<AnlzWithVocals> {
 	vocalsOf(data);
-	return data;
+	if (!isUsbTrackId(stable_id)) return data;
+	if (data.stable_id !== stable_id) {
+		throw new Error(`/anlz for ${stable_id} answered for ${data.stable_id}`);
+	}
+	return (await loadStickSessionEdits()).withSessionHotCues(stable_id, data);
 }
 
 /** GET /tracks/{sid} with `cache: 'reload'`, paired with
@@ -795,11 +827,13 @@ export async function fetchAnlzBypassingHttpCache(
  * client's ordinary `getTrack` can otherwise replay a pre-switch row while
  * `/anlz` already reflects the new lane. */
 export async function fetchTrackBypassingHttpCache(stable_id: string): Promise<Track> {
-	return _fetchJson<Track>(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, 'reload');
+	return _fetchJson<Track>(trackApiPath(stable_id), 'reload');
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
+	// Spec 4b: rb-meta is library vendor state; no stick route exists.
+	refuseStickRead(stable_id, 'rb-meta');
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);
 }
 
@@ -815,27 +849,25 @@ export async function fetchQualityLadder(): Promise<QualityRung[]> {
 // backend route param type rejects them with 422 before this client is
 // even asked to serialize one.
 
-export interface HotCueReversal {
-	reversal_id: string;
-}
-
-export interface HotCueMutation {
-	cue: AnlzCue | null;
-	revision: string;
-	reversal?: HotCueReversal;
-}
-
-export interface HotCueSlotState {
-	slot: HotCueSlot;
-	cue: AnlzCue | null;
-	revision: string;
-}
-
-/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. */
+/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. A
+ * stick track's slots carry this session's edits (decision 2). */
 export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotState[]> {
-	return _fetchJson<HotCueSlotState[]>(
-		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues`
-	);
+	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
+	if (!isUsbTrackId(stable_id)) return slots;
+	return (await loadStickSessionEdits()).withSessionHotCueSlots(stable_id, slots);
+}
+
+/** Set a track's rating and answer the rating now in effect. A library track
+ * fetches a fresh ETag, then PATCHes with If-Match (a ConflictError carries the
+ * current row). A stick track's rating is a session edit with no request (USB
+ * Play spec decision 2). */
+export async function saveTrackRating(stable_id: string, next: number): Promise<number | null> {
+	if (isUsbTrackId(stable_id)) {
+		(await loadStickSessionEdits()).setSessionRating(stable_id, next);
+		return next;
+	}
+	const etag = (await getTrack(stable_id)).etag;
+	return (await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null;
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the
@@ -847,6 +879,10 @@ export async function saveHotCue(
 	revision: string,
 	comment?: string | null
 ): Promise<HotCueMutation> {
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) {
+		return (await loadStickSessionEdits()).saveSessionHotCue(stable_id, slot, in_ms, revision, comment ?? null);
+	}
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		{ in_ms, comment: comment ?? null },
@@ -860,6 +896,8 @@ export async function clearHotCue(
 	slot: HotCueSlot,
 	revision: string
 ): Promise<HotCueMutation> {
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) return (await loadStickSessionEdits()).clearSessionHotCue(stable_id, slot, revision);
 	return _deleteRequest<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
 		revision
@@ -873,6 +911,10 @@ export async function restoreHotCue(
 	revision: string,
 	reversal_id: string
 ): Promise<HotCueMutation> {
+	// Spec 4b and decision 2: a stick track's cue edit stays in this session and makes no request.
+	if (isUsbTrackId(stable_id)) {
+		return (await loadStickSessionEdits()).restoreSessionHotCue(stable_id, slot, revision, reversal_id);
+	}
 	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}/restore`,
 		{ reversal_id },
@@ -881,10 +923,10 @@ export async function restoreHotCue(
 }
 
 /** URL for GET /tracks/{sid}/artwork - use directly as <img src>. The
- * backend 404s ARTWORK_NOT_FOUND; consumers render the grey placeholder
+ * backend 404s ARTWORK_NOT_FOUND; consumers render the gray placeholder
  * slate on img error, never a fabricated image. */
 export function artworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
-	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/artwork?size=${size}`;
+	return `${RB_API_BASE}${trackApiPath(stable_id, `/artwork?size=${size}`)}`;
 }
 
 /** Artwork for a loaded deck: the same chain as {@link artworkUrl}, and when
@@ -926,7 +968,7 @@ export function artworkStatusLabel(
 
 /** URL for GET /tracks/{sid}/audio (Range-capable stream). */
 export function audioUrl(stable_id: string): string {
-	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/audio`;
+	return `${RB_API_BASE}${trackApiPath(stable_id, '/audio')}`;
 }
 
 /** Fetch the full audio file as an ArrayBuffer for decodeAudioData.
@@ -1052,6 +1094,8 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
  * unavailable envelope is published as explicit unavailable state; malformed
  * or broken artifacts still reject. */
 export async function probeStemArtifact(stableId: string): Promise<StemArtifactProbe> {
+	// Spec 4b: stick tracks have no stem bundle and no stems route.
+	if (isUsbTrackId(stableId)) return { status: 'unavailable', error: 'stick tracks have no stem bundle' };
 	if (optionalResources(stableId).stems === false) {
 		return { status: 'unavailable', error: 'no stem bundle advertised' };
 	}
@@ -1089,6 +1133,8 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 }
 
 export function stemAudioUrl(stableId: string, part: StemPartName): string {
+	// Unreachable for a stick id (probeStemArtifact above never reports it ready).
+	refuseStickRead(stableId, `stem ${part}`);
 	return (
 		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/stems/` +
 		encodeURIComponent(part)

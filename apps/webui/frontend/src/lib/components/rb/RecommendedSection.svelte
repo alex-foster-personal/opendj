@@ -46,7 +46,7 @@
 	 *     transient/auth failure never masquerades as "partner deleted".
 	 */
 	import { listPairingsFor, getTrack, type Pairing, type Track } from '$lib/api';
-	import { ApiError } from '$lib/api/client';
+	import { ApiError } from '$lib/api/errors';
 	import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 
 	type Props = {

@@ -35,6 +35,7 @@ import { resumeAnlzPrefetchOwedFetch, setAnlzPrefetchShedRequest } from '$lib/co
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
+import { setMidiLoadFailureReporter } from '$lib/settings/apply';
 import { installSettingSaveErrorSink } from '$lib/settings/setting-save-errors';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
@@ -139,6 +140,12 @@ function _hasPlayableAutoPlayNext(): boolean {
 
 let _xrunsAtPrevious = 0;
 
+/** The settings MIDI toggle's load-failure toast (CHROME-07), wired into
+ * settings/apply.ts at boot so that module stays off stores.svelte. */
+export function toastMidiLoadFailure(exc: unknown): void {
+	pushToast('MIDI could not load, so it stays off', 'error', undefined, exc);
+}
+
 /**
  * Start the page-lifetime instruments. Returns the teardown, which the
  * caller owns (the root layout hands it back from onMount).
@@ -149,6 +156,7 @@ let _xrunsAtPrevious = 0;
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	installPerfEventLogGlobal();
+	setMidiLoadFailureReporter(toastMidiLoadFailure);
 	// A settings write that failed on disk shows as an error toast (PR #4014).
 	installSettingSaveErrorSink((message, cause) => pushToast(message, 'error', undefined, cause));
 	// Every client error from here on carries the page's own transport read,
@@ -203,7 +211,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 				() => readXrunSessionCounter().xruns
 			);
 			setAudioPrefetchShedRequest((id) => shed.request(id));
-			setEagerStemDecodeShed(shed, () => kernelPressureIsElevated(readMachinePressure()));
+			setEagerStemDecodeShed(shed, () => kernelPressureIsElevated(readMachinePressure()), anyDeckPlaying);
 			setAnlzPrefetchShedRequest((id) => shed.request(id));
 		}
 	});
@@ -239,6 +247,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	return () => {
 		stopTelemetryConsent?.();
 		setLiveTransportProbe(null);
+		setMidiLoadFailureReporter(null);
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);

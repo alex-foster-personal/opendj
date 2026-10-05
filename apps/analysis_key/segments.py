@@ -79,6 +79,13 @@ SegmentStatus = Literal["ok", "failed", "missing"]
 # the bar grid
 #-----------------------------------------------------------------------------
 
+def _floor_5dp(seconds: float) -> float:
+    """``seconds`` at the payload's 5 dp, never above it: the last segment
+    ends at the record's own duration, and rounding that half-up publishes an
+    end past ``duration_s`` that the write boundary refuses."""
+    return math.floor(seconds * 100_000) / 100_000
+
+
 @dataclass(frozen=True)
 class BarGrid:
     """Bar extents in seconds: ``starts[i]`` to ``ends[i]`` is bar ``i``.
@@ -331,12 +338,17 @@ class SegmentBlock:
                     "start_bar": segment.start_bar,
                     "end_bar": segment.end_bar,
                     "start_s": round(segment.start_s, 5),
-                    "end_s": round(segment.end_s, 5),
+                    # Interior ends round like the next start so the two
+                    # stay equal; only the last end meets duration_s.
+                    "end_s": (
+                        _floor_5dp(segment.end_s) if index == len(self.segments) - 1
+                        else round(segment.end_s, 5)
+                    ),
                     "key_camelot": canon.to_camelot(segment.key),
                     "key_openkey": canon.to_open_key(segment.key),
                     "confidence": segment.confidence,
                 }
-                for segment in self.segments
+                for index, segment in enumerate(self.segments)
             ],
         }
 

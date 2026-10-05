@@ -138,6 +138,20 @@ def write_config(data_dir: Path, config: CloudSyncConfig) -> Path:
     return path
 
 
+def configured_machine_name(data_dir: Path) -> str | None:
+    """The machine name saved in the config file, or ``None`` when none is saved.
+
+    THE one answer to "what is this data dir called on the fleet". Every path
+    that registers this machine (the scheduler, Sync now, the CLI, enroll, the
+    feedback pin sync, ``GET /cloudsync/machines``) asks here before falling
+    back to a hostname: ``machines.name`` is UNIQUE, and a second data dir on a
+    host that has pulled the fleet's ``machines`` table finds the hostname
+    already taken by another machine id. A malformed file raises.
+    """
+    stored = read_config(data_dir)
+    return None if stored is None else stored.machine_name
+
+
 def _env_enabled(env: Mapping[str, str]) -> bool | None:
     raw = env.get(SCHEDULER_ENV, "")
     if raw == "":
@@ -201,6 +215,7 @@ __all__ = [
     "EffectiveConfig",
     "config_path",
     "config_payload",
+    "configured_machine_name",
     "read_config",
     "resolve_config",
     "write_config",

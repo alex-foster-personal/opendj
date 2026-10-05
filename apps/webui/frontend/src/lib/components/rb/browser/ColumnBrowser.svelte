@@ -85,12 +85,9 @@
 				album: t.album ?? null,
 				file_exists: t.file_exists,
 				file_availability: t.file_availability,
-				// Bulk listing has no is_streaming (same gap as All Tracks
-				// table rows before their lazy rb-meta hydrates, contract
-				// point 1) - null here means the SAME "unknown, treat as
-				// loadable" fallback loadRow's ?? chain already applies to
-				// unhydrated table rows, not a new risk this view invents.
-				is_streaming: null
+				// CHROME-02: the bulk listing carries is_streaming, so a
+				// streaming row here gets the same inert load as the table.
+				is_streaming: t.is_streaming
 			}));
 		} catch (exc) {
 			loadError = exc instanceof RbApiError ? exc.code : String(exc);

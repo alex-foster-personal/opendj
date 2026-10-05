@@ -47,6 +47,19 @@ import {
 import { deriveAlignment } from '$lib/player/cue-align-policy';
 import type { CueAlignBus } from '$lib/player/cue-align.svelte';
 import type { CueBridgeWireResult } from '$lib/player/cue-bridge-wiring';
+import { capturedSignalLevel } from '$lib/player/cue-latency';
+import {
+	IO_OPERATION_TIMEOUT_ERROR_NAME,
+	ioDeviceAccessForFailure,
+	ioDeviceAccessForListing,
+	listNativeShellDevices,
+	ioDeviceAccessRequestWasNotGranted,
+	ioOperationTimedOut,
+	listIoDevices,
+	savedIoDeviceNotices,
+	systemDefaultOutputOnly,
+	type SavedIoDevice
+} from '$lib/player/io-device-access';
 import type { NativeCueSinkClient } from '$lib/player/cue-native-sink-client';
 import {
 	nativeCueSinkConfig,
@@ -218,9 +231,16 @@ export interface HeadphoneNodes {
 	splitRightCueGain: GainNode;
 	splitRightMasterGain: GainNode;
 	splitMerger: ChannelMergerNode;
+	/** Observers only: application-bus level does not prove physical output. */
+	masterSignalAnalyser: AnalyserNode | null;
+	cueSignalAnalyser: AnalyserNode | null;
+	meterSilence: GainNode | null;
 }
 
 let _headphoneNodes: HeadphoneNodes | null = null;
+/** True only while the engine has wired the monitor blend to channels 3/4 of
+ * the same multichannel destination that carries master on 1/2. */
+let _multichannelMonitorActive = false;
 /** The engine AudioContext the master mix is pinned onto via setSinkId. */
 let _outputContext: AudioContext | null = null;
 
@@ -234,6 +254,81 @@ let _bridgeUnderrunCount = 0;
 /** Bumped by every teardown. An operation that started under an older
  * generation refuses to publish rather than resurrect a disposed monitor. */
 let _headphoneGeneration = 0;
+let _signalMeterFrame: number | null = null;
+
+function _clearSignal(name: 'master' | 'cue' | 'input', state: 'inactive' | 'unavailable'): void {
+	const signal = mixerState.headphones.signals[name];
+	signal.state = state;
+	signal.rms = null;
+	signal.peak = null;
+	signal.measured_at = null;
+}
+
+function _publishSignal(name: 'master' | 'cue' | 'input', samples: Float32Array): void {
+	const signal = mixerState.headphones.signals[name];
+	const level = capturedSignalLevel(samples);
+	signal.state = 'measured';
+	signal.rms = level.rms;
+	signal.peak = level.peak;
+	signal.measured_at = new Date().toISOString();
+}
+
+/** The calibration capture's live mic level, published to the IO panel's
+ * INPUT meter while a cue-alignment capture is pulling frames. */
+export function publishCalibrationInputSignal(samples: Float32Array): void {
+	_publishSignal('input', samples);
+}
+
+export function clearCalibrationInputSignal(): void {
+	_clearSignal('input', 'inactive');
+}
+
+function _stopSignalMeters(): void {
+	if (_signalMeterFrame !== null && typeof cancelAnimationFrame === 'function') {
+		cancelAnimationFrame(_signalMeterFrame);
+	}
+	_signalMeterFrame = null;
+	_clearSignal('master', 'unavailable');
+	_clearSignal('cue', 'unavailable');
+	_clearSignal('input', 'inactive');
+}
+
+/** Sample actual AnalyserNode buffers only while the browser provides an
+ * animation clock.  There is deliberately no timer-made level estimate. */
+function _startSignalMeters(nodes: HeadphoneNodes): void {
+	_stopSignalMeters();
+	if (
+		nodes.masterSignalAnalyser === null ||
+		nodes.cueSignalAnalyser === null ||
+		typeof requestAnimationFrame !== 'function'
+	) {
+		return;
+	}
+	const master = new Float32Array(nodes.masterSignalAnalyser.fftSize);
+	const cue = new Float32Array(nodes.cueSignalAnalyser.fftSize);
+	let lastContextTime = -Infinity;
+	const sample = () => {
+		if (_headphoneNodes !== nodes) return;
+		const contextTime = nodes.level.context.currentTime;
+		if (
+			nodes.level.context.state !== 'running' ||
+			!Number.isFinite(contextTime) ||
+			contextTime <= lastContextTime
+		) {
+			_clearSignal('master', 'inactive');
+			_clearSignal('cue', 'inactive');
+			_signalMeterFrame = requestAnimationFrame(sample);
+			return;
+		}
+		lastContextTime = contextTime;
+		nodes.masterSignalAnalyser?.getFloatTimeDomainData(master);
+		nodes.cueSignalAnalyser?.getFloatTimeDomainData(cue);
+		_publishSignal('master', master);
+		_publishSignal('cue', cue);
+		_signalMeterFrame = requestAnimationFrame(sample);
+	};
+	_signalMeterFrame = requestAnimationFrame(sample);
+}
 
 /** Unit-interval guard for the mix knob. Deliberately a private leaf here
  * rather than an import: the engine's copy guards trim/EQ/fader/master, and
@@ -281,10 +376,13 @@ export function headphoneMixTargetGains(params: {
 	mix: number;
 	level: number;
 	active: boolean;
+	/** A multichannel interface is carrying the cue on its own channel pair. */
+	multichannel_monitor_active: boolean;
 }): HeadphoneMixTargets {
-	const { mix, level, active, output_mode, selected_output_device_id } = params;
+	const { mix, level, active, output_mode, selected_output_device_id, multichannel_monitor_active } =
+		params;
 	const gains = headphoneMixGains(mix);
-	const monitorLive = output_mode === 'two_outputs' && active;
+	const monitorLive = multichannel_monitor_active || (output_mode === 'two_outputs' && active);
 	// MAIN/practice always blends cue into the speaker path; a stale cue device id left
 	// in state after leaving two_outputs must not silence channel CUE on speakers.
 	const practiceDeviceId = output_mode === 'practice' ? null : selected_output_device_id;
@@ -410,7 +508,11 @@ export async function withHeadphoneOperationTimeout<T>(
 	}
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 	const timeout = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => reject(new Error(`headphone ${operation} timed out after ${timeoutMs}ms`)), timeoutMs);
+		timeoutId = setTimeout(() => {
+			const error = new Error(`headphone ${operation} timed out after ${timeoutMs}ms`);
+			error.name = IO_OPERATION_TIMEOUT_ERROR_NAME;
+			reject(error);
+		}, timeoutMs);
 	});
 	try {
 		return await Promise.race([promise, timeout]);
@@ -436,7 +538,8 @@ export function applyHeadphoneMix(): void {
 		selected_output_device_id: mixerState.headphones.selected_output_device_id,
 		mix: mixerState.headphones.mix,
 		level: mixerState.headphones.level,
-		active: mixerState.headphones.active
+		active: mixerState.headphones.active,
+		multichannel_monitor_active: _multichannelMonitorActive
 	});
 	_setMonitorParam(nodes, nodes.cueMix.gain, targets.monitorCueMix);
 	_setMonitorParam(nodes, nodes.masterMix.gain, targets.monitorMasterMix);
@@ -548,6 +651,13 @@ export function headphoneLivenessAlertText(verdict: LivenessVerdict | undefined)
 		return 'Headphone output not producing sound - re-select the device or reload';
 	}
 	return null;
+}
+
+/** Headphone cluster alert line from the serialized headphone read model. */
+export function headphoneLivenessAlertForState(
+	state: import('$lib/rb/mixer-types').HeadphoneState
+): string | null {
+	return headphoneLivenessAlertText(state.liveness_verdict);
 }
 
 /** Case-insensitive label match for Bluetooth-class monitor devices. */
@@ -783,6 +893,23 @@ export function micUnlockDecision(permission: unknown): MicUnlockDecision {
 	return 'ask';
 }
 
+/**
+ * IOPIN-14: `micUnlockDecision`, corrected by what the listing actually shows.
+ *
+ * `granted` is the Permissions API's claim that names are readable. When the
+ * listing just read is still withheld, the claim did not hold for this
+ * document (observed Thu 1 Oct 2026 in Chromium 149: `granted`, and
+ * enumerateDevices still returned its empty placeholders), and skipping the
+ * stream would leave the operator pressing a grant button that does nothing.
+ * The operator pressed that button, which is the consent, so ask.
+ */
+export function labelUnlockDecision(permission: unknown, namesWithheld: boolean): MicUnlockDecision {
+	if (typeof namesWithheld !== 'boolean') throw new TypeError('namesWithheld must be a boolean');
+	const decision = micUnlockDecision(permission);
+	if (decision === 'already_unlocked' && namesWithheld) return 'ask';
+	return decision;
+}
+
 /** What the operator is told when they have declined the microphone. It is not
  * a failure: two-output cue still works for any device they have already
  * picked, and practice and split-cable never needed a device at all. Names the
@@ -969,6 +1096,13 @@ export function setHeadphoneOutputMode(mode: unknown): void {
 	applyHeadphoneMix();
 }
 
+/** Activate the same CUE/MASTER/LEVEL monitor blend for a discrete 3/4 output
+ * pair. Wiring stays in the engine; this function only makes its gains live. */
+export function setMultichannelMonitorActive(active: boolean): void {
+	_multichannelMonitorActive = active;
+	applyHeadphoneMix();
+}
+
 /** Insert the practice equal-power pair between master and mute so cue and
  * master share one destination clock. Does not create a second sink. */
 export function wirePracticeBlendIntoMasterPath(
@@ -1007,9 +1141,52 @@ export function wireSplitCableIntoMasterPath(
 	nodes.splitMerger.connect(muteGain);
 }
 
+const HEADPHONE_DIAGNOSTIC_WINDOW_MS = 60_000;
+let _lastHeadphoneDiagnosticAt = -Infinity;
+
+function _safeErrorClass(error: unknown): string {
+	const candidate = error instanceof Error ? error.name : typeof error;
+	return /^[A-Za-z0-9_.-]{1,64}$/.test(candidate) ? candidate : 'unknown';
+}
+
+/** One bounded, privacy-safe record for repeated audio-route failures.  Keep
+ * device ids, browser messages and media paths out: those may be present in a
+ * DOMException and are not needed to diagnose topology. */
+function _recordHeadphoneDiagnostic(operation: string, error: unknown): void {
+	const now = Date.now();
+	if (now - _lastHeadphoneDiagnosticAt < HEADPHONE_DIAGNOSTIC_WINDOW_MS) return;
+	_lastHeadphoneDiagnosticAt = now;
+	const hp = mixerState.headphones;
+	const fmt = (value: number | null) => (value === null ? 'na' : value.toFixed(3));
+	recordPerfEvent(
+		'headphone-diagnostic',
+		[
+			`operation=${operation.replace(/[^A-Za-z0-9_.-]/g, '_')}`,
+			`error_class=${_safeErrorClass(error)}`,
+			`mode=${hp.output_mode}`,
+			`supported=${hp.supported}`,
+			`cue_active=${hp.active}`,
+			`master_route=${hp.routes.master.state}`,
+			`cue_route=${hp.routes.cue.state}`,
+			`master_rms=${fmt(hp.signals.master.rms)}`,
+			`cue_rms=${fmt(hp.signals.cue.rms)}`,
+			`input_rms=${fmt(hp.signals.input.rms)}`
+		].join(' '),
+		null,
+		'error'
+	);
+}
+
+/** Calibration/session code uses this for failures that occur above a device
+ * operation. It retains the same rate, privacy and deferred Sentry policy. */
+export function recordHeadphoneFailureDiagnostic(operation: string, error: unknown): void {
+	_recordHeadphoneDiagnostic(operation, error);
+}
+
 function _headphoneError(operation: string, error: unknown): Error {
 	const message = error instanceof Error ? error.message : String(error);
 	mixerState.headphones.error = `${operation}: ${message}`;
+	_recordHeadphoneDiagnostic(operation, error);
 	return new Error(mixerState.headphones.error, { cause: error });
 }
 
@@ -1510,7 +1687,9 @@ function _clearHeadphoneSelection(): void {
 	_stopHeadphoneLiveness();
 	mixerState.headphones.selected_output_device_id = null;
 	mixerState.headphones.active = false;
+	mixerState.headphones.routes.cue = { state: 'default', selected: false };
 	_cueClearedByOperator = true;
+	_rememberSavedOutput('cue', null);
 }
 
 /** The browser's own answer, or null when it will not be asked (Safari has no
@@ -1537,6 +1716,10 @@ async function _unlockHeadphoneOutputLabels(mediaDevices: MediaDevices): Promise
 
 function _requireMasterSinkApi(context: AudioContext): AudioContext & { setSinkId: (sinkId: string) => Promise<void> } {
 	if (!audioContextSinkIdIsSupported(context)) {
+		mixerState.headphones.routes.master = {
+			state: 'unsupported',
+			selected: mixerState.headphones.selected_master_output_device_id !== null
+		};
 		throw new Error(
 			'AudioContext.setSinkId is unavailable; master follows the OS default. Use Chrome for two-device cue.'
 		);
@@ -1558,6 +1741,7 @@ async function _applyMasterSink(deviceId: string, context: AudioContext): Promis
 	const ctx = _requireMasterSinkApi(context);
 	await withHeadphoneOperationTimeout('master setSinkId', ctx.setSinkId(deviceId));
 	_outputContext = context;
+	mixerState.headphones.routes.master = { state: 'selected', selected: true };
 }
 
 /**
@@ -1634,6 +1818,11 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	const splitRightCueGain = context.createGain();
 	const splitRightMasterGain = context.createGain();
 	const splitMerger = context.createChannelMerger(2);
+	const canMeasureBuses = typeof context.createAnalyser === 'function';
+	const masterSignalAnalyser = canMeasureBuses ? context.createAnalyser() : null;
+	const cueSignalAnalyser = canMeasureBuses ? context.createAnalyser() : null;
+	const meterSilence = canMeasureBuses ? context.createGain() : null;
+	if (meterSilence !== null) meterSilence.gain.value = 0;
 	masterLeftHalf.gain.value = 0.5;
 	masterRightHalf.gain.value = 0.5;
 	cueLeftHalf.gain.value = 0.5;
@@ -1650,6 +1839,16 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 	masterMix.connect(level);
 	level.connect(delay);
 	delay.connect(bridgeInput);
+	// Keep analyser taps in the pulled graph through a silent sink.  They
+	// observe the app buses and add no audible path or physical-output claim.
+	if (masterSignalAnalyser !== null && cueSignalAnalyser !== null && meterSilence !== null) {
+		masterMonitor.connect(masterSignalAnalyser);
+		// HEADPHONE CUE follows MIX/LEVEL, not an upstream pre-volume branch.
+		level.connect(cueSignalAnalyser);
+		masterSignalAnalyser.connect(meterSilence);
+		cueSignalAnalyser.connect(meterSilence);
+		meterSilence.connect(context.destination);
+	}
 	_headphoneNodes = {
 		cueSum,
 		masterMonitor,
@@ -1677,9 +1876,13 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 		splitLeftGain,
 		splitRightCueGain,
 		splitRightMasterGain,
-		splitMerger
+		splitMerger,
+		masterSignalAnalyser,
+		cueSignalAnalyser,
+		meterSilence
 	};
 	applyHeadphoneMix();
+	_startSignalMeters(_headphoneNodes);
 	return _headphoneNodes;
 }
 
@@ -1704,6 +1907,7 @@ export function peekCueBus(): { context: AudioContext; cueSum: GainNode } | null
 
 function _disposeHeadphoneGraph(): void {
 	_stopHeadphoneLiveness();
+	_stopSignalMeters();
 	const nodes = _headphoneNodes;
 	_headphoneNodes = null;
 	_outputContext = null;
@@ -1740,7 +1944,10 @@ function _disposeHeadphoneGraph(): void {
 		nodes.splitLeftGain,
 		nodes.splitRightCueGain,
 		nodes.splitRightMasterGain,
-		nodes.splitMerger
+		nodes.splitMerger,
+		...(nodes.masterSignalAnalyser === null ? [] : [nodes.masterSignalAnalyser]),
+		...(nodes.cueSignalAnalyser === null ? [] : [nodes.cueSignalAnalyser]),
+		...(nodes.meterSilence === null ? [] : [nodes.meterSilence])
 	]) {
 		node.disconnect();
 	}
@@ -1752,24 +1959,107 @@ export function disposeHeadphoneMonitor(): void {
 	_lastMonitorSource = undefined;
 	_rememberedCueId = null;
 	_cueClearedByOperator = false;
-	_masterDelayNode = null;
 	_unwatchHeadphoneDeviceChanges();
+	releaseHeadphoneGraphOfFailedBuild();
+}
+
+/**
+ * IOPIN-12: release the monitor graph of an engine graph build that THREW,
+ * and nothing else. The build ran lazily inside a headphone or master output
+ * selection (`monitorSource()` in its try block), so retiring in-flight
+ * operations here, as route teardown does, would make that selection's own
+ * catch report "stale headphone operation" in place of the build's real
+ * error. Route state (remembered cue, device watch, monitor source) belongs
+ * to the still-mounted route and is kept for the next build.
+ */
+export function releaseHeadphoneGraphOfFailedBuild(): void {
+	_masterDelayNode = null;
+	_multichannelMonitorActive = false;
 	_disposeHeadphoneGraph();
 	_disposeNativeSink();
+}
+
+/** Whether this browser or shell can pin an output at all. Asked of the
+ * prototype so the answer does not need an engine context to exist yet. */
+function _outputPinningIsSupported(): boolean {
+	// CUEOUT-22: the Mac app pins both outputs natively, without setSinkId.
+	if (nativeCueSinkAvailable()) return true;
+	return typeof AudioContext !== 'undefined' && audioContextSinkIdIsSupported(AudioContext.prototype);
+}
+
+let _ioDeviceAccessAttempts = 0;
+
+/** How many enumeration attempts have published an access state. A caller
+ * that asks for an enumeration reads this before and after, so a request that
+ * was rejected before it ever ran is told from one that ran and failed. */
+export function ioDeviceAccessAttempts(): number {
+	return _ioDeviceAccessAttempts;
+}
+
+/**
+ * IOPIN-14: record that the device list could NOT be read, and why.
+ *
+ * The output list keeps what an earlier attempt read, or falls back to the
+ * system default alone: the machine is still playing through something, and
+ * a failed question is never drawn as "no devices".
+ */
+export function publishIoDeviceAccessFailure(
+	status: 'api_missing' | 'enumeration_failed' | 'timeout',
+	error: unknown
+): void {
+	_ioDeviceAccessAttempts += 1;
+	mixerState.headphones.device_access = ioDeviceAccessForFailure({
+		status,
+		error,
+		outputPinning: _outputPinningIsSupported()
+	});
+	if (mixerState.headphones.outputs.length === 0) {
+		mixerState.headphones.outputs = systemDefaultOutputOnly();
+	}
+}
+
+function _savedOutputs(): { master: SavedIoDevice | null; cue: SavedIoDevice | null } {
+	return loadMixerConfig().saved_outputs;
+}
+
+/** Remember the operator's pick by id and name, so a later session can say
+ * what became of it. `null` forgets the role. */
+function _rememberSavedOutput(role: 'master' | 'cue', deviceId: string | null): void {
+	const listed = deviceId === null ? undefined : mixerState.headphones.outputs.find((output) => output.id === deviceId);
+	persistMixerConfig({
+		saved_outputs: {
+			..._savedOutputs(),
+			[role]: listed === undefined ? null : { id: listed.id, label: listed.label }
+		}
+	});
 }
 
 export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Promise<void> {
 	if (monitorSource !== undefined) _lastMonitorSource = monitorSource;
 	const generation = _headphoneGeneration;
 	const native = nativeCueSinkAvailable() ? await _nativeSink() : null;
+	let mediaDevices: MediaDevices | null = null;
+	if (native === null) {
+		try {
+			mediaDevices = requireHeadphoneDeviceApi();
+		} catch (error) {
+			publishIoDeviceAccessFailure('api_missing', error);
+			throw error;
+		}
+		// Watch before listing: a listing that fails today must still be retried
+		// by the plug-in event that fixes it. The native sink pushes its own
+		// device changes instead (`_onNativeCueEvent`).
+		_watchHeadphoneDeviceChanges(mediaDevices);
+	}
 	let devices: MediaDeviceInfo[];
-	let outputs: { id: string; label: string }[];
+	let permission: string | null;
+	let listing: ReturnType<typeof listIoDevices>;
 	try {
 		if (native !== null) {
-			// CUEOUT-22: outputs come from the shell. Inputs (AUDIO IN, the
+			// CUEOUT-22: outputs come from the shell, already named, so no
+			// microphone grant is needed to list them. Inputs (AUDIO IN, the
 			// calibration mic) still come from the webview when it exposes them.
 			const listed = await withHeadphoneOperationTimeout('native output listing', native.list());
-			outputs = nativeOutputsAsHeadphoneOutputs(listed);
 			const room = listed.find((device) => device.is_default);
 			_nativeRoomOutputId = room === undefined ? null : nativeDeviceId(room.uid);
 			mixerState.headphones.supported = true;
@@ -1777,24 +2067,26 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 				typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.enumerateDevices === 'function'
 					? await withHeadphoneOperationTimeout('enumerateDevices', navigator.mediaDevices.enumerateDevices())
 					: [];
+			_assertCurrentHeadphoneOperation(generation, null);
+			permission = await _microphonePermissionState();
+			listing = listNativeShellDevices(nativeOutputsAsHeadphoneOutputs(listed), devices);
 		} else {
 			devices = await withHeadphoneOperationTimeout(
 				'enumerateDevices',
-				requireHeadphoneDeviceApi().enumerateDevices()
+				(mediaDevices as MediaDevices).enumerateDevices()
 			);
-			outputs = devices
-				.filter((device) => device.kind === 'audiooutput')
-				.map((device) => ({ id: device.deviceId, label: device.label }));
+			_assertCurrentHeadphoneOperation(generation, null);
+			permission = await _microphonePermissionState();
+			listing = listIoDevices(devices);
 		}
 		_assertCurrentHeadphoneOperation(generation, null);
 	} catch (error) {
 		_assertCurrentHeadphoneOperation(generation, null);
+		publishIoDeviceAccessFailure(ioOperationTimedOut(error) ? 'timeout' : 'enumeration_failed', error);
 		throw _headphoneError('headphone output enumeration failed', error);
 	}
-	mixerState.headphones.outputs = outputs;
-	mixerState.headphones.inputs = devices
-		.filter((device) => device.kind === 'audioinput')
-		.map((device) => ({ id: device.deviceId, label: device.label }));
+	mixerState.headphones.outputs = listing.outputs;
+	mixerState.headphones.inputs = listing.inputs;
 	const previousMasterId = mixerState.headphones.selected_master_output_device_id;
 	const previousCueId = mixerState.headphones.selected_output_device_id;
 	if (previousCueId !== null) _rememberedCueId = previousCueId;
@@ -1836,9 +2128,26 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	mixerState.headphones.selected_input_device_id =
 		inputStillPresent ?? preferredAudioInputDeviceId(devices);
 	mixerState.headphones.error = null;
+	_ioDeviceAccessAttempts += 1;
+	const access = ioDeviceAccessForListing({
+		listing,
+		permission,
+		outputPinning: _outputPinningIsSupported()
+	});
+	// A withheld listing proves nothing about which devices are present, so
+	// the saved picks are only compared against a real one.
+	if (access.status === 'listed') {
+		access.notices.push(
+			...savedIoDeviceNotices({
+				saved: _savedOutputs(),
+				outputs: listing.outputs,
+				selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+				selectedCueId: mixerState.headphones.selected_output_device_id
+			})
+		);
+	}
+	mixerState.headphones.device_access = access;
 	applyHeadphoneMix();
-	// The native sink pushes its own device changes (`_onNativeCueEvent`).
-	if (native === null) _watchHeadphoneDeviceChanges(requireHeadphoneDeviceApi());
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
@@ -1858,10 +2167,17 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 	const generation = _headphoneGeneration;
 	try {
 		if (nativeCueSinkAvailable()) {
-			// The shell names every device itself, so there is no label unlock
-			// and no microphone prompt on this path.
+			// The shell names every output itself, so outputs need no unlock.
+			// The webview's inputs (AUDIO IN, the calibration mic) still do when
+			// it withholds them, and this press is the operator's consent.
 			await refreshHeadphoneOutputs(monitorSource);
 			_assertCurrentHeadphoneOperation(generation, null);
+			// A declined or absent microphone only leaves the inputs unnamed: the
+			// outputs are already named, so cue picking below still runs.
+			if (mixerState.headphones.device_access.status !== 'listed' && (await _unlockWebviewInputs(generation))) {
+				await refreshHeadphoneOutputs(monitorSource);
+				_assertCurrentHeadphoneOperation(generation, null);
+			}
 			await _autoSelectSoleBluetoothCue(monitorSource, generation);
 			return;
 		}
@@ -1886,7 +2202,8 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		// unlock failure is still raised (and shown) afterwards.
 		await refreshHeadphoneOutputs(monitorSource);
 		_assertCurrentHeadphoneOperation(generation, null);
-		const decision = micUnlockDecision(await _microphonePermissionState());
+		const namesWithheld = mixerState.headphones.device_access.status !== 'listed';
+		const decision = labelUnlockDecision(await _microphonePermissionState(), namesWithheld);
 		_assertCurrentHeadphoneOperation(generation, null);
 		if (decision === 'declined') {
 			// Not an error: nothing failed, the operator chose this. Saying so here
@@ -1917,6 +2234,67 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('headphone output acquisition failed', error);
 	}
+}
+
+/**
+ * IOPIN-14, `request` mode only (the dev server): name the devices when I/O
+ * opens, asking for the microphone grant the browser needs IF it has never
+ * been asked.
+ *
+ * The request is made only when the Permissions API answers `prompt`. A
+ * `granted` origin lists without a stream and so without a prompt, which is
+ * what makes this a once-per-origin question; `denied`, and a browser with no
+ * such permission to query, are left to the named state and its button.
+ *
+ * Unlike `acquireHeadphoneOutput` this never selects a device: opening I/O
+ * changes no route (IOPIN-03). The stream is stopped as soon as it opens.
+ */
+export async function requestIoDeviceNames(monitorSource?: MonitorSource): Promise<void> {
+	const generation = _headphoneGeneration;
+	await refreshHeadphoneOutputs(monitorSource);
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (mixerState.headphones.device_access.status !== 'permission_needed') return;
+	const permission = await _microphonePermissionState();
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (permission !== 'prompt') return;
+	let requestError: unknown = null;
+	try {
+		await _unlockHeadphoneOutputLabels(requireHeadphoneDeviceApi());
+	} catch (error) {
+		requestError = error;
+	}
+	_assertCurrentHeadphoneOperation(generation, null);
+	// List again whatever the answer was: a grant names the devices, a refusal
+	// turns the state into `permission_denied` with how to re-allow.
+	await refreshHeadphoneOutputs(monitorSource);
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (requestError === null || ioDeviceAccessRequestWasNotGranted(requestError)) return;
+	if (microphoneIsMissing(requestError)) {
+		mixerState.headphones.error = MIC_ABSENT_NOTICE;
+		return;
+	}
+	// Recorded on the panel and in the diagnostic ring, not thrown: the listing
+	// above is the state, and this is why it is still withheld.
+	_headphoneError('audio device access request failed', requestError);
+}
+
+/** CUEOUT-22: ask the webview for the microphone grant that names its inputs.
+ * False when nothing was opened. A declined or absent microphone sets no
+ * error: the panel's access state already says why AUDIO IN is unnamed, and
+ * the MIC_* notices talk about hidden OUTPUT names, which the shell names. */
+async function _unlockWebviewInputs(generation: number): Promise<boolean> {
+	const decision = labelUnlockDecision(await _microphonePermissionState(), true);
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (decision === 'declined') return false;
+	try {
+		await _unlockHeadphoneOutputLabels(requireHeadphoneDeviceApi());
+	} catch (error) {
+		if (!microphoneIsMissing(error)) throw error;
+		_assertCurrentHeadphoneOperation(generation, null);
+		return false;
+	}
+	_assertCurrentHeadphoneOperation(generation, null);
+	return true;
 }
 
 async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generation: number): Promise<void> {
@@ -1986,9 +2364,11 @@ export async function selectHeadphoneOutput(
 		}
 		mixerState.headphones.selected_output_device_id = deviceId;
 		mixerState.headphones.active = true;
+		mixerState.headphones.routes.cue = { state: 'selected', selected: true };
 		mixerState.headphones.output_mode = 'two_outputs';
 		_rememberedCueId = deviceId;
 		_cueClearedByOperator = false;
+		_rememberSavedOutput('cue', deviceId);
 		applyHeadphoneMix();
 		_lastMonitorSource = monitorSource;
 		_startHeadphoneLiveness(nodes);
@@ -1996,6 +2376,7 @@ export async function selectHeadphoneOutput(
 		mixerState.headphones.selected_output_device_id = previousId;
 		mixerState.headphones.active = previousActive;
 		mixerState.headphones.output_mode = previousMode;
+		mixerState.headphones.routes.cue = { state: 'failed', selected: previousId !== null };
 		_assertCurrentHeadphoneOperation(generation, nodes);
 		throw _headphoneError('headphone output selection failed', error);
 	}
@@ -2021,8 +2402,12 @@ export async function selectMasterOutput(
 		_lastMonitorSource = monitorSource;
 		mixerState.headphones.selected_master_output_device_id = deviceId;
 		mixerState.headphones.error = null;
+		_rememberSavedOutput('master', deviceId);
 	} catch (error) {
 		mixerState.headphones.selected_master_output_device_id = previousId;
+		if (mixerState.headphones.routes.master.state !== 'unsupported') {
+			mixerState.headphones.routes.master = { state: 'failed', selected: previousId !== null };
+		}
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('master output selection failed', error);
 	}

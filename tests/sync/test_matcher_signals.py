@@ -219,7 +219,7 @@ class TestConfidence:
     def test_three_signals_meets_accept_threshold(self) -> None:
         # A pair with ISRC + duration + ID3 would fire 3 signals.
         # We only test the threshold constants here so we don't depend on
-        # mutagen.
+        # the tag reader.
         assert MIN_SIGNALS_FOR_ACCEPT == 3
         assert MIN_CONFIDENCE_FOR_ACCEPT == 0.70
 

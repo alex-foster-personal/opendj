@@ -7,11 +7,11 @@
 //   if formatBytes(0x90,60,127) isn't '90 3C 7F' then broken
 //   if describeSource(null) doesn't say 'undecoded' then broken
 //   if midiLabelStatus(granted, no mapped device) is green then broken
-//   if midiLabelStatus with requestPending isn't amber then broken
+//   if midiLabelStatus with requestPending and MIDI on isn't amber then broken
+//   if midiLabelStatus(granted, MIDI turned off) is red then broken
+//   if midiLabelStatus(pending prompt, MIDI turned off) is amber then broken
 //   if requestMidiAccess failure leaves midiUi.lastError null then broken
 //   if two toggleMidiPanel calls don't restore panelOpen then broken
-//   if a WebMIDI-less window clears the shared MIDI opt-in then broken
-//   if a Chrome denial leaves the MIDI opt-in set then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -28,7 +28,6 @@ let fmt; // midi-format.ts (pure)
 let uiState; // midi-ui-state.svelte.ts (rune module)
 let enabledChoice; // midi-enabled-choice.ts (the persisted opt-in, runtime-free)
 let webmidi; // webmidi.svelte.ts (for permission state assertions)
-let initialPermission; // midiState.permission as the module built it, before any test
 let flx10; // ddj-flx10.ts (real map, for best-guess-hint transcription check)
 
 before(async () => {
@@ -52,7 +51,6 @@ before(async () => {
 		'/src/lib/components/rb/midi/midi-enabled-choice.ts'
 	);
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
-	initialPermission = webmidi.midiState.permission;
 	flx10 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx10.ts');
 });
 
@@ -73,7 +71,23 @@ function _uninstallLocalStorage() {
 	delete globalThis.localStorage;
 }
 
+/** Run fn with a WebMIDI whose request is denied (Node has none of its own). */
+async function _withDenyingWebMidi(fn) {
+	const desc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		value: { requestMIDIAccess: () => Promise.reject(new Error('denied')) }
+	});
+	try {
+		await fn();
+	} finally {
+		if (desc) Object.defineProperty(globalThis, 'navigator', desc);
+		else delete globalThis.navigator;
+	}
+}
+
 after(async () => {
+	uiState?.detachMidiGlueForRouteUnmount();
 	await vite.close();
 });
 
@@ -110,39 +124,70 @@ test('formatLogTs renders seconds since page load and rejects bad input', () => 
 
 // -------------------------------------------------------- label status logic
 
-test('midiLabelStatus: amber while a request is pending, above all else', () => {
-	assert.equal(fmt.midiLabelStatus('prompt', true, false), 'amber');
-	assert.equal(fmt.midiLabelStatus('granted', true, true), 'amber');
+test('midiLabelStatus: amber while a request for MIDI turned on is pending', () => {
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, true), 'amber');
+	assert.equal(fmt.midiLabelStatus('granted', true, true, true), 'amber');
+	assert.equal(fmt.midiLabelStatus('denied', true, false, true), 'amber');
+});
+
+test('midiLabelStatus: turning MIDI off wins over a pending prompt (Codex P2 4131292220)', () => {
+	// The prompt still open belongs to a superseded request (disableMidi bumped
+	// the generation), so its late grant attaches nothing: MIDI is off.
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, false), 'grey');
+	assert.equal(fmt.midiLabelStatus('granted', true, true, false), 'grey');
+	assert.equal(fmt.midiLabelTitle('prompt', true, 0, 0, false), 'MIDI: off - turn it on in Settings');
+	// Control: the same pending prompt with MIDI on is still amber and says so.
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, true), 'amber');
+	assert.match(fmt.midiLabelTitle('prompt', true, 0, 0, true), /pending/);
 });
 
 test('midiLabelStatus: green when granted with a mapped device, red without', () => {
-	assert.equal(fmt.midiLabelStatus('granted', false, true), 'green');
+	assert.equal(fmt.midiLabelStatus('granted', false, true, true), 'green');
 	// granted but no mapped device = access was granted then the controller
 	// disconnected (or nothing recognised is plugged in) -> red X.
-	assert.equal(fmt.midiLabelStatus('granted', false, false), 'red');
-	assert.equal(fmt.midiLabelStatus('prompt', false, false), 'grey');
-	assert.equal(fmt.midiLabelStatus('denied', false, false), 'grey');
-	assert.equal(fmt.midiLabelStatus('unsupported', false, false), 'grey');
+	assert.equal(fmt.midiLabelStatus('granted', false, false, true), 'red');
+	assert.equal(fmt.midiLabelStatus('prompt', false, false, true), 'grey');
+	assert.equal(fmt.midiLabelStatus('denied', false, false, true), 'grey');
+	assert.equal(fmt.midiLabelStatus('unsupported', false, false, true), 'grey');
 });
 
-test('midiLabelGlyph: check icon for green, cross icon for red, nothing otherwise (#3886: icons, not glyphs)', () => {
-	assert.equal(fmt.midiLabelGlyph('green'), 'check');
+test('midiLabelStatus: granted but turned off is gray, not a lost device (Codex P2, PR #3896)', () => {
+	// releaseMidiInputs() keeps the grant and empties the device list.
+	assert.equal(fmt.midiLabelStatus('granted', false, false, false), 'grey');
+	assert.equal(fmt.midiLabelStatus('granted', false, true, false), 'grey');
+	// Control: the same empty list with MIDI on is still a lost device.
+	assert.equal(fmt.midiLabelStatus('granted', false, false, true), 'red');
+	// Off wins even over a request still in flight.
+	assert.equal(fmt.midiLabelStatus('granted', true, false, false), 'grey');
+});
+
+test('midiLabelGlyph: tick for green, cross for red, none otherwise (#3886: SVG icon kinds, not text glyphs)', () => {
+	assert.equal(fmt.midiLabelGlyph('green'), 'tick');
 	assert.equal(fmt.midiLabelGlyph('red'), 'cross');
-	assert.equal(fmt.midiLabelGlyph('grey'), null);
-	assert.equal(fmt.midiLabelGlyph('amber'), null);
+	assert.equal(fmt.midiLabelGlyph('grey'), 'none');
+	assert.equal(fmt.midiLabelGlyph('amber'), 'none');
 });
 
 test('midiLabelTitle: granted with zero mapped devices reads as disconnected', () => {
-	assert.match(fmt.midiLabelTitle('granted', false, 0, 0), /granted but no mapped controller/);
-	assert.match(fmt.midiLabelTitle('granted', false, 0, 1), /granted but no mapped controller/);
+	assert.match(fmt.midiLabelTitle('granted', false, 0, 0, true), /granted but no mapped controller/);
+	assert.match(fmt.midiLabelTitle('granted', false, 0, 1, true), /granted but no mapped controller/);
+});
+
+test('midiLabelTitle: granted but turned off says so and points at Settings', () => {
+	const off = fmt.midiLabelTitle('granted', false, 0, 0, false);
+	assert.match(off, /off - turn it on in Settings/);
+	assert.doesNotMatch(off, /reconnect/);
+	// Control: the other permission states read the same whatever the choice.
+	assert.match(fmt.midiLabelTitle('denied', false, 0, 0, false), /denied/);
+	assert.match(fmt.midiLabelTitle('prompt', false, 0, 0, false), /request access/);
 });
 
 test('midiLabelTitle names every permission state', () => {
-	assert.match(fmt.midiLabelTitle('unsupported', false, 0, 0), /not supported/);
-	assert.match(fmt.midiLabelTitle('denied', false, 0, 0), /denied/);
-	assert.match(fmt.midiLabelTitle('prompt', false, 0, 0), /request access/);
-	assert.match(fmt.midiLabelTitle('granted', false, 1, 2), /1 mapped \/ 2 connected/);
-	assert.match(fmt.midiLabelTitle('granted', true, 0, 0), /pending/);
+	assert.match(fmt.midiLabelTitle('unsupported', false, 0, 0, true), /not supported/);
+	assert.match(fmt.midiLabelTitle('denied', false, 0, 0, true), /denied/);
+	assert.match(fmt.midiLabelTitle('prompt', false, 0, 0, true), /request access/);
+	assert.match(fmt.midiLabelTitle('granted', false, 1, 2, true), /1 mapped \/ 2 connected/);
+	assert.match(fmt.midiLabelTitle('granted', true, 0, 0, true), /pending/);
 });
 
 // ---------------------------------------------------- decoded trace labels
@@ -212,6 +257,24 @@ test('requestMidiAccess on a WebMIDI-less runtime fails LOUDLY into lastError', 
 	assert.notEqual(uiState.midiUi.lastError, null);
 	assert.match(uiState.midiUi.lastError, /not supported/i);
 	assert.equal(webmidi.midiState.permission, 'unsupported');
+	// Failure must release the action handler and meter interval: a second
+	// request is a fresh failure, not "attachMidiGlue: already attached".
+	await uiState.requestMidiAccess();
+	assert.match(uiState.midiUi.lastError, /not supported/i);
+});
+
+test('CTRL-06: boot in a runtime with no MIDI makes no request and keeps the shared opt-in', async () => {
+	// Node has neither navigator.requestMIDIAccess nor the Tauri bridge.
+	assert.equal(uiState.midiRuntimeAvailable(), false);
+	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
+	try {
+		uiState.midiUi.lastError = null;
+		await uiState.maybeAutoEnableMidi();
+		assert.equal(uiState.midiUi.lastError, null, 'boot must not request MIDI where none exists');
+		assert.equal(enabledChoice.midiEnabledPersisted(), true, 'the Chrome tab keeps its opt-in');
+	} finally {
+		_uninstallLocalStorage();
+	}
 });
 
 test('requestMidiAccess throws on a concurrent second call', async () => {
@@ -252,54 +315,15 @@ test('midiEnabledPersisted is false (no throw) when localStorage is absent', () 
 	assert.equal(uiState.midiEnabledPersisted(), false);
 });
 
-/** Give Node's navigator a requestMIDIAccess that rejects, the way Chrome
- * answers a user who clicks Block, and take it away again afterwards. */
-async function _withDeniedWebMidi(fn) {
-	const denied = async () => {
-		throw new Error('NotAllowedError: permission denied');
-	};
-	globalThis.navigator.requestMIDIAccess = denied;
-	try {
-		assert.equal(webmidi.webMidiSupported(), true);
-		await fn();
-	} finally {
-		delete globalThis.navigator.requestMIDIAccess;
-	}
-}
-
-test('webMidiSupported follows navigator.requestMIDIAccess', async () => {
-	assert.equal(webmidi.webMidiSupported(), false); // Node, like WKWebView
-	await _withDeniedWebMidi(async () => {});
-	assert.equal(webmidi.webMidiSupported(), false);
-});
-
-test('a WebMIDI-less window starts unsupported, not "not requested yet"', () => {
-	// Module state was built in Node, which has no WebMIDI: the desktop app's
-	// panel must not offer a request button that can never work.
-	assert.equal(initialPermission, 'unsupported');
-});
-
-test('a denied requestMidiAccess clears the persisted enabled flag (no reload nag)', async () => {
-	// Simulate "user enabled MIDI before", then a reload where Chrome denies
-	// access: the choice must be forgotten so we do not re-nag.
+test('a failed requestMidiAccess clears the persisted enabled flag (no reload nag)', async () => {
+	// Simulate "user enabled MIDI before", then a reload where WebMIDI denies
+	// access: the choice must be forgotten so we do not re-nag (CTRL-06 control:
+	// a runtime that HAS MIDI still clears it).
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	assert.equal(uiState.midiEnabledPersisted(), true);
-	await _withDeniedWebMidi(async () => {
-		await uiState.requestMidiAccess();
-	});
-	assert.match(uiState.midiUi.lastError, /denied/); // failed loudly
-	assert.equal(webmidi.midiState.permission, 'denied');
+	await _withDenyingWebMidi(() => uiState.requestMidiAccess());
+	assert.notEqual(uiState.midiUi.lastError, null); // failed loudly
 	assert.equal(uiState.midiEnabledPersisted(), false); // and forgot the choice
-	_uninstallLocalStorage();
-});
-
-test('an unsupported requestMidiAccess keeps the shared enabled flag', async () => {
-	// The desktop app has no WebMIDI, and the opt-in is shared with the Chrome
-	// tab through ui-prefs, so failing here must not switch Chrome's MIDI off.
-	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
-	await uiState.requestMidiAccess();
-	assert.match(uiState.midiUi.lastError, /not supported/i); // still loud
-	assert.equal(uiState.midiEnabledPersisted(), true);
 	_uninstallLocalStorage();
 });
 
@@ -314,24 +338,25 @@ test('maybeAutoEnableMidi is a no-op when the user never opted in', async () => 
 
 test('maybeAutoEnableMidi re-runs the request when the choice was persisted', async () => {
 	// Persisted opt-in -> auto path calls requestMidiAccess, which the stub
-	// denies, clearing the flag: proves the wire actually fired.
+	// WebMIDI denies, clearing the flag: proves the wire actually fired.
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	uiState.midiUi.lastError = null;
-	await _withDeniedWebMidi(async () => {
-		await uiState.maybeAutoEnableMidi();
-	});
-	assert.match(uiState.midiUi.lastError, /denied/);
+	await _withDenyingWebMidi(() => uiState.maybeAutoEnableMidi());
+	assert.notEqual(uiState.midiUi.lastError, null);
 	assert.equal(uiState.midiEnabledPersisted(), false);
 	_uninstallLocalStorage();
 });
 
-test('maybeAutoEnableMidi does nothing in a WebMIDI-less window', async () => {
-	// The desktop app: no request, no error, and the opt-in stays for Chrome.
-	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
-	uiState.midiUi.lastError = null;
-	await uiState.maybeAutoEnableMidi();
-	assert.equal(uiState.midiUi.lastError, null);
-	assert.equal(uiState.midiUi.requestPending, false);
-	assert.equal(uiState.midiEnabledPersisted(), true);
-	_uninstallLocalStorage();
+// requirement: CHROME-08
+test('MidiPanel supports expanded 70vw and floating width modes', async () => {
+	const { readFileSync } = await import('node:fs');
+	const { fileURLToPath } = await import('node:url');
+	const panel = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/MidiPanel.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(panel, /width:\s*70vw/);
+	assert.match(panel, /data-width-mode=\{midiUi\.widthMode\}/);
+	assert.match(panel, /toggleMidiPanelExpanded/);
+	assert.match(panel, /floatMidiPanel/);
 });

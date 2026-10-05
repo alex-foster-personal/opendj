@@ -277,7 +277,9 @@ def local_artwork(stable_id: str, *, online: bool = False) -> tuple[bytes, str]:
 
     The chain after rekordbox's own jpg, first hit wins:
 
-    1. the picture embedded in the track's local audio file (tinytag, MIT);
+    1. the picture embedded in the track's local audio file (tinytag, MIT,
+       via :mod:`apps.shared.tag_reader`, a core dependency that ships in
+       every build);
     2. a ``cover``/``folder``/``front`` image beside that file;
     3. a cover found online earlier and cached in the app's data dir;
     4. with ``online=True`` only, a MusicBrainz + Cover Art Archive lookup
@@ -345,20 +347,19 @@ def _track_query(stable_id: str, duration_ms: int | None) -> Any:
     return artwork_sources.TrackQuery(artist=artist, title=title, duration_ms=duration_ms)
 
 
-def local_artwork_available(stable_id: str) -> bool | None:
+def local_artwork_available(stable_id: str) -> bool:
     """Whether ``/artwork`` would serve something for a track with no
     rekordbox mapping, without going online: an embedded picture, a cover
-    image beside the file, or an online cover already cached. Still typed
-    ``bool | None`` for the wire, but the reader (tinytag) is now a core
-    dependency, so it never answers ``None`` ("could not check") any more
-    (#795, #4717).
+    image beside the file, or an online cover already cached. The reader
+    (tinytag, via :mod:`apps.shared.tag_reader`) is a core dependency, so
+    this never answers "could not check" (#795, #4717).
     """
     return _artwork_available_for_resolved(stable_id, _resolve_local_audio_path(stable_id))
 
 
 def bulk_local_artwork_available(
     state: sqlite3.Connection, stable_ids: Sequence[str],
-) -> dict[str, bool | None]:
+) -> dict[str, bool]:
     """:func:`local_artwork_available` for many rows over ONE open state.db.
 
     The listing hot path (issue #3962): the per-row function opens a fresh
@@ -420,7 +421,7 @@ def local_track_file_tags(stable_id: str) -> tuple[str | None, str | None]:
 
     A folder import persists the genre and comment it read off the file's
     own tags into ``track_fields`` (see
-    :func:`apps.shared.state.ingest.folder._write_file_tag_metadata`). They
+    :func:`apps.shared.state.ingest.folder.write_file_tag_metadata`). They
     are file facts, not rekordbox facts, so they are the only two metadata
     fields an unmapped row can honestly serve.
 

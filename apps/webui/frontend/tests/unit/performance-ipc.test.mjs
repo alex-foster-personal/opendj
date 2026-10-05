@@ -946,7 +946,9 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		assert.deepEqual(state.decks[1].stems.controls, {
 			vocal: { muted: false, solo: false, gain: 0.5 },
 			instrumental: { muted: false, solo: false, gain: 0.5 },
-			drums: { muted: false, solo: false, gain: 0.5 }
+			drums: { muted: false, solo: false, gain: 0.5 },
+			bass: { muted: false, solo: false, gain: 0.5 },
+			other: { muted: false, solo: false, gain: 0.5 }
 		});
 
 		await assert.rejects(
@@ -956,7 +958,7 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				stem: 'mix',
 				muted: true
 			}),
-			/stem must be vocal, instrumental, or drums/i
+			/unknown stem control: mix/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
@@ -966,6 +968,12 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				solo: 'yes'
 			}),
 			/solo must be boolean/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_solo', deck: 1, stem: 'bass', solo: true, exclusive: 'yes'
+			}),
+			/exclusive must be boolean/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({
@@ -991,7 +999,7 @@ test('stem commands are strict typed IPC and default state never claims artifact
 				stem: 'mix',
 				value: 0.5
 			}),
-			/stem must be vocal, instrumental, or drums/i
+			/unknown stem control: mix/i
 		);
 	} finally {
 		uninstall();
@@ -1069,10 +1077,32 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				offset_ms: null,
 				verify_residual_ms: null,
 				probe: null,
-				error: null
+				error: null,
+				diagnostics: {
+					probe: 'chirp', alternate_probe: 'unavailable', failure: null,
+					master_measurements_ms: [], cue_measurements_ms: [], spread_ms: null
+				}
 			},
+			routes: {
+				master: { state: 'default', selected: false },
+				cue: { state: 'default', selected: false }
+			},
+			signals: Object.fromEntries(['master', 'cue', 'input'].map((bus) => [bus, {
+				state: bus === 'input' ? 'inactive' : 'unavailable',
+				rms: null, peak: null, measured_at: null,
+				source: bus === 'input' ? 'captured_input' : 'application_bus',
+				physical_output_proven: false
+			}])),
 			outputs: [],
 			inputs: [],
+			device_access: {
+				status: 'not_checked',
+				action: 'retry',
+				message: 'Audio devices have not been checked yet. Audio plays through the system default output.',
+				detail: null,
+				output_pinning: true,
+				notices: []
+			},
 			supported: false,
 			active: false,
 			error: null
@@ -1160,13 +1190,14 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'headphone_output_select'/);
 	assert.match(mixer, /type: 'headphone_master_select'/);
 	assert.match(mixer, /type: 'headphone_input_select'/);
-	// Pin 894af5672c3b: SET OUTPUTS records the session click, then acquires.
-	assert.match(headphones, /function handleSetOutputs\(\): void \{[^}]*onacquire\(\);/);
-	// bf60d7d67 feat(webui): pin master and cue sinks from I/O menu (#2409)
-	// replaced the "+ OUT" grant button (title "Grant browser access to a second
-	// audio output") with the I/O button, which still calls onacquire.
+	assert.match(headphones, /onclick=\{onacquire\}/);
+	// Opening settings is read-only; permission/chooser is a separate explicit
+	// action. Both still reach the typed dispatcher via Mixer callbacks.
+	// Pin 894af5672c3b: SET OUTPUTS records the session click, then opens the panel.
+	assert.match(headphones, /function handleSetOutputs\(\): void \{[^}]*openIo\(\);/);
 	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{handleSetOutputs\}/);
-	assert.match(headphones, /I\/O briefly uses the built-in mic so device names appear/);
+	assert.match(headphones, /Choose output \/ allow device access/);
+	assert.match(headphones, /Device access can open an output chooser or microphone permission prompt/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 	assert.match(headphones, /ondelay/);
@@ -1412,6 +1443,36 @@ test('master mute and browser playlist selection are bus commands with queryable
 		uninstall();
 		delete globalThis.window;
 	}
+});
+
+test('IOPIN-06 takeover mode is a strict dispatcher command with a query-visible result', async () => {
+	// [if] MIDI settings choose Jump [then] IPC reports Jump, [else stop].
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const originalMode = ipc.queryPerformanceState().midi_takeover.mode;
+	try {
+		const jumped = await window.musicDjToolsPerformance.dispatch({
+			type: 'midi_takeover_mode',
+			mode: 'jump'
+		});
+		assert.equal(jumped.midi_takeover.mode, 'jump');
+		assert.equal(ipc.queryPerformanceState().midi_takeover.mode, 'jump');
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'midi_takeover_mode', mode: 'teleport' }),
+			/midi takeover mode must be pickup or jump/
+		);
+	} finally {
+		await ipc.dispatchPerformanceCommand({ type: 'midi_takeover_mode', mode: originalMode });
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('IOPIN-06 MIDI panel sends takeover radios through the typed dispatcher', async () => {
+	// [if] a takeover radio changes [then] it dispatches the shared command, [else stop].
+	const source = await readFile('src/lib/components/rb/MidiPanel.svelte', 'utf8');
+	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'midi_takeover_mode', mode \}\)/);
+	assert.doesNotMatch(source, /setMidiTakeoverMode\(/);
 });
 
 // ----- pin 88e3abec02a0: "show other users' pins" is stubbed, not silent --

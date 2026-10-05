@@ -69,14 +69,15 @@ Pulled from [`reqs.json`](../reqs.json) and the generated
 
 ### Serato GEOB cue write (Phase 16)
 
-Serato cue writes through `mutagen` GEOB frames were plumbed end-to-end
+Serato cue writes through ID3 GEOB frames were plumbed end-to-end
 late in the v1 window (PR #65) and the `03-8-hot-cues` fixture now
 round-trips. Earlier v1 RC notes described this as a silent drop; that
 RC note is obsolete.
 
 - Read path: `apps/adapters/serato/` preserves subcrate playlist
   membership on read (PR #65).
-- Write path: `SeratoAdapter.write()` emits GEOB via mutagen.
+- Write path: `SeratoAdapter.write()` emits GEOB via the in-house
+  `apps.shared.id3v2` (mutagen until Thu 1 Oct 2026).
 - Remaining caution: only the `03-8-hot-cues` fixture exercises the
   write path in-repo; a real Serato library round-trip is still
   category D2-adjacent and has not been run.

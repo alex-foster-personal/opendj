@@ -1,10 +1,11 @@
 // Open DJ desktop shell entry point.
 //
-// THIN SHELL, NOW WITH A LIFECYCLE. This binary owns no application logic:
-// no `#[tauri::command]` handlers, no HTTP client for the API, no database,
-// no product decisions. What it gained is the one responsibility a shipped
-// app cannot outsource -- starting the engine that lives inside its own
-// bundle, and stopping it again.
+// THIN SHELL, NOW WITH A LIFECYCLE AND NATIVE TRANSPORTS. This binary owns no
+// deck or library logic, no HTTP client for the API, and no database. It owns
+// the responsibilities a shipped app cannot outsource: starting/stopping the
+// bundled engine and bridging OS hardware APIs that WKWebView does not expose.
+// Native MIDI carries raw bytes only; TypeScript still owns all controller
+// mapping and behavior.
 //
 // Before this train the artifact was a window onto an engine somebody else
 // had started from a repo checkout. That made it a demo. The bar it now has
@@ -22,6 +23,7 @@ mod cue_sink;
 mod engine;
 mod engine_log;
 mod launch;
+mod midi;
 mod output_health;
 mod shell_health;
 mod supervisor;
@@ -515,6 +517,11 @@ fn main() {
     // live session (`launch.rs::stop_holder_pid`). The guard belongs here,
     // at launch admission, not in the lock logic itself.
     let builder = tauri::Builder::default()
+        .manage(midi::NativeMidiBridge::default())
+        .invoke_handler(tauri::generate_handler![
+            midi::platform::native_midi_snapshot,
+            midi::platform::native_midi_send
+        ])
         .plugin(tauri_plugin_single_instance::init(focus_existing_window))
         // THE AUTO-UPDATE CHANNEL. Registered unconditionally, in release and in
         // debug, so a developer build cannot silently lack the surface a shipped

@@ -97,11 +97,6 @@ dependencies = [
     # Pillow is imported directly by apps/sync/usb/pioneer/agent_actuator.py
     # for artwork resizing (diagnose F5-3).
     "Pillow>=12.3.0",
-    # Every audio tag READ (title/artist/genre, duration, bitrate, embedded
-    # art) goes through tinytag behind apps/shared/_tagreader.py. MIT, pure
-    # Python, no dependencies. Writing tags into audio files is not a product
-    # feature: mutagen is GPL-2.0-or-later (issue #4717; ADR-0122).
-    "tinytag>=2.2.1,<3",
     # Same module reads display geometry and grabs window images through
     # Quartz. It was undeclared until Mon 17 Aug 2026, so a uv-synced venv
     # had no pyobjc and every geometry call raised "Quartz unavailable" ON
@@ -145,6 +140,11 @@ dependencies = [
     # Same range as the dev extra below, which keeps its entry for the dmg
     # preflight's reason.
     "cryptography>=50,<51",
+    # Every audio tag READ (title/artist/genre, duration, bitrate, embedded
+    # art) goes through tinytag behind apps/shared/_tagreader.py. MIT, pure
+    # Python, no dependencies. Writing tags into audio files is not a product
+    # feature: mutagen is GPL-2.0-or-later (issue #4717; ADR-0122).
+    "tinytag>=2.3.2,<3",
 ]
 
 # AGENT-05: the `opendj` console script. A thin client of the AGENT-03 command
@@ -733,11 +733,12 @@ module = [
     "sentry_sdk.*",
     "setproctitle",
     "sklearn.*",
+    "tinytag",
+    "tinytag.*",
     "soundfile",
     "spotipy",
     "spotipy.*",
     "tensorflow",
-    "tinytag",
     "torch",
     "torchaudio",
     "yaml",

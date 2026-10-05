@@ -23,6 +23,7 @@
  */
 
 import { api } from '$lib/api/client';
+import { refuseStickWrite } from '$lib/rb/track-source';
 import { queryPerformanceState, type PerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { deckWasHeard, externallyRoutedDecks } from '$lib/sets/deck-audibility';
 
@@ -99,6 +100,7 @@ function _defaultHeard(): (state: PerformanceState, deck: DeckId) => boolean {
 }
 
 async function _defaultPost(play: PlayPost): Promise<void> {
+	refuseStickWrite(play.stableId, 'play count');
 	await api.POST('/api/v1/tracks/{stable_id}/plays', {
 		params: { path: { stable_id: play.stableId } },
 		body: {

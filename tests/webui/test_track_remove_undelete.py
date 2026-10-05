@@ -1,4 +1,5 @@
-"""LIBM-52 HTTP remove/undelete regression tests.
+"""LIBM-52 HTTP remove/undelete regression tests (also the server half of LIBM-78b:
+the /reconcile admin view removes rows through this endpoint).
 
 [if] POST :remove then POST :undelete on a track in two playlists [then] both
 memberships return at original positions and the audio file is untouched,

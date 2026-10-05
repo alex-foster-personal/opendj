@@ -126,14 +126,22 @@ class DeckHotCue(_Strict):
 class DeckBeatLoop(_Strict):
     type: Literal["deck_beat_loop"]
     deck: DeckId
-    # exactBeatLoopRangeMs() and the beat_loop dispatcher command both require
-    # a positive integer beat count; a fractional value passes here and then
-    # produces a command error instead of a loop at press time.
-    beats: int = Field(gt=0)
+    # Fractional loops interpolate adjacent measured PQTZ timestamps.
+    beats: float = Field(gt=0, allow_inf_nan=False)
+
+
+class DeckAutoLoopToggle(_Strict):
+    type: Literal["deck_auto_loop_toggle"]
+    deck: DeckId
 
 
 class DeckLoopExit(_Strict):
     type: Literal["deck_loop_exit"]
+    deck: DeckId
+
+
+class DeckStemEqToggle(_Strict):
+    type: Literal["deck_stem_eq_toggle"]
     deck: DeckId
 
 
@@ -189,7 +197,9 @@ MidiActionModel = Annotated[
     | DeckCue
     | DeckHotCue
     | DeckBeatLoop
+    | DeckAutoLoopToggle
     | DeckLoopExit
+    | DeckStemEqToggle
     | MixerChannel
     | MixerGlobal
     | ChannelCue
@@ -205,7 +215,8 @@ MidiActionModel = Annotated[
 # 'note'; action-glue.svelte.ts's _pressed() throws on anything else.
 _BUTTON_ACTIONS = frozenset(
     {"deck_play_toggle", "deck_cue", "deck_hot_cue", "deck_beat_loop", "deck_loop_exit",
-     "channel_cue", "browse_load", "shift_modifier"}
+     "channel_cue", "browse_load", "shift_modifier", "deck_stem_eq_toggle",
+     "deck_auto_loop_toggle"}
 )
 
 # _continuous01() throws on anything but kind:'continuous'/'continuous14'. A

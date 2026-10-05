@@ -13,15 +13,20 @@
 	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
+	import { untrack } from 'svelte';
 
 	let {
 		pin,
+		point = null,
 		onclose,
 		onarchive,
 		onfollowon,
 		onreply
 	}: {
 		pin: FeedbackPin;
+		/** Where the marker is actually drawn (FeedbackPinLayer's resolved
+		 * position); null falls back to the pin's stored percentages. */
+		point?: { x_pct: number; y_pct: number } | null;
 		onclose: () => void;
 		onarchive: () => void | Promise<void>;
 		onfollowon: () => void;
@@ -47,7 +52,7 @@
 	 * prop change, not just at mount. */
 	const bodyStyle = $derived.by(() => {
 		const pos = measuredPos;
-		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(point ?? pin);
 		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 
@@ -67,7 +72,7 @@
 		if (pinBodyElement === null) return;
 		const rect = pinBodyElement.getBoundingClientRect();
 		measuredPos = pinBodyPos(
-			pin,
+			point ?? pin,
 			{ w: rect.width, h: rect.height },
 			{ w: window.innerWidth, h: window.innerHeight }
 		);
@@ -81,7 +86,10 @@
 		lightboxOpen = false;
 		unsyncedAttachmentId = null;
 		replyText = readPinReplyDraft(localStorage, pin.id);
-		if (pinBodyElement !== null) _reposition();
+		// untrack: `point` is re-resolved every layout tick, and this effect
+		// also resets the lightbox and reply draft, which must only happen
+		// when a different pin opens, not once a second.
+		if (pinBodyElement !== null) untrack(_reposition);
 	});
 
 	function handleLightboxKeydown(event: KeyboardEvent): void {
@@ -155,6 +163,22 @@
 			<dd>{pin.environment.machine}</dd>
 			<dt title="Release version separate from git sha">Release</dt>
 			<dd>{pin.environment.release_version}</dd>
+			{#if pin.environment.user_email}
+				<dt title="Account signed in when the pin was dropped, stamped by the daemon">User</dt>
+				<dd>{pin.environment.user_email}</dd>
+			{/if}
+			{#if pin.environment.ui_config}
+				{@const cfg = pin.environment.ui_config}
+				<dt title="App mode, audio engine and performance tier at drop time">Config</dt>
+				<dd>{cfg.app_mode} / {cfg.engine_mode} / {cfg.perf_tier}</dd>
+				<dt title="Feature switches that were on at drop time">Switches on</dt>
+				<dd>
+					{Object.entries(cfg.switches)
+						.filter(([, on]) => on)
+						.map(([name]) => name)
+						.join(', ') || 'none'}
+				</dd>
+			{/if}
 		{/if}
 	</dl>
 	{#if pin.fixed_in_sha}
@@ -201,8 +225,8 @@
 	{/each}
 	{#if pin.attachment && unsyncedAttachmentId === pin.attachment.id}
 		<p class="fb-hint fb-attachment-unsynced" data-testid="fb-attachment-unsynced">
-			Screenshot not on this machine: pin sync carries attachment details, not the image
-			yet.
+			Attachment not on this machine: pin sync carries the screenshot's details, not the
+			image yet.
 		</p>
 	{:else if pin.attachment}
 		{@const attachmentId = pin.attachment.id}

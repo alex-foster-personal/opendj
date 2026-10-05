@@ -1,3 +1,35 @@
+<script module lang="ts">
+	import type { Component } from 'svelte';
+	import type { PlaylistNode } from '$lib/rb/library-types';
+
+	type UsbList = Component<{
+		selectedId: string | null;
+		onselect: (node: PlaylistNode) => void;
+	}>;
+
+	/** The USBs tab body, lazy: stick browsing (list, tree and the Play from
+	 * USB store) stays out of the /performance first-paint bundle until the
+	 * tab is first opened. Module scope, so the import runs once per session. */
+	let UsbListView = $state<UsbList | null>(null);
+	let usbListLoad: Promise<void> | null = null;
+	/** Why the tab body failed to load; the next visit to the tab retries. */
+	let usbListError = $state<string | null>(null);
+
+	function loadUsbList(): void {
+		usbListError = null;
+		usbListLoad ??= import('./UsbSourceList.svelte').then(
+			(mod) => {
+				UsbListView = mod.default;
+			},
+			(exc: unknown) => {
+				usbListLoad = null;
+				usbListError = exc instanceof Error ? exc.message : String(exc);
+				console.error('[usb] USBs tab failed to load:', exc);
+			}
+		);
+	}
+</script>
+
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import LibrarySourceTabs, { type LibrarySourceTab } from './LibrarySourceTabs.svelte';
@@ -6,7 +38,6 @@
 	import TaglistTree from './TaglistTree.svelte';
 	import TreeSmartlistSection from './TreeSmartlistSection.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
-	import UsbSourceList from './UsbSourceList.svelte';
 	import AutolistBrowser from './AutolistBrowser.svelte';
 	import UsbPanel from '../UsbPanel.svelte';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
@@ -37,6 +68,7 @@
 
 	$effect(() => {
 		if (activeTab === 'autolists') autolistsMounted = true;
+		else if (activeTab === 'usbs') loadUsbList();
 	});
 
 	async function handleNewSmartlist(): Promise<void> {
@@ -103,7 +135,15 @@
 	{:else if activeTab === 'taglists'}
 		<TaglistTree selectedId={playlistTreeProps.selectedId} onselect={playlistTreeProps.onselect} />
 	{:else if activeTab !== 'autolists'}
-		<UsbSourceList />
+		{#if UsbListView !== null}
+			<UsbListView selectedId={playlistTreeProps.selectedId} onselect={playlistTreeProps.onselect} />
+		{:else if usbListError !== null}
+			<div class="usb-list-state failed" data-testid="usb-list-failed" title={usbListError}>
+				USB list failed to load: open the tab again to retry
+			</div>
+		{:else}
+			<div class="usb-list-state" data-testid="usb-list-loading">loading USB sticks...</div>
+		{/if}
 	{/if}
 	<UsbPanel />
 </div>
@@ -118,6 +158,14 @@
 	}
 	.autolists-body.hidden {
 		display: none;
+	}
+	.usb-list-state {
+		padding: 2px 6px;
+		font-size: 11px;
+		color: var(--rb-text-dim);
+	}
+	.usb-list-state.failed {
+		color: var(--rb-red);
 	}
 	.autolists-body {
 		flex: 1 1 0;

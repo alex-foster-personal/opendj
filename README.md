@@ -349,8 +349,9 @@ communities, including pyrekordbox and the Pioneer database research community.
 ## License
 
 Apache License 2.0. See [`LICENSE`](LICENSE) for the full text and [`NOTICE`](NOTICE) for
-third-party attribution. Third-party components retain their own licenses; the source
-dependency and lock files identify the configured packages. The open-dj spec
+attribution of third-party runtime dependencies. Audio tags are read with `tinytag` (MIT).
+Third-party components retain their own licenses; the source dependency and lock files
+identify the configured packages. The open-dj spec
 itself is published under CC BY 4.0; see [`open-dj/LICENSE-SPEC.md`](open-dj/LICENSE-SPEC.md).
 
 ## Contact

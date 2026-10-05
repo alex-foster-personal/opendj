@@ -470,6 +470,11 @@ DDL_SOURCE_FILES: dict[str, str] = {
     "apps/webui/server/search_index.py": (
         "SEPARATE FILE. Its first line says so: never mutate state.db's own schema."
     ),
+    "apps/webui/server/grid_quality_store.py": (
+        "SEPARATE FILE <state dir>/grid-quality.db, a sidecar next to state.db. "
+        "Derived beatgrid-quality verdicts (GRIDFLAG-02): rebuildable from the "
+        "grids, no migration, never synced."
+    ),
     "apps/sets/state.py": (
         "SEPARATE FILE data/sets/sets.db. Every apps/ call site constructs "
         "SetsState() or SetsState(db_path=...) against apps.sets.paths.SETS_DB; "

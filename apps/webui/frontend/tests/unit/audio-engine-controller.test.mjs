@@ -12,6 +12,7 @@ const REAL_PQTZ_BEATS = [
 ];
 let audio;
 let presentation;
+let contextWait;
 let headphones;
 let computeFollowerSyncPlan;
 // The pure SLIP hidden-timeline math lives in the player's pure leaf
@@ -25,6 +26,7 @@ let shiftLiveBeatLoopRangeMs;
 let targetWithinShiftedLiveLoopMs;
 let loopExitOnSeekMs;
 let quantizedSeekDecisionMs;
+let resolvedLoopState;
 
 // The engine reaches the daemon through the generated OpenAPI client, which
 // builds a `new Request(url)` before any stub sees it. Node has no document to
@@ -38,6 +40,7 @@ before(async () => {
 		viteApiBase: API_BASE
 	});
 	presentation = await loadTypeScriptModule('src/lib/player/transport/presentation.ts');
+	contextWait = await loadTypeScriptModule('src/lib/player/transport/context-time-wait.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	({ disposeAudioResources } = await loadTypeScriptModule(
 		'src/lib/rb/audio-resource-disposal.ts'
@@ -49,7 +52,8 @@ before(async () => {
 		shiftLiveBeatLoopRangeMs,
 		targetWithinShiftedLiveLoopMs,
 		loopExitOnSeekMs,
-		quantizedSeekDecisionMs
+		quantizedSeekDecisionMs,
+		resolvedLoopState
 	} = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
@@ -894,6 +898,20 @@ test('central loop quantization snaps both endpoints and rejects collapsed loops
 	);
 });
 
+test('resolved loop snapshot preserves beat fractions but snaps manual endpoints', () => {
+	assert.deepEqual(resolvedLoopState({ in_ms: 590, out_ms: 1090 }, null, 2000, REAL_PQTZ_BEATS, 1), {
+		in_ms: 608, out_ms: 1080, engaged: true, beat_length: null
+	});
+	const quarterBeat = { in_ms: 608, out_ms: 726 };
+	assert.deepEqual(resolvedLoopState(quarterBeat, 0.25, 2000, REAL_PQTZ_BEATS, 4), {
+		...quarterBeat, engaged: true, beat_length: 0.25
+	});
+	assert.deepEqual(resolvedLoopState(quarterBeat, null, 700, null, null), {
+		in_ms: 608, out_ms: 700, engaged: true, beat_length: null
+	});
+	assert.throws(() => resolvedLoopState(quarterBeat, null, 608, null, null), /empty at decoded duration/i);
+});
+
 test('loop endpoints clamp to decoded duration near EOF without hiding an empty loop', () => {
 	assert.deepEqual(
 		audio.loopEndpointsWithinDurationMs({ in_ms: 9_000, out_ms: 13_000 }, 10_000),
@@ -1405,15 +1423,15 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 	// The default clock is the real one, and these three reject before any
 	// sleep, so they exercise it end to end without waiting on a timer.
 	await assert.rejects(
-		audio.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
+		contextWait.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
 		/not running/i
 	);
 	await assert.rejects(
-		audio.waitForAdvancingContextTime({ currentTime: Number.NaN, state: 'running' }, 1),
+		contextWait.waitForAdvancingContextTime({ currentTime: Number.NaN, state: 'running' }, 1),
 		/finite and non-negative/i
 	);
 	await assert.rejects(
-		audio.waitForAdvancingContextTime(
+		contextWait.waitForAdvancingContextTime(
 			{ currentTime: 0, state: 'running' },
 			1,
 			() => false,
@@ -1422,14 +1440,14 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 		/state changed/i
 	);
 	// The one part of the real clock the rejections above cannot reach.
-	assert.ok(Number.isFinite(audio.REAL_CONTEXT_WAIT_CLOCK.nowMs()));
-	await audio.REAL_CONTEXT_WAIT_CLOCK.sleep(1);
+	assert.ok(Number.isFinite(contextWait.REAL_CONTEXT_WAIT_CLOCK.nowMs()));
+	await contextWait.REAL_CONTEXT_WAIT_CLOCK.sleep(1);
 
 	// A context whose time never moves: the wait must give up inside its stall
 	// timeout instead of polling all the way to the target.
 	const stalled = virtualContextWaitClock();
 	await assert.rejects(
-		audio.waitForAdvancingContextTime(
+		contextWait.waitForAdvancingContextTime(
 			{ currentTime: 0, state: 'running' },
 			1,
 			() => true,
@@ -1455,7 +1473,7 @@ test('context-time waits reject suspended, stale, and stalled clocks within a bo
 		},
 		state: 'running'
 	};
-	await audio.waitForAdvancingContextTime(advancingContext, 1, () => true, 100, advancing);
+	await contextWait.waitForAdvancingContextTime(advancingContext, 1, () => true, 100, advancing);
 	assert.equal(advancing.elapsedMs(), 1000, 'the wait must stop at the target, not past it');
 });
 

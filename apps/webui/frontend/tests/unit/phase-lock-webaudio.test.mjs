@@ -174,7 +174,9 @@ test('a second trim is relative to the base, not to the first trim', async () =>
 		followerBaseTempo: BASE,
 		normalization: 1,
 		pitchRangePct: 8,
-		trimming: true
+		trimming: true,
+		sinceJoinSec: 0.05,
+		overLineTicks: 0
 	});
 	assert.equal(expected.action, 'trim');
 	assert.equal(e.log.schedules.length, 2);
@@ -365,28 +367,124 @@ test('a failed trim drops the lock and reports it', async () => {
 	assert.match(e.log.errors[0].message, /trim failed: processor gone/);
 });
 
-test('a lost lock re-joins through resync once, never trims; a looped follower is left alone', () => {
-	const e = fakeEngine();
+/** A lock old enough to re-join: in phase and ticking for the minimum interval. */
+async function agedLock(e) {
 	const lock = mod.createWebAudioPhaseLock(e.ports);
 	lock.record(2, JOIN);
-	e.decks[2].pos += (0.3 * 60) / 128 * BASE; // 0.3 beat ahead
-	const [step] = lock.tick(e.now);
+	for (let elapsed = 0; elapsed <= pl.PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC; elapsed += 0.05) {
+		lock.tick(e.now);
+		e.advance(0.05);
+	}
+	await flush();
+	assert.deepEqual(e.log.schedules, [], 'precondition: in phase, nothing scheduled');
+	return lock;
+}
+
+test('a lost lock re-joins through resync once, after confirming; a looped follower is left alone', async () => {
+	const e = fakeEngine();
+	const lock = await agedLock(e);
+	e.decks[2].pos = inPhase(e.decks[1].pos) + (0.3 * 60) / 128 * BASE; // 0.3 beat ahead
+	// The confirming ticks trim at the cap; nothing is seeked on one reading.
+	for (let tick = 1; tick < pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS; tick++) {
+		const [step] = lock.tick(e.now);
+		assert.equal(step.decision.action, 'trim', `tick ${tick}: confirming, trimmed at the cap`);
+		assert.deepEqual(e.log.resyncs, [], `tick ${tick}: not re-joined yet`);
+		await flush();
+		e.clockOnly(0.05);
+	}
+	let step;
+	for (let tick = 0; tick < 4 && e.log.resyncs.length === 0; tick++) {
+		[step] = lock.tick(e.now);
+		await flush();
+		e.clockOnly(0.05);
+	}
 	assert.equal(step.decision.action, 'reseek');
 	assert.deepEqual(e.log.resyncs, [{ master: 1, deck: 2 }]);
-	assert.deepEqual(e.log.schedules, []);
 	assert.equal(lock.snapshot().has(2), false, 'dropped until the join records a new one');
 	e.advance(0.05);
 	lock.tick(e.now);
 	assert.equal(e.log.resyncs.length, 1, 'no second re-seek while the first is in flight');
 
 	const looped = fakeEngine();
-	const lock2 = mod.createWebAudioPhaseLock(looped.ports);
-	lock2.record(2, JOIN);
-	looped.decks[2].pos += (0.3 * 60) / 128 * BASE;
+	const lock2 = await agedLock(looped);
+	looped.decks[2].pos = inPhase(looped.decks[1].pos) + (0.3 * 60) / 128 * BASE;
 	looped.decks[2].loop = true;
-	lock2.tick(looped.now);
+	for (let tick = 0; tick < 10; tick++) {
+		lock2.tick(looped.now);
+		await flush();
+		looped.clockOnly(0.05);
+	}
 	assert.deepEqual(looped.log.resyncs, []);
 	assert.ok(lock2.snapshot().has(2));
+});
+
+test('no re-join inside the minimum interval after a join: the capped trim works on it instead', async () => {
+	const e = fakeEngine();
+	const lock = mod.createWebAudioPhaseLock(e.ports);
+	lock.record(2, JOIN);
+	e.decks[2].pos += 0.03 * BASE; // 30 ms ahead: past the re-join line
+	let lastTrim = null;
+	for (let elapsed = 0; elapsed < pl.PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC - 0.1; elapsed += 0.05) {
+		lock.tick(e.now);
+		await flush();
+		e.advance(0.05);
+		lastTrim = e.log.schedules.at(-1)?.ratio ?? lastTrim;
+	}
+	assert.deepEqual(e.log.resyncs, [], 'never seeked inside the interval');
+	assert.ok(Math.abs(e.log.schedules[0].ratio - BASE * (1 - pl.PHASE_LOCK_MAX_TRIM)) < 1e-12, 'trimmed at the cap');
+	const left = pl.phaseErrorMs({
+		masterBeats: MASTER_GRID,
+		masterPositionSec: e.decks[1].pos,
+		masterTempo: 1,
+		followerBeats: FOLLOWER_GRID,
+		followerPositionSec: e.decks[2].pos
+	});
+	assert.ok(Math.abs(left) < pl.PHASE_LOCK_RESEEK_MS, `walked back to ${left.toFixed(1)} ms without a seek`);
+	// Mutation guard for the gate itself: the SAME error on an aged lock does re-join.
+	const aged = fakeEngine();
+	const lock2 = await agedLock(aged);
+	aged.decks[2].pos += 0.03 * BASE;
+	for (let tick = 0; tick < 8; tick++) {
+		lock2.tick(aged.now);
+		await flush();
+		aged.clockOnly(0.05);
+	}
+	assert.equal(aged.log.resyncs.length, 1);
+});
+
+test('nudge: an offset the DJ dialed in is held; without the nudge the same offset is trimmed back', async () => {
+	const run = async (tell) => {
+		const e = fakeEngine();
+		const lock = mod.createWebAudioPhaseLock(e.ports);
+		lock.record(2, JOIN);
+		e.decks[2].pos += 0.008 * BASE; // the jog moved the deck 8 ms ahead
+		if (tell) lock.nudge(2, 8);
+		for (let i = 0; i < 400; i++) {
+			lock.tick(e.now);
+			await flush();
+			e.advance(0.05);
+		}
+		const standing = pl.phaseErrorMs({
+			masterBeats: MASTER_GRID,
+			masterPositionSec: e.decks[1].pos,
+			masterTempo: 1,
+			followerBeats: FOLLOWER_GRID,
+			followerPositionSec: e.decks[2].pos
+		});
+		return { e, standing };
+	};
+	const held = await run(true);
+	assert.deepEqual(held.e.log.schedules, [], 'no trim fights the nudge');
+	assert.deepEqual(held.e.log.resyncs, []);
+	assert.ok(Math.abs(held.standing - 8) < 1e-6, `still ${held.standing} ms ahead`);
+	const fought = await run(false);
+	assert.ok(fought.e.log.schedules.length > 0, 'an offset nobody dialed in is corrected');
+	assert.ok(Math.abs(fought.standing) < pl.PHASE_LOCK_DEADBAND_MS, `pulled back to ${fought.standing} ms`);
+	const e = fakeEngine();
+	const lock = mod.createWebAudioPhaseLock(e.ports);
+	assert.throws(() => lock.nudge(2, 8), /no lock/);
+	lock.record(2, JOIN);
+	assert.throws(() => lock.nudge(2, Number.NaN), /finite/);
 });
 
 test('a malformed input drops that lock and reports it instead of throwing into the frame', () => {

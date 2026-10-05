@@ -29,7 +29,7 @@ const draftBubble = read('src/lib/components/rb/FeedbackPinDraftBubble.svelte');
 
 test("'m' arms comment pin placement", () => {
 	assert.match(commentPinRouting, /e\.key !== 'm' && e\.key !== 'M'/);
-	assert.match(commentPinHotkeys, /resolveCommentPinHotkey\(e,/);
+	assert.match(commentPinHotkeys, /resolveCommentPinHotkey\(e\)/);
 	assert.match(commentPinHotkeys, /armPinPlacement\(\)/);
 	assert.match(commentPinHotkeys, /resolveCommentPinHotkey/);
 	assert.match(hotkeys, /armPinPlacement/);

@@ -104,6 +104,36 @@ def write_stem_bundle(root: Path, stable_id: str) -> Path:
     return bundle
 
 
+def put_in_cloud(s3, cfg, scratch: Path, stable_id: str) -> dict[str, str]:
+    """Upload a real bundle's bytes to the in-memory R2 and return its index
+    entry ({filename: sha256}), exactly what the push rail journals."""
+    import hashlib
+    import shutil
+
+    from apps.cloud.asset_store import asset_object_key
+
+    bundle = write_stem_bundle(scratch, stable_id)
+    entry: dict[str, str] = {}
+    for file_path in sorted(bundle.iterdir()):
+        body = file_path.read_bytes()
+        digest = hashlib.sha256(body).hexdigest()
+        s3.put_object_if_none_match(cfg.audio_bucket, asset_object_key(digest), body)
+        entry[file_path.name] = digest
+    shutil.rmtree(bundle)
+    return entry
+
+
+def arm_cloud(app, data_dir: Path, s3, cfg, index: dict[str, dict[str, str]]) -> None:
+    """Arm stem hydration on ``app`` the way the engine does: a source on
+    app state and the R2 index in its local cache file."""
+    from apps.cloud import stem_index
+    from apps.cloud.stem_source import DirectR2Source
+
+    app.state.stem_hydration_source = DirectR2Source(cfg, s3)
+    app.state.stem_hydration_unarmed_reason = None
+    stem_index.save_cached_index(data_dir, index)
+
+
 def vocal_worker_result() -> dict[str, object]:
     from apps.vocals import cache as vocals_cache
 
@@ -161,3 +191,22 @@ def write_fetch_verdict(data_dir: Path, stable_id: str, outcome: str) -> None:
             recorded_at=STAMP,
         ),
     )
+
+
+def write_analysis_row(state_db: Path, stable_id: str, *, backend: str = "librosa") -> None:
+    """A real row in the real ``analysis`` table (schema from the store)."""
+    from apps.analysis.store import open_conn
+
+    conn = open_conn(state_db)
+    try:
+        conn.execute(
+            "INSERT INTO analysis (stable_id, backend, backend_version, analyzed_at, "
+            "duration_s, sample_rate, bpm, bpm_confidence, key_camelot, key_openkey, "
+            "key_confidence, energy, energy_source, record_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (stable_id, backend, "test", STAMP, 200.0, 44_100, 120.0, 1.0, "8A", "1m",
+             1.0, 5, "test", "{}"),
+        )
+        conn.commit()
+    finally:
+        conn.close()

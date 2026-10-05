@@ -11,6 +11,7 @@
  */
 import { ApiError, api, unwrap } from '../api/client';
 import { RbApiError } from './api-rb-error';
+import { refuseStickRead } from './track-source';
 import type { AnlzBeatgrid } from './anlz-types';
 
 /** GET /tracks/{sid}/beatgrid-fallback response (analysis.py::BeatgridFallbackOut).
@@ -34,6 +35,8 @@ export interface BeatgridFallbackOut {
 }
 
 export async function fetchBeatgridFallback(stable_id: string): Promise<BeatgridFallbackOut> {
+	// Spec 4b: a stick grid is the stick's own PQTZ; no library fallback exists.
+	refuseStickRead(stable_id, 'beatgrid fallback');
 	try {
 		return (await unwrap(
 			api.GET('/api/v1/tracks/{stable_id}/beatgrid-fallback', {

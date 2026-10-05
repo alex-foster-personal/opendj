@@ -69,10 +69,9 @@ async function loadAndPlayDeck1(page: Page): Promise<void> {
 	// tree's All Tracks row, which made an audio measurement depend on the
 	// browser panel's layout: at this spec's 1280x800 viewport the panel is
 	// ~103px tall, its tree scroller is starved to 4px, and once the fixture
-	// carries a handful of playlists the row lands below the fold and under
-	// the fixed PerformanceAppNav overlay, which then eats the click. That
-	// layout fault is real and logged in .planning/TECH-DEBT.md; it is not
-	// what this spec measures.
+	// carries a handful of playlists the row lands below the fold, where a
+	// click cannot reach it. That layout fault is real and logged in
+	// .planning/TECH-DEBT.md; it is not what this spec measures.
 	const firstRow = page.locator(TRACK_ROW).first();
 	await expect(firstRow).toBeVisible({ timeout: 30_000 });
 	const stableId = await firstRow.getAttribute('data-stable-id');

@@ -142,6 +142,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
@@ -176,6 +177,11 @@ import {
 	previewCueSeek,
 	stopPreviewCue
 } from '$lib/player/preview-cue.svelte';
+import {
+	midiTakeoverUi,
+	setMidiTakeoverMode
+} from '$lib/rb/midi/takeover-ui.svelte';
+import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 
 /** HTTP-mirrored headphone controls (CUEOUT-04). Acquire stays on
  *  PerformanceCommand only: it needs a visible user gesture. */
@@ -228,8 +234,10 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesign }
-	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
-	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
+			/** Optional load condition is checked inside the queue, not at input time.
+	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
+	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
+	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number; if_load_generation?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
 	| { type: 'loop_interval_mode'; deck: DeckId; enabled: boolean }
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
@@ -247,7 +255,7 @@ export type PerformanceCommand =
 	| { type: 'master'; deck: DeckId; lock?: boolean }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
-	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean; exclusive?: boolean }
 	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
 	/** STEM-46/47: get this deck's stems now (retry a failed load, start a held one). */
 	| { type: 'stem_load'; deck: DeckId }
@@ -268,6 +276,8 @@ export type PerformanceCommand =
 	| { type: 'head_delay_ms'; value: number }
 	| { type: 'master_mute'; muted: boolean; persist?: boolean }
 	| { type: 'browser_select_playlist'; playlist_id: string }
+	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
+	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
@@ -306,7 +316,7 @@ export type PerformanceCommand =
 	| { type: 'hot_cue_trigger'; deck: DeckId; slot: HotCueSlot }
 	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
 	// write to serialize, but still a real UI action - every one of these has
-	// a cmd+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
+	// a Ctrl+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
 	// so agent-native parity requires the same commands here.
 	| { type: 'tech_mode_toggle' }
 	| { type: 'tech_mode_peek'; peeking: boolean }
@@ -422,6 +432,7 @@ export interface PerformanceState {
 		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
 		selected_row: string | null;
 	};
+	midi_takeover: { mode: MidiTakeoverMode };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
 	rescue_restore: {
@@ -1054,8 +1065,8 @@ function _generation(value: unknown): number {
 }
 
 function _stem(value: unknown): StemControl {
-	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
-		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
+	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums' && value !== 'bass' && value !== 'other') {
+		throw new TypeError(`unknown stem control: ${String(value)}`);
 	}
 	return value;
 }
@@ -1147,6 +1158,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('playlist_id must be a non-empty string');
 		}
 		return { type, playlist_id: record.playlist_id };
+	}
+	if (type === 'midi_takeover_mode') {
+		_exactKeys(record, ['type', 'mode']);
+		if (record.mode !== 'pickup' && record.mode !== 'jump') {
+			throw new TypeError(`midi takeover mode must be pickup or jump; got ${String(record.mode)}`);
+		}
+		return { type, mode: record.mode };
 	}
 	if (type === 'headphone_outputs_refresh') {
 		_exactKeys(record, ['type']);
@@ -1398,25 +1416,28 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, position_ms, snap };
 	} else if (type === 'loop') {
-		_exactKeys(record, ['type', 'deck', 'loop']);
-		if (record.loop === null) return { type, deck, loop: null };
+		_exactKeys(record, ['type', 'deck', 'loop', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
+		if (record.loop === null) return { type, deck, loop: null, ...condition };
 		const loop = _record(record.loop);
 		_exactKeys(loop, ['in_ms', 'out_ms']);
 		return {
 			type,
 			deck,
+			...condition,
 			loop: { in_ms: _finite('loop.in_ms', loop.in_ms), out_ms: _finite('loop.out_ms', loop.out_ms) }
 		};
 	} else if (type === 'beat_loop') {
-		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms']);
+		_exactKeys(record, ['type', 'deck', 'beats', 'start_ms', 'if_load_generation']);
+		const condition = record.if_load_generation === undefined ? {} : { if_load_generation: _generation(record.if_load_generation) };
 		const beats = _finite('beats', record.beats);
-		if (!Number.isInteger(beats) || beats <= 0) {
-			throw new RangeError(`beats must be a positive integer; got ${beats}`);
+		if (beats <= 0) {
+			throw new RangeError(`beats must be positive; got ${beats}`);
 		}
-		if (record.start_ms === undefined) return { type, deck, beats };
+		if (record.start_ms === undefined) return { type, deck, beats, ...condition };
 		const start_ms = _finite('start_ms', record.start_ms);
 		if (start_ms < 0) throw new RangeError('start_ms must be >= 0');
-		return { type, deck, beats, start_ms };
+		return { type, deck, beats, start_ms, ...condition };
 	} else if (type === 'beat_jump') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		const beats = _finite('beats', record.beats);
@@ -1456,8 +1477,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
 		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
 	} else if (type === 'stem_solo') {
-		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
-		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+		_exactKeys(record, ['type', 'deck', 'stem', 'solo', 'exclusive']);
+		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo),
+			...(record.exclusive === undefined ? {} : { exclusive: _boolean('exclusive', record.exclusive) }) };
 	} else if (type === 'stem_eq_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -1601,9 +1623,16 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
 }
 
 /** Live-derive `remaining_ms` from the AudioContext clock rather than
- * trusting a cached countdown. Expired schedules read as null; queries must
+ * trusting a cached countdown - the same "recompute, don't cache" rule
+ * `deckTransportClock` follows. A landed schedule reads as null.
+ *
+ * These snapshots are READ paths: queryPerformanceState() runs inside
+ * `$derived` (WaveRow.svelte, Deck.svelte), and Svelte throws
+ * `state_unsafe_mutation` on any `$state` write from there. Queries must
  * not mutate reactive state while a consumer derives or renders the snapshot.
- * Command and session lifecycle owners clear or replace the stored schedule. */
+ * An expired record is reported as null and left for the command paths and
+ * session lifecycle owners (the next arm, unload, or session teardown) to
+ * clear or replace. */
 function _waveformSeekArmedSnapshot(
 	deckId: DeckId
 ): { target_position_ms: number; remaining_ms: number } | null {
@@ -1727,7 +1756,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 			controls: {
 				vocal: { ...deck.stems.controls.vocal },
 				instrumental: { ...deck.stems.controls.instrumental },
-				drums: { ...deck.stems.controls.drums }
+				drums: { ...deck.stems.controls.drums },
+				bass: { ...deck.stems.controls.bass },
+				other: { ...deck.stems.controls.other }
 			}
 		},
 		loop: deck.loop === null ? null : { ...deck.loop },
@@ -1768,6 +1799,7 @@ export function queryPerformanceState(): PerformanceState {
 	const previewStats = previewCacheStats();
 	return {
 		version: 1,
+		midi_takeover: { mode: midiTakeoverUi.mode },
 		master_deck: masterDecks[0] ?? null,
 		master_mode: getMasterMode(),
 		master_reason: getMasterReason(),
@@ -1791,8 +1823,29 @@ export function queryPerformanceState(): PerformanceState {
 			master: mixerState.master,
 			headphones: {
 				...mixerState.headphones,
+				calibration: {
+					...mixerState.headphones.calibration,
+					diagnostics: {
+						...mixerState.headphones.calibration.diagnostics,
+						master_measurements_ms: [...mixerState.headphones.calibration.diagnostics.master_measurements_ms],
+						cue_measurements_ms: [...mixerState.headphones.calibration.diagnostics.cue_measurements_ms]
+					}
+				},
+				signals: {
+					master: { ...mixerState.headphones.signals.master },
+					cue: { ...mixerState.headphones.signals.cue },
+					input: { ...mixerState.headphones.signals.input }
+				},
+				routes: {
+					master: { ...mixerState.headphones.routes.master },
+					cue: { ...mixerState.headphones.routes.cue }
+				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
-				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input })),
+				device_access: {
+					...mixerState.headphones.device_access,
+					notices: [...mixerState.headphones.device_access.notices]
+				}
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },
@@ -1941,6 +1994,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'master_volume' ||
 		command.type === 'master_mute' ||
 		command.type === 'browser_select_playlist' ||
+		command.type === 'midi_takeover_mode' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
@@ -2022,6 +2076,12 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	if (command.type === 'master_volume') _operatorMasterVolume = command.value;
+	// A device release can wait behind a load of the very same track ID. The
+	// load generation, checked under the deck queue claim, owns the gesture.
+	if ((command.type === 'loop' || command.type === 'beat_loop') &&
+		command.if_load_generation !== undefined &&
+		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
 	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
 	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
 	if (await executeInRustEngine(command, pushToast)) return;
@@ -2091,6 +2151,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			if (command.start_at_context_sec !== undefined) {
 				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
 			} else if (_quantizedLaunchArmedSnapshot(command.deck) !== null && command.quantize !== true) {
+				// The snapshot, not the raw record: a launch that has already
+				// landed is not cleared by reads, and must not turn this press
+				// into a disarm.
 				quantizedLaunchArmed[command.deck] = null;
 				_quantizedLaunchDriver.clear(command.deck);
 			} else if (command.quantize === true) {
@@ -2188,7 +2251,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'stem_mute') {
 		engine.setStemMute(command.deck, command.stem, command.muted, pressT0Ms);
 	} else if (command.type === 'stem_solo') {
-		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms);
+		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
 	} else if (command.type === 'stem_load') {
@@ -2438,11 +2501,19 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 		await engine.rescueStopAllTogether(decks);
 		_rescueRestoredDecks = [];
+	} else if (command.type === 'midi_takeover_mode') {
+		setMidiTakeoverMode(command.mode);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
 	}
 }
+
+/** How `_persistCommandError` already put an error on screen, so the UI
+ * boundary can tell "reported" from "about to vanish" without a second toast.
+ * `toasted` also reached console.error (an error toast writes its own log
+ * row there); `banner_only` is a load whose caller suppressed the toast. */
+const _persistedCommandErrors = new WeakMap<object, 'toasted' | 'banner_only'>();
 
 function _persistCommandError(
 	deck: DeckId | null, error: unknown, command?: PerformanceCommand
@@ -2450,6 +2521,7 @@ function _persistCommandError(
 	const messageText = _errorMessage(error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
+	const errorObject = typeof error === 'object' && error !== null ? error : null;
 	if (
 		(command !== undefined &&
 			command.type === 'load' &&
@@ -2457,6 +2529,12 @@ function _persistCommandError(
 		// A worded load failure already raised its own deck-load toast (CLOUDSYNC-33).
 		deckFacingMessage(error) !== undefined
 	) {
+		if (errorObject !== null) _persistedCommandErrors.set(errorObject, 'banner_only');
+		return;
+	}
+	if (errorObject !== null) _persistedCommandErrors.set(errorObject, 'toasted');
+	if (command !== undefined && command.type === 'load') {
+		reportDeckLoadCommandFailure(command.deck, messageText, error);
 		return;
 	}
 	let subcontrol = '';
@@ -2533,6 +2611,24 @@ function _invalidateCommandSession(generation: number): void {
 		waveformSeekArmed[deckId] = null;
 		hotCueArmed[deckId] = null;
 	}
+}
+
+/** The value of the last master_volume command this page executed, or null
+ * if none has run. The route's teardown hard mute (`engine.setMaster(0)`) and
+ * a preset's late-settlement mute write the mixer directly, so a live
+ * `mixer.master` of 0 is not by itself an operator's choice; this is. */
+let _operatorMasterVolume: number | null = null;
+
+export function operatorMasterVolume(): number | null {
+	return _operatorMasterVolume;
+}
+
+/** The generation of the live route command session, or null between
+ * mounts. A session-scoped writer binds to the value it saw at install and
+ * stops the moment it changes, so nothing it writes can describe a torn-down
+ * route (hard-muted master, stopped decks). */
+export function activePerformanceCommandSession(): number | null {
+	return _activeCommandSession?.generation ?? null;
 }
 
 function _currentCommandSession(): number {
@@ -3025,8 +3121,22 @@ export async function dispatchPerformanceCommand(
 }
 
 /**
- * UI event boundary: await the same fail-fast dispatcher, then consume the
- * rejection only after it has been persisted in visible reactive state.
+ * What a UI-boundary command came to. `no_session` is the one EXPECTED
+ * refusal: no command session is current, because the route has not started
+ * one yet (it does so after its first async hydration) or has torn it down.
+ * `failed` is everything else, and has always been reported by the time the
+ * caller sees it.
+ */
+export type PerformanceUiCommandResult =
+	| { ok: true }
+	| { ok: false; reason: 'no_session'; error: ScopedCommandInvalidatedError }
+	| { ok: false; reason: 'failed'; error: unknown };
+
+/**
+ * UI event boundary: await the same fail-fast dispatcher and turn its
+ * rejection into a result, never into silence. A failure the dispatcher did
+ * not persist (it skips its report once the session is no longer current) is
+ * persisted here, so no path out of this function drops an error unseen.
  *
  * Q1 / S2: this is where the press clock starts. The default is taken on ENTRY,
  * before `_dispatchUnknown` can park the command behind another scope's tail,
@@ -3037,11 +3147,28 @@ export async function dispatchPerformanceCommand(
 export async function runPerformanceCommandFromUi(
 	command: PerformanceCommand,
 	pressT0Ms: number = performance.now()
-): Promise<void> {
+): Promise<PerformanceUiCommandResult> {
 	try {
 		await dispatchPerformanceCommand(command, pressT0Ms);
-	} catch {
-		// The dispatcher already populated the deck alert and toast.
+		return { ok: true };
+	} catch (error) {
+		if (error instanceof ScopedCommandInvalidatedError) {
+			console.debug(`[performance-ipc] ${command.type} not run, no command session: ${error.message}`);
+			return { ok: false, reason: 'no_session', error };
+		}
+		const reported =
+			typeof error === 'object' && error !== null ? _persistedCommandErrors.get(error) : undefined;
+		if (reported === undefined) {
+			// Toast plus its console.error row: the same channel as every
+			// other command failure.
+			_persistCommandError(null, error);
+		} else if (reported === 'banner_only') {
+			console.error(`[performance-ipc] ${command.type} failed`, error);
+		} else if (reported === 'toasted') {
+			// Already on screen and in the console; a second report would
+			// only double the toast and the forwarded log row.
+		}
+		return { ok: false, reason: 'failed', error };
 	}
 }
 

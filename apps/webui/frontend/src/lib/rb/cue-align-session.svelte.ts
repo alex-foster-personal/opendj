@@ -21,6 +21,7 @@ import { DECK_IDS, type DeckId } from '$lib/player/constants';
 // load of "/" (the library bundle budget). Nothing calibrates before a click.
 import type { CueAlignController, CueAlignEffects, CueAlignProbe } from '$lib/player/cue-align.svelte';
 import type { HeadphoneCalibrationProbe } from '$lib/rb/mixer-types';
+import { recordHeadphoneFailureDiagnostic } from '$lib/player/headphones';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import { engine } from '$lib/rb/audio-engine.svelte';
 
@@ -129,9 +130,21 @@ export async function startCueAlignment(opts: { interactive: boolean }): Promise
 	try {
 		[effects, { createCueAlignController }] = await Promise.all([_effects(), import('$lib/player/cue-align.svelte')]);
 	} catch (error) {
+		// `_effects()` can refuse before the controller gets to reset its run
+		// evidence. Publish a fresh precondition diagnosis, never measurements
+		// or a failure reason retained from the previous run.
+		calibration.diagnostics = {
+			probe: 'chirp',
+			alternate_probe: 'unavailable',
+			failure: 'route_or_operation',
+			master_measurements_ms: [],
+			cue_measurements_ms: [],
+			spread_ms: null
+		};
 		_run.active = false;
 		calibration.error = error instanceof Error ? error.message : String(error);
 		calibration.step = 'failed';
+		recordHeadphoneFailureDiagnostic('calibration-precondition', error);
 		throw error;
 	}
 	if (_abortRequested) {
@@ -158,7 +171,9 @@ export async function startCueAlignment(opts: { interactive: boolean }): Promise
 		calibration.probe = null;
 	}
 	if (calibration.step === 'failed') {
-		throw new Error(calibration.error ?? 'cue alignment calibration failed');
+		const error = new Error(calibration.error ?? 'cue alignment calibration failed');
+		recordHeadphoneFailureDiagnostic('calibration', error);
+		throw error;
 	}
 }
 

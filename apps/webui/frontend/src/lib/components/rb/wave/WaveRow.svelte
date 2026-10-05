@@ -17,7 +17,7 @@
 		readyBeatgridFallback
 	} from './wave-row-beatgrid-fallback';
 	import {
-		ghostSeekBlinkVisible,
+		ghostSeekFrame,
 		masterAnlzForDeck,
 		masterDownbeatOverlayForDeck
 	} from './wave-row-deckux-overlays';
@@ -178,7 +178,6 @@
 
 	const showStems = $derived(uiPrefs.show_stems);
 	const waveformSeekArmed = $derived(queryPerformanceState().decks[deckId].waveform_seek_armed);
-	const ghostBlinkOn = $derived(ghostSeekBlinkVisible(performance.now()));
 	const masterDownbeatOverlay = $derived.by(() =>
 		masterDownbeatOverlayForDeck({
 			beatSyncMax: uiPrefs.beat_sync_max,
@@ -264,7 +263,9 @@
 		if (!el || palette === null || cssW === 0 || cssH === 0) return;
 		const paintPositionMs = _paintPositionMs();
 		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
+		const ghost = ghostSeekFrame(waveformSeekArmed, performance.now());
 		const visualInputs = [
+			ghost.blinkPhase,
 			deck.stable_id,
 			deck.duration_ms,
 			paintAnlz,
@@ -305,8 +306,8 @@
 			playheadTimeMs: performance.now(),
 			waveformDesign: uiPrefs.waveform_design,
 			masterDownbeatOverlay,
-			ghostSeekMs: waveformSeekArmed?.target_position_ms ?? null,
-			ghostSeekVisible: waveformSeekArmed !== null && ghostBlinkOn
+			ghostSeekMs: ghost.ghostSeekMs,
+			ghostSeekVisible: ghost.ghostSeekVisible
 		});
 	}
 

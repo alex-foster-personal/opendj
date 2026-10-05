@@ -1,4 +1,4 @@
-import type { AnchorishElement } from './feedback';
+import type { AnchorishElement } from './feedback-anchorish';
 
 /** Pin-system chrome that must not become the stored anchor. */
 const PIN_SYSTEM_CLASSES = new Set([
@@ -29,6 +29,14 @@ function isInsideFloatingSurface(el: Element): boolean {
 	if (el.closest('[role="dialog"]') !== null) return true;
 	if (el.closest('[data-overlay-z]') !== null) return true;
 	return false;
+}
+
+const PIN_SYSTEM_SELECTOR = [...PIN_SYSTEM_CLASSES].map((cls) => `.${cls}`).join(',');
+
+/** Pin markers, bubbles and the placement overlay: never a pin's anchor or
+ * a nearby anchor, or pins would end up positioned against each other. */
+export function isPinSystemElement(el: Element): boolean {
+	return el.closest(PIN_SYSTEM_SELECTOR) !== null;
 }
 
 function isSkipped(el: Element): boolean {

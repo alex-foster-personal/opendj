@@ -13,7 +13,7 @@ import pytest
 from apps.shared import audio_files
 
 # Minimal, valid MP3 frame generated on the fly. Tiny (~100 bytes) — good
-# enough for mutagen to identify the file as audio.
+# enough for the tag reader to identify the file as audio.
 _SILENT_MP3 = bytes.fromhex(
     # ID3v2.3 header: "ID3", version, flags, size (4-byte synchsafe) = 0
     "494433030000000000"

@@ -1,13 +1,16 @@
 <script lang="ts">
 	/**
 	 * Honest, page-granular library load progress (pin ad59ac, follow-on to
-	 * #937). Rendered through TrackTable's `bodyOverlay` slot, which pins it
-	 * inside the table region just below the sticky column-header row
-	 * (pin 02717d4ea496: mounted as a sibling ABOVE the table it pushed the
-	 * column headers down the page, which reads as the headers being in the
-	 * wrong place). TrackTable renders the snippet without knowing what is
-	 * in it, so it stays a pure row renderer; it contributes only the
-	 * measured header offset, which nothing outside it can know.
+	 * #937), in its own RESERVED strip between the browser toolbar and the
+	 * column headers (pins 1f9711b7, dd5fad7f, e452be6b).
+	 *
+	 * Two earlier placements each broke one half of the requirement. Mounted
+	 * as a conditional sibling above the table it pushed the column headers
+	 * down for the length of every load (pin 02717d4ea496). Moved into
+	 * TrackTable's body overlay it stopped moving anything and instead sat on
+	 * top of the first track rows. So the strip is now ALWAYS in the layout at
+	 * one fixed height and only its content is conditional: it cannot cover a
+	 * row, and nothing shifts when a load starts or ends.
 	 *
 	 * "Honest" here means: the bar, the count, and the rows/s figure only
 	 * ever move in the same whole-page jumps PaneStore.load_progress does
@@ -29,6 +32,8 @@
 	 * while loading and progress is still null this shows an indeterminate
 	 * track and received-row count, never a made-up percentage.
 	 */
+	import { loadRowsPerSecond, type LoadRateBaseline } from '$lib/rb/load-rate';
+
 	let {
 		loading,
 		progress,
@@ -39,28 +44,23 @@
 		searching?: boolean;
 	} = $props();
 
-	// Monotonic elapsed-time tracking for the rows/s figure. Resets whenever
+	// LIBUX-37: the rows/s figure is measured from a baseline, set whenever
 	// progress goes null->non-null (a fresh load starting) or loaded goes
 	// backwards (a new load superseding one already in flight for this pane).
-	let startedAt: number | null = $state(null);
-	let lastLoaded = $state(0);
-	let rowsPerSecond = $state(0);
+	// It stays null, and nothing is shown, until the window is long enough.
+	let baseline: LoadRateBaseline | null = null;
+	let rowsPerSecond = $state<number | null>(null);
 
 	$effect(() => {
 		const p = progress;
 		if (p === null) {
-			startedAt = null;
-			lastLoaded = 0;
-			rowsPerSecond = 0;
+			baseline = null;
+			rowsPerSecond = null;
 			return;
 		}
 		const now = performance.now();
-		if (startedAt === null || p.loaded < lastLoaded) {
-			startedAt = now;
-		}
-		lastLoaded = p.loaded;
-		const elapsedS = (now - (startedAt ?? now)) / 1000;
-		rowsPerSecond = elapsedS > 0 ? p.loaded / elapsedS : 0;
+		if (baseline === null || p.loaded < baseline.loaded) baseline = { atMs: now, loaded: p.loaded };
+		rowsPerSecond = loadRowsPerSecond(baseline, now, p.loaded);
 	});
 
 	const pct = $derived.by((): number | null => {
@@ -76,8 +76,8 @@
 	});
 </script>
 
-{#if loading || progress !== null || searching}
-	<div class="lli-root" role="status" aria-live="polite">
+<div class="lli-root" role="status" aria-live="polite">
+	{#if loading || progress !== null || searching}
 		<span class="lli-mark" aria-hidden="true"></span>
 		{#if searching}
 			<span class="lli-search">searching whole collection...</span>
@@ -95,26 +95,32 @@
 			>
 				<div class="lli-bar" style={pct === null ? undefined : `width:${pct}%`}></div>
 			</div>
-			<span class="lli-label">{label}{#if rowsPerSecond > 0}<span class="lli-rate"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
+			<span class="lli-label">{label}{#if rowsPerSecond !== null}<span class="lli-rate" title="Rows received per second, measured since this load's first page over a window of at least one second"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
 		{/if}
-	</div>
-{/if}
+	{/if}
+</div>
 
 <style>
 	.lli-root {
-		display: grid;
-		justify-items: center;
-		gap: 5px;
-		margin-top: 2px;
-		padding: 6px 8px;
+		--lli-strip-h: 18px;
+		flex: 0 0 var(--lli-strip-h);
+		height: var(--lli-strip-h);
+		box-sizing: border-box;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		padding: 0 8px;
+		overflow: hidden;
 		color: var(--rb-text-dim);
 		font-family: var(--rb-font);
 		font-size: 10px;
 		line-height: 1.2;
 	}
 	.lli-mark {
-		width: 20px;
-		height: 20px;
+		flex: 0 0 auto;
+		width: 12px;
+		height: 12px;
 		background: currentColor;
 		mask: url('/favicon.svg') center / contain no-repeat;
 		animation: library-mark-reveal 180ms step-end both, library-mark-spin 420ms linear infinite;
@@ -123,6 +129,9 @@
 		white-space: nowrap;
 	}
 	.lli-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.lli-rate {
@@ -130,7 +139,8 @@
 	}
 	.lli-track {
 		position: relative;
-		width: min(220px, 70vw);
+		flex: 0 1 220px;
+		min-width: 60px;
 		height: 2px;
 		background: color-mix(in srgb, #4fb2ff 18%, transparent);
 		outline: 1px solid color-mix(in srgb, #4fb2ff 70%, transparent);

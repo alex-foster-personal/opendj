@@ -9,15 +9,21 @@
 
 import type { LyricLine } from '$lib/api';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
+import { MUSIC_NOTE_PATH } from '../../../ui/icon-glyphs';
 
 type LyricVerdict = LyricsRowSummary['effective'];
 
-/** Compact per-verdict glyph for the 64px library column. */
-export const LYRIC_VERDICT_GLYPHS: Record<LyricVerdict, string> = {
-	vocal: '♪', // ♪ - vocal, lyrics expected
-	sparse: '~', // sparse vocal content
-	'no-lyrics': '∅', // ∅ - calibrated no-lyrics
-	unknown: '?'
+/** A verdict mark is either an inline SVG icon path or a compact text mark.
+ * The vocal verdict is an icon, not a musical-note character (CHROME-01:
+ * icons, not emoji or text-symbol glyphs, in UI chrome). */
+export type LyricVerdictMark = { kind: 'icon'; path: string } | { kind: 'text'; text: string };
+
+/** Compact per-verdict mark for the 64px library column. */
+export const LYRIC_VERDICT_MARKS: Record<LyricVerdict, LyricVerdictMark> = {
+	vocal: { kind: 'icon', path: MUSIC_NOTE_PATH }, // vocal, lyrics expected
+	sparse: { kind: 'text', text: '~' }, // sparse vocal content
+	'no-lyrics': { kind: 'text', text: '∅' }, // ∅ - calibrated no-lyrics
+	unknown: { kind: 'text', text: '?' }
 };
 
 /** Hover explainer per verdict (glyph title). */
@@ -36,12 +42,12 @@ export const LYRIC_QUALITY_TITLE =
 /** Title for the muted dash rendered when row.lyrics is null. */
 export const LYRIC_NO_DATA_TITLE = 'no lyric data yet - pipeline has not processed this track';
 
-export function lyricVerdictGlyph(verdict: LyricVerdict): string {
-	const glyph = LYRIC_VERDICT_GLYPHS[verdict];
-	if (glyph === undefined) {
-		throw new Error(`lyricVerdictGlyph: unknown verdict "${String(verdict)}"`);
+export function lyricVerdictMark(verdict: LyricVerdict): LyricVerdictMark {
+	const mark = LYRIC_VERDICT_MARKS[verdict];
+	if (mark === undefined) {
+		throw new Error(`lyricVerdictMark: unknown verdict "${String(verdict)}"`);
 	}
-	return glyph;
+	return mark;
 }
 
 export function lyricVerdictTitle(summary: LyricsRowSummary): string {

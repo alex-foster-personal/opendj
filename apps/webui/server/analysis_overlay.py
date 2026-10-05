@@ -15,7 +15,6 @@ import sqlite3
 
 from apps.analysis import lanes as analysis_lanes
 from apps.analysis import selection as analysis_selection
-from apps.analysis.lanes import LANES
 from apps.analysis.selection import OWN_ANALYSIS_SOURCE as _OWN_ANALYSIS_SOURCE
 from apps.analysis.selection import EffectiveField
 
@@ -36,17 +35,15 @@ def _batch_needs_lane_owned_fields(
     selection = analysis_selection.Selection.resolve(conn)
     if selection.any_own:
         return True
-    for sid in stable_ids:
-        mapped = rb_mapped.get(sid, False)
-        for lane in LANES:
-            if (
-                analysis_selection.effective_source_for_track(
-                    conn, lane, has_rb_mapping=mapped
-                )
-                == "own"
-            ):
-                return True
-    return False
+    # The effective source depends on the lane and on whether a track is
+    # mapped, never on which track: resolve each mapping state present in
+    # the batch once, not once per track (LIBM-135).
+    sources = analysis_selection.lane_sources_by_mapping(conn)
+    return any(
+        source == "own"
+        for mapped in {bool(rb_mapped.get(sid, False)) for sid in stable_ids}
+        for source in sources[mapped].values()
+    )
 
 
 def lane_owned_fields(

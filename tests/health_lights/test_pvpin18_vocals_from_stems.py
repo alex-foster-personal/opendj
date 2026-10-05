@@ -1,6 +1,6 @@
 """Vocal stems imply vocal analysis, with a switch (PVPIN-18, pin 40d3b9731db7).
 
-The coverage drain (HEALTH-05) is what delivers this ask, so these
+The coverage drain (HEALTH-05, HEALTH-10) is what delivers this ask, so these
 are the pin's own two acceptance lines run against that drain.
 
 Regression lines:
@@ -53,10 +53,10 @@ def test_a_track_without_stems_gets_no_vocal_job(library: Library) -> None:
     assert rig.vocals_runs == []
 
 
-def test_the_drain_switch_off_derives_no_vocal_analysis_from_stems(library: Library) -> None:
+def test_the_switch_off_derives_no_vocal_analysis_from_stems(library: Library) -> None:
     _present(library, "a", stems=True)
     rig = Rig(library)
-    rig.drain.set_enabled(False)
+    rig.drain.update_config(steps={"vocals": False})
 
     for _ in range(3):
         rig.drain.tick()

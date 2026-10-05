@@ -333,8 +333,56 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/client-events', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/client-errors', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/commands/next', (route) => route.fulfill({ status: 409, json: {} }));
-	await page.route('**/api/v1/ingest/coverage', (route) =>
+	await page.route('**/api/v1/ingest/coverage**', (route) =>
 		route.fulfill({ json: { total_tracks: 1, on_disk: 1, unreachable: 0, missing: { vocals: 1, stems: 1 }, generated_at: 0 } })
+	);
+	// TrackTable asks the engine once per page session to bring stored beatgrid
+	// verdicts up to date (api-grid-flags.ts `ensureGridQualityScan`). Declared
+	// as a KNOWN request; `idle` is the engine's answer when nothing is running.
+	await page.route('**/api/v1/beatgrid-flags/scan', (route) =>
+		route.fulfill({
+			json: { state: 'idle', running_scope: null, last_result: null, last_error: null }
+		})
+	);
+	// StemCacheHealthDot.svelte reads the stem cache's disk state on mount and
+	// every 60 s. Declared as a KNOWN request, with every field the wire type
+	// (StemCacheStatusOut) requires and an empty, healthy cache.
+	await page.route('**/api/v1/stems/cache/status', (route) =>
+		route.fulfill({
+			json: {
+				state: 'healthy',
+				stems_dir: '/e2e/stems',
+				disk_total_bytes: 1_000_000_000_000,
+				disk_free_bytes: 500_000_000_000,
+				floor_bytes: 20_000_000_000,
+				shortfall_bytes: 0,
+				cache_bytes: 0,
+				budget_bytes: 480_000_000_000,
+				over_budget_bytes: 0,
+				bundle_count: 0,
+				evictable_bundle_count: 0,
+				evictable_bytes: 0,
+				would_evict_count: 0,
+				would_evict_bytes: 0,
+				local_only_count: 0,
+				local_only_bytes: 0,
+				local_only_stable_ids: [],
+				upload_queue_count: 0,
+				protected_count: 0,
+				can_rehydrate: false,
+				blocked_reason: null,
+				settings: {
+					auto_evict: false,
+					enforce_interval_s: 300,
+					floor_fraction: 0.02,
+					floor_gib: 20,
+					max_cache_gib: null
+				},
+				enforcer_running: false,
+				last_enforcement: null,
+				last_error: null
+			}
+		})
 	);
 	await page.route('**/api/v1/reconcile/summary', (route) =>
 		route.fulfill({ json: { total_tracks: 1, total_broken: 0, orphan_broken: 0, playlists: [] } })
@@ -416,6 +464,29 @@ test('null artwork availability identifies an unavailable reader without request
 			json: { tier: 'STANDARD', source: 'auto', auto_tier: 'STANDARD', override: 'auto' }
 		})
 	);
+	// EnrichCard.svelte (ENRICH-01) reads the enrichment summary on mount.
+	// Answered `show: false`, the engine's shape for a library with nothing
+	// left to enrich, so the card stays hidden and fires nothing else.
+	await page.route('**/api/v1/enrich/summary', (route) =>
+		route.fulfill({
+			json: {
+				show: false,
+				analysis: null,
+				analysis_error: null,
+				coverage: null,
+				coverage_error: null,
+				stems: { state: 'done', pending: null, reason: null },
+				decisions: {}
+			}
+		})
+	);
+	// preview-strip-fill.ts (NATIVE-21) asks for the strips of strip-less rows
+	// in view. Answered "nothing on disk yet" for every id, never a strip, so
+	// no row gains a waveform and no id is pending a retry.
+	await page.route('**/api/v1/library/preview-strips', (route) => {
+		const { ids } = route.request().postDataJSON() as { ids: string[] };
+		return route.fulfill({ json: { strips: Object.fromEntries(ids.map((id) => [id, null])), pending: [] } });
+	});
 	// client-performance-samples.ts's `startClientPerformanceSampling`, also
 	// deferred from app-init.ts (`scheduler.defer('client-samples:first', ...)`,
 	// same 9f4631536 introduction, Sat 12 Sep 2026). The module never reads the

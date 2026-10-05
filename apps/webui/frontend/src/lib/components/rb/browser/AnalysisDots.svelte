@@ -40,8 +40,12 @@
 	const doneCount = $derived(
 		ANALYSIS_DOT_SLOTS.filter((k): k is AnalysisKind => k !== null && badge[k] === true).length
 	);
+	// `unknown` is not a finding: the detector could not look. It is drawn
+	// (hollow), but never counted as an issue.
 	const issueCount = $derived(
-		ANALYSIS_DOT_SLOTS.filter((k): k is AnalysisKind => k !== null && issues[k] !== undefined).length
+		ANALYSIS_DOT_SLOTS.filter(
+			(k): k is AnalysisKind => k !== null && issues[k] !== undefined && issues[k]?.severity !== 'unknown'
+		).length
 	);
 	const totalSlots = ANALYSIS_DOT_SLOTS.filter((k) => k !== null).length;
 	const allDone = $derived(mode === 'coverage' && doneCount === totalSlots && totalSlots > 0);
@@ -65,6 +69,10 @@
 		return ANALYSIS_COLORS[kind];
 	}
 
+	function dotUnknown(kind: AnalysisKind): boolean {
+		return mode === 'issues' && issues[kind]?.severity === 'unknown';
+	}
+
 	function dotTitle(kind: AnalysisKind): string | undefined {
 		if (suppressDotTitles) return undefined;
 		if (mode === 'issues') return issues[kind]?.detail;
@@ -85,6 +93,7 @@
 			<span
 				class="dot"
 				class:on={dotOn(kind)}
+				class:unknown={dotUnknown(kind)}
 				style={dotOn(kind) ? `--dot:${dotColor(kind)}` : undefined}
 				data-kind={kind}
 				title={dotTitle(kind)}
@@ -117,6 +126,11 @@
 	}
 	.dot.on {
 		background: var(--dot);
+	}
+	/* Could not be judged: hollow, so it reads as neither ok (off) nor a flag (filled). */
+	.dot.on.unknown {
+		background: transparent;
+		box-shadow: inset 0 0 0 1px var(--dot);
 	}
 	.dot.empty {
 		background: transparent;

@@ -15,7 +15,7 @@
 		type PinDraft,
 		type PinSeen
 	} from '$lib/rb/feedback';
-	import { parseShowHarvestedPins, SHOW_HARVESTED_PINS_KEY } from '$lib/rb/feedback-pin-board';
+	import { isPinOnPage, parseShowHarvestedPins, SHOW_HARVESTED_PINS_KEY } from '$lib/rb/feedback-pin-board';
 	import { readPinsVisible, writePinsVisible, onPinsVisibleChanged } from '$lib/rb/feedback-pin-visibility';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
@@ -40,6 +40,13 @@
 		clearPinAnchorHighlight
 	} from '$lib/rb/feedback-pin-anchor-highlight';
 	import { resolvePinAnchorAt } from '$lib/rb/feedback-pin-placement';
+	import {
+		capturePinPlacement,
+		measureSelector,
+		resolvePinPosition,
+		type PinPlacement,
+		type ResolvedPinPosition
+	} from '$lib/rb/feedback-pin-position';
 	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 	import FeedbackPinCard from './FeedbackPinCard.svelte';
 	import FeedbackPinDraftBubble from './FeedbackPinDraftBubble.svelte';
@@ -49,6 +56,7 @@
 		| (PinDraft & {
 				viewport: { width: number; height: number };
 				followOn: { parentId: string; label: string } | null;
+				placement: PinPlacement | null;
 		  })
 		| null = $state(null);
 	function _currentViewport(): { width: number; height: number } {
@@ -72,6 +80,7 @@
 		pinsVisible
 			? feedbackState.pins.filter((p) => {
 					if (!isPinDrawn(p)) return false;
+					if (!isPinOnPage(p, pathname)) return false;
 					if (p.author === 'agent' && !uiPrefs.show_agent_pins) return false;
 					if (p.status === 'harvested' && !showHarvestedPins) return false;
 					return true;
@@ -79,6 +88,20 @@
 			: []
 	);
 	const bodyPin = $derived(pagePins.find((p) => p.id === openPinId) ?? null);
+
+	/** Bumped on resize, scroll, and a 1 s tick while pins are drawn, so a pin
+	 * re-places itself when the element it is tagged to moves or goes away
+	 * (feedback-pin-position.ts). Percent-only pins never needed this. */
+	let layoutTick = $state(0);
+	const pinPositions: Map<string, ResolvedPinPosition> = $derived.by(() => {
+		void layoutTick;
+		const positions = new Map<string, ResolvedPinPosition>();
+		if (typeof window === 'undefined' || pagePins.length === 0) return positions;
+		const viewport = { w: window.innerWidth, h: window.innerHeight };
+		for (const pin of pagePins) positions.set(pin.id, resolvePinPosition(pin, measureSelector, viewport));
+		return positions;
+	});
+	const bodyPinPoint = $derived(bodyPin === null ? null : (pinPositions.get(bodyPin.id) ?? null));
 	$effect(() => {
 		if (!draftHydrated) return;
 		persistParkedPinDraft(localStorage, pinDraft, foreignDraftParked, (err) => {
@@ -104,7 +127,8 @@
 			text: draft.text,
 			page: draft.page,
 			viewport: draft.viewport ?? _currentViewport(),
-			followOn: null
+			followOn: null,
+			placement: draft.placement ?? null
 		};
 		void focusPinDraftTextarea();
 	});
@@ -190,6 +214,30 @@
 		_globals().__mdtPinPlacementArmed = {
 			get: () => feedbackState.placementArmed
 		};
+		// Agent parity for pin re-placement: which tier each drawn pin resolved
+		// on (element | anchor | viewport), the selector it used, and whether
+		// that is a fallback. `refresh: true` re-measures first.
+		_globals().__mdtPinPositions = {
+			get: (opts?: { refresh?: boolean }) => {
+				if (opts?.refresh) layoutTick += 1;
+				return Object.fromEntries(pinPositions);
+			}
+		};
+
+		let relayoutQueued = false;
+		const relayout = (): void => {
+			if (relayoutQueued) return;
+			relayoutQueued = true;
+			requestAnimationFrame(() => {
+				relayoutQueued = false;
+				layoutTick += 1;
+			});
+		};
+		const relayoutTimer = setInterval(() => {
+			if (pagePins.length > 0 && document.visibilityState === 'visible') layoutTick += 1;
+		}, 1000);
+		window.addEventListener('resize', relayout);
+		window.addEventListener('scroll', relayout, { capture: true, passive: true });
 
 		const onOptionDown = (e: KeyboardEvent): void => {
 			if (e.key === 'Alt') optionKeyHeld = true;
@@ -214,6 +262,10 @@
 			delete _globals().__mdtPinSeen;
 			delete _globals().__mdtPinsVisible;
 			delete _globals().__mdtPinPlacementArmed;
+			delete _globals().__mdtPinPositions;
+			clearInterval(relayoutTimer);
+			window.removeEventListener('resize', relayout);
+			window.removeEventListener('scroll', relayout, { capture: true });
 			window.removeEventListener('keydown', onOptionDown);
 			window.removeEventListener('keyup', onOptionUp);
 			window.removeEventListener('blur', onBlur);
@@ -243,7 +295,9 @@
 			viewport: { width: window.innerWidth, height: window.innerHeight },
 			text: '',
 			page: pathname,
-			followOn: { parentId: pin.id, label: followOnText(pin).trim() }
+			followOn: { parentId: pin.id, label: followOnText(pin).trim() },
+			// The daemon copies the parent's placement onto the follow-on.
+			placement: null
 		};
 		void focusPinDraftTextarea();
 	}
@@ -264,15 +318,20 @@
 		const under = resolvePinAnchorAt(e.clientX, e.clientY, (x, y) =>
 			document.elementsFromPoint(x, y)
 		);
+		const anchor = describeAnchor(under ?? null);
+		// resolvePinAnchorAt types its result as the DOM-free AnchorishElement
+		// for node:test; here it is always the real element elementsFromPoint returned.
+		const placement = capturePinPlacement({ x: e.clientX, y: e.clientY }, under as Element | null, anchor);
 		disarmPinPlacement();
 		foreignDraftParked = false;
 		pinDraft = {
 			point,
-			anchor: describeAnchor(under ?? null),
+			anchor,
 			viewport: { width: window.innerWidth, height: window.innerHeight },
 			text: '',
 			page: pathname,
-			followOn: null
+			followOn: null,
+			placement
 		};
 		void focusPinDraftTextarea();
 	}
@@ -289,6 +348,7 @@
 
 <FeedbackPinMarkers
 	pins={pagePins}
+	positions={pinPositions}
 	seen={pinSeen}
 	{pathname}
 	{optionKeyHeld}
@@ -298,6 +358,7 @@
 {#if bodyPin !== null}
 	<FeedbackPinCard
 		pin={bodyPin}
+		point={bodyPinPoint}
 		onclose={closePin}
 		onarchive={() => archiveOpenPin(bodyPin)}
 		onfollowon={() => startFollowOn(bodyPin)}

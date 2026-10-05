@@ -174,7 +174,8 @@ export function noteMasterSilence(
 	analyser: AnalyserNode | null,
 	externalRouteAnalyser: AnalyserNode | null,
 	anyDeckPlaying: boolean,
-	tMs: number
+	tMs: number,
+	masterOutputIntentionallySilent = false
 ): void {
 	const ctx = _readDropoutContext?.() ?? null;
 	const playing = anyDeckPlaying && analyser !== null;
@@ -196,6 +197,7 @@ export function noteMasterSilence(
 	_state = foldSilenceSample(_state, {
 		playing,
 		audible: _anyDeckAudible(ctx),
+		masterOutputIntentionallySilent,
 		masterRms,
 		tMs,
 		source_explains_silence
@@ -204,7 +206,11 @@ export function noteMasterSilence(
 		_reportSilenceDropout('silent-while-playing');
 	}
 	const routedRms = externalRouteAnalyser === null ? 0 : _masterRms(externalRouteAnalyser);
-	_noteOutputDeviceLiveness(playing, Math.max(masterRms, routedRms), tMs);
+	_noteOutputDeviceLiveness(
+		playing && !masterOutputIntentionallySilent,
+		Math.max(masterRms, routedRms),
+		tMs
+	);
 	if (ctx !== null) _xrunsAtPreviousSample = ctx.xruns;
 }
 

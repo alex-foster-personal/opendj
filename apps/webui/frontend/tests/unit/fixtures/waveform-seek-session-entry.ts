@@ -14,3 +14,7 @@ export {
 	queryPerformanceState,
 	uiPrefs
 } from '$lib/rb/performance-ipc.svelte';
+export {
+	installPerformanceQuantizedLaunchDriverForTest,
+	resetQuantizedLaunchArmedForTest
+} from '$lib/rb/performance-ipc.svelte';

@@ -37,6 +37,7 @@
  * module, one import, both halves of a load's telemetry.
  */
 
+import { ApiError } from '$lib/api/errors';
 import { reportClientError, type ClientErrorContext } from '$lib/client-error-reporting';
 import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
@@ -358,6 +359,116 @@ export async function failedDeckLoadMessage(
  * already be stamped when this is called, or every report is missing the one
  * number that says when the load died.
  */
+/** Plain words for a stick load refusal, keyed on the backend's detail.code
+ * (spec 4b, USBPLAY-09). */
+const STICK_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([
+	['USB_STICK_NOT_MOUNTED', 'Stick removed - plug it back in to load this track'],
+	['USB_FILE_MISSING', "This track's audio file is missing from the stick"],
+	['USB_TRACK_NOT_FOUND', "This track is no longer in the stick's rekordbox export"]
+]);
+
+/** The toast headline for a failed stick load, or null when `cause` is not a
+ * stick refusal. Reads `code` off either error class a load can reject with
+ * (ApiError from getTrack, RbApiError from audio, anlz and hot cues). */
+export function stickLoadFailureWords(cause: unknown): string | null {
+	const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
+	return typeof code === 'string' ? (STICK_LOAD_FAILURE_WORDS.get(code) ?? null) : null;
+}
+
+/** Plain words for a library load refusal, keyed on the backend's detail.code
+ * (apps/adapters/rekordbox/paths.py resolve_playable_audio, and the audio
+ * route's open probe). The reason goes in the HEADLINE (pin a4898e22): a
+ * generic "could not load the track" made the operator expand the toast to
+ * learn the file was simply missing. */
+const LIBRARY_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([
+	['TRACK_NOT_FOUND', 'this track is no longer in the library'],
+	['AUDIO_FILE_MISSING', "this track's audio file is missing on this machine"],
+	['CLOUD_ASSET_UNAVAILABLE', "this track's audio is not on this machine and could not be fetched"],
+	['CLOUD_POLICY_UNCONFIGURED', 'cloud audio is not set up on this machine, so this track cannot be fetched'],
+	['AUDIO_ACCESS_BLOCKED', "this track's file did not open in time - its drive or folder is not answering"]
+]);
+
+/** What fetch rejects with when nothing answered. The text is the browser's
+ * own and differs per engine (Chromium, WebKit, Gecko). */
+const UNREACHABLE_FETCH_MESSAGES: ReadonlySet<string> = new Set([
+	'Failed to fetch',
+	'Load failed',
+	'NetworkError when attempting to fetch resource.'
+]);
+
+const HEADLINE_REASON_MAX_CHARS = 120;
+
+function _shortReason(cause: unknown): string {
+	const text = cause instanceof Error ? cause.message : String(cause);
+	const firstLine = text.split('\n', 1)[0].trim();
+	return firstLine.length <= HEADLINE_REASON_MAX_CHARS
+		? firstLine
+		: `${firstLine.slice(0, HEADLINE_REASON_MAX_CHARS - 3)}...`;
+}
+
+/**
+ * The track route answers an unknown stable_id with a bare 404 (`errors.py`
+ * handle_not_found carries no detail.code), so getTrack rejects with
+ * HTTP_404 while the audio route rejects the same load with TRACK_NOT_FOUND.
+ * The load fetches both at once and whichever rejects first names the toast,
+ * so the headline flipped between "no longer in the library" and "could not
+ * load the track: Not Found" by timing alone. Give the lookup's 404 the same
+ * code. A stick lookup's 404 carries USB_TRACK_NOT_FOUND and is left alone.
+ */
+export function libraryTrackLookupError(error: unknown): unknown {
+	if (error instanceof ApiError && error.status === 404 && error.code === 'HTTP_404') {
+		return new ApiError(404, 'TRACK_NOT_FOUND', error.message, error.response, error.body);
+	}
+	return error;
+}
+
+/** `libraryTrackLookupError` as a `.catch` handler for the load's getTrack. */
+export function rethrowLibraryTrackLookupError(error: unknown): never {
+	throw libraryTrackLookupError(error);
+}
+
+/** The toast headline for a failed deck load: always names the reason. */
+export function deckLoadFailureHeadline(deck: 1 | 2 | 3 | 4, cause: unknown): string {
+	const stickWords = stickLoadFailureWords(cause);
+	if (stickWords !== null) return stickWords;
+	const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
+	const words = typeof code === 'string' ? LIBRARY_LOAD_FAILURE_WORDS.get(code) : undefined;
+	if (words !== undefined) return `Deck ${deck}: ${words}`;
+	if (cause instanceof Error && cause.name === 'EncodingError') {
+		return `Deck ${deck}: this track's audio file could not be decoded`;
+	}
+	if (cause instanceof TypeError && UNREACHABLE_FETCH_MESSAGES.has(cause.message)) {
+		return `Deck ${deck}: the engine did not answer while loading this track`;
+	}
+	return `Deck ${deck} could not load the track: ${_shortReason(cause)}`;
+}
+
+/** Failures the engine has already put on screen. The same error object then
+ * rejects the load COMMAND, whose dispatcher reports failures too: without
+ * this one failed load raised two toasts. Weak, so a reported error is not
+ * kept alive; a thrown non-object cannot be tracked and is reported twice. */
+const _toastedLoadFailures = new WeakSet<object>();
+
+function _pushDeckLoadFailureToast(
+	deck: 1 | 2 | 3 | 4,
+	message: string,
+	cause: unknown,
+	context: ClientErrorContext,
+	groupKey?: string
+): void {
+	pushToast(
+		`Deck ${deck} load failed - ${message}`,
+		'error',
+		undefined,
+		cause,
+		context,
+		groupKey,
+		undefined,
+		{ headline: deckLoadFailureHeadline(deck, cause) }
+	);
+	if (typeof cause === 'object' && cause !== null) _toastedLoadFailures.add(cause);
+}
+
 export function reportDeckLoadFailure(
 	deck: 1 | 2 | 3 | 4,
 	message: string,
@@ -368,7 +479,23 @@ export function reportDeckLoadFailure(
 	const failureContext = deckLoadFailureContext(deck, stages);
 	// A load whose caller shows its own toast (Trackify, #4036) still owes the
 	// server this report: it is the only record of which stage the load died in.
-	if (options.suppressFailureToast === true) reportClientError(cause, failureContext);
-	else pushToast(`Deck ${deck} load failed - ${message}`, 'error', undefined, cause, failureContext);
+	if (options.suppressFailureToast === true) {
+		reportClientError(cause, failureContext);
+	} else {
+		_pushDeckLoadFailureToast(deck, message, cause, failureContext);
+	}
 	recordPerfEvent('deck-load-fail', message, deck);
+}
+
+/**
+ * The load COMMAND failed. Called by the command dispatcher for every rejected
+ * load. A failure the engine already toasted is left alone; a load refused
+ * before it reached the engine (another owner holds the controls, the deck is
+ * not stopped) is reported here, as a load, with its reason.
+ */
+export function reportDeckLoadCommandFailure(deck: 1 | 2 | 3 | 4, message: string, cause: unknown): void {
+	if (typeof cause === 'object' && cause !== null && _toastedLoadFailures.has(cause)) return;
+	// Grouped per deck, as the dispatcher groups every other command failure:
+	// a refusal repeated by a held key is one toast with a count, not a stack.
+	_pushDeckLoadFailureToast(deck, message, cause, { source: 'deck-load', deck }, `performance:${deck}:load:`);
 }

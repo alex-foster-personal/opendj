@@ -6,6 +6,7 @@
 import { RB_API_BASE } from '$lib/rb/api-rb';
 import { releaseEagerStemDecodeNow } from '$lib/rb/stem-decode-shed';
 import type { StemDeckState } from '$lib/rb/stem-types';
+import { refuseStickRead } from '$lib/rb/track-source';
 
 /** STEM-46: ask the engine to fetch (or re-fetch) this track's cloud bundle,
  * clearing a recorded failure first. The manifest GET alone cannot do that: a
@@ -15,6 +16,8 @@ export async function requestStemHydration(
 	stableId: string,
 	fetcher: typeof fetch = fetch
 ): Promise<void> {
+	// Spec 4b: stick tracks have no stem bundle and no stems route.
+	refuseStickRead(stableId, 'stem hydrate');
 	const path = `/api/v1/tracks/${encodeURIComponent(stableId)}/stems/hydrate`;
 	const response = await fetcher(`${RB_API_BASE}${path}`, { method: 'POST' });
 	if (!response.ok) throw new Error(`stem hydrate request failed: HTTP ${response.status} ${path}`);

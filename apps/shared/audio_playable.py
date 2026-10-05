@@ -16,6 +16,10 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
     [if] container magic does not match the extension [then ⛔️] reject
     [if] the tag reader (tinytag) claims absurd duration or bitrate [then ⛔️]
          reject
+    [if] the tag reader cannot parse a file whose magic checks passed
+         [then] it is NOT rejected: the decoder, not the tag reader, is the
+         authority on playability, and a library must never lose a track to a
+         metadata parser's blind spot
 
   -> full decode, ffmpeg, librosa, or soundfile. Header + one frame only.
   -> rekordbox adapter ingest (follow-up).

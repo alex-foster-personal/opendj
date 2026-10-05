@@ -36,7 +36,7 @@ from apps.stems.artifacts import (
     load_stem_bundle,
 )
 from apps.vocals import cache as vocals_cache
-from apps.webui.server import library_playable
+from apps.webui.server import coverage_cloud, library_playable
 from apps.webui.server.routes import ingest_cli_procs
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed
 
@@ -125,6 +125,10 @@ class _RefreshJob:
     #: for. The worker still uses the one shared analysis CLI, never a UI-only
     #: imitation of an analyzer.
     analysis_orders: dict[str, str] = field(default_factory=dict)
+    #: What R2 holds that this machine can fetch back, read when the job was
+    #: started. OFF counts nothing as in cloud, so a job built without one
+    #: can only over-target, never skip a bundle that is genuinely missing.
+    stem_cloud: coverage_cloud.StemCloud = coverage_cloud.OFF
 
 
 _job_lock = threading.RLock()

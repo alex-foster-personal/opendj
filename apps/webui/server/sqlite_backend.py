@@ -82,6 +82,7 @@ from .backend import (
     TrackUpdate,
     compute_library_revision_summary,
     compute_mytag_catalog_revision,
+    resolve_grid_flag_dismissed_write,
     resolve_tempo_pref_write,
 )
 from .etag import compute_etag, strip_quotes
@@ -214,7 +215,7 @@ def _reset_warnings_for_tests() -> None:
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
     "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
-    "energy", "tempo_pref",
+    "energy", "tempo_pref", "grid_flag_dismissed",
 )
 
 _TRACKS_PROJECTION = (
@@ -467,6 +468,7 @@ def _row_to_track(
         comments=comments,
         last_played_at=last_played_at,
         tempo_pref=tempo_pref,
+        grid_flag_dismissed=_val("grid_flag_dismissed") is True,
         file_path=row["file_path"],
         created_at=row["created_at"],
         updated_at=_effective_updated_at(row["updated_at"], fields),
@@ -572,6 +574,10 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
         writes["comments"] = patch["comments"]
     if "tempo_pref" in patch:
         writes["tempo_pref"] = resolve_tempo_pref_write(patch["tempo_pref"])
+    if "grid_flag_dismissed" in patch:
+        writes["grid_flag_dismissed"] = resolve_grid_flag_dismissed_write(
+            patch["grid_flag_dismissed"]
+        )
     if "tags_add" in patch or "tags_remove" in patch:
         tags = list(current.tags or [])
         for tag in patch.get("tags_add") or []:

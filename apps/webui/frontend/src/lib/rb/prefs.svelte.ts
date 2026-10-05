@@ -254,6 +254,8 @@ export interface RbUiPrefs
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	/** Mirror deck 2 control row horizontally for mixer-facing symmetry (issue #3983). */
 	deck_right_mirror: boolean;
+	/** Mirror deck 1 and 3 control rows (local-only pref). */
+	deck_left_mirror: boolean;
 	/** Playlist sidebar: tree list vs column browser (issue #3983). */
 	playlist_tree_view: PlaylistTreeViewMode;
 	level_calibration: LevelCalibrationPrefs;
@@ -295,6 +297,7 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
 	deck_right_mirror: false,
+	deck_left_mirror: false,
 	playlist_tree_view: 'tree',
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	crossfade_curve: 'magic',
@@ -519,6 +522,13 @@ function _load(): RbUiPrefs {
 		deck_layout_duration_ms: deckLayoutDurationMs,
 		deck_right_mirror: deckRightMirror
 	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	if (parsed.deck_left_mirror !== undefined && typeof parsed.deck_left_mirror !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (deck_left_mirror is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const deckLeftMirror = parsed.deck_left_mirror ?? DEFAULTS.deck_left_mirror;
 	const playlistTreeView = validatePlaylistTreeViewField(parsed.playlist_tree_view, STORAGE_KEY);
 	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
@@ -570,6 +580,7 @@ function _load(): RbUiPrefs {
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
 		deck_right_mirror: deckRightMirror ?? DEFAULTS.deck_right_mirror,
+		deck_left_mirror: deckLeftMirror,
 		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
@@ -770,7 +781,8 @@ export const {
 	toggleDeckLayoutMode,
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
-	setDeckRightMirror
+	setDeckRightMirror,
+	setDeckLeftMirror
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export const { setPlaylistTreeView, togglePlaylistTreeView } = makePlaylistTreeViewSetters(

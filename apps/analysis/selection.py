@@ -604,44 +604,79 @@ def _implicit_default_track_values(
     }
 
 
+def lane_sources_by_mapping(
+    conn: sqlite3.Connection,
+) -> dict[bool, dict[str, Source]]:
+    """``{has_rb_mapping: {lane: effective source}}``, resolved ONCE per call.
+
+    :func:`effective_source_for_track` depends on the lane and on whether the
+    track is rekordbox-mapped, never on which track it is. Asking it per
+    track re-read the persisted lane default (a schema probe plus a SELECT)
+    for every mapped row and every lane-owned field: 218,000 of the 258,530
+    statements one ``GET /reconcile/broken`` ran on a 9,713-track library
+    (LIBM-135, Thu 1 Oct 2026). A batch resolves both mapping states here
+    and then only indexes.
+    """
+    return {
+        mapped: {
+            lane: effective_source_for_track(conn, lane, has_rb_mapping=mapped)
+            for lane in LANES
+        }
+        for mapped in (True, False)
+    }
+
+
+def _available_not_selected(served: EffectiveField | None, lane: str) -> EffectiveField:
+    """The served rekordbox field, restated as "own analysis exists, not selected"."""
+    reason = f"{lane} analysis available (rekordbox source selected)"
+    if served is None:
+        return EffectiveField(
+            value=None, source="rekordbox", confidence=None, modified_at="",
+            status="available-not-selected", reason=reason,
+        )
+    return EffectiveField(
+        value=served.value, source=served.source, confidence=served.confidence,
+        modified_at=served.modified_at, status="available-not-selected", reason=reason,
+    )
+
+
 def _annotate_available_not_selected(
     conn: sqlite3.Connection,
-    sid: str,
-    fields: dict[str, EffectiveField],
+    ids: list[str],
+    out: dict[str, dict[str, EffectiveField]],
     *,
-    has_rb_mapping: bool,
+    rb_mapped: Mapping[str, bool],
+    sources: Mapping[bool, Mapping[str, Source]],
     projection_available: bool,
 ) -> None:
     """When rbx is selected but a canonical own record exists, name it (STANDALONE-03).
 
     The caller has already established that ``analysis_canonical`` exists and
     passes whether ``analysis_projection`` does: both are schema facts of the
-    connection, probed once per call rather than once per track (#3962).
+    connection, probed once per call rather than once per track (#3962). The
+    pointer and projection reads are batched per field for the same reason
+    (LIBM-135): one statement per 500 ids, not one per track.
     """
-    from .canonical import canonical_pointer
+    from .canonical import canonical_pointed_ids
 
+    if not projection_available:
+        # No own store means no own row to name, whatever the pointers say.
+        return
     for field_name, lane in PROJECTION_FIELDS.items():
-        if effective_source_for_track(conn, lane, has_rb_mapping=has_rb_mapping) != "rbx":
+        rbx_ids = [
+            sid for sid in ids
+            if sources[bool(rb_mapped.get(sid, False))][lane] == "rbx"
+        ]
+        pointed = canonical_pointed_ids(conn, rbx_ids, lane)
+        if not pointed:
             continue
-        pointer = canonical_pointer(conn, sid, lane)
-        if pointer is None:
-            continue
-        own_row = (
-            _fetch_projection(conn, [sid], (field_name,))[sid].get(field_name)
-            if projection_available
-            else None
-        )
-        if own_row is None or own_row.status != "ok":
-            continue
-        served = fields.get(field_name)
-        fields[field_name] = EffectiveField(
-            value=served.value if served is not None else None,
-            source=served.source if served is not None else "rekordbox",
-            confidence=served.confidence if served is not None else None,
-            modified_at=served.modified_at if served is not None else "",
-            status="available-not-selected",
-            reason=f"{lane} analysis available (rekordbox source selected)",
-        )
+        candidates = [sid for sid in rbx_ids if sid in pointed]
+        own_rows = _fetch_projection(conn, candidates, (field_name,))
+        for sid in candidates:
+            own_row = own_rows[sid].get(field_name)
+            if own_row is None or own_row.status != "ok":
+                continue
+            out[sid][field_name] = _available_not_selected(out[sid].get(field_name), lane)
 
 
 def effective_fields(
@@ -700,12 +735,12 @@ def effective_fields(
                 )
         return out
 
+    sources = lane_sources_by_mapping(conn)
     for field_name, lane in PROJECTION_FIELDS.items():
         rbx_ids: list[str] = []
         own_ids: list[str] = []
         for sid in ids:
-            mapped = bool(rb_mapped.get(sid, False))
-            if effective_source_for_track(conn, lane, has_rb_mapping=mapped) == "own":
+            if sources[bool(rb_mapped.get(sid, False))][lane] == "own":
                 own_ids.append(sid)
             elif field_name in _RBX_FIELDS:
                 rbx_ids.append(sid)
@@ -731,14 +766,14 @@ def effective_fields(
 
     if not _table_exists(conn, "analysis_canonical"):
         return out
-    for sid in ids:
-        _annotate_available_not_selected(
-            conn,
-            sid,
-            out[sid],
-            has_rb_mapping=bool(rb_mapped.get(sid, False)),
-            projection_available=projection_available,
-        )
+    _annotate_available_not_selected(
+        conn,
+        ids,
+        out,
+        rb_mapped=rb_mapped,
+        sources=sources,
+        projection_available=projection_available,
+    )
     return out
 
 
@@ -820,6 +855,7 @@ __all__ = [
     "effective_source",
     "effective_source_and_implicit_own_for_track",
     "effective_source_for_track",
+    "lane_sources_by_mapping",
     "implicit_own_default",
     "ensure_tables",
     "field_column_sql",

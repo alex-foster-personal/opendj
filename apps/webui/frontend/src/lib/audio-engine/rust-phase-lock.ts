@@ -1,4 +1,7 @@
-/** Supersedes phase-lock ownership declarations embedded in rust-transport.ts. */
+/**
+ * The state one Rust-mode Beat Sync join leaves behind for the continuous
+ * phase lock in `rust-transport.ts`. Types only.
+ */
 import type { TempoNormalization } from '$lib/rb/beat-sync-math';
 import { DECKS, type DeckId } from './rust-link';
 
@@ -17,6 +20,14 @@ export interface PhaseLock {
 	sent: number;
 	/** A trim or re-seek is in flight; the next tick waits for it. */
 	busy: boolean;
+	/** Page-clock time of the join: a re-join is never sooner than
+	 * PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC after it. */
+	joinedAtSec: number;
+	/** Consecutive ticks the error has been past the re-join line. */
+	overLineTicks: number;
+	/** The phase offset the DJ dialed in since the join, wall-clock ms. No Rust
+	 * mode control moves a locked follower yet, so this stays 0. */
+	userOffsetMs: number;
 }
 
 export const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};
@@ -32,4 +43,3 @@ export function invalidateRustPhaseLocks(deck: DeckId): void {
 export function phaseLocksForTest(): Readonly<Partial<Record<DeckId, Readonly<PhaseLock>>>> {
 	return phaseLocks;
 }
-

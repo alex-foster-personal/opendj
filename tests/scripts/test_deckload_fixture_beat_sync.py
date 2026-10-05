@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import wave
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -21,6 +20,7 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
     RESCUE_PLAYBACK_LIBRARY_TRACKS,
     RESCUE_PLAYBACK_TRACKS,
     build_rescue_playback,
+    wav_id3_pictures,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -116,6 +116,8 @@ def test_rescue_playback_fixture_is_idempotent_on_second_build(tmp_path: Path) -
     assert hashlib.sha256(expected_png).hexdigest() == ARTWORK_PNG_SHA256
     artwork = audio_files.read_embedded_artwork(artwork_wav)
     assert artwork == (expected_png, "image/png")
+    pictures = wav_id3_pictures(artwork_wav)
+    assert [(mime, picture_type) for mime, picture_type, _desc, _data in pictures] == [("image/png", 3)]
     other_wavs = {
         track.filename
         for track in RESCUE_PLAYBACK_LIBRARY_TRACKS

@@ -14,6 +14,8 @@
 		chipState as chipStateOf,
 		chipTitle
 	} from '$lib/components/cloudsync/cloudsync-view';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import { publishCloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 
 	let status = $state<CloudSyncStatus | null>(null);
 	let loadError = $state<string | null>(null);
@@ -34,8 +36,14 @@
 		try {
 			status = await getStatus();
 			loadError = null;
+			publishCloudSyncChipState(status);
 		} catch (error: unknown) {
 			loadError = error instanceof Error ? error.message : String(error);
+			// A failed refresh keeps the last status on screen, so the TopBar
+			// clock (CHROME-06) reads that same retained state; publishing null
+			// here turned one transient error into 'off' and hid the clock
+			// beside a chip still showing syncing/ok (codex review of #3896).
+			publishCloudSyncChipState(status);
 		}
 	}
 
@@ -66,7 +74,8 @@
 	// Re-read on an interval (a heartbeat that goes stale after load must turn
 	// the chip off) and at once when /cloudsync runs Sync now or saves config.
 	onMount(() => {
-		void load();
+		// LIBM-138: the first read waits for the boot window to close.
+		bootScheduler.defer('cloudsync-chip:load', () => void load());
 		const timer = setInterval(() => {
 			if (!document.hidden) void load();
 		}, CHIP_POLL_MS);

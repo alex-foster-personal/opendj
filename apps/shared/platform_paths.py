@@ -17,8 +17,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Literal
 
 from apps.shared import fd_anchored_walk, fs_residency
 from apps.shared.library_mode import crate_root, is_mac_users_path
@@ -103,6 +105,11 @@ def refresh_share_root() -> Path:
     return SHARE_ROOT
 
 
+def reanchor_share_root() -> bool:
+    """Trust the share root as the directory it is now (``fd_anchored_walk.reanchor_root``)."""
+    return fd_anchored_walk.reanchor_root(SHARE_ROOT)
+
+
 SHARE_ROOT: Path = compute_share_root()
 
 # ----- djay Pro -------------------------------------------------------------
@@ -162,6 +169,29 @@ def is_streaming_uri(path: str | None) -> bool:
     must use :func:`is_streaming_row` instead.
     """
     return bool(path) and str(path).startswith(STREAMING_PREFIXES)
+
+
+StreamingProvider = Literal["spotify", "tidal", "soundcloud", "unknown"]
+
+
+def streaming_provider(path: str | None) -> StreamingProvider | None:
+    """Which service a streaming URI names, or ``None`` for a non-streaming path.
+
+    ``http(s)://`` streams are real streams from no service this app brands,
+    so they report ``"unknown"`` rather than ``None``. Listing rows carry this
+    so a row with no rekordbox mapping (djay-only, locally imported), whose
+    browser rb-meta never arrives, still shows its provider.
+    """
+    if not is_streaming_uri(path):
+        return None
+    uri = str(path)
+    if uri.startswith("spotify:"):
+        return "spotify"
+    if uri.startswith("tidal:"):
+        return "tidal"
+    if uri.startswith("soundcloud:"):
+        return "soundcloud"
+    return "unknown"
 
 
 def is_streaming_row(path: str | None, *, file_exists: bool) -> bool:
@@ -485,6 +515,16 @@ def resolve_library_path(
 # this module under its own file-size ratchet -- Amendment 17: extraction,
 # never a shrink).
 
+def _share_root_forms() -> Iterator[Path]:
+    """SHARE_ROOT as configured, then resolved, the second only when asked for.
+
+    Resolving it up front cost one full ``Path.resolve()`` walk per asset path
+    for a root the common case never used (LIBM-137).
+    """
+    yield SHARE_ROOT
+    yield SHARE_ROOT.resolve()
+
+
 def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
     """Resolve an asset candidate and reject a share-root symlink escape."""
     if mapped.reason == "share" and fd_anchored_walk.FD_ANCHORED_WALK_SUPPORTED:
@@ -494,7 +534,7 @@ def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
         # derived-sibling candidate built from a prior fd-walk's canonical
         # result, which can differ lexically when SHARE_ROOT itself sits
         # behind a symlink.
-        for root in (SHARE_ROOT, SHARE_ROOT.resolve()):
+        for root in _share_root_forms():
             try:
                 resolved = fd_anchored_walk.resolve_under_root(candidate, root)
             except ValueError:

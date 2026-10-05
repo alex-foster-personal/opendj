@@ -327,9 +327,16 @@ test('the reporter rides the failure context on the toast that already reaches t
 		'the reported context must be built from the caller stages, not re-measured'
 	);
 	assert.ok(
-		/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*undefined,\s*cause,\s*failureContext\s*\)/.test(
-			MODULE_SOURCE
-		),
+		// `[,)]`: trailing arguments after the context are allowed (the stick
+		// load headline override, usb-track-guards.test.mjs).
+		// Two links since pin a4898e22 moved the toast into one shared helper
+		// (the command dispatcher reports through it too): the reporter hands
+		// its stage context to the helper, and the helper forwards the context
+		// it was given as pushToast's context argument.
+		/_pushDeckLoadFailureToast\(deck, message, cause, failureContext\);/.test(MODULE_SOURCE) &&
+			/pushToast\(\s*`Deck \$\{deck\} load failed - \$\{message\}`,\s*'error',\s*undefined,\s*cause,\s*context\s*[,)]/.test(
+				MODULE_SOURCE
+			),
 		'the failure context must ride the toast report that already reaches the ' +
 			'server, or the deck-load row is reported twice with the stages on neither'
 	);

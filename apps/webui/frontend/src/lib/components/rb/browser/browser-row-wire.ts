@@ -47,6 +47,23 @@ export function wireAvailability(wire: {
 		: null;
 }
 
+/** A pending row's availability settled from its /rb-meta answer, or null
+ * when there is nothing to settle (row already settled, or no rb-meta yet).
+ *
+ * The listing's row-hydration budget leaves most of a cold collection
+ * AVAILABILITY_PENDING and nothing re-asks; /rb-meta's file_exists is a
+ * full stat (its type cannot say pending), so it is disk truth, not a guess.
+ * A settled row keeps its typed status (awaiting_volume, streaming). */
+export function settledAvailabilityFromRbMeta(
+	row: Pick<BrowserRow, 'file_exists' | 'file_availability'>,
+	meta: { file_exists: boolean; is_streaming: boolean } | null
+): Pick<BrowserRow, 'file_exists' | 'file_availability'> | null {
+	if (meta === null || row.file_availability !== 'AVAILABILITY_PENDING') return null;
+	if (meta.is_streaming) return { file_exists: false, file_availability: 'streaming' };
+	else if (meta.file_exists) return { file_exists: true, file_availability: 'present' };
+	else return { file_exists: false, file_availability: 'absent' };
+}
+
 export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
 	const availability = wireAvailability(wire);
 	if (
@@ -93,6 +110,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		cloud_transfer: wire.cloud_transfer ?? null,
 		spotify_pending:
 			wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
+		streaming_provider: wire.streaming_provider ?? null,
 		quality: wire.quality ?? null,
 		play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
 		strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
@@ -105,6 +123,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		revealed: false,
 		match_context: null,
 		lyrics: wire.lyrics ?? null,
+		grid_quality: wire.grid_quality ?? null,
 		is_remix: wire.is_remix ?? null,
 		is_radio_edit: wire.is_radio_edit ?? null
 	};
@@ -112,7 +131,8 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 
 /**
  * The listing's own streaming verdict (issue #3934). `TrackListItemOut`
- * carries no `is_streaming` field, so All Tracks rows used to start at null
+ * once carried no `is_streaming` field (CHROME-02 added it on the Preview
+ * branch; this verdict still wins when it says streaming), so All Tracks rows used to start at null
  * and learn they were streaming only once rb-meta hydrated, i.e. after the
  * operator had already tried to load or drag them; until then a streaming row
  * read as an ordinary broken link. The server already classifies a streaming
@@ -157,7 +177,10 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		bpm_confidence: track.bpm_confidence ?? null,
 		bpm_confidence_error: track.bpm_confidence_error ?? null,
 		...availability,
-		is_streaming: listRowIsStreaming(availability.file_availability),
+		// CHROME-02 wire flag, with the listing's own availability verdict
+		// (issue #3934) winning when it already says streaming.
+		is_streaming: listRowIsStreaming(availability.file_availability) ?? track.is_streaming ?? null,
+		streaming_provider: track.streaming_provider ?? null,
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,
 		cloud_transfer: track.cloud_transfer ?? null,
@@ -174,6 +197,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		revealed: false,
 		match_context: null,
 		lyrics: track.lyrics ?? null,
+		grid_quality: track.grid_quality ?? null,
 		is_remix: track.is_remix ?? null,
 		is_radio_edit: track.is_radio_edit ?? null
 	};

@@ -159,6 +159,8 @@ def test_comment_roundtrip_and_bounds(fb: TestClient) -> None:
         "viewport_height": 800,
         "machine": "test-host",
         "release_version": "0.1.0",
+        "user_email": None,
+        "ui_config": None,
     }
 
     listed = fb.get("/api/v1/feedback/comments").json()["comments"]

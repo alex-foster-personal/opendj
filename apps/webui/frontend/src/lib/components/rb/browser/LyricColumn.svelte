@@ -10,9 +10,10 @@
 		LYRIC_NO_DATA_TITLE,
 		LYRIC_QUALITY_TITLE,
 		lyricSyncQualityPct,
-		lyricVerdictGlyph,
+		lyricVerdictMark,
 		lyricVerdictTitle
 	} from './lyric-column';
+	import LyricVerdictMark from './LyricVerdictMark.svelte';
 	import {
 		cancelHoverLoad,
 		hoverLoadLyrics,
@@ -86,7 +87,7 @@
 	{:else}
 		{@const pct = lyricSyncQualityPct(row.lyrics.pct_witness_red)}
 		<span class="lyr-glyph" title={lyricVerdictTitle(row.lyrics)}
-			>{lyricVerdictGlyph(row.lyrics.effective)}</span
+			><LyricVerdictMark mark={lyricVerdictMark(row.lyrics.effective)} /></span
 		>
 		{#if pct !== null}
 			<span class="lyr-pct" title={LYRIC_QUALITY_TITLE}>{pct}%</span>

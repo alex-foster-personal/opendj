@@ -11,6 +11,7 @@ import { fetchAnlzForDeckLoad } from '$lib/components/rb/wave/anlz-cache.svelte'
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
+import { createFrameBackstop } from '$lib/rb/frame-backstop';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import {
@@ -369,6 +370,10 @@ export function mirrorEngineState(s: EngineState): void {
 	// `_reanchor` reports a follower that cannot lock in its own sync_error.
 	if (masterStopped !== null) {
 		const ended = masterStopped;
+		// Not awaited: a state frame must not wait on a re-join; `_reanchor`
+		// reports a follower that cannot lock in its own sync_error. The
+		// election runner still serializes the handoff, and a stale frame
+		// (replacement load, or the master already playing again) is ignored.
 		void runAutomaticMasterElection(async () => {
 			const st = deckStates[ended.deck];
 			if (
@@ -409,4 +414,13 @@ function _startRaf(): void {
 		}
 	};
 	rafId = requestAnimationFrame(tick);
+	// AUDIOLIVE-11: AutoPlay and the IPC snapshot read this mirror, and an
+	// occluded window delivers no frames, so a stalled frame is run from a timer.
+	createFrameBackstop(
+		() => rafId,
+		() => {
+			if (rafId !== null) cancelAnimationFrame(rafId);
+			tick();
+		}
+	).arm();
 }

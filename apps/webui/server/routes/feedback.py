@@ -42,9 +42,7 @@ it; all comments move; a non-empty general note moves and resets.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import tempfile
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -53,9 +51,27 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.shared.paths import DATA_DIR, PROJECT_ROOT
+from apps.webui.server.routes.auth import signed_in_user
+from apps.webui.server.routes.feedback_pin_ui_config import PinUiConfig
+
+from .feedback_pin_placement import (
+    MAX_NEARBY_ANCHORS,
+    PinElementOffset,
+    PinNearbyAnchor,
+    require_anchor_for_offset,
+)
+
+# Re-exported: the sibling feedback modules import these from here.
+from .feedback_storage import (  # noqa: F401
+    _load,
+    _load_general,
+    _save,
+    keep_unknown_fields,
+    write_atomic,
+)
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -214,6 +230,9 @@ class CommentOut(BaseModel):
     attachment: AttachmentOut | None = None
     # Pin follow-up thread (issue #905): absent or empty on pins before FB-13.
     replies: list[CommentReplyOut] = Field(default_factory=list)
+    # Placement against the UI (feedback_pin_placement.py): absent on older pins.
+    element_offset: PinElementOffset | None = None
+    nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list)
 
 
 class CommentListOut(BaseModel):
@@ -235,15 +254,30 @@ class CommentCreateIn(BaseModel):
     viewport_height: int = Field(ge=1, le=100_000)
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
     agent_kind: str | None = None
+    # Pin 49f9d217: optional so an agent posting a pin over HTTP need not
+    # invent a UI it does not have.
+    ui_config: PinUiConfig | None = None
+    element_offset: PinElementOffset | None = None
+    nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list, max_length=MAX_NEARBY_ANCHORS)
+
+    @model_validator(mode="after")
+    def _offset_has_anchor(self) -> CommentCreateIn:
+        require_anchor_for_offset(self.anchor, self.element_offset)
+        return self
 
 
 class PinEnvironmentOut(BaseModel):
-    """Non-personal runtime facts needed to reproduce a pinned UI defect.
+    """Runtime facts needed to reproduce a pinned UI defect.
 
     ``machine`` and ``release_version`` are already exposed by the running
-    daemon's settings/health surfaces. The browser contributes only its UI
-    kind and viewport dimensions: no username, user agent, URL query, or
-    other new personal data enters the pin store.
+    daemon's settings/health surfaces. The browser contributes its UI kind,
+    viewport dimensions and a closed ``ui_config`` snapshot (see
+    ``PinUiConfig``): no user agent, URL query, file path or track title.
+
+    ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
+    it from the session cookie, the same identity ``GET /api/v1/auth/me``
+    already returns to this browser; a request body cannot set it. It is null
+    when nobody is signed in, and absent on pins older than this field.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -253,6 +287,8 @@ class PinEnvironmentOut(BaseModel):
     viewport_height: int
     machine: str
     release_version: str
+    user_email: str | None = None
+    ui_config: PinUiConfig | None = None
 
 
 class GeneralNoteOut(BaseModel):
@@ -292,88 +328,6 @@ def _now() -> str:
     # or the frontend's string-order unread comparison cannot tell the second
     # write happened at all.
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-def _load(path: Path, root_key: str) -> list[dict[str, Any]]:
-    if not path.is_file():
-        return []
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    items = raw.get(root_key) if isinstance(raw, dict) else None
-    if not isinstance(items, list):
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "FEEDBACK_STORE_MALFORMED",
-                "message": f"{path} does not hold a {root_key!r} list",
-            },
-        )
-    return items
-
-
-def write_atomic(path: Path, text: str) -> None:
-    """Replace ``path`` with ``text`` so a reader sees the old file or the new one.
-
-    Temp file in the same directory, fsync, then ``os.replace`` (atomic on one
-    filesystem), then fsync the directory so the rename itself is durable. A
-    plain ``write_text`` truncates first, so a crash or a full disk mid-write
-    leaves a torn ``comments.json`` that every later read refuses (PR #1978
-    review). The temp name starts with a dot, so no ``archive-*.json`` glob
-    can mistake a leftover for an archive.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temp = Path(temp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp, path)
-    except BaseException:
-        temp.unlink(missing_ok=True)
-        raise
-    if os.name == "posix":
-        dir_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-
-
-def _save(path: Path, root_key: str, items: list[dict[str, Any]]) -> None:
-    write_atomic(path, json.dumps({root_key: items}, indent=2) + "\n")
-
-
-def keep_unknown_fields(raw: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
-    """``known`` (a model dump) laid over ``raw``, so fields this build lacks survive.
-
-    A newer build may add a pin field this one's ``CommentOut`` does not know.
-    Validating and dumping drops it; overlaying the dump on the raw doc keeps
-    it, at every nesting level, while still filling this build's defaults.
-    """
-    merged = dict(raw)
-    for key, value in known.items():
-        prior = raw.get(key)
-        if isinstance(value, dict) and isinstance(prior, dict):
-            merged[key] = keep_unknown_fields(prior, value)
-        else:
-            merged[key] = value
-    return merged
-
-
-def _load_general(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {"text": "", "updated_at": None, "build": None}
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or not isinstance(raw.get("text"), str):
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "FEEDBACK_STORE_MALFORMED",
-                "message": f"{path} does not hold a general note",
-            },
-        )
-    return raw
 
 
 # ----- build stamp --------------------------------------------------------
@@ -416,8 +370,9 @@ def _build_stamp(request: Request) -> BuildStampOut:
 
 
 def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentOut:
-    """Combine browser dimensions with daemon facts it already publishes."""
+    """Combine browser facts with daemon facts, including who is signed in."""
 
+    user = signed_in_user(request)
     machine = getattr(request.app.state, "hostname", None)
     release_version = getattr(request.app.state, "version", None)
     if not isinstance(machine, str) or machine == "":
@@ -430,6 +385,8 @@ def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentO
         viewport_height=body.viewport_height,
         machine=machine,
         release_version=release_version,
+        user_email=None if user is None else user.email,
+        ui_config=body.ui_config,
     )
 
 
@@ -544,6 +501,8 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
         status="open",
         author=body.author,
         agent_kind=body.agent_kind,
+        element_offset=body.element_offset,
+        nearby_anchors=body.nearby_anchors,
     )
     with _COMMENTS_LOCK:
         items = _load(path, "comments")

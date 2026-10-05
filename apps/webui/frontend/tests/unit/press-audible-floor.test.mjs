@@ -711,7 +711,7 @@ test('a controller press is stamped at MIDI receipt, like a DOM press', () => {
 	// a plain schedule row.
 	const midi = readSource('src/lib/rb/midi/webmidi.svelte.ts');
 	assert.ok(
-		midi.includes('_actionHandler(binding.action, value, device.input.id, log.ts)'),
+		midi.includes('_actionHandler(binding.action, value, device.id, log.ts)'),
 		'the receipt stamp must reach the glue layer'
 	);
 	// Pinned on the registration signature, not on the whole file, and on

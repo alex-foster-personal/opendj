@@ -92,9 +92,9 @@ test('performance-ipc forwards pressT0Ms into setEq', () => {
 });
 
 test('MIDI mixer_channel eq forwards pressT0Ms into dispatchPerformanceCommand', () => {
-	const glue = readSource('src/lib/rb/midi/action-glue.svelte.ts');
+	const glue = readSource('src/lib/rb/midi/controller-pad-runtime.svelte.ts');
 	assert.ok(
-		glue.includes("{ type: 'eq', deck: action.deck, band: action.band, value: v }"),
+		glue.includes("{ type: 'eq', deck, band, value }"),
 		'MIDI eq must dispatch the eq command'
 	);
 	assert.ok(

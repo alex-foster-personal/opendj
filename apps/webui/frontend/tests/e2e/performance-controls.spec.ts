@@ -635,6 +635,403 @@ async function _surfaceRepaintCounts(
 }
 
 test.describe('performance controls and browser IPC', () => {
+	test('Mixtour Bounce release cannot exit a loop queued after reload', async ({ page, request }) => {
+		test.setTimeout(240_000);
+		const stableId = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK ?? (await _fetchAnalyzedTracks(request))[0].stable_id;
+		const grid = (await beatgridFor(request, API_BASE, stableId, []))?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [];
+		expect(grid.length).toBeGreaterThan(32);
+		await _gotoPerformance(page);
+		await _dispatch(page, { type: 'load', deck: 1, stable_id: stableId });
+		await _dispatch(page, { type: 'seek', deck: 1, position_ms: grid[8] });
+		const controller = await page.evaluateHandle(async (url) => {
+			const glue = await import(url) as typeof import('../../src/lib/rb/midi/action-glue.svelte');
+			return glue.handleMidiAction;
+		}, '/src/lib/rb/midi/action-glue.svelte.ts');
+		await controller.evaluate((send) => {
+			send({ type: 'controller_pad_mode', deck: 1, mode: 'bounce_loop' },
+				{ kind: 'button', pressed: true, velocity: 127 }, 'mixtour-queued-release');
+			send({ type: 'controller_pad', deck: 1, pad: 1, shifted: false },
+				{ kind: 'button', pressed: true, velocity: 127 }, 'mixtour-queued-release');
+		});
+		expect((await _idleState(page)).decks[1].loop?.beat_length).toBe(0.03125);
+		await controller.evaluate(async (send, { stableId, position }) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) throw new Error('performance IPC is not installed');
+			// Same JS turn: release observes the old deck, but its command waits
+			// behind a genuine reload, seek and new loop in the shared scheduler.
+			const reload = ipc.dispatch({ type: 'load', deck: 1, stable_id: stableId });
+			const seek = ipc.dispatch({ type: 'seek', deck: 1, position_ms: position });
+			const loop = ipc.dispatch({ type: 'beat_loop', deck: 1, beats: 4 });
+			send({ type: 'controller_pad', deck: 1, pad: 1, shifted: false },
+				{ kind: 'button', pressed: false, velocity: 0 }, 'mixtour-queued-release');
+			await Promise.all([reload, seek, loop]);
+		}, { stableId, position: grid[8] });
+		expect((await _idleState(page)).decks[1].loop?.beat_length,
+			'an old release must not cancel a new-track loop after waiting in the queue').toBe(4);
+		await controller.evaluate(async (send, { stableId, position }) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) throw new Error('performance IPC is not installed');
+			const reload = ipc.dispatch({ type: 'load', deck: 1, stable_id: stableId });
+			const seek = ipc.dispatch({ type: 'seek', deck: 1, position_ms: position });
+			const loop = ipc.dispatch({ type: 'beat_loop', deck: 1, beats: 4 });
+			// Both edges can arrive before the load starts. Neither may target
+			// the replacement track just because the same deck number is used.
+			for (const pressed of [true, false]) send(
+				{ type: 'controller_pad', deck: 1, pad: 1, shifted: false },
+				{ kind: 'button', pressed, velocity: pressed ? 127 : 0 }, 'mixtour-queued-release');
+			await Promise.all([reload, seek, loop]);
+		}, { stableId, position: grid[8] });
+		expect((await _idleState(page)).decks[1].loop?.beat_length,
+			'queued old-track press and release must both be inert').toBe(4);
+		for (const generation of [0, -1, 1.5, '1']) {
+			await expect(page.evaluate(async (generation) => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) throw new Error('performance IPC is not installed');
+				await ipc.dispatch({ type: 'loop', deck: 1, loop: null, if_load_generation: generation });
+			}, generation)).rejects.toThrow('generation must be a positive safe integer');
+		}
+		expect((await _idleState(page)).decks[1].loop?.beat_length).toBe(4);
+		await _dispatch(page, { type: 'unload', deck: 1 });
+		await controller.dispose();
+	});
+
+	test('Mixtour Bounce holds release safely across mode changes and reloads', async ({ page, request }) => {
+		test.setTimeout(360_000);
+		const stableId = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK ?? (await _fetchAnalyzedTracks(request))[0].stable_id;
+		const grid = (await beatgridFor(request, API_BASE, stableId, []))?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [];
+		expect(grid.length).toBeGreaterThan(32);
+		await _gotoPerformance(page);
+		const controller = await page.evaluateHandle(async (url) => {
+			const glue = await import(url) as typeof import('../../src/lib/rb/midi/action-glue.svelte');
+			return glue.handleMidiAction;
+		}, '/src/lib/rb/midi/action-glue.svelte.ts');
+		for (const deck of DECK_IDS) {
+			const mode = async (mode: 'bounce_loop' | 'auto_loop' | 'pitch_cue') => {
+				await controller.evaluate((send, args) => send(
+					{ type: 'controller_pad_mode', deck: args.deck, mode: args.mode },
+					{ kind: 'button', pressed: true, velocity: 127 }, 'mixtour-hold-proof'
+				), { deck, mode });
+				return _idleState(page);
+			};
+			const pad = async (pad: 1 | 2 | 5, pressed: boolean) => {
+				await controller.evaluate((send, args) => send(
+					{ type: 'controller_pad', deck: args.deck, pad: args.pad, shifted: false },
+					{ kind: 'button', pressed: args.pressed, velocity: args.pressed ? 127 : 0 }, 'mixtour-hold-proof'
+				), { deck, pad, pressed });
+				return _idleState(page);
+			};
+			await _dispatch(page, { type: 'load', deck, stable_id: stableId });
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[8] });
+			await mode('bounce_loop');
+			await pad(1, true);
+			await pad(2, true);
+			let state = await pad(1, false);
+			expect(state.decks[deck].loop?.beat_length, 'older release must not cancel latest hold').toBe(0.0625);
+			state = await pad(2, false);
+			expect(state.decks[deck].loop).toBeNull();
+			await pad(1, true);
+			state = await mode('pitch_cue');
+			expect(state.decks[deck].loop, 'mode change must release a held Bounce loop').toBeNull();
+			await mode('auto_loop');
+			state = await pad(5, true);
+			expect(state.decks[deck].loop?.beat_length, 'Auto Loop must engage before testing late release').toBe(4);
+			state = await pad(1, false);
+			expect(state.decks[deck].loop?.beat_length, 'late release must not cancel a new Auto Loop').toBe(4);
+			await pad(5, true);
+			await mode('bounce_loop');
+			await pad(1, true);
+			await _dispatch(page, { type: 'load', deck, stable_id: stableId });
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[8] });
+			await _dispatch(page, { type: 'beat_loop', deck, beats: 4 });
+			state = await pad(1, false);
+			expect(state.decks[deck].loop?.beat_length, 'old hold must not mutate a reloaded track').toBe(4);
+			await _dispatch(page, { type: 'loop', deck, loop: null });
+			await pad(1, true);
+			// Exercise the production disconnect cleanup without fabricating a
+			// connected port. Physical removal/reconnect remains hardware QA.
+			await page.evaluate(async (url) => {
+				const glue = await import(url) as typeof import('../../src/lib/rb/midi/action-glue.svelte');
+				glue.releaseControllerDevice('mixtour-hold-proof');
+			}, '/src/lib/rb/midi/action-glue.svelte.ts');
+			state = await _idleState(page);
+			expect(state.decks[deck].loop, 'device cleanup must release its held loop').toBeNull();
+			await _dispatch(page, { type: 'unload', deck });
+		}
+		await controller.dispose();
+	});
+
+	test('Mixtour SHIFT LOOP toggles and cancels pending manual entry', async ({ page, request }) => {
+		test.setTimeout(240_000);
+		const stableId = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK ?? (await _fetchAnalyzedTracks(request))[0].stable_id;
+		const grid = (await beatgridFor(request, API_BASE, stableId, []))?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [];
+		expect(grid.length).toBeGreaterThan(32);
+		await _gotoPerformance(page);
+		const controller = await page.evaluateHandle(async ({ glueUrl, mapUrl }) => {
+			const glue = await import(glueUrl) as typeof import('../../src/lib/rb/midi/action-glue.svelte');
+			const map = await import(mapUrl) as typeof import('../../src/lib/rb/midi/maps/reloop-mixtour-pro');
+			return (deck: 1 | 2 | 3 | 4, note: number, pressed: boolean, padChannel = false) => {
+				const binding = map.RELOOP_MIXTOUR_PRO_MAP.bindings.find((candidate) =>
+					candidate.source.ch === deck + (padChannel ? 4 : 0) && candidate.source.kind === 'note' && candidate.source.id === note);
+				if (binding === undefined) throw new Error(`missing real controller binding ${deck}:${note}`);
+				glue.handleMidiAction(binding.action, { kind: 'button', pressed, velocity: pressed ? 127 : 0 }, 'mixtour-loop-gesture-proof');
+			};
+		}, { glueUrl: '/src/lib/rb/midi/action-glue.svelte.ts', mapUrl: '/src/lib/rb/midi/maps/reloop-mixtour-pro.ts' });
+		for (const deck of DECK_IDS) {
+			const send = async (note: number, pressed = true, padChannel = false) => {
+				await controller.evaluate((input, args) => input(args.deck, args.note, args.pressed, args.padChannel),
+					{ deck, note, pressed, padChannel });
+				return _idleState(page);
+			};
+			await _dispatch(page, { type: 'load', deck, stable_id: stableId });
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[8] });
+			let state = await send(0x40);
+			expect(state.decks[deck].loop?.beat_length).toBe(4);
+			state = await send(0x40, false);
+			expect(state.decks[deck].loop?.engaged).toBe(true);
+			state = await send(0x40);
+			expect(state.decks[deck].loop).toBeNull();
+			await send(0x03); // manual IN
+			state = await send(0x40); // cancel manual IN, not start Auto Loop
+			expect(state.decks[deck].loop).toBeNull();
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[9] });
+			await send(0x03);
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[13] });
+			state = await send(0x03);
+			expect(state.decks[deck].loop?.in_ms).toBeCloseTo(grid[9], 3);
+			expect(state.decks[deck].loop?.out_ms).toBeCloseTo(grid[13], 3);
+			await send(0x03); // manual EXIT
+			await send(0x04, true, true); // Auto Loop mode
+			await send(0x19, true, true); // pad 6 = eight beats
+			await send(0x19, true, true); // off again
+			state = await send(0x40);
+			expect(state.decks[deck].loop?.beat_length, 'reuse the selected Auto Loop length').toBe(8);
+			await send(0x40);
+			await send(0x03); // an unfinished manual gesture must not survive reload
+			await _dispatch(page, { type: 'load', deck, stable_id: stableId });
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[16] });
+			state = await send(0x03);
+			expect(state.decks[deck].loop).toBeNull();
+			await _dispatch(page, { type: 'seek', deck, position_ms: grid[20] });
+			state = await send(0x03);
+			expect(state.decks[deck].loop?.in_ms).toBeCloseTo(grid[16], 3);
+			await send(0x03);
+			await _dispatch(page, { type: 'unload', deck });
+		}
+		await controller.dispose();
+	});
+
+	test('Mixtour N button routes EQ knobs into real decoded stems', async ({ page, request }) => {
+		test.setTimeout(240_000);
+		const requested = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK;
+		let candidates: string[];
+		if (requested === undefined) {
+			const response = await request.get(`${API_BASE}/api/v1/tracks?limit=1000&available=true`);
+			expect(response.ok(), 'real library must be readable for stem discovery').toBe(true);
+			const tracks = await response.json() as { items: TrackWire[] };
+			candidates = tracks.items.filter((track) => track.file_exists).map((track) => track.stable_id);
+		} else {
+			candidates = [requested];
+		}
+		let stableId: string | undefined;
+		for (const candidate of candidates) {
+			const response = await request.get(`${API_BASE}/api/v1/tracks/${candidate}/stems`);
+			expect(response.ok(), `real stem manifest must be readable for ${candidate}`).toBe(true);
+			const manifest = await response.json() as { schema?: number; layout?: string };
+			if (manifest.schema === 1 && manifest.layout === 'demucs4') {
+				stableId = candidate;
+				break;
+			}
+		}
+		expect(stableId, 'UNAVAILABLE: requires a real analyzed Demucs track; set PERFORMANCE_E2E_MIXTOUR_TRACK').toBeTruthy();
+		await _gotoPerformance(page);
+		const glue = await page.evaluateHandle(async (url) => import(url), '/src/lib/rb/midi/action-glue.svelte.ts');
+		const sendN = async (deck: 1 | 2 | 3 | 4, pressed: boolean) => {
+			await glue.evaluate((module, { deck, pressed }) => module.handleMidiAction(
+				{ type: 'deck_stem_eq_toggle', deck },
+				{ kind: 'button', pressed, velocity: pressed ? 127 : 0 }
+			), { deck, pressed });
+			return _idleState(page);
+		};
+		const sendEq = async (deck: 1 | 2 | 3 | 4, band: 'high' | 'mid' | 'low', value01: number) => {
+			await glue.evaluate((module, { deck, band, value01 }) => module.handleMidiAction(
+				{ type: 'mixer_channel', deck, target: 'eq', band },
+				{ kind: 'continuous', value01, raw: Math.round(value01 * 127) }
+			), { deck, band, value01 });
+			return _idleState(page);
+		};
+		try {
+			for (const deck of DECK_IDS) {
+				let state = await sendN(deck, true);
+				expect(state.mixer.channels[deck].stem_eq_mode, 'empty decks must refuse N').toBe(false);
+				await _dispatch(page, { type: 'load', deck, stable_id: stableId! });
+				await expect.poll(async () => (await _idleState(page)).decks[deck].stems.status,
+					{ timeout: 60_000 }).toBe('ready');
+				state = await _idleState(page);
+				expect(state.decks[deck].stems.available_controls).toEqual(expect.arrayContaining(['vocal', 'instrumental', 'drums']));
+				const originalEq = ['eq_high', 'eq_mid', 'eq_low'].map((field) =>
+					state.mixer.channels[deck][field as 'eq_high' | 'eq_mid' | 'eq_low']);
+				state = await sendN(deck, true);
+				expect(state.mixer.channels[deck].stem_eq_mode).toBe(true);
+				state = await sendN(deck, false);
+				expect(state.mixer.channels[deck].stem_eq_mode, 'release must not toggle twice').toBe(true);
+				expect(await glue.evaluate((module, deck) => module.ledTriggerActive({ kind: 'stem_eq_enabled', deck }), deck)).toBe(true);
+				for (const [band, stem] of [['high', 'vocal'], ['mid', 'instrumental'], ['low', 'drums']] as const) {
+					for (const value of [0, 1, 0.5]) {
+						state = await sendEq(deck, band, value);
+						expect(state.decks[deck].stems.controls[stem].gain).toBe(value);
+						expect([state.mixer.channels[deck].eq_high, state.mixer.channels[deck].eq_mid,
+							state.mixer.channels[deck].eq_low]).toEqual(originalEq);
+					}
+				}
+				state = await sendN(deck, true);
+				expect(state.mixer.channels[deck].stem_eq_mode).toBe(false);
+				state = await sendEq(deck, 'high', 0);
+				expect(state.mixer.channels[deck].eq_high).toBe(0);
+				expect(state.decks[deck].stems.controls.vocal.gain).toBe(0.5);
+				await sendEq(deck, 'high', 0.5);
+				await _dispatch(page, { type: 'unload', deck });
+			}
+		} finally {
+			await glue.dispose();
+		}
+	});
+
+	for (const deck of DECK_IDS) {
+		test(`Mixtour Auto Loop pads toggle the real engine loop on deck ${deck}`, async ({ page, request }) => {
+			const stableId = process.env.PERFORMANCE_E2E_MIXTOUR_TRACK;
+			const track = stableId === undefined
+				? (await _fetchAnalyzedTracks(request))[0]
+				: { stable_id: stableId, beatgrid_ms: (await beatgridFor(request, API_BASE, stableId, []))
+					?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [] };
+			expect(track.beatgrid_ms.length, 'real track must provide at least 32 measured beats').toBeGreaterThanOrEqual(32);
+			await _gotoPerformance(page);
+			const handler = await page.evaluateHandle(async (moduleUrl) => {
+				const glue = await import(moduleUrl);
+				return glue.handleMidiAction as typeof import('../../src/lib/rb/midi/action-glue.svelte').handleMidiAction;
+			}, '/src/lib/rb/midi/action-glue.svelte.ts');
+			const feedback = await page.evaluateHandle(async ({ glueUrl, mapUrl, deck }) => {
+				const glue = await import(glueUrl) as typeof import('../../src/lib/rb/midi/action-glue.svelte');
+				const map = await import(mapUrl) as typeof import('../../src/lib/rb/midi/maps/reloop-mixtour-pro');
+				return () => glue.midiLedFeedback(map.RELOOP_MIXTOUR_PRO_MAP, 'mixtour-real-engine-regression')
+					.filter((output) => output.ch === 4 + deck && output.note >= 0x14 && output.note <= 0x23);
+			}, { glueUrl: '/src/lib/rb/midi/action-glue.svelte.ts',
+				mapUrl: '/src/lib/rb/midi/maps/reloop-mixtour-pro.ts', deck });
+			const assertLoopLights = async (mode: 'auto_loop' | 'bounce_loop', activePad: number | null) => {
+				const outputs = await feedback.evaluate((read) => read());
+				expect(outputs).toHaveLength(16);
+				expect(new Set(outputs.map((output) => output.note)).size).toBe(16);
+				for (const output of outputs) {
+					const pad = ((output.note - 0x14) % 8) + 1;
+					const expected = mode === 'auto_loop'
+						? (pad === activePad ? 67 : 3) : (pad === activePad ? 75 : 11);
+					expect(output.velocity, `pad ${pad} ${mode} feedback`).toBe(expected);
+				}
+			};
+			await _dispatch(page, { type: 'load', deck, stable_id: track.stable_id });
+			await _dispatch(page, { type: 'seek', deck, position_ms: track.beatgrid_ms[8] });
+			const pressPad = async (
+				pad: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8, pressed: boolean,
+				mode: 'auto_loop' | 'bounce_loop' = 'auto_loop', shifted = false
+			) => {
+				await handler.evaluate((handleMidiAction, { deck, pad, pressed, mode, shifted }) => {
+					handleMidiAction(
+						{ type: 'controller_pad_mode', deck, mode },
+						{ kind: 'button', pressed: true, velocity: 127 }, 'mixtour-real-engine-regression'
+					);
+					handleMidiAction(
+						{ type: 'controller_pad', deck, pad, shifted },
+						{ kind: 'button', pressed, velocity: pressed ? 127 : 0 }, 'mixtour-real-engine-regression'
+					);
+				}, { deck, pad, pressed, mode, shifted });
+				return _idleState(page);
+			};
+			let state = await pressPad(5, true);
+			expect(state.decks[deck].loop?.engaged).toBe(true);
+			expect(state.decks[deck].loop?.beat_length).toBe(4);
+			state = await pressPad(5, false);
+			expect(state.decks[deck].loop?.engaged).toBe(true);
+			const loopStart = state.decks[deck].loop?.in_ms;
+			for (const factor of [0.5, 2] as const) {
+				await handler.evaluate((handleMidiAction, { deck, factor }) => {
+					handleMidiAction(
+						{ type: 'deck_loop_scale', deck, factor },
+						{ kind: 'button', pressed: true, velocity: 127 }, 'mixtour-real-engine-regression'
+					);
+				}, { deck, factor });
+				state = await _idleState(page);
+				expect(state.decks[deck].loop?.beat_length).toBe(factor === 0.5 ? 2 : 4);
+				expect(state.decks[deck].loop?.in_ms).toBe(loopStart);
+			}
+			state = await pressPad(6, true);
+			expect(state.decks[deck].loop?.beat_length).toBe(8);
+			state = await pressPad(6, true);
+			expect(state.decks[deck].loop?.engaged ?? false).toBe(false);
+			state = await pressPad(5, true);
+			expect(state.decks[deck].loop?.beat_length).toBe(4);
+			state = await pressPad(5, true);
+			expect(state.decks[deck].loop?.engaged ?? false).toBe(false);
+			// A coarse manual quantize grid must not collapse a beat-loop pad.
+			await _dispatch(page, { type: 'quantize_grid', deck, beats: 4 });
+			for (const mode of ['auto_loop', 'bounce_loop'] as const) {
+				const lengths = mode === 'auto_loop'
+					? [0.25, 0.5, 1, 2, 4, 8, 16, 32]
+					: [0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4];
+				for (const pad of [1, 2, 3, 4, 5, 6, 7, 8] as const) {
+					state = await pressPad(pad, true, mode);
+					const loop = state.decks[deck].loop;
+					expect(loop?.engaged).toBe(true);
+					expect(loop?.beat_length).toBe(lengths[pad - 1]);
+					const start = track.beatgrid_ms.findIndex((ms) => Math.abs(ms - loop!.in_ms) < 0.01);
+					expect(start).toBeGreaterThanOrEqual(0);
+					const end = start + lengths[pad - 1];
+					const floor = Math.floor(end);
+					const expectedOut = track.beatgrid_ms[floor] + (end - floor) *
+						(track.beatgrid_ms[Math.ceil(end)] - track.beatgrid_ms[floor]);
+					expect(loop!.out_ms).toBeCloseTo(expectedOut, 3);
+					await assertLoopLights(mode, pad);
+					state = await pressPad(pad, false, mode);
+					expect(state.decks[deck].loop?.engaged ?? false).toBe(mode === 'auto_loop');
+					if (mode === 'auto_loop') {
+						state = await pressPad(pad, true, mode);
+						expect(state.decks[deck].loop?.engaged ?? false).toBe(false);
+					}
+					await assertLoopLights(mode, null);
+				}
+				// Factory SHIFT bank repeats the same actions; cover both ends.
+				for (const pad of [1, 8] as const) {
+					state = await pressPad(pad, true, mode, true);
+					expect(state.decks[deck].loop?.beat_length).toBe(lengths[pad - 1]);
+					await assertLoopLights(mode, pad);
+					state = await pressPad(pad, false, mode, true);
+					expect(state.decks[deck].loop?.engaged ?? false).toBe(mode === 'auto_loop');
+					if (mode === 'auto_loop') await pressPad(pad, true, mode, true);
+					await assertLoopLights(mode, null);
+				}
+			}
+			await _dispatch(page, { type: 'play', deck, playing: true });
+			await _firstPresentedTransportState(page, deck, true);
+			await pressPad(1, true, 'bounce_loop');
+			state = await _firstPresentedTransportState(page, deck, true);
+			expect(state.decks[deck].loop?.beat_length).toBe(0.03125);
+			await pressPad(1, false, 'bounce_loop');
+			state = await _firstPresentedTransportState(page, deck, true);
+			expect(state.decks[deck].loop?.engaged ?? false).toBe(false);
+			await handler.evaluate((handleMidiAction, deck) => handleMidiAction(
+				{ type: 'controller_pad_mode', deck, mode: 'pitch_cue' },
+				{ kind: 'button', pressed: true, velocity: 127 }, 'mixtour-real-engine-regression'
+			), deck);
+			expect((await feedback.evaluate((read) => read())).every((output) => output.velocity === 0),
+				'unavailable mode must not retain old loop-pad colors').toBe(true);
+			await _dispatch(page, { type: 'play', deck, playing: false });
+			await _firstPresentedTransportState(page, deck, false);
+			// This regression checks each deck's pad semantics. Concurrent
+			// four-deck endurance belongs to the separate hardware rehearsal.
+			await _dispatch(page, { type: 'unload', deck });
+			await handler.dispose();
+			await feedback.dispose();
+		});
+	}
+
 	test('defaults are explicit, master is unique, and UI and IPC share state', async ({ page }) => {
 		await _gotoPerformance(page);
 

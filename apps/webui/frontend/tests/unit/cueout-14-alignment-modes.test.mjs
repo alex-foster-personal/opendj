@@ -145,7 +145,8 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			head_delay_ms: 77,
 			alignment_mode: 'hybrid',
 			master_delay_ms: 0,
-			last_calibration: null
+			last_calibration: null,
+			saved_outputs: { master: null, cue: null }
 		});
 	});
 
@@ -191,7 +192,8 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			head_delay_ms: 0,
 			alignment_mode: 'delay_all',
 			master_delay_ms: 700,
-			last_calibration: record
+			last_calibration: record,
+			saved_outputs: { master: null, cue: null }
 		});
 		const state = await loadTypeScriptModule('src/lib/player/state.svelte.ts');
 		const defaults = state._defaultHeadphones();
@@ -205,7 +207,15 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			offset_ms: 700,
 			error: null,
 			verify_residual_ms: null,
-			probe: null
+			probe: null,
+			diagnostics: {
+				probe: 'chirp',
+				alternate_probe: 'unavailable',
+				failure: null,
+				master_measurements_ms: [],
+				cue_measurements_ms: [],
+				spread_ms: null
+			}
 		});
 	});
 });

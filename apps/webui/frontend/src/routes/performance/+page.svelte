@@ -9,6 +9,7 @@
 	import '$lib/rb/theme.css';
 	import AutoPlayStallBanner from '$lib/components/rb/AutoPlayStallBanner.svelte';
 	import BrowserPanel from '$lib/components/rb/BrowserPanel.svelte';
+	import EnrichCard from '$lib/components/rb/EnrichCard.svelte';
 	import CommandBar from '$lib/components/rb/CommandBar.svelte';
 	import Deck from '$lib/components/rb/Deck.svelte';
 	import EqOverlay from '$lib/components/rb/EqOverlay.svelte';
@@ -145,6 +146,10 @@
 			if (unmounted) return;
 			uninstallIpc = installPerformanceBrowserIpc();
 			const rescueHandled = await runPerformanceRescueAutoRestore();
+			// The route can unmount while the rescue fetch is in flight. Its
+			// cleanup has already run by then, so anything installed now would
+			// never be uninstalled and would restore and snapshot a torn-down page.
+			if (unmounted) return;
 			uninstallSessionRestore = installPerformanceSessionRestore({
 				replaceState: (url) => replaceState(url, {}),
 				skipDeckRestore: rescueHandled
@@ -238,6 +243,8 @@
 	<!-- PLAY-08: fixed-position, outside the grid, so a mid-set AutoPlay stop
 	     cannot reflow the decks while it explains itself. -->
 	<AutoPlayStallBanner />
+	<!-- ENRICH-01: fixed bottom-right, outside the grid, so it never reflows the decks. -->
+	<EnrichCard />
 	<RustEngineBadge />
 	<WaveformStack />
 	<div class="deck-area">
@@ -590,6 +597,17 @@
 	.perf-root.tw-active .deck-col {
 		background: transparent;
 	}
+	/* LIBUX-30: a hidden region takes its separator rules with it. The deck
+	 * columns' inner borders and the wave stack's bottom border belong to the
+	 * containers, not to the [data-deck] children the opacity rules below
+	 * hide, so they stayed painted and overlay mode showed a wireframe: one
+	 * rule across the window and two down the mixer's sides. Each comes back
+	 * with its own edge (hover or peek), never before. */
+	.perf-root.tw-active:not(.tw-left-visible) .deck-col:first-child,
+	.perf-root.tw-active:not(.tw-right-visible) .deck-col:last-child,
+	.perf-root.tw-active:not(.tw-top-visible) :global(.rb-wavestack) {
+		border-color: transparent;
+	}
 	.perf-root.tw-active :global(.rb-browser),
 	.perf-root.tw-active :global(.rb-topbar),
 	.perf-root.tw-active :global(.rb-mixer) {
@@ -641,7 +659,7 @@
 	/* Opt-held reveal reads over a full translucent backdrop so the homeless
 	 * group stays readable against whatever else is still hidden underneath.
 	 * Gated on tw-opt-reveal specifically, never tw-homeless-visible: that
-	 * class is ALSO true while peeking (cmd+R held), where every region is
+	 * class is ALSO true while peeking (Ctrl+R held), where every region is
 	 * already fully visible (isDeckSlotVisible/isEdgeVisible both return true
 	 * while peeking) - a backdrop there would dim the very content peek
 	 * exists to bring back into full view. */

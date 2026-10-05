@@ -86,7 +86,7 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 
 	const folder = page.locator('[data-testid="playlist-folder"]');
 	await folder.click({ button: 'right' });
-	// LIBM-135: the folder menu opens with its built rows; the unbuilt
+	// LIBM-163: the folder menu opens with its built rows; the unbuilt
 	// "New folder" row is hidden for V1 rather than shown inert.
 	await expect(page.locator(MENU)).toContainText('New playlist');
 	await expect(page.getByRole('menuitem', { name: 'New folder', exact: true })).toHaveCount(0);

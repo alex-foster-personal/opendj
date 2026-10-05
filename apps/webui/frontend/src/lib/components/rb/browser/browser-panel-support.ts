@@ -18,6 +18,7 @@ export {
 	resolveRowVocals
 } from '$lib/rb/row-vocals';
 export {
+	computeNextOnlyRef,
 	isAppropriateNext,
 	resolveSearchFilterFallback,
 	selectSearchFilterFallback,
@@ -65,9 +66,35 @@ export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
+export { settledAvailabilityFromRbMeta } from './browser-row-wire';
+export { startPendingSettle } from './pending-availability-settle';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';
 export { setTabLabel } from './playlist-set-tabs';
+/** A stick track row whose stick was pulled (USBPLAY-09: the browse store
+ * grays it to awaiting_volume), refused as "Stick removed" (spec 4b) rather
+ * than as a broken link. Stick ids start `usb-`; library ids are sha1 hex, so
+ * the prefix cannot match one (the same test as track-source's isUsbTrackId). */
+export function isRemovedStickRow(row: {
+	stable_id: string;
+	file_availability?: string | null;
+}): boolean {
+	return row.file_availability === 'awaiting_volume' && row.stable_id.startsWith('usb-');
+}
+
+/** Play from USB pane source (USBPLAY-05): dynamic, so the stick store and
+ * row mapping load on the first stick pane, not with /performance. */
+export function usbPaneSource(): Promise<typeof import('$lib/rb/usb-library.svelte')> {
+	return import('$lib/rb/usb-library.svelte');
+}
+
+// Re-exported so BrowserPanel.svelte, already coupled to this barrel, does not
+// take more direct fan-out edges for IOPIN-01 keyboard nav, the Cmd+A/C/X/V
+// library edit keys and the MIDI browse adapter.
+export { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
+export { createBrowserKeyboard } from './browser-keyboard';
+export { createLibraryEditKeys } from './library-edit-keys';
+export { openIoView } from '$lib/rb/io-surface.svelte';
 export { PairingIndex } from '$lib/rb/pairing-index.svelte';
 // Through here, not imported directly, to keep BrowserPanel's import fan-out
 // (frontend.max_fan_out quality ratchet) at main's figure.

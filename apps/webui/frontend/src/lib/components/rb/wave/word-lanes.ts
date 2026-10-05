@@ -209,6 +209,31 @@ export function sliceLanes(
 }
 
 /**
+ * Widest each packed word may be drawn, in CSS px: the distance to the next
+ * word in ITS OWN lane (pin 6b1da5a8). The packer already spaces a lane by
+ * ESTIMATED label widths; this caps the real, painted box, which can be wider
+ * than the estimate (the active word is bold, and the backing adds padding).
+ * Parallel to `packed`; null = last visible word in its lane, nothing to run
+ * into. Same contract as the line lane's lyricLaneWidthPercent.
+ */
+export function laneWordMaxWidthsPx(packed: readonly PackedLaneWord[]): (number | null)[] {
+	const caps: (number | null)[] = new Array(packed.length).fill(null);
+	const nextXByLane = new Map<number, number>();
+	for (let i = packed.length - 1; i >= 0; i--) {
+		const { lane, x } = packed[i];
+		const nextX = nextXByLane.get(lane);
+		if (nextX !== undefined) {
+			if (nextX <= x) {
+				throw new Error(`the next word in lane ${lane} must start later: ${nextX} <= ${x}`);
+			}
+			caps[i] = nextX - x;
+		}
+		nextXByLane.set(lane, x);
+	}
+	return caps;
+}
+
+/**
  * Waveform window geometry for one frame: the window shown is
  * `windowSeconds * pitch` seconds of track time centred on the playhead
  * (the same semantic the main's lyrics-lane.ts lyricLanePositionPercent

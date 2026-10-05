@@ -6,13 +6,13 @@
 import type { DeckId } from '$lib/rb/deck-id';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 import type { PitchRange } from '$lib/player/constants';
-import type { StemControl } from '$lib/rb/stem-types';
+import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 
 export const PERFORMANCE_SESSION_STORAGE_KEY = 'mdt.rb.performance-session.v1';
 
 const SNAPSHOT_VERSION = 1;
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
-const STEM_CONTROLS: StemControl[] = ['vocal', 'instrumental', 'drums'];
+const STEM_CONTROLS = STEM_CONTROL_IDS;
 const PITCH_RANGES = new Set<PitchRange>([8, 16, 100]);
 const ASSIGNS = new Set<CrossfaderAssign>(['A', 'B', 'THRU']);
 
@@ -44,6 +44,11 @@ export interface PerformanceSessionStemControlSnapshot {
 	gain?: number;
 }
 
+/** V1 snapshots predate independent bass/harmonics. Absent child controls
+ * preserve the loader's neutral defaults; malformed present controls fail. */
+type SessionStemControls = Record<'vocal' | 'instrumental' | 'drums', PerformanceSessionStemControlSnapshot>
+	& Partial<Record<'bass' | 'other', PerformanceSessionStemControlSnapshot>>;
+
 export interface PerformanceSessionSnapshot {
 	version: 1;
 	captured_at_ms: number;
@@ -52,9 +57,13 @@ export interface PerformanceSessionSnapshot {
 	mixer: {
 		crossfader: number;
 		master: number;
+		/** True only when `master` came from an operator's own master_volume
+		 * command. A 0 without it is a safety mute (route teardown, a failed
+		 * preset) and restore must not replay it. Absent in older snapshots. */
+		master_set_by_operator?: boolean;
 		channels: Record<DeckId, PerformanceSessionMixerChannelSnapshot>;
 	};
-	stems: Record<DeckId, Record<StemControl, PerformanceSessionStemControlSnapshot>>;
+	stems: Record<DeckId, SessionStemControls>;
 }
 
 export interface PerformanceSessionSnapshotInput {
@@ -76,9 +85,13 @@ export interface PerformanceSessionSnapshotInput {
 	mixer: {
 		crossfader: number;
 		master: number;
+		/** True only when `master` came from an operator's own master_volume
+		 * command. A 0 without it is a safety mute (route teardown, a failed
+		 * preset) and restore must not replay it. Absent in older snapshots. */
+		master_set_by_operator?: boolean;
 		channels: Record<DeckId, PerformanceSessionMixerChannelSnapshot>;
 	};
-	stems: Record<DeckId, Record<StemControl, PerformanceSessionStemControlSnapshot>>;
+	stems: Record<DeckId, SessionStemControls>;
 }
 
 function _assertUnit(value: number, label: string): void {
@@ -198,9 +211,12 @@ export function serializePerformanceSession(input: PerformanceSessionSnapshotInp
 		mixer: {
 			crossfader: input.mixer.crossfader,
 			master: input.mixer.master,
+			...(input.mixer.master_set_by_operator === undefined
+				? {}
+				: { master_set_by_operator: input.mixer.master_set_by_operator }),
 			channels: {} as Record<DeckId, PerformanceSessionMixerChannelSnapshot>
 		},
-		stems: {} as Record<DeckId, Record<StemControl, PerformanceSessionStemControlSnapshot>>
+		stems: {} as Record<DeckId, SessionStemControls>
 	};
 
 	for (const deckId of DECK_IDS) {
@@ -219,7 +235,9 @@ export function serializePerformanceSession(input: PerformanceSessionSnapshotInp
 		payload.stems[deckId] = {
 			vocal: { ...input.stems[deckId].vocal },
 			instrumental: { ...input.stems[deckId].instrumental },
-			drums: { ...input.stems[deckId].drums }
+			drums: { ...input.stems[deckId].drums },
+			...(input.stems[deckId].bass === undefined ? {} : { bass: { ...input.stems[deckId].bass } }),
+			...(input.stems[deckId].other === undefined ? {} : { other: { ...input.stems[deckId].other } })
 		};
 	}
 
@@ -273,6 +291,8 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 	) {
 		return null;
 	}
+	const masterSetByOperator = mixerRaw.master_set_by_operator;
+	if (masterSetByOperator !== undefined && typeof masterSetByOperator !== 'boolean') return null;
 
 	const channels: Record<DeckId, PerformanceSessionMixerChannelSnapshot> = {} as Record<
 		DeckId,
@@ -286,15 +306,14 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 		channels[deckId] = channel;
 	}
 
-	const stems: Record<DeckId, Record<StemControl, PerformanceSessionStemControlSnapshot>> =
-		{} as Record<DeckId, Record<StemControl, PerformanceSessionStemControlSnapshot>>;
+	const stems = {} as Record<DeckId, SessionStemControls>;
 	for (const deckId of DECK_IDS) {
 		const deckStems = (blob.stems as Record<string, unknown>)[String(deckId)];
 		if (deckStems === null || typeof deckStems !== 'object') return null;
 		const stemRecord = deckStems as Record<string, unknown>;
-		const deckStemSnapshot: Record<StemControl, PerformanceSessionStemControlSnapshot> =
-			{} as Record<StemControl, PerformanceSessionStemControlSnapshot>;
+		const deckStemSnapshot = {} as SessionStemControls;
 		for (const stem of STEM_CONTROLS) {
+			if ((stem === 'bass' || stem === 'other') && stemRecord[stem] === undefined) continue;
 			const control = _parseStemControl(stemRecord[stem]);
 			if (control === null) return null;
 			deckStemSnapshot[stem] = control;
@@ -310,6 +329,7 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 		mixer: {
 			crossfader: mixerRaw.crossfader,
 			master: mixerRaw.master,
+			...(masterSetByOperator === undefined ? {} : { master_set_by_operator: masterSetByOperator }),
 			channels
 		},
 		stems

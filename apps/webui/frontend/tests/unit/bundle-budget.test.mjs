@@ -152,6 +152,7 @@ test('the library limit is exactly 278528: the inherited 256000 plus the reviewe
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
   assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
+  assert.match(source, /RAISED Sat 26 Sep 2026 \(\+2 KiB, PR #3837/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 2 Oct 2026 \(\+1 KiB, PR #4897/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 2 Oct 2026 \(\+2 KiB, PR #4908/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #5086/, 'the raise must carry its note');

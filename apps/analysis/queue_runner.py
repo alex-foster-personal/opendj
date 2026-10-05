@@ -40,10 +40,11 @@ from . import queue_store
 from ._warmup_lock import ensure_owned_numba_cache_dir
 from .backends.base import AnalyzerBackend, TrackVanished
 from .jit_warmup import warm_backend_jit
+from .lane_enums import LaneContractError
 from .pool import analyze_one, spawn_pool
 from .queue import CascadeOutcome, QueueError, enqueue
 from .queue_effects import cascade_if_canonical
-from .record import AnalysisRecord
+from .record import AnalysisRecord, RecordContractError
 from .store import upsert_record
 from .worker_diagnostics import (
     pool_death_message,
@@ -309,13 +310,22 @@ def _settle_one(
             f"analyze_one returned neither a record nor an error for "
             f"{item.stable_id}/{item.lane}"
         )
-    outcomes = _commit_record(
-        ctx.conn,
-        batch_id=ctx.batch_id,
-        item=item,
-        record=record,
-        runner_id=ctx.runner_id,
-    )
+    try:
+        outcomes = _commit_record(
+            ctx.conn,
+            batch_id=ctx.batch_id,
+            item=item,
+            record=record,
+            runner_id=ctx.runner_id,
+        )
+    except (RecordContractError, LaneContractError) as exc:
+        # The producer emitted a record the contract refuses for THIS track
+        # (live: a fitted beat 0.011 s past a frame-derived duration). The
+        # commit rolled back, so the item fails with the breach as its reason
+        # and the batch carries on; raising here took the whole drain down
+        # and stranded every sibling claim as `running`.
+        _settle_failed(ctx, item, f"{type(exc).__name__}: {exc}")
+        return
     if outcomes is None:
         # Cancelled while this worker was analyzing. The record was rolled
         # back with the settlement, so the item stays cancelled and a resume
@@ -326,6 +336,24 @@ def _settle_one(
     ctx.summary.completed += 1
     if ctx.on_item is not None:
         ctx.on_item(item, queue_store.ITEM_DONE)
+
+
+def _settle_failed(ctx: _RunContext, item: queue_store.QueueItem, reason: str) -> None:
+    settled = queue_store.finish_item(
+        ctx.conn,
+        batch_id=ctx.batch_id,
+        stable_id=item.stable_id,
+        lane=item.lane,
+        state=queue_store.ITEM_FAILED,
+        reason=reason,
+        claimed_by=ctx.runner_id,
+    )
+    if not settled:
+        ctx.summary.discarded_on_cancel += 1
+        return
+    ctx.summary.failed += 1
+    if ctx.on_item is not None:
+        ctx.on_item(item, queue_store.ITEM_FAILED)
 
 
 def _snapshot_workers(
@@ -370,6 +398,44 @@ def _effective_version(backend_cls: type[AnalyzerBackend]) -> str:
     if callable(resolver):
         return str(resolver())
     return version
+
+
+def _drain_pool(ctx: _RunContext, pool: ProcessPoolExecutor) -> None:
+    """Pump the pool to empty, settling the batch's runner on every escape.
+
+    ``seen_workers`` is why this is not one call: the stdlib exposes no
+    public handle on the worker processes and ``shutdown`` drops the private
+    one, so they are snapshotted while still reachable. Same reason as
+    apps/analysis/pool.py -- a native crash (issue #1316's NULL instruction
+    pointer, issue #1572's librosa SIGSEGV) produces no Python traceback at
+    all, and the worker's exit SIGNAL is the only evidence of what happened.
+    Without it a drain that hits one reports "A process in the process pool
+    was terminated abruptly", which names neither the signal nor the cause.
+    """
+    conn, batch_id = ctx.conn, ctx.batch_id
+    seen_workers: dict[int, object] = {}
+    try:
+        try:
+            _pump_pool(ctx, pool, seen_workers)
+        finally:
+            _snapshot_workers(pool, seen_workers)
+            pool.shutdown(wait=True, cancel_futures=True)
+    except BackendUnavailable:
+        queue_store.clear_batch_runner(conn, batch_id)
+        raise
+    except BrokenProcessPool as exc:
+        queue_store.release_running_items(conn, batch_id)
+        queue_store.clear_batch_runner(conn, batch_id)
+        raise RuntimeError(
+            pool_death_message(worker_exit_signals(seen_workers.values()))
+        ) from exc
+    except Exception:
+        # Any other escape leaves this runner's claims uncommitted; hand them
+        # back now instead of leaving them `running` until a takeover of this
+        # exact batch, which a fresh enqueue never performs.
+        queue_store.release_running_items(conn, batch_id)
+        queue_store.clear_batch_runner(conn, batch_id)
+        raise
 
 
 def run_batch(
@@ -430,29 +496,7 @@ def run_batch(
         summary=summary,
         on_item=on_item,
     )
-    # ``seen_workers`` is why this is not one call: the stdlib exposes no
-    # public handle on the worker processes and ``shutdown`` drops the private
-    # one, so they are snapshotted while still reachable. Same reason as
-    # apps/analysis/pool.py -- a native crash (issue #1316's NULL instruction
-    # pointer, issue #1572's librosa SIGSEGV) produces no Python traceback at
-    # all, and the worker's exit SIGNAL is the only evidence of what happened.
-    # Without it a drain that hits one reports "A process in the process pool
-    # was terminated abruptly", which names neither the signal nor the cause.
-    seen_workers: dict[int, object] = {}
-    try:
-        try:
-            _pump_pool(ctx, pool, seen_workers)
-        finally:
-            _snapshot_workers(pool, seen_workers)
-            pool.shutdown(wait=True, cancel_futures=True)
-    except BackendUnavailable:
-        queue_store.clear_batch_runner(conn, batch_id)
-        raise
-    except BrokenProcessPool as exc:
-        queue_store.clear_batch_runner(conn, batch_id)
-        raise RuntimeError(
-            pool_death_message(worker_exit_signals(seen_workers.values()))
-        ) from exc
+    _drain_pool(ctx, pool)
 
     if summary.cancelled_midway:
         queue_store.clear_batch_runner(conn, batch_id)
