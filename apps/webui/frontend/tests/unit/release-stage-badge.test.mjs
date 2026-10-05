@@ -5,8 +5,8 @@
  *   title does not tell the user to keep a backup, then broken
  * - if the badge hard-codes its word instead of reading the constant, then a
  *   move to beta leaves a stale "alpha" on screen: broken
- * - if the badge is not mounted directly after the "open dj" wordmark, then
- *   the stage reads as belonging to something else: broken
+ * - the bottom tray no longer carries the badge (OSSPUB-07, Mon 5 Oct 2026);
+ *   brand-alpha-font.test.mjs owns that and the badge's style
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -35,12 +35,6 @@ test('OSSPUB-04 if the badge hard-codes its word instead of reading the constant
 	assert.match(badge, /\{RELEASE_STAGE\}/);
 	assert.match(badge, /title=\{RELEASE_STAGE_TITLE\}/);
 	assert.doesNotMatch(badge.replace(/<style>[\s\S]*<\/style>/, ''), />\s*alpha\s*</i);
-});
-
-test('OSSPUB-04 if the badge is not mounted directly after the wordmark then broken', () => {
-	const panel = read('lib/components/rb/BrowserPanel.svelte');
-	assert.match(panel, /<span class="wordmark">open dj<\/span>\s*<AlphaBadge \/>/);
-	assert.match(panel, /import AlphaBadge from '\$lib\/components\/AlphaBadge\.svelte';/);
 });
 
 test('OSSPUB-04 if the first-run screen shows the name without the badge then broken', () => {
