@@ -55,6 +55,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 INSIGHTS_JOB = "ci-insights"
 SHARDS = (1, 2, 3, 4, 5)
+RUST_SUITES = ("desktop", "audio")
 PROBE_STEP_ID = "trunk-token"
 GUARD_NAME = "The Trunk uploads must have run"
 
@@ -84,14 +85,24 @@ def _uploads() -> list[dict]:
     return [_step_by_id(INSIGHTS_JOB, f"trunk-flaky-tests-{n}") for n in SHARDS]
 
 
+def _rust_uploads() -> list[dict]:
+    return [_step_by_id(INSIGHTS_JOB, f"trunk-flaky-tests-rust-{suite}") for suite in RUST_SUITES]
+
+
+def _all_uploads() -> list[dict]:
+    return _uploads() + _rust_uploads()
+
+
 # -----------------------------------------------------------------------------
 def test_trunk_uploads_live_in_the_isolated_insights_job() -> None:
-    for upload in _uploads():
+    for upload in _all_uploads():
         assert upload["uses"].startswith("trunk-io/analytics-uploader@"), upload["uses"]
     all_uploaders = [
         s for s in _steps(INSIGHTS_JOB) if str(s.get("uses", "")).startswith("trunk-io/")
     ]
-    assert len(all_uploaders) == len(SHARDS), "exactly one uploader per shard, no combined upload"
+    assert len(all_uploaders) == len(SHARDS) + len(RUST_SUITES), (
+        "exactly one uploader per pytest shard and per cargo suite, no combined upload"
+    )
 
 
 def test_trunk_token_never_shares_a_job_with_repository_code() -> None:
@@ -106,24 +117,24 @@ def test_trunk_token_never_shares_a_job_with_repository_code() -> None:
 
 
 def test_trunk_uploads_cannot_redden_the_lane() -> None:
-    for upload in _uploads():
+    for upload in _all_uploads():
         assert upload.get("continue-on-error") is True, upload["id"]
 
 
 def test_trunk_uploader_never_quarantines() -> None:
-    for upload in _uploads():
+    for upload in _all_uploads():
         assert str(upload["with"].get("quarantine")).lower() == "false", upload["id"]
 
 
 def test_trunk_uploads_are_pinned_to_a_sha() -> None:
-    for upload in _uploads():
+    for upload in _all_uploads():
         assert re.fullmatch(r"trunk-io/analytics-uploader@[0-9a-f]{40}", upload["uses"]), upload[
             "uses"
         ]
 
 
 def test_trunk_uploads_run_without_a_checkout() -> None:
-    for upload in _uploads():
+    for upload in _all_uploads():
         assert str(upload["with"].get("use-uncloned-repo")).lower() == "true"
     assert not any(
         str(s.get("uses", "")).startswith("actions/checkout@") for s in _steps(INSIGHTS_JOB)
@@ -134,7 +145,7 @@ def test_each_upload_carries_exactly_its_own_shard_report() -> None:
     download_paths = [
         s["with"]["path"]
         for s in _steps(INSIGHTS_JOB)
-        if str(s.get("id", "")).startswith("download-")
+        if re.fullmatch(r"download-[1-5]", str(s.get("id", "")))
     ]
     assert len(download_paths) == len(SHARDS), download_paths
     for shard, (upload, path) in enumerate(zip(_uploads(), download_paths, strict=True), start=1):
@@ -182,6 +193,19 @@ def test_trunk_guard_reads_every_shard_upload() -> None:
             guard["env"][f"HAS_REPORT_{n}"] == f"${{{{ steps.shard-report-{n}.outputs.report }}}}"
         )
         assert guard["env"][f"DOWNLOAD_{n}"] == f"${{{{ steps.download-{n}.outcome }}}}"
+    for suite in RUST_SUITES:
+        assert (
+            guard["env"][f"TRUNK_UPLOAD_RUST_{suite}"]
+            == f"${{{{ steps.trunk-flaky-tests-rust-{suite}.outcome }}}}"
+        )
+        assert (
+            guard["env"][f"HAS_REPORT_RUST_{suite}"]
+            == f"${{{{ steps.rust-report-{suite}.outputs.report }}}}"
+        )
+        assert (
+            guard["env"][f"DOWNLOAD_RUST_{suite}"]
+            == f"${{{{ steps.download-rust-{suite}.outcome }}}}"
+        )
 
 
 def _run_guard(
@@ -248,6 +272,12 @@ HEAD_INPUTS = {
 
 
 def test_uploads_name_the_repo_and_head_on_every_event() -> None:
+    # The body below iterates `_uploads()` (the five pytest shards). The cargo
+    # uploads carry the same four inputs; checked here so a rust-only drop is
+    # still red.
+    for upload in _rust_uploads():
+        for key, fallback in HEAD_INPUTS.items():
+            assert fallback in upload["with"][key], (upload["id"], key)
     for upload in _uploads():
         for name, fallback in HEAD_INPUTS.items():
             value = str(upload["with"].get(name, ""))
@@ -256,7 +286,7 @@ def test_uploads_name_the_repo_and_head_on_every_event() -> None:
 
 
 def test_trunk_cli_version_is_pinned() -> None:
-    for upload in _uploads():
+    for upload in _all_uploads():
         version = str(upload["with"].get("cli-version", "latest"))
         assert re.fullmatch(r"\d+\.\d+\.\d+", version), (upload["id"], version)
 
