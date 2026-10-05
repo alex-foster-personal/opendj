@@ -408,8 +408,9 @@ def test_a_phase_past_its_budget_is_named_and_fails_only_its_track(caplog: pytes
         assert drain.tick() == "timeout:tags"
     assert "phase tags exceeded its 0.3 s budget on a" in caplog.text, "if the stuck phase is not named then broken"
     assert drain.tick() == "ran:strip", "if a stuck phase wedges the phases after it then broken"
+    reasons = drain.refresh_coverage()["lanes"]["tags"]["failed_reasons"]
     gate.set()
-    assert "timed out" in drain.refresh_coverage()["lanes"]["tags"]["failed_reasons"].popitem()[0]
+    assert [why for why in reasons if "timed out" in why], "if the hung track is not failed by name then broken"
 
 
 def test_an_abandoned_phase_is_never_started_twice() -> None:

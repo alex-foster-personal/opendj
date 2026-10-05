@@ -73,8 +73,8 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.process_priority import lowered_priority
-from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
+from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
 
 log = logging.getLogger(__name__)
 
