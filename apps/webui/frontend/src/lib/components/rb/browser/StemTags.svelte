@@ -4,7 +4,7 @@
 -->
 <script lang="ts">
 	import type { StemSummary } from '$lib/rb/api-rb';
-	import { STEM_COLORS } from '$lib/rb/stem-colors';
+	import { stemCssColor } from '$lib/rb/stem-colors';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 
 	interface Props {
@@ -84,9 +84,9 @@
 	);
 
 	const colorStyle =
-		`--stem-vocal: ${STEM_COLORS.vocal}; ` +
-		`--stem-instrumental: ${STEM_COLORS.instrumental}; ` +
-		`--stem-drums: ${STEM_COLORS.drums};`;
+		`--stem-vocal: ${stemCssColor('vocal')}; ` +
+		`--stem-instrumental: ${stemCssColor('instrumental')}; ` +
+		`--stem-drums: ${stemCssColor('drums')};`;
 </script>
 
 {#if ready === null}
