@@ -34,6 +34,8 @@ export interface MirrorLeaseState {
 	holder: string | null;
 	holder_playing?: boolean | null;
 	holder_yieldable?: boolean | null;
+	/** Taken with Take control: the engine will not hand it back to a playing tab. */
+	holder_operator_claimed?: boolean | null;
 }
 
 export type ClaimDecision = { claim: false } | { claim: true; takeover: boolean; why: string };
@@ -56,7 +58,9 @@ export function decideFollowerClaim(input: {
 		return input.holdsLocalLock ? { claim: true, takeover: false, why: 'free' } : { claim: false };
 	}
 	const holderPlaying = lease.holder_playing === true;
-	if (input.playing && !holderPlaying) return { claim: true, takeover: false, why: 'audible' };
+	if (input.playing && !holderPlaying && lease.holder_operator_claimed !== true) {
+		return { claim: true, takeover: false, why: 'audible' };
+	}
 	if (input.visible && lease.holder_yieldable === true) return { claim: true, takeover: false, why: 'holder-hidden-idle' };
 	if (input.gestureAgeMs !== null && input.gestureAgeMs <= GESTURE_CLAIM_MS && !holderPlaying) {
 		return { claim: true, takeover: true, why: 'gesture' };
@@ -142,6 +146,7 @@ export function createLeasedMirrorPublisher(deps: {
 		void fetch(MIRROR_PATH, { method: 'PUT', headers, body: JSON.stringify(deps.build()) })
 			.then(async (response) => {
 				registered = response.ok && deps.leadership.isLeader();
+				if (registered) deps.leadership.noteLeaseAccepted();
 				if (response.status !== 409) return;
 				const refusal = (await response.json()) as { reason?: string; holder?: unknown };
 				if (refusal.reason === 'lease_held' && typeof refusal.holder === 'string') {
