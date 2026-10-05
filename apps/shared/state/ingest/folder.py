@@ -42,7 +42,6 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared import audio_files, audio_playable, fs_access, fs_residency, hashing
-from apps.shared.stem_outputs import is_stem_output
 from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
@@ -56,6 +55,7 @@ from apps.shared.state.ingest.path_collisions import (
     assert_no_path_collisions,
 )
 from apps.shared.state.writer import StateWriter
+from apps.shared.stem_outputs import is_stem_output
 
 ADAPTER_ID: str = "folder"
 
