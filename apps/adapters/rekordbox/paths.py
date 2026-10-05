@@ -515,11 +515,12 @@ def _local_only_pick(
 ) -> track_locations.PickedAudio:
     """CLOUDSYNC-33: what a local-only machine plays when believed state has no copy.
 
-    Believed state reads only the first local location row, so a working
-    alternate or rekordbox's own FolderPath (which the listing counts as this
-    track's file) can still be on disk. The picker ranks all of them under the
-    same policy the share cap uses. When none plays, a rekordbox file that is
-    here but unplayable says why; otherwise the deck says plainly it is not here.
+    Believed state walks every local location row, so this runs only when none
+    of them materialises; rekordbox's own FolderPath (which the listing counts
+    as this track's file) can still be on disk. The picker ranks every
+    location plus that FolderPath under the same policy the share cap uses.
+    When none plays, a rekordbox file that is here but unplayable says why;
+    otherwise the deck says plainly it is not here.
     """
     rekordbox_copy = _rekordbox_copy(stable_id)
     pick = track_locations.pick_playable(
