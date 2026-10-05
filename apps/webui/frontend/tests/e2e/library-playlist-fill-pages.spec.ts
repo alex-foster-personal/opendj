@@ -45,11 +45,13 @@ function recordTracksPages(page: Page): TracksPageCall[] {
 	return calls;
 }
 
-async function waitForPlaylistFill(page: Page, before: number): Promise<number> {
+async function waitForPlaylistFill(page: Page, before: readonly string[]): Promise<number> {
 	const handle = await page.waitForFunction(
 		(start) => {
 			const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
-			const done = rows.slice(start).find((row) => row.kind === 'library-load-playlist');
+			const done = rows.find(
+				(row) => row.kind === 'library-load-playlist' && !start.includes(JSON.stringify(row))
+			);
 			return done?.stages?.rows ?? null;
 		},
 		before,
@@ -81,7 +83,10 @@ test('a 1k playlist fills with a 30-row first page then 500-row pages, every mem
 	const playlistRow = page.getByTestId('playlist-row').filter({ hasText: PLAYLIST_NAME });
 	await expect(playlistRow).toBeVisible({ timeout: 60_000 });
 
-	const before = await page.evaluate(() => (window as PerfRingWindow).__mdtPerfLog?.().length ?? 0);
+	// The retained ring is bounded: its array length is not an append cursor.
+	const before = await page.evaluate(() =>
+		((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
+	);
 	await playlistRow.click();
 	const filledRows = await waitForPlaylistFill(page, before);
 	await expect.poll(() => calls.filter((c) => c.offset > 0).length).toBe(2);

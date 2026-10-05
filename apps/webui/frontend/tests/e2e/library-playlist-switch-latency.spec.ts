@@ -135,8 +135,9 @@ async function measureOneSample(page: Page): Promise<Sample> {
 
 		await page.getByTestId('playlist-all-tracks').click();
 		await waitForSwitchPaint(page);
+		// Compare actual event identities; bounded retention can keep the length unchanged.
 		const playlistCountBefore = await page.evaluate(
-			() => (window as PerfRingWindow).__mdtPerfLog?.().length ?? 0
+			() => ((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
 		);
 		await page.getByTestId('playlist-row').filter({ hasText: PLAYLIST_NAME }).click();
 		await waitForSwitchPaint(page);
@@ -144,10 +145,10 @@ async function measureOneSample(page: Page): Promise<Sample> {
 			(before) => {
 				const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
 				return rows
-					.slice(before)
 					.some(
 						(row) =>
 							row.kind === 'library-switch-first-rows' &&
+							!before.includes(JSON.stringify(row)) &&
 							row.labels?.source === 'playlist'
 					);
 			},
@@ -174,7 +175,7 @@ async function measureOneSample(page: Page): Promise<Sample> {
 		);
 
 		const allTracksCountBefore = await page.evaluate(
-			() => (window as PerfRingWindow).__mdtPerfLog?.().length ?? 0
+			() => ((window as PerfRingWindow).__mdtPerfLog?.() ?? []).map((row) => JSON.stringify(row))
 		);
 		await page.getByTestId('playlist-all-tracks').click();
 		await waitForSwitchPaint(page);
@@ -182,10 +183,10 @@ async function measureOneSample(page: Page): Promise<Sample> {
 			(before) => {
 				const rows = (window as PerfRingWindow).__mdtPerfLog?.() ?? [];
 				return rows
-					.slice(before)
 					.some(
 						(row) =>
 							row.kind === 'library-switch-first-rows' &&
+							!before.includes(JSON.stringify(row)) &&
 							row.labels?.source === 'all-tracks'
 					);
 			},
