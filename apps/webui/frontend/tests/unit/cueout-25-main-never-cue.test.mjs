@@ -125,6 +125,11 @@ test('masterRepairedFromCue fires only when a refresh moved MAIN off the CUE dev
 		collision.masterRepairedFromCue({ previousMasterId: SPEAKERS, cueId: HP, nextMasterId: SPEAKERS, autoPinnedMaster: false }),
 		null
 	);
+	// A vanished non-cue MAIN that gets auto-pinned is a CUEOUT-09 fallback, not a repair from the cue.
+	assert.equal(
+		collision.masterRepairedFromCue({ previousMasterId: 'native:gone', cueId: HP, nextMasterId: SPEAKERS, autoPinnedMaster: true }),
+		null
+	);
 });
 
 test('refresh persists the repaired MAIN only after the sink is re-pinned', () => {
