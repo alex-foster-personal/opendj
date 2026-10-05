@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-test('pin 44bd9b44eded Hz and cache perf-meter titles are non-empty derived strings', async () => {
+// PERF-UI-10 moved the per-readout hover strings off `title` and into the one
+// shared card, so the pin now follows them there: each live explainer must
+// still reach the card's row model.
+test('pin 44bd9b44eded every perf-meter explainer string still feeds the shared card', async () => {
 	const src = await readFile('src/lib/components/rb/PerfMeters.svelte', 'utf8');
-	const meterBlocks = [...src.matchAll(/<span class="perf-meter"[^>]*>/g)];
-	assert.ok(meterBlocks.length >= 2, 'expected at least two compact perf-meter readouts');
-	const firstTwo = src.slice(meterBlocks[0].index, meterBlocks[1].index + 200);
-	assert.match(firstTwo, /title=\{audioHealthHover\(\)\}/);
-	assert.match(src, /class="perf-meter cache-n" title=\{cacheHover\}/);
-	assert.match(src, /title=\{waveformStutterHover\(\)\}/);
-	assert.match(src, /title=\{memoryHover\}/);
+	assert.match(src, /perfReadoutRows\(\{/);
+	assert.match(src, /hzDetail: audioHealthHover\(\)/);
+	assert.match(src, /cacheDetail: cacheHover/);
+	assert.match(src, /waveformDetail: waveformStutterHover\(\)/);
+	assert.match(src, /memoryDetail: memoryHover/);
 });
