@@ -90,6 +90,7 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     (".github/", Kind.INFRA),
     ("ci/", Kind.INFRA),
     (".ci/", Kind.INFRA),
+    (".config/", Kind.INFRA),  # cargo-nextest: .config/nextest.toml
     (".trunk/", Kind.INFRA),
     (".pnpm-store/", Kind.INFRA),
     # Trees whose only CI consumers are pytest modules.

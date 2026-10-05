@@ -199,6 +199,16 @@ entries:
     install: "periodic-checks.yml (dependency-audit, monthly, CI_RUNS_ON_LINUX pool) runs `cargo install cargo-audit --locked --force --version $CARGO_AUDIT_VERSION` whenever the runner's cargo-audit is absent or another version; to preinstall: cargo install cargo-audit --locked --version 0.22.2 as the runner user"
     verify: "cargo audit --version"
     notes: "job-provisioned: the only consumer is a monthly job on the linux-light pool (agentbox runners today, not agbox2/3), and it installs the pinned version itself, replacing any other. The completeness test checks this version against the workflow's CARGO_AUDIT_VERSION"
+  - name: cargo-nextest
+    kind: binary
+    version: "0.9.146"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (env CARGO_NEXTEST_VERSION on the contracts install step; prebuilt tarball, not cargo install)"
+    provides: [cargo-nextest]
+    needed_by: [rust]
+    provision: job
+    install: "ci.yml job contracts downloads cargo-nextest-0.9.146-x86_64-unknown-linux-gnu.tar.gz when `cargo nextest --version` is not 0.9.146 and installs the binary into ~/.cargo/bin"
+    verify: "cargo nextest --version"
+    notes: "job-provisioned prebuilt: cargo install would compile nextest inside the contracts job's 10 minute budget. Invoked as `cargo nextest`, which the completeness scan records as cargo (rust-cargo)."
 
   #----- toolchains for the runner user (provisioning items 6, 7) -------------
   - name: node-system

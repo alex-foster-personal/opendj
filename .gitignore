@@ -360,3 +360,6 @@ service-account*.json
 /.ds-sync/
 # JUnit reports the pytest fast lane writes for CI test health (Trunk Flaky Tests, per shard).
 junit-shard-*.xml
+# nextest --profile ci writes these at the crate roots (.config/nextest.toml).
+apps/desktop/src-tauri/junit.xml
+apps/audio-engine/junit.xml

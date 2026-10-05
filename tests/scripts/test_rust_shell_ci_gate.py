@@ -17,5 +17,6 @@ def test_ci_gate_runs_the_desktop_shell_rust_tests() -> None:
 
     assert (
         "mkdir -p apps/desktop/src-tauri/payload" in workflow
-        and "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked" in workflow
+        and "cargo nextest run --manifest-path apps/desktop/src-tauri/Cargo.toml --locked"
+        in workflow
     )
