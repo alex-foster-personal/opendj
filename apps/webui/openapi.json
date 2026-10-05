@@ -17854,6 +17854,18 @@
       },
       "ReconcileSummary": {
         "properties": {
+          "age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0.0,
+            "title": "Age S"
+          },
           "availability": {
             "anyOf": [
               {
@@ -17868,9 +17880,27 @@
             ],
             "title": "Availability"
           },
+          "computed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
           "orphan_broken": {
-            "title": "Orphan Broken",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orphan Broken"
           },
           "playlists": {
             "items": {
@@ -17879,13 +17909,43 @@
             "title": "Playlists",
             "type": "array"
           },
+          "refresh_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Error"
+          },
+          "refreshing": {
+            "default": false,
+            "title": "Refreshing",
+            "type": "boolean"
+          },
           "total_broken": {
-            "title": "Total Broken",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Broken"
           },
           "total_tracks": {
-            "title": "Total Tracks",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tracks"
           }
         },
         "required": [
@@ -37936,7 +37996,22 @@
     },
     "/api/v1/reconcile/summary": {
       "get": {
+        "description": "Scan now, or (``cached``) answer from the last scan without ever\nscanning in the request (HEALTH-15). The browser asks ``cached``; a caller\nthat acts on the counts asks without it.",
         "operationId": "reconcile_summary_api_v1_reconcile_summary_get",
+        "parameters": [
+          {
+            "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. Before the first scan has finished the counts, `computed_at` and `age_s` are null and `refreshing` is true: ask again shortly. Without this the library is scanned for this request.",
+            "in": "query",
+            "name": "cached",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. Before the first scan has finished the counts, `computed_at` and `age_s` are null and `refreshing` is true: ask again shortly. Without this the library is scanned for this request.",
+              "title": "Cached",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -37947,6 +38022,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Reconcile Summary",
