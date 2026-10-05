@@ -19,8 +19,7 @@ Run in a SUBPROCESS, matching test_contract_rev.py / test_migrate_on_boot.py:
 ``MDT_DATA_DIR`` at import time; doing that inside the pytest process would
 bind the whole session to one throwaway data dir.
 
-[if] engine_health awaits the legacy health coroutine [then] GET /api/v1/health
-on the engine_core app returns 200 with the real seeded track count, [else stop].
+[if] engine_health awaits legacy_health [then] GET /api/v1/health returns 200, [else stop].
 
 Mutation control (verified by hand, not as a second committed test): dropping
 the `await` on the `legacy_health(...)` call inside `_add_health_route`
