@@ -312,6 +312,7 @@
 			partnerPaintMs,
 			partnerState?.pitch ?? null
 		] as const;
+		tracePlayhead('wave-clock', deckId, paintPositionMs); // before the sub-pixel skip: the clock itself
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
 		tracePlayhead('wave', deckId, paintPositionMs);
 		if (splitPartner !== null && partnerPaintMs !== null) tracePlayhead('wave-partner', splitPartner.id, partnerPaintMs);
