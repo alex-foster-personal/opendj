@@ -10,8 +10,12 @@ import {
 } from '../wave/wave-math';
 import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
-/** Keep-out around BPM/pitch/range text (viewBox units, center 50,50). */
+/** Translucent scrim behind the BPM/pitch/range text (viewBox units, center 50,50). */
 export const JOG_RADIAL_INNER_RADIUS = 18;
+
+/** Waveform baseline: bands start near the hub and run UNDER the text scrim,
+ * so the face reads as one waveform instead of a ring around a black disc. */
+export const JOG_RADIAL_WAVE_INNER_RADIUS = 6;
 
 /** Stays inside the face disc; must not enter the phase-mark annulus. */
 export const JOG_RADIAL_OUTER_RADIUS =
@@ -214,7 +218,7 @@ function _paintBands(
 ): void {
 	const n = frame.preview.length;
 	if (n === 0) return;
-	const rInner = JOG_RADIAL_INNER_RADIUS;
+	const rInner = JOG_RADIAL_WAVE_INNER_RADIUS;
 	const rOuter = JOG_RADIAL_OUTER_RADIUS;
 	for (let i = 0; i < n; i++) {
 		const a0 = polarAngleRad(i, n);
