@@ -2833,6 +2833,13 @@
 		justify-content: center;
 		padding: 0 2px;
 	}
+	/* The header glyph has a viewBox and no intrinsic size, so without an
+	 * explicit box it stretches to fill its flex label. */
+	.plays-icon {
+		flex: 0 0 auto;
+		width: 10px;
+		height: 10px;
+	}
 	.c-plays {
 		font-size: 10px;
 	}
