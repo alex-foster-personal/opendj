@@ -10,7 +10,8 @@ const src = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),
 	'utf8'
 );
-const style = src.slice(src.indexOf('<style'));
+// Comments stripped: the rationale comment names the pinned class in the media block.
+const style = src.slice(src.indexOf('<style')).replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('settings button is pinned, not in the evictable utility tier', () => {
 	const m = /<button\s[^>]*class="([^"]*)"[^>]*aria-label="Open settings"/s.exec(src);
