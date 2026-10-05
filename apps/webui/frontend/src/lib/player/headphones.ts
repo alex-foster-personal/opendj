@@ -1257,6 +1257,11 @@ function _onNativeCueEvent(event: NativeCueSinkEvent): void {
 			return;
 		}
 		case 'master_reasserted':
+			// The shell put the macOS default back on the pinned MAIN. The page
+			// did not call setMaster again, so record the pin here too.
+			if (mixerState.headphones.selected_master_output_device_id !== null) {
+				mixerState.headphones.routes.master = { state: 'selected', selected: true };
+			}
 			recordPerfEvent(
 				'native-master-reasserted',
 				`macOS moved the default output to ${event.from_uid ?? 'another device'}; MASTER was put back`,
@@ -1736,6 +1741,7 @@ async function _applyMasterSink(deviceId: string, context: AudioContext): Promis
 		// while the pin holds (CUEOUT-09 P0).
 		await withHeadphoneOperationTimeout('native master select', native.setMaster(deviceId));
 		_outputContext = context;
+		mixerState.headphones.routes.master = { state: 'selected', selected: true };
 		return;
 	}
 	const ctx = _requireMasterSinkApi(context);
@@ -2104,6 +2110,9 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
 	});
 	mixerState.headphones.selected_master_output_device_id = assignment.masterId;
+	if (assignment.masterId === null) {
+		mixerState.headphones.routes.master = { state: 'default', selected: false };
+	}
 	const plan = pinnedSinkReapplyPlan({
 		previousMasterId,
 		nextMasterId: assignment.masterId,
