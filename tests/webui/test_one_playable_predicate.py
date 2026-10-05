@@ -329,10 +329,11 @@ def _served(client: TestClient, sid: str) -> bool:
 
 
 def test_tree_rows_and_deck_load_agree_on_what_plays(client: TestClient) -> None:
-    """[if] the parity playlist is read through all three surfaces [then] rows
-    present == served exactly, every track the tree counts is served, the only
-    served track a cold tree does not count is the unchecked one (pending, not
-    present), and once rows have stated it the tree count == served, [else stop]."""
+    """[if] tree, rows and deck load read one playlist [then] they agree on what plays, [else stop].
+
+    Rows present == served exactly, every track the tree counts is served, the
+    only served track a cold tree does not count is the unchecked one (pending,
+    not present), and once rows have stated it the tree count == served."""
     sids = [case.sid for case in PARITY_CASES]
     tree = _tree_status_by_sid(sids)
     cold_count = _tree_available_count(client, "pl-parity")
@@ -356,8 +357,9 @@ def test_tree_rows_and_deck_load_agree_on_what_plays(client: TestClient) -> None
 
 
 def test_folder_path_track_is_served_from_the_folder_path(client: TestClient) -> None:
-    """[if] a track's only copy is its rekordbox FolderPath on a configured
-    machine [then] the deck plays that file and says so, [else stop]."""
+    """[if] a track's only copy is its rekordbox FolderPath [then] the deck plays that file, [else stop].
+
+    The machine is configured, and the response names the FolderPath source."""
     response = client.get(
         f"/api/v1/tracks/{PRESENT_ONLY_AT_FOLDER_PATH.sid}/audio",
         headers={"Range": "bytes=0-0"},
@@ -373,9 +375,10 @@ def test_folder_path_track_is_served_from_the_folder_path(client: TestClient) ->
 def test_hide_broken_shows_a_folder_path_playlist_and_hides_an_unplayable_one(
     client: TestClient,
 ) -> None:
-    """[if] every member of a playlist exists only at its FolderPath [then]
-    available_count == track_count and every member serves; [if] no member
-    has a copy [then] available_count is 0 and none serves, [else stop]."""
+    """[if] hide-broken lists FolderPath-only and copyless playlists [then] it counts only real copies, [else stop].
+
+    Every member at its FolderPath: available_count == track_count and every
+    member serves. No member with a copy: available_count is 0 and none serves."""
     available, total = _tree_available_count(client, "pl-folder-only")
     assert (available, total) == (len(FOLDER_ONLY_SIDS), len(FOLDER_ONLY_SIDS))
     assert all(_served(client, sid) for sid in FOLDER_ONLY_SIDS)
