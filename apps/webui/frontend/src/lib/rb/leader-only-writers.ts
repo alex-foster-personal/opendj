@@ -55,11 +55,15 @@ export function installLeaderOnlyRestore(
 		let uninstallSession: (() => void) | null = null;
 		let uninstallRescueWriter: (() => void) | null = null;
 		void (async () => {
-			const rescueHandled = priorRuns === 0 ? await deps.runRescueAutoRestore() : true;
+			// Every promotion resumes from the engine's rescue ring (written every 2 s by
+			// the previous leader), so Take control continues the set rather than starting
+			// it again; a demoted tab was silenced, so there is nothing local to keep. The
+			// browser-local session snapshot only restores decks on the first promotion.
+			const rescueHandled = await deps.runRescueAutoRestore();
 			// Leadership can be lost (or the route unmount) while the rescue
 			// fetch is in flight; nothing installed after that would be undone.
 			if (stopped) return;
-			uninstallSession = deps.installSessionRestore({ skipDeckRestore: rescueHandled });
+			uninstallSession = deps.installSessionRestore({ skipDeckRestore: rescueHandled || priorRuns > 0 });
 			uninstallRescueWriter = deps.installRescueRingWriter();
 		})();
 		return () => {
@@ -68,4 +72,50 @@ export function installLeaderOnlyRestore(
 			uninstallRescueWriter?.();
 		};
 	});
+}
+
+/**
+ * Bug #31: a tab that stops leading goes silent at once, so the operator never
+ * hears two sets. `silence` stops this tab's OWN output only (decks, stems,
+ * preview cue, AutoPlay's armed handoff); it writes nothing shared, because the
+ * new leader owns the mirror, the session and the rescue ring. It runs in a
+ * microtask, after every leader-only writer has been uninstalled by the same
+ * notification, so the pause it causes cannot be recorded as the operator's.
+ */
+export function installDemotionSilencer(deps: {
+	leadership: Pick<TabLeadership, 'isLeader' | 'subscribe'>;
+	silence: () => void;
+}): () => void {
+	let wasLeader = deps.leadership.isLeader();
+	let disposed = false;
+	const unsubscribe = deps.leadership.subscribe(() => {
+		const leads = deps.leadership.isLeader();
+		if (wasLeader && !leads) {
+			queueMicrotask(() => {
+				if (!disposed && !deps.leadership.isLeader()) deps.silence();
+			});
+		}
+		wasLeader = leads;
+	});
+	return () => {
+		disposed = true;
+		unsubscribe();
+	};
+}
+
+/** Bug #31: what `installDemotionSilencer` runs on /performance, with its effects injected. */
+export function silenceDemotedTab(deps: {
+	pauseDeck: (deck: 1 | 2 | 3 | 4) => Promise<void>;
+	stopPreviewCue: () => void;
+	cancelAutoPlayNext: () => void;
+	reportError: (deck: 1 | 2 | 3 | 4, error: unknown) => void;
+}): void {
+	// AutoPlay first, so no handoff can start a deck while the others are pausing.
+	deps.cancelAutoPlayNext();
+	deps.stopPreviewCue();
+	// Every deck, not only the ones reading playing: a quantized launch armed on a
+	// paused deck would otherwise start it a beat later. pause() also clears that.
+	for (const deck of [1, 2, 3, 4] as const) {
+		void deps.pauseDeck(deck).catch((error: unknown) => deps.reportError(deck, error));
+	}
 }

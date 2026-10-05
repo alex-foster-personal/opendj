@@ -142,6 +142,7 @@ export function createLeasedMirrorPublisher(deps: {
 		void fetch(MIRROR_PATH, { method: 'PUT', headers, body: JSON.stringify(deps.build()) })
 			.then(async (response) => {
 				registered = response.ok && deps.leadership.isLeader();
+				if (registered) deps.leadership.noteLeaseAccepted();
 				if (response.status !== 409) return;
 				const refusal = (await response.json()) as { reason?: string; holder?: unknown };
 				if (refusal.reason === 'lease_held' && typeof refusal.holder === 'string') {

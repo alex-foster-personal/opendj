@@ -498,3 +498,20 @@ test('a hidden, silent follower makes no request at all', async () => {
 	assert.equal(engine.requests.length - before, 0);
 	assert.ok(leader);
 });
+
+// ------------------------------------------ confirmed by the engine ---
+
+test('a lock holder is not a confirmed leader until the engine accepts its PUT', async () => {
+	const a = page(fakeLocks(), 'a');
+	await flush();
+	assert.equal(a.leadership.isConfirmedLeader(), true, 'its promotion PUT was accepted');
+	const b = page(fakeLocks(), 'b');
+	await flush();
+	assert.equal(b.leadership.holdsLocalLock(), true);
+	assert.equal(b.leadership.isConfirmedLeader(), false, 'refused by the lease: never confirmed');
+	a.tabState.playing = false;
+	b.tabState.playing = true;
+	await run(3, a, b);
+	assert.equal(b.leadership.isConfirmedLeader(), true);
+	assert.equal(a.leadership.isConfirmedLeader(), false, 'demoted: no longer confirmed');
+});
