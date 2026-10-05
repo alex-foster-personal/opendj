@@ -513,6 +513,29 @@ export function pausedSeekClock(
 	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
 }
 
+/**
+ * Clamp a seek target to a decoded track's duration, tolerating the one case
+ * a raw float duration and an integer-rounded saved position can disagree on:
+ * a track that played to the end. `durationMs` comes from a decoded buffer's
+ * sample count (a float with sub-ms remainder); a position persisted from it
+ * is rounded, so it can read up to 1ms higher than the raw duration it was
+ * taken from. Without this, session restore throws for every deck that had
+ * simply played to completion (seen live: "cueJump: ms must be within
+ * 0..248059, got 248059" -- the deck was never restored).
+ *
+ * Only that rounding margin is forgiven. `ms` further past the end is still a
+ * real error: inclusive-rounded is the upper bound, not "anything goes".
+ */
+export function clampSeekTargetMs(ms: number, durationMs: number, label = 'seek'): number {
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		throw new RangeError(`${label}: duration must be finite and positive, got ${durationMs}`);
+	}
+	if (!Number.isFinite(ms) || ms < 0 || ms > Math.round(durationMs)) {
+		throw new RangeError(`${label}: ms must be within 0..${Math.round(durationMs)}, got ${ms}`);
+	}
+	return ms > durationMs ? durationMs : ms;
+}
+
 export function decodedTransportDurationMs(decodedDurationSec: number): number {
 	if (!Number.isFinite(decodedDurationSec) || decodedDurationSec <= 0) {
 		throw new RangeError(
