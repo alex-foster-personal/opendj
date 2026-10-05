@@ -81,7 +81,7 @@ export function initPlayheadClock(): PlayheadClockState {
 }
 
 /** Where the anchor says the deck is at `nowMs`, before any slew. */
-export function projectedTruthMs(anchor: PlayheadSample, nowMs: number, cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG): number {
+function _projectedTruthMs(anchor: PlayheadSample, nowMs: number, cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG): number {
 	if (!anchor.playing || !anchor.trusted) return anchor.positionMs;
 	const elapsed = Math.min(cfg.maxProjectionMs, Math.max(-cfg.maxProjectionMs, nowMs - anchor.sampledAtMs));
 	return anchor.positionMs + elapsed * anchor.rate;
@@ -101,7 +101,7 @@ function _remainingOffsetMs(state: PlayheadClockState, nowMs: number): number {
 /** The position to draw at `nowMs`; null before the first sample. */
 export function playheadDisplayMs(state: PlayheadClockState, nowMs: number, cfg: PlayheadClockConfig = PLAYHEAD_CLOCK_CONFIG): number | null {
 	if (state.anchor === null) return null;
-	const truth = projectedTruthMs(state.anchor, nowMs, cfg);
+	const truth = _projectedTruthMs(state.anchor, nowMs, cfg);
 	if (!state.anchor.playing || !state.anchor.trusted) return truth;
 	return truth + _remainingOffsetMs(state, nowMs);
 }
@@ -143,7 +143,7 @@ export function notePlayheadSample(
 		return 'frozen';
 	}
 	const shown = playheadDisplayMs(state, nowMs, cfg) ?? sample.positionMs;
-	const errorMs = shown - projectedTruthMs(sample, nowMs, cfg);
+	const errorMs = shown - _projectedTruthMs(sample, nowMs, cfg);
 	if (_isDiscontinuity(previous, sample, cfg)) {
 		_snap(state, sample, errorMs);
 		return 'snap-discontinuity';
