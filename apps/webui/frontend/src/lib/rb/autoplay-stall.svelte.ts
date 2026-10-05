@@ -37,7 +37,7 @@ function _reportAutoPlayStallFailure(stall: AutoPlayStallDescription): void {
 	// Exhaustion and handoff terminal branches already emit error toasts (and
 	// those rows reach webui-client-errors-*.log). Silent idle has no toast, so
 	// it needs its own grep-stable console line (PLAY-14 / pin b91c8ba9b84b).
-	if (stall.reason !== 'no-deck-playing') return;
+	if (stall.reason !== 'no-deck-playing' && stall.reason !== 'no-playing-master') return;
 	const diagnostic = autoPlayStallDiagnosticMessage(stall.reason, stall.detail);
 	recordPerfEvent('autoplay-stall', diagnostic, null, 'error');
 	console.error(diagnostic);
@@ -113,6 +113,21 @@ export function noteAutoPlaySilentIdle(input: {
 	);
 }
 
+/**
+ * PLAY-15: a deck is playing but none is master, so AutoPlay can never arm.
+ * Mon 5 Oct 2026: a rescued page played two decks out with AutoPlay on and
+ * said nothing until the 30 s no-deck-playing stall, after the music ended.
+ */
+export function noteAutoPlayNoPlayingMaster(sourceStableId: string): void {
+	raiseAutoPlayStall(
+		describeAutoPlayStall({
+			reason: 'no-playing-master',
+			source_stable_id: sourceStableId,
+			blocked: []
+		})
+	);
+}
+
 export function noteAutoPlayHandoffStall(
 	reason: 'handoff-attempts-exhausted' | 'handoff-incomplete' | 'master-handover-refused',
 	sourceStableId: string,
@@ -174,7 +189,8 @@ export function retireAutoPlayStallIfAudible(sourceStableId: string, audible: bo
 		if (sourceStableId === stall.source_stable_id) clearAutoPlayStall();
 		return;
 	}
-	if (stall.reason === 'no-deck-playing') {
+	// PLAY-15: any audible master is the recovery for a master-less set.
+	if (stall.reason === 'no-deck-playing' || stall.reason === 'no-playing-master') {
 		clearAutoPlayStall();
 		return;
 	}

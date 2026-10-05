@@ -54,6 +54,7 @@ import {
 	planAutoPlayIdleDisarm,
 	readAutoPlayIdleSinceMs,
 	resetAutoPlayIdleClock,
+	shouldRaiseAutoPlayNoMasterStall,
 	shouldRaiseAutoPlaySilentStall
 } from '$lib/rb/autoplay-idle';
 import {
@@ -77,6 +78,7 @@ import {
 	clearAutoPlayStall,
 	noteAutoPlayExhaustion,
 	noteAutoPlayHandoffStall,
+	noteAutoPlayNoPlayingMaster,
 	noteAutoPlaySilentIdle,
 	readAutoPlayStall,
 	retireAutoPlayStallIfAudible
@@ -126,6 +128,8 @@ let _promoting = false;
 let _disarmRetainStall = false;
 /** Last pickSourceDeck id, used when every deck has stopped (issue #2153). */
 let _lastSourceStableId: string | null = null;
+/** PLAY-15: since when a deck has been playing with no playing master. */
+let _noMasterSinceMs: number | null = null;
 
 export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
@@ -272,6 +276,34 @@ async function _promoteMaster(): Promise<void> {
 	throw new Error(`unhandled master promotion decision: ${String(_exhaustive)}`);
 }
 
+/**
+ * PLAY-15: a deck playing with no playing master leaves AutoPlay blind, since
+ * pickSourceDeck only arms off the master. Say so while the music is still
+ * going, not 30 s after it ends (Mon 5 Oct 2026, silver preview).
+ */
+function _noteNoPlayingMaster(noSource: boolean, snaps: readonly AutoPlayDeckSnap[]): void {
+	const playingDeck = snaps.find((d) => d.playing && d.stable_id !== null) ?? null;
+	if (!noSource || playingDeck === null || _pendingMaster !== null) {
+		_noMasterSinceMs = null;
+		return;
+	}
+	const now = Date.now();
+	_noMasterSinceMs ??= now;
+	if (
+		shouldRaiseAutoPlayNoMasterStall({
+			enabled: uiPrefs.auto_play_enabled,
+			any_playing: true,
+			playing_master: false,
+			pending_master: false,
+			stall_active: readAutoPlayStall() !== null,
+			no_master_since_ms: _noMasterSinceMs,
+			now_ms: now
+		})
+	) {
+		noteAutoPlayNoPlayingMaster(playingDeck.stable_id!);
+	}
+}
+
 async function _tick(): Promise<void> {
 	if (!uiPrefs.auto_play_enabled) {
 		_clearChartedOrder();
@@ -333,6 +365,7 @@ async function _tick(): Promise<void> {
 	if (source !== null && source.stable_id !== null) {
 		_lastSourceStableId = source.stable_id;
 	}
+	_noteNoPlayingMaster(source === null || source.stable_id === null, snaps);
 	if (source === null || source.stable_id === null) {
 		// Row 1, but NOT while a promotion is still settling: between the old
 		// master being demoted and the new one being flagged there is a poll or
@@ -595,6 +628,7 @@ export function installAutoPlay(): () => void {
 		_promoting = false;
 		resetAutoPlayIdleClock();
 		resetAutoPlaySilenceRecovery();
+		_noMasterSinceMs = null;
 		_disarmRetainStall = false;
 		_claimedIds = new Set();
 		_playedIds = new Set();

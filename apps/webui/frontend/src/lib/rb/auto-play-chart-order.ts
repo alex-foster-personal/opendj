@@ -19,7 +19,7 @@ import { uiPrefs } from '$lib/rb/prefs.svelte';
 
 export const CHARTED_ORDER_HORIZON = 64;
 
-/** PLAY-15: the recordings on the decks now, for rows the playlist cannot name. */
+/** PLAY-16: the recordings on the decks now, for rows the playlist cannot name. */
 export function deckSongIdentities(): Set<string> {
 	const identities = new Set<string>();
 	for (const id of DECK_IDS) {
