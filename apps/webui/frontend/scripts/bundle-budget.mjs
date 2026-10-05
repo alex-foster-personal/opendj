@@ -340,7 +340,10 @@ const BUDGETS = [
   // Merge note (PR #4014 x SET-11 x #4094 x #4906): main's merged ceiling is
   // 260,096. The Preview port's reviewed ceiling was 251,904. This merge keeps
   // the larger of the two.
-  { name: 'performance', limit: 260096, measured: 251283, note: '/performance and children' },
+  // RAISED Mon 5 Oct 2026 (+1 KiB, PR #5441 CHROME-12/13, V1 budget rule of up to
+  // 4 KiB per V1 PR): the top-bar skin button cycles Default, Gothic and Light, and
+  // set_skin carries the skin over IPC. CI measured 260,232 against 260,096 (+136).
+  { name: 'performance', limit: 261120, measured: 260232, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

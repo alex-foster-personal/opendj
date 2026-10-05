@@ -246,7 +246,7 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesignPref }
-	| ({ type: 'set_skin' } & SkinSettings)
+	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
