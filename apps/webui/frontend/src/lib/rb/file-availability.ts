@@ -9,4 +9,6 @@ export type FileAvailabilityStatus =
 	| 'absent'
 	| 'AVAILABILITY_PENDING'
 	| 'streaming'
-	| 'awaiting_volume';
+	| 'awaiting_volume'
+	/** UI read of a stored `streaming` row, named from the URI scheme. */
+	| `${string}-streaming`;

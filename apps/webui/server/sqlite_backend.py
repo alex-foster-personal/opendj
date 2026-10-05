@@ -975,8 +975,22 @@ class SqliteBackend:
                     if (pairing.from_stable_id, pairing.to_stable_id,
                         pairing.direction) not in covered
                 )
+            tracks_playable = 0
+            if (
+                self._table_exists(conn, "tracks")
+                and self._table_exists(conn, "track_availability")
+            ):
+                tracks_playable = conn.execute(
+                    "SELECT COUNT(*) FROM tracks AS t "
+                    "JOIN track_availability AS a ON a.stable_id = t.stable_id "
+                    "WHERE t.deleted_at IS NULL "
+                    "AND a.state = 'present'"
+                ).fetchone()[0]
         return {
-            "tracks": tracks, "playlists": playlists, "pairings": pairings,
+            "tracks": tracks,
+            "tracks_playable": tracks_playable,
+            "playlists": playlists,
+            "pairings": pairings,
         }
 
     # --- writes -----------------------------------------------------------

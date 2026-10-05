@@ -196,7 +196,11 @@ test('header counts explain what they count instead of repeating the number', as
 	assert.match(nav.headerTrackCountTitle(8355), /^8355 tracks: .*library database/);
 	assert.match(nav.headerPlaylistCountTitle(12), /^12 playlists: .*not counting deleted/);
 	const layout = read('src/routes/+layout.svelte');
-	assert.match(layout, /title=\{headerTrackCountTitle\(health\.data\.state_db\.tracks\)\}/);
+	assert.match(
+		layout,
+		/title=\{headerTrackCountTitle\(health\.data\.state_db\.tracks, health\.data\.state_db\.tracks_playable \?\? 0\)\}/
+	);
+	assert.match(layout, /playable\)/);
 	assert.match(layout, /title=\{headerPlaylistCountTitle\(health\.data\.state_db\.playlists\)\}/);
 	assert.doesNotMatch(layout, /title=\{String\(health\.data\.state_db/);
 });
