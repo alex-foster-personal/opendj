@@ -473,6 +473,11 @@ def test_prepare_spoke_identity_commits_large_backlog_in_bounded_batches(
             original(conn, batch, batch_index=batch_index, batch_count=batch_count)
 
         monkeypatch.setattr(engine_identity_map, "_commit_remap_batch", _spy)
+        # These bare remap rows own no child rows, so STATE-19 would skip them
+        # all. Model a backlog whose losers all still have children to move.
+        monkeypatch.setattr(
+            engine_identity_map, "losers_with_children", lambda _conn, losers: set(losers)
+        )
 
         assert prepare_spoke_identity(conn) == pair_count
         assert seen_batches == [IDENTITY_REMAP_BATCH_ROWS] * 4 + [50], (
