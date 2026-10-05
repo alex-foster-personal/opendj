@@ -1,10 +1,17 @@
 /**
- * AGENT-18 reactive view of this tab's leadership, for the follower banner.
+ * AGENT-18 reactive view of this tab's leadership, for the follower banner,
+ * and the one place the /performance route creates its leadership.
  *
- * `ui-mirror.ts` owns the controller (it is the thing the leadership gates);
- * this file only holds what the banner renders and the one action it offers.
+ * The route owns the leadership because more than the UI mirror hangs off it:
+ * session restore, the rescue ring, the play counter and the deck observer
+ * all run only while this tab leads (`leader-only-writers.ts`).
  */
-import type { TabLeadership, TabLeadershipSnapshot } from './tab-leadership';
+import {
+	createTabLeadership,
+	type LockManagerLike,
+	type TabLeadership,
+	type TabLeadershipSnapshot
+} from './tab-leadership';
 
 const PENDING: TabLeadershipSnapshot = { role: 'pending', reason: null, leaseHolder: null };
 
@@ -12,13 +19,29 @@ export const tabLeadershipView = $state<{ current: TabLeadershipSnapshot }>({ cu
 
 let _active: TabLeadership | null = null;
 
-export function bindTabLeadership(leadership: TabLeadership | null): void {
-	_active = leadership;
-	tabLeadershipView.current = leadership === null ? PENDING : leadership.snapshot();
+function _browserLocks(): LockManagerLike | null {
+	const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+	return locks === undefined ? null : (locks as unknown as LockManagerLike);
 }
 
-export function publishTabLeadership(snapshot: TabLeadershipSnapshot): void {
-	tabLeadershipView.current = snapshot;
+/** Create this tab's leadership and bind the banner to it. Dispose on unmount. */
+export function installTabLeadership(): { leadership: TabLeadership; dispose: () => void } {
+	const leadership = createTabLeadership({
+		locks: _browserLocks(),
+		onChange: (snapshot) => {
+			tabLeadershipView.current = snapshot;
+		}
+	});
+	_active = leadership;
+	tabLeadershipView.current = leadership.snapshot();
+	return {
+		leadership,
+		dispose: () => {
+			leadership.dispose();
+			if (_active === leadership) _active = null;
+			tabLeadershipView.current = PENDING;
+		}
+	};
 }
 
 /** The banner's "Take control" button. */

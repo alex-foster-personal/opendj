@@ -51,6 +51,8 @@ export interface LockManagerLike {
 
 export interface TabLeadership {
 	snapshot(): TabLeadershipSnapshot;
+	/** Called on every role change, after `onChange`. Returns the unsubscribe. */
+	subscribe(listener: (snapshot: TabLeadershipSnapshot) => void): () => void;
 	/** True only when this tab holds the local lock AND no other browser holds the lease. */
 	isLeader(): boolean;
 	/** True when this tab holds the local lock (it may still be lease-blocked). */
@@ -72,7 +74,7 @@ function _isAbort(error: unknown): boolean {
 
 export function createTabLeadership(deps: {
 	locks: LockManagerLike | null;
-	onChange: (snapshot: TabLeadershipSnapshot) => void;
+	onChange?: (snapshot: TabLeadershipSnapshot) => void;
 	lockName?: string;
 }): TabLeadership {
 	const lockName = deps.lockName ?? PERFORMANCE_LEADER_LOCK;
@@ -84,6 +86,7 @@ export function createTabLeadership(deps: {
 	let disposed = false;
 	let releaseHeld: (() => void) | null = null;
 	let queued: AbortController | null = null;
+	const listeners = new Set<(snapshot: TabLeadershipSnapshot) => void>();
 
 	const snapshot = (): TabLeadershipSnapshot => {
 		if (!decided) return { role: 'pending', reason: null, leaseHolder: null };
@@ -99,7 +102,8 @@ export function createTabLeadership(deps: {
 		const key = JSON.stringify(next);
 		if (key === last) return;
 		last = key;
-		deps.onChange(next);
+		deps.onChange?.(next);
+		for (const listener of [...listeners]) listener(next);
 	};
 
 	/** Lock callback: hold the lock until released by dispose, or stolen. */
@@ -165,6 +169,12 @@ export function createTabLeadership(deps: {
 
 	return {
 		snapshot,
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
 		isLeader: () => decided && hasLock && leaseHolder === null,
 		holdsLocalLock: () => decided && hasLock,
 		takeControl() {
@@ -196,10 +206,45 @@ export function createTabLeadership(deps: {
 		},
 		dispose() {
 			disposed = true;
+			listeners.clear();
 			queued?.abort();
 			queued = null;
 			releaseHeld?.();
 			releaseHeld = null;
 		}
+	};
+}
+
+/**
+ * AGENT-18: run `install` only while this tab leads, and undo it the moment
+ * leadership is lost (stolen by another tab, or another browser's lease).
+ * `install` receives how many times it has run before, so a caller can do
+ * one-time work (restoring decks) only on the first promotion.
+ */
+export function whileLeader(
+	leadership: Pick<TabLeadership, 'isLeader' | 'subscribe'>,
+	install: (priorRuns: number) => () => void
+): () => void {
+	let uninstall: (() => void) | null = null;
+	let runs = 0;
+	const stop = (): void => {
+		const current = uninstall;
+		uninstall = null;
+		current?.();
+	};
+	const sync = (): void => {
+		const leads = leadership.isLeader();
+		if (leads && uninstall === null) {
+			uninstall = install(runs);
+			runs += 1;
+		} else if (!leads && uninstall !== null) {
+			stop();
+		}
+	};
+	const unsubscribe = leadership.subscribe(sync);
+	sync();
+	return () => {
+		unsubscribe();
+		stop();
 	};
 }

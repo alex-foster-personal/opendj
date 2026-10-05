@@ -159,12 +159,7 @@ export function buildUiMirror(): Record<string, unknown> {
 	};
 }
 
-function _browserLocks(): LockManagerLike | null {
-	const locks = (globalThis.navigator as Navigator | undefined)?.locks;
-	return locks === undefined ? null : (locks as unknown as LockManagerLike);
-}
-
-export function installUiMirror(): () => void {
+export function installUiMirror(leadership: TabLeadership): () => void {
 	// The engine only knows a performance page is open once it has ACCEPTED a
 	// mirror publish, and every /api/v1/commands route answers 409 until then.
 	// `mirror.isRegistered()` is that precondition, read by the order poll:
@@ -175,13 +170,6 @@ export function installUiMirror(): () => void {
 	// silent toward the engine, so it can neither overwrite the playing tab's
 	// state nor execute an order the operator's tab should run.
 	let lastPublishAtMs: number | null = null;
-	const leadership = createTabLeadership({
-		locks: _browserLocks(),
-		onChange: (snapshot) => {
-			publishTabLeadership(snapshot);
-			if (snapshot.role === 'leader') mirror.publish();
-		}
-	});
 	const mirror = createLeasedMirrorPublisher({
 		leadership,
 		clientId: MIRROR_CLIENT_ID,
@@ -201,7 +189,9 @@ export function installUiMirror(): () => void {
 			lastPublishAtMs = nowMs;
 		}
 	});
-	bindTabLeadership(leadership);
+	const unsubscribeLeadership = leadership.subscribe((snapshot) => {
+		if (snapshot.role === 'leader') mirror.publish();
+	});
 	mirror.publish();
 	const interval = window.setInterval(mirror.publish, 1000);
 	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish);
@@ -227,7 +217,6 @@ export function installUiMirror(): () => void {
 		uninstallOrderPoll();
 		window.clearInterval(interval);
 		closeMirrorIfLeader();
-		leadership.dispose();
-		bindTabLeadership(null);
+		unsubscribeLeadership();
 	};
 }
