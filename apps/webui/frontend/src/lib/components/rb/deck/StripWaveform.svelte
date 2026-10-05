@@ -24,6 +24,7 @@
 		type WordIndex
 	} from '$lib/lyrics/pointer-word';
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
+	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { resolveStripBandColors } from '$lib/rb/wave-palette';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
@@ -73,10 +74,14 @@
 	let stripW: number = $state(0);
 	let pointer: PointerWord | null = $state(null);
 
+	const overviewPositionMs: number = $derived(deck.position_ms);
+	$effect(() => {
+		if (deck.playing) tracePlayhead('overview', deck.deck_id, overviewPositionMs);
+	});
 	const posPct: number = $derived(
 		deck.duration_ms === null || deck.duration_ms === 0
 			? 0
-			: (deck.position_ms / deck.duration_ms) * 100
+			: (overviewPositionMs / deck.duration_ms) * 100
 	);
 
 	// Validated vocals of the loaded analysis; null while no anlz payload.

@@ -43,6 +43,7 @@
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
 	import { isPresentationClockStalled, positionSampledAtMs } from '$lib/rb/presentation-clock-report';
+	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import {
 		initPaintScheduleState,
 		initPositionInterpolatorState,
@@ -312,6 +313,8 @@
 			partnerState?.pitch ?? null
 		] as const;
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
+		tracePlayhead('wave', deckId, paintPositionMs);
+		if (splitPartner !== null && partnerPaintMs !== null) tracePlayhead('wave-partner', splitPartner.id, partnerPaintMs);
 		const dpr = window.devicePixelRatio;
 		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
 			el.width = cssW * dpr;

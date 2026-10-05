@@ -19,6 +19,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import ControlExplainer from './ControlExplainer.svelte';
 	import {
 		blitJogRadial,
@@ -104,11 +105,17 @@
 	// Range readout is REAL from the engine's per-deck pitchRanges store;
 	// 100 renders as WIDE per SCREENSHOT-SPEC 3.
 	const rangeText: string = $derived(pitchRange === 100 ? 'WIDE' : `+-${pitchRange}`);
+	// The position every rotating part of the dial is drawn from (phase marks,
+	// progress trail); reported so the smoothness probe scores what was drawn.
+	const jogPositionMs: number = $derived(deck.position_ms);
+	$effect(() => {
+		if (deck.audible) tracePlayhead('jog', deck.deck_id, jogPositionMs);
+	});
 	const dialCircumference = 2 * Math.PI * 46;
 	const tickAngle: number = $derived(
 		deck.duration_ms === null || deck.duration_ms <= 0
 			? 0
-			: Math.min(1, Math.max(0, deck.position_ms / deck.duration_ms)) * 360
+			: Math.min(1, Math.max(0, jogPositionMs / deck.duration_ms)) * 360
 	);
 
 	// Pin 67a4ce88805f: an obviously-playing deck needs a fast white line
@@ -125,7 +132,7 @@
 	// browser clock, so this only ever moves with real playback.
 	const barBeats: number = $derived(jogPhaseBeats(deck.quantize_grid_beats));
 	const barPhase: number | null = $derived(
-		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, deck.position_ms / 1000), barBeats)
+		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, jogPositionMs / 1000), barBeats)
 	);
 	const phaseAngle: number = $derived((barPhase ?? 0) * 360);
 	const phaseTitle: string = $derived(
