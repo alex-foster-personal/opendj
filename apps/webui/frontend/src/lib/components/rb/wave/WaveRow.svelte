@@ -42,13 +42,14 @@
 		foldPresentationSample,
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
-	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
+	import { isPresentationClockStalled, positionSampledAtMs } from '$lib/rb/presentation-clock-report';
 	import {
 		initPaintScheduleState,
 		initPositionInterpolatorState,
 		paintPositionMs,
 		paintScrollPx,
-		shouldSkipRepaint
+		shouldSkipRepaint,
+		type PaintPositionDeck
 	} from './paint-position';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
@@ -246,10 +247,19 @@
 	// Pin 53ba89ca8ddc (waveform jitter): see `./paint-position.ts` for the
 	// measurement + rationale (tested there, a `.svelte` file cannot be).
 	// `stallState` below folds raw `deck.position_ms`, never this value.
+	// Both halves project from the engine's sample time, so a split row (and
+	// every row) paints synced decks in phase (paint-position.ts module note).
 	const _paintPositionState = initPositionInterpolatorState();
+	const _partnerPaintState = initPositionInterpolatorState();
 
 	function _paintPositionMs(): number {
-		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now());
+		const sampledAt = positionSampledAtMs(deckId, deck.position_ms);
+		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now(), sampledAt);
+	}
+
+	function _partnerPaintMs(id: DeckId, partner: PaintPositionDeck): number {
+		const sampledAt = positionSampledAtMs(id, partner.position_ms);
+		return paintPositionMs(_partnerPaintState, null, partner, isPresentationClockStalled(id), performance.now(), sampledAt);
 	}
 
 	const stemScrollPx = $derived(
@@ -284,6 +294,7 @@
 		const paintPositionMs = _paintPositionMs();
 		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
 		const ghost = ghostSeekFrame(waveformSeekArmed, performance.now());
+		const partnerPaintMs = splitPartner === null || partnerState === null ? null : _partnerPaintMs(splitPartner.id, partnerState);
 		const visualInputs = [
 			ghost.blinkPhase,
 			deck.stable_id,
@@ -297,7 +308,7 @@
 			palette,
 			splitPartner?.id ?? null,
 			partnerAnlz,
-			partnerState?.position_ms ?? null,
+			partnerPaintMs,
 			partnerState?.pitch ?? null
 		] as const;
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
@@ -317,7 +328,7 @@
 			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone);
 			return;
 		}
-		if (splitPartner !== null && partnerState !== null && partnerState.duration_ms !== null) {
+		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
 			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin) };
 			paintSplitRow(
@@ -325,7 +336,7 @@
 				ctx,
 				{
 					...common,
-					positionMs: partnerState.position_ms,
+					positionMs: partnerPaintMs,
 					durationMs: partnerState.duration_ms,
 					anlz: partnerAnlz,
 					pitch: partnerState.pitch,

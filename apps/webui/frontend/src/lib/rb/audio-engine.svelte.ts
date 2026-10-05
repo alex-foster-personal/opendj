@@ -101,7 +101,7 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
 import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
@@ -1851,6 +1851,7 @@ function _publishPresentedTransport(
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
+	notePositionSample(deck, st.position_ms, performance.now()); // the paint projects from this instant
 	st.audible = observation.audible;
 	st.transport_pending = observation.transport_pending || _reanchorRampPending(rt);
 	const presentedKeyShift = presentedKeyShiftSemitonesAt(
