@@ -66,7 +66,7 @@ export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
 export { libraryAudioLoadRefusal, rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
-export { nameStreamingAvailability, settledAvailabilityFromRbMeta } from './browser-row-wire';
+export { applySettledAvailability } from './browser-row-wire';
 export { startPendingSettle } from './pending-availability-settle';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';

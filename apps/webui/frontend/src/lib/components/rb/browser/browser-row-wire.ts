@@ -137,6 +137,29 @@ export function settledAvailabilityFromRbMeta(
 	else return { file_exists: false, file_availability: 'absent' };
 }
 
+/** Write rb-meta disk truth onto a pending row and name a streaming URI.
+ * No-op once the row has already settled. */
+export function applySettledAvailability(row: {
+	file_exists: boolean | null;
+	file_availability?: BrowserRow['file_availability'] | null;
+	file_path?: string | null;
+	rb_meta?: { file_exists: boolean; is_streaming: boolean; folder_path?: string | null } | null;
+}): void {
+	const settled = settledAvailabilityFromRbMeta(
+		{
+			file_exists: row.file_exists,
+			file_availability: row.file_availability ?? 'AVAILABILITY_PENDING'
+		},
+		row.rb_meta ?? null
+	);
+	if (settled === null) return;
+	const path = row.file_path ?? row.rb_meta?.folder_path ?? null;
+	Object.assign(row, {
+		...settled,
+		file_availability: nameStreamingAvailability(settled.file_availability, path, null)
+	});
+}
+
 export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
 	const availability = wireAvailability(wire);
 	if (

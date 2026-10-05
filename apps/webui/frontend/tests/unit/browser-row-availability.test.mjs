@@ -229,6 +229,27 @@ describe('a pending row settles from its rb-meta disk truth', () => {
 	it('a pending row with no rb-meta stays pending', () => {
 		assert.equal(wire.settledAvailabilityFromRbMeta(pending, null), null);
 	});
+	it('a streaming URI is named when the pending row settles', () => {
+		const row = {
+			file_exists: null,
+			file_availability: 'AVAILABILITY_PENDING',
+			file_path: 'tidal:tracks:99560085',
+			rb_meta: { file_exists: false, is_streaming: true, folder_path: 'tidal:tracks:99560085' }
+		};
+		wire.applySettledAvailability(row);
+		assert.equal(row.file_exists, false);
+		assert.equal(row.file_availability, 'tidal-streaming');
+	});
+	it('a settled row is left alone, including its availability label', () => {
+		const row = {
+			file_exists: false,
+			file_availability: 'awaiting_volume',
+			file_path: null,
+			rb_meta: { file_exists: true, is_streaming: false, folder_path: '/music/a.mp3' }
+		};
+		wire.applySettledAvailability(row);
+		assert.equal(row.file_availability, 'awaiting_volume');
+	});
 });
 
 // Regression line: a visible row's rb-meta fetch is a full stat, so its answer
@@ -238,9 +259,12 @@ test('BrowserPanel settles a visible pending row from the rb-meta it fetched', (
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(
 		panel,
-		/row\.rb_meta = await _fetchRbMetaWithRetry\(row\.stable_id\);\s*_applySettledAvailability\(row\);/,
+		/row\.rb_meta = await _fetchRbMetaWithRetry\(row\.stable_id\);\s*applySettledAvailability\(row\);/,
 		'a visible row never settles from the rb-meta it already fetched'
 	);
-	// Control: settling goes through the pure mapper, which never rewrites a settled row.
-	assert.match(panel, /function _applySettledAvailability\(row: LoadableRow\): void \{\s*const settled = settledAvailabilityFromRbMeta\(/);
+	// Settling lives in the row helper: the pure mapper, then the streaming name.
+	const helper = read('src/lib/components/rb/browser/browser-row-wire.ts');
+	assert.match(helper, /export function applySettledAvailability\(/);
+	assert.match(helper, /settledAvailabilityFromRbMeta\(/);
+	assert.match(helper, /nameStreamingAvailability\(settled\.file_availability, path, null\)/);
 });

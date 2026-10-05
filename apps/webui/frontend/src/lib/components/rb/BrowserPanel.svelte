@@ -92,8 +92,7 @@
 		libraryAudioLoadRefusal,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		settledAvailabilityFromRbMeta,
-		nameStreamingAvailability,
+		applySettledAvailability,
 		startPendingSettle,
 		PlaylistSetTabs,
 		usbPaneSource,
@@ -2275,7 +2274,7 @@
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
-			_applySettledAvailability(row);
+			applySettledAvailability(row);
 		} catch (exc) {
 			// A track with no rekordbox vendor mapping is NOT an error any more:
 			// rb-meta answers 200 with the local-vendor payload. A 404 here now
@@ -2343,24 +2342,6 @@
 		file_availability?: BrowserRow['file_availability'];
 		file_path?: string | null;
 	};
-
-	/** Write rb-meta's disk truth onto a pending row (no-op once settled). */
-	function _applySettledAvailability(row: LoadableRow): void {
-		const settled = settledAvailabilityFromRbMeta(
-			{
-				file_exists: row.file_exists,
-				file_availability: row.file_availability ?? 'AVAILABILITY_PENDING'
-			},
-			row.rb_meta ?? null
-		);
-		if (settled !== null) {
-			const path = row.file_path ?? row.rb_meta?.folder_path ?? null;
-			Object.assign(row, {
-				...settled,
-				file_availability: nameStreamingAvailability(settled.file_availability, path, null)
-			});
-		}
-	}
 
 	function loadRow(
 		row: LoadableRow,
