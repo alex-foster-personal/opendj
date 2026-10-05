@@ -25,9 +25,9 @@ Two invariants the call sites rely on:
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Literal
