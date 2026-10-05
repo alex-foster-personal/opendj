@@ -70,6 +70,7 @@
 		border-bottom: 1px solid var(--rb-border, #333);
 	}
 	.es-header h2 {
+		font-family: var(--rb-font-brand);
 		margin: 0;
 		font-size: 13px;
 		font-weight: 600;

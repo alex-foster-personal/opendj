@@ -352,6 +352,7 @@
 		font-size: 12px;
 	}
 	.m-title {
+		font-family: var(--rb-font-brand);
 		font-size: 13px;
 		font-weight: 600;
 		color: #e8edf2;

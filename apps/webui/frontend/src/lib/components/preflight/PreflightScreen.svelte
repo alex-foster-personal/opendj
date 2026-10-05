@@ -275,6 +275,7 @@
 		background: url('/favicon.svg') center / contain no-repeat;
 	}
 	.preflight-name {
+		font-family: var(--rb-font-brand);
 		display: block;
 		font-size: 1.15rem;
 		font-weight: 700;
