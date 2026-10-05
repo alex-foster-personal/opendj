@@ -31,6 +31,9 @@ import {
 import { persistMixerConfig } from '$lib/player/mixer-config';
 import { mixerState } from '$lib/player/state.svelte';
 
+export { disposeHeadphoneMonitor, selectMasterOutput } from '$lib/player/headphones';
+export { mixerState };
+
 /** Which node a calibration chirp is injected at, for the given bus and purpose. This is
  * the actual routing decision `_cueAlignChirpTarget` resolves to a node from, not a
  * separate description of it, so a regression back to the measure-only bypass points
@@ -276,8 +279,12 @@ export function cueAlignAudioEffects(): Pick<
 	const selectedMaster = mixerState.headphones.selected_master_output_device_id;
 	const masterRoute = mixerState.headphones.routes.master;
 	if (selectedMaster !== null && masterRoute.state !== 'selected') {
+		const detail =
+			masterRoute.state === 'default'
+				? 'a MAIN device is selected but the route is still marked default, so the pin was never recorded'
+				: `route capability is ${masterRoute.state}`;
 		throw new Error(
-			`cue alignment cannot measure the selected MASTER route: route capability is ${masterRoute.state}. Clear MAIN to use the OS default, or select a supported MAIN route.`
+			`cue alignment cannot measure the selected MASTER route: ${detail}. Select a supported MAIN route before calibrating.`
 		);
 	}
 	return {
