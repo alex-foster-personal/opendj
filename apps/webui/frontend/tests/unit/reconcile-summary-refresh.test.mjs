@@ -42,8 +42,18 @@ const SUMMARY = { total_tracks: 10, total_broken: 2, orphan_broken: 0, playlists
 
 // REQ: HEALTH-15
 test('a first scan still running paints nothing and asks to be re-read', async () => {
-	// [if] the engine answers 503 RECONCILE_SUMMARY_WARMING [then] nothing applies, re-ask, [else stop].
-	answer({ detail: { code: 'RECONCILE_SUMMARY_WARMING', message: 'first scan running' } }, 503);
+	// [if] the engine answers computed_at null [then] nothing applies, re-ask, [else stop].
+	answer({
+		total_tracks: null,
+		total_broken: null,
+		orphan_broken: null,
+		playlists: [],
+		availability: null,
+		computed_at: null,
+		age_s: null,
+		refreshing: true,
+		refresh_error: null
+	});
 	const { applied, outcome } = await readOnce();
 	assert.deepEqual(applied, []);
 	assert.deepEqual(outcome, { ok: true, refreshing: true, refresh_error: null });

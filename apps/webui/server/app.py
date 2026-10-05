@@ -51,6 +51,7 @@ from .cloud_sync import probe_syncthing_status
 from .frontend_build import frontend_build_dir
 from .request_guard import install_request_guard
 from .routes import ingest as ingest_routes
+from .routes import reconcile as reconcile_routes
 from .share_gate import ShareConfig
 from .usage_telemetry import UsageStore
 
@@ -410,7 +411,7 @@ def _build_default_app() -> FastAPI:
     # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
     # this entrypoint against a fixture data dir with an unmapped track (#949).
     from apps.shared.paths import STATE_DB
-    return create_app(
+    app = create_app(
         backend=backend,
         bind_host=bind_host,
         hostname=hostname,
@@ -426,6 +427,10 @@ def _build_default_app() -> FastAPI:
         auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
         stem_hydration=True,
     )
+    # HEALTH-15: the daemon's first reconcile scan starts now, not on the
+    # browser's first read (39 to 61 s on the silver preview under load).
+    reconcile_routes.warm_summary_snapshot(app, backend)
+    return app
 
 
 # Single-item cache mutated in place (not rebound) so ``__getattr__`` below
