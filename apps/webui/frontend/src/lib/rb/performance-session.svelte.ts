@@ -295,6 +295,13 @@ export function shouldRestoreSessionMaster(snapshot: PerformanceSessionSnapshot)
 	return snapshot.mixer.master > 0 || snapshot.mixer.master_set_by_operator === true;
 }
 
+/** RESCUE-07: decks already holding a track when a restore starts. */
+export function liveDecksAtRestore(
+	decks: Record<DeckId, { stable_id: string | null }>
+): DeckId[] {
+	return DECK_IDS.filter((deckId) => decks[deckId]?.stable_id != null);
+}
+
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
@@ -305,6 +312,18 @@ async function _restoreSession(
 	autoPlayEnabled: () => boolean = () => uiPrefs.auto_play_enabled
 ): Promise<void> {
 	if (skipDeckRestore) return;
+	// RESCUE-07: restore only into an empty engine. When the route remounts
+	// over a running one (a dev hot reload, or a double mount) the live decks
+	// are newer than the snapshot, and replaying it loaded onto a playing deck
+	// ("load: deck 2 must be fully stopped before replacement", silver preview
+	// Mon 5 Oct 2026 19:19:45Z and 20:06:11Z) and yanked live tempo settings.
+	const liveDecks = liveDecksAtRestore(query().decks);
+	if (liveDecks.length > 0) {
+		console.info(
+			`[session-restore] skipped: deck(s) ${liveDecks.join(',')} already loaded, so this is a remount over a live engine`
+		);
+		return;
+	}
 	if (snapshot !== null) {
 		await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
 		if (shouldRestoreSessionMaster(snapshot)) {
