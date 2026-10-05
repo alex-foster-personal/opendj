@@ -76,25 +76,25 @@ function simulate({ seconds = 60, rate = 1.016, bufferMs = 10.667, latencyMs = 2
 describe('dead reckoning from the output timestamp', () => {
 	it('projects from the sample time at the sample rate, not from when it was noticed', () => {
 		const state = clock.initPlayheadClock();
-		clock.notePlayheadSample(state, sample(5000, 1000, { rate: 1.08 }), 1150);
-		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1150) - (5000 + 150 * 1.08)) < 1e-9);
-		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1160) - (5000 + 160 * 1.08)) < 1e-9);
+		clock.notePlayheadSample(state, sample(5000, 1000, { rate: 1.08 }), 1090);
+		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1090) - (5000 + 90 * 1.08)) < 1e-9);
+		assert.ok(Math.abs(clock.playheadDisplayMs(state, 1100) - (5000 + 100 * 1.08)) < 1e-9);
 	});
 
 	it('two elements reading one tick in different frames paint synced decks in phase (BEATSYNC-PAINT-01)', () => {
 		const a = clock.initPlayheadClock();
 		const b = clock.initPlayheadClock();
 		clock.notePlayheadSample(a, sample(5000, 1000), 1000);
-		clock.notePlayheadSample(b, sample(7000, 1000), 1150); // noticed a whole busy frame later
-		assert.equal(clock.playheadDisplayMs(b, 1150) - clock.playheadDisplayMs(a, 1150), 2000, 'if decks the engine holds 2000 ms apart paint apart by anything else then they slip - broken');
+		clock.notePlayheadSample(b, sample(7000, 1000), 1100); // noticed a whole busy frame later
+		assert.equal(clock.playheadDisplayMs(b, 1100) - clock.playheadDisplayMs(a, 1100), 2000, 'if decks the engine holds 2000 ms apart paint apart by anything else then they slip - broken');
 	});
 
-	it('control: anchoring at notice time paints the same tick 150 ms out of phase', () => {
+	it('control: anchoring at notice time paints the same tick 100 ms out of phase', () => {
 		const a = clock.initPlayheadClock();
 		const b = clock.initPlayheadClock();
 		clock.notePlayheadSample(a, sample(5000, 1000), 1000);
-		clock.notePlayheadSample(b, sample(7000, 1150), 1150);
-		assert.equal(clock.playheadDisplayMs(b, 1150) - clock.playheadDisplayMs(a, 1150), 1850);
+		clock.notePlayheadSample(b, sample(7000, 1100), 1100);
+		assert.equal(clock.playheadDisplayMs(b, 1100) - clock.playheadDisplayMs(a, 1100), 1900);
 	});
 
 	it('takes performanceTime only while the output clock drives presentation', () => {
