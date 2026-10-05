@@ -26,7 +26,7 @@ import os
 import sqlite3
 import unicodedata
 import uuid
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -463,6 +463,94 @@ def list_location_paths(
     return out
 
 
+@dataclass(frozen=True)
+class PlayableCandidate:
+    """One path that could make a track playable on this machine."""
+
+    path: str
+    source: str
+
+
+def playable_candidate_paths(
+    conn: sqlite3.Connection,
+    primary_by_sid: Mapping[str, str | None],
+    *,
+    machine_id: str | None = None,
+) -> dict[str, list[PlayableCandidate]]:
+    """THE paths that make a track playable on this machine (issue #3934).
+
+    The playlist tree's ``available_count``, the row wire's
+    ``file_availability`` and the deck-load audio route all ask "is one of
+    these on disk here?" of this one list, in this order:
+
+    1. the caller's primary: rekordbox's FolderPath when the track is mapped,
+       else ``tracks.file_path`` (``source`` ``"primary"``);
+    2. this machine's live local ``track_locations`` rows, available first
+       (``source`` ``"location:<id>"``);
+    3. ``tracks.file_path`` (``source`` ``"file_path"``).
+
+    The surfaces differ only in HOW they answer (the persisted index with no
+    stat for the tree, a budgeted stat for rows, an open probe for the deck),
+    never in WHICH paths count. Duplicates and empty paths are dropped; a
+    streaming URI survives only as the primary, where it means "streaming".
+    """
+    stable_ids = list(primary_by_sid)
+    out: dict[str, list[PlayableCandidate]] = {sid: [] for sid in stable_ids}
+    if not stable_ids:
+        return out
+    locations: dict[str, list[PlayableCandidate]] = {sid: [] for sid in stable_ids}
+    if _locations_machine_scoped(conn):
+        owner = machine_id or _sync_stamp.local_machine_id(conn)
+        for batch in _batched(stable_ids, ID_BIND_BATCH):
+            placeholders = ",".join("?" * len(batch))
+            rows = conn.execute(
+                f"SELECT stable_id, location_id, file_path FROM track_locations "
+                f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
+                f"AND deleted_at IS NULL AND kind = 'local' "
+                f"AND file_path IS NOT NULL AND file_path != '' "
+                f"ORDER BY stable_id, available DESC, "
+                f"CASE role WHEN 'primary' THEN 0 ELSE 1 END, created_at, location_id",
+                (*batch, owner),
+            ).fetchall()
+            for stable_id, location_id, file_path in rows:
+                locations[str(stable_id)].append(
+                    PlayableCandidate(str(file_path), f"location:{location_id}")
+                )
+    track_paths: dict[str, str] = {}
+    tracks_deleted_filter = " AND deleted_at IS NULL" if _tracks_soft_deletes(conn) else ""
+    for batch in _batched(stable_ids, ID_BIND_BATCH):
+        placeholders = ",".join("?" * len(batch))
+        for stable_id, file_path in conn.execute(
+            f"SELECT stable_id, file_path FROM tracks "
+            f"WHERE stable_id IN ({placeholders}){tracks_deleted_filter}",
+            batch,
+        ).fetchall():
+            if file_path:
+                track_paths[str(stable_id)] = str(file_path)
+    for sid in stable_ids:
+        primary = primary_by_sid[sid]
+        ordered = [
+            *([PlayableCandidate(primary, "primary")] if primary else []),
+            *locations[sid],
+            *(
+                [PlayableCandidate(track_paths[sid], "file_path")]
+                if sid in track_paths
+                else []
+            ),
+        ]
+        seen: set[str] = set()
+        for candidate in ordered:
+            if candidate.path in seen:
+                continue
+            if candidate.source != "primary" and candidate.path.startswith(
+                platform_paths.STREAMING_PREFIXES
+            ):
+                continue
+            seen.add(candidate.path)
+            out[sid].append(candidate)
+    return out
+
+
 def upsert_location(
     conn: sqlite3.Connection,
     *,
@@ -649,6 +737,38 @@ def pick_playable(
             seen.add(str(cand.path))
             candidates.append(cand)
 
+    return _pick_winner(candidates, policy)
+
+
+def pick_playable_from_candidates(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    paths: Sequence[PlayableCandidate],
+    *,
+    policy: PickPolicy | None = None,
+) -> PickedAudio | None:
+    """The playable winner among exactly ``paths``, the
+    :func:`playable_candidate_paths` list the listing counts (issue #3934)."""
+    policy = policy or policy_from_env()
+    row = conn.execute(
+        "SELECT duration_ms FROM tracks WHERE stable_id = ?", (stable_id,)
+    ).fetchone()
+    duration = row[0] if row is not None else None
+    candidates = [
+        cand
+        for candidate in paths
+        if (
+            cand := _candidate_from_path(
+                candidate.path, kind="local", source=candidate.source, duration_ms=duration
+            )
+        )
+        is not None
+    ]
+    return _pick_winner(candidates, policy)
+
+
+def _pick_winner(candidates: Sequence[_Candidate], policy: PickPolicy) -> PickedAudio | None:
+    """Pick order 1-4 from the module docstring over built candidates."""
     working = [c for c in candidates if c.working]
     if not working:
         return None
