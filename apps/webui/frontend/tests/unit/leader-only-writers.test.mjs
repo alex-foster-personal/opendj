@@ -48,7 +48,8 @@ function fakeLeadership(leads) {
 }
 
 /** Real-shaped installers that record what ran and what is still live. */
-function recorder({ rescueHandled = false, rescueDelay = null } = {}) {
+function recorder({ rescueHandled = false, rescueDelay = null, restoreSettles = true } = {}) {
+	const control = { restoreSettles };
 	const log = [];
 	const live = new Set();
 	const installer = (name) => () => {
@@ -61,6 +62,7 @@ function recorder({ rescueHandled = false, rescueDelay = null } = {}) {
 	};
 	return {
 		log,
+		control,
 		live,
 		deps: {
 			runRescueAutoRestore: async () => {
@@ -68,8 +70,11 @@ function recorder({ rescueHandled = false, rescueDelay = null } = {}) {
 				if (rescueDelay !== null) await rescueDelay;
 				return rescueHandled;
 			},
-			installSessionRestore: ({ skipDeckRestore }) => {
+			installSessionRestore: ({ skipDeckRestore, resumeInterruptedRestore, onDeckRestoreSettled }) => {
 				log.push(`session restore skipDeckRestore=${skipDeckRestore}`);
+				if (resumeInterruptedRestore) log.push('session restore resumes the URL decks');
+				// A restore that settles reports it; one cut short by demotion never does.
+				if (control.restoreSettles) onDeckRestoreSettled();
 				return installer('session writer')();
 			},
 			installRescueRingWriter: installer('rescue writer'),
@@ -160,6 +165,45 @@ test('re-promotion restarts the writers but never restores decks again', async (
 		['session restore skipDeckRestore=false', 'session restore skipDeckRestore=true']
 	);
 	assert.equal(r.live.size, 4);
+});
+
+test('a restore cut short by demotion is resumed on re-promotion, then never again', async () => {
+	// Mon 5 Oct 2026: d1 and d2 loaded, the lease moved, d3/d4 failed "disposed",
+	// and "Take control" skipped deck restore, so the URL lost d3 and d4.
+	const leadership = fakeLeadership(true);
+	const r = recorder({ restoreSettles: false });
+	installBoth(leadership, r.deps);
+	await flush();
+	leadership.set(false);
+	r.control.restoreSettles = true;
+	leadership.set(true);
+	await flush();
+	leadership.set(false);
+	leadership.set(true);
+	await flush();
+	assert.deepEqual(
+		r.log.filter((line) => line.startsWith('session restore')),
+		[
+			'session restore skipDeckRestore=false',
+			'session restore skipDeckRestore=false',
+			'session restore resumes the URL decks',
+			'session restore skipDeckRestore=true'
+		]
+	);
+	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 1);
+});
+
+test('mutation control: without the settled signal every re-promotion would resume', async () => {
+	const leadership = fakeLeadership(true);
+	const r = recorder({ restoreSettles: false });
+	installBoth(leadership, r.deps);
+	await flush();
+	for (let i = 0; i < 2; i += 1) {
+		leadership.set(false);
+		leadership.set(true);
+		await flush();
+	}
+	assert.equal(r.log.filter((line) => line === 'session restore resumes the URL decks').length, 2);
 });
 
 test('leadership lost during the rescue fetch installs no session writer', async () => {
