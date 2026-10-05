@@ -55,6 +55,7 @@
 	} from '$lib/preflight/preflight-actions';
 	import { firstRunGate, retryFirstRunGate } from '$lib/setup/first-run-gate.svelte';
 	import { runSetup, runSetupBlocked } from '$lib/setup/run-setup';
+	import PreflightActions from './PreflightActions.svelte';
 	import PreflightCheckRow from './PreflightCheckRow.svelte';
 
 	const POLL_MS = 3_000;
@@ -260,7 +261,7 @@
 			{ actions: visibleActions, runSetup: visibleChecks.some(checkOffersRunSetup) },
 			runSetupBlocked()
 		)}
-		onAction={(id) => void handleAction(id)}
+		onAction={(id: PreflightActionId) => void handleAction(id)}
 	/>
 </section>
 {/if}
