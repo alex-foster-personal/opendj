@@ -203,7 +203,7 @@ def test_a_stale_snapshot_never_replaces_a_fresher_one(
 
 @pytest.mark.requirement("AGENT-18")
 def test_an_old_stored_snapshot_yields_to_any_writer(monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] the stored snapshot is older than the TTL [then] a skewed-clock writer is accepted, [else stop]."""
+    """[if] the stored snapshot is past the TTL [then] a skewed-clock writer is accepted, [else stop]."""
 
     async def body(client: AsyncClient, clock: _Clock) -> None:
         assert (await _put_at(client, "a", "2026-10-05T20:04:00.000Z", playing=False)).status_code == 202
