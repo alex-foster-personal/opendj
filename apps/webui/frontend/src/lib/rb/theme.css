@@ -66,7 +66,6 @@
 	--rb-issue-square-ink: initial;    /* unset: the '!' glyph on that square stays near-black */
 	--rb-quality-filter: none;         /* QLT venue badges keep their colour ramp */
 	--rb-bpm-mismatch-ring: initial;   /* unset: off-tempo BPM cells keep their red severity rings */
-	--rb-bpm-mismatch-text: initial;   /* unset: off-tempo BPM numbers keep the column's dim text */
 	--rb-stem-vocal: initial;          /* unset: stem chips, tags, dials and rows use STEM_COLORS (stem-colors.ts) */
 	--rb-stem-instrumental: initial;
 	--rb-stem-drums: initial;
@@ -207,12 +206,12 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-artwork-filter: grayscale(1) contrast(1.05);
 	/* Library warnings in gray: the minor-issue '!' is a light square with a
 	   black glyph (still the brightest thing in its cell), QLT badges go
-	   grayscale, and an off-tempo BPM just dims instead of ringing red. */
+	   grayscale, and an off-tempo BPM drops its red ring
+	   (its number is already dimmed by the BPM heat ramp). */
 	--rb-issue-square: #d6d6d6;
 	--rb-issue-square-ink: #0a0a0a;
 	--rb-quality-filter: grayscale(1);
 	--rb-bpm-mismatch-ring: transparent;
-	--rb-bpm-mismatch-text: #666666;
 	/* Stems: low-chroma tints, still five distinct hues, so they stop
 	   shouting against the gray chrome. */
 	--rb-stem-vocal: #8ea6ba;
@@ -261,11 +260,6 @@ html[data-skin='mono-dev'] .perf-root .readout .bpm {
 	font-weight: 500;
 	color: #bdbdbd;
 	letter-spacing: -0.02em;
-}
-/* Off-tempo library BPM: no red ring (token above), and one step dimmer than
- * the column's already-dim numbers, so a mismatch reads as "not for now". */
-html[data-skin='mono-dev'] .perf-root .c-bpm:is(.bpm-warn, .bpm-danger, .bpm-critical) {
-	color: var(--rb-bpm-mismatch-text);
 }
 
 /* -------- skin: light --------
@@ -321,7 +315,6 @@ html[data-skin='light'] .perf-root {
 	--rb-issue-square-ink: initial;
 	--rb-quality-filter: none;
 	--rb-bpm-mismatch-ring: initial;
-	--rb-bpm-mismatch-text: initial;
 	--rb-stem-vocal: initial;
 	--rb-stem-instrumental: initial;
 	--rb-stem-drums: initial;

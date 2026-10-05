@@ -11,8 +11,10 @@ const THEME = readFileSync('src/lib/rb/theme.css', 'utf8');
 const src = (rel) => readFileSync(`src/lib/components/rb/${rel}`, 'utf8');
 
 let colors;
+let heat;
 before(async () => {
 	colors = await loadTypeScriptModule('src/lib/rb/stem-colors.ts');
+	heat = await loadTypeScriptModule('src/lib/rb/bpm-heat.ts');
 });
 
 /** Custom-property map of the block whose selector is exactly `selector`. */
@@ -48,7 +50,7 @@ const GOTHIC = "html[data-skin='mono-dev'] .perf-root";
 
 test("if the Gothic '!' square, QLT filter or BPM mismatch keep a hue then the skin is not monochrome", () => {
 	const mono = tokens(GOTHIC);
-	for (const name of ['--rb-issue-square', '--rb-issue-square-ink', '--rb-bpm-mismatch-text']) {
+	for (const name of ['--rb-issue-square', '--rb-issue-square-ink']) {
 		assert.ok(isHex(mono[name]), `${name}=${mono[name]} must be a hex in mono-dev`);
 		assert.equal(saturation(mono[name]), 0, `${name}=${mono[name]} must be a neutral gray`);
 	}
@@ -57,14 +59,14 @@ test("if the Gothic '!' square, QLT filter or BPM mismatch keep a hue then the s
 	// The '!' stays legible as a warning: light square, near-black glyph.
 	const lum = (hex) => parseInt(hex.slice(1, 3), 16);
 	assert.ok(lum(mono['--rb-issue-square']) - lum(mono['--rb-issue-square-ink']) >= 160, 'square vs glyph contrast');
-	// Mismatch is dimmer than the BPM column's normal dim text.
-	assert.ok(lum(mono['--rb-bpm-mismatch-text']) < lum(mono['--rb-text-dim']), 'mismatch must be dimmer than --rb-text-dim');
-	assert.match(THEME, /html\[data-skin='mono-dev'\] \.perf-root \.c-bpm:is\(\.bpm-warn, \.bpm-danger, \.bpm-critical\) \{\s*color: var\(--rb-bpm-mismatch-text\);/);
+	// With the ring gone, the number is dimmed by its inline heat colour alone.
+	const grey = (rgb) => Number(rgb.match(/rgb\((\d+)/)[1]);
+	assert.ok(grey(heat.classifyBpmHeat(150, 123).color) < grey(heat.classifyBpmHeat(123, 123).color) - 60, 'off-tempo BPM must be drawn dimmer');
 });
 
 test('if the default skin sets these hooks then it loses its amber square, colour ramp and red rings (control)', () => {
 	const base = tokens('.perf-root');
-	for (const name of ['--rb-issue-square', '--rb-issue-square-ink', '--rb-bpm-mismatch-ring', '--rb-bpm-mismatch-text', ...STEMS.map((s) => `--rb-stem-${s}`)]) {
+	for (const name of ['--rb-issue-square', '--rb-issue-square-ink', '--rb-bpm-mismatch-ring', ...STEMS.map((s) => `--rb-stem-${s}`)]) {
 		assert.equal(base[name], 'initial', `${name} must stay unset in the default skin`);
 	}
 	assert.equal(base['--rb-quality-filter'], 'none');
