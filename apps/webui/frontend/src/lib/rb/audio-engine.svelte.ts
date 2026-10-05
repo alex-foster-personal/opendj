@@ -293,6 +293,7 @@ import {
 import {
 	_positionForSegment,
 	pausedSeekClock,
+	clampSeekTargetMs,
 	commonSyncScheduleTimes,
 	deckReachedEnd,
 	decodedTransportDurationMs,
@@ -393,7 +394,7 @@ export {
 	scheduleOffsetStages,
 	supersedingScheduleTime
 };
-export { pausedSeekClock };
+export { pausedSeekClock, clampSeekTargetMs };
 export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock };
 // The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
 // its device boundary and its algebra. Deliberately NOT re-exported here: no
