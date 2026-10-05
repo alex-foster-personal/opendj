@@ -61,7 +61,7 @@ def _run_concurrently(fn: Callable[[], object], n: int) -> list[object]:
     def one(i: int) -> None:
         try:
             out[i] = fn()
-        except BaseException as exc:  # collected and asserted by the caller
+        except Exception as exc:  # collected and asserted by the caller
             out[i] = exc
 
     threads = [threading.Thread(target=one, args=(i,)) for i in range(n)]
