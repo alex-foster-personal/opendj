@@ -71,7 +71,7 @@ def wal_bytes(db_path: Path) -> int:
         return 0
 
 
-def should_checkpoint(wal_size: int, threshold: int = CFG.WAL_TRUNCATE_BYTES) -> bool:
+def should_checkpoint(wal_size: int, threshold: int) -> bool:
     return wal_size > threshold
 
 
@@ -89,7 +89,7 @@ def _open_existing(db_path: Path, busy_ms: int) -> sqlite3.Connection:
     return conn
 
 
-def checkpoint_truncate(db_path: Path, *, busy_ms: int = CFG.CHECKPOINT_BUSY_MS) -> CheckpointResult:
+def checkpoint_truncate(db_path: Path, *, busy_ms: int) -> CheckpointResult:
     """Run ``PRAGMA wal_checkpoint(TRUNCATE)`` and report what it did.
 
     SQLite reports a reader that pins the log as ``busy=1`` in the result row,
@@ -152,9 +152,9 @@ class StateMaintenance:
             report = retention.prune_superseded(self._db)
             log.info("state-maintenance analysis prune: %s", report)
         size = wal_bytes(self._db)
-        if not should_checkpoint(size):
+        if not should_checkpoint(size, CFG.WAL_TRUNCATE_BYTES):
             return None
-        result = checkpoint_truncate(self._db)
+        result = checkpoint_truncate(self._db, busy_ms=CFG.CHECKPOINT_BUSY_MS)
         if result.busy:
             self._busy_streak += 1
             log.warning(
