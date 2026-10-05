@@ -3,8 +3,12 @@
 Answers "is this library path's audio on disk" from, in order: the in-process
 L1 cache (``config._FILE_EXISTS_CACHE``), the persisted ``path_availability``
 index (:mod:`.path_index`), and at most a per-request budget of real stats.
-Whatever the budget cannot cover comes back ``AVAILABILITY_PENDING`` and is
-handed to the background refresher, never guessed in either direction.
+Whatever the budget cannot cover is handed to the background refresher. Row
+hydration serves such a path's last known answer while it is re-checked, if
+that answer is under :data:`SERVE_RECENT_MAX_S` old (PERF-RB-06: with a 30 s
+TTL, shorter than one All Tracks walk, about 85% of page 1 read pending on the
+silver preview). A path with no recent answer comes back
+``AVAILABILITY_PENDING``; nothing is guessed in either direction.
 
 Two invariants the call sites rely on:
 
@@ -23,6 +27,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -49,6 +54,10 @@ PENDING: FileAvailabilityStatus = "AVAILABILITY_PENDING"
 
 PROBE_BUDGET_TREE_SUMMARY: int = 0
 PROBE_BUDGET_ROW_HYDRATION: int = 16
+#: How old a known answer may be and still be served while it is re-checked in
+#: the background (PERF-RB-06). Twice the window in which an unchanged answer is
+#: written back (PERF-RB-05), so a row that keeps being probed never ages out.
+SERVE_RECENT_MAX_S: float = 2 * path_index.UNCHANGED_REWRITE_AFTER_S
 
 
 class AvailabilityProbeMode(Enum):
@@ -75,6 +84,12 @@ class ProbeBudget:
         self.mode = mode
         self.remaining = mode.budget
         self.spent = 0
+
+    @property
+    def serves_recent(self) -> bool:
+        """Row hydration serves a known answer up to :data:`SERVE_RECENT_MAX_S`
+        old instead of pending while the background refresher re-checks it."""
+        return self.mode is AvailabilityProbeMode.ROW_HYDRATION
 
     @property
     def serves_stale(self) -> bool:
@@ -156,15 +171,41 @@ def _record_stats(namespace: str, sizes: Mapping[str, int | None], now: float) -
             config._FILE_EXISTS_CACHE[path] = (now, size)
 
 
+def _recent_answers(
+    paths: Sequence[str],
+    index: Mapping[str, path_index.IndexEntry | None],
+    now: float,
+) -> dict[str, int | None]:
+    """Answers no older than :data:`SERVE_RECENT_MAX_S`: this process's own
+    expired L1 stat first (its time is exact), else a trusted index row. The
+    index row's ``checked_at`` can lag the last stat by up to
+    ``UNCHANGED_REWRITE_AFTER_S`` (PERF-RB-05), which the window covers."""
+    with config._FILE_EXISTS_LOCK:
+        l1 = {path: config._FILE_EXISTS_CACHE.get(path) for path in paths}
+    wall_now = datetime.now(UTC)
+    out: dict[str, int | None] = {}
+    for path in paths:
+        hit, entry = l1[path], index.get(path)
+        if hit is not None and now - hit[0] < SERVE_RECENT_MAX_S:
+            out[path] = hit[1]
+        elif entry is not None and (wall_now - entry.checked_at).total_seconds() < (
+            SERVE_RECENT_MAX_S
+        ):
+            out[path] = entry.materialised_size
+    return out
+
+
 def _triage(
     paths: Sequence[str],
     index: Mapping[str, path_index.IndexEntry | None],
     budget: ProbeBudget,
     out: dict[str, PathProbeResult],
+    recent: Mapping[str, int | None],
 ) -> tuple[list[str], list[str]]:
     """Answer fresh index hits into ``out``; split the rest into the paths
-    this request stats now and the ones handed to the background refresher
-    (served stale for a tree summary, else pending)."""
+    this request stats now and the ones handed to the background refresher.
+    Those are served stale for a tree summary, their recent answer for row
+    hydration (PERF-RB-06), else pending."""
     stat_now: list[str] = []
     background: list[str] = []
     for path in paths:
@@ -175,11 +216,12 @@ def _triage(
             stat_now.append(path)
         else:
             background.append(path)
-            out[path] = (
-                _size_result(entry.materialised_size)
-                if entry is not None and budget.serves_stale
-                else _PENDING_RESULT
-            )
+            if entry is not None and budget.serves_stale:
+                out[path] = _size_result(entry.materialised_size)
+            elif path in recent and budget.serves_recent:
+                out[path] = _size_result(recent[path])
+            else:
+                out[path] = _PENDING_RESULT
     return stat_now, background
 
 
@@ -211,7 +253,8 @@ def bulk_probe_paths(
         return out
     namespace = path_index.resolver_namespace(config.DATA_DIR)
     index = _load_index(namespace, rest) if trust_index else {}
-    stat_now, background = _triage(rest, index, budget, out)
+    recent = _recent_answers(rest, index, now) if budget.serves_recent else {}
+    stat_now, background = _triage(rest, index, budget, out, recent)
     sizes = {path: _stat_size(resolve_asset_path(path).resolved) for path in stat_now}
     out.update((path, _size_result(size)) for path, size in sizes.items())
     _record_stats(namespace, sizes, now)
@@ -393,6 +436,7 @@ __all__ = [
     "PENDING",
     "PROBE_BUDGET_ROW_HYDRATION",
     "PROBE_BUDGET_TREE_SUMMARY",
+    "SERVE_RECENT_MAX_S",
     "AvailabilityProbeMode",
     "FileAvailabilityStatus",
     "PathProbeResult",
