@@ -17854,6 +17854,11 @@
       },
       "ReconcileSummary": {
         "properties": {
+          "age_s": {
+            "default": 0.0,
+            "title": "Age S",
+            "type": "number"
+          },
           "availability": {
             "anyOf": [
               {
@@ -17878,6 +17883,22 @@
             },
             "title": "Playlists",
             "type": "array"
+          },
+          "refresh_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Error"
+          },
+          "refreshing": {
+            "default": false,
+            "title": "Refreshing",
+            "type": "boolean"
           },
           "total_broken": {
             "title": "Total Broken",
@@ -37936,7 +37957,22 @@
     },
     "/api/v1/reconcile/summary": {
       "get": {
+        "description": "Scan now, or (``cached``) answer from the last scan without ever\nscanning in the request (HEALTH-15). The browser asks ``cached``; a caller\nthat acts on the counts asks without it.",
         "operationId": "reconcile_summary_api_v1_reconcile_summary_get",
+        "parameters": [
+          {
+            "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. With no scan yet the answer is 503 RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. Without this the library is scanned for this request.",
+            "in": "query",
+            "name": "cached",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. With no scan yet the answer is 503 RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. Without this the library is scanned for this request.",
+              "title": "Cached",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -37947,6 +37983,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "`cached` was asked and no scan has finished yet"
           }
         },
         "summary": "Reconcile Summary",
