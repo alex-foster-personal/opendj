@@ -14,7 +14,7 @@ from typing import Literal, Protocol
 from apps.cloud import stem_index
 from apps.cloud.lyrics_asr_source import LYRICS_ASR_NOT_FOUND
 from apps.lyrics import cache
-from apps.lyrics.asr_hallucination import ASR_SOURCE, filter_asr_lines
+from apps.lyrics.asr_hallucination import ASR_SOURCE, filter_asr_lines, servable_lyrics
 from apps.lyrics.asr_lines import group_asr_words_into_lines, parse_asr_words
 from apps.lyrics.asr_source import (
     AsrLyricsProvider,
@@ -122,7 +122,11 @@ class LyricsFetchService:
         if cached is not None:
             if cached.stable_id != track.stable_id:
                 raise ValueError(f"lyrics-cache identity mismatch at {path}")
-            return FetchResult(outcome="cached", lyrics=cached)
+            servable = servable_lyrics(cached)
+            if servable is None:
+                # LYRICS-12: a hallucination-only ASR cache is an instrumental.
+                return FetchResult(outcome="instrumental")
+            return FetchResult(outcome="cached", lyrics=servable)
         synced = self.provider.fetch_synced(track)
         if synced is not None:
             lyrics = Lyrics(track.stable_id, "lrclib", parse_lrc_lines(synced))
