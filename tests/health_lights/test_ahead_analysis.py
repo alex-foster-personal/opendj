@@ -13,7 +13,11 @@ Regression lines:
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
+import subprocess
+import threading
+import time
 
 import pytest
 
@@ -154,7 +158,7 @@ def test_host_wide_lane_failure_is_named_once() -> None:
     drain = world.drain()
     _run_to_green(drain)
     assert [lane for lane, _ids in world.lane_runs] == ["loudness", "waveform", "beatgrid", "key"]
-    cov = drain.coverage()
+    cov = drain.refresh_coverage()
     assert cov["lanes"]["key"]["unavailable"] == "Requested resampling engine is unavailable"
 
 
@@ -170,9 +174,9 @@ def test_coverage_reports_progress() -> None:
     """[if] strips are written [then] the strip lane's done count rises, [else stop]."""
     world = World(["a", "b", "r"], mapped={"r"})
     drain = world.drain()
-    assert drain.coverage()["lanes"]["strip"]["missing"] == 2
+    assert drain.refresh_coverage()["lanes"]["strip"]["missing"] == 2
     drain.tick()
-    strip = drain.coverage()["lanes"]["strip"]
+    strip = drain.refresh_coverage()["lanes"]["strip"]
     assert strip["done"] == 2 and strip["total"] == 2
 
 
@@ -198,7 +202,7 @@ def test_per_track_failures_do_not_close_the_lane() -> None:
     world.run_lane = run_lane  # type: ignore[method-assign]
     drain = world.drain()
     drain.tick()
-    cov = drain.coverage()["lanes"]["loudness"]
+    cov = drain.refresh_coverage()["lanes"]["loudness"]
     assert cov["unavailable"] is None
     assert cov["failed"] == 4 and cov["missing"] == 0
 
@@ -216,7 +220,7 @@ def test_same_host_cause_with_different_files_closes_the_lane() -> None:
     world.run_lane = run_lane  # type: ignore[method-assign]
     drain = world.drain()
     drain.tick()
-    unavailable = drain.coverage()["lanes"]["loudness"]["unavailable"]
+    unavailable = drain.refresh_coverage()["lanes"]["loudness"]["unavailable"]
     assert unavailable == f"TrackUnreadable: {cause}"
     assert aa.reason_kind("TrackVanished: /a/b.mp3 was gone") == "TrackVanished: /a/b.mp3 was gone"
 
@@ -241,7 +245,7 @@ def test_writer_that_leaves_no_strip_is_not_looped() -> None:
     drain.tick()
     drain.tick()
     assert world.strip_runs == ["a"]
-    assert drain.coverage()["lanes"]["strip"]["failed"] == 1
+    assert drain.refresh_coverage()["lanes"]["strip"]["failed"] == 1
 
 
 def test_never_read_tags_are_refreshed_before_any_strip() -> None:
@@ -262,7 +266,7 @@ def test_a_still_unreadable_file_is_tried_once_not_looped() -> None:
     drain = world.drain()
     _run_to_green(drain)
     assert world.tag_runs == ["a"], "if an unreadable file is re-read every tick then broken"
-    tags = drain.coverage()["lanes"]["tags"]
+    tags = drain.refresh_coverage()["lanes"]["tags"]
     assert tags["failed"] == 1 and tags["failed_reasons"] == {"the file still reads no tags or no duration": 1}
 
 
@@ -275,7 +279,7 @@ def test_a_busy_state_db_defers_the_tag_read_instead_of_failing_it() -> None:
     drain = world.drain()
     _run_to_green(drain)
     assert world.tag_runs == ["a", "a"], "if a locked write is not retried then broken"
-    assert drain.coverage()["lanes"]["tags"]["failed"] == 0
+    assert drain.refresh_coverage()["lanes"]["tags"]["failed"] == 0
 
 
 def test_a_declined_key_is_counted_apart_from_done_and_never_rerun() -> None:
@@ -287,7 +291,7 @@ def test_a_declined_key_is_counted_apart_from_done_and_never_rerun() -> None:
     world.declined["key"] = {"b": "no_tonal_center: ambiguous_margin"}
     drain = world.drain()
     assert drain.tick() == "green", "if a declined record is re-run then broken"
-    key = drain.coverage()["lanes"]["key"]
+    key = drain.refresh_coverage()["lanes"]["key"]
     assert (key["done"], key["declined"], key["missing"]) == (1, 1, 0)
     assert key["declined_reasons"] == {"no_tonal_center: ambiguous_margin": 1}
 
@@ -322,7 +326,7 @@ def test_one_track_that_aborts_its_run_fails_alone_and_the_lane_stays_open() -> 
     world = _one_bad_track_world("t2")
     drain = world.drain()
     drain.tick()
-    cov = drain.coverage()["lanes"]["loudness"]
+    cov = drain.refresh_coverage()["lanes"]["loudness"]
     assert cov["unavailable"] is None, "if one track's abort closes the lane then broken"
     assert cov["failed"] == 1 and cov["done"] == 3, "if siblings of the bad track are not produced then broken"
     assert world.lane_runs[1:] == [("loudness", [sid]) for sid in world.present]
@@ -335,7 +339,7 @@ def test_a_shared_reason_every_track_reproduces_alone_closes_the_lane() -> None:
     world.lane_error = "BackendNotAvailable: no checkpoint"
     drain = world.drain()
     _run_to_green(drain)
-    cov = drain.coverage()["lanes"]
+    cov = drain.refresh_coverage()["lanes"]
     assert all(cov[lane]["unavailable"] == world.lane_error for lane, _b in aa.LANE_ORDER)
     # one chunk plus its four solo reruns per lane, then never again
     assert len(world.lane_runs) == len(aa.LANE_ORDER) * (1 + aa.LANE_CHUNK)
@@ -354,4 +358,101 @@ def test_solo_reruns_stop_when_a_deck_starts_playing() -> None:
     drain = world.drain()
     drain.tick()
     assert world.lane_runs == [("loudness", ["t0", "t1", "t2", "t3"])]
-    assert drain.coverage()["lanes"]["loudness"]["unavailable"] is None
+    assert drain.refresh_coverage()["lanes"]["loudness"]["unavailable"] is None
+
+
+#-----------------------------------------------------------------------------
+# a busy tick never wedges coverage or the drain (silver, Mon 5 Oct 2026)
+#-----------------------------------------------------------------------------
+FAST_BUDGETS = {name: 0.3 for name in aa.PHASE_BUDGETS_S}
+
+
+def test_coverage_answers_from_the_snapshot_while_a_tick_is_stuck() -> None:
+    """[if] a tick is stuck in a source [then] coverage still answers at once, [else stop]."""
+    world = World(["a", "b"])
+    gate = threading.Event()
+    drain = world.drain()
+    drain.refresh_coverage()
+    drain._src.present_fn = lambda: (gate.wait(5), list(world.present))[1]  # type: ignore[misc]
+    ticker = threading.Thread(target=drain.tick)
+    ticker.start()
+    started = time.monotonic()
+    cov = drain.coverage()
+    took = time.monotonic() - started
+    gate.set()
+    ticker.join(5)
+    assert took < 0.2, f"if coverage waits on a stuck tick then broken (took {took:.2f} s)"
+    assert cov["present"] == 2 and cov["computed_at"] is not None
+
+
+def test_coverage_before_any_snapshot_says_so() -> None:
+    """[if] coverage was never computed [then] it says computed_at None, not zeros, [else stop]."""
+    cov = World(["a"]).drain().coverage()
+    assert cov["computed_at"] is None and cov["lanes"] == {} and cov["present"] is None
+
+
+def test_a_phase_past_its_budget_is_named_and_fails_only_its_track(caplog: pytest.LogCaptureFixture) -> None:
+    """[if] a tag read hangs [then] that track fails by name and the drain moves on, [else stop]."""
+    world = World(["a", "b"])
+    world.blank = {"a"}
+    gate = threading.Event()
+    real = world.refresh_tags
+
+    def hang(sid: str) -> bool:
+        gate.wait(5)
+        return real(sid)
+
+    world.refresh_tags = hang  # type: ignore[method-assign]
+    drain = aa.AheadDrain(world.drain()._src, phase_budgets_s=FAST_BUDGETS)
+    with caplog.at_level(logging.WARNING):
+        assert drain.tick() == "timeout:tags"
+    assert "phase tags exceeded its 0.3 s budget on a" in caplog.text, "if the stuck phase is not named then broken"
+    assert drain.tick() == "ran:strip", "if a stuck phase wedges the phases after it then broken"
+    reasons = drain.refresh_coverage()["lanes"]["tags"]["failed_reasons"]
+    gate.set()
+    assert [why for why in reasons if "timed out" in why], "if the hung track is not failed by name then broken"
+
+
+def test_an_abandoned_phase_is_never_started_twice() -> None:
+    """[if] an abandoned phase is still running [then] the tick waits, never a 2nd copy, [else stop]."""
+    world = World(["a"])
+    gate = threading.Event()
+    calls: list[int] = []
+
+    def stuck() -> list[str]:
+        calls.append(1)
+        gate.wait(5)
+        return ["a"]
+
+    src = world.drain()._src
+    src.present_fn = stuck
+    drain = aa.AheadDrain(src, phase_budgets_s=FAST_BUDGETS)
+    assert drain.tick() == "timeout:present"
+    assert drain.tick() == "waiting:present"
+    assert len(calls) == 1, "if an abandoned phase is started again while running then broken"
+    gate.set()
+    time.sleep(0.1)
+    drain.tick()
+    assert len(calls) == 2, "if a returned phase can never run again then broken"
+
+
+def test_done_ids_are_read_once_per_lane_per_tick() -> None:
+    """[if] a tick plans lane work [then] done_fn runs once per lane, not per track, [else stop]."""
+    world = World([f"t{i}" for i in range(50)])
+    world.strips = set(world.present)
+    calls: list[str] = []
+    src = world.drain()._src
+    src.done_fn = lambda lane, _backend: (calls.append(lane), set(world.done[lane]))[1]
+    aa.AheadDrain(src).tick()
+    assert len(calls) <= len(aa.LANE_ORDER), f"if done_fn runs per track then broken ({len(calls)} calls)"
+
+
+def test_a_lane_call_that_times_out_fails_its_tracks_not_the_tick(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] a queue call times out [then] each track gets a timeout reason, [else stop]."""
+    def boom(args: list[str], db: str) -> tuple[int, str, str]:
+        raise subprocess.TimeoutExpired(cmd="queue_cli", timeout=aa.QUEUE_TIMEOUT_S)
+
+    monkeypatch.setattr(aa, "_queue_cli", boom)
+    run = aa.run_lane_via_queue("db", lambda: sqlite3.connect(":memory:"))
+    errors = run("beatgrid", "own_beatgrid.backfill", ["a", "b"])
+    assert errors == dict.fromkeys(["a", "b"], "queue call timed out after 900 s")
