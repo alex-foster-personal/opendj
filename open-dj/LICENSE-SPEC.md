@@ -1,6 +1,6 @@
 # License: Creative Commons Attribution 4.0 International (CC-BY-4.0)
 
-Copyright (c) 2026 Alex Foster and open-dj contributors.
+Copyright (c) 2026 The Open DJ contributors.
 
 This work, the **open-dj specification** and its accompanying JSON Schemas at
 `open-dj/spec/` and `open-dj/schema/`, is licensed under the Creative Commons
