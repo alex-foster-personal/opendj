@@ -150,7 +150,10 @@ class StateMaintenance:
         if time.monotonic() >= self._next_prune:
             self._next_prune = time.monotonic() + CFG.PRUNE_INTERVAL_S
             report = retention.prune_superseded(self._db)
-            log.info("state-maintenance analysis prune: %s", report)
+            # WARNING, not INFO: the engine logs at WARNING and up, and a prune
+            # deletes rows, so it must be visible when it does anything.
+            if report.rows > 0:
+                log.warning("state-maintenance analysis prune: %s", report)
         size = wal_bytes(self._db)
         if not should_checkpoint(size, CFG.WAL_TRUNCATE_BYTES):
             return None
@@ -165,7 +168,9 @@ class StateMaintenance:
             )
         elif result.busy is False:
             self._busy_streak = 0
-            log.info(
+            # WARNING: a WAL over the threshold is itself notable, and INFO
+            # is not written by the engine.
+            log.warning(
                 "state-maintenance wal checkpoint ok: log=%d checkpointed=%d wal %d -> %d bytes",
                 result.log_frames, result.checkpointed_frames,
                 result.wal_bytes_before, result.wal_bytes_after,

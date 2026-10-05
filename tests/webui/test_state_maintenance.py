@@ -89,3 +89,12 @@ def test_should_checkpoint_threshold_is_strict() -> None:
     """[if] the WAL is exactly at the threshold [then] no checkpoint, one byte over runs one, [else stop]."""
     assert sm.should_checkpoint(100, 100) is False
     assert sm.should_checkpoint(101, 100) is True
+
+
+def test_checkpoint_result_is_logged_at_warning(held_db, monkeypatch, caplog) -> None:
+    """[if] a checkpoint runs [then] its result is logged at WARNING, which the engine writes, [else stop]."""
+    db, _keeper = held_db
+    monkeypatch.setattr(sm.CFG, "WAL_TRUNCATE_BYTES", 1024)
+    with caplog.at_level("WARNING", logger=sm.__name__):
+        sm.StateMaintenance(state_db_path=db).tick()
+    assert any("wal checkpoint ok" in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
