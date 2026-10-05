@@ -73,7 +73,7 @@ test('STEM dials use stem colors distinct from default EQ accent', async () => {
 	assert.equal(colors.STEM_COLORS.vocal, wave.VOCAL_BLUE);
 
 	const row = await source('deck/StemRow.svelte');
-	assert.match(row, /STEM_COLORS\.vocal/);
+	assert.match(row, /stemCssColor\(stem\.id\)/);
 	assert.doesNotMatch(row, /--rb-green/);
 
 	const knob = await source('mixer/Knob.svelte');
@@ -92,5 +92,5 @@ test('STEM dials use stem colors distinct from default EQ accent', async () => {
 			`${dial} must forward its stem accentColor to Knob`
 		);
 	}
-	assert.match(strip, /STEM_COLORS\[stem\]/);
+	assert.match(strip, /stemCssColor\(stem\)/);
 });

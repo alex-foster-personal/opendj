@@ -1,7 +1,7 @@
 /** Pure helpers for stem mini-waveform rows (issue #1036). */
 
 import type { DeckState } from '$lib/rb/deck-state-types';
-import { STEM_COLORS } from '$lib/rb/stem-colors';
+import { stemColorFromToken } from '$lib/rb/stem-colors';
 import { STEM_CONTROLS } from '$lib/rb/stem-graph';
 import type { StemControl, StemLayout } from '$lib/rb/stem-types';
 
@@ -33,6 +33,7 @@ export function stemWaveRowUnavailableTip(deck: DeckState, stem: StemControl): s
 	return null;
 }
 
-export function stemWaveRowColor(stem: StemControl): string {
-	return STEM_COLORS[stem];
+/** Canvas colour for a stem row: the skin's --rb-stem-<id> computed value, else the default. */
+export function stemWaveRowColor(stem: StemControl, computedToken = ''): string {
+	return stemColorFromToken(stem, computedToken);
 }
