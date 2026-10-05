@@ -17,6 +17,13 @@
  *     - the operator touched this tab in the last GESTURE_CLAIM_MS and the
  *       holder is not playing (claimed with takeover).
  *   A claim that the engine refuses (409) demotes the tab again.
+ * - A leader never PUTs blind either. Until a lease read or an accepted PUT
+ *   has cleared it, a tab that becomes leader (a fresh page load, a reload, a
+ *   promoted sibling) first reads the lease and applies the same claim rules.
+ *   Tue 6 Oct 2026, main E2E run 37383098288: a reloaded page PUT into the
+ *   previous page's still-live 10 s lease, and Chromium logs every 409 fetch
+ *   as a console error that no catch can take back. Take control skips the
+ *   read: its takeover header is the operator's decision.
  */
 import type { TabLeadership } from './tab-leadership';
 
@@ -96,6 +103,27 @@ export function createLeasedMirrorPublisher(deps: {
 	let leaseCheckInFlight = false;
 	let lastLeaseCheckAtMs = Number.NEGATIVE_INFINITY;
 	let lastGestureAtMs: number | null = null;
+	/** A lease read or an accepted PUT says this leader may PUT without a 409. */
+	let leaseCleared = false;
+	let preflightInFlight = false;
+
+	const decide = (lease: MirrorLeaseState): ClaimDecision =>
+		decideFollowerClaim({
+			lease,
+			selfId: deps.clientId,
+			holdsLocalLock: deps.leadership.holdsLocalLock(),
+			visible: deps.isVisible(),
+			playing: deps.isPlaying(),
+			gestureAgeMs: lastGestureAtMs === null ? null : now() - lastGestureAtMs
+		});
+
+	/** Claim on a decision: a lock holder is promoted at once and its PUT is already cleared. */
+	const claim = (decision: { takeover: boolean; why: string }): void => {
+		console.info(`ui-mirror: claiming leadership (${decision.why})`);
+		if (decision.takeover) lastGestureAtMs = null;
+		leaseCleared = true;
+		deps.leadership.claim({ takeover: decision.takeover });
+	};
 
 	const checkLease = (): void => {
 		const nowMs = now();
@@ -108,19 +136,8 @@ export function createLeasedMirrorPublisher(deps: {
 					console.error(`ui-mirror lease read failed: ${response.status}`);
 					return;
 				}
-				const lease = (await response.json()) as MirrorLeaseState;
-				const decision = decideFollowerClaim({
-					lease,
-					selfId: deps.clientId,
-					holdsLocalLock: deps.leadership.holdsLocalLock(),
-					visible: deps.isVisible(),
-					playing: deps.isPlaying(),
-					gestureAgeMs: lastGestureAtMs === null ? null : now() - lastGestureAtMs
-				});
-				if (!decision.claim) return;
-				console.info(`ui-mirror: claiming leadership (${decision.why})`);
-				if (decision.takeover) lastGestureAtMs = null;
-				deps.leadership.claim({ takeover: decision.takeover });
+				const decision = decide((await response.json()) as MirrorLeaseState);
+				if (decision.claim) claim(decision);
 			})
 			.catch(() => {
 				// Engine down: stay a follower and ask again on a later tick.
@@ -130,11 +147,49 @@ export function createLeasedMirrorPublisher(deps: {
 			});
 	};
 
+	/** A new leader reads the lease before its first PUT; another browser's live lease demotes it. */
+	const preflightLease = (): void => {
+		if (preflightInFlight) return;
+		preflightInFlight = true;
+		lastLeaseCheckAtMs = now();
+		void fetch(LEASE_PATH)
+			.then(async (response) => {
+				if (!response.ok) {
+					console.error(`ui-mirror lease read failed: ${response.status}`);
+					return;
+				}
+				const lease = (await response.json()) as MirrorLeaseState;
+				if (!deps.leadership.isLeader() || leaseCleared) return;
+				const decision = decide(lease);
+				if (decision.claim) {
+					claim(decision);
+					publish();
+				} else if (typeof lease.holder === 'string') {
+					deps.leadership.noteLeaseConflict(lease.holder);
+				} else {
+					console.error(`ui-mirror lease read refused a claim with no holder: ${JSON.stringify(lease)}`);
+				}
+			})
+			.catch(() => {
+				// Engine down: stay unconfirmed and read again on the next tick.
+			})
+			.finally(() => {
+				preflightInFlight = false;
+			});
+	};
+
 	const publish = (): void => {
 		if (!deps.leadership.isLeader()) {
 			registered = false;
+			leaseCleared = false;
 			// A hidden, silent follower stays completely quiet toward the engine.
 			if (deps.isVisible() || deps.isPlaying()) checkLease();
+			return;
+		}
+		const takeover = deps.leadership.consumeTakeover();
+		if (takeover) leaseCleared = true;
+		if (!leaseCleared) {
+			preflightLease();
 			return;
 		}
 		deps.beforePublish?.(now());
@@ -142,7 +197,7 @@ export function createLeasedMirrorPublisher(deps: {
 			'content-type': 'application/json',
 			[LEASE_HEADER]: deps.clientId
 		};
-		if (deps.leadership.consumeTakeover()) headers[LEASE_TAKEOVER_HEADER] = '1';
+		if (takeover) headers[LEASE_TAKEOVER_HEADER] = '1';
 		void fetch(MIRROR_PATH, { method: 'PUT', headers, body: JSON.stringify(deps.build()) })
 			.then(async (response) => {
 				registered = response.ok && deps.leadership.isLeader();
@@ -150,6 +205,7 @@ export function createLeasedMirrorPublisher(deps: {
 				if (response.status !== 409) return;
 				const refusal = (await response.json()) as { reason?: string; holder?: unknown };
 				if (refusal.reason === 'lease_held' && typeof refusal.holder === 'string') {
+					leaseCleared = false;
 					deps.leadership.noteLeaseConflict(refusal.holder);
 				} else if (refusal.reason === 'stale_snapshot') {
 					// Our own slow PUT overtaken by a newer one: the engine kept the
@@ -163,8 +219,9 @@ export function createLeasedMirrorPublisher(deps: {
 			.catch(() => {
 				// Engine down / WebKit `Load failed`: do not become an
 				// unhandledrejection (Sentry OPEN-DJ-FE-F). Forget registration
-				// until a later PUT is accepted.
+				// until a later PUT is accepted, and read the lease before the next.
 				registered = false;
+				leaseCleared = false;
 			});
 	};
 

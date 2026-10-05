@@ -29,6 +29,7 @@
 		dismissPerformanceDeckError,
 		dispatchPerformanceCommand,
 		queryPerformanceState,
+		queryQuantizedLaunchArmed,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { pushToast } from '$lib/stores.svelte';
@@ -495,7 +496,7 @@
 		<TransportCluster
 			{deck}
 			{pending}
-			quantizedLaunchArmed={queryPerformanceState().decks[deckId].quantized_launch_armed}
+			quantizedLaunchArmed={queryQuantizedLaunchArmed(deckId)}
 			onCue={returnToCue}
 			onPlayPause={playPause}
 		/>
