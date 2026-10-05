@@ -254,6 +254,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		detail:
 			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws single-color bars. The preview shows the effective design for the current skin.',
 		implemented: true,
+		preview: 'waveform',
 		control: {
 			kind: 'enum',
 			options: [

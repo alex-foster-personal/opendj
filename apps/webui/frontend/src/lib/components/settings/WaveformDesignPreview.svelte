@@ -3,6 +3,7 @@
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { resolveStripBandColors } from '$lib/rb/wave-palette';
 	import { effectiveWaveformDesign, effectiveWavePalette } from '$lib/rb/ui-skin';
+	import { paintWaveformPreview } from '$lib/settings/waveform-preview-paint';
 
 	let { design }: { design?: WaveformDesign } = $props();
 
@@ -20,54 +21,9 @@
 	$effect(() => {
 		const el = canvas;
 		if (el === undefined) return;
-		const c = colors;
 		const ctx = el.getContext('2d');
-		if (ctx === null) return;
-		const w = el.width;
-		const h = el.height;
-		ctx.clearRect(0, 0, w, h);
-		ctx.fillStyle = '#0a0c10';
-		ctx.fillRect(0, 0, w, h);
-		const n = 48;
-		const sample = Array.from({ length: n }, (_, i) => {
-			const t = i / (n - 1);
-			return 0.15 + 0.75 * Math.abs(Math.sin(t * Math.PI * 3)) * (1 - t * 0.2);
-		});
-		const barW = w / n;
-		if (active === 'line') {
-			ctx.strokeStyle = c.mono;
-			ctx.lineWidth = 1.5;
-			ctx.beginPath();
-			for (let i = 0; i < n; i++) {
-				const x = i * barW + barW / 2;
-				const y = h - sample[i] * (h - 4);
-				if (i === 0) ctx.moveTo(x, y);
-				else ctx.lineTo(x, y);
-			}
-			ctx.stroke();
-			return;
-		}
-		for (let i = 0; i < n; i++) {
-			const x = i * barW;
-			const v = sample[i];
-			if (active === 'blocks') {
-				// Mirrored single-color bars with a 1px gap (waveform-blocks-design).
-				const bh = v * (h - 2);
-				ctx.fillStyle = c.mono;
-				ctx.fillRect(x, (h - bh) / 2, Math.max(1, barW - 1), bh);
-			} else if (active === 'mono') {
-				const bh = v * (h - 2);
-				ctx.fillStyle = c.mono;
-				ctx.fillRect(x, h - bh, barW, bh);
-			} else {
-				ctx.fillStyle = c.low;
-				ctx.fillRect(x, h - v * (h - 2) * 0.55, barW, v * (h - 2) * 0.55);
-				ctx.fillStyle = c.mid;
-				ctx.fillRect(x, h - v * (h - 2) * 0.75, barW, v * (h - 2) * 0.35);
-				ctx.fillStyle = c.high;
-				ctx.fillRect(x, h - v * (h - 2) * 0.45, barW, v * (h - 2) * 0.25);
-			}
-		}
+		if (ctx === null) throw new Error('waveform design preview: canvas 2d context unavailable');
+		paintWaveformPreview(ctx, el.width, el.height, active, colors);
 	});
 </script>
 
@@ -79,7 +35,6 @@
 	data-design={active}
 	data-palette={palette}
 	aria-label="Waveform design preview"
-	title={`Preview: ${active} design, ${palette} colors (the effective look for the current skin)`}
 ></canvas>
 
 <style>
