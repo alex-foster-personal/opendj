@@ -124,3 +124,25 @@ export function readOutputTimestamp(context: AudioContext): {
 	}
 	return { contextTime, performanceTime };
 }
+
+/**
+ * When each deck's published `position_ms` was sampled (`performance.now()`).
+ *
+ * Painting projects a playing deck's position forward between samples. It
+ * must project from the instant the engine took the sample, not from the frame
+ * that first noticed it: rows notice a tick in different frames, so anchoring
+ * on notice painted synced decks a frame apart (see `paint-position.ts`).
+ * Written by both engines' per-frame publish; a position written any other way
+ * (seek, unload) holds a different value, so `positionSampledAtMs` says null.
+ */
+const _positionSamples: Record<DeckId, { positionMs: number; atMs: number } | null> = { 1: null, 2: null, 3: null, 4: null };
+
+export function notePositionSample(deck: DeckId, positionMs: number, atMs: number): void {
+	_positionSamples[deck] = { positionMs, atMs };
+}
+
+/** The sample time of `positionMs` on `deck`, or null when it is not the latest sample. */
+export function positionSampledAtMs(deck: DeckId, positionMs: number): number | null {
+	const sample = _positionSamples[deck];
+	return sample !== null && sample.positionMs === positionMs ? sample.atMs : null;
+}

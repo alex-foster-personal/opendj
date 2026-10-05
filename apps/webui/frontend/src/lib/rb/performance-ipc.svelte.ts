@@ -1696,6 +1696,50 @@ function _quantizedLaunchArmedSnapshot(
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
+// ------------------------------------------- narrow reads for UI $derived
+
+/*
+ * PERF-GRID-03: a component that needs ONE field must not `$derived` the whole
+ * `queryPerformanceState()`. That snapshot reads every deck's position, so the
+ * derived re-ran on every transport tick and rebuilt four deck snapshots plus
+ * the transition read each time. Measured on demon-llama with two synced
+ * decks playing: 61% of main-thread time after the grid memo landed. These
+ * accessors return exactly what the matching snapshot field holds and track
+ * only what that field depends on.
+ *
+ * The two armed countdowns are clock-derived (`remaining_ms`, expiry read as
+ * null), so while one is armed it also tracks the decks' positions: it then
+ * ticks and expires exactly as the full snapshot did, and costs nothing while
+ * nothing is armed.
+ */
+
+function _trackTransportTicks(): void {
+	for (const deckId of DECK_IDS) void getDeckState(deckId).position_ms;
+}
+
+/** Same value as `queryPerformanceState().master_mode`. */
+export function queryMasterMode(): MasterMode {
+	return getMasterMode();
+}
+
+/** Same value as `queryPerformanceState().decks[deckId].waveform_seek_armed`. */
+export function queryWaveformSeekArmed(
+	deckId: DeckId
+): { target_position_ms: number; remaining_ms: number } | null {
+	if (waveformSeekArmed[deckId] === null) return null;
+	_trackTransportTicks();
+	return _waveformSeekArmedSnapshot(deckId);
+}
+
+/** Same value as `queryPerformanceState().decks[deckId].quantized_launch_armed`. */
+export function queryQuantizedLaunchArmed(
+	deckId: DeckId
+): { remaining_ms: number; launch_at_context_sec: number } | null {
+	if (quantizedLaunchArmed[deckId] === null) return null;
+	_trackTransportTicks();
+	return _quantizedLaunchArmedSnapshot(deckId);
+}
+
 function _openPairingSnapshot(): PairingSnapshot {
 	const loaded = DECK_IDS.flatMap((deckId) => {
 		const deck = getDeckState(deckId);
