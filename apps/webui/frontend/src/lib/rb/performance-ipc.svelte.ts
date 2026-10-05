@@ -1601,18 +1601,16 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
 }
 
 /** Live-derive `remaining_ms` from the AudioContext clock rather than
- * trusting a cached countdown, then self-clear once the schedule has landed -
- * the same "recompute, don't cache" rule `deckTransportClock` follows. */
+ * trusting a cached countdown. Expired schedules read as null; queries must
+ * not mutate reactive state while a consumer derives or renders the snapshot.
+ * Command and session lifecycle owners clear or replace the stored schedule. */
 function _waveformSeekArmedSnapshot(
 	deckId: DeckId
 ): { target_position_ms: number; remaining_ms: number } | null {
 	const armed = waveformSeekArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		waveformSeekArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -1622,10 +1620,7 @@ function _hotCueArmedSnapshot(
 	const armed = hotCueArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		hotCueArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -1635,10 +1630,7 @@ function _quantizedLaunchArmedSnapshot(
 	const armed = quantizedLaunchArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.launch_at_context_sec - _quantizedLaunchDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		quantizedLaunchArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
@@ -2098,7 +2090,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (command.playing) {
 			if (command.start_at_context_sec !== undefined) {
 				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
-			} else if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+			} else if (_quantizedLaunchArmedSnapshot(command.deck) !== null && command.quantize !== true) {
 				quantizedLaunchArmed[command.deck] = null;
 				_quantizedLaunchDriver.clear(command.deck);
 			} else if (command.quantize === true) {
