@@ -43,13 +43,19 @@
 	import { OVERLAY_Z } from '$lib/overlays/stack';
 	import { bootGateHeading, needsImportAction } from '$lib/preflight/boot-copy';
 	import { bootCheckDetail, bootCheckLabel } from '$lib/preflight/preflight-boot-copy';
+	import { checkPreflight, preflightGate, requestPermissions } from '$lib/preflight/preflight.svelte';
 	import {
-		checkPreflight,
-		preflightGate,
-		requestPermissions
-	} from '$lib/preflight/preflight.svelte';
+		checkOffersRunSetup,
+		preflightExplainers,
+		runImport,
+		runRecheck,
+		runRequestPermissions,
+		runRetrySetupCheck,
+		type PreflightActionId
+	} from '$lib/preflight/preflight-actions';
 	import { firstRunGate, retryFirstRunGate } from '$lib/setup/first-run-gate.svelte';
 	import { runSetup, runSetupBlocked } from '$lib/setup/run-setup';
+	import PreflightActions from './PreflightActions.svelte';
 	import PreflightCheckRow from './PreflightCheckRow.svelte';
 
 	const POLL_MS = 3_000;
@@ -72,8 +78,8 @@
 	);
 
 	let timer: ReturnType<typeof setInterval> | null = null;
-	let importBusy = $state(false);
-	let importError = $state<string | null>(null);
+	let pendingAction = $state<PreflightActionId | null>(null);
+	let actionStatus = $state<string | null>(null);
 
 	const bootHeadline = $derived(
 		mode === 'boot' && blocking
@@ -137,19 +143,63 @@
 			firstRunGate.hasError
 	);
 
-	async function handleImportMusic(): Promise<void> {
-		if (!navigate || importBusy) return;
-		importBusy = true;
-		importError = await runSetup(navigate);
-		importBusy = false;
+	const visibleActions = $derived<PreflightActionId[]>([
+		...(mode === 'boot' && blocking && firstRunGate.hasError ? (['retry-setup'] as const) : []),
+		...(showImportCta ? (['import'] as const) : []),
+		'recheck',
+		'permissions'
+	]);
+	const disabledActions = $derived<PreflightActionId[]>(
+		runSetupBlocked() !== null || !navigate ? ['import'] : []
+	);
+	const footer = $derived(
+		mode !== 'boot' || !blocking
+			? null
+			: preflightGate.needsActionCopy
+				? 'Import your music below to continue, or fix the items above and re-check.'
+				: 'This screen clears itself automatically once every check passes.'
+	);
+
+	function openImporter(): Promise<string | null> {
+		return navigate ? runSetup(navigate) : Promise.resolve('no way to open setup from this screen');
 	}
 
-	async function retrySetupCheck(): Promise<void> {
-		const show = await retryFirstRunGate();
-		if (show !== true || !navigate) return;
-		importBusy = true;
-		importError = await runSetup(navigate);
-		importBusy = false;
+	function setActionStatus(status: string): void {
+		actionStatus = status;
+	}
+
+	const checkDeps = {
+		check: checkPreflight,
+		snapshot: () => ({ checks: visibleChecks, error: preflightGate.error }),
+		now: () => new Date(),
+		labelOf: (check: (typeof preflightGate.checks)[number]) =>
+			mode === 'boot' ? bootRowLabel(check) : check.label,
+		setStatus: setActionStatus
+	};
+
+	/** PREFLIGHT-05: every click shows a pending line, then the real result. */
+	async function handleAction(id: PreflightActionId): Promise<void> {
+		if (pendingAction !== null) return;
+		pendingAction = id;
+		try {
+			if (id === 'recheck') {
+				await runRecheck(checkDeps);
+			} else if (id === 'permissions') {
+				await runRequestPermissions({ ...checkDeps, check: requestPermissions });
+			} else if (id === 'import') {
+				await runImport(openImporter, setActionStatus);
+			} else if (id === 'retry-setup') {
+				await runRetrySetupCheck(
+					{ retry: retryFirstRunGate, gateError: () => firstRunGate.error, open: openImporter },
+					setActionStatus
+				);
+			} else {
+				const _exhaustive: never = id;
+				throw new Error(`Unhandled preflight action: ${_exhaustive}`);
+			}
+		} finally {
+			pendingAction = null;
+		}
 	}
 
 	function bootRowLabel(check: (typeof preflightGate.checks)[number]): string {
@@ -189,9 +239,6 @@
 	{/if}
 	{#if mode === 'boot' && blocking && firstRunGate.hasError}
 		<p class="preflight-error" role="alert">{firstRunGate.error}</p>
-		<button type="button" class="preflight-retry-first-run" onclick={() => void retrySetupCheck()}>
-			Retry setup check
-		</button>
 	{/if}
 	<ul class="preflight-checks">
 		{#each visibleChecks as check (check.id)}
@@ -204,36 +251,18 @@
 			/>
 		{/each}
 	</ul>
-	<div class="preflight-actions">
-		{#if showImportCta}
-			<button
-				type="button"
-				class="preflight-import"
-				data-testid="preflight-import-music"
-				disabled={importBusy || runSetupBlocked() !== null || !navigate}
-				title={runSetupBlocked() ?? 'Open setup to import rekordbox or a music folder.'}
-				onclick={() => void handleImportMusic()}
-			>
-				{importBusy ? 'Opening setup...' : 'Import your music'}
-			</button>
-			{#if importError}
-				<p class="preflight-error">{importError}</p>
-			{/if}
-		{/if}
-		<button type="button" onclick={() => void checkPreflight()}>Re-check</button>
-		<button
-			type="button"
-			title="Attempt the gated audio read again; macOS prompts here if it never has."
-			onclick={() => void requestPermissions()}
-		>
-			Re-request permissions
-		</button>
-	</div>
-	{#if mode === 'boot' && blocking && !preflightGate.needsActionCopy}
-		<p class="note">This screen clears itself automatically once every check passes.</p>
-	{:else if mode === 'boot' && blocking && preflightGate.needsActionCopy}
-		<p class="note">Import your music below to continue, or fix the items above and re-check.</p>
-	{/if}
+	<PreflightActions
+		actions={visibleActions}
+		disabled={disabledActions}
+		pending={pendingAction}
+		status={actionStatus}
+		{footer}
+		explainers={preflightExplainers(
+			{ actions: visibleActions, runSetup: visibleChecks.some(checkOffersRunSetup) },
+			runSetupBlocked()
+		)}
+		onAction={(id: PreflightActionId) => void handleAction(id)}
+	/>
 </section>
 {/if}
 
@@ -325,7 +354,7 @@
 		flex-wrap: wrap;
 		gap: 0.75rem 1.25rem;
 	}
-	.preflight-boot-strip .note {
+	.preflight-boot-strip :global(.note) {
 		display: none;
 	}
 	.preflight-error {
@@ -338,14 +367,5 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
-	}
-	.preflight-actions {
-		display: flex;
-		gap: 0.5rem;
-	}
-	.note {
-		color: var(--muted);
-		font-size: 0.85em;
-		margin: 0;
 	}
 </style>

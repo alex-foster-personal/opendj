@@ -271,7 +271,11 @@ test('the memory meter samples through untrack and perfMeterSampleIntervalMs', (
 		/jsHeapMB: HEAP_API_PRESENT \? readJsHeapMB\(performance\) : null/,
 		'null, not 0: an unmeasurable heap must not enter the total as a measured zero'
 	);
-	assert.match(src, /title=\{memoryHover\}/, 'the house rule: every numeric readout keeps its hover');
+	assert.match(
+		src,
+		/memoryDetail: memoryHover/,
+		'the house rule: every numeric readout keeps its explainer, now in the shared PERF-UI-10 card'
+	);
 });
 
 test('PlaylistTree renders the reserved Missing Tracks folder outside the playlist loop', () => {

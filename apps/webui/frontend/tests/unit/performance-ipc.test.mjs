@@ -551,7 +551,7 @@ test('analysis-source commands are validated through the typed all-deck schedule
 	try {
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'vocals', source: 'own' }),
-			/feature must be beatgrid/i
+			/feature must be one of beatgrid, key, waveform, loudness, vocal; got vocals/i
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({ type: 'analysis_source', feature: 'beatgrid', source: 'invalid' }),
