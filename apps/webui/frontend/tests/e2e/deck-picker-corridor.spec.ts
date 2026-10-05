@@ -204,9 +204,18 @@ test('travelling title → gap → a deck button lands on the button', async ({ 
 	await page.mouse.move(geo.gapX, geo.gapY, { steps: 1 });
 	await page.mouse.move(geo.deck2X, geo.deck2Y, { steps: 1 });
 
+	// Identify deck 2 by its label, not its `title`: while the pointer rests on
+	// a control the single hover tooltip (#5397) parks `title` on `data-tip` so
+	// WKWebView does not draw a second, native tooltip.
 	const landed = await page.evaluate(({ x, y }) => {
+		const selected = document.querySelector<HTMLElement>(
+			'[data-testid="track-row"].rb-row-selected'
+		);
+		const deck2 = [
+			...(selected?.querySelectorAll<HTMLElement>('.deck-btns button.deck-target') ?? [])
+		].find((b) => b.textContent?.trim() === '2');
 		const hit = document.elementFromPoint(x, y);
-		if (hit === null) return { ok: false, stack: 'null' };
+		if (hit === null || deck2 === undefined) return { ok: false, tip: null, stack: 'null' };
 		const button = hit.closest('button');
 		const stack = document
 			.elementsFromPoint(x, y)
@@ -214,7 +223,8 @@ test('travelling title → gap → a deck button lands on the button', async ({ 
 			.map((el) => `${el.tagName}.${el.className}`)
 			.join(' > ');
 		return {
-			ok: button !== null && button.getAttribute('title') === 'Load onto deck 2',
+			ok: button === deck2,
+			tip: deck2.getAttribute('title') ?? deck2.getAttribute('data-tip'),
 			stack
 		};
 	}, { x: geo.deck2X, y: geo.deck2Y });
@@ -223,4 +233,5 @@ test('travelling title → gap → a deck button lands on the button', async ({ 
 		landed.ok,
 		`after the gap hop, the deck-2 button centre must resolve to that button; hit stack: ${landed.stack}`
 	).toBe(true);
+	expect(landed.tip, 'the landed button must be the deck-2 loader').toBe('Load onto deck 2');
 });
