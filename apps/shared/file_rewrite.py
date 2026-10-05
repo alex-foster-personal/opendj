@@ -8,7 +8,6 @@ whose audio bytes must come through untouched.
 from __future__ import annotations
 
 import ctypes
-import ctypes.util
 import errno
 import os
 import sys
@@ -102,7 +101,9 @@ def copy_extended_metadata(src: Path, dst: Path) -> None:
     labels, capabilities) are skipped, so they never block a tag write.
     """
     if sys.platform == "darwin":
-        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        # A literal path the payload runtime-load guard can classify (allowlisted as
+        # part of every macOS install); copyfile(3) is exported by libSystem.
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
         if libc.copyfile(os.fsencode(src), os.fsencode(dst), None, _COPYFILE_ACL_AND_XATTR) < 0:
             code = ctypes.get_errno()
             if code in _XATTR_UNSUPPORTED:

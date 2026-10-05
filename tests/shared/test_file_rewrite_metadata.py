@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import errno
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import BinaryIO
 
 import pytest
 
-from apps.shared.file_rewrite import copy_rest, rewrite_atomic
+from apps.shared.file_rewrite import copy_extended_metadata, copy_rest, rewrite_atomic
 
 
 def _set_user_xattr_or_skip(path: Path) -> None:
@@ -103,3 +105,16 @@ def test_a_user_xattr_that_cannot_be_copied_aborts_and_keeps_the_original(tmp_pa
 
     assert track.read_bytes() == b"OLDTAG" + b"audio-bytes"
     assert [p.name for p in tmp_path.iterdir()] == ["track.mp3"], "the temp file is removed"
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="exercises the macOS copyfile(3) branch")
+def test_macos_copyfile_branch_carries_an_xattr_across(tmp_path: Path):
+    """[if] copy_extended_metadata runs on macOS [then] libSystem copyfile(3) carries
+    an xattr onto the destination, [else stop]. The branch the payload ships to every Mac."""
+    src, dst = tmp_path / "src.mp3", tmp_path / "dst.mp3"
+    src.write_bytes(b"a")
+    dst.write_bytes(b"b")
+    subprocess.run(["/usr/bin/xattr", "-w", "com.opendj.test", "keep-me", str(src)], check=True)
+    copy_extended_metadata(src, dst)
+    read = subprocess.run(["/usr/bin/xattr", "-p", "com.opendj.test", str(dst)], capture_output=True, text=True, check=False)
+    assert read.returncode == 0 and read.stdout.strip() == "keep-me", read.stderr
