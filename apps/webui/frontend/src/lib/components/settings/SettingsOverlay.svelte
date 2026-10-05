@@ -4,6 +4,7 @@
 	 * Opens like a command palette, expands for results; RHS rows ARE the settings.
 	 */
 	import { tick } from 'svelte';
+	import WaveformDesignPreview from './WaveformDesignPreview.svelte';
 	import { goto } from '$app/navigation';
 	import {
 		RUN_SETUP_LABEL,
@@ -538,11 +539,10 @@
 														<option value={opt.value}>{opt.label}</option>
 													{/each}
 												</select>
-												{#if def.id === 'waveform_design' || def.id === 'wave_palette'}
-													<!-- Loads with the row, not the first paint (library bundle budget, PR #4014). -->
-													{#await import('./WaveformDesignPreview.svelte') then { default: WaveformDesignPreview }}
-														<WaveformDesignPreview />
-													{/await}
+												{#if def.preview === 'waveform'}
+													<!-- Static, not a lazy import: a pending or failed chunk rendered NOTHING, silently,
+													     and on a cold /performance load the dev server took over 8 s to serve it (Mon 5 Oct 2026). -->
+													<WaveformDesignPreview />
 												{/if}
 											{:else if def.control.kind === 'multi_bool'}
 												<div class="so-multi" title={def.title}>
