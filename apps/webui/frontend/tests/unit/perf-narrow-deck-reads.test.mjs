@@ -12,8 +12,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
 
-import { bundleTypeScriptModule } from './load-typescript.mjs';
-import { importBundledSource } from './import-bundled-source.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const SRC = new URL('../../src/lib/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, SRC), 'utf8');
@@ -21,8 +20,7 @@ const read = (rel) => readFileSync(new URL(rel, SRC), 'utf8');
 let ipc;
 
 before(async () => {
-	const text = await bundleTypeScriptModule('tests/unit/fixtures/waveform-seek-session-entry.ts');
-	ipc = await importBundledSource(text, 'perf-narrow-deck-reads');
+	ipc = await loadTypeScriptModule('tests/unit/fixtures/waveform-seek-session-entry.ts');
 });
 
 const BEATS = Array.from({ length: 64 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: i * 0.5 }));
