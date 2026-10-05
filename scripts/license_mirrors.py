@@ -88,6 +88,8 @@ def _pin(
     sha256: str,
     reason: str,
     issue: str = _ISSUE_5189,
+    *,
+    fetched: str = _FETCHED,
 ) -> ReviewedLicenseText:
     return ReviewedLicenseText(
         ecosystem=ecosystem,
@@ -95,7 +97,7 @@ def _pin(
         version=version,
         text_relative=text_relative,
         source_url=source_url,
-        fetched=_FETCHED,
+        fetched=fetched,
         sha256=sha256,
         reason=reason,
         issue=issue,
@@ -178,6 +180,43 @@ _DASP_REASON = (
 )
 
 REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
+    _pin(
+        "python",
+        "setuptools vendored setuptools/config/_validate_pyproject/NOTICE",
+        "84.0.0",
+        "docs/legal/setuptools-84.0.0-vendored-LICENSE.txt",
+        "https://raw.githubusercontent.com/pypa/setuptools/v84.0.0/setuptools/config/_validate_pyproject/NOTICE",
+        "09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7",
+        "the upstream generated-validation NOTICE contains the complete BSD-3-Clause and MPL-2.0 "
+        "license texts; identical bytes are mirrored as a license while the original notice remains",
+        issue="https://github.com/maintainer/music-dj-tools/issues/5351",
+        fetched="Mon 5 Oct 2026",
+    ),
+    _pin(
+        "python",
+        "setuptools vendored setuptools/config/NOTICE",
+        "84.0.0",
+        "docs/legal/setuptools-84.0.0-vendored-LICENSE.txt",
+        "https://raw.githubusercontent.com/pypa/setuptools/v84.0.0/setuptools/config/_validate_pyproject/NOTICE",
+        "09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7",
+        "the config NOTICE identifies validate-pyproject schemas under MPL-2.0; the same release's "
+        "generated-validation NOTICE carries the complete MPL-2.0 terms and is mirrored unchanged",
+        issue="https://github.com/maintainer/music-dj-tools/issues/5351",
+        fetched="Mon 5 Oct 2026",
+    ),
+    _pin(
+        "rust",
+        "rusty-chromaprint",
+        "0.3.0",
+        "docs/legal/rusty-chromaprint-0.3.0-LICENSE.txt",
+        "https://raw.githubusercontent.com/darksv/rusty-chromaprint/97d67dfed02854ac5d5eaa9ac965b9abe3dff690/chromaprint/Cargo.toml",
+        "9156dec80ec91630ebc343ca42a9994443f5f320056202fca93b4fec4054aade",
+        "the locked crate and exact upstream revision declare MIT but ship no LICENSE or copyright "
+        "notice; upstream Cargo metadata and canonical SPDX MIT permission text are staged, "
+        "omitting the template copyright placeholder rather than inventing a holder or year",
+        issue="https://github.com/maintainer/music-dj-tools/issues/5351",
+        fetched="Mon 5 Oct 2026",
+    ),
     _pin(
         "python",
         "rbox",
