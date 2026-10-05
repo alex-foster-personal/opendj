@@ -331,6 +331,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
+        from . import state_maintenance
+
+        state_maintenance.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
         # A step still running would outlive the engine with its pool
@@ -340,6 +343,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         from . import path_availability_refresh
 
         path_availability_refresh.stop()
+        from . import state_maintenance
+
+        state_maintenance.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
         drain = getattr(app.state, "coverage_drain", None)
