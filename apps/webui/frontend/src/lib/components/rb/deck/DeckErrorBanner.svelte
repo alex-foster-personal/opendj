@@ -53,6 +53,14 @@
 		})
 	);
 
+	// The load failure string often has no deck number of its own. The plain
+	// headline starts with "couldn't load", and this banner knows the deck.
+	const shownHeadline = $derived(
+		presentation.headline.startsWith("couldn't load ")
+			? `Deck ${deckId}: ${presentation.headline}`
+			: presentation.headline
+	);
+
 	let copyNote = $state<string | null>(null);
 
 	async function copyReport(): Promise<void> {
@@ -62,7 +70,7 @@
 		const text = buildToastReport({
 			id: errorId,
 			kind: 'error',
-			headline: presentation.headline,
+			headline: shownHeadline,
 			message: error,
 			detail: presentation.detail,
 			classification: diagnostic.classification,
@@ -98,11 +106,11 @@
 	data-performance-error={deckId}
 	data-performance-error-id={errorId}
 	title={errorId === null
-		? presentation.headline
-		: `${presentation.headline}\n\nError id ${errorId} - click to copy full report.`}
+		? shownHeadline
+		: `${shownHeadline}\n\nError id ${errorId} - click to copy full report.`}
 >
 	<button type="button" class="deck-error-body" onclick={() => copyReport()}>
-		<span class="deck-error-text">{presentation.headline}</span>
+		<span class="deck-error-text">{shownHeadline}</span>
 		<span class="deck-error-copy-hint">Click to copy</span>
 		{#if copyNote !== null}
 			<span class="deck-error-copy-note">{copyNote}</span>

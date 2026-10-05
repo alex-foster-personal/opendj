@@ -63,6 +63,7 @@
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
+	import { installSingleHoverTooltip } from '$lib/ui/single-hover-tooltip';
 
 	const visibleToasts = $derived(selectVisibleToasts(toasts));
 
@@ -293,7 +294,9 @@
 			}
 		);
 		const id = setInterval(refreshHealth, 30_000);
+		const uninstallHoverTooltip = installSingleHoverTooltip();
 		return () => {
+			uninstallHoverTooltip();
 			uninstallSettings();
 			uninstallHotkeysOverlay();
 			uninstallQuitGate();
