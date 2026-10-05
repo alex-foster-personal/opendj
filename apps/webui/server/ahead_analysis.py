@@ -48,6 +48,12 @@ Requirements (mini-PRD):
     [if] only one track reproduces it alone [then] that track fails and the lane stays open
   ✔︎ agent parity
     [if] coverage is asked for [then] GET /ahead-analysis/coverage and the CLI agree
+  ✔︎ coverage never waits on a tick (NATIVE-21)
+    [if] a tick is busy [then] coverage answers at once from the last snapshot
+  ✔︎ every phase is bounded
+    [if] a phase outlives its budget [then] it is abandoned with a named log line
+    [if] a phase was abandoned mid-track [then] that track fails, the next tick moves on
+    [if] done ids are needed [then] one query per lane per tick, never one per track
 """
 from __future__ import annotations
 
@@ -67,6 +73,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.process_priority import lowered_priority
+from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
 
 log = logging.getLogger(__name__)
@@ -85,6 +92,19 @@ PAUSED_INTERVAL_S: float = 5.0
 IDLE_INTERVAL_S: float = 60.0
 STOP_JOIN_S: float = 5.0
 QUEUE_TIMEOUT_S: float = 900.0
+#: Budget per tick phase; a phase past it is abandoned with a named log line
+#: (ahead_analysis_phases). Lane runs are bounded per subprocess by
+#: QUEUE_TIMEOUT_S instead, and a timeout there fails the chunk per track.
+PHASE_BUDGETS_S: dict[str, float] = {
+    "playing": 10.0,
+    "present": 180.0,
+    "tags": 120.0,
+    "strip": 300.0,
+    "plan": 180.0,
+    "coverage": 300.0,
+}
+#: How old the served coverage snapshot may get before the loop recomputes it.
+COVERAGE_REFRESH_S: float = 60.0
 NICENESS: int = 19
 #: (lane, backend) in drain order: cheap and visible first.
 LANE_ORDER: tuple[tuple[str, str], ...] = (
@@ -224,6 +244,7 @@ class AheadStatus:
     unavailable: dict[str, str] = field(default_factory=dict)
     last_job: dict[str, Any] | None = None
     updated_at: float | None = None
+    phase_timeouts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -252,7 +273,13 @@ class AheadSources:
 
 
 class AheadDrain:
-    def __init__(self, sources: AheadSources, *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        sources: AheadSources,
+        *,
+        clock: Callable[[], float] = time.time,
+        phase_budgets_s: Mapping[str, float] = PHASE_BUDGETS_S,
+    ) -> None:
         self._src = sources
         self._clock = clock
         self._status = AheadStatus()
@@ -265,6 +292,10 @@ class AheadDrain:
         self._wake = threading.Event()
         self._halt = threading.Event()
         self._thread: threading.Thread | None = None
+        self._phases = PhaseRunner(phase_budgets_s)
+        #: The last computed coverage and when; served as-is by ``coverage()``.
+        self._coverage: dict[str, Any] = {"present": None, "rekordbox_mapped": None, "lanes": {}}
+        self._coverage_at: float | None = None
 
     # --- control ----------------------------------------------------------
     def bump(self, stable_id: str) -> None:
@@ -292,33 +323,71 @@ class AheadDrain:
             return outcome
 
     def _tick(self) -> str:
-        if self._src.playing_fn():
+        """Every step runs as a bounded phase: past its budget it is abandoned
+        (``timeout:<phase>``), and while an abandoned copy is still running the
+        tick says so (``waiting:<phase>``) instead of starting a second one."""
+        try:
+            return self._tick_phases()
+        except PhaseTimeout as exc:
+            self._fail_timed_out_items(exc)
+            return f"timeout:{exc.phase}"
+        except PhaseStillRunning as exc:
+            return f"waiting:{exc.phase}"
+        finally:
+            self._status.phase_timeouts = dict(self._phases.timeouts)
+
+    def _tick_phases(self) -> str:
+        if self._phases.run("playing", self._src.playing_fn):
             return "paused_playing"
         with self._bump_lock:
             bumped = list(self._bumped)
-        present = self._src.present_fn()
-        tag_targets = self._tag_targets(present, bumped)
-        if tag_targets:
-            self._refresh_tags(tag_targets)
-            return "ran:tags"
+        present = self._phases.run("present", self._src.present_fn)
+        for name, phase in ((TAGS_LANE, self._tags_phase), (STRIP_LANE, self._strip_phase)):
+            try:
+                if self._phases.run(name, phase, present, bumped):
+                    return f"ran:{name}"
+            except PhaseStillRunning:
+                continue  # that phase is stuck on its own; later phases still run
+        work = self._phases.run("plan", self._plan_lane_work, present, bumped)
+        if work is None:
+            return "green"
+        lane, chunk = work
+        self._run_lane(lane, dict(LANE_ORDER)[lane], chunk)
+        return f"ran:{lane}"
+
+    def _fail_timed_out_items(self, exc: PhaseTimeout) -> None:
+        """A phase abandoned mid-item fails THAT item, so the next tick moves past it."""
+        reason = f"timed out: {exc}"
+        if exc.phase == TAGS_LANE and isinstance(exc.item, str):
+            self._tags_failed[exc.item] = reason
+        elif exc.phase == STRIP_LANE and isinstance(exc.item, list):
+            self._strip_failed.update(dict.fromkeys(exc.item, reason))
+
+    def _tags_phase(self, present: list[str], bumped: list[str]) -> bool:
+        targets = self._tag_targets(present, bumped)
+        if targets:
+            self._refresh_tags(targets)
+        return bool(targets)
+
+    def _strip_phase(self, present: list[str], bumped: list[str]) -> bool:
         mapped = self._src.mapped_fn(present)
         unmapped = [sid for sid in present if sid not in mapped]
         targets = strip_targets(unmapped, self._src.has_strip_fn, self._strip_failed, bumped)
         if targets:
+            self._phases.mark(STRIP_LANE, targets)
             self._write_strips(targets)
-            return "ran:strip"
-        missing = {
-            lane: [sid for sid in present if sid not in self._src.done_fn(lane, backend)]
-            for lane, backend in LANE_ORDER
-            if lane not in self._status.unavailable
-        }
-        work = next_lane_work(missing, self._lane_failed, self._status.unavailable, bumped)
-        if work is None:
-            return "green"
-        lane, chunk = work
-        backend = dict(LANE_ORDER)[lane]
-        self._run_lane(lane, backend, chunk)
-        return f"ran:{lane}"
+        return bool(targets)
+
+    def _plan_lane_work(self, present: list[str], bumped: list[str]) -> tuple[str, list[str]] | None:
+        # done_fn is one query per lane: read it ONCE, never once per track
+        # (silver, Mon 5 Oct 2026: 2270 x 4 queries a tick took over 11 min).
+        missing: dict[str, list[str]] = {}
+        for lane, backend in LANE_ORDER:
+            if lane in self._status.unavailable:
+                continue
+            done = self._src.done_fn(lane, backend)
+            missing[lane] = [sid for sid in present if sid not in done]
+        return next_lane_work(missing, self._lane_failed, self._status.unavailable, bumped)
 
     def _tag_targets(self, present: list[str], bumped: list[str]) -> list[str]:
         blank = self._src.blank_tags_fn()
@@ -328,6 +397,7 @@ class AheadDrain:
     def _refresh_tags(self, targets: list[str]) -> None:
         errors: dict[str, str] = {}
         for sid in targets:
+            self._phases.mark(TAGS_LANE, sid)
             try:
                 read = self._src.refresh_tags_fn(sid)
             except sqlite3.OperationalError as exc:
@@ -412,21 +482,55 @@ class AheadDrain:
 
     # --- coverage ---------------------------------------------------------
     def coverage(self) -> dict[str, Any]:
+        """The last computed coverage plus the live status. Never queries and
+        never waits on a tick, so the HTTP route answers while a tick is busy.
+        ``computed_at`` is None until the loop has computed it once."""
+        now = self._clock()
+        return {
+            **self._coverage,
+            "state": self._status.state,
+            "strips_written": self._status.strips_written,
+            "tags_refreshed": self._status.tags_refreshed,
+            "lane_batches": self._status.lane_batches,
+            "last_job": self._status.last_job,
+            "phase_timeouts": dict(self._status.phase_timeouts),
+            "computed_at": self._coverage_at,
+            "coverage_age_s": None if self._coverage_at is None else round(now - self._coverage_at, 1),
+        }
+
+    def refresh_coverage(self) -> dict[str, Any]:
+        """Recompute the coverage snapshot (bounded like any phase) and serve it."""
+        computed = self._phases.run("coverage", self._compute_coverage)
+        self._coverage = computed
+        self._coverage_at = self._clock()
+        return self.coverage()
+
+    def _refresh_coverage_if_stale(self) -> None:
+        if self._coverage_at is not None and self._clock() - self._coverage_at < COVERAGE_REFRESH_S:
+            return
+        try:
+            self.refresh_coverage()
+        except (PhaseTimeout, PhaseStillRunning):
+            pass  # named in the log by the phase runner; the old snapshot stays served
+        except Exception:
+            log.exception("ahead analysis: coverage refresh failed; the old snapshot stays served")
+
+    def _compute_coverage(self) -> dict[str, Any]:
         present = self._src.present_fn()
         mapped = self._src.mapped_fn(present)
         unmapped = [sid for sid in present if sid not in mapped]
         blank = self._src.blank_tags_fn()
         lanes: dict[str, Any] = {
             TAGS_LANE: coverage_counts(
-                present, [sid for sid in present if sid not in blank], self._tags_failed
+                present, [sid for sid in present if sid not in blank], dict(self._tags_failed)
             ),
             STRIP_LANE: coverage_counts(
-                unmapped, [sid for sid in unmapped if self._src.has_strip_fn(sid)], self._strip_failed
-            )
+                unmapped, [sid for sid in unmapped if self._src.has_strip_fn(sid)], dict(self._strip_failed)
+            ),
         }
         present_set = set(present)
         for lane, backend in LANE_ORDER:
-            counts = coverage_counts(present, self._src.done_fn(lane, backend), self._lane_failed[lane])
+            counts = coverage_counts(present, self._src.done_fn(lane, backend), dict(self._lane_failed[lane]))
             declined = {
                 sid: why for sid, why in self._src.declined_fn(lane, backend).items() if sid in present_set
             }
@@ -438,16 +542,7 @@ class AheadDrain:
             counts["declined_reasons"] = reasons
             counts["unavailable"] = self._status.unavailable.get(lane)
             lanes[lane] = counts
-        return {
-            "state": self._status.state,
-            "present": len(present),
-            "rekordbox_mapped": len(mapped),
-            "strips_written": self._status.strips_written,
-            "tags_refreshed": self._status.tags_refreshed,
-            "lane_batches": self._status.lane_batches,
-            "lanes": lanes,
-            "last_job": self._status.last_job,
-        }
+        return {"present": len(present), "rekordbox_mapped": len(mapped), "lanes": lanes}
 
     # --- background loop --------------------------------------------------
     def start(self) -> None:
@@ -463,6 +558,7 @@ class AheadDrain:
         if self._thread is not None:
             self._thread.join(timeout=STOP_JOIN_S)
         self._thread = None
+        self._phases.shutdown()
 
     def _loop(self) -> None:
         interval = ACTIVE_INTERVAL_S
@@ -478,9 +574,11 @@ class AheadDrain:
                 self._status.state = "blocked"
                 interval = IDLE_INTERVAL_S
                 continue
+            finally:
+                self._refresh_coverage_if_stale()
             if outcome.startswith("ran:"):
                 interval = ACTIVE_INTERVAL_S
-            elif outcome == "paused_playing":
+            elif outcome == "paused_playing" or outcome.startswith(("timeout:", "waiting:")):
                 interval = PAUSED_INTERVAL_S
             else:
                 interval = IDLE_INTERVAL_S
@@ -514,6 +612,15 @@ def run_lane_via_queue(
     db: str, conn_factory: Callable[[], sqlite3.Connection]
 ) -> Callable[[str, str, list[str]], dict[str, str]]:
     def run(lane: str, backend: str, ids: list[str]) -> dict[str, str]:
+        try:
+            return run_bounded(lane, backend, ids)
+        except subprocess.TimeoutExpired as exc:
+            # A wedged run fails ITS tracks (and the drain reruns them one by
+            # one), never the tick: subprocess.run has already killed it.
+            log.warning("ahead analysis: lane %s queue call timed out after %g s for %s", lane, exc.timeout, ids)
+            return dict.fromkeys(ids, f"queue call timed out after {exc.timeout:g} s")
+
+    def run_bounded(lane: str, backend: str, ids: list[str]) -> dict[str, str]:
         id_args = [arg for sid in ids for arg in ("--stable-id", sid)]
         code, out, err = _queue_cli(
             ["enqueue", "--lane", lane, "--backend", backend, "--note", "ahead-analysis", *id_args], db

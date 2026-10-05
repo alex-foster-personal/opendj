@@ -15,6 +15,7 @@
 		chipTitle
 	} from '$lib/components/cloudsync/cloudsync-view';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
+	import { coalesce } from '$lib/rb/coalesce';
 	import { publishCloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 
 	let status = $state<CloudSyncStatus | null>(null);
@@ -47,6 +48,11 @@
 		}
 	}
 
+	// One status read at a time (PERF-RB-04): a poll or a status-changed event that
+	// lands while a read is in flight runs once after it, never beside it. On the
+	// silver preview each read took over 120 s, so the 30 s interval stacked them.
+	const loadOnce = coalesce(load);
+
 	function closePopover(): void {
 		popoverOpen = false;
 		triggerEl?.focus();
@@ -75,11 +81,11 @@
 	// the chip off) and at once when /cloudsync runs Sync now or saves config.
 	onMount(() => {
 		// LIBM-138: the first read waits for the boot window to close.
-		bootScheduler.defer('cloudsync-chip:load', () => void load());
+		bootScheduler.defer('cloudsync-chip:load', () => void loadOnce());
 		const timer = setInterval(() => {
-			if (!document.hidden) void load();
+			if (!document.hidden) void loadOnce();
 		}, CHIP_POLL_MS);
-		const onStatusChanged = (): void => void load();
+		const onStatusChanged = (): void => void loadOnce();
 		window.addEventListener(STATUS_CHANGED_EVENT, onStatusChanged);
 		return () => {
 			clearInterval(timer);

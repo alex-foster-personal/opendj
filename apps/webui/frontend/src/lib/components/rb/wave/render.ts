@@ -73,6 +73,11 @@ export type { WavePalette } from './cues';
  * Shared by the wavestack rows, deck strip and browser preview strips. */
 export const VOCAL_BLUE = '#4fb2ff';
 
+/** Mid and high bands paint at this alpha over the opaque low band, so the
+ * stacked tri-band reads through itself. Shared with the jog-wheel radial
+ * painter (jog-radial-render.ts) so the two cannot drift apart. */
+export const WAVE_UPPER_BAND_ALPHA = 0.9;
+
 /** Height of the vocal bar layer in CSS px ('2px-ish' per requirement). */
 export const VOCAL_BAR_PX = 2;
 
@@ -501,7 +506,7 @@ function _drawBands(
 	}
 	ctx.fillStyle = palette.low;
 	ctx.fill(lowPath);
-	ctx.globalAlpha = 0.9;
+	ctx.globalAlpha = WAVE_UPPER_BAND_ALPHA;
 	ctx.fillStyle = palette.mid;
 	ctx.fill(midPath);
 	ctx.fillStyle = palette.high;
