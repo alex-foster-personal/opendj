@@ -137,3 +137,30 @@ def test_probe_without_a_running_refresher_persists_inline(
 
     assert all(result.materialised_size == 131 for result in probed.values())
     assert _indexed_sizes(state_db_path, data_dir, paths) == {path: 131 for path in paths}
+
+
+@pytest.mark.requirement("STATE-16")
+def test_library_jobs_listing_answers_while_a_writer_holds_the_lock(tmp_path: Path) -> None:
+    """[if] a writer holds state.db [then] GET /library-jobs is 200 inside busy_timeout, [else stop]."""
+    from apps.analysis import queue_user
+
+    db = tmp_path / "state.db"
+    app = create_app()
+    app.state.analysis_db_path = db
+    app.state.stem_roots = (tmp_path / "stems",)
+    client = TestClient(app)
+    assert client.get("/api/v1/library-jobs", params={"lane": "stems"}).status_code == 200
+    conn = sqlite3.connect(str(db))
+    try:
+        batches = {row[0] for row in conn.execute("SELECT batch_id FROM analysis_queue_batch")}
+    finally:
+        conn.close()
+    assert set(queue_user.USER_BATCH_IDS.values()) <= batches, "the standing batches were not made"
+
+    with _writer_lock_held(db):
+        started = time.monotonic()
+        response = client.get("/api/v1/library-jobs", params={"lane": "stems", "include": "settled"})
+        elapsed = time.monotonic() - started
+
+    assert response.status_code == 200, response.text
+    assert elapsed < state_db.DEFAULT_BUSY_TIMEOUT_S / 2, f"waited {elapsed:.2f}s on the lock"
