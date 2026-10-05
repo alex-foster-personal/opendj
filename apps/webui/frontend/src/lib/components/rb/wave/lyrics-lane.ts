@@ -76,3 +76,36 @@ export function lyricLinesSpanningRange(
 	}
 	return spanning;
 }
+
+//--------------------------------------------------------------- two-row layout
+
+/** Lyric rows over a main wave row (design record: re-skinning
+ * design-widgets, option G, Mon 5 Oct 2026). Entry i sits on row i % 2, so
+ * neighbors never share a row; row centers as a percent of the row height. */
+export const LYRIC_ROW_CENTER_PCT = [32, 68] as const;
+/** Clear pixels kept between two entries sharing a row. */
+export const LYRIC_ENTRY_GAP_PX = 6;
+
+/** One lane entry's row and the widest it may draw before it would reach the
+ * next entry on the SAME row (entry i + 2), as a percent of the lane width.
+ * Infinity when no later entry shares the row. */
+export type LyricLaneSlot = { row: 0 | 1; maxWidthPct: number };
+
+export function lyricLaneSlots(
+	entries: readonly TimedLyricLine[],
+	pitch: number,
+	windowSeconds: number
+): LyricLaneSlot[] {
+	if (!Number.isFinite(pitch) || pitch <= 0 || !Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+		throw new Error('lyricLaneSlots requires positive pitch and windowSeconds');
+	}
+	const pctPerMs = 100 / (windowSeconds * pitch * 1000);
+	return entries.map((entry, index) => {
+		const sameRowNext = entries[index + 2];
+		return {
+			row: (index % 2) as 0 | 1,
+			maxWidthPct:
+				sameRowNext === undefined ? Infinity : (sameRowNext.start_ms - entry.start_ms) * pctPerMs
+		};
+	});
+}

@@ -46,6 +46,10 @@
 	--rb-fs-label: 10px;         /* small control labels */
 	--rb-fs-deck-title: 13px;    /* deck title 12-13px */
 
+	/* -------- lyrics overlay (main wave rows) -------- */
+	--rb-lyric-box-alpha: 0.3;   /* black box behind each lyric word/line */
+	--rb-lyric-outline-px: 1px;  /* black text outline; 0px turns it off */
+
 	/* -------- layout metrics -------- */
 	--rb-topbar-h: 28px;         /* section 1 */
 	--rb-waverow-h: 43px;        /* section 2, per deck row - 2/3 of the old 64px so

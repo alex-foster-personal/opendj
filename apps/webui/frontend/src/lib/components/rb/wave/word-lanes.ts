@@ -45,7 +45,7 @@ export const LANE_FONT_PX = 11;
 export const LANE_CHAR_W_PX = 6.9;
 /** Clear pixels required between two labels sharing a lane. */
 export const LANE_WORD_GAP_PX = 5;
-/** Lanes available over one waveform row (spec: second row when required). */
+/** Lanes over one waveform row; placed words alternate between them. */
 export const LANE_COUNT = 2;
 /** px-per-second quantisation step for the memo key. Pitch moves pxPerS
  * continuously; a 1px/s bucket caps repacks at a handful per fader sweep
@@ -120,9 +120,11 @@ export function bucketPxPerS(pxPerS: number): number {
  * Rules (all in absolute px at `pxPerS`, so the result is window-free):
  *   1. words with a null start_s cannot be placed and are skipped - an
  *      unaligned word has no honest position;
- *   2. a word goes to lane 0 when its onset x clears lane 0's cursor
- *      (previous label's right edge + LANE_WORD_GAP_PX), else lane 1 on the
- *      same test, else it is DROPPED whole;
+ *   2. placed words ALTERNATE lanes (first word lane 0, then 1, 0, ...), so
+ *      neighbors never share a row (design record: re-skinning
+ *      design-widgets, option G); a word whose turn-lane cursor (previous
+ *      label's right edge + LANE_WORD_GAP_PX) is still ahead of its onset x
+ *      is DROPPED whole and the next word takes that lane instead;
  *   3. cursors only advance, so within a lane no two labels can overlap by
  *      construction (the property the unit test sweeps).
  */
@@ -140,6 +142,7 @@ export function assignLanes(
 	let maxWidthPx = 0;
 	let usedLane1 = false;
 	let prevStart = -Infinity;
+	let lastLane = -1;
 	for (const word of words) {
 		if (word.start_s === null) continue;
 		if (word.start_s < prevStart) {
@@ -151,15 +154,10 @@ export function assignLanes(
 		prevStart = word.start_s;
 		const x = word.start_s * pxPerS;
 		const widthPx = estimateLabelWidthPx(word.word, charW);
-		let lane = -1;
-		for (let l = 0; l < LANE_COUNT; l++) {
-			if (x >= cursors[l]) {
-				lane = l;
-				break;
-			}
-		}
-		if (lane === -1) continue; // dropped whole - too dense for both lanes
+		const lane = (lastLane + 1) % LANE_COUNT;
+		if (x < cursors[lane]) continue; // dropped whole - its turn lane is still occupied
 		cursors[lane] = x + widthPx + LANE_WORD_GAP_PX;
+		lastLane = lane;
 		if (widthPx > maxWidthPx) maxWidthPx = widthPx;
 		if (lane === 1) usedLane1 = true;
 		laneWords.push({ word, lane, widthPx });

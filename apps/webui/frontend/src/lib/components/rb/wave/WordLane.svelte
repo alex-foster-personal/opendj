@@ -14,6 +14,7 @@
 <script lang="ts">
 	import type { KaraokeWord } from '$lib/api-karaoke';
 	import { WAVE_WINDOW_S } from './render';
+	import { LYRIC_ROW_CENTER_PCT } from './lyrics-lane';
 	import {
 		assignLanes,
 		activeLaneWordIdx,
@@ -36,8 +37,6 @@
 		pitch: number;
 	} = $props();
 
-	/** Per-lane text box height; two of them fill the 24px root. */
-	const LANE_HEIGHT_PX = 12;
 	/** Witness classes drawn as SUSPECT (render.ts drawLyricLanes contract):
 	 * round-5 calibration showed contradict/lost carry 4.5x the base
 	 * word-timing error rate. Shown dimmer and underlined, never hidden. */
@@ -115,7 +114,8 @@
 				class:suspect={_isSuspect(packed.word.idx)}
 				class:active={packed.word.idx === frame.activeIdx}
 				style:left={`${packed.x}px`}
-				style:top={`${packed.lane * LANE_HEIGHT_PX}px`}
+				style:top={`${LYRIC_ROW_CENTER_PCT[packed.lane]}%`}
+				data-row={packed.lane}
 				title={_wordTitle(packed.word)}
 				aria-current={packed.word.idx === frame.activeIdx ? 'true' : undefined}
 			>{packed.word.word}</span>
@@ -126,20 +126,27 @@
 <style>
 	.word-lane {
 		position: absolute;
-		inset: auto 0 2px;
-		height: 24px;
+		inset: 0;
 		overflow: hidden;
 		pointer-events: none;
 		z-index: 2;
 	}
+	/* Rows alternate (word-lanes.ts assignLanes); box and outline are skin
+	   tokens shared with the line lane. */
 	.lane-word {
 		position: absolute;
-		height: 12px;
-		line-height: 12px;
+		transform: translateY(-50%);
+		padding: 0 2px;
+		line-height: 13px;
 		white-space: nowrap;
 		pointer-events: none;
-		color: color-mix(in srgb, var(--rb-text) 70%, transparent);
-		text-shadow: 0 1px 2px var(--rb-bg);
+		color: color-mix(in srgb, var(--rb-text) 85%, transparent);
+		background: rgb(0 0 0 / var(--rb-lyric-box-alpha));
+		text-shadow:
+			var(--rb-lyric-outline-px) 0 #000,
+			calc(-1 * var(--rb-lyric-outline-px)) 0 #000,
+			0 var(--rb-lyric-outline-px) #000,
+			0 calc(-1 * var(--rb-lyric-outline-px)) #000;
 		transition: color 80ms linear, font-weight 80ms linear;
 	}
 	/* Suspect first, active second: a suspect word at the playhead still
