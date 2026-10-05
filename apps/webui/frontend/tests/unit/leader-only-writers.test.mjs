@@ -295,12 +295,13 @@ test('the silencer runs after every leader-only writer has stopped', async () =>
 	const leadership = fakeLeadership(true);
 	const r = recorder();
 	const order = [];
+	// Installed FIRST, as /performance does, so its listener runs before the gates'.
+	installDemotionSilencer({ leadership, silence: () => order.push('silence') });
 	installBoth(leadership, {
 		...r.deps,
 		installRescueRingWriter: () => () => order.push('rescue writer stopped'),
 		installPlayCounter: () => () => order.push('play counter stopped')
 	});
-	installDemotionSilencer({ leadership, silence: () => order.push('silence') });
 	await flush();
 	leadership.set(false);
 	await flush();

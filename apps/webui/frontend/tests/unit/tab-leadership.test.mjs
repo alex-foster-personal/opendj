@@ -29,7 +29,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const leadershipModule = await loadTypeScriptModule('src/lib/rb/tab-leadership.ts');
 const publisherModule = await loadTypeScriptModule('src/lib/rb/leased-mirror-publisher.ts');
 const orders = await loadTypeScriptModule('src/lib/rb/agent-orders.ts');
-const { createTabLeadership } = leadershipModule;
+const { createTabLeadership, confirmedLeadership, whileLeader } = leadershipModule;
 const { createLeasedMirrorPublisher, decideFollowerClaim, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
 const NEXT = '/api/v1/commands/next';
 
@@ -515,4 +515,20 @@ test('a lock holder is not a confirmed leader until the engine accepts its PUT',
 	await run(3, a, b);
 	assert.equal(b.leadership.isConfirmedLeader(), true);
 	assert.equal(a.leadership.isConfirmedLeader(), false, 'demoted: no longer confirmed');
+});
+
+test('a tab refused by the lease never opens the leader-only gate, not even briefly', async () => {
+	const a = page(fakeLocks(), 'a');
+	await flush();
+	const b = page(fakeLocks(), 'b');
+	let installs = 0;
+	whileLeader(confirmedLeadership(b.leadership), () => {
+		installs += 1;
+		return () => {};
+	});
+	await flush();
+	await run(3, a, b);
+	assert.equal(b.leadership.holdsLocalLock(), true, 'precondition: b holds its own browser lock');
+	assert.equal(installs, 0, 'restore and shared writers never ran in the refused tab');
+	assert.ok(a);
 });
