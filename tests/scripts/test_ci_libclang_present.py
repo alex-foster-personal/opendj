@@ -252,8 +252,8 @@ def test_contracts_job_probes_libclang_before_any_bindgen_build() -> None:
     steps = _contracts_steps()
     probe_at = _step_index(steps, PROBE)
     for builder in (
-        "cargo test --manifest-path apps/audio-engine/Cargo.toml",
-        "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+        "cargo nextest run --manifest-path apps/audio-engine/Cargo.toml",
+        "cargo nextest run --manifest-path apps/desktop/src-tauri/Cargo.toml",
         "make waveform-native-release-check",
     ):
         assert probe_at < _step_index(steps, builder), f"{builder!r} runs before the probe"

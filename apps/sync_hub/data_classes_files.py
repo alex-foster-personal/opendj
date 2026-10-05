@@ -472,6 +472,9 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         ".coverage",
         ".coverage.*",
         "junit-shard-*.xml",  # per-shard JUnit the fast lane uploads to Trunk Flaky Tests
+        # nextest --profile ci writes these at the crate roots (.config/nextest.toml)
+        "apps/desktop/src-tauri/junit.xml",
+        "apps/audio-engine/junit.xml",
         "htmlcov/",
         "coverage-matrix.md",
         "/node_modules/",  # root npm install: @trunkio/launcher (npm run lint / fmt)

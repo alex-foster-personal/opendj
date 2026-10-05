@@ -89,8 +89,8 @@ export interface DeckState {
 	quantize_grid_beats: QuantizeGrid;
 	/** Follow the elected master deck's local PQTZ tempo and phase. */
 	beat_sync_enabled: boolean;
-	/** Keep this deck's audible Camelot key aligned to the elected master.
-	 * When true the KEY SYNC control stays lit and re-applies through syncKey. */
+	/** Operator arm for KEY SYNC. Whether the deck is actually following a
+	 * master right now is keySyncStatus(), which the control lights from. */
 	key_sync_enabled: boolean;
 	/** Preserve source pitch while tempo changes through Signalsmith Stretch. */
 	master_tempo_enabled: boolean;
