@@ -115,6 +115,8 @@ export interface WavePalette {
 	cueOutline: string;
 	/** Phrase chevrons (--rb-text-dim). */
 	phrase: string;
+	/** Vocal-presence bars (--rb-wave-vocal; mono palette: pale blue). */
+	vocal: string;
 }
 
 // cueOutline intentionally reuses `tick` (--rb-text): rather than reading the
@@ -132,7 +134,8 @@ const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueOutline'>, string> = 
 	cueHotCue: '--rb-green',
 	cueLoop: '--rb-orange',
 	cueMemory: '--rb-red',
-	phrase: '--rb-text-dim'
+	phrase: '--rb-text-dim',
+	vocal: '--rb-wave-vocal'
 };
 
 /** Resolve the palette from the .perf-root CSS vars. Fail-fast: a missing

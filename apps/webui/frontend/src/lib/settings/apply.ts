@@ -5,6 +5,7 @@
 import { parseWaveformDesign } from '$lib/rb/waveform-design';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { parseWavePalette } from '$lib/rb/wave-palette';
+import { parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -30,6 +31,8 @@ import {
 	setShowStems,
 	setWaveformDesign,
 	setWavePalette,
+	setUiSkin,
+	setWaveSplitMaster,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -138,6 +141,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'show_stems',
 	'waveform_design',
 	'wave_palette',
+	'ui_skin',
+	'wave_split_master',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -219,6 +224,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.waveform_design;
 		case 'wave_palette':
 			return uiPrefs.wave_palette;
+		case 'ui_skin':
+			return uiPrefs.ui_skin;
+		case 'wave_split_master':
+			return uiPrefs.wave_split_master;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -356,7 +365,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'waveform_design': {
 			const design = parseWaveformDesign(value);
 			if (design === undefined) {
-				throw new Error(`waveform_design must be tri-band|mono|line, got ${String(value)}`);
+				throw new Error(`waveform_design must be tri-band|mono|line|blocks, got ${String(value)}`);
 			}
 			setWaveformDesign(design);
 			return;
@@ -364,9 +373,21 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'wave_palette': {
 			const choice = parseWavePalette(value);
 			if (choice === undefined) {
-				throw new Error(`wave_palette must be rekordbox|legacy, got ${String(value)}`);
+				throw new Error(`wave_palette must be rekordbox|legacy|mono, got ${String(value)}`);
 			}
 			setWavePalette(choice);
+			return;
+		}
+		case 'ui_skin': {
+			const skin = parseUiSkin(value);
+			if (skin === undefined) throw new Error(`ui_skin must be default|mono-dev|light, got ${String(value)}`);
+			setUiSkin(skin);
+			return;
+		}
+		case 'wave_split_master': {
+			const mode = parseWaveSplitMaster(value);
+			if (mode === undefined) throw new Error(`wave_split_master must be auto|on|off, got ${String(value)}`);
+			setWaveSplitMaster(mode);
 			return;
 		}
 		case 'deck_layout': {

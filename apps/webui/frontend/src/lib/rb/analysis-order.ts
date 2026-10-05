@@ -11,7 +11,7 @@
 // asserted directly: stub only startIngestRefresh, and check upsertJob is
 // never invoked on the excluded path.
 
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 import type { AnalysisOrder } from './api-ingest';
 
 // Re-exported so tests/unit/analysis-order.test.mjs can throw a REAL

@@ -1,7 +1,7 @@
 /**
  * Typed client for playlist-set routes (SET-05).
  */
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 import { ApiError, api, unwrap } from '../api/client';
 
 export interface PlaylistSetEntry {

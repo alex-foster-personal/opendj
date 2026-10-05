@@ -35,10 +35,11 @@
 		setDeckLayoutMode,
 		describeTwoDeckToggle,
 		toggleLyricsGlobal,
-		toggleTheme,
+		cycleUiSkin,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
+	import { skinCycleTitle } from '$lib/rb/ui-skin';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
@@ -721,15 +722,19 @@
 	<button
 		type="button"
 		class="tb-icon theme-toggle topbar-slot-utility"
-		class:on={uiPrefs.theme === 'light'}
-		title={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-		onclick={toggleTheme}
+		class:on={uiPrefs.ui_skin === 'light'}
+		data-skin-current={uiPrefs.ui_skin}
+		title={skinCycleTitle(uiPrefs.ui_skin)}
+		aria-label={skinCycleTitle(uiPrefs.ui_skin)}
+		onclick={cycleUiSkin}
 	>
-		{#if uiPrefs.theme === 'dark'}
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
-		{:else}
+		<!-- One glyph per skin: moon = default dark, half disc = Gothic, sun = Light. -->
+		{#if uiPrefs.ui_skin === 'default'}
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
+		{:else if uiPrefs.ui_skin === 'mono-dev'}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2Z" fill="currentColor" /></svg>
+		{:else if uiPrefs.ui_skin === 'light'}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
 		{/if}
 	</button>
 

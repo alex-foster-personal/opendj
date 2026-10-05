@@ -8,7 +8,8 @@
  *   the second, so they cannot overlap
  * [if] a word is the last visible one in its lane [then] it has no cap
  * [if] words are in different lanes [then] one never caps the other
- * [if] a word is drawn [then] it sits on the same 85% backing as a line
+ * [if] a word is drawn [then] it sits on the same backing as a line (since
+ *   decision G, Mon 5 Oct 2026: the black --rb-lyric-box-alpha box and outline)
  * [if] the backing has padding [then] the text still starts on the sung onset
  *
  * Synthetic placeholder words only; no real lyric text.
@@ -76,14 +77,16 @@ function rule(src, selector, until) {
 }
 
 test('the word lane uses the same backing as the line lane', () => {
-	const backingOf = (css) =>
-		css.match(/background:\s*color-mix\(in srgb, var\(--rb-bg\) (\d+)%, transparent\)/);
+	const backingOf = (css) => ({
+		box: css.match(/background:\s*([^;]+);/)?.[1],
+		outline: css.match(/text-shadow:\s*([^;]+);/)?.[1]
+	});
 	const line = backingOf(rule(LINE_LANE, '.lyric-line', '.lyric-line.active'));
 	const word = backingOf(rule(WORD_LANE, '.lane-word', '.lane-word.suspect'));
-	assert.ok(line, 'the line lane backing is the reference');
-	assert.ok(word, 'a word needs a backing mixed from the app background');
-	assert.equal(word[1], line[1], 'both lanes must use one backing opacity');
-	assert.equal(word[1], '85');
+	assert.equal(line.box, 'rgb(0 0 0 / var(--rb-lyric-box-alpha))', 'the line lane backing is the reference');
+	assert.equal(word.box, line.box, 'both lanes must use one backing');
+	assert.ok(line.outline?.includes('var(--rb-lyric-outline-px)'), 'the line lane outline is a skin token');
+	assert.equal(word.outline?.replace(/\s+/g, ' '), line.outline?.replace(/\s+/g, ' '), 'both lanes must use one outline');
 });
 
 test('the word backing clips at its cap and keeps the text on the sung onset', () => {

@@ -31,6 +31,7 @@
 	--rb-wave-mid: #f0a020;      /* waveform mids band - amber */
 	--rb-wave-high: #f4f6f8;     /* waveform highs band - white */
 	--rb-wave-mono: #3d7dd9;     /* mono / line waveform designs */
+	--rb-wave-vocal: #4fb2ff;    /* vocal-presence bars over waveforms */
 	--rb-red: #d0342c;           /* cue markers, position tick */
 	--rb-yellow: #e5c33a;        /* Free licence badge */
 	--rb-select: #1d3f73;        /* selected row highlight */
@@ -45,6 +46,22 @@
 	--rb-fs-browser: 11px;       /* browser table text 10-11px */
 	--rb-fs-label: 10px;         /* small control labels */
 	--rb-fs-deck-title: 13px;    /* deck title 12-13px */
+
+	/* -------- lyrics overlay (main wave rows) -------- */
+	--rb-lyric-box-alpha: 0.3;   /* black box behind each lyric word/line */
+	--rb-lyric-outline-px: 1px;  /* black text outline; 0px turns it off */
+
+	/* -------- skin hooks for colored chrome (mono-dev grays them) -------- */
+	--rb-status-dot-filter: none;      /* library analysis + Err dot grids */
+	--rb-rail-spotify: #35c04f;        /* icon rail source icons */
+	--rb-rail-spotify-arc: transparent;
+	--rb-rail-files: #3d7dd9;
+	--rb-rail-beatport: #8e5bd6;
+	--rb-rail-record: #d0342c;
+	--rb-knob-warn: var(--rb-orange);  /* EQ dial past ~30% throw */
+	--rb-knob-alarm: var(--rb-red);    /* EQ dial past ~50% throw */
+	--rb-artwork-filter: none;         /* mono-dev grays artwork; html-level too, for pages outside .perf-root */
+	--rb-key-compat-border: initial;   /* unset: the compatible-key ring uses the master key's hue */
 
 	/* -------- layout metrics -------- */
 	--rb-topbar-h: 28px;         /* section 1 */
@@ -88,6 +105,7 @@ html[data-theme='light'] .perf-root {
 	--rb-wave-mid: #9a5a00;
 	--rb-wave-high: #4a4f57;
 	--rb-wave-mono: #2166b1;
+	--rb-wave-vocal: #2a76c0;    /* #4fb2ff was 2.07:1 on the light face, under the 3:1 floor */
 	--rb-red: #ad2420;
 	--rb-yellow: #927000;
 	--rb-select: #d6e5f5;
@@ -110,6 +128,177 @@ html[data-theme='light'][data-wave-palette='legacy'] .perf-root {
 	--rb-wave-low: #a44b11;
 	--rb-wave-mid: #2166b1;
 	--rb-wave-high: #3a4653;
+}
+
+/* Mono grayscale waveform palette (skin preview). TS mirror in wave-palette.ts. */
+html[data-wave-palette='mono'] .perf-root {
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #b0b0b0;
+	--rb-wave-high: #f4f4f4;
+	--rb-wave-mono: #cfcfcf;
+	--rb-wave-vocal: #cfe6ff;
+}
+html[data-theme='light'][data-wave-palette='mono'] .perf-root {
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #4a4a4a;
+	--rb-wave-high: #2a2a2a;
+	--rb-wave-mono: #3a3a3a;
+	--rb-wave-vocal: #3f6f9f;
+}
+
+/* -------- skin: mono-dev (preview) --------
+ * Near-black grayscale chrome. Declared after the theme blocks so it wins at
+ * equal specificity; dark-only by design (it repaints light too). Red is kept
+ * for errors and missing-file badges only. Section 1 is pure token overrides;
+ * section 2 overrides shapes the token set has no knob for (radius, gradient
+ * fills, BPM size) and is the list of what resisted the theme. */
+html[data-skin='mono-dev'] {
+	color-scheme: dark;
+}
+html[data-skin='mono-dev'] .perf-root {
+	--rb-bg: #0a0a0a;
+	--rb-panel: #0e0e0e;
+	--rb-panel-raised: #141414;
+	--rb-waverow-secondary: #121212;
+	--rb-border: #2a2a2a;
+	--rb-text: #d6d6d6;
+	--rb-text-dim: #8c8c8c;
+	--rb-accent: #d6d6d6;
+	--rb-accent-glow: transparent;
+	--rb-green: #e8e8e8;
+	--rb-orange: #9a9a9a;
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #b0b0b0;
+	--rb-wave-high: #f4f4f4;
+	--rb-wave-mono: #cfcfcf;
+	--rb-wave-vocal: #cfe6ff;
+	--rb-red: #d0342c;
+	--rb-yellow: #b4b4b4;
+	--rb-select: #262626;
+	--rb-master: #cfcfcf;
+	--rb-master-ink: #0a0a0a;
+	--rb-master-text: #f2f2f2;
+	--rb-font: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+	--rb-fs-browser: 10.5px;
+	--rb-fs-label: 9.5px;
+	/* Split rows (wave_split_master) paint two decks per row: 56px gives each
+	   half 28px; 72px read better but pushed the library off a 1280x800 screen. */
+	--rb-waverow-h: 56px;
+	/* De-colored chrome: status grids, icon rail, EQ dials, key ring. */
+	--rb-status-dot-filter: grayscale(1);
+	--rb-rail-spotify: currentColor;
+	--rb-rail-spotify-arc: var(--rb-panel);
+	--rb-rail-files: currentColor;
+	--rb-rail-beatport: currentColor;
+	--rb-rail-record: currentColor;
+	--rb-knob-warn: #bdbdbd;
+	--rb-knob-alarm: #f4f4f4;
+	--rb-key-compat-border: #f4f4f4;
+	--rb-artwork-filter: grayscale(1) contrast(1.05);
+}
+/* Track artwork in grayscale, color back on hover. Keyed on the artwork
+ * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it
+ * covers the deck header, wavestack summary, library rows and the dedup page
+ * (which sits outside .perf-root, hence the html-level token). */
+html[data-skin='mono-dev'] {
+	--rb-artwork-filter: grayscale(1) contrast(1.05);
+}
+html[data-skin='mono-dev'] img[src*='/artwork'] {
+	filter: var(--rb-artwork-filter);
+	transition: filter 120ms ease-out;
+}
+html[data-skin='mono-dev'] img[src*='/artwork']:hover {
+	filter: none;
+}
+/* section 2: shape overrides (no token exists for these) */
+html[data-skin='mono-dev'] .perf-root :is(button, .rb-knob, .rb-fader-thumb, .slot, .round, .pad) {
+	border-radius: 0;
+}
+html[data-skin='mono-dev'] .perf-root :is(.round, .rb-knob) {
+	background: var(--rb-panel);
+	box-shadow: none;
+}
+html[data-skin='mono-dev'] .perf-root .round {
+	border-color: var(--rb-text-dim);
+}
+html[data-skin='mono-dev'] .perf-root .rb-lit-button.lit {
+	color: var(--rb-bg);
+	box-shadow: none;
+}
+html[data-skin='mono-dev'] .perf-root .rb-fader-track {
+	background: var(--rb-bg);
+}
+html[data-skin='mono-dev'] .perf-root .rb-fader-thumb {
+	background: var(--rb-panel-raised);
+}
+html[data-skin='mono-dev'] .perf-root .readout .bpm {
+	font-size: 22px;
+	font-weight: 500;
+	color: #bdbdbd;
+	letter-spacing: -0.02em;
+}
+
+/* -------- skin: light --------
+ * Warm light chrome, the third stop on the top-bar skin button. Chrome tokens
+ * come from the maintainer's claude.ai "Performance Light Pass" (LIGHT palette); the
+ * 3Band wave bands and master fill/ink keep the light theme's values because
+ * that design predates #4219. Defines every token mono-dev defines, so no
+ * dark value leaks through (tests/unit/skin-cycle-light.test.mjs). Like
+ * mono-dev it wins over either theme. color-scheme is !important because
+ * prefs.svelte.ts writes the theme's color-scheme as an inline style. */
+html[data-skin='light'] {
+	color-scheme: light !important;
+}
+html[data-skin='light'] .perf-root {
+	--rb-bg: #f7f3eb;
+	--rb-panel: #fffdf8;
+	--rb-panel-raised: #eee8dd;
+	--rb-waverow-secondary: #fffdf8;
+	--rb-border: #b8b0a3;
+	--rb-text: #27241f;
+	--rb-text-dim: #5d574e;
+	--rb-accent: #175ea8;
+	--rb-accent-glow: rgba(23, 94, 168, 0.35);
+	--rb-green: #1d7035;
+	--rb-orange: #a44b11;
+	--rb-wave-low: #1d4fa3;
+	--rb-wave-mid: #9a5a00;
+	--rb-wave-high: #4a4f57;
+	--rb-wave-mono: #2166b1;
+	--rb-wave-vocal: #1f6fb0;
+	--rb-red: #ad2420;
+	--rb-yellow: #927000;
+	--rb-select: #d6e5f5;
+	--rb-master: #856500;
+	--rb-master-ink: #fffdf8;
+	--rb-master-text: #7a5c00;
+	--rb-font: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', Roboto,
+		sans-serif;
+	--rb-fs-browser: 11px;
+	--rb-fs-label: 10px;
+	--rb-waverow-h: 43px;
+	--rb-status-dot-filter: none;
+	--rb-rail-spotify: #1d7035;
+	--rb-rail-spotify-arc: transparent;
+	--rb-rail-files: #2166b1;
+	--rb-rail-beatport: #6b3fb0;
+	--rb-rail-record: #ad2420;
+	--rb-knob-warn: var(--rb-orange);
+	--rb-knob-alarm: var(--rb-red);
+	--rb-key-compat-border: initial;
+	--rb-artwork-filter: none;
+}
+/* section 2: deck ground and dividers are component-local dark literals
+ * (performance/+page.svelte); light equivalents from the design's
+ * LIGHT_SURFACES map. Other hardcoded dark wells are PR follow-ups. */
+html[data-skin='light'] .perf-root :is(.deck-area, .deck-col) {
+	background: #efe9dd;
+}
+html[data-skin='light'] .perf-root .deck-col:first-child {
+	border-right-color: var(--rb-border);
+}
+html[data-skin='light'] .perf-root .deck-col:last-child {
+	border-left-color: var(--rb-border);
 }
 
 /* -------- panel chrome -------- */

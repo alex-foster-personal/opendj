@@ -6,7 +6,7 @@
  * the whole-library search request and the load hand-off to the browser.
  */
 import type { DeckId } from './deck-id';
-import type { FileAvailabilityStatus } from './api-rb';
+import type { FileAvailabilityStatus } from './file-availability';
 
 /** The fields the bar shows and the browser's deck-load path needs. */
 export interface CommandBarRow {

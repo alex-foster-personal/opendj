@@ -235,7 +235,7 @@
 	function keyCompatStyle(key: string | null): string | undefined {
 		const base = keyCellStyle(key);
 		if (!keyCompat(key) || masterKeyColor === null) return base;
-		const border = `box-shadow: inset 0 0 0 1px ${masterKeyColor}`;
+		const border = `--key-compat-color: ${masterKeyColor}`;
 		return base === undefined ? border : `${base};${border}`;
 	}
 
@@ -2833,6 +2833,9 @@
 		justify-content: center;
 		padding: 0 2px;
 	}
+	.h-plays .th-label {
+		justify-content: center;
+	}
 	/* The header glyph has a viewBox and no intrinsic size, so without an
 	 * explicit box it stretches to fill its flex label. */
 	.plays-icon {
@@ -2918,6 +2921,19 @@
 		border-radius: 2px;
 		padding-left: 4px;
 		padding-right: 4px;
+	}
+	/* Compatible-key ring as an overlay ABOVE the row separator
+	   (tbody tr::after, z-index 4), so all four sides show; an inset
+	   box-shadow on the td itself lost its bottom edge under it. A skin may
+	   set --rb-key-compat-border (mono-dev: white) over the master key hue. */
+	.c-key.key-compat::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		border-radius: 2px;
+		box-shadow: inset 0 0 0 1px var(--rb-key-compat-border, var(--key-compat-color));
+		pointer-events: none;
 	}
 	.c-key.key-inert {
 		color: var(--rb-text-dim);
