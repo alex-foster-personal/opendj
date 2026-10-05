@@ -13,6 +13,7 @@
  * hello list, the Web Audio only features, and key lock until the engine
  * reports it. When a better engine connects, the controls light up again.
  */
+import { TIP_PARKED_ATTR } from '$lib/ui/single-hover-tooltip';
 import { rustCommandUnsupported } from './rust-mode.svelte';
 
 export const RUST_INERT_TITLE = 'not implemented - see PARITY-TODO';
@@ -59,7 +60,13 @@ function _hold(el: HTMLElement): void {
 		saved.set(el, { title: el.getAttribute('title'), disabled: f.disabled });
 	}
 	if (f.disabled === false) f.disabled = true;
-	if (el.getAttribute('title') !== RUST_INERT_TITLE) el.setAttribute('title', RUST_INERT_TITLE);
+	// A hover tooltip parks `title` on `data-tip` and flags the element. Writing
+	// the inert title back here would undo that park and loop with the observer.
+	if (el.hasAttribute(TIP_PARKED_ATTR)) {
+		if (el.hasAttribute('title')) el.removeAttribute('title');
+	} else if (el.getAttribute('title') !== RUST_INERT_TITLE) {
+		el.setAttribute('title', RUST_INERT_TITLE);
+	}
 	if (el.getAttribute('aria-disabled') !== 'true') el.setAttribute('aria-disabled', 'true');
 }
 
@@ -112,8 +119,15 @@ function _reassert(records: MutationRecord[]): void {
 		const s = saved.get(el);
 		if (s === undefined) continue;
 		const f = el as HTMLElement & { disabled?: boolean };
-		if (r.attributeName === 'title' && el.getAttribute('title') !== RUST_INERT_TITLE) {
-			s.title = el.getAttribute('title');
+		if (r.attributeName === 'title') {
+			const current = el.getAttribute('title');
+			if (el.hasAttribute(TIP_PARKED_ATTR)) {
+				// The cleared title is the hover park, not a new component value.
+				// A real string written during the park is still remembered.
+				if (current !== null && current !== RUST_INERT_TITLE) s.title = current;
+			} else if (current !== RUST_INERT_TITLE) {
+				s.title = current;
+			}
 		}
 		if (r.attributeName === 'disabled' && f.disabled === false) s.disabled = false;
 		_hold(el);
