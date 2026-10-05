@@ -5072,6 +5072,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/state/ui-mirror/lease": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ui Mirror Lease
+         * @description AGENT-18: which page holds the mirror lease (always 200; ``held`` false when none).
+         */
+        get: operations["get_ui_mirror_lease_api_v1_state_ui_mirror_lease_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/bulk-hydrate": {
         parameters: {
             query?: never;
@@ -25836,7 +25856,12 @@ export interface operations {
     publish_ui_mirror_api_v1_state_ui_mirror_put: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description AGENT-18: the publishing page's client id, claiming the mirror lease. */
+                "x-opendj-lease"?: string | null;
+                /** @description AGENT-18: '1' when the operator pressed Take control on this page. */
+                "x-opendj-lease-takeover"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -25854,9 +25879,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -25896,6 +25919,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ui_mirror_lease_api_v1_state_ui_mirror_lease_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
