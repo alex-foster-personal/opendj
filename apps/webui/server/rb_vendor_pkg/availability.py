@@ -157,18 +157,29 @@ def _load_index(
 
 
 def _record_stats(namespace: str, sizes: Mapping[str, int | None], now: float) -> None:
+    """Cache this request's stats in L1, and persist them off the request thread.
+
+    A read request never opens a write connection while the server runs
+    (STATE-16): the running refresher persists the rows, so a writer holding
+    the state.db lock cannot turn ``GET /api/v1/tracks`` into a 503. With no
+    refresher running (CLI, script, no-lifespan test) the rows are written
+    here, as before, because nothing else would write them.
+    """
     if not sizes:
+        return
+    with config._FILE_EXISTS_LOCK:
+        for path, size in sizes.items():
+            config._FILE_EXISTS_CACHE[path] = (now, size)
+    rows = list(sizes.items())
+    if path_availability_refresh.record(namespace, rows):
         return
     if config.STATE_DB.exists():
         conn = state_db.open_rw(config.STATE_DB)
         try:
-            path_index.upsert_rows(conn, namespace, list(sizes.items()))
+            path_index.upsert_rows(conn, namespace, rows)
             conn.commit()
         finally:
             conn.close()
-    with config._FILE_EXISTS_LOCK:
-        for path, size in sizes.items():
-            config._FILE_EXISTS_CACHE[path] = (now, size)
 
 
 def _recent_answers(
