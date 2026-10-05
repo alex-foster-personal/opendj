@@ -14,6 +14,7 @@ from typing import Literal, Protocol
 from apps.cloud import stem_index
 from apps.cloud.lyrics_asr_source import LYRICS_ASR_NOT_FOUND
 from apps.lyrics import cache
+from apps.lyrics.asr_hallucination import ASR_SOURCE, filter_asr_lines
 from apps.lyrics.asr_lines import group_asr_words_into_lines, parse_asr_words
 from apps.lyrics.asr_source import (
     AsrLyricsProvider,
@@ -200,8 +201,8 @@ class LyricsFetchService:
                 ),
             )
             return FetchResult(outcome="instrumental")
-        lines = group_asr_words_into_lines(parsed_words)
-        if not lines:
+        asr_filter = filter_asr_lines(group_asr_words_into_lines(parsed_words))
+        if asr_filter.no_lyrics:
             write_verdict(
                 self.data_dir,
                 FetchVerdict(
@@ -216,7 +217,7 @@ class LyricsFetchService:
                 ),
             )
             return FetchResult(outcome="instrumental")
-        lyrics = Lyrics(track.stable_id, "asr", lines)
+        lyrics = Lyrics(track.stable_id, ASR_SOURCE, asr_filter.kept)
         cache.write(path, lyrics)
         write_verdict(
             self.data_dir,
