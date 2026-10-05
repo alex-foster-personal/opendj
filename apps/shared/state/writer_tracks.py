@@ -170,6 +170,10 @@ class _TrackWriterMixin:
                 )
             if existing is not None and tuple(existing[:-2]) == new_row and not file_is_back:
                 return False
+            # Index 6 is file_path. Judge ownership from the pre-write row:
+            # the stamp below overwrites origin_device_id with this machine,
+            # so the post-write origin cannot say who wrote the path.
+            wrote_path_here = existing is None or existing[6] != file_path
             stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
             if existing is None:
                 conn.execute(
@@ -227,13 +231,21 @@ class _TrackWriterMixin:
                 ts=now,
             )
             self.bus.publish(ev)
-            _locations.sync_primary_local(
+            machine_id = self.machine_id()
+            if _locations.should_attach_local_primary(
                 conn,
                 stable_id=stable_id,
                 file_path=file_path,
-                now=now,
-                machine_id=self.machine_id(),
-            )
+                machine_id=machine_id,
+                wrote_path_here=wrote_path_here,
+            ):
+                _locations.sync_primary_local(
+                    conn,
+                    stable_id=stable_id,
+                    file_path=file_path,
+                    now=now,
+                    machine_id=machine_id,
+                )
         return True
 
     def upsert_track_location(

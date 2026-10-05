@@ -71,6 +71,62 @@ def test_locations_reads_are_scoped_to_the_writing_machine(
     ]
 
 
+def test_synced_foreign_path_does_not_become_a_local_primary(
+    state_conn: sqlite3.Connection, tmp_path: Path,
+) -> None:
+    """A cloud-synced path keeps its origin machine.
+
+    Upserting metadata for a row whose file_path arrived from another
+    machine must not stamp this machine's id on a local primary. A path
+    this machine inserts still gets one.
+    """
+    air_path = "/Users/dev/Music/only-on-air.aiff"
+    state_conn.execute(
+        "INSERT INTO machines(machine_id, name, platform, is_hub, first_seen, "
+        "last_seen) VALUES ('m-air', 'air', 'macos', 0, ?, ?)",
+        (_TS, _TS),
+    )
+    foreign_id = "c" * 40
+    state_conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, title, artists_json, "
+        "file_path, created_at, updated_at, origin_device_id) "
+        "VALUES (?, 'inferred', 'Foreign', '[]', ?, ?, ?, 'm-air')",
+        (foreign_id, air_path, _TS, _TS),
+    )
+    state_conn.commit()
+
+    writer = StateWriter(state_conn, FakeEventBus(), actor="tripwire")
+    local_audio = tmp_path / "written-here.aiff"
+    local_audio.write_bytes(b"local")
+    local_id = "d" * 40
+    try:
+        changed = writer.upsert_track(
+            stable_id=foreign_id, stable_id_tier="inferred", title="Retitled",
+            artists=[], album=None, isrc=None, duration_ms=None,
+            file_path=air_path,
+        )
+        writer.upsert_track(
+            stable_id=local_id, stable_id_tier="inferred", title="Local",
+            artists=[], album=None, isrc=None, duration_ms=None,
+            file_path=str(local_audio),
+        )
+    finally:
+        writer.close()
+
+    assert changed is True
+    mine = sync_stamp.ensure_local_machine(state_conn)
+    foreign_locals = state_conn.execute(
+        "SELECT machine_id FROM track_locations WHERE stable_id = ?",
+        (foreign_id,),
+    ).fetchall()
+    assert foreign_locals == []
+    local_row = state_conn.execute(
+        "SELECT machine_id, role, kind FROM track_locations WHERE stable_id = ?",
+        (local_id,),
+    ).fetchone()
+    assert local_row == (mine, "primary", "local")
+
+
 def test_reprobing_a_location_reuses_its_location_id(
     state_conn: sqlite3.Connection, tmp_path: Path,
 ) -> None:

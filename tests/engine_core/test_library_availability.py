@@ -2175,13 +2175,22 @@ def test_worker_retries_busy_lock_instead_of_failed_phase(
     worker.stop()
 
 
-def test_worker_failed_phase_only_after_retry_budget_exhausted(
+def test_lock_error_on_first_batch_still_checks_every_row(
     data_dir: Path,
     state_db_path: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    _seed_worker_tracks(state_db_path, tmp_path, count=6, prefix="busy-fail-")
+    """A database-locked first batch must not leave the worker idle.
+
+    The first commit attempts raise ``database is locked`` until the retry
+    budget is spent. Every seeded row still gets a ``track_availability``
+    row, and the give-up is logged at error.
+    """
+    stable_ids = _seed_worker_tracks(
+        state_db_path, tmp_path, count=6, prefix="lock-drain-"
+    )
     monkeypatch.setattr(
         "apps.engine_core.library_availability.AVAILABILITY_LOCK_RETRIES",
         2,
@@ -2194,27 +2203,36 @@ def test_worker_failed_phase_only_after_retry_budget_exhausted(
         "apps.engine_core.library_availability._AVAILABILITY_LOCK_BACKOFF_MAX_S",
         0.02,
     )
+    calls = {"n": 0}
+    original = avail.commit_availability_batch
 
-    holder = state_db.open_rw(state_db_path)
-    holder.execute("BEGIN IMMEDIATE")
+    def _locked_first_batch(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise sqlite3.OperationalError("database is locked")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(avail, "commit_availability_batch", _locked_first_batch)
+
     worker = LibraryAvailabilityWorker(data_dir, batch_size=3)
-    worker.start()
+    with caplog.at_level("ERROR"):
+        worker.start()
+        _wait_worker_complete(worker, guard_s=THREAD_HANG_GUARD_S)
+        worker.stop()
 
-    started = time.monotonic()
-    snapshot = worker.status()
-    while time.monotonic() - started < THREAD_HANG_GUARD_S:
-        snapshot = worker.status()
-        if snapshot.phase == "failed":
-            break
-        time.sleep(0.02)
-
-    holder.execute("COMMIT")
-    holder.close()
-    worker.stop()
-
-    assert snapshot.phase == "failed"
-    assert snapshot.last_error is not None
-    assert "lock retries" in snapshot.last_error
+    assert any(
+        "gave up this round" in record.message for record in caplog.records
+    )
+    conn = state_db.open_rw(state_db_path)
+    try:
+        rows = conn.execute(
+            "SELECT stable_id FROM track_availability WHERE stable_id IN "
+            f"({','.join('?' for _ in stable_ids)})",
+            stable_ids,
+        ).fetchall()
+    finally:
+        conn.close()
+    assert {row[0] for row in rows} == set(stable_ids)
 
 
 def test_mid_round_busy_requeues_priority_ids(

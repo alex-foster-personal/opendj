@@ -413,12 +413,17 @@ class LibraryAvailabilityWorker:
                 if isinstance(exc, sqlite3.OperationalError) and not state_db.is_sqlite_busy(exc):
                     raise
                 if attempt + 1 >= AVAILABILITY_LOCK_RETRIES:
-                    log.warning(
-                        "availability worker database locked after %s retries",
+                    # Do not park in "failed". That phase suppresses the
+                    # idle wake, so unchecked rows sit forever until someone
+                    # hands their ids to request_probe. Stay queued, say so
+                    # at error level, and let the loop drain again.
+                    log.error(
+                        "availability worker gave up this round after %s "
+                        "database lock retries; unchecked rows stay queued",
                         AVAILABILITY_LOCK_RETRIES,
                     )
                     with self._lock:
-                        self._status.phase = "failed"
+                        self._status.phase = "queued"
                         self._status.last_error = (
                             f"availability writes blocked after "
                             f"{AVAILABILITY_LOCK_RETRIES} lock retries"
@@ -527,7 +532,10 @@ class LibraryAvailabilityWorker:
                 self._commit_batch(conn, chunk)
             except (sqlite3.OperationalError, state_db.StateStoreBusyError) as exc:
                 if isinstance(exc, state_db.StateStoreBusyError) or state_db.is_sqlite_busy(exc):
-                    self._requeue_priority_ids(round_cursor.priority_taken)
+                    # The whole round, not only the priority subset. The
+                    # cursor is not advanced, and the batch must be offered
+                    # again ahead of later scans.
+                    self._requeue_priority_ids(list(candidate_ids))
                     raise
                 raise
             batches_committed += 1
