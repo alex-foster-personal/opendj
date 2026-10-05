@@ -267,3 +267,28 @@ textarea {
 .toast.error {
   border-color: var(--danger);
 }
+
+/* Replaces the native WKWebView tooltip while a control's title is parked. */
+.single-hover-tip {
+  position: fixed;
+  z-index: 400;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 4px 8px;
+  background: var(--surface-raised);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.single-hover-tip-sr {
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}

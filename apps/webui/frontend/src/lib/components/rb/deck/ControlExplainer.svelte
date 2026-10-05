@@ -1,14 +1,10 @@
 <script lang="ts">
-	// Hover/focus teaching chrome for performance controls. Native `title` stays
-	// on the wrapped control by convention; this popover adds short bullets +
-	// optional SVG demos. UI-only - does not invent engine behavior. Copy must
-	// match audio-engine.
-	//
-	// A caller whose wrapped control would otherwise show BOTH the native
-	// title and this popover at once (the overlap pin dd4f0f5ae33f flagged)
-	// should drop that control's own `title` and keep only `aria-label` -
-	// this component's own `title` prop still reaches screen readers via the
-	// popover's heading and, on slow/no-hover, is unaffected either way.
+	// Hover/focus teaching chrome for performance controls. This popover is the
+	// one visual tooltip. `data-custom-tip` tells the document hover layer
+	// (single-hover-tooltip.ts) to park any live `title` on the control so
+	// WKWebView does not add its native tooltip beside this popover. The
+	// parked string is restored on pointer leave. UI-only. Copy must match
+	// audio-engine.
 	import { onDestroy, onMount, tick } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { placeFloating, type Size } from '$lib/ui/clamp-to-viewport';
@@ -276,6 +272,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	class="explainer"
+	data-custom-tip={hasRich ? '' : undefined}
 	bind:this={wrapEl}
 	onpointerenter={_show}
 	onpointerleave={_hide}

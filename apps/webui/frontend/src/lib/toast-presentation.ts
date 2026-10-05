@@ -6,6 +6,7 @@
  */
 
 import type { ToastDiagnostic } from './toast-error-classification';
+import { deckLoadPlainHeadline, libraryFailureCodeInText, trackTitleBeforeCode } from './rb/deck-load-failure-copy';
 
 export const TOAST_SOLUTION_URL_PLACEHOLDER = 'https://docs.opendj.app/errors/tbd';
 
@@ -83,6 +84,27 @@ function splitDeckLoadMessage(message: string): ToastPresentation | null {
 }
 
 /**
+ * A library load failure whose text still carries `title: CODE: detail`.
+ * The headline is the plain sentence. The raw text stays in `detail` for
+ * click-to-copy. Titles are taken whole, dashes included.
+ */
+function codedLibraryLoadPresentation(message: string): ToastPresentation | null {
+	const code = libraryFailureCodeInText(message);
+	if (code === undefined) return null;
+	const deckMatch = /^Deck (\d)\b/.exec(message);
+	const deck = deckMatch === null ? null : Number(deckMatch[1]);
+	const title = trackTitleBeforeCode(message, code);
+	const headline = deckLoadPlainHeadline(deck, title, code, message);
+	if (headline === null) return null;
+	return {
+		headline,
+		detail: message,
+		rawMessage: message,
+		feature: 'Deck load'
+	};
+}
+
+/**
  * Map a raw toast message into compact on-screen copy.
  */
 function applyDiagnostic(
@@ -103,7 +125,14 @@ function applyDiagnostic(
 	}
 	const detail = detailParts.length > 0 ? detailParts.join('\n') : presentation.detail;
 	let headline = presentation.headline;
+	// A deck-load sentence already names the track. Prefixing the feature
+	// ("Open DJ: 7A") is what cut a Camelot title down to its first fragment
+	// once an earlier split had left only that fragment as the headline.
+	const alreadyNamesTheTrack = /couldn't load "|could not load the track|stopped unexpectedly/i.test(
+		headline
+	);
 	if (
+		!alreadyNamesTheTrack &&
 		feature !== undefined &&
 		feature !== '' &&
 		!headline.toLowerCase().includes(feature.toLowerCase()) &&
@@ -133,6 +162,13 @@ export function formatToastPresentation(input: {
 		return applyDiagnostic(withSolutionHint(input.kind, deckProcessor), input.diagnostic);
 	}
 
+	// Before the generic "Deck N load failed" split. That split drops the
+	// title, and a title may itself contain " - ".
+	const coded = codedLibraryLoadPresentation(rawMessage);
+	if (coded !== null) {
+		return applyDiagnostic(withSolutionHint(input.kind, coded), input.diagnostic);
+	}
+
 	const deckLoad = splitDeckLoadMessage(rawMessage);
 	if (deckLoad !== null) {
 		return applyDiagnostic(withSolutionHint(input.kind, deckLoad), input.diagnostic);
@@ -153,11 +189,15 @@ export function formatToastPresentation(input: {
 	}
 
 	// Long technical strings: keep a short headline, stash the rest for expand.
-	if (rawMessage.length > 96 && rawMessage.includes(' - ')) {
-		const splitAt = rawMessage.indexOf(' - ');
+	// Never split or cut on " - ". A track title is allowed to contain it
+	// ("7A - 6 - Glasswing"), and the first fragment is not the error.
+	if (rawMessage.length > 96) {
+		const newline = rawMessage.indexOf('\n');
+		const splitAt = newline > 0 && newline < 96 ? newline : 93;
+		const headline = newline > 0 && newline < 96 ? rawMessage.slice(0, newline) : `${rawMessage.slice(0, splitAt)}...`;
 		return applyDiagnostic(
 			withSolutionHint(input.kind, {
-				headline: rawMessage.slice(0, splitAt),
+				headline,
 				detail: rawMessage,
 				feature,
 				rawMessage
