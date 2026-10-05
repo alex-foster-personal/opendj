@@ -283,7 +283,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		}
 		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
-		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
+		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w, frame.palette.vocal);
 	}
 	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
 	if (frame.ghostSeekMs !== undefined && frame.ghostSeekMs !== null && frame.ghostSeekVisible === true) {
@@ -748,7 +748,8 @@ function _drawVocals(
 	anlz: AnlzData,
 	tLeft: number,
 	pxPerS: number,
-	w: number
+	w: number,
+	vocalColor: string
 ): void {
 	// Four mandatory states (SPIKE-B1/B2): 'rekordbox' and 'demucs' draw
 	// bars identically (demucs intensity is confidence on the same 1..4
@@ -757,7 +758,7 @@ function _drawVocals(
 	// contract breach must never render as 'no vocals'.
 	const vocals = vocalsOf(anlz);
 	if (vocals.status !== 'rekordbox' && vocals.status !== 'demucs') return;
-	ctx.fillStyle = VOCAL_BLUE;
+	ctx.fillStyle = vocalColor;
 	for (const region of vocals.regions) {
 		const x0 = Math.max(0, (region.start_s - tLeft) * pxPerS);
 		const x1 = Math.min(w, (region.end_s - tLeft) * pxPerS);

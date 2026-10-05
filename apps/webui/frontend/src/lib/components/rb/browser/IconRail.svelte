@@ -33,13 +33,13 @@
 		{ plannedId: 'itunes-library', color: 'currentColor', d: 'M2 3h12v2H2zM4 7h10v2H4zM6 11h8v2H6z', mode: 'fill' },
 		{
 			tip: 'Spotify playlists and acquisition queue',
-			color: '#35c04f',
+			color: 'var(--rb-rail-spotify)',
 			d: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z',
 			mode: 'fill',
 			source: 'spotify'
 		},
-		{ plannedId: 'file-browser', color: '#3d7dd9', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
-		{ plannedId: 'beatport', color: '#8e5bd6', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
+		{ plannedId: 'file-browser', color: 'var(--rb-rail-files)', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
+		{ plannedId: 'beatport', color: 'var(--rb-rail-beatport)', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
 		{ plannedId: 'video-output', color: 'currentColor', d: 'M2 3h12v8H2zM6 12h4v2H6z', mode: 'fill' },
 		{
 			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a)
@@ -63,7 +63,7 @@
 		},
 		{
 			tip: 'Start set recording',
-			color: '#d0342c',
+			color: 'var(--rb-rail-record)',
 			d: 'M8 3a5 5 0 1 1 0 10A5 5 0 1 1 8 3M8 7a1 1 0 1 1 0 2a1 1 0 1 1 0-2',
 			mode: 'stroke',
 			action: 'record'
@@ -71,6 +71,7 @@
 	];
 
 	const SECTIONS: string[] = ['Collection', 'iTunes', 'Devices'];
+	const SPOTIFY_ARCS_D = 'M4.6 6.6C6.8 5.9 9.4 6.1 11.4 7.2M5 8.6C6.8 8.1 8.9 8.3 10.5 9.2M5.4 10.5C6.8 10.1 8.4 10.3 9.6 11';
 </script>
 
 <nav class="rail" aria-label="browser sources">
@@ -97,9 +98,14 @@
 		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
 				{#if icon.mode === 'stroke'}
-					<path d={icon.d} fill="none" stroke={icon.color} stroke-width="1.4" />
+					<path d={icon.d} fill="none" style:stroke={icon.color} stroke-width="1.4" />
 				{:else}
-					<path d={icon.d} fill={icon.color} />
+					<path d={icon.d} style:fill={icon.color} />
+				{/if}
+				{#if icon.source === 'spotify'}
+					<!-- Glyph arcs: transparent by default, the panel color under
+					     mono-dev so the disc reads as the Spotify glyph in rail gray. -->
+					<path class="spotify-arcs" d={SPOTIFY_ARCS_D} fill="none" stroke-width="1.1" stroke-linecap="round" />
 				{/if}
 			</svg>
 		</button>
@@ -132,6 +138,9 @@
 		border: none;
 		color: var(--rb-text-dim);
 		cursor: pointer;
+	}
+	.spotify-arcs {
+		stroke: var(--rb-rail-spotify-arc);
 	}
 	.rail-btn.active {
 		background: var(--rb-panel-raised);

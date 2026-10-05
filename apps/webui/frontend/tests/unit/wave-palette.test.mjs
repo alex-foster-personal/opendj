@@ -206,7 +206,8 @@ describe('#4219 waveform band palette', () => {
 						low: tokens['rb-wave-low'],
 						mid: tokens['rb-wave-mid'],
 						high: tokens['rb-wave-high'],
-						mono: tokens['rb-wave-mono']
+						mono: tokens['rb-wave-mono'],
+						vocal: tokens['rb-wave-vocal']
 					},
 					`${scheme}/${choice}`
 				);
@@ -219,7 +220,8 @@ describe('#4219 waveform band palette', () => {
 			low: '#e8a13a',
 			mid: 'rgba(61, 125, 217, 0.85)',
 			high: 'rgba(207, 224, 242, 0.9)',
-			mono: '#3d7dd9'
+			mono: '#3d7dd9',
+			vocal: '#4fb2ff'
 		});
 		assert.equal(wp.resolveStripBandColors('dark').low, '#2767d8');
 	});

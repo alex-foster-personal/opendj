@@ -31,6 +31,7 @@
 	--rb-wave-mid: #f0a020;      /* waveform mids band - amber */
 	--rb-wave-high: #f4f6f8;     /* waveform highs band - white */
 	--rb-wave-mono: #3d7dd9;     /* mono / line waveform designs */
+	--rb-wave-vocal: #4fb2ff;    /* vocal-presence bars over waveforms */
 	--rb-red: #d0342c;           /* cue markers, position tick */
 	--rb-yellow: #e5c33a;        /* Free licence badge */
 	--rb-select: #1d3f73;        /* selected row highlight */
@@ -49,6 +50,18 @@
 	/* -------- lyrics overlay (main wave rows) -------- */
 	--rb-lyric-box-alpha: 0.3;   /* black box behind each lyric word/line */
 	--rb-lyric-outline-px: 1px;  /* black text outline; 0px turns it off */
+
+	/* -------- skin hooks for colored chrome (mono-dev grays them) -------- */
+	--rb-status-dot-filter: none;      /* library analysis + Err dot grids */
+	--rb-rail-spotify: #35c04f;        /* icon rail source icons */
+	--rb-rail-spotify-arc: transparent;
+	--rb-rail-files: #3d7dd9;
+	--rb-rail-beatport: #8e5bd6;
+	--rb-rail-record: #d0342c;
+	--rb-knob-warn: var(--rb-orange);  /* EQ dial past ~30% throw */
+	--rb-knob-alarm: var(--rb-red);    /* EQ dial past ~50% throw */
+	--rb-artwork-filter: none;         /* mono-dev grays artwork; html-level too, for pages outside .perf-root */
+	--rb-key-compat-border: initial;   /* unset: the compatible-key ring uses the master key's hue */
 
 	/* -------- layout metrics -------- */
 	--rb-topbar-h: 28px;         /* section 1 */
@@ -92,6 +105,7 @@ html[data-theme='light'] .perf-root {
 	--rb-wave-mid: #9a5a00;
 	--rb-wave-high: #4a4f57;
 	--rb-wave-mono: #2166b1;
+	--rb-wave-vocal: #2a76c0;    /* #4fb2ff was 2.07:1 on the light face, under the 3:1 floor */
 	--rb-red: #ad2420;
 	--rb-yellow: #927000;
 	--rb-select: #d6e5f5;
@@ -122,12 +136,14 @@ html[data-wave-palette='mono'] .perf-root {
 	--rb-wave-mid: #b0b0b0;
 	--rb-wave-high: #f4f4f4;
 	--rb-wave-mono: #cfcfcf;
+	--rb-wave-vocal: #cfe6ff;
 }
 html[data-theme='light'][data-wave-palette='mono'] .perf-root {
 	--rb-wave-low: #6a6a6a;
 	--rb-wave-mid: #4a4a4a;
 	--rb-wave-high: #2a2a2a;
 	--rb-wave-mono: #3a3a3a;
+	--rb-wave-vocal: #3f6f9f;
 }
 
 /* -------- skin: mono-dev (preview) --------
@@ -155,6 +171,7 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-wave-mid: #b0b0b0;
 	--rb-wave-high: #f4f4f4;
 	--rb-wave-mono: #cfcfcf;
+	--rb-wave-vocal: #cfe6ff;
 	--rb-red: #d0342c;
 	--rb-yellow: #b4b4b4;
 	--rb-select: #262626;
@@ -167,6 +184,17 @@ html[data-skin='mono-dev'] .perf-root {
 	/* Split rows (wave_split_master) paint two decks per row: 56px gives each
 	   half 28px; 72px read better but pushed the library off a 1280x800 screen. */
 	--rb-waverow-h: 56px;
+	/* De-colored chrome: status grids, icon rail, EQ dials, key ring. */
+	--rb-status-dot-filter: grayscale(1);
+	--rb-rail-spotify: currentColor;
+	--rb-rail-spotify-arc: var(--rb-panel);
+	--rb-rail-files: currentColor;
+	--rb-rail-beatport: currentColor;
+	--rb-rail-record: currentColor;
+	--rb-knob-warn: #bdbdbd;
+	--rb-knob-alarm: #f4f4f4;
+	--rb-key-compat-border: #f4f4f4;
+	--rb-artwork-filter: grayscale(1) contrast(1.05);
 }
 /* Track artwork in grayscale, color back on hover. Keyed on the artwork
  * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it

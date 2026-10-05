@@ -46,6 +46,8 @@ export interface WaveBandColors {
 	high: string;
 	/** Single-color 'mono' / 'line' designs (--rb-wave-mono). */
 	mono: string;
+	/** Vocal-presence bars (--rb-wave-vocal). */
+	vocal: string;
 }
 
 /** Mirrors theme.css: `.perf-root`, `html[data-theme='light'] .perf-root`, and
@@ -54,14 +56,14 @@ export const WAVE_BAND_COLORS: Readonly<
 	Record<WaveScheme, Readonly<Record<WavePaletteChoice, Readonly<WaveBandColors>>>>
 > = {
 	dark: {
-		rekordbox: { low: '#2767d8', mid: '#f0a020', high: '#f4f6f8', mono: '#3d7dd9' },
-		legacy: { low: '#e8a13a', mid: '#3d7dd9', high: '#cfe0f2', mono: '#3d7dd9' },
-		mono: { low: '#6a6a6a', mid: '#b0b0b0', high: '#f4f4f4', mono: '#cfcfcf' }
+		rekordbox: { low: '#2767d8', mid: '#f0a020', high: '#f4f6f8', mono: '#3d7dd9', vocal: '#4fb2ff' },
+		legacy: { low: '#e8a13a', mid: '#3d7dd9', high: '#cfe0f2', mono: '#3d7dd9', vocal: '#4fb2ff' },
+		mono: { low: '#6a6a6a', mid: '#b0b0b0', high: '#f4f4f4', mono: '#cfcfcf', vocal: '#cfe6ff' }
 	},
 	light: {
-		rekordbox: { low: '#1d4fa3', mid: '#9a5a00', high: '#4a4f57', mono: '#2166b1' },
-		legacy: { low: '#a44b11', mid: '#2166b1', high: '#3a4653', mono: '#2166b1' },
-		mono: { low: '#6a6a6a', mid: '#4a4a4a', high: '#2a2a2a', mono: '#3a3a3a' }
+		rekordbox: { low: '#1d4fa3', mid: '#9a5a00', high: '#4a4f57', mono: '#2166b1', vocal: '#2a76c0' },
+		legacy: { low: '#a44b11', mid: '#2166b1', high: '#3a4653', mono: '#2166b1', vocal: '#2a76c0' },
+		mono: { low: '#6a6a6a', mid: '#4a4a4a', high: '#2a2a2a', mono: '#3a3a3a', vocal: '#3f6f9f' }
 	}
 };
 
@@ -91,5 +93,5 @@ export function resolveStripBandColors(
 	choice: WavePaletteChoice = WAVE_PALETTE_DEFAULT
 ): WaveBandColors {
 	const c = resolveWaveBandColors(scheme, choice);
-	return { low: c.low, mid: _rgba(c.mid, 0.85), high: _rgba(c.high, 0.9), mono: c.mono };
+	return { low: c.low, mid: _rgba(c.mid, 0.85), high: _rgba(c.high, 0.9), mono: c.mono, vocal: c.vocal };
 }

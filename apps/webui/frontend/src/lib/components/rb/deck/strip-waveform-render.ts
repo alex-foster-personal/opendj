@@ -16,7 +16,6 @@ import {
 	BLOCK_PITCH_PX,
 	drawLoopRegion,
 	resolveStripWaveformKind,
-	VOCAL_BLUE,
 	vocalAlpha
 } from '../wave/render';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
@@ -133,7 +132,7 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 			frame.bandColors ?? DEFAULT_BAND_COLORS
 		);
 		if (frame.vocals !== null && durationMs !== null && durationMs > 0) {
-			_drawVocalBars(ctx, frame.vocals, durationMs, w);
+			_drawVocalBars(ctx, frame.vocals, durationMs, w, (frame.bandColors ?? DEFAULT_BAND_COLORS).vocal);
 		}
 	}
 	// The loop band is NOT gated on analysis: it overlays the strip rect
@@ -209,11 +208,12 @@ function _drawVocalBars(
 	ctx: CanvasRenderingContext2D,
 	vocals: StripVocals,
 	durationMs: number,
-	widthPx: number
+	widthPx: number,
+	vocalColor: string
 ): void {
 	// rekordbox + demucs render identically; barless states draw nothing.
 	if (vocals.status !== 'rekordbox' && vocals.status !== 'demucs') return;
-	ctx.fillStyle = VOCAL_BLUE;
+	ctx.fillStyle = vocalColor;
 	for (const region of vocals.regions) {
 		const x0 = Math.max(0, ((region.start_s * 1000) / durationMs) * widthPx);
 		const x1 = Math.min(widthPx, ((region.end_s * 1000) / durationMs) * widthPx);
