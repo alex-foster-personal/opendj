@@ -76,7 +76,7 @@ def fresh_state_db(tmp_path: Path) -> Path:
     try:
         for sid, tier, title, artists, album, isrc, dur, fp in [
             ("sid-001", "isrc", "Midnight Drive",
-             ["the maintainer"], "Drive", "USAAA0000001", 240_000,
+             ["Tamsin Quell"], "Drive", "USAAA0000001", 240_000,
              "/music/midnight.mp3"),
             ("sid-002", "fingerprint", "Oxide",
              ["Beta", "Gamma"], "Minerals", None, 312_500,
@@ -156,7 +156,7 @@ class TestRoundTripReads:
         ]
         t1 = page.items[0]
         assert t1.title == "Midnight Drive"
-        assert t1.artist == "the maintainer"
+        assert t1.artist == "Tamsin Quell"
         assert t1.album == "Drive"
         assert t1.duration_ms == 240_000
         assert t1.bpm == 124.0

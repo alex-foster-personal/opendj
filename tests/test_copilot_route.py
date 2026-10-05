@@ -59,7 +59,7 @@ def _seed_track(
 def backend() -> InMemoryBackend:
     """Current 124bpm/8A plus in-window + out-of-window candidates."""
     b = InMemoryBackend()
-    _seed_track(b, "cur-001", title="Midnight Drive", artist="the maintainer",
+    _seed_track(b, "cur-001", title="Midnight Drive", artist="Tamsin Quell",
                 bpm=124.0, key="8A", energy=6)
     # In BPM window (6%): 128/124 = +3.2%, 120/124 = -3.2%, 118 = -4.8%.
     _seed_track(b, "cand-128", title="Oxide", artist="Beta",

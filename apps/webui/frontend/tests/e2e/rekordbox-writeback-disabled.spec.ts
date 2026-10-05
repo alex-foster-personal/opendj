@@ -33,7 +33,7 @@ const REFUSAL = 'sync to rekordbox disabled - one-way import only';
 const BROKEN_TRACK = {
 	stable_id: 'sid-1',
 	title: 'Midnight Drive',
-	artist: 'the maintainer',
+	artist: 'Tamsin Quell',
 	album: 'Nightwork',
 	bpm: 124,
 	key: '8A',

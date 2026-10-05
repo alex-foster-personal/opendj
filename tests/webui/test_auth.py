@@ -450,7 +450,7 @@ def test_identity_maps_google_claims() -> None:
                 {
                     "sub": "1234567890",
                     "email": "maintainer",
-                    "name": "the maintainer",
+                    "name": "Tamsin Quell",
                     "picture": "https://lh3.googleusercontent.com/a/pic",
                 }
             ),

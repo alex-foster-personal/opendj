@@ -27,7 +27,7 @@ function clusterPayload({ decisionAction = null } = {}) {
 						is_canonical: true,
 						similarity: null,
 						title: 'Midnight Drive',
-						artist: 'the maintainer',
+						artist: 'Tamsin Quell',
 						bpm: 124,
 						key: '8A',
 						duration_ms: 210000,

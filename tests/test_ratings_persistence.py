@@ -53,7 +53,7 @@ def state_db_path(tmp_path: Path) -> Path:
                 stable_id=SID,
                 stable_id_tier="isrc",
                 title="Midnight Drive",
-                artists=["the maintainer"],
+                artists=["Tamsin Quell"],
                 album="Drive",
                 isrc="USAAA0000001",
                 duration_ms=240_000,

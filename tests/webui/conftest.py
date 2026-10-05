@@ -96,7 +96,7 @@ def seed_backend() -> InMemoryBackend:
     base = datetime(2026, 4, 17, 10, 0, 0, tzinfo=UTC)
     for i, (title, artist, bpm, key, rating, tags) in enumerate(
         [
-            ("Midnight Drive", "the maintainer", 124.0, "8A", 4, ["deep-house"]),
+            ("Midnight Drive", "Tamsin Quell", 124.0, "8A", 4, ["deep-house"]),
             ("Oxide", "Beta", 128.0, "7A", 3, ["techno"]),
             ("Gulf", "Gamma", 118.0, "5A", 5, ["ambient", "downtempo"]),
             ("Phoenix", "Delta", 140.0, "11A", 2, ["trance"]),

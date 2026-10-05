@@ -135,11 +135,11 @@ def _seed_cluster_db(
 def seeded_backend() -> InMemoryBackend:
     backend = InMemoryBackend()
     backend.seed_track(Track(
-        stable_id="track-canon", title="Midnight Drive", artist="the maintainer",
+        stable_id="track-canon", title="Midnight Drive", artist="Tamsin Quell",
         bpm=124.0, key="8A", duration_ms=210_000, rating=4,
     ))
     backend.seed_track(Track(
-        stable_id="track-alias", title="Midnight Drive (128k)", artist="the maintainer",
+        stable_id="track-alias", title="Midnight Drive (128k)", artist="Tamsin Quell",
         bpm=124.0, key="8A", duration_ms=210_000, rating=None,
     ))
     return backend
@@ -231,7 +231,7 @@ def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
     assert by_id["track-canon"]["similarity"] is None
     assert by_id["track-alias"]["is_canonical"] is False
     assert by_id["track-alias"]["similarity"] == pytest.approx(0.97)
-    assert by_id["track-alias"]["artist"] == "the maintainer"
+    assert by_id["track-alias"]["artist"] == "Tamsin Quell"
     # Neither fixture path exists on disk.
     assert by_id["track-canon"]["file_exists"] is False
     assert by_id["track-alias"]["file_exists"] is False

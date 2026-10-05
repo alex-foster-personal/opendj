@@ -47,12 +47,12 @@ def _seed_state_db(path: Path, *, canon_path: str | None = None,
     try:
         writer.upsert_track(
             stable_id=CANON, stable_id_tier="inferred",
-            title="Midnight Drive", artists=["the maintainer"], album=None,
+            title="Midnight Drive", artists=["Tamsin Quell"], album=None,
             isrc=None, duration_ms=210_000, file_path=canon_path,
         )
         writer.upsert_track(
             stable_id=ALIAS, stable_id_tier="inferred",
-            title="Midnight Drive (128k)", artists=["the maintainer"], album=None,
+            title="Midnight Drive (128k)", artists=["Tamsin Quell"], album=None,
             isrc=None, duration_ms=210_000, file_path=alias_path,
         )
         writer.upsert_track(
