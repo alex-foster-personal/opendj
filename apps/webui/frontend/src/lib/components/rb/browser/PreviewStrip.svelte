@@ -25,6 +25,7 @@
 	import type { WaveformDesign } from '$lib/rb/waveform-design';
 	import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { effectiveWaveformDesign, effectiveWavePalette } from '$lib/rb/ui-skin';
 	import { drawStripPreviewBands } from '../deck/strip-waveform-render';
 	import {
 		drawLoopCueBands,
@@ -123,9 +124,9 @@
 	});
 
 	$effect(() => {
-		const design = uiPrefs.waveform_design;
+		const design = effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		if (canvas && strip !== null && revealed) {
-			const bandColors = resolveStripBandColors(uiPrefs.theme, uiPrefs.wave_palette);
+			const bandColors = resolveStripBandColors(uiPrefs.theme, effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
 			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors);
 		}
 	});

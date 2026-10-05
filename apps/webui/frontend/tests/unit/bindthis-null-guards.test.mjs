@@ -358,7 +358,8 @@ test('PreviewStrip.svelte: draw effect does not call _draw once canvas has unmou
 			vocals: null,
 			duration_ms: 0,
 			dpr: 1,
-			uiPrefs: { waveform_design: 'tri-band' },
+			uiPrefs: { waveform_design: 'tri-band', ui_skin: 'default' },
+			effectiveWaveformDesign: (pref) => pref,
 			_draw
 		})
 	);

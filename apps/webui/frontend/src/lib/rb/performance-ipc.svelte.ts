@@ -119,9 +119,16 @@ import {
 	setWaveSplitMaster,
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
-import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
-import { parseWavePalette, type WavePaletteChoice } from '$lib/rb/wave-palette';
-import { parseUiSkin, parseWaveSplitMaster, type UiSkin, type WaveSplitMaster } from '$lib/rb/ui-skin';
+import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
+import { parseWavePalettePref, type WavePaletteChoice, type WavePalettePref } from '$lib/rb/wave-palette';
+import {
+	effectiveWaveformDesign,
+	effectiveWavePalette,
+	parseUiSkin,
+	parseWaveSplitMaster,
+	type UiSkin,
+	type WaveSplitMaster
+} from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -238,8 +245,8 @@ export type PerformanceCommand =
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
-	| { type: 'set_waveform_design'; design: WaveformDesign }
-	| { type: 'set_skin'; ui_skin: UiSkin; wave_palette: WavePaletteChoice; wave_split_master: WaveSplitMaster }
+	| { type: 'set_waveform_design'; design: WaveformDesignPref }
+	| { type: 'set_skin'; ui_skin: UiSkin; wave_palette: WavePalettePref; wave_split_master: WaveSplitMaster }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
@@ -496,9 +503,13 @@ export interface PerformanceState {
 	};
 	ui: {
 		show_stems: boolean;
-		waveform_design: WaveformDesign;
+		/** Stored pref; 'auto' follows the skin. */
+		waveform_design: WaveformDesignPref;
+		/** What the waveforms actually paint (auto resolved through the skin). */
+		waveform_design_effective: WaveformDesign;
 		ui_skin: UiSkin;
-		wave_palette: WavePaletteChoice;
+		wave_palette: WavePalettePref;
+		wave_palette_effective: WavePaletteChoice;
 		wave_split_master: WaveSplitMaster;
 	};
 }
@@ -1329,7 +1340,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'set_skin') {
 		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
 		const ui_skin = parseUiSkin(record.ui_skin);
-		const wave_palette = parseWavePalette(record.wave_palette);
+		const wave_palette = parseWavePalettePref(record.wave_palette);
 		const wave_split_master = parseWaveSplitMaster(record.wave_split_master);
 		if (ui_skin === undefined || wave_palette === undefined || wave_split_master === undefined) {
 			throw new TypeError('set_skin requires ui_skin, wave_palette and wave_split_master');
@@ -1338,7 +1349,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
-		const design = parseWaveformDesign(record.design);
+		const design = parseWaveformDesignPref(record.design);
 		if (design === undefined) throw new TypeError('design is required');
 		return { type, design };
 	}
@@ -1928,8 +1939,10 @@ export function queryPerformanceState(): PerformanceState {
 		ui: {
 			show_stems: uiPrefs.show_stems,
 			waveform_design: uiPrefs.waveform_design,
+			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
 			wave_palette: uiPrefs.wave_palette,
+			wave_palette_effective: effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin),
 			wave_split_master: uiPrefs.wave_split_master
 		}
 	};
