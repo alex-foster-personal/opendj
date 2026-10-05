@@ -859,7 +859,8 @@ export function setWaveSplitMaster(next: WaveSplitMaster): void {
  * its matching waveform look in any browser; `?skin=default` reverts. An
  * unknown value throws via parseUiSkin rather than silently ignoring it. */
 function _applySkinFromUrl(): void {
-	if (typeof window === 'undefined') return;
+	// SSR has no window; unit-test window stubs have no location. Neither has a URL to read.
+	if (typeof window === 'undefined' || window.location === undefined) return;
 	const raw = new URLSearchParams(window.location.search).get('skin');
 	if (raw === null) return;
 	const skin = parseUiSkin(raw) as UiSkin;
