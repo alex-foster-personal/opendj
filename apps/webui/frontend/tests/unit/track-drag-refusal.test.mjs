@@ -104,6 +104,12 @@ test('the drag start actually consults it, and does not refuse in silence', () =
 	);
 	assert.match(fn, /trackDragRefusal\(/, 'the drag start no longer asks why');
 	assert.match(fn, /onrefused|pushToast/, 'a refused drag says nothing to the user');
+	const stored = fn.slice(fn.indexOf('beginTrackDrag('));
+	assert.match(
+		stored,
+		/file_availability:\s*row\.file_availability/,
+		'the deck drop rechecks this snapshot, so a present row must keep its status'
+	);
 });
 
 /**

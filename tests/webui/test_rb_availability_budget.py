@@ -166,7 +166,8 @@ def test_list_playlists_all_stale_index_zero_stats(
 ) -> None:
     """[if] tree summary with all-stale index [then ⛔️] zero filesystem stats."""
     client, data_dir, state_db_path = availability_client
-    _sids, paths = _seed_library(state_db_path, track_count=3)
+    sids, paths = _seed_library(state_db_path, track_count=3)
+    _mark_availability(state_db_path, sids, paths)
     _seed_index(
         state_db_path,
         data_dir,
@@ -319,6 +320,21 @@ def test_bulk_file_size_tree_summary_never_stats(
     assert probed[str(path)].status == "AVAILABILITY_PENDING"
 
 
+def _mark_availability(state_db_path: Path, sids: list[str], paths: list[str]) -> None:
+    """Checked rows: the tree may trust the index. Unchecked rows must not."""
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for sid, path in zip(sids, paths, strict=True):
+            conn.execute(
+                "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) "
+                "VALUES (?, 'present', ?, ?)",
+                (sid, path, ISO),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _seed_alternates(state_db_path: Path, sids: list[str], *, present: bool) -> list[str]:
     """Point each track's primary path at a missing file and give it one
     ``track_locations`` alternate (a real file when ``present``)."""
@@ -423,7 +439,8 @@ def test_tree_summary_refreshes_stale_entries_in_background(
     """[if] the tree summary serves a stale index answer [then ⛔️] that path is
     queued for refresh, so the TTL still bounds how long the count can lag."""
     client, data_dir, state_db_path = availability_client
-    _sids, paths = _seed_library(state_db_path, track_count=3)
+    sids, paths = _seed_library(state_db_path, track_count=3)
+    _mark_availability(state_db_path, sids, paths)
     _seed_index(state_db_path, data_dir, [(p, 256) for p in paths[:2]], stale=True)
     _seed_index(state_db_path, data_dir, [(paths[2], 256)], stale=False)
     calls = _stat_spy(monkeypatch)

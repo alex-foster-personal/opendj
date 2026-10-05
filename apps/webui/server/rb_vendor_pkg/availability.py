@@ -33,6 +33,7 @@ from apps.adapters.rekordbox.paths import is_streaming_path, resolve_asset_path
 from apps.shared import fs_residency, remote_status
 from apps.shared.state import db as state_db
 from apps.shared.state import locations as track_locations
+from apps.shared.state.locations import ID_BIND_BATCH
 
 from .. import path_availability_refresh
 from . import path_index
@@ -312,19 +313,25 @@ def sids_without_availability_row(stable_ids: Sequence[str]) -> set[str]:
     if not wanted or not config.STATE_DB.exists():
         return set(wanted)
     conn = _open_ro(config.STATE_DB, "STATE_DB")
+    known: set[str] = set()
     try:
-        placeholders = ",".join("?" for _ in wanted)
-        try:
-            rows = conn.execute(
-                "SELECT stable_id FROM track_availability "
-                f"WHERE stable_id IN ({placeholders})",
-                wanted,
-            ).fetchall()
-        except Exception:
-            return set(wanted)
+        # One placeholder per id blows past SQLITE_LIMIT_VARIABLE_NUMBER
+        # (999 on the packaged build). Playlist detail passes the whole
+        # membership; chunk at the same bound as other bulk id lookups.
+        for start in range(0, len(wanted), ID_BIND_BATCH):
+            chunk = wanted[start : start + ID_BIND_BATCH]
+            placeholders = ",".join("?" for _ in chunk)
+            try:
+                rows = conn.execute(
+                    "SELECT stable_id FROM track_availability "
+                    f"WHERE stable_id IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+            except Exception:
+                return set(wanted)
+            known.update(row[0] for row in rows)
     finally:
         conn.close()
-    known = {row[0] for row in rows}
     return {sid for sid in wanted if sid not in known}
 
 

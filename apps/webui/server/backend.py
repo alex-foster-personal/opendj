@@ -714,8 +714,10 @@ class InMemoryBackend:
 
     def stats(self) -> dict[str, Any]:
         with self._mutex:
+            # No track_availability table here. The health contract counts
+            # only rows confirmed present, so an in-memory track is not playable.
             return {"tracks": len(self._tracks),
-                    "tracks_playable": len(self._tracks),
+                    "tracks_playable": 0,
                     "playlists": len(self._playlists),
                     "pairings": len(self._pairings)}
 

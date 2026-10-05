@@ -77,7 +77,16 @@ test('a remote copy takes precedence over an absent local file, so cloud-only is
 });
 
 test('a remote row is not classed broken the way a missing local file is', () => {
-	assert.match(source, /row\.is_remote !== true/);
+	assert.match(source, /class:broken=\{rowRendersUnavailable\(row\)\}/);
+	const wire = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/browser-row-wire.ts', import.meta.url)),
+		'utf8'
+	);
+	const fn = wire.slice(
+		wire.indexOf('export function rowRendersUnavailable'),
+		wire.indexOf('export function libraryAudioLoadRefusal')
+	);
+	assert.match(fn, /row\.is_remote === true\) return false/);
 });
 
 test('local-only uses a crossed-out cloud instead of the old blank cell', () => {

@@ -1324,6 +1324,7 @@
 		beginTrackDrag(ids, {
 			[row.stable_id]: {
 				file_exists: row.file_exists,
+				file_availability: row.file_availability,
 				is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
 			}
 		});
