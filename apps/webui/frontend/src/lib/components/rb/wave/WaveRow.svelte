@@ -7,7 +7,7 @@
 	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
-		queryPerformanceState,
+		queryWaveformSeekArmed,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { hasTrustedBeatGrid } from '$lib/player/grid-features';
@@ -196,7 +196,7 @@
 	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
 
 	const showStems = $derived(uiPrefs.show_stems);
-	const waveformSeekArmed = $derived(queryPerformanceState().decks[deckId].waveform_seek_armed);
+	const waveformSeekArmed = $derived(queryWaveformSeekArmed(deckId));
 	const masterDownbeatOverlay = $derived.by(() =>
 		masterDownbeatOverlayForDeck({
 			beatSyncMax: uiPrefs.beat_sync_max,

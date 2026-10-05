@@ -470,7 +470,9 @@ let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
-let _masterMode: MasterMode = 'auto';
+// $state so a narrow `queryMasterMode()` derived updates on lock/unlock
+// without riding every transport tick (PERF-GRID-03).
+let _masterMode: MasterMode = $state('auto');
 let _masterReason: MasterReason = null;
 /**
  * #1475 M enforcement: a static gain ceiling, not a limiter. `_ceilingDbfs` is
