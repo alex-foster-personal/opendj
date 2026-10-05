@@ -4244,11 +4244,13 @@
 	}
 	.library-health:hover .health-popover,
 	.library-health:focus-within .health-popover { display: block; }
+	/* Regular weight in the UI font (the maintainer, Mon 5 Oct 2026: "bolded, which is
+	   incorrect"). The shipped Anybody subset is weight 800 only, so the brand
+	   face cannot draw this regular; it stays on the bold titles. */
 	.wordmark {
-		font-family: var(--rb-font-brand);
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
-		font-weight: 600;
+		font-weight: 400;
 		letter-spacing: 0.5px;
 	}
 	.grip {
