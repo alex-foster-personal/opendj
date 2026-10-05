@@ -98,6 +98,7 @@ import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 import {
 	applyUiSkinDom,
+	nextUiSkin,
 	parseUiSkin,
 	parseWaveSplitMaster,
 	UI_SKIN_DEFAULT,
@@ -912,6 +913,14 @@ export function setUiSkin(next: UiSkin): void {
 	uiPrefs.ui_skin = next;
 	applyUiSkinDom(next);
 	_persist();
+}
+
+/** Top-bar skin button: advance to the next skin in UI_SKIN_CHOICES order and
+ * wrap. Same write path as Settings > UI skin and the set_skin command. */
+export function cycleUiSkin(): UiSkin {
+	const next = nextUiSkin(uiPrefs.ui_skin);
+	setUiSkin(next);
+	return next;
 }
 
 export function setWaveSplitMaster(next: WaveSplitMaster): void {

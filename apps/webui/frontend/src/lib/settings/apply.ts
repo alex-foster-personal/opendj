@@ -380,7 +380,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'ui_skin': {
 			const skin = parseUiSkin(value);
-			if (skin === undefined) throw new Error(`ui_skin must be default|mono-dev, got ${String(value)}`);
+			if (skin === undefined) throw new Error(`ui_skin must be default|mono-dev|light, got ${String(value)}`);
 			setUiSkin(skin);
 			return;
 		}
