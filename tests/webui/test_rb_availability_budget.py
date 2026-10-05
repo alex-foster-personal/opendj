@@ -225,7 +225,20 @@ def test_restart_serves_index_before_probe(
         "apps.webui.server.routes.playlists.rb_vendor.playlist_order_index",
         dict,
     )
-    _sids, paths = _seed_library(state_db_path, track_count=4)
+    sids, paths = _seed_library(state_db_path, track_count=4)
+    # A checked row (track_availability present) still answers from a fresh
+    # index. Unchecked rows stat; that case is LIBM-167.
+    conn = state_db.open_rw(state_db_path)
+    try:
+        for sid, path in zip(sids, paths, strict=True):
+            conn.execute(
+                "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) "
+                "VALUES (?, 'present', ?, ?)",
+                (sid, path, ISO),
+            )
+        conn.commit()
+    finally:
+        conn.close()
     _seed_index(
         state_db_path,
         data_dir,

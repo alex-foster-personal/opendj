@@ -366,7 +366,7 @@
 		<div class="topbar">
 			<div class="status-strip" data-testid="header-status-strip">
 				{#if health.data}
-					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
+					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks, health.data.state_db.tracks_playable ?? 0)}>{health.data.state_db.tracks} tracks ({health.data.state_db.tracks_playable ?? 0} playable)</span>
 					<span class="sep" aria-hidden="true"> · </span>
 					<span class="readout readout-numeric" title={headerPlaylistCountTitle(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
 					<span class="sep" aria-hidden="true"> · </span>

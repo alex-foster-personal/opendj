@@ -715,6 +715,7 @@ class InMemoryBackend:
     def stats(self) -> dict[str, Any]:
         with self._mutex:
             return {"tracks": len(self._tracks),
+                    "tracks_playable": len(self._tracks),
                     "playlists": len(self._playlists),
                     "pairings": len(self._pairings)}
 

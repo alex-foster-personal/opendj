@@ -6,11 +6,28 @@
  * budgeted, typed lane: `file_availability` is one of present / absent /
  * streaming / awaiting_volume / AVAILABILITY_PENDING, and `file_exists` is a
  * bool for every settled status and null ONLY while availability is pending.
- * The mapper enforces exactly that pairing: a pending row with null loads
- * (a big playlist has hundreds of them on a cold index), while null on a
- * settled row, or a missing status, still fails loudly as a broken backend
- * contract rather than being guessed into "missing" or "present".
+ * The mapper enforces exactly that pairing: a pending row carries null
+ * file_exists. Loading that row is refused (the load is not the probe);
+ * null on a settled row, or a missing status, still fails loudly as a
+ * broken backend contract rather than being guessed into "missing" or
+ * "present".
  */
+
+/** Why this row must not reach a deck, or null when its audio is present. */
+export function libraryAudioLoadRefusal(row: {
+	file_exists: boolean | null;
+	file_availability?: string | null;
+	is_streaming?: boolean | null;
+}): string | null {
+	if (row.is_streaming === true || row.file_availability === 'streaming') {
+		return 'streaming track - deck load not implemented (see PARITY-TODO)';
+	}
+	if (row.file_availability === 'present' && row.file_exists === true) return null;
+	if (row.file_exists === false || row.file_availability === 'absent') {
+		return 'cannot load: audio file missing on disk (broken link)';
+	}
+	return 'cannot load: audio on this machine has not been confirmed';
+}
 import {
 	decodePreviewStrip,
 	parseStemSummary,

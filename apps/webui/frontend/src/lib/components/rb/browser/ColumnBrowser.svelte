@@ -202,11 +202,14 @@
 							<div
 								class="row"
 								class:selected={selectedId === row.stable_id}
-								class:broken={row.file_exists === false}
+								class:broken={row.file_exists === false ||
+									row.file_availability === 'AVAILABILITY_PENDING'}
 								class:pending={row.file_availability === 'AVAILABILITY_PENDING'}
-								title={row.file_availability === 'AVAILABILITY_PENDING'
-									? 'availability still checking (wait for disk probe)'
-									: undefined}
+								title={row.file_exists === false
+									? 'cannot load: audio file missing on disk (broken link)'
+									: row.file_availability === 'AVAILABILITY_PENDING'
+										? 'cannot load: audio on this machine has not been confirmed'
+										: undefined}
 								role="button"
 								tabindex="0"
 								onclick={() => _selectTrack(row)}

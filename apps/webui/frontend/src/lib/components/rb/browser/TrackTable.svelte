@@ -1881,17 +1881,21 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={row.file_exists === false &&
-							row.file_availability !== 'AVAILABILITY_PENDING' &&
+						class:broken={(row.file_exists === false ||
+							row.file_availability === 'AVAILABILITY_PENDING') &&
+							row.file_availability !== 'streaming' &&
 							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
+							row.file_availability !== 'awaiting_volume' &&
 							row.is_remote !== true &&
 							row.spotify_pending !== true &&
 							!row.stable_id.startsWith('spotify-pending:')}
 						class:rb-row-availability-pending={row.file_availability ===
 							'AVAILABILITY_PENDING'}
-						title={row.file_availability === 'AVAILABILITY_PENDING'
-							? 'availability still checking (wait for disk probe)'
-							: undefined}
+						title={row.file_exists === false
+							? 'cannot load: audio file missing on disk (broken link)'
+							: row.file_availability === 'AVAILABILITY_PENDING'
+								? 'cannot load: audio on this machine has not been confirmed'
+								: undefined}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}

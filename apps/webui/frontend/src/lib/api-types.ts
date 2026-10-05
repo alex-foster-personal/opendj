@@ -10471,6 +10471,11 @@ export interface components {
             playlists: number;
             /** Tracks */
             tracks: number;
+            /**
+             * Tracks Playable
+             * @default 0
+             */
+            tracks_playable?: number;
         };
         /** HealthSyncthing */
         HealthSyncthing: {

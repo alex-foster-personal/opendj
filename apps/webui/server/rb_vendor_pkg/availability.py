@@ -187,11 +187,17 @@ def bulk_probe_paths(
     *,
     probe_mode: AvailabilityProbeMode = AvailabilityProbeMode.ROW_HYDRATION,
     budget: ProbeBudget | None = None,
+    trust_index: bool = True,
 ) -> dict[str, PathProbeResult]:
     """Disk truth or ``AVAILABILITY_PENDING`` for each unique local path.
 
     ``budget`` is the request's shared allowance; without one, a fresh
     budget for ``probe_mode`` is used (one call = one request).
+
+    ``trust_index`` is false for tracks with no ``track_availability`` row.
+    A copied ``path_availability`` index can mark another machine's path
+    present with no stat here; those paths spend a budgeted stat, or come
+    back pending. They are never reported present from the index alone.
     """
     wanted = list(dict.fromkeys(p for p in paths if p))
     if not wanted:
@@ -203,7 +209,8 @@ def bulk_probe_paths(
     if not rest:
         return out
     namespace = path_index.resolver_namespace(config.DATA_DIR)
-    stat_now, background = _triage(rest, _load_index(namespace, rest), budget, out)
+    index = _load_index(namespace, rest) if trust_index else {}
+    stat_now, background = _triage(rest, index, budget, out)
     sizes = {path: _stat_size(resolve_asset_path(path).resolved) for path in stat_now}
     out.update((path, _size_result(size)) for path, size in sizes.items())
     _record_stats(namespace, sizes, now)
@@ -295,21 +302,66 @@ def _is_present(result: PathProbeResult | None) -> bool:
     return result is not None and result.status == "present"
 
 
+def sids_without_availability_row(stable_ids: Sequence[str]) -> set[str]:
+    """Stable ids with no ``track_availability`` row (unchecked).
+
+    No row is unknown, not present. A missing table or database treats every
+    id as unchecked so a listing cannot promote it from an index hit.
+    """
+    wanted = list(dict.fromkeys(sid for sid in stable_ids if sid))
+    if not wanted or not config.STATE_DB.exists():
+        return set(wanted)
+    conn = _open_ro(config.STATE_DB, "STATE_DB")
+    try:
+        placeholders = ",".join("?" for _ in wanted)
+        try:
+            rows = conn.execute(
+                "SELECT stable_id FROM track_availability "
+                f"WHERE stable_id IN ({placeholders})",
+                wanted,
+            ).fetchall()
+        except Exception:
+            return set(wanted)
+    finally:
+        conn.close()
+    known = {row[0] for row in rows}
+    return {sid for sid in wanted if sid not in known}
+
+
 def classify_rows(
     folder_by_sid: Mapping[str, str | None],
     probed: Mapping[str, PathProbeResult],
     budget: ProbeBudget,
+    *,
+    distrust_index_sids: set[str] | None = None,
 ) -> dict[str, FileAvailabilityStatus]:
     """Status per stable_id, consulting ``track_locations`` alternates for
     every row whose primary path is not already known present. Alternates
-    draw on the SAME ``budget`` the primaries used."""
+    draw on the SAME ``budget`` the primaries used.
+
+    ``distrust_index_sids`` (unchecked rows) probe alternates with a real
+    stat. A fresh index hit is not enough to call them present.
+    """
+    distrust = distrust_index_sids or set()
     awaiting = _awaiting_volume(folder_by_sid)
     primary = _primary_results(folder_by_sid, probed, awaiting)
     unresolved = [sid for sid, result in primary.items() if not _is_present(result)]
     alternates = _location_paths(unresolved)
-    alt_probed = bulk_probe_paths(
-        (path for paths in alternates.values() for path in paths), budget=budget
-    )
+    trusted = [
+        path
+        for sid, paths in alternates.items()
+        if sid not in distrust
+        for path in paths
+    ]
+    forced = [
+        path
+        for sid, paths in alternates.items()
+        if sid in distrust
+        for path in paths
+    ]
+    alt_probed = bulk_probe_paths(trusted, budget=budget)
+    if forced:
+        alt_probed.update(bulk_probe_paths(forced, budget=budget, trust_index=False))
     return {
         sid: classify_availability(
             path,
@@ -334,5 +386,6 @@ __all__ = [
     "classify_availability",
     "classify_rows",
     "local_paths",
+    "sids_without_availability_row",
     "status_to_file_exists",
 ]
