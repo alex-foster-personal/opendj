@@ -16,7 +16,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let mod;
 
 before(async () => {
-	mod = await loadTypeScriptModule('src/lib/player/key/key-sync-status.ts');
+	mod = await loadTypeScriptModule('src/lib/player/key/camelot.ts');
 });
 
 function decks(overrides) {

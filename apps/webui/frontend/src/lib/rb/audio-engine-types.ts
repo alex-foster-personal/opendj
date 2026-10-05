@@ -86,9 +86,6 @@ export interface AudioEngine {
 	setSlip(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Shift the loaded deck by exactly one semitone. */
 	nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void>;
-	/** Align the loaded deck to the elected loaded master using the documented
-	 * deterministic Camelot harmonic policy. */
-	syncKey(deck: DeckId): Promise<void>;
 	/** Arm KEY SYNC on/off. While armed and a loaded keyed master exists, the
 	 * deck follows that master's audible key through every master change
 	 * (keySyncStatus 'following'); otherwise it waits, unlit. A manual key

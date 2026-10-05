@@ -43,7 +43,7 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
-import type { KeySyncStatus } from '$lib/player/key/key-sync-status';
+import type { KeySyncStatus } from '$lib/player/key/camelot';
 import { assertHeadDelayMs } from '$lib/player/constants';
 import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {

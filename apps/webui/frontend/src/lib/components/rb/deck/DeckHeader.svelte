@@ -20,7 +20,7 @@
 	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
-	import { keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/key-sync-status';
+	import { keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/camelot';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';

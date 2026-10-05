@@ -402,6 +402,17 @@ test('a manual nudge on the follower disengages KEY SYNC instead of being undone
 	assert.equal(deck(2).key_shift_semitones, shift + 1);
 });
 
+test('a refused out-of-range nudge leaves KEY SYNC armed (PR #5404 Devin P2)', async () => {
+	await loadPair();
+	for (let i = 0; i < 12; i += 1) await audio.engine.nudgeKey(2, 1);
+	assert.equal(deck(2).key_shift_semitones, 12);
+	await audio.engine.setKeySync(2, true);
+	assert.equal(audio.keySyncStatus(2), 'waiting-no-master');
+	await assert.rejects(audio.engine.nudgeKey(2, 1));
+	assert.equal(deck(2).key_sync_enabled, true, 'a nudge that never applied must not disarm');
+	assert.equal(deck(2).key_shift_semitones, 12);
+});
+
 test('turning KEY SYNC off restores the pre-sync manual shift', async () => {
 	await followDeck1();
 	await audio.engine.nudgeKey(1, 1);
