@@ -45,7 +45,9 @@ test('if KEY SYNC is clicked then behavior stays on the existing onKeySync IPC p
 	const block = chromeBlock();
 	const keySyncIdx = block.indexOf('class="rb-lit-button keysync"');
 	assert.notEqual(keySyncIdx, -1, 'no KEY SYNC button in .chrome');
-	const keySyncSlice = block.slice(keySyncIdx, keySyncIdx + 600);
+	const buttonEnd = block.indexOf('</button>', keySyncIdx);
+	assert.notEqual(buttonEnd, -1, 'KEY SYNC button never closed');
+	const keySyncSlice = block.slice(keySyncIdx, buttonEnd);
 	assert.match(
 		keySyncSlice,
 		/onclick=\{async \(\) => await onKeySync\(\)\}/,
@@ -58,5 +60,26 @@ test('if deck header renders on 1280px width then chrome nowrap keeps transport 
 		header,
 		/\.chrome\s*\{[^}]*flex-wrap:\s*nowrap/,
 		'if deck header renders on 1280px width then KEY SYNC must not wrap transport controls off the chrome row'
+	);
+});
+
+test('if KEY SYNC is armed but not following then the button is not lit (DECKUX-34)', () => {
+	const block = chromeBlock();
+	const keySyncIdx = block.indexOf('class="rb-lit-button keysync"');
+	const keySyncSlice = block.slice(keySyncIdx, block.indexOf('</button>', keySyncIdx));
+	assert.match(
+		keySyncSlice,
+		/class:lit=\{keySyncState === 'following'\}/,
+		'if KEY SYNC lights from the arm instead of the follow status then it can show ON over a wrong key'
+	);
+	assert.doesNotMatch(
+		keySyncSlice,
+		/class:lit=\{deck\.key_sync_enabled\}/,
+		'if KEY SYNC lights from key_sync_enabled then a waiting arm reads as following'
+	);
+	assert.match(
+		keySyncSlice,
+		/disabled=\{pending \|\| \(!keySyncAvailable && !deck\.key_sync_enabled\)\}/,
+		'if an armed KEY SYNC with no master is disabled then the operator cannot disarm it'
 	);
 });

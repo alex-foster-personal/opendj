@@ -272,9 +272,10 @@
 		return WAVE_ICON_XS.map((x, i) => `${x},${row.cy + row.offsets[i]}`).join(' ');
 	}
 
-	/** Gear (settings) icon: 8 square teeth radiating off the ring so the
-	 * glyph reads as a mechanical cog, not a sun with rays. */
-	const GEAR_TOOTH_ANGLES: number[] = [0, 45, 90, 135, 180, 225, 270, 315];
+	/** Settings gear: the industry-standard cog outline (Lucide "settings",
+	 * ISC licence). The earlier 8 square teeth read as a sun at 12px. */
+	const SETTINGS_GEAR_PATH =
+		'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z';
 
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
@@ -743,18 +744,20 @@
 		aria-label="Open settings"
 		onclick={() => openSettings()}
 	>
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<circle cx="6" cy="6" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3" />
-			{#each GEAR_TOOTH_ANGLES as angle (angle)}
-				<rect
-					x="5.15"
-					y="0.6"
-					width="1.7"
-					height="1.7"
-					fill="currentColor"
-					transform={`rotate(${angle} 6 6)`}
-				/>
-			{/each}
+		<svg
+			class="settings-gear"
+			width="13"
+			height="13"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d={SETTINGS_GEAR_PATH} />
+			<circle cx="12" cy="12" r="3" />
 		</svg>
 	</button>
 
