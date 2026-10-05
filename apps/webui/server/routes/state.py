@@ -9,6 +9,7 @@ and freezes with the page.
 """
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from fastapi.responses import JSONResponse
 from apps.webui.server.headphone_reports import client_id_of, headphone_reports
 
 router = APIRouter(prefix="/state", tags=["agent-state"])
+_LOG = logging.getLogger(__name__)
 
 # AGENT-18: one writer per engine. A page that sends the lease header claims the
 # mirror for LEASE_TTL_S; a different leased writer is refused with 409 until the
@@ -46,6 +48,27 @@ def _live_lease(request: Request) -> MirrorLease | None:
     if lease.expires_monotonic <= monotonic():
         return None
     return lease
+
+
+def _published_at(document: dict[str, Any] | None) -> datetime | None:
+    value = None if document is None else document.get("published_at")
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _refuse(body: dict[str, Any], reason: str, extra: dict[str, Any]) -> JSONResponse:
+    _LOG.warning(
+        "ui-mirror PUT refused: reason=%s client_id=%s published_at=%s %s",
+        reason,
+        body.get("client_id"),
+        body.get("published_at"),
+        extra,
+    )
+    return JSONResponse(status_code=409, content={"accepted": False, "reason": reason, **extra})
 
 
 def _lease_body(lease: MirrorLease | None) -> dict[str, Any]:
@@ -90,6 +113,25 @@ async def publish_ui_mirror(
     ),
 ) -> dict[str, bool] | JSONResponse:
     """Replace the page's current screen document with strict JSON input."""
+    # AGENT-18: a snapshot older than the live one is a stale or out-of-order
+    # write (a dead page's queued PUT, a slow fetch overtaken by a newer one).
+    # It never replaces fresher state. Once the stored one is older than the
+    # lease TTL, any writer may replace it, so browser clock skew cannot wedge it.
+    current_doc = _mirror_store(request)
+    new_at, old_at = _published_at(body), _published_at(current_doc)
+    stored_age_s = monotonic() - getattr(request.app.state, "ui_mirror_received_monotonic", float("-inf"))
+    if (
+        takeover != "1"
+        and new_at is not None
+        and old_at is not None
+        and new_at < old_at
+        and stored_age_s < LEASE_TTL_S
+    ):
+        return _refuse(
+            body,
+            "stale_snapshot",
+            {"stored_published_at": old_at.isoformat()},
+        )
     if lease_id is not None:
         if lease_id == "" or body.get("client_id", lease_id) != lease_id:
             return JSONResponse(
@@ -98,14 +140,12 @@ async def publish_ui_mirror(
             )
         current = _live_lease(request)
         if current is not None and current.holder != lease_id and takeover != "1":
-            return JSONResponse(
-                status_code=409,
-                content={"accepted": False, "reason": "lease_held", **_lease_body(current)},
-            )
+            return _refuse(body, "lease_held", _lease_body(current))
         request.app.state.ui_mirror_lease = MirrorLease(lease_id, monotonic() + LEASE_TTL_S)
     stored = deepcopy(body)
     stored["received_at"] = _received_at()
     request.app.state.ui_mirror = stored
+    request.app.state.ui_mirror_received_monotonic = monotonic()
     # CUEOUT-18: the mirror stays last-writer-wins; the headphone state is
     # also kept per reporting client, so one tab cannot overwrite another's.
     mixer = body.get("mixer")
