@@ -34,6 +34,7 @@ import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
+import { rowRendersUnavailable } from './browser-row-wire';
 import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
@@ -89,6 +90,8 @@ export interface BrowserRow extends Pick<
 	genre_guess?: { family: string; confidence: number; source: 'jev' } | null;
 	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
 	file_exists: boolean | null;
+	/** Path the listing probed (state file_path, or rekordbox FolderPath). */
+	file_path?: string | null;
 	/** Typed disk-truth lane; pending rows are neither playable nor broken. */
 	file_availability: FileAvailabilityStatus;
 	/** Venue-rung quality, inline on every row from the SAME stat pass.
@@ -493,16 +496,13 @@ export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from 
  * into the pure module's SearchableTrack shape (resolving the rb_meta genre
  * fallback here, since that fallback is BrowserRow-specific).
  *
- * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
- * hide-broken: they are intentional unmatched placeholders, not broken links.
- * Pending rows (file_exists null, PERF-RB-02) stay visible: nothing showed them missing. */
+ * Streaming / Spotify-pending rows stay visible under hide-broken: they are
+ * intentional unmatched placeholders, not broken links. Unavailable rows
+ * (absent, or unchecked / pending) use the same predicate as the greyed row. */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
-	const base = hideBroken
-		? rows.filter(
-				(r) => r.file_exists !== false || r.is_streaming === true || r.spotify_pending === true
-			)
-		: rows;
+	// The Broken checkbox is the inverse of hideBroken: unticked hides these rows.
+	const base = hideBroken ? rows.filter((r) => !rowRendersUnavailable(r)) : rows;
 	if (query.trim() === '') return base;
 	return base.filter((r) =>
 		matchesSearchQuery(

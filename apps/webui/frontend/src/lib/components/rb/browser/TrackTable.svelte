@@ -114,6 +114,7 @@
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackRowPopovers, { type PlaylistsMenuAnchor, type RelocateMenuAnchor } from './TrackRowPopovers.svelte';
 	import { trackCloudView } from './track-cloud-state';
+	import { rowRendersUnavailable } from './browser-row-wire';
 	import CloudStatusIcon from './CloudStatusIcon.svelte';
 	import MinorIssueSquare from './MinorIssueSquare.svelte';
 	import SortArrowIcon from './SortArrowIcon.svelte';
@@ -1833,6 +1834,8 @@
 						spotifyPending: row.spotify_pending === true,
 						provider: row.streaming_provider,
 						folderPath: row.rb_meta?.folder_path ?? null,
+						filePath: row.file_path ?? row.rb_meta?.folder_path ?? null,
+						fileAvailability: row.file_availability,
 						transfer:
 							row.cloud_transfer === null || row.cloud_transfer === undefined
 								? null
@@ -1881,14 +1884,7 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={(row.file_exists === false ||
-							row.file_availability === 'AVAILABILITY_PENDING') &&
-							row.file_availability !== 'streaming' &&
-							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
-							row.file_availability !== 'awaiting_volume' &&
-							row.is_remote !== true &&
-							row.spotify_pending !== true &&
-							!row.stable_id.startsWith('spotify-pending:')}
+						class:broken={rowRendersUnavailable(row)}
 						class:rb-row-availability-pending={row.file_availability ===
 							'AVAILABILITY_PENDING'}
 						title={row.file_exists === false

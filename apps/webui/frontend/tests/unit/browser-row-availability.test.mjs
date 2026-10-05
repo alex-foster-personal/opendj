@@ -17,7 +17,8 @@
  *   cold playlist never loads -> broken
  * - if null is accepted on a SETTLED row, or a row without file_availability
  *   loads, then a broken backend contract is silently guessed -> broken
- * - if hide-broken hides pending rows then most of a cold playlist vanishes
+ * - if hide-broken keeps an unchecked row then the Broken checkbox and the
+ *   grey row disagree (LIBM-167): unticked Broken hides pending and absent
  * - if deck load / preview / drag call a pending row "missing on disk" then
  *   the operator goes hunting for a file that is fine -> broken
  * - if deck load / preview / drag refuse a pending row at all then a new
@@ -80,7 +81,7 @@ describe('a playlist with more than 16 pending rows loads', () => {
 		assert.equal(pendingOf(rows).length, 24);
 	});
 
-	it('hide-broken keeps pending rows and still drops a missing one', () => {
+	it('hide-broken drops pending and absent rows and keeps present ones', () => {
 		const rows = captured.map((w, i) => wire.rowFromPlaylistWire(w, i + 1));
 		const missing = clone(captured[0]);
 		missing.stable_id = 'sid-missing';
@@ -88,8 +89,10 @@ describe('a playlist with more than 16 pending rows loads', () => {
 		missing.file_availability = 'absent';
 		rows.push(wire.rowFromPlaylistWire(missing, rows.length + 1));
 		const visible = contract.filterRows(rows, '', true);
-		assert.equal(visible.length, 40);
+		assert.equal(visible.length, 16);
+		assert.ok(visible.every((r) => r.file_availability === 'present'));
 		assert.ok(!visible.some((r) => r.stable_id === 'sid-missing'));
+		assert.equal(contract.filterRows(rows, '', false).length, 41);
 	});
 });
 
@@ -123,13 +126,13 @@ describe('the mapper still refuses a broken contract', () => {
 	});
 });
 
-// Pin c90b8036d495: a pending row is a row nobody has stat'ed yet, which is
-// not a reason to refuse it. The load itself is the probe.
-describe('pending rows load; only a known-absent file is refused', () => {
-	it('drag allows a pending row', () => {
+// An unchecked row is not playable. Drag refuses it the same way a deck load
+// does. A known-absent file still says missing on disk.
+describe('pending rows are refused; a known-absent file says missing', () => {
+	it('drag refuses a pending row', () => {
 		const row = wire.rowFromPlaylistWire(pendingOf(captured)[0], 1);
 		assert.equal(row.file_exists, null);
-		assert.equal(refusal.trackDragRefusal(row), null);
+		assert.match(refusal.trackDragRefusal(row), /not been confirmed/);
 	});
 
 	it('drag still calls an absent row missing (control)', () => {
@@ -154,16 +157,16 @@ test('BrowserPanel maps through the shared module and never refuses a pending ro
 	assert.ok(!panel.includes('function _rowFromListWire('), 'a private mapper came back');
 	assert.match(panel, /rowFromPlaylistWire as _rowFromPlaylistWire/);
 	assert.ok(!panel.includes(PENDING_PHRASE), 'a pending row is refused with a toast again');
-	// The missing-file refusal is still there (control), and it fires on a
-	// KNOWN-absent file only: `!row.file_exists` would call a pending row
+	// The missing-file refusal lives in the shared predicate module and fires
+	// on a KNOWN-absent file only: `!row.file_exists` would call a pending row
 	// (file_exists null) missing.
-	for (const missingPhrase of [MISSING_LOAD, MISSING_PREVIEW]) {
-		const at = panel.indexOf(missingPhrase);
-		assert.ok(at > 0, missingPhrase);
-		const guard = panel.slice(panel.lastIndexOf('if (', at), at);
-		assert.match(guard, /row\.file_exists === false/, missingPhrase);
-	}
-	assert.ok(!panel.includes('!row.file_exists'), 'a null file_exists reads as missing');
+	const wireSrc = read('src/lib/components/rb/browser/browser-row-wire.ts');
+	const at = wireSrc.indexOf(MISSING_LOAD);
+	assert.ok(at > 0, MISSING_LOAD);
+	const guard = wireSrc.slice(wireSrc.lastIndexOf('if (', at), at);
+	assert.match(guard, /row\.file_exists === false/);
+	assert.ok(!wireSrc.includes('!row.file_exists'), 'a null file_exists reads as missing');
+	assert.ok(!panel.includes(MISSING_PREVIEW), 'preview toast duplicated the shared refusal');
 	const support = read('src/lib/components/rb/browser/browser-panel-support.ts');
 	assert.match(support, /rowFromPlaylistWire.*from '\.\/browser-row-wire'/);
 });
@@ -172,9 +175,10 @@ test('BrowserPanel maps through the shared module and never refuses a pending ro
 test('pending rows are styled and titled as pending in both browser views', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /class:rb-row-availability-pending=/);
-	assert.match(table, /availability still checking \(wait for disk probe\)/);
+	assert.match(table, /class:broken=\{rowRendersUnavailable\(row\)\}/);
+	assert.match(table, /cannot load: audio on this machine has not been confirmed/);
 	const column = read('src/lib/components/rb/browser/ColumnBrowser.svelte');
-	assert.match(column, /class:broken=\{row\.file_exists === false\}/);
+	assert.match(column, /class:broken=\{rowRendersUnavailable\(row\)\}/);
 	assert.match(column, /class:pending=/);
 });
 

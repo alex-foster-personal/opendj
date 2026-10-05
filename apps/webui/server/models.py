@@ -317,6 +317,9 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_availability: FileAvailabilityStatus
     file_exists: bool | None
+    # Path this row's availability check looked at (rekordbox FolderPath, else
+    # the state-layer file_path). The cloud icon titles it when unavailable.
+    file_path: str | None = None
     is_streaming: bool
     # CHROME-02: which service streams this row (null when not streaming), so
     # an unmapped streaming row whose rb-meta never loads still shows its icon.

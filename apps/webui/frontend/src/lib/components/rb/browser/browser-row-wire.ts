@@ -13,6 +13,33 @@
  * "present".
  */
 
+/**
+ * The greyed library row and the Broken checkbox share this predicate.
+ * True for no audio on this machine: an absent file, or an unchecked row
+ * (`AVAILABILITY_PENDING`, including one whose local path was not present).
+ * Streaming, Spotify placeholders, a pulled stick, and awaiting-volume rows
+ * stay out: they are not broken links.
+ */
+export function rowRendersUnavailable(row: {
+	file_exists: boolean | null;
+	file_availability?: string | null;
+	is_streaming?: boolean | null;
+	is_remote?: boolean | null;
+	spotify_pending?: boolean | null;
+	stable_id?: string;
+	rb_meta?: { is_streaming?: boolean | null } | null;
+}): boolean {
+	const streaming =
+		row.file_availability === 'streaming' ||
+		row.is_streaming === true ||
+		row.rb_meta?.is_streaming === true;
+	if (streaming) return false;
+	if (row.spotify_pending === true) return false;
+	if (typeof row.stable_id === 'string' && row.stable_id.startsWith('spotify-pending:')) return false;
+	if (row.file_availability === 'awaiting_volume' || row.is_remote === true) return false;
+	return row.file_exists === false || row.file_availability === 'AVAILABILITY_PENDING';
+}
+
 /** Why this row must not reach a deck, or null when its audio is present. */
 export function libraryAudioLoadRefusal(row: {
 	file_exists: boolean | null;
@@ -121,6 +148,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		loudness_status: wire.loudness_status ?? 'ok',
 		loudness_reason: wire.loudness_reason ?? null,
 		...availability,
+		file_path: typeof wire.file_path === 'string' ? wire.file_path : null,
 		is_streaming: wire.is_streaming,
 		is_remote: wire.is_remote === true,
 		has_remote_copy: wire.has_remote_copy === true,
@@ -194,6 +222,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		bpm_confidence: track.bpm_confidence ?? null,
 		bpm_confidence_error: track.bpm_confidence_error ?? null,
 		...availability,
+		file_path: typeof track.file_path === 'string' ? track.file_path : null,
 		// CHROME-02 wire flag, with the listing's own availability verdict
 		// (issue #3934) winning when it already says streaming.
 		is_streaming: listRowIsStreaming(availability.file_availability) ?? track.is_streaming ?? null,
