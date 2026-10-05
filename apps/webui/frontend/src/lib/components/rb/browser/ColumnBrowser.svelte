@@ -16,6 +16,7 @@
 </script>
 
 <script lang="ts">
+	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
 	// Column view (browser-surface unit, Miller-column lane, PlaylistTree's
 	// long-inert 'Column View' tab). Self-contained like PlaylistTree's
 	// smartlist fetch: this component fetches the WHOLE library (artist +
@@ -118,7 +119,11 @@
 	// broken track can't still surface as an otherwise-empty artist/album
 	// bucket.
 	const visibleRows = $derived<ColumnTrackRow[]>(
-		rows === null ? [] : uiPrefs.hide_broken_links ? rows.filter((r) => r.file_exists !== false) : rows
+		rows === null
+			? []
+			: uiPrefs.hide_broken_links
+				? rows.filter((r) => !rowRendersUnavailable(r))
+				: rows
 	);
 	const artistList = $derived<ColumnBucket[]>(artistBuckets(visibleRows));
 	const albumList = $derived<ColumnBucket[]>(albumBuckets(visibleRows, artist));
@@ -202,11 +207,9 @@
 							<div
 								class="row"
 								class:selected={selectedId === row.stable_id}
-								class:broken={row.file_exists === false}
+								class:broken={rowRendersUnavailable(row)}
 								class:pending={row.file_availability === 'AVAILABILITY_PENDING'}
-								title={row.file_availability === 'AVAILABILITY_PENDING'
-									? 'availability still checking (wait for disk probe)'
-									: undefined}
+								title={libraryRowHoverTitle(row)}
 								role="button"
 								tabindex="0"
 								onclick={() => _selectTrack(row)}

@@ -10471,6 +10471,11 @@ export interface components {
             playlists: number;
             /** Tracks */
             tracks: number;
+            /**
+             * Tracks Playable
+             * @default 0
+             */
+            tracks_playable: number;
         };
         /** HealthSyncthing */
         HealthSyncthing: {
@@ -14162,6 +14167,8 @@ export interface components {
             file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
             file_exists: boolean | null;
+            /** File Path */
+            file_path?: string | null;
             /** Genre */
             genre: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
@@ -15938,6 +15945,8 @@ export interface components {
             file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
             /** File Exists */
             file_exists: boolean | null;
+            /** File Path */
+            file_path?: string | null;
             /** Genre */
             genre: string | null;
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;

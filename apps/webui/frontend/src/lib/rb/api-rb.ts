@@ -418,6 +418,8 @@ export interface PlaylistTrackRowWire {
 	preview_max: number | null;
 	file_availability: FileAvailabilityStatus;
 	file_exists: boolean | null;
+	/** Location the listing probed. Optional on older payloads. */
+	file_path?: string | null;
 	is_streaming: boolean;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
