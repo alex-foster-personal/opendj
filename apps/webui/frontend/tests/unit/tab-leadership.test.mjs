@@ -420,9 +420,11 @@ test('decideFollowerClaim: the claim rules, each with its control', () => {
 test('two browsers: a playing follower takes over from an idle leader within one lease period', async () => {
 	const idle = page(fakeLocks(), 'idle-chrome');
 	await flush();
-	const playing = page(fakeLocks(), 'agent-pane', { playing: true });
+	const playing = page(fakeLocks(), 'agent-pane');
 	await flush();
 	assert.equal(engine.lease.holder, 'idle-chrome', 'precondition: the idle tab got there first');
+	assert.equal(playing.role(), 'follower', 'precondition: refused while it was idle');
+	playing.tabState.playing = true;
 	const startedAt = clockMs;
 	let tookMs = null;
 	for (let i = 0; i < 10 && tookMs === null; i += 1) {
