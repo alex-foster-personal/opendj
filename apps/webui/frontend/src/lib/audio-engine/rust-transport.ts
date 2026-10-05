@@ -146,7 +146,7 @@ async function _join(
 	});
 	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
 	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
-		cmds.push({ type: 'seek', deck: follower, position_ms: join.positionMs });
+		cmds.push({ type: 'seek', deck: follower, position_ms: join.positionMs, quantize: false });
 	}
 	if (options.play) cmds.push({ type: 'play', deck: follower, playing: true });
 	// Sent together: the engine applies what arrives before its next block
@@ -379,7 +379,7 @@ async function _pressCue(deck: DeckId): Promise<void> {
 		const target = st.cue_ms ?? 0;
 		cancelArmedJump(deck);
 		await Promise.all([
-			send({ type: 'seek', deck, position_ms: target }),
+			send({ type: 'seek', deck, position_ms: target, quantize: false }),
 			send({ type: 'play', deck, playing: false })
 		]);
 		_setPlaying(deck, false);
@@ -423,7 +423,7 @@ async function _seek(deck: DeckId, ms: number, options: { quantize: boolean }): 
 		st.position_ms = targetMs;
 		return;
 	}
-	await send({ type: 'seek', deck, position_ms: targetMs });
+	await send({ type: 'seek', deck, position_ms: targetMs, quantize: false });
 	st.position_ms = targetMs;
 	if (st.playing && uiPrefs.beat_sync_max && master === deck) {
 		await _reanchor(deck, _lockedFollowers(deck), targetMs / 1000);
@@ -547,6 +547,7 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			if (typeof command.enabled !== 'boolean') {
 				throw new TypeError('setQuantize: enabled must be boolean');
 			}
+			await send(command);
 			const st = deckStates[command.deck];
 			st.quantize_enabled = command.enabled;
 			if (command.enabled && gridFeaturesInert(st)) {
@@ -558,6 +559,7 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			if (command.beats !== 1 && command.beats !== 4 && command.beats !== 8) {
 				throw new TypeError('setQuantizeGrid: beats must be 1, 4, or 8');
 			}
+			await send(command);
 			deckStates[command.deck].quantize_grid_beats = command.beats;
 			return;
 		default:
