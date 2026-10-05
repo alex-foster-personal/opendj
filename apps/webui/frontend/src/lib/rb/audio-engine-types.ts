@@ -89,8 +89,10 @@ export interface AudioEngine {
 	/** Align the loaded deck to the elected loaded master using the documented
 	 * deterministic Camelot harmonic policy. */
 	syncKey(deck: DeckId): Promise<void>;
-	/** Latch KEY SYNC on/off. Enabling applies syncKey; the control stays lit
-	 * while enabled. Disabling restores the pre-latch manual key shift. */
+	/** Arm KEY SYNC on/off. While armed and a loaded keyed master exists, the
+	 * deck follows that master's audible key through every master change
+	 * (keySyncStatus 'following'); otherwise it waits, unlit. A manual key
+	 * nudge disarms it. Disabling restores the pre-arm manual key shift. */
 	setKeySync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Stop transport if needed and clear the deck so a replacement load can
 	 * claim it. No-op when the deck is already empty. */

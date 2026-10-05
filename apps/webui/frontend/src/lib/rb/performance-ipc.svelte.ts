@@ -43,6 +43,7 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
+import type { KeySyncStatus } from '$lib/player/key/key-sync-status';
 import { assertHeadDelayMs } from '$lib/player/constants';
 import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
@@ -81,6 +82,7 @@ import {
 	installScopedSyncRunner,
 	isMasterMuted,
 	keySyncPreview,
+	keySyncStatus,
 	mixerState,
 	pitchRanges,
 	setMasterMuted,
@@ -366,6 +368,8 @@ export interface PerformanceDeckSnapshot {
 	quantize_grid_beats: QuantizeGrid;
 	beat_sync_enabled: boolean;
 	key_sync_enabled: boolean;
+	/** Whether the KEY SYNC arm is actually following a master now (DECKUX-34). */
+	key_sync_status: KeySyncStatus;
 	master_tempo_enabled: boolean;
 	slip_enabled: boolean;
 	slip_active: boolean;
@@ -1738,6 +1742,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		quantize_grid_beats: deck.quantize_grid_beats,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		key_sync_enabled: deck.key_sync_enabled,
+		key_sync_status: keySyncStatus(deckId),
 		master_tempo_enabled: deck.master_tempo_enabled,
 		slip_enabled: deck.slip_enabled,
 		slip_active: deck.slip_active,

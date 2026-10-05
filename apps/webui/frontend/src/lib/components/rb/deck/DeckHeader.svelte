@@ -11,6 +11,7 @@
 		deckEffectiveBpm,
 		deckStates,
 		keySyncPreview,
+		keySyncStatus,
 		pitchRanges,
 		rateDeckTrack
 	} from '$lib/rb/audio-engine.svelte';
@@ -19,6 +20,7 @@
 	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
+	import { keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/key-sync-status';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
@@ -161,14 +163,20 @@
 			keySyncPlan.deltaSemitones
 		);
 	});
+	// Lit only while the follow really holds (DECKUX-34): an arm that is
+	// waiting on a master reads as ARMED, never as ON over a wrong key.
+	// keySyncStatus reads only $state deckStates fields, so this tracks them.
+	const keySyncState: KeySyncStatus = $derived(keySyncStatus(deckId));
 	const keySyncTitle: string = $derived(
-		!keySyncAvailable
-			? 'requires a loaded Camelot-key master'
-			: deck.key_sync_enabled
-				? 'KEY SYNC ON - this deck follows the selected master key'
-				: keySyncDeltaText === null
-					? 'KEY SYNC OFF - exact target is unavailable'
-					: `KEY SYNC OFF - ${keySyncDeltaText}`
+		keySyncState === 'following'
+			? 'KEY SYNC ON - this deck follows the selected master key'
+			: keySyncState !== 'off'
+				? keySyncStatusTitle(keySyncState)
+				: !keySyncAvailable
+					? 'requires a loaded Camelot-key master'
+					: keySyncDeltaText === null
+						? 'KEY SYNC OFF - exact target is unavailable'
+						: `KEY SYNC OFF - ${keySyncDeltaText}`
 	);
 	const keySyncBullets: readonly string[] = $derived.by(() => {
 		if (keySyncPlan === null) {
@@ -449,13 +457,15 @@
 			>
 				<button
 					class="rb-lit-button keysync"
-					class:lit={deck.key_sync_enabled}
-					disabled={pending || !keySyncAvailable}
-					aria-pressed={deck.key_sync_enabled}
+					class:lit={keySyncState === 'following'}
+					class:armed={keySyncState !== 'off' && keySyncState !== 'following'}
+					disabled={pending || (!keySyncAvailable && !deck.key_sync_enabled)}
+					aria-pressed={keySyncState === 'following'}
 					data-performance-control="key-sync"
 					data-testid={`key-sync-deck-${deckId}`}
 					aria-label={`key sync deck ${deckId}`}
-					data-state={deck.key_sync_enabled ? 'on' : 'off'}
+					data-state={keySyncState === 'following' ? 'on' : keySyncState === 'off' ? 'off' : 'armed'}
+					data-key-sync-status={keySyncState}
 					title={keySyncTitle}
 					onclick={async () => await onKeySync()}
 				>
@@ -713,6 +723,10 @@
 	}
 	.keysync {
 		flex: 0 0 auto;
+	}
+	.keysync.armed {
+		outline: 1px dashed var(--rb-text-dim);
+		outline-offset: -2px;
 	}
 	.enable-master-tempo {
 		border: 1px solid var(--rb-red);

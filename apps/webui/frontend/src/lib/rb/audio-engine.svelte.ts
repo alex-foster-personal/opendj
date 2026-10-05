@@ -102,6 +102,7 @@ import {
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { deriveKeySyncStatus, type KeySyncStatus } from '$lib/player/key/key-sync-status';
 import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
@@ -897,6 +898,11 @@ function _keySyncPlan(deck: DeckId, masterDeck: DeckId, sourceBaseline: number):
 	};
 }
 
+/** Whether this deck's KEY SYNC arm is actually following a master now. */
+export function keySyncStatus(deck: DeckId): KeySyncStatus {
+	return deriveKeySyncStatus(deck, deckStates);
+}
+
 /** Return null only when an input or output-presented plan is unavailable. */
 export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 	if (!DECK_IDS.includes(deck)) throw new RangeError(`KEY SYNC deck must be within 1..4, got ${deck}`);
@@ -1052,6 +1058,48 @@ function _assignMaster(deck: DeckId | null, reason?: MasterReason): void {
 	_masterDeck = deck;
 	if (reason !== undefined) _masterReason = reason;
 	for (const candidate of DECK_IDS) deckStates[candidate].is_master = candidate === deck;
+	_queueKeySyncFollow();
+}
+
+//----------------------------------------------------------------- KEY SYNC follow (DECKUX-34)
+// KEY SYNC is a follow, not a one-shot: while a deck's status is 'following'
+// its manual key shift tracks the master. Every input that can move the
+// master's audible key or change which deck is master queues one coalesced
+// pass: master assignment, a paused deck's control change, and a live deck's
+// newly presented schedule revision. The pass is diff-gated (no write when
+// the follower already sits at the target), so the follower's own write
+// re-queues a pass that settles as a no-op.
+
+let _keySyncFollowQueued = false;
+
+function _queueKeySyncFollow(): void {
+	if (_keySyncFollowQueued) return;
+	_keySyncFollowQueued = true;
+	queueMicrotask(() => {
+		_keySyncFollowQueued = false;
+		for (const deck of DECK_IDS) {
+			if (keySyncStatus(deck) !== 'following') continue;
+			void _applyKeySyncFollow(deck).catch((error: unknown) => _disengageKeySync(deck, error));
+		}
+	});
+}
+
+/** Move a following deck onto the current master's target. A plan that is not
+ * yet derivable (live deck before output presentation) waits for the next
+ * presented revision, which queues another pass. */
+async function _applyKeySyncFollow(deck: DeckId): Promise<void> {
+	const plan = keySyncPreview(deck);
+	if (plan === null) return;
+	if (plan.targetManualShiftSemitones === _desiredKeyShiftSemitones(deck)) return;
+	await _setDeckKeyShift(deck, plan.targetManualShiftSemitones);
+}
+
+/** A follow that cannot be applied must not stay lit over a wrong key. */
+function _disengageKeySync(deck: DeckId, error: unknown): void {
+	deckStates[deck].key_sync_enabled = false;
+	_rt[deck].keySyncBaselineSemitones = null;
+	const message = error instanceof Error ? error.message : String(error);
+	pushToast(`KEY SYNC deck ${deck} turned off - could not follow the master: ${message}`, 'error');
 }
 
 function _ownedMaster(): DeckId | null {
@@ -1538,6 +1586,7 @@ function _applyPausedDeckControlSettings(
 	rt.controlKeyShiftSemitones = next.keyShiftSemitones;
 	st.pitch = next.tempoRatio;
 	st.master_tempo_enabled = next.masterTempoEnabled;
+	_queueKeySyncFollow();
 	return next;
 }
 
@@ -1832,6 +1881,7 @@ function _publishPresentedTransport(
 	// .planning/hardening-ledger/decisions/presentation-clock-fallback.md.
 	// CUEOUT-14: the room hears everything master_delay_ms later than the
 	// render clock, so the playhead and PLAY light lag by exactly that.
+	const presentedRevisionBefore = rt.presentation.presented_revision;
 	const observation = observePresentedTransportTimeline(
 		rt.presentation,
 		outputTimestamp,
@@ -1841,6 +1891,7 @@ function _publishPresentedTransport(
 	);
 	notePresentationClock(deck, observation.clock_stalled);
 	if (!observation.accepted) return observation;
+	if (rt.presentation.presented_revision !== presentedRevisionBefore) _queueKeySyncFollow();
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
@@ -3826,7 +3877,11 @@ class RbAudioEngine implements AudioEngine {
 		if (semitones !== -1 && semitones !== 1) {
 			throw new RangeError(`nudgeKey: semitones must be -1 or 1, got ${semitones}`);
 		}
-		_requireLoaded(deck, 'nudgeKey');
+		const { st, rt } = _requireLoaded(deck, 'nudgeKey');
+		// A manual nudge is the operator taking the key back: an armed KEY SYNC
+		// would otherwise snap the nudge straight back on its next follow pass.
+		st.key_sync_enabled = false;
+		rt.keySyncBaselineSemitones = null;
 		await _setDeckKeyShift(deck, _desiredKeyShiftSemitones(deck) + semitones);
 	}
 
@@ -3854,9 +3909,24 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		_requireLoaded(deck, 'setKeySync');
-		rt.keySyncBaselineSemitones = _keySyncManualShiftBaseline(deck);
-		st.key_sync_enabled = true;
-		await this.syncKey(deck);
+		if (_masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
+		// Re-enabling keeps the ORIGINAL baseline, or disabling would restore
+		// the synced shift instead of the operator's own.
+		if (!st.key_sync_enabled) {
+			rt.keySyncBaselineSemitones = _keySyncManualShiftBaseline(deck);
+			st.key_sync_enabled = true;
+		}
+		// No master yet (session restore replays this before any master is
+		// elected) is the ARMED state keySyncStatus reports; the follow pass
+		// applies it when a master appears.
+		if (keySyncStatus(deck) !== 'following') return;
+		try {
+			await _applyKeySyncFollow(deck);
+		} catch (error) {
+			st.key_sync_enabled = false;
+			rt.keySyncBaselineSemitones = null;
+			throw error;
+		}
 	}
 
 	async unload(deck: DeckId): Promise<void> {
