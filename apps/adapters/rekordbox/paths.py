@@ -545,6 +545,29 @@ def _local_copy_pick(
     )
 
 
+def _unavailable_refusal(
+    stable_id: str,
+    source: hydration.PlaybackSource,
+    local_copy: _LocalCopy | None,
+) -> HTTPException:
+    """Why a track with no playable copy here will not load.
+
+    A local-only machine (no CloudSync policy) says why rekordbox's file will
+    not play, else plainly that it is not here (CLOUDSYNC-33); a configured
+    machine names the cloud asset as unavailable.
+    """
+    if source.policy_source == "unconfigured":
+        if local_copy is not None and local_copy.rekordbox_refusal is not None:
+            return local_copy.rekordbox_refusal
+        return not_found(
+            "AUDIO_NOT_ON_THIS_MACHINE", source.reason or hydration.NOT_ON_THIS_MACHINE
+        )
+    return not_found(
+        "CLOUD_ASSET_UNAVAILABLE",
+        source.reason or f"audio for track {stable_id} is unavailable on this machine",
+    )
+
+
 def resolve_playable_audio(
     stable_id: str,
     *,
@@ -634,19 +657,7 @@ def resolve_playable_audio(
         return local_copy.pick
 
     if source.origin == "unavailable":
-        if source.policy_source == "unconfigured":
-            # CLOUDSYNC-33: a local-only deck says why rekordbox's file will
-            # not play, else plainly that it is not here.
-            if local_copy is not None and local_copy.rekordbox_refusal is not None:
-                raise local_copy.rekordbox_refusal
-            raise not_found(
-                "AUDIO_NOT_ON_THIS_MACHINE", source.reason or hydration.NOT_ON_THIS_MACHINE
-            )
-        raise not_found(
-            "CLOUD_ASSET_UNAVAILABLE",
-            source.reason
-            or f"audio for track {stable_id} is unavailable on this machine",
-        )
+        raise _unavailable_refusal(stable_id, source, local_copy)
 
     if source.origin == "presigned":
         try:
