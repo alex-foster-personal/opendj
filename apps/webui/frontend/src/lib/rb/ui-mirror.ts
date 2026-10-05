@@ -5,9 +5,8 @@ import { masterSilenceState, outputDeviceLivenessState } from './master-silence-
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
-import { createTabLeadership, type LockManagerLike } from './tab-leadership';
+import type { TabLeadership } from './tab-leadership';
 import { createLeasedMirrorPublisher, MIRROR_PATH } from './leased-mirror-publisher';
-import { bindTabLeadership, publishTabLeadership } from './tab-leadership.svelte';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { outputTopologyMirror } from '$lib/rb/audio-output-status.svelte';

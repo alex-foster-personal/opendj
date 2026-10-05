@@ -213,13 +213,16 @@ test('/performance routes every writer through the leader gate', async () => {
 		'installPlayCounter(',
 		'installDeckObserverEmitter('
 	]) {
-		const at = onMount.indexOf(call);
-		assert.ok(at >= 0, `${call} is still wired`);
-		const gate = Math.max(
-			onMount.lastIndexOf('installLeaderOnlyRestore({', at),
-			onMount.lastIndexOf('installLeaderOnlyEventWriters({', at)
-		);
-		assert.ok(gate >= 0 && onMount.slice(gate, at).split('});').length === 1, `${call} runs outside the leader gate`);
+		const sites = [...onMount.matchAll(new RegExp(call.replace('(', '\\('), 'g'))].map((m) => m.index);
+		assert.ok(sites.length > 0, `${call} is still wired`);
+		for (const at of sites) {
+			const gate = Math.max(
+				onMount.lastIndexOf('installLeaderOnlyRestore({', at),
+				onMount.lastIndexOf('installLeaderOnlyEventWriters({', at)
+			);
+			const between = onMount.slice(gate, at);
+			assert.ok(gate >= 0 && !between.includes('});'), `${call} runs outside the leader gate`);
+		}
 	}
 	assert.match(page, /installUiMirror\(tabLeadership\.leadership\)/);
 	assert.match(page, /tabLeadership\.dispose\(\);/);
