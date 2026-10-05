@@ -547,6 +547,7 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			if (typeof command.enabled !== 'boolean') {
 				throw new TypeError('setQuantize: enabled must be boolean');
 			}
+			await send(command);
 			const st = deckStates[command.deck];
 			st.quantize_enabled = command.enabled;
 			if (command.enabled && gridFeaturesInert(st)) {
@@ -558,6 +559,7 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			if (command.beats !== 1 && command.beats !== 4 && command.beats !== 8) {
 				throw new TypeError('setQuantizeGrid: beats must be 1, 4, or 8');
 			}
+			await send(command);
 			deckStates[command.deck].quantize_grid_beats = command.beats;
 			return;
 		default:
