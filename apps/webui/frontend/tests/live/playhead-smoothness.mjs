@@ -147,7 +147,12 @@ try {
 	const expected = ['wave:1', 'wave:2', 'jog:1', 'jog:2', 'overview:1', 'overview:2', ...(SPLIT ? ['wave-partner:1'] : [])];
 	const missing = expected.filter((k) => !keys.includes(k));
 	out.elements = {};
-	for (const key of keys.filter((k) => !k.startsWith('event:') && ['1', '2'].includes(k.split(':')[1]))) {
+	const elementKeys = keys.filter((k) => !k.startsWith('event:') && !k.startsWith('age:') && ['1', '2'].includes(k.split(':')[1]));
+	out.sample_age_ms = Object.fromEntries(['age:1', 'age:2'].filter((k) => keys.includes(k)).map((k) => {
+		const ages = frames.map((f) => f.v[k]).filter((a) => a !== undefined);
+		return [k, { p50: round(percentile(ages, 0.5)), p95: round(percentile(ages, 0.95)), max: round(Math.max(...ages)) }];
+	}));
+	for (const key of elementKeys) {
 		const deck = Number(key.split(':')[1]);
 		const rate = (out.before[deck].pitch + out.after[deck].pitch) / 2;
 		out.elements[key] = scoreSeries(frames, key, rate);

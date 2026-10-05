@@ -42,15 +42,13 @@
 		foldPresentationSample,
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
-	import { isPresentationClockStalled, positionSampledAtMs } from '$lib/rb/presentation-clock-report';
+	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
+	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import {
 		initPaintScheduleState,
-		initPositionInterpolatorState,
-		paintPositionMs,
 		paintScrollPx,
-		shouldSkipRepaint,
-		type PaintPositionDeck
+		shouldSkipRepaint
 	} from './paint-position';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
@@ -245,22 +243,18 @@
 		});
 	}
 
-	// Pin 53ba89ca8ddc (waveform jitter): see `./paint-position.ts` for the
-	// measurement + rationale (tested there, a `.svelte` file cannot be).
-	// `stallState` below folds raw `deck.position_ms`, never this value.
-	// Both halves project from the engine's sample time, so a split row (and
-	// every row) paints synced decks in phase (paint-position.ts module note).
-	const _paintPositionState = initPositionInterpolatorState();
-	const _partnerPaintState = initPositionInterpolatorState();
-
+	// Every playhead element draws from one clock per deck (ANIM-CLOCK-01,
+	// `$lib/rb/playhead-clock.ts`): dead reckoning from the engine's output
+	// timestamp, small drift slewed out, discontinuities snapped. A scrub wins
+	// outright; an untrusted clock paints the raw sample, so a stall stays
+	// visible. `stallState` below folds raw `deck.position_ms`, never this value.
 	function _paintPositionMs(): number {
-		const sampledAt = positionSampledAtMs(deckId, deck.position_ms);
-		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now(), sampledAt);
+		if (scrubPreviewMs !== null) return scrubPreviewMs;
+		return clockUntrusted ? deck.position_ms : playheadMs(deckId, deck);
 	}
 
-	function _partnerPaintMs(id: DeckId, partner: PaintPositionDeck): number {
-		const sampledAt = positionSampledAtMs(id, partner.position_ms);
-		return paintPositionMs(_partnerPaintState, null, partner, isPresentationClockStalled(id), performance.now(), sampledAt);
+	function _partnerPaintMs(id: DeckId, partner: { position_ms: number; playing: boolean }): number {
+		return isPresentationClockStalled(id) ? partner.position_ms : playheadMs(id, partner);
 	}
 
 	const stemScrollPx = $derived(

@@ -19,6 +19,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import ControlExplainer from './ControlExplainer.svelte';
 	import {
@@ -106,8 +107,9 @@
 	// 100 renders as WIDE per SCREENSHOT-SPEC 3.
 	const rangeText: string = $derived(pitchRange === 100 ? 'WIDE' : `+-${pitchRange}`);
 	// The position every rotating part of the dial is drawn from (phase marks,
-	// progress trail); reported so the smoothness probe scores what was drawn.
-	const jogPositionMs: number = $derived(deck.position_ms);
+	// progress trail): the shared per-deck playhead clock (ANIM-CLOCK-01), so the
+	// marks turn smoothly and in phase with the strip; reported to the probe.
+	const jogPositionMs: number = $derived(playheadMs(deck.deck_id, deck));
 	$effect(() => {
 		if (deck.audible) tracePlayhead('jog', deck.deck_id, jogPositionMs);
 	});
@@ -128,8 +130,8 @@
 	// phase (4 beats default)";
 	// jogPhaseBeats resolves that (and the unimplemented 'phase' sentinel)
 	// to DEFAULT_PQTZ_BAR_BEATS while still honouring a chosen 4 or 8.
-	// position_ms is the engine-published presentation position, never a
-	// browser clock, so this only ever moves with real playback.
+	// jogPositionMs is projected from the engine's output timestamp and freezes
+	// when the deck pauses or its clock stalls, so this only moves with playback.
 	const barBeats: number = $derived(jogPhaseBeats(deck.quantize_grid_beats));
 	const barPhase: number | null = $derived(
 		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, jogPositionMs / 1000), barBeats)

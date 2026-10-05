@@ -24,6 +24,7 @@
 		type WordIndex
 	} from '$lib/lyrics/pointer-word';
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
+	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { resolveStripBandColors } from '$lib/rb/wave-palette';
@@ -74,7 +75,7 @@
 	let stripW: number = $state(0);
 	let pointer: PointerWord | null = $state(null);
 
-	const overviewPositionMs: number = $derived(deck.position_ms);
+	const overviewPositionMs: number = $derived(playheadMs(deck.deck_id, deck)); // ANIM-CLOCK-01 shared clock
 	$effect(() => {
 		if (deck.playing) tracePlayhead('overview', deck.deck_id, overviewPositionMs);
 	});
