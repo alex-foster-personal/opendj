@@ -108,7 +108,7 @@ test('an idle deck waveform repaints on a palette switch (palette is reactive st
 	const { readFileSync } = await import('node:fs');
 	const src = readFileSync(new URL('../../src/lib/components/rb/wave/WaveRow.svelte', import.meta.url), 'utf8');
 	assert.match(src, /let palette = \$state\.raw<WavePalette \| null>\(null\);/);
-	assert.match(src, /void uiPrefs\.wave_palette;\s*\n\s*palette = readPalette\(el\);/);
+	assert.match(src, /void uiPrefs\.wave_palette;\s*\n\s*(?:void uiPrefs\.ui_skin;\s*\n\s*)?palette = readPalette\(el\);/);
 	const staticRepaint = src.slice(src.indexOf('// Static repaint on load/seek'));
 	assert.match(staticRepaint.slice(0, staticRepaint.indexOf('draw(true);')), /void palette;/);
 });
