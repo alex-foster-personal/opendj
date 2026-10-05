@@ -7,13 +7,15 @@ Live on the silver preview, Mon 5 Oct 2026: the summary did not answer in
 Regression one-liners:
   - if a cached read runs the scan in the request then broken
   - if four cached reads during one scan start more than one scan then broken
-  - if a cached read waits for the first scan instead of answering 503 then broken
+  - if a cached read waits for the first scan, or reports zeros before it, then broken
   - if a stale snapshot is not served at once with refreshing true then broken
-  - if a failed first scan is not named in the 503 then broken
+  - if a failed first scan is not named in the warming answer then broken
+  - if the daemon does not start the first scan at startup then broken
   - if an uncached read stops scanning for its own request then broken
 """
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -23,12 +25,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import apps.webui.server.app as app_module
 from apps.webui.server import coverage_cache, rb_vendor
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 from apps.webui.server.routes import reconcile as reconcile_routes
 
 URL = "/api/v1/reconcile/summary"
+#: A cached read before any scan has finished: unknown counts, never zeros.
+WARMING = {"total_tracks": None, "total_broken": None, "orphan_broken": None,
+           "playlists": [], "availability": None, "computed_at": None,
+           "age_s": None, "refreshing": True, "refresh_error": None}
 CALLERS = 4
 #: The request-time budget the browser needs (the brief's target is 100 ms
 #: live); generous here so a loaded CI box does not flake it.
@@ -59,7 +66,7 @@ class _CountingScan:
         if self.fail:
             raise RuntimeError("disk I/O error")
         return {"total_tracks": 3, "total_broken": 1, "orphan_broken": 1,
-                "playlists": [], "availability": None}
+                "playlists": [], "availability": None, "computed_at": 1234.0}
 
 
 @pytest.fixture
@@ -110,15 +117,14 @@ def _run_jobs(jobs: list[Callable[[], None]]) -> None:
 def test_cached_read_never_scans_in_the_request(
     client: TestClient, jobs: list, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] a cached read finds no scan [then] 503 and no scan in the request, [else stop]."""
+    """[if] a cached read finds no scan [then] warming 200, no scan in the request, [else stop]."""
     scan = _CountingScan()
     monkeypatch.setattr(reconcile_routes, "scan_summary", scan)
 
     response = client.get(URL, params={"cached": "true"})
 
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "RECONCILE_SUMMARY_WARMING"
-    assert response.headers["retry-after"] == str(reconcile_routes.SUMMARY_WARMING_RETRY_S)
+    assert response.status_code == 200
+    assert response.json() == WARMING
     assert scan.calls == 0, "the request ran the scan itself"
     assert len(jobs) == 1, "no background scan was started"
 
@@ -131,11 +137,11 @@ def test_overlapping_cached_reads_start_one_scan(
     scan = _CountingScan()
     monkeypatch.setattr(reconcile_routes, "scan_summary", scan)
 
-    codes = [client.get(URL, params={"cached": "true"}).status_code for _ in range(CALLERS)]
+    bodies = [client.get(URL, params={"cached": "true"}).json() for _ in range(CALLERS)]
     _run_jobs(jobs)
     body = client.get(URL, params={"cached": "true"}).json()
 
-    assert codes == [503] * CALLERS
+    assert bodies == [WARMING] * CALLERS
     assert scan.calls == 1
     assert (body["total_tracks"], body["total_broken"], body["refreshing"]) == (3, 1, False)
 
@@ -204,7 +210,7 @@ def test_a_stale_snapshot_is_served_while_one_rescan_runs(
 def test_a_failed_first_scan_is_named_and_retried(
     client: TestClient, jobs: list, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] the first background scan fails [then] the 503 names it and retries, [else stop]."""
+    """[if] the first background scan fails [then] the answer names it and retries, [else stop]."""
     scan = _CountingScan(fail=True)
     monkeypatch.setattr(reconcile_routes, "scan_summary", scan)
     client.get(URL, params={"cached": "true"})
@@ -212,8 +218,8 @@ def test_a_failed_first_scan_is_named_and_retried(
 
     response = client.get(URL, params={"cached": "true"})
 
-    assert response.status_code == 503
-    assert "disk I/O error" in response.json()["detail"]["message"]
+    assert response.status_code == 200
+    assert response.json() == {**WARMING, "refresh_error": "RuntimeError: disk I/O error"}
     assert len(jobs) == 1, "the next read did not retry the scan"
 
 
@@ -230,12 +236,32 @@ def test_the_background_scan_runs_off_the_request_thread(
                              mount_frontend=False)
     application.include_router(reconcile_routes.router, prefix="/api/v1")
     with TestClient(application) as c:
-        assert c.get(URL, params={"cached": "true"}).status_code == 503
+        first = c.get(URL, params={"cached": "true"}).json()
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            response = c.get(URL, params={"cached": "true"})
-            if response.status_code == 200:
+            body = c.get(URL, params={"cached": "true"}).json()
+            if body["computed_at"] is not None:
                 break
             time.sleep(0.02)
-    assert response.status_code == 200
+    assert first["computed_at"] is None and first["refreshing"] is True
+    assert body["total_tracks"] == 3
     assert scan.threads == ["coverage-refresh"]
+
+
+@pytest.mark.requirement("HEALTH-15")
+def test_the_daemon_starts_the_first_scan_at_startup(
+    app: FastAPI, client: TestClient, jobs: list, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the daemon app is built [then] the first scan starts before any read, [else stop]."""
+    scan = _CountingScan()
+    monkeypatch.setattr(reconcile_routes, "scan_summary", scan)
+
+    reconcile_routes.warm_summary_snapshot(app, app.state.backend)
+    assert len(jobs) == 1 and scan.calls == 0
+    assert client.get(URL, params={"cached": "true"}).json() == WARMING
+    assert len(jobs) == 1, "the first read started a second scan beside the startup one"
+    _run_jobs(jobs)
+    assert client.get(URL, params={"cached": "true"}).json()["total_tracks"] == 3
+    # The daemon factory is the one place this is wired; a refactor that
+    # drops the call leaves the first read to start the scan again.
+    assert "warm_summary_snapshot(app, backend)" in inspect.getsource(app_module._build_default_app)

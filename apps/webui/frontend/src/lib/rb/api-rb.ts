@@ -16,7 +16,7 @@
 import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
-import { api, readApiErrorCode, readApiErrorStatus, unwrap } from '$lib/api/client';
+import { api, unwrap } from '$lib/api/client';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
@@ -615,14 +615,18 @@ export class ReconcileSummaryWarming extends Error {
 	}
 }
 
+/** A summary that carries counts: what {@link getReconcileSummary} returns. */
+export type ReconcileSummaryCounts = ReconcileSummary & { total_tracks: number; total_broken: number };
+
 /** Fetch aggregate reconciliation counts without inventing a usable library state.
  *
  * Asks `cached` (HEALTH-15): the engine answers from its last library scan in
  * milliseconds, with `age_s` / `refreshing`, and never scans for this request.
- * Throws {@link ReconcileSummaryWarming} until the first scan has finished. */
+ * Throws {@link ReconcileSummaryWarming} while the first scan is still running
+ * (`computed_at` null, counts null). */
 export async function getReconcileSummary(
 	timeoutMs: number = RECONCILE_SUMMARY_TIMEOUT_MS
-): Promise<ReconcileSummary> {
+): Promise<ReconcileSummaryCounts> {
 	const { signal, clear } = timeoutSignal(timeoutMs);
 	let summary: ReconcileSummary;
 	try {
@@ -630,9 +634,6 @@ export async function getReconcileSummary(
 			api.GET('/api/v1/reconcile/summary', { params: { query: { cached: true } }, signal })
 		);
 	} catch (error: unknown) {
-		if (readApiErrorStatus(error) === 503 && readApiErrorCode(error) === 'RECONCILE_SUMMARY_WARMING') {
-			throw new ReconcileSummaryWarming(error instanceof Error ? error.message : String(error));
-		}
 		if (signal.aborted) {
 			throw new Error(`reconcile summary request timed out after ${timeoutMs / 1000} s`, {
 				cause: error
@@ -641,6 +642,13 @@ export async function getReconcileSummary(
 		throw error;
 	} finally {
 		clear();
+	}
+	if (summary.computed_at === null) {
+		throw new ReconcileSummaryWarming(
+			summary.refresh_error
+				? `the first library scan failed (${summary.refresh_error}); a new one is running`
+				: "the engine's first library scan is still running"
+		);
 	}
 	const { total_tracks, total_broken } = summary;
 	if (
@@ -654,7 +662,7 @@ export async function getReconcileSummary(
 	) {
 		throw new Error('reconcile summary has invalid total_tracks or total_broken counts');
 	}
-	return summary;
+	return { ...summary, total_tracks, total_broken };
 }
 
 /** Track listing item + contract point 1's per-row fields. STANDALONE-05

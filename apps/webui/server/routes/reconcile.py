@@ -33,8 +33,9 @@ Endpoints
     ``?cached=true`` (HEALTH-15, what the browser asks) answers from the last
     scan in milliseconds with ``age_s`` / ``refreshing`` / ``refresh_error``
     and never scans in the request: a stale scan is redone behind it (one at
-    a time), and before the first scan finishes the answer is 503
-    ``RECONCILE_SUMMARY_WARMING`` with ``Retry-After``.
+    a time). The server starts the first scan at startup; until it finishes
+    a cached read answers 200 with null counts, ``computed_at`` null and
+    ``refreshing`` true, never zeros.
 
 Availability semantics (mirror of ``apps.reconcile.list_broken``)
 -----------------------------------------------------------------
@@ -71,6 +72,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,14 +99,12 @@ _MAX_SCAN_PAGES: int = 1000
 #: The scan took 39 to 61 s on the silver preview beside the analysis drain
 #: (Mon 5 Oct 2026), so it must not run on every read (HEALTH-15).
 SUMMARY_MAX_AGE_S: float = 60.0
-#: How long a reader that found no summary yet should wait before asking again.
-SUMMARY_WARMING_RETRY_S: int = 5
 SUMMARY_CACHED_HELP = (
     "Answer at once from the last library scan instead of scanning for this "
     "request. `age_s` says how old it is; when `refreshing` is true a newer "
-    "scan is running. With no scan yet the answer is 503 "
-    "RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. "
-    "Without this the library is scanned for this request."
+    "scan is running. Before the first scan has finished the counts, "
+    "`computed_at` and `age_s` are null and `refreshing` is true: ask again "
+    "shortly. Without this the library is scanned for this request."
 )
 
 
@@ -154,20 +154,26 @@ class PlaylistBrokenSummary(BaseModel):
 
 
 class ReconcileSummary(BaseModel):
-    total_tracks: int
-    total_broken: int
+    #: The three counts are None only while a ``cached`` read finds no scan
+    #: finished yet (``computed_at`` None, ``refreshing`` true): unknown,
+    #: never zero. A read without ``cached`` always carries them.
+    total_tracks: int | None
+    total_broken: int | None
     # Broken tracks referenced by no playlist -- only reachable via the
     # Missing Tracks folder, never via a playlist badge.
-    orphan_broken: int
+    orphan_broken: int | None
     playlists: list[PlaylistBrokenSummary]
+    #: Unix time the scan behind these counts finished; None before the first.
+    computed_at: float | None = None
     #: Where every live row's audio stands on THIS machine, from the one
     #: shared predicate (``library_playable``) that ingest coverage also
     #: reads, so the two endpoints cannot disagree. Keys: total, present,
     #: broken_here, off_machine, awaiting_volume, streaming, pathless.
     #: ``None`` = unknown (the backend has no state.db to scan), never zero.
     availability: dict[str, int] | None = None
-    #: Seconds since this scan ran; 0 unless ``cached`` was asked.
-    age_s: float = 0.0
+    #: Seconds since this scan ran; 0 unless ``cached`` was asked, None
+    #: before the first scan has finished.
+    age_s: float | None = 0.0
     #: A newer scan is running behind a ``cached`` read; ask again shortly.
     refreshing: bool = False
     #: Why the latest background scan failed. The counts are then the last
@@ -446,11 +452,14 @@ def summary_cache_for(app: FastAPI) -> coverage_cache.CoverageCache:
         return cache
 
 
-@router.get(
-    "/summary",
-    response_model=ReconcileSummary,
-    responses={503: {"description": "`cached` was asked and no scan has finished yet"}},
-)
+def warm_summary_snapshot(app: FastAPI, backend: StateBackend) -> None:
+    """Start the first summary scan behind server startup, so the browser's
+    first ``cached`` read finds it running or done instead of starting it."""
+    log.info("reconcile summary: first scan started at startup (HEALTH-15)")
+    summary_cache_for(app).peek(lambda: scan_summary(backend))
+
+
+@router.get("/summary", response_model=ReconcileSummary)
 def reconcile_summary(
     request: Request,
     cached: bool = Query(False, description=SUMMARY_CACHED_HELP),
@@ -464,25 +473,14 @@ def reconcile_summary(
     def scan() -> dict[str, object]:
         return scan_summary(backend)
 
-    if not cached:
-        reading = cache.measure(scan)
-    else:
-        peeked = cache.peek(scan)
-        if peeked is None:
-            failed = cache.last_refresh_error
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "RECONCILE_SUMMARY_WARMING",
-                    "message": (
-                        "the first library scan is running; ask again shortly"
-                        if failed is None
-                        else f"the last library scan failed ({failed}); a new one is running"
-                    ),
-                },
-                headers={"Retry-After": str(SUMMARY_WARMING_RETRY_S)},
-            )
-        reading = peeked
+    reading = cache.measure(scan) if not cached else cache.peek(scan)
+    if reading is None:
+        # No scan has finished yet: say so, with nothing that reads as a count.
+        return ReconcileSummary(
+            total_tracks=None, total_broken=None, orphan_broken=None, playlists=[],
+            availability=None, computed_at=None, age_s=None, refreshing=True,
+            refresh_error=cache.last_refresh_error,
+        )
     return ReconcileSummary.model_validate({
         **reading.fields,
         "age_s": reading.age_s,
@@ -493,6 +491,7 @@ def reconcile_summary(
 
 def scan_summary(backend: StateBackend) -> dict[str, object]:
     """The full library scan behind the summary: every row's path, stat'd."""
+    started = time.monotonic()
     total_tracks, broken_ids = _scan_broken_ids(backend)
     playlists = backend.list_playlists()
 
@@ -510,12 +509,15 @@ def scan_summary(backend: StateBackend) -> dict[str, object]:
 
     referenced = {sid for pl in playlists for sid in pl.items}
     orphan_broken = sum(1 for sid in broken_ids if sid not in referenced)
+    availability = _availability(backend)
+    log.info("reconcile summary: scanned %d tracks in %.1f s", total_tracks, time.monotonic() - started)
     return {
         "total_tracks": total_tracks,
         "total_broken": len(broken_ids),
         "orphan_broken": orphan_broken,
         "playlists": [p.model_dump() for p in per_playlist],
-        "availability": _availability(backend),
+        "availability": availability,
+        "computed_at": time.time(),
     }
 
 
@@ -527,5 +529,6 @@ __all__ = [
     "SUMMARY_MAX_AGE_S",
     "scan_summary",
     "summary_cache_for",
+    "warm_summary_snapshot",
     "router",
 ]

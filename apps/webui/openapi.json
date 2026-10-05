@@ -17855,9 +17855,16 @@
       "ReconcileSummary": {
         "properties": {
           "age_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "default": 0.0,
-            "title": "Age S",
-            "type": "number"
+            "title": "Age S"
           },
           "availability": {
             "anyOf": [
@@ -17873,9 +17880,27 @@
             ],
             "title": "Availability"
           },
+          "computed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
           "orphan_broken": {
-            "title": "Orphan Broken",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orphan Broken"
           },
           "playlists": {
             "items": {
@@ -17901,12 +17926,26 @@
             "type": "boolean"
           },
           "total_broken": {
-            "title": "Total Broken",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Broken"
           },
           "total_tracks": {
-            "title": "Total Tracks",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tracks"
           }
         },
         "required": [
@@ -37961,13 +38000,13 @@
         "operationId": "reconcile_summary_api_v1_reconcile_summary_get",
         "parameters": [
           {
-            "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. With no scan yet the answer is 503 RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. Without this the library is scanned for this request.",
+            "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. Before the first scan has finished the counts, `computed_at` and `age_s` are null and `refreshing` is true: ask again shortly. Without this the library is scanned for this request.",
             "in": "query",
             "name": "cached",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. With no scan yet the answer is 503 RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. Without this the library is scanned for this request.",
+              "description": "Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. Before the first scan has finished the counts, `computed_at` and `age_s` are null and `refreshing` is true: ask again shortly. Without this the library is scanned for this request.",
               "title": "Cached",
               "type": "boolean"
             }
@@ -37993,9 +38032,6 @@
               }
             },
             "description": "Validation Error"
-          },
-          "503": {
-            "description": "`cached` was asked and no scan has finished yet"
           }
         },
         "summary": "Reconcile Summary",
