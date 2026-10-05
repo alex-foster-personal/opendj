@@ -3,6 +3,8 @@
 A fresh path_availability index copied with state.db can say an Air path is
 present. With no track_availability row, the listing has to stat that path
 on this machine. A missing file is absent. A file that is here stays present.
+
+[if] an unchecked row's file is missing or the URI is streaming [then] it is not playable, [else stop].
 """
 from __future__ import annotations
 
