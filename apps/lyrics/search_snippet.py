@@ -51,10 +51,10 @@ def matched_snippet(data_dir: Path, stable_id: str, query: str) -> str | None:
     terms = _query_terms(query)
     if not terms:
         return None
-    cached = load(cache_path(data_dir, stable_id))
-    # LYRICS-12: never quote a hallucination line, and drop a hallucination-
-    # only hit even if an index built before v3 still holds it.
-    lyrics = None if cached is None else servable_lyrics(cached)
+    lyrics = load(cache_path(data_dir, stable_id))
+    # LYRICS-12: never quote a hallucination line; a hallucination-only entry
+    # is no hit, even while an index built before schema v3 still holds it.
+    lyrics = None if lyrics is None else servable_lyrics(lyrics)
     if lyrics is None:
         return None
     return _best_line(lyrics.lines, terms).text
