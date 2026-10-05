@@ -179,8 +179,13 @@ async def publish_ui_mirror(
     current_doc = _mirror_store(request)
     new_at, old_at = _published_at(body), _published_at(current_doc)
     stored_age_s = monotonic() - getattr(request.app.state, "ui_mirror_received_monotonic", float("-inf"))
+    # Compared within ONE writer (its own reordered PUTs), or for unleased writers.
+    # Between two leased tabs the lease decides; their clocks may disagree (Mon 5
+    # Oct 2026: a second browser's takeover was refused as "stale" by 2 s of skew).
+    same_writer = current_doc is not None and current_doc.get("client_id") == body.get("client_id")
     if (
         takeover != "1"
+        and (same_writer or lease_id is None)
         and new_at is not None
         and old_at is not None
         and new_at < old_at

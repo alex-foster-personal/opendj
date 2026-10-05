@@ -302,3 +302,34 @@ def test_take_control_is_not_handed_back_to_a_playing_tab(monkeypatch: pytest.Mo
         assert (await client.get("/api/v1/state/ui-mirror/lease")).json()["holder"] == "maintainer-chrome"
 
     _run(monkeypatch, body)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_another_leased_tabs_clock_does_not_make_it_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] a leased tab's clock is behind the holder's [then] the lease decides, not staleness, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        ahead = {"x-opendj-lease": "x"}
+        put = await client.put(
+            "/api/v1/state/ui-mirror",
+            json={"client_id": "x", "published_at": "2026-10-05T21:14:20.000Z", "decks": {"1": {"playing": True}}},
+            headers=ahead,
+        )
+        assert put.status_code == 202
+        behind = await client.put(
+            "/api/v1/state/ui-mirror",
+            json={"client_id": "y", "published_at": "2026-10-05T21:14:18.000Z", "decks": {}},
+            headers={"x-opendj-lease": "y", "x-opendj-lease-takeover": "1"},
+        )
+        assert behind.status_code == 202, "a takeover from a slower clock still lands"
+        renew = await client.put(
+            "/api/v1/state/ui-mirror",
+            json={"client_id": "y", "published_at": "2026-10-05T21:14:19.000Z", "decks": {}},
+            headers={"x-opendj-lease": "y"},
+        )
+        assert renew.status_code == 202, "and so do its renewals while x's newer clock is on record"
+        assert (await _put_at(client, "y", "2026-10-05T21:14:18.500Z", playing=False)).status_code == 409, (
+            "control: y's own reordered PUT is still refused"
+        )
+
+    _run(monkeypatch, body)
