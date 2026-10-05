@@ -178,3 +178,33 @@ export function clearAutoPlayChartedOrder(
 	clearKey();
 	publishEmpty();
 }
+
+/**
+ * PLAY-15: how long a deck may play with no master before AutoPlay says it is
+ * blind. Covers the poll or two between an automatic demote and re-election;
+ * an AutoPlay promotion in flight is excluded separately via `pending_master`.
+ */
+export const AUTO_PLAY_NO_MASTER_STALL_MS = 5_000;
+
+/**
+ * PLAY-15: raise `no-playing-master` once a deck has been playing with no
+ * playing master for AUTO_PLAY_NO_MASTER_STALL_MS. AutoPlay only arms off the
+ * playing master, so this state silently ends the set at the last track's end.
+ */
+export function shouldRaiseAutoPlayNoMasterStall(input: {
+	enabled: boolean;
+	any_playing: boolean;
+	playing_master: boolean;
+	pending_master: boolean;
+	stall_active: boolean;
+	no_master_since_ms: number | null;
+	now_ms: number;
+}): boolean {
+	if (!input.enabled) return false;
+	if (!input.any_playing) return false;
+	if (input.playing_master) return false;
+	if (input.pending_master) return false;
+	if (input.stall_active) return false;
+	if (input.no_master_since_ms === null) return false;
+	return input.now_ms - input.no_master_since_ms >= AUTO_PLAY_NO_MASTER_STALL_MS;
+}
