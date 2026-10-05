@@ -32,7 +32,7 @@ def test_large_wal_is_truncated(held_db, monkeypatch) -> None:
     assert sm.wal_bytes(db) > 64 * 1024
     result = sm.StateMaintenance(state_db_path=db).tick()
     assert result is not None and result.busy is False
-    assert result.checkpointed_frames == result.log_frames > 0
+    assert result.wal_bytes_before > 64 * 1024 and result.wal_bytes_after == 0
     assert sm.wal_bytes(db) == 0
 
 
