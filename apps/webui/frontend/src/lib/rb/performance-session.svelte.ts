@@ -32,6 +32,9 @@ import {
 	shouldSkipPerformanceSessionRestore
 } from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
+import { planReloadResumeOffer } from '$lib/rb/reload-resume';
+import { offerReloadResume } from '$lib/rb/reload-resume.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
 export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
@@ -57,6 +60,8 @@ export interface PerformanceSessionRestoreOptions {
 	 * writer stops when it ends. Defaults to the live performance IPC. */
 	commandSession?: () => number | null;
 	operatorMaster?: () => number | null;
+	/** RESCUE-07: whether AutoPlay is on, for the reload-resume log line. */
+	autoPlayEnabled?: () => boolean;
 }
 
 function _snapshotInputFromState(
@@ -79,7 +84,8 @@ function _snapshotInputFromState(
 			quantize_enabled: deck.quantize_enabled,
 			beat_sync_enabled: deck.beat_sync_enabled,
 			master_tempo_enabled: deck.master_tempo_enabled,
-			key_sync_enabled: deck.key_sync_enabled
+			key_sync_enabled: deck.key_sync_enabled,
+			playing: deck.playing
 		};
 		const channel = state.mixer.channels[deckId];
 		channels[deckId] = {
@@ -107,6 +113,7 @@ function _snapshotInputFromState(
 	return {
 		captured_at_ms,
 		playlist_id,
+		master_deck: state.master_deck,
 		decks,
 		mixer: {
 			crossfader: state.mixer.crossfader,
@@ -293,7 +300,9 @@ async function _restoreSession(
 	query: typeof queryPerformanceState,
 	snapshot: PerformanceSessionSnapshot | null,
 	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
-	skipDeckRestore: boolean
+	skipDeckRestore: boolean,
+	now: () => number = () => Date.now(),
+	autoPlayEnabled: () => boolean = () => uiPrefs.auto_play_enabled
 ): Promise<void> {
 	if (skipDeckRestore) return;
 	if (snapshot !== null) {
@@ -314,6 +323,13 @@ async function _restoreSession(
 				: 0;
 		await _restoreDeck(dispatch, query, deckId, stable_id, position_ms, snapshot);
 	}
+	// RESCUE-07: decks that were playing come back stopped (a reload is not a
+	// Gig rescue, and the browser will not start audio before a click), so say
+	// so and offer the click, rather than landing silently stopped.
+	offerReloadResume(
+		planReloadResumeOffer({ snapshot, decks: query().decks, now_ms: now() }),
+		autoPlayEnabled()
+	);
 }
 
 export function installPerformanceSessionRestore(
@@ -367,7 +383,8 @@ export function installPerformanceSessionRestore(
 	void _restoreSession(
 		(command) => { assertActive(); return dispatch(command); },
 		() => { assertActive(); return query(); },
-		snapshot, urlDeckIds, skipDeckRestore
+		snapshot, urlDeckIds, skipDeckRestore,
+		nowFn, opts.autoPlayEnabled ?? (() => uiPrefs.auto_play_enabled)
 	).finally(() => {
 		if (disposed) return;
 		writer = createSessionSnapshotWriter({
