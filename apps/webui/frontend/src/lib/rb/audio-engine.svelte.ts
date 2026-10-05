@@ -3250,9 +3250,7 @@ class RbAudioEngine implements AudioEngine {
 	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
-		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
-			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
-		}
+		ms = clampSeekTargetMs(ms, durMs, 'cueJump');
 		const seekBeats = _quantizeGrid(st);
 		const { targetMs, exitLoop } = quantizedSeekDecisionMs(seekBeats, ms, _quantizeGridBeats(st), skipGridQuantize, st.loop);
 		if (targetMs > durMs) {

@@ -39,14 +39,12 @@ from apps.feature_flags.profiles import (
 )
 from apps.shared.google_oauth_client import apply_bundled_oauth
 from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
+from apps.shared.uvicorn_shutdown import GRACEFUL_SHUTDOWN_S
 
 EXIT_OK: int = 0
 EXIT_LOCKED: int = 1
 EXIT_REFUSED: int = 2
 HUB_MACHINE_NAME_ENV: str = "MDT_HUB_MACHINE_NAME"
-#: Seconds uvicorn waits for open requests on SIGTERM before it closes them
-#: and runs the lifespan shutdown. See the uvicorn.run call below.
-GRACEFUL_SHUTDOWN_S: int = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
