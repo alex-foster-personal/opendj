@@ -56,24 +56,31 @@ describe('trackDragRefusal', () => {
 });
 
 test('72be3e505510 streaming refusal matches double-click wording', () => {
-	const phrase = 'streaming track - deck load not implemented (see PARITY-TODO)';
+	const phrase = "Streaming track: Open DJ can't play streaming services";
 	assert.equal(trackDragRefusal({ file_exists: true, is_streaming: true }), phrase);
+	assert.equal(
+		trackDragRefusal({
+			file_exists: false,
+			is_streaming: true,
+			file_path: 'tidal:tracks:99560085'
+		}),
+		"Tidal streaming track: Open DJ can't play streaming services"
+	);
 });
 
 test('the drag path words its refusals exactly as the load path does', () => {
-	// The two sentences are duplicated rather than shared: importing a shared
-	// constant into BrowserPanel pushed that file past the fan-out ratchet, and
-	// gzip already collapses the repeat. So the equality is held by THIS test.
+	// Both paths call libraryAudioLoadRefusal. The sentences live once, in
+	// browser-row-wire / streaming-availability, so deck-track-drop does not
+	// copy them.
 	const read = (p) => readFileSync(fileURLToPath(new URL(`../../${p}`, import.meta.url)), 'utf8');
 	const refusal = read('src/lib/rb/track-drag-refusal.ts');
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
-	for (const phrase of [
-		'streaming track - deck load not implemented (see PARITY-TODO)',
-		'cannot load: audio file missing on disk (broken link)'
-	]) {
-		assert.ok(refusal.includes(phrase), `the drag path lost the phrase: ${phrase}`);
-		assert.ok(panel.includes(phrase), `the load path lost the phrase: ${phrase}`);
-	}
+	const wire = read('src/lib/components/rb/browser/browser-row-wire.ts');
+	const named = read('src/lib/components/rb/browser/streaming-availability.ts');
+	assert.match(refusal, /libraryAudioLoadRefusal/);
+	assert.match(panel, /libraryAudioLoadRefusal/);
+	assert.match(wire, /cannot load: audio file missing on disk \(broken link\)/);
+	assert.match(named, /Open DJ can't play streaming services/);
 });
 
 const TABLE_PATH = fileURLToPath(
@@ -97,6 +104,12 @@ test('the drag start actually consults it, and does not refuse in silence', () =
 	);
 	assert.match(fn, /trackDragRefusal\(/, 'the drag start no longer asks why');
 	assert.match(fn, /onrefused|pushToast/, 'a refused drag says nothing to the user');
+	const stored = fn.slice(fn.indexOf('beginTrackDrag('));
+	assert.match(
+		stored,
+		/file_availability:\s*row\.file_availability/,
+		'the deck drop rechecks this snapshot, so a present row must keep its status'
+	);
 });
 
 /**
@@ -203,10 +216,7 @@ describe('deck drop guards (STATE-10, issue #2451)', () => {
 
 	it('deck-track-drop reuses trackDragRefusal instead of duplicating phrases', () => {
 		assert.match(dropHelper, /trackDragRefusal/);
-		assert.equal(
-			dropHelper.includes('streaming track - deck load not implemented (see PARITY-TODO)'),
-			false
-		);
+		assert.equal(dropHelper.includes("Open DJ can't play streaming services"), false);
 		assert.equal(
 			dropHelper.includes('cannot load: audio file missing on disk (broken link)'),
 			false
