@@ -1628,9 +1628,11 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
  *
  * These snapshots are READ paths: queryPerformanceState() runs inside
  * `$derived` (WaveRow.svelte, Deck.svelte), and Svelte throws
- * `state_unsafe_mutation` on any `$state` write from there. So an expired
- * record is never cleared here; it is reported as null and left for the
- * command paths (the next arm, unload, or session teardown) to overwrite. */
+ * `state_unsafe_mutation` on any `$state` write from there. Queries must
+ * not mutate reactive state while a consumer derives or renders the snapshot.
+ * An expired record is reported as null and left for the command paths and
+ * session lifecycle owners (the next arm, unload, or session teardown) to
+ * clear or replace. */
 function _waveformSeekArmedSnapshot(
 	deckId: DeckId
 ): { target_position_ms: number; remaining_ms: number } | null {

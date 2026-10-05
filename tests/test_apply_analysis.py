@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,17 @@ from apps.sync.safety import SafetyAbort
 # Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
 # import gate ON (root conftest reads the marker). Never a real rb target.
 pytestmark = [pytest.mark.requirement("SYNC-05"), pytest.mark.rekordbox_writeback]
+
+
+@pytest.fixture(autouse=True)
+def _owned_rollout_directory(tmp_path: Path):
+    """Relative production rollout stamps belong to one test, not all workers."""
+    previous = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def _make_diff(tmp_path: Path, rows: list[dict]) -> Path:

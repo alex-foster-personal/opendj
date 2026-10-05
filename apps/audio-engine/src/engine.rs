@@ -113,7 +113,7 @@ pub enum EngineCmd {
     Cue { deck: DeckId },
     Quantize { deck: DeckId, enabled: bool },
     QuantizeGrid { deck: DeckId, beats: u8 },
-    Seek { deck: DeckId, position_ms: f64 },
+    Seek { deck: DeckId, position_ms: f64, quantize: bool },
     Loop { deck: DeckId, bounds_ms: Option<(f64, f64)> },
     BeatLoop { deck: DeckId, beats: f64, start_ms: Option<f64> },
     BeatJump { deck: DeckId, beats: f64 },
@@ -314,7 +314,7 @@ impl Engine {
             Cue { deck } => self.deck_mut(deck)?.cue()?,
             Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
             QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
-            Seek { deck, position_ms } => self.deck_mut(deck)?.seek(position_ms)?,
+            Seek { deck, position_ms, quantize } => self.deck_mut(deck)?.seek_with_quantize(position_ms, quantize)?,
             Loop { deck, bounds_ms } => self.deck_mut(deck)?.set_loop(bounds_ms)?,
             BeatLoop { deck, beats, start_ms } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
             BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
@@ -711,7 +711,7 @@ mod tests {
             let mut e = Engine::new(48000);
             e.apply(EngineCmd::Load { deck: 1, track: Arc::new(clicks(48000, 3.0, 1.0)) }).unwrap();
             e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 1, position_ms: 500.0 }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 1, position_ms: 500.0, quantize: true }).unwrap();
             e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
             let mut buf = vec![0.0f32; 48000 * 2];
             e.render(&mut buf);
@@ -959,7 +959,7 @@ mod tests {
             e.render(&mut out);
             // 300 ms in: nearest beat is 400 ms on the new grid, 500 ms on the old.
             e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
-            e.apply(EngineCmd::Seek { deck: 1, position_ms: 300.0 }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 1, position_ms: 300.0, quantize: true }).unwrap();
             e.apply(EngineCmd::BeatJump { deck: 1, beats: 1.0 }).unwrap();
             (out, e.snapshot().decks[0].position_ms)
         };

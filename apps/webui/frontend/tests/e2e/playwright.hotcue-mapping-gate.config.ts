@@ -77,7 +77,8 @@ export default defineConfig({
 			env: {
 				...process.env,
 				MDT_DATA_DIR: FIXTURE_DATA_DIR,
-				MDT_LIBRARY_MODE: 'local'
+				MDT_LIBRARY_MODE: 'local',
+				MUSIC_DJ_FRONTEND_PORT: String(HOTCUE_MAPPING_GATE_FRONTEND_PORT)
 			}
 		},
 		{
