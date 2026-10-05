@@ -58,6 +58,7 @@ import {
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import {
+	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
 	setAnalysisSource,
@@ -1244,11 +1245,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
-		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (!(ANALYSIS_SOURCE_FEATURES as readonly unknown[]).includes(record.feature)) {
+			throw new TypeError(`analysis-source feature must be one of ${ANALYSIS_SOURCE_FEATURES.join(', ')}; got ${String(record.feature)}`);
+		}
 		if (record.source !== 'rekordbox' && record.source !== 'own') {
 			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
 		}
-		return { type, feature: record.feature, source: record.source };
+		return { type, feature: record.feature as AnalysisSourceFeature, source: record.source };
 	}
 	if (type === 'auto_play_two_track') {
 		_exactKeys(record, ['type']);
