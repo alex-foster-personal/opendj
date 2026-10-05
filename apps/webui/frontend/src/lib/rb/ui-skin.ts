@@ -13,7 +13,13 @@
  *     [if] nextUiSkin('light') is not 'default' [then ⛔️]
  *   ? skinCycleTitle: names the current skin and the next one.
  *     [if] skinCycleTitle('mono-dev') is not "Skin: Gothic. Click for Light" [then ⛔️]
+ *   ? effectiveWaveformDesign / effectiveWavePalette: 'auto' follows SKIN_WAVE_LOOK, explicit wins.
+ *     [if] effectiveWaveformDesign('auto', 'mono-dev') is not 'blocks' [then ⛔️]
+ *     [if] effectiveWavePalette('legacy', 'mono-dev') is not 'legacy' [then ⛔️]
  */
+
+import type { WaveformDesign, WaveformDesignPref } from './waveform-design';
+import type { WavePaletteChoice, WavePalettePref } from './wave-palette';
 
 export type UiSkin = 'default' | 'mono-dev' | 'light';
 
@@ -26,7 +32,32 @@ export const UI_SKIN_LABELS: Readonly<Record<UiSkin, string>> = {
 	light: 'Light'
 };
 
-export const UI_SKIN_DEFAULT: UiSkin = 'default';
+/** Gothic is the default skin (the maintainer, Mon 5 Oct 2026: the website advertises it).
+ * The cycle order above is unchanged. */
+export const UI_SKIN_DEFAULT: UiSkin = 'mono-dev';
+
+/** The default before Mon 5 Oct 2026; prefs.svelte.ts migrates it once. */
+export const UI_SKIN_PRE_GOTHIC_DEFAULT: UiSkin = 'default';
+
+/** The waveform look each skin declares. A waveform_design or wave_palette
+ * pref of 'auto' resolves through this table, so switching skin changes the
+ * waveforms; an explicit pref ignores it. Gothic is the mono grayscale palette
+ * on blocks, the pairing the skin was designed with. */
+export const SKIN_WAVE_LOOK: Readonly<Record<UiSkin, Readonly<{ design: WaveformDesign; palette: WavePaletteChoice }>>> = {
+	default: { design: 'tri-band', palette: 'rekordbox' },
+	'mono-dev': { design: 'blocks', palette: 'mono' },
+	light: { design: 'tri-band', palette: 'rekordbox' }
+};
+
+export function effectiveWaveformDesign(pref: WaveformDesignPref, skin: UiSkin): WaveformDesign {
+	if (pref === 'auto') return SKIN_WAVE_LOOK[skin].design;
+	return pref;
+}
+
+export function effectiveWavePalette(pref: WavePalettePref, skin: UiSkin): WavePaletteChoice {
+	if (pref === 'auto') return SKIN_WAVE_LOOK[skin].palette;
+	return pref;
+}
 
 export function parseUiSkin(raw: unknown): UiSkin | undefined {
 	if (raw === undefined) return undefined;

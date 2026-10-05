@@ -26,11 +26,28 @@ const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy
 
 export const WAVE_PALETTE_DEFAULT: WavePaletteChoice = 'rekordbox';
 
+/** Stored preference: a concrete palette, or 'auto' to follow the active
+ * skin's declared palette (ui-skin.ts SKIN_WAVE_LOOK). */
+export type WavePalettePref = WavePaletteChoice | 'auto';
+
+/** First-run stored pref: follow the skin. */
+export const WAVE_PALETTE_PREF_DEFAULT: WavePalettePref = 'auto';
+
 /** Undefined passes through (pref absent); any other non-choice throws. */
 export function parseWavePalette(raw: unknown): WavePaletteChoice | undefined {
 	if (raw === undefined) return undefined;
 	if (!WAVE_PALETTE_CHOICES.includes(raw as WavePaletteChoice)) {
 		throw new Error(`wave_palette must be rekordbox|legacy|mono, got ${String(raw)}`);
+	}
+	return raw as WavePaletteChoice;
+}
+
+/** Undefined passes through (pref absent); 'auto' or a palette passes; anything else throws. */
+export function parseWavePalettePref(raw: unknown): WavePalettePref | undefined {
+	if (raw === 'auto') return 'auto';
+	if (raw === undefined) return undefined;
+	if (!WAVE_PALETTE_CHOICES.includes(raw as WavePaletteChoice)) {
+		throw new Error(`wave_palette must be auto|rekordbox|legacy|mono, got ${String(raw)}`);
 	}
 	return raw as WavePaletteChoice;
 }
