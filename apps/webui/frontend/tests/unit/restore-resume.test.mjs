@@ -35,7 +35,14 @@ function deck(stable_id) {
 		beat_sync_enabled: false,
 		master_tempo_enabled: true,
 		key_sync_enabled: false,
-		stems: { available_controls: [], controls: {} }
+		stems: {
+			available_controls: ['vocal', 'instrumental', 'drums'],
+			controls: {
+				vocal: { muted: false, solo: false, gain: 0.5 },
+				instrumental: { muted: false, solo: false, gain: 0.5 },
+				drums: { muted: false, solo: false, gain: 0.5 }
+			}
+		}
 	};
 }
 

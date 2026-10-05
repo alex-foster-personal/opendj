@@ -74,7 +74,7 @@ function recorder({ rescueHandled = false, rescueDelay = null, restoreSettles = 
 				log.push(`session restore skipDeckRestore=${skipDeckRestore}`);
 				if (resumeInterruptedRestore) log.push('session restore resumes the URL decks');
 				// A restore that settles reports it; one cut short by demotion never does.
-				if (control.restoreSettles) onDeckRestoreSettled();
+				if (control.restoreSettles) onDeckRestoreSettled?.();
 				return installer('session writer')();
 			},
 			installRescueRingWriter: installer('rescue writer'),
