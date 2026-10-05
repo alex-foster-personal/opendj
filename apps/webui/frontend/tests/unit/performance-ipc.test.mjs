@@ -1599,7 +1599,8 @@ test('RESCUE-02 rescue_resume and rescue_stop_all parse, scope all decks, and lo
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({
 			type: 'rescue_resume',
-			decks: [{ deck: 1, position_ms: 5000 }, { deck: 3, position_ms: 12_000 }]
+			decks: [{ deck: 1, position_ms: 5000 }, { deck: 3, position_ms: 12_000 }],
+			master_deck: 1
 		}),
 		ipc.PERFORMANCE_RESCUE_COMMAND_SCOPES
 	);
@@ -1617,8 +1618,23 @@ test('RESCUE-02 rescue_resume and rescue_stop_all parse, scope all decks, and lo
 			/rescue restore owns controls/
 		);
 		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'rescue_resume', decks: [] }),
+			window.musicDjToolsPerformance.dispatch({ type: 'rescue_resume', decks: [], master_deck: 1 }),
 			/requires at least one deck/
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'rescue_resume',
+				decks: [{ deck: 1, position_ms: 0 }],
+				master_deck: 3
+			}),
+			/master_deck 3 is not one of the resumed decks/
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'rescue_resume',
+				decks: [{ deck: 1, position_ms: 0 }]
+			}),
+			/master_deck/
 		);
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({ type: 'rescue_stop_all', extra: true }),

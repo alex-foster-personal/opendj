@@ -359,7 +359,9 @@ _VERBS: tuple[Verb, ...] = (
          note="Requires a mounted playlist history panel."),
     Verb("rescue_resume", "rescue_resume", (
         arg("decks", "rescue_decks", rescue_decks_value, "1:5000[,3:12000]"),
-    ), note="RESCUE-02: schedule every listed deck at position_ms together."),
+        arg("master_deck", "deck", deck_value, "1-4"),
+    ), note="RESCUE-02: schedule every listed deck at position_ms together; RESCUE-06: master_deck "
+            "(one of the listed decks) is master once they start."),
     Verb("rescue_stop_all", "rescue_stop_all", (),
          note="RESCUE-02 Undo: stop every deck restored by rescue playback together."),
 )

@@ -30,7 +30,8 @@ export type AutoPlayStallReason =
 	| 'handoff-attempts-exhausted'
 	| 'handoff-incomplete'
 	| 'master-handover-refused'
-	| 'no-deck-playing';
+	| 'no-deck-playing'
+	| 'no-playing-master';
 
 export interface AutoPlayStallTrack {
 	stable_id: string;
@@ -127,6 +128,8 @@ function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 			return 'AutoPlay stopped: the next track is playing but could not be made master';
 		case 'no-deck-playing':
 			return 'AutoPlay stopped: no deck has been playing for 30 seconds';
+		case 'no-playing-master':
+			return 'AutoPlay cannot arm: a deck is playing but no deck is master';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
@@ -155,6 +158,8 @@ function _resume(reason: AutoPlayStallReason): string {
 			return 'Press MASTER on the deck that is playing: AutoPlay follows the master deck and will queue nothing until one is set.';
 		case 'no-deck-playing':
 			return 'Press play on a loaded deck. AutoPlay will queue the next track from there.';
+		case 'no-playing-master':
+			return 'Press MASTER on the deck that is playing: AutoPlay follows the master deck and queues nothing until one is set.';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);
@@ -248,6 +253,8 @@ export function autoPlayStallDiagnosticMessage(
 	switch (reason) {
 		case 'no-deck-playing':
 			return '[autoplay] arm failed: no-deck-playing after idle timeout (see autoplay-stall)';
+		case 'no-playing-master':
+			return '[autoplay] arm failed: no-playing-master, a deck is playing with no master (see autoplay-stall)';
 		default: {
 			const detailBit = detail === null || detail === '' ? '' : `: ${detail}`;
 			return `[autoplay] run failed: ${reason}${detailBit} (see autoplay-stall)`;
@@ -269,6 +276,7 @@ export function autoPlayExhaustionToast(reason: AutoPlayStallReason): string {
 		case 'handoff-incomplete':
 		case 'master-handover-refused':
 		case 'no-deck-playing':
+		case 'no-playing-master':
 			throw new Error(`${reason} is a handoff failure, not an exhaustion toast`);
 		default: {
 			const _exhaustive: never = reason;

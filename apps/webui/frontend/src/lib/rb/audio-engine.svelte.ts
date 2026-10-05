@@ -4192,9 +4192,13 @@ class RbAudioEngine implements AudioEngine {
 
 	/** RESCUE-02: batch resume with one shared schedule instant for every deck. */
 	async rescueResumeTogether(
-		plans: ReadonlyArray<{ deck: DeckId; positionSec: number }>
+		plans: ReadonlyArray<{ deck: DeckId; positionSec: number }>,
+		masterDeck: DeckId
 	): Promise<void> {
 		if (plans.length === 0) return;
+		if (!plans.some((plan) => plan.deck === masterDeck)) {
+			throw new RangeError(`rescueResumeTogether: master deck ${masterDeck} is not being resumed`);
+		}
 		const ctx = await _resumeContext();
 		let sharedWhen = ctx.currentTime;
 		for (const plan of plans) {
@@ -4204,6 +4208,10 @@ class RbAudioEngine implements AudioEngine {
 		await Promise.all(
 			plans.map((plan) => _scheduleDeck(plan.deck, sharedWhen, plan.positionSec, true))
 		);
+		// RESCUE-06: the shared schedule skips play's play-claim election, so a
+		// rescued page otherwise plays with no master and AutoPlay (which only
+		// arms off the playing master) never queues the next track.
+		_assignMaster(masterDeck, 'play-claim');
 	}
 
 	/** RESCUE-02 Undo: stop every rescued deck at one shared schedule instant. */
