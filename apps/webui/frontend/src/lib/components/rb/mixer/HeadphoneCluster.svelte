@@ -465,6 +465,8 @@
 		justify-content: center;
 		min-height: 23px;
 		line-height: 1.1;
+		/* Breathing room from the VOL knob (the maintainer, Mon 5 Oct 2026). */
+		margin-left: 10px;
 	}
 	.hp-btn-io.io-alert {
 		color: var(--rb-red, #e5484d);
