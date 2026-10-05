@@ -93,6 +93,7 @@
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		settledAvailabilityFromRbMeta,
+		nameStreamingAvailability,
 		startPendingSettle,
 		PlaylistSetTabs,
 		usbPaneSource,
@@ -2340,6 +2341,7 @@
 	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
 		rb_meta?: BrowserRow['rb_meta'];
 		file_availability?: BrowserRow['file_availability'];
+		file_path?: string | null;
 	};
 
 	/** Write rb-meta's disk truth onto a pending row (no-op once settled). */
@@ -2351,7 +2353,13 @@
 			},
 			row.rb_meta ?? null
 		);
-		if (settled !== null) Object.assign(row, settled);
+		if (settled !== null) {
+			const path = row.file_path ?? row.rb_meta?.folder_path ?? null;
+			Object.assign(row, {
+				...settled,
+				file_availability: nameStreamingAvailability(settled.file_availability, path, null)
+			});
+		}
 	}
 
 	function loadRow(
@@ -2597,8 +2605,8 @@
 		}
 		const previewRefusal = libraryAudioLoadRefusal(row);
 		if (previewRefusal !== null) {
-			const detail = previewRefusal.startsWith('streaming')
-				? 'streaming track has no local audio to preview'
+			const detail = /streaming track/i.test(previewRefusal)
+				? previewRefusal
 				: previewRefusal.replace(/^cannot load: /, '');
 			pushToast(`preview: ${detail}`, 'error');
 			return;

@@ -10,10 +10,12 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared.state import db as state_db
 from apps.webui.server.rb_vendor_pkg import availability
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_availability_status
+from apps.webui.server.sqlite_backend import SqliteBackend
 
-from .test_rb_availability_budget import _configure_data_dir, _seed_index, _seed_library
+from .test_rb_availability_budget import ISO, _configure_data_dir, _seed_index, _seed_library
 
 pytestmark = pytest.mark.requirement("LIBM-167")
 
@@ -57,3 +59,41 @@ def test_present_file_still_available(
 
     assert status == "present"
     assert availability.status_to_file_exists(status) is True
+
+
+# REQ: LIBM-167
+@pytest.mark.requirement("LIBM-167")
+def test_streaming_uri_is_not_playable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a tidal URI is stored as streaming [then] playable counts present only."""
+    data_dir = tmp_path / "data"
+    state_db_path = _configure_data_dir(monkeypatch, data_dir)
+    sids, paths = _seed_library(state_db_path, track_count=2)
+    tidal = "tidal:tracks:99560085"
+    conn = state_db.open_rw(state_db_path)
+    try:
+        conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+            (tidal, sids[1]),
+        )
+        conn.execute(
+            "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) "
+            "VALUES (?, 'present', ?, ?)",
+            (sids[0], paths[0], ISO),
+        )
+        conn.execute(
+            "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) "
+            "VALUES (?, 'streaming', ?, ?)",
+            (sids[1], tidal, ISO),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    stats = SqliteBackend(state_db_path).stats()
+    classified = availability.classify_availability(tidal, [], awaiting_volume=False)
+
+    assert classified == "streaming"
+    assert stats["tracks"] == 2
+    assert stats["tracks_playable"] == 1

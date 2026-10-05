@@ -13,48 +13,6 @@
  * "present".
  */
 
-/**
- * The greyed library row and the Broken checkbox share this predicate.
- * True for no audio on this machine: an absent file, or an unchecked row
- * (`AVAILABILITY_PENDING`, including one whose local path was not present).
- * Streaming, Spotify placeholders, a pulled stick, and awaiting-volume rows
- * stay out: they are not broken links.
- */
-export function rowRendersUnavailable(row: {
-	file_exists: boolean | null;
-	file_availability?: string | null;
-	is_streaming?: boolean | null;
-	is_remote?: boolean | null;
-	spotify_pending?: boolean | null;
-	stable_id?: string;
-	rb_meta?: { is_streaming?: boolean | null } | null;
-}): boolean {
-	const streaming =
-		row.file_availability === 'streaming' ||
-		row.is_streaming === true ||
-		row.rb_meta?.is_streaming === true;
-	if (streaming) return false;
-	if (row.spotify_pending === true) return false;
-	if (typeof row.stable_id === 'string' && row.stable_id.startsWith('spotify-pending:')) return false;
-	if (row.file_availability === 'awaiting_volume' || row.is_remote === true) return false;
-	return row.file_exists === false || row.file_availability === 'AVAILABILITY_PENDING';
-}
-
-/** Why this row must not reach a deck, or null when its audio is present. */
-export function libraryAudioLoadRefusal(row: {
-	file_exists: boolean | null;
-	file_availability?: string | null;
-	is_streaming?: boolean | null;
-}): string | null {
-	if (row.is_streaming === true || row.file_availability === 'streaming') {
-		return 'streaming track - deck load not implemented (see PARITY-TODO)';
-	}
-	if (row.file_availability === 'present' && row.file_exists === true) return null;
-	if (row.file_exists === false || row.file_availability === 'absent') {
-		return 'cannot load: audio file missing on disk (broken link)';
-	}
-	return 'cannot load: audio on this machine has not been confirmed';
-}
 import {
 	decodePreviewStrip,
 	parseStemSummary,
@@ -64,6 +22,72 @@ import {
 	type TrackListItemWire
 } from '$lib/rb/api-rb';
 import type { BrowserRow } from './pane-contract.svelte';
+import {
+	isNamedStreamingStatus,
+	isStreamingAvailability,
+	nameStreamingAvailability,
+	streamingLoadRefusal,
+	type StreamingRowFacts
+} from './streaming-availability';
+
+/**
+ * The greyed library row and the Broken checkbox share this predicate.
+ * True for no audio Open DJ can play: an absent file, an unchecked row
+ * (`AVAILABILITY_PENDING`), or a streaming-service URI. Spotify placeholders,
+ * a pulled stick, and awaiting-volume rows stay out.
+ */
+export function rowRendersUnavailable(row: {
+	file_exists: boolean | null;
+	file_availability?: string | null;
+	is_streaming?: boolean | null;
+	is_remote?: boolean | null;
+	spotify_pending?: boolean | null;
+	stable_id?: string;
+	file_path?: string | null;
+	rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
+}): boolean {
+	if (row.spotify_pending === true) return false;
+	if (typeof row.stable_id === 'string' && row.stable_id.startsWith('spotify-pending:')) return false;
+	if (isStreamingAvailability(row)) return true;
+	if (row.file_availability === 'awaiting_volume' || row.is_remote === true) return false;
+	return row.file_exists === false || row.file_availability === 'AVAILABILITY_PENDING';
+}
+
+/** Why this row must not reach a deck, or null when its audio is present. */
+export function libraryAudioLoadRefusal(row: {
+	file_exists: boolean | null;
+	file_availability?: string | null;
+	is_streaming?: boolean | null;
+	file_path?: string | null;
+	streaming_provider?: string | null;
+	rb_meta?: { is_streaming?: boolean | null; folder_path?: string | null } | null;
+}): string | null {
+	if (isStreamingAvailability(row)) return streamingLoadRefusal(row);
+	// A row that only says the file is on disk (no typed status yet) is loadable.
+	// Pending and awaiting-volume stay refused until the status is present.
+	if (
+		row.file_exists === true &&
+		(row.file_availability == null || row.file_availability === 'present')
+	) {
+		return null;
+	}
+	if (row.file_exists === false || row.file_availability === 'absent') {
+		return 'cannot load: audio file missing on disk (broken link)';
+	}
+	return 'cannot load: audio on this machine has not been confirmed';
+}
+
+/** Row tooltip: the streaming sentence, the missing-file sentence, or pending. */
+export function libraryRowHoverTitle(row: StreamingRowFacts & {
+	file_exists: boolean | null;
+}): string | undefined {
+	if (isStreamingAvailability(row)) return streamingLoadRefusal(row);
+	if (row.file_exists === false) return 'cannot load: audio file missing on disk (broken link)';
+	if (row.file_availability === 'AVAILABILITY_PENDING') {
+		return 'cannot load: audio on this machine has not been confirmed';
+	}
+	return undefined;
+}
 
 const FILE_AVAILABILITY_STATUSES: ReadonlySet<string> = new Set<FileAvailabilityStatus>([
 	'present',
@@ -79,7 +103,12 @@ export function wireAvailability(wire: {
 	file_availability: unknown;
 }): Pick<BrowserRow, 'file_exists' | 'file_availability'> | null {
 	const status = wire.file_availability;
-	if (typeof status !== 'string' || !FILE_AVAILABILITY_STATUSES.has(status)) return null;
+	if (
+		typeof status !== 'string' ||
+		(!FILE_AVAILABILITY_STATUSES.has(status) && !isNamedStreamingStatus(status))
+	) {
+		return null;
+	}
 	const availability = status as FileAvailabilityStatus;
 	if (availability === 'AVAILABILITY_PENDING') {
 		return wire.file_exists === null
@@ -148,6 +177,11 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		loudness_status: wire.loudness_status ?? 'ok',
 		loudness_reason: wire.loudness_reason ?? null,
 		...availability,
+		file_availability: nameStreamingAvailability(
+			availability.file_availability,
+			typeof wire.file_path === 'string' ? wire.file_path : null,
+			wire.streaming_provider
+		),
 		file_path: typeof wire.file_path === 'string' ? wire.file_path : null,
 		is_streaming: wire.is_streaming,
 		is_remote: wire.is_remote === true,
@@ -185,10 +219,13 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
  * front. Any other status stays null ("not known to be streaming"), which
  * keeps the lazy rb-meta fallback for the rest unchanged.
  */
+export { nameStreamingAvailability } from './streaming-availability';
+
 export function listRowIsStreaming(
 	availability: FileAvailabilityStatus | null | undefined
 ): true | null {
-	return availability === 'streaming' ? true : null;
+	if (availability === 'streaming' || isNamedStreamingStatus(availability)) return true;
+	return null;
 }
 
 export function rowFromListWire(track: TrackListItemWire, order: number): BrowserRow {
@@ -223,9 +260,21 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		bpm_confidence_error: track.bpm_confidence_error ?? null,
 		...availability,
 		file_path: typeof track.file_path === 'string' ? track.file_path : null,
+		file_availability: nameStreamingAvailability(
+			availability.file_availability,
+			typeof track.file_path === 'string' ? track.file_path : null,
+			track.streaming_provider
+		),
 		// CHROME-02 wire flag, with the listing's own availability verdict
 		// (issue #3934) winning when it already says streaming.
-		is_streaming: listRowIsStreaming(availability.file_availability) ?? track.is_streaming ?? null,
+		is_streaming:
+			listRowIsStreaming(
+				nameStreamingAvailability(
+					availability.file_availability,
+					typeof track.file_path === 'string' ? track.file_path : null,
+					track.streaming_provider
+				)
+			) ?? track.is_streaming ?? null,
 		streaming_provider: track.streaming_provider ?? null,
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,

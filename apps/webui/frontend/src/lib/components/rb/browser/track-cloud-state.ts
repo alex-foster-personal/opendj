@@ -2,6 +2,8 @@
  * durable cloud presence separately from local availability and ephemeral
  * transfer bytes, so none of the three requested states has to be guessed. */
 
+import { streamingLoadRefusal } from './streaming-availability';
+
 export type TrackCloudKind =
 	| 'not-on-cloud'
 	| 'on-cloud-not-local'
@@ -130,14 +132,18 @@ export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 	const transfer = transferView(input.transfer);
 	const unavailable = unavailableIconTitle(input);
 	if (input.isStreaming || input.spotifyPending) {
-		return withTransfer(
-			'streaming',
-			'Streaming-service track; it is not part of CloudSync audio storage.',
-			transfer,
-			input.spotifyPending ? 'spotify' : (input.provider ?? streamingProviderFromPath(input.folderPath)),
-			'none',
-			null
-		);
+		const provider = input.spotifyPending
+			? 'spotify'
+			: (input.provider ?? streamingProviderFromPath(input.folderPath));
+		const title = input.spotifyPending
+			? 'Streaming-service track; it is not part of CloudSync audio storage.'
+			: streamingLoadRefusal({
+					file_availability: input.fileAvailability,
+					is_streaming: input.isStreaming,
+					file_path: input.filePath ?? input.folderPath,
+					streaming_provider: provider
+				});
+		return withTransfer('streaming', title, transfer, provider, 'none', null);
 	}
 
 	if (input.hasRemoteCopy && input.fileExists) {

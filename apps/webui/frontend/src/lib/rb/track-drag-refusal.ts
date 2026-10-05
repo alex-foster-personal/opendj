@@ -6,7 +6,7 @@
  * `preventDefault()` and returned - the drag simply never started, with no
  * cursor change, no toast, nothing - so it read as "can't click and drag from
  * library, deck". Double-clicking the SAME row explained itself properly
- * ("streaming track - deck load not implemented"), which is how the second pin
+ * ("Tidal streaming track: Open DJ can't play streaming services"), which is how the second pin
  * arrived carrying its own diagnosis.
  *
  * One condition, two levels of honesty. The reasons live here so both paths
@@ -23,6 +23,8 @@ export interface DraggableRow {
 	 * and the rest of the code tests `=== true`, so null is treated as "not
 	 * streaming" here too rather than as a third state. */
 	is_streaming?: boolean | null;
+	file_path?: string | null;
+	streaming_provider?: string | null;
 }
 
 /**

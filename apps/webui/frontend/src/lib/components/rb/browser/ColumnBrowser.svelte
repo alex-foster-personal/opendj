@@ -16,7 +16,7 @@
 </script>
 
 <script lang="ts">
-	import { rowRendersUnavailable } from './browser-row-wire';
+	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
 	// Column view (browser-surface unit, Miller-column lane, PlaylistTree's
 	// long-inert 'Column View' tab). Self-contained like PlaylistTree's
 	// smartlist fetch: this component fetches the WHOLE library (artist +
@@ -209,11 +209,7 @@
 								class:selected={selectedId === row.stable_id}
 								class:broken={rowRendersUnavailable(row)}
 								class:pending={row.file_availability === 'AVAILABILITY_PENDING'}
-								title={row.file_exists === false
-									? 'cannot load: audio file missing on disk (broken link)'
-									: row.file_availability === 'AVAILABILITY_PENDING'
-										? 'cannot load: audio on this machine has not been confirmed'
-										: undefined}
+								title={libraryRowHoverTitle(row)}
 								role="button"
 								tabindex="0"
 								onclick={() => _selectTrack(row)}

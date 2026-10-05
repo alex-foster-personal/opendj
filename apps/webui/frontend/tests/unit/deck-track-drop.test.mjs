@@ -57,7 +57,7 @@ describe('applyDeckTrackDrop', () => {
 		assert.equal(toasts.length, 1);
 		assert.equal(
 			toasts[0].message,
-			'streaming track - deck load not implemented (see PARITY-TODO)'
+			"Streaming track: Open DJ can't play streaming services"
 		);
 		assert.equal(dispatches.length, 0);
 	});

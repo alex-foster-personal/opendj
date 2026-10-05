@@ -466,8 +466,8 @@ class HealthStateDb(BaseModel):
     tracks: int
     playlists: int
     pairings: int
-    # Live rows whose track_availability is present or streaming. Unchecked
-    # and absent rows stay in `tracks` and out of this count.
+    # Live rows whose track_availability is present. Streaming-service rows
+    # are not playable. Unchecked and absent rows stay in `tracks`.
     tracks_playable: int = 0
     last_writer_hostname: str | None = None
     last_writer_at: str | None = None

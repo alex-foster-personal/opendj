@@ -21,7 +21,7 @@ import { before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const STREAMING_REFUSAL = 'streaming track - deck load not implemented (see PARITY-TODO)';
+const STREAMING_REFUSAL = "Streaming track: Open DJ can't play streaming services";
 const BROKEN_REFUSAL = 'cannot load: audio file missing on disk (broken link)';
 
 let wire;
@@ -55,9 +55,10 @@ describe('a streaming All Tracks row is streaming from the moment it is mapped',
 		assert.equal(refusal.trackDragRefusal(row), STREAMING_REFUSAL);
 	});
 
-	it('stays visible under hide-broken and is not counted locally available', () => {
+	it('hides under hide-broken and is not counted locally available', () => {
 		const row = listRow({ file_availability: 'streaming', file_exists: false });
-		assert.deepEqual(contract.filterRows([row], '', true), [row]);
+		assert.equal(wire.rowRendersUnavailable(row), true);
+		assert.deepEqual(contract.filterRows([row], '', true), []);
 		assert.equal(contract.rowIsLocallyAvailable(row), false);
 	});
 
@@ -77,8 +78,9 @@ describe('a streaming All Tracks row is streaming from the moment it is mapped',
 });
 
 describe('listRowIsStreaming', () => {
-	it('answers true only for the streaming status', () => {
+	it('answers true for streaming and a named scheme status', () => {
 		assert.equal(wire.listRowIsStreaming('streaming'), true);
+		assert.equal(wire.listRowIsStreaming('tidal-streaming'), true);
 		for (const status of ['present', 'absent', 'awaiting_volume', 'AVAILABILITY_PENDING', null, undefined]) {
 			assert.equal(wire.listRowIsStreaming(status), null, String(status));
 		}

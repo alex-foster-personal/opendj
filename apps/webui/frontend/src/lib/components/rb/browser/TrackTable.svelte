@@ -114,7 +114,7 @@
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackRowPopovers, { type PlaylistsMenuAnchor, type RelocateMenuAnchor } from './TrackRowPopovers.svelte';
 	import { trackCloudView } from './track-cloud-state';
-	import { rowRendersUnavailable } from './browser-row-wire';
+	import { libraryRowHoverTitle, rowRendersUnavailable } from './browser-row-wire';
 	import CloudStatusIcon from './CloudStatusIcon.svelte';
 	import MinorIssueSquare from './MinorIssueSquare.svelte';
 	import SortArrowIcon from './SortArrowIcon.svelte';
@@ -1887,11 +1887,7 @@
 						class:broken={rowRendersUnavailable(row)}
 						class:rb-row-availability-pending={row.file_availability ===
 							'AVAILABILITY_PENDING'}
-						title={row.file_exists === false
-							? 'cannot load: audio file missing on disk (broken link)'
-							: row.file_availability === 'AVAILABILITY_PENDING'
-								? 'cannot load: audio on this machine has not been confirmed'
-								: undefined}
+						title={libraryRowHoverTitle(row)}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}

@@ -145,7 +145,7 @@ describe('pending rows are refused; a known-absent file says missing', () => {
 	it('drag still refuses a streaming row (control)', () => {
 		assert.match(
 			refusal.trackDragRefusal({ file_exists: null, is_streaming: true }),
-			/streaming track/
+			/streaming track/i
 		);
 	});
 });
@@ -176,10 +176,13 @@ test('pending rows are styled and titled as pending in both browser views', () =
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /class:rb-row-availability-pending=/);
 	assert.match(table, /class:broken=\{rowRendersUnavailable\(row\)\}/);
-	assert.match(table, /cannot load: audio on this machine has not been confirmed/);
+	assert.match(table, /title=\{libraryRowHoverTitle\(row\)\}/);
 	const column = read('src/lib/components/rb/browser/ColumnBrowser.svelte');
 	assert.match(column, /class:broken=\{rowRendersUnavailable\(row\)\}/);
+	assert.match(column, /title=\{libraryRowHoverTitle\(row\)\}/);
 	assert.match(column, /class:pending=/);
+	const wireSrc = read('src/lib/components/rb/browser/browser-row-wire.ts');
+	assert.match(wireSrc, /cannot load: audio on this machine has not been confirmed/);
 });
 
 /*

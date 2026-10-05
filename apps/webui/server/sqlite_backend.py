@@ -984,7 +984,7 @@ class SqliteBackend:
                     "SELECT COUNT(*) FROM tracks AS t "
                     "JOIN track_availability AS a ON a.stable_id = t.stable_id "
                     "WHERE t.deleted_at IS NULL "
-                    "AND a.state IN ('present', 'streaming')"
+                    "AND a.state = 'present'"
                 ).fetchone()[0]
         return {
             "tracks": tracks,

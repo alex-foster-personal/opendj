@@ -496,9 +496,9 @@ export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from 
  * into the pure module's SearchableTrack shape (resolving the rb_meta genre
  * fallback here, since that fallback is BrowserRow-specific).
  *
- * Streaming / Spotify-pending rows stay visible under hide-broken: they are
- * intentional unmatched placeholders, not broken links. Unavailable rows
- * (absent, or unchecked / pending) use the same predicate as the greyed row. */
+ * Spotify-pending placeholders stay visible under hide-broken. A streaming
+ * service URI is a broken link and hides with the other unavailable rows
+ * (absent, or unchecked / pending). */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
 	// The Broken checkbox is the inverse of hideBroken: unticked hides these rows.

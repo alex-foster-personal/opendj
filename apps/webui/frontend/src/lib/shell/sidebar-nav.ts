@@ -60,7 +60,7 @@ export function isCurrentNavLink(href: string, pathname: string): boolean {
  * number again. Denominators per `GET /api/v1/health` state_db
  * (sqlite_backend.stats): every track row, and non-deleted playlists. */
 export function headerTrackCountTitle(n: number, playable = 0): string {
-	return `${n} tracks: every track row in the library database (state.db), including tracks whose audio file is missing. ${playable} playable: track_availability present or streaming on this machine.`;
+	return `${n} tracks: every track row in the library database (state.db), including tracks whose audio file is missing. ${playable} playable: track_availability present on this machine. Streaming-service rows are not playable.`;
 }
 
 export function headerPlaylistCountTitle(n: number): string {
