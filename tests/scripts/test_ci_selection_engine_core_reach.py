@@ -11,6 +11,8 @@ Today that reach is DERIVED, not hand-mapped: `tests/engine_core/conftest.py` im
 through webui, so the conftest-reach rule selects every engine_core test. These tests pin
 it against THIS repository, and the webui module list is read from engine_core's own
 imports by AST, so a new direct import is covered without editing this file.
+
+[if] a webui module engine_core imports stops selecting tests/engine_core [then] fail, [else stop].
 """
 
 from __future__ import annotations
