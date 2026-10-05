@@ -2,7 +2,8 @@
  * Charted AutoPlay order memo and refresh (extracted from auto-play.svelte.ts).
  */
 
-import { deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import { autoPlaySongIdentity } from '$lib/rb/auto-play-chain';
 import {
 	chartedOrderKey,
 	getAutoPlayPlaylist,
@@ -17,6 +18,18 @@ import { publishAutoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 
 export const CHARTED_ORDER_HORIZON = 64;
+
+/** PLAY-16: the recordings on the decks now, for rows the playlist cannot name. */
+export function deckSongIdentities(): Set<string> {
+	const identities = new Set<string>();
+	for (const id of DECK_IDS) {
+		const deck = deckStates[id];
+		if (deck.stable_id === null) continue;
+		const identity = autoPlaySongIdentity(deck.title, deck.artist);
+		if (identity !== null) identities.add(identity);
+	}
+	return identities;
+}
 
 export function clearChartedAutoPlayOrder(chartKey: { current: string | null }): void {
 	chartKey.current = null;
@@ -73,7 +86,8 @@ export function refreshChartedAutoPlayOrder(input: {
 		max_tempo_ratio: bounds.max,
 		exclude_ids: input.excludeIds,
 		played_ids: input.playedIds,
-		max_chain_length: CHARTED_ORDER_HORIZON + 1
+		max_chain_length: CHARTED_ORDER_HORIZON + 1,
+		exclude_identities: deckSongIdentities()
 	});
 	publishAutoPlayOrder(full.slice(1));
 }

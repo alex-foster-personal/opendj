@@ -85,6 +85,10 @@
  *                                                   first observation WITH rows.
  *                                                   An empty mount snapshot must
  *                                                   not freeze the whole session.
+ * 21  Candidate is another library copy of a        Not pickable (PLAY-16): same title
+ *     recording on a deck, played or claimed        once "N - " prefixes go, same lead
+ *                                                   artist, so one song cannot sit
+ *                                                   on several decks at once.
  *
  * CONVERGENCE - the simple logic all twenty rows reduce to:
  *   a. Source = the playing master, or nothing.                 (pickSourceDeck)
@@ -103,7 +107,10 @@
  * a deferred master promotion from re-arming an already committed handoff.
  */
 import type { AutoPlayTrackRow } from '$lib/rb/auto-play-chain';
-import { pickNextStableId as pickCompatibleNextStableId } from '$lib/rb/auto-play-chain';
+import {
+	pickNextStableId as pickCompatibleNextStableId,
+	sameRecordingAsSpent
+} from '$lib/rb/auto-play-chain';
 export { createAutoPlayFeedSnapshot } from '$lib/rb/autoplay-feed';
 import type { DeckId } from '$lib/rb/deck-slots';
 
@@ -351,12 +358,14 @@ export function queueEntriesForChain(
 export function pickNextStableId(input: Parameters<typeof pickCompatibleNextStableId>[0]): string | null {
 	const compatible = pickCompatibleNextStableId(input);
 	if (compatible !== null || input.enforce_play_order) return compatible;
+	const repeatsARecording = sameRecordingAsSpent(input);
 	for (const row of input.playlist) {
 		if (
 			row.stable_id !== input.current_stable_id &&
 			row.file_exists &&
 			!input.exclude_ids.has(row.stable_id) &&
-			!input.played_ids.has(row.stable_id)
+			!input.played_ids.has(row.stable_id) &&
+			!repeatsARecording(row)
 		) {
 			return row.stable_id;
 		}
