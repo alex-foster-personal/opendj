@@ -50,7 +50,7 @@ function _visibleAgainstBackground(color) {
 
 /** A 2D context that records the ink each draw call lays down. */
 function recordingContext() {
-	const ink = { area: 0, strokeSegments: 0 };
+	const ink = { area: 0, strokeSegments: 0, colors: new Set() };
 	let pathSegments = 0;
 	const ctx = {
 		fillStyle: '',
@@ -58,7 +58,10 @@ function recordingContext() {
 		lineWidth: 1,
 		clearRect() {},
 		fillRect(_x, _y, w, h) {
-			if (_visibleAgainstBackground(ctx.fillStyle)) ink.area += Math.max(0, w) * Math.max(0, h);
+			if (_visibleAgainstBackground(ctx.fillStyle)) {
+				ink.area += Math.max(0, w) * Math.max(0, h);
+				if (w > 0 && h > 0) ink.colors.add(ctx.fillStyle);
+			}
 		},
 		beginPath() {
 			pathSegments = 0;
@@ -103,6 +106,7 @@ test('CHROME-16 if any option value of a preview row paints an empty or invisibl
 				const label = `${def.id}=${value} skin=${skinId} -> ${design}/${choice}`;
 				const visible = ink.area >= MIN_INK_SHARE * W * H || ink.strokeSegments >= 40;
 				assert.ok(visible, `${label}: preview painted no visible marks (ink area ${ink.area}, stroke segments ${ink.strokeSegments})`);
+				if (design === 'tri-band') assert.equal(ink.colors.size, 3, `${label}: tri-band must show all three bands, saw ${[...ink.colors].join(', ')}`);
 				painted += 1;
 			}
 		}
