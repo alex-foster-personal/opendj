@@ -1,4 +1,7 @@
-"""STATE-17: superseded own-analysis versions are pruned; the current one always survives."""
+"""STATE-17 analysis retention.
+
+[if] an own_* version is superseded [then] it is pruned and the current one survives, [else stop].
+"""
 
 from __future__ import annotations
 

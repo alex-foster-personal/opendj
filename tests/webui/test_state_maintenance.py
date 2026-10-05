@@ -1,4 +1,7 @@
-"""STATE-16: the state.db WAL is reset by a periodic TRUNCATE checkpoint."""
+"""STATE-16 WAL checkpointing.
+
+[if] the state.db WAL grows past the threshold [then] a TRUNCATE checkpoint resets it, [else stop].
+"""
 
 from __future__ import annotations
 
