@@ -62,6 +62,7 @@ def health(
         status="ok",
         state_db=HealthStateDb(
             path=str(db_path), tracks=stats["tracks"],
+            tracks_playable=int(stats.get("tracks_playable", 0)),
             playlists=stats["playlists"], pairings=stats["pairings"],
             last_writer_hostname=last_writer[0] if last_writer else None,
             last_writer_at=last_writer[1] if last_writer else None,

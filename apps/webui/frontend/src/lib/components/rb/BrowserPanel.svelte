@@ -89,9 +89,10 @@
 		clearSelection,
 		pruneSelection,
 		fetchAllPages,
+		libraryAudioLoadRefusal,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		settledAvailabilityFromRbMeta,
+		applySettledAvailability,
 		startPendingSettle,
 		PlaylistSetTabs,
 		usbPaneSource,
@@ -2273,7 +2274,7 @@
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
-			_applySettledAvailability(row);
+			applySettledAvailability(row);
 		} catch (exc) {
 			// A track with no rekordbox vendor mapping is NOT an error any more:
 			// rb-meta answers 200 with the local-vendor payload. A 404 here now
@@ -2339,19 +2340,8 @@
 	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
 		rb_meta?: BrowserRow['rb_meta'];
 		file_availability?: BrowserRow['file_availability'];
+		file_path?: string | null;
 	};
-
-	/** Write rb-meta's disk truth onto a pending row (no-op once settled). */
-	function _applySettledAvailability(row: LoadableRow): void {
-		const settled = settledAvailabilityFromRbMeta(
-			{
-				file_exists: row.file_exists,
-				file_availability: row.file_availability ?? 'AVAILABILITY_PENDING'
-			},
-			row.rb_meta ?? null
-		);
-		if (settled !== null) Object.assign(row, settled);
-	}
 
 	function loadRow(
 		row: LoadableRow,
@@ -2590,17 +2580,16 @@
 		// broken link has no audio to preview, and finding that out as an
 		// opaque decoder error several hundred milliseconds later teaches the
 		// operator nothing. `is_streaming` has no local file at all.
-		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
-			pushToast('preview: streaming track has no local audio to preview', 'error');
-			return;
-		}
 		if (isRemovedStickRow(row)) {
 			pushToast('preview: Stick removed', 'error');
 			return;
 		}
-		// Pin c90b8036d495: null means not probed yet, and the preview is the probe.
-		if (row.file_exists === false) {
-			pushToast('preview: audio file missing on disk (broken link)', 'error');
+		const previewRefusal = libraryAudioLoadRefusal(row);
+		if (previewRefusal !== null) {
+			const detail = /streaming track/i.test(previewRefusal)
+				? previewRefusal
+				: previewRefusal.replace(/^cannot load: /, '');
+			pushToast(`preview: ${detail}`, 'error');
 			return;
 		}
 		// The row already carries the analyzed BPM, so the tempo match (CUEOUT-15
@@ -2633,19 +2622,15 @@
 		// generation number, not a boolean, is what makes that safe.
 		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
-			if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
-				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
-				return;
-			}
 			if (isRemovedStickRow(row)) {
 				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
-			if (row.file_exists === false) {
-				// FR-1: broken-link rows stay selectable but never load. A row
-				// whose disk truth is not probed yet (null) is NOT refused: the
-				// load is the probe (pin c90b8036d495).
-				pushToast('cannot load: audio file missing on disk (broken link)', 'error');
+			const loadRefusal = libraryAudioLoadRefusal(row);
+			if (loadRefusal !== null) {
+				// Refuse before dispatchPerformanceCommand. Absent and
+				// unchecked/pending rows never become a deck error toast.
+				pushToast(loadRefusal, 'error');
 				return;
 			}
 			const target = deck ?? _lowestFreeDeck();

@@ -134,9 +134,9 @@ test('a grayed stick row is refused as "Stick removed" before the broken-link re
 	]) {
 		const guard = between(panel, start, end);
 		const removed = guard.indexOf('if (isRemovedStickRow(row)) {');
-		// The broken-link refusal fires only on a probed `false`; a pending
-		// (null) probe is not a refusal (pin c90b8036d495).
-		const broken = guard.indexOf('if (row.file_exists === false) {');
+		// Broken-link and pending refusals now share libraryAudioLoadRefusal.
+		// The stick sentence has to win before that call.
+		const broken = guard.indexOf('libraryAudioLoadRefusal(row)');
 		assert.ok(removed >= 0, `${start} has no removed-stick refusal`);
 		assert.ok(broken > removed, `${start}: the removed-stick refusal must run before the broken-link one`);
 		assert.match(
