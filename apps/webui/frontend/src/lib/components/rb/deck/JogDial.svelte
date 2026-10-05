@@ -22,10 +22,12 @@
 	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import { readPalette, resolveStripWaveformKind } from '$lib/components/rb/wave/render';
 	import {
 		blitJogRadial,
 		JOG_RADIAL_INNER_RADIUS,
 		type JogRadialFrame,
+		type JogRadialPalette,
 		type StripVocals
 	} from './jog-radial-render';
 
@@ -52,6 +54,10 @@
 
 	const DIAL_CSS_PX = 104;
 	let radialCanvas: HTMLCanvasElement | undefined = $state();
+	// Same palette source as the deck rows (WaveRow.svelte): the .perf-root
+	// --rb-wave-* vars, re-read when the theme, the waveform colour choice or
+	// the skin swaps them. $state.raw so an idle deck still repaints on a swap.
+	let radialPalette = $state.raw<JogRadialPalette | null>(null);
 
 	const radialOn: boolean = $derived(uiPrefs.jog_radial_waveform);
 	const previewBands = $derived(deck.anlz?.waveform.preview ?? null);
@@ -210,7 +216,18 @@
 
 	$effect(() => {
 		const c = radialCanvas;
-		if (c === undefined || !showRadialCanvas || previewBands === null || deck.anlz === null) return;
+		if (c === undefined) return;
+		void uiPrefs.theme;
+		void uiPrefs.wave_palette;
+		void uiPrefs.ui_skin;
+		radialPalette = readPalette(c); // throws if not under .perf-root
+	});
+
+	$effect(() => {
+		const c = radialCanvas;
+		const palette = radialPalette;
+		if (c === undefined || palette === null) return;
+		if (!showRadialCanvas || previewBands === null || deck.anlz === null) return;
 		const ctx = c.getContext('2d');
 		if (ctx === null) throw new Error('JogDial: radial canvas 2d context unavailable');
 		const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio ?? 1;
@@ -224,8 +241,8 @@
 		const frame: JogRadialFrame = {
 			widthPx: css,
 			heightPx: css,
-			playingFace: deck.audible,
-			kind: deck.anlz.waveform.kind,
+			palette,
+			kind: resolveStripWaveformKind(deck.anlz.waveform.kind, uiPrefs.waveform_design),
 			preview: previewBands,
 			vocals: radialVocals,
 			durationSec: radialDurationSec

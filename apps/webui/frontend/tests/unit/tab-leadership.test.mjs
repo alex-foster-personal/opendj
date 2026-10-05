@@ -1,0 +1,372 @@
+/**
+ * AGENT-18: exactly one /performance tab per engine writes the UI mirror and
+ * claims agent orders.
+ *
+ * Mon 5 Oct 2026 on the live preview: the maintainer's Chrome tab plus two agent browser
+ * panes each polled `GET /api/v1/commands/next` every 50 ms and PUT the mirror
+ * every second, so an order ran in whichever tab claimed it and the engine's
+ * view of what was playing flipped between tabs.
+ *
+ * The Web Locks manager and the engine are fakes that implement the documented
+ * contracts (ifAvailable, steal rejects the old holder with AbortError, a
+ * signal aborts a queued request; the lease rules of routes/state.py). The
+ * controller, the publisher and the order poll are the real modules.
+ *
+ * Regression lines:
+ *   - if a second tab in one browser is not a follower then broken
+ *   - if closing the leader does not promote a follower then broken
+ *   - if Take control does not move leadership (and hand it back later) then broken
+ *   - if a follower PUTs the mirror or polls commands/next then broken
+ *   - if a 409 lease_held does not demote the tab then broken
+ *   - if a demoted tab keeps PUTting (409 console spam) then broken
+ *   - if a lease release does not promote the other browser's tab then broken
+ */
+import assert from 'node:assert/strict';
+import { afterEach, beforeEach, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const leadershipModule = await loadTypeScriptModule('src/lib/rb/tab-leadership.ts');
+const publisherModule = await loadTypeScriptModule('src/lib/rb/leased-mirror-publisher.ts');
+const orders = await loadTypeScriptModule('src/lib/rb/agent-orders.ts');
+const { createTabLeadership } = leadershipModule;
+const { createLeasedMirrorPublisher, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
+const NEXT = '/api/v1/commands/next';
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function flush() {
+	for (let i = 0; i < 10; i += 1) await tick();
+}
+
+function abortError() {
+	const error = new Error('lock request aborted');
+	error.name = 'AbortError';
+	return error;
+}
+
+/** One browser's LockManager, single lock name, per the Web Locks spec. */
+function fakeLocks() {
+	let holder = null;
+	const queue = [];
+	const grant = (entry) => {
+		holder = entry;
+		Promise.resolve()
+			.then(() => entry.callback({ name: entry.name }))
+			.then(
+				(value) => {
+					if (holder !== entry) return;
+					holder = null;
+					entry.resolve(value);
+					next();
+				},
+				(error) => {
+					if (holder !== entry) return;
+					holder = null;
+					entry.reject(error);
+					next();
+				}
+			);
+	};
+	const next = () => {
+		const entry = queue.shift();
+		if (entry !== undefined) grant(entry);
+	};
+	return {
+		held: () => holder !== null,
+		request(name, options, callback) {
+			return new Promise((resolve, reject) => {
+				const entry = { name, callback, resolve, reject };
+				if (options.steal) {
+					if (holder !== null) {
+						const stolen = holder;
+						holder = null;
+						stolen.reject(abortError());
+					}
+					grant(entry);
+					return;
+				}
+				if (holder === null && queue.length === 0) {
+					grant(entry);
+					return;
+				}
+				if (options.ifAvailable) {
+					Promise.resolve(callback(null)).then(resolve, reject);
+					return;
+				}
+				queue.push(entry);
+				options.signal?.addEventListener('abort', () => {
+					const index = queue.indexOf(entry);
+					if (index >= 0) queue.splice(index, 1);
+					reject(abortError());
+				});
+			});
+		}
+	};
+}
+
+function tab(locks) {
+	const snapshots = [];
+	const leadership = createTabLeadership({ locks, onChange: (snapshot) => snapshots.push(snapshot) });
+	return { leadership, snapshots, role: () => leadership.snapshot().role };
+}
+
+// ------------------------------------------------------------ leadership ---
+
+test('the first tab leads and a second tab in the same browser follows', async () => {
+	const locks = fakeLocks();
+	const a = tab(locks);
+	await flush();
+	const b = tab(locks);
+	await flush();
+	assert.equal(a.role(), 'leader');
+	assert.equal(b.role(), 'follower');
+	assert.equal(b.leadership.snapshot().reason, 'another-tab');
+	assert.equal(b.leadership.isLeader(), false);
+	a.leadership.dispose();
+	b.leadership.dispose();
+});
+
+test('mutation control: without a shared lock both tabs lead', async () => {
+	// This is the defect: each tab on its own lock (or none) believes it leads.
+	const a = tab(fakeLocks());
+	const b = tab(fakeLocks());
+	await flush();
+	assert.equal(a.role(), 'leader');
+	assert.equal(b.role(), 'leader');
+});
+
+test('closing the leader promotes the follower', async () => {
+	const locks = fakeLocks();
+	const a = tab(locks);
+	await flush();
+	const b = tab(locks);
+	await flush();
+	a.leadership.dispose();
+	await flush();
+	assert.equal(b.role(), 'leader');
+	assert.deepEqual(b.snapshots.map((s) => s.role), ['follower', 'leader']);
+	b.leadership.dispose();
+});
+
+test('Take control moves leadership, and it comes back when the taker closes', async () => {
+	const locks = fakeLocks();
+	const a = tab(locks);
+	await flush();
+	const b = tab(locks);
+	await flush();
+	b.leadership.takeControl();
+	await flush();
+	assert.equal(b.role(), 'leader');
+	assert.equal(a.role(), 'follower', 'the stolen tab must stand down');
+	assert.equal(b.leadership.consumeTakeover(), true, 'the next PUT asks the engine for the lease');
+	assert.equal(b.leadership.consumeTakeover(), false, 'and only the next one');
+	b.leadership.dispose();
+	await flush();
+	assert.equal(a.role(), 'leader', 'the stolen tab re-queued and got it back');
+	a.leadership.dispose();
+	await flush();
+	assert.equal(locks.held(), false, 'dispose releases the lock');
+});
+
+test('a lease conflict demotes a lock holder and a free lease restores it', () => {
+	const a = tab(null);
+	assert.equal(a.role(), 'leader', 'no Web Locks: the lease alone arbitrates');
+	a.leadership.noteLeaseConflict('chrome-tab');
+	assert.deepEqual(a.leadership.snapshot(), {
+		role: 'follower',
+		reason: 'another-browser',
+		leaseHolder: 'chrome-tab'
+	});
+	assert.equal(a.leadership.holdsLocalLock(), true);
+	a.leadership.noteLeaseFree();
+	assert.equal(a.role(), 'leader');
+});
+
+// --------------------------------------------- publisher + fake engine ---
+
+const TTL_MS = 10_000;
+let realFetch;
+let engine;
+let clockMs;
+
+/** The lease rules of apps/webui/server/routes/state.py, in memory. */
+function fakeEngine() {
+	const state = { lease: null, mirror: null, requests: [] };
+	const live = () => (state.lease !== null && state.lease.expires > clockMs ? state.lease : null);
+	const json = (status, body) =>
+		new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+	state.fetch = async (url, init = {}) => {
+		const method = init.method ?? 'GET';
+		const headers = init.headers ?? {};
+		state.requests.push({ method, url: String(url), lease: headers['x-opendj-lease'] ?? null, takeover: headers['x-opendj-lease-takeover'] ?? null });
+		if (url === MIRROR_PATH && method === 'PUT') {
+			const id = headers['x-opendj-lease'];
+			const current = live();
+			if (current !== null && current.holder !== id && headers['x-opendj-lease-takeover'] !== '1') {
+				return json(409, { accepted: false, reason: 'lease_held', held: true, holder: current.holder });
+			}
+			state.lease = { holder: id, expires: clockMs + TTL_MS };
+			state.mirror = JSON.parse(init.body);
+			return json(202, { accepted: true });
+		}
+		if (url === MIRROR_PATH && method === 'DELETE') {
+			const current = live();
+			if (current === null || current.holder === headers['x-opendj-client-id']) {
+				state.lease = null;
+				state.mirror = null;
+			}
+			return new Response(null, { status: 204 });
+		}
+		if (url === LEASE_PATH) {
+			const current = live();
+			return json(200, { held: current !== null, holder: current?.holder ?? null });
+		}
+		if (url === NEXT) return json(200, null);
+		throw new Error(`unexpected request ${method} ${url}`);
+	};
+	return state;
+}
+
+beforeEach(() => {
+	realFetch = globalThis.fetch;
+	clockMs = 1_000_000;
+	engine = fakeEngine();
+	globalThis.fetch = engine.fetch;
+});
+
+afterEach(() => {
+	globalThis.fetch = realFetch;
+});
+
+/** One /performance page, wired the way installUiMirror wires it: promotion publishes at once. */
+function page(locks, clientId) {
+	const snapshots = [];
+	let mirror = null;
+	const leadership = createTabLeadership({
+		locks,
+		onChange: (snapshot) => {
+			snapshots.push(snapshot);
+			if (snapshot.role === 'leader') mirror.publish();
+		}
+	});
+	mirror = createLeasedMirrorPublisher({
+		leadership,
+		clientId,
+		build: () => ({ client_open: true, client_id: clientId }),
+		now: () => clockMs
+	});
+	return { leadership, snapshots, mirror, clientId, role: () => leadership.snapshot().role };
+}
+
+const puts = (id) => engine.requests.filter((r) => r.method === 'PUT' && r.lease === id).length;
+
+test('same browser: only the leader PUTs; closing it promotes the follower', async () => {
+	const locks = fakeLocks();
+	const a = page(locks, 'tab-a');
+	await flush();
+	const b = page(locks, 'tab-b');
+	await flush();
+	for (let i = 0; i < 5; i += 1) {
+		a.mirror.publish();
+		b.mirror.publish();
+		clockMs += 1000;
+		await flush();
+	}
+	assert.equal(puts('tab-a'), 6, 'one PUT on promotion, then one per tick');
+	assert.equal(puts('tab-b'), 0, 'a follower is silent toward the engine');
+	assert.equal(engine.requests.filter((r) => r.url === LEASE_PATH).length, 0, 'and does not even read the lease');
+	assert.equal(b.mirror.isRegistered(), false);
+	// Close A the way installUiMirror's teardown does.
+	await engine.fetch(MIRROR_PATH, { method: 'DELETE', headers: { 'x-opendj-client-id': 'tab-a' } });
+	a.leadership.dispose();
+	await flush();
+	assert.equal(b.role(), 'leader');
+	assert.equal(puts('tab-b'), 1, 'promotion publishes at once');
+	assert.equal(b.mirror.isRegistered(), true);
+	assert.equal(engine.mirror.client_id, 'tab-b');
+	b.leadership.dispose();
+});
+
+test('two browsers: the second is refused once, then reads the lease instead of PUTting', async () => {
+	const a = page(fakeLocks(), 'chrome');
+	await flush();
+	const b = page(fakeLocks(), 'agent-pane');
+	await flush();
+	assert.equal(b.leadership.snapshot().reason, 'another-browser');
+	assert.equal(b.leadership.snapshot().leaseHolder, 'chrome');
+	for (let i = 0; i < 6; i += 1) {
+		clockMs += 1000;
+		a.mirror.publish();
+		b.mirror.publish();
+		await flush();
+	}
+	assert.equal(puts('agent-pane'), 1, 'exactly one refused PUT, then silence');
+	const leaseReads = engine.requests.filter((r) => r.url === LEASE_PATH).length;
+	assert.ok(leaseReads >= 3 && leaseReads <= 4, `lease re-read every ${LEASE_RECHECK_MS} ms, got ${leaseReads}`);
+	assert.equal(engine.mirror.client_id, 'chrome', 'the leader mirror was never overwritten');
+	// Chrome closes: its DELETE releases the lease, and the pane takes over.
+	await engine.fetch(MIRROR_PATH, { method: 'DELETE', headers: { 'x-opendj-client-id': 'chrome' } });
+	clockMs += LEASE_RECHECK_MS;
+	b.mirror.publish();
+	await flush();
+	assert.equal(b.role(), 'leader');
+	assert.equal(engine.mirror.client_id, 'agent-pane', 'promotion published at once');
+});
+
+test('two browsers: a crashed holder hands over after the lease lapses', async () => {
+	const a = page(fakeLocks(), 'chrome');
+	await flush();
+	const b = page(fakeLocks(), 'agent-pane');
+	await flush();
+	clockMs += TTL_MS - 1000;
+	b.mirror.publish();
+	await flush();
+	assert.equal(b.role(), 'follower', 'control: still held inside the TTL');
+	clockMs += 2000;
+	b.mirror.publish();
+	await flush();
+	assert.equal(b.role(), 'leader');
+});
+
+test('Take control across browsers sends the takeover header once and demotes the old holder', async () => {
+	const a = page(fakeLocks(), 'chrome');
+	await flush();
+	const b = page(fakeLocks(), 'agent-pane');
+	await flush();
+	b.leadership.takeControl();
+	await flush();
+	assert.equal(engine.mirror.client_id, 'agent-pane', 'becoming leader publishes at once');
+	clockMs += 1000;
+	b.mirror.publish();
+	a.mirror.publish();
+	await flush();
+	const takeovers = engine.requests.filter((r) => r.takeover === '1');
+	assert.equal(takeovers.length, 1);
+	assert.equal(a.leadership.snapshot().reason, 'another-browser');
+	assert.equal(engine.mirror.client_id, 'agent-pane');
+});
+
+test('a follower never polls the order bus; a registered leader does', async () => {
+	const locks = fakeLocks();
+	const a = page(locks, 'tab-a');
+	await flush();
+	const b = page(locks, 'tab-b');
+	await flush();
+	a.mirror.publish();
+	b.mirror.publish();
+	await flush();
+	let running = true;
+	const followerPoll = orders.pollAgentOrders(b.mirror, b.mirror.publish, () => running);
+	await new Promise((resolve) => setTimeout(resolve, 220));
+	running = false;
+	await followerPoll;
+	assert.equal(engine.requests.filter((r) => r.url === NEXT).length, 0);
+	running = true;
+	const leaderPoll = orders.pollAgentOrders(a.mirror, a.mirror.publish, () => running);
+	await new Promise((resolve) => setTimeout(resolve, 220));
+	running = false;
+	await leaderPoll;
+	assert.ok(engine.requests.filter((r) => r.url === NEXT).length > 0, 'control: the leader does poll');
+	a.leadership.dispose();
+	b.leadership.dispose();
+});

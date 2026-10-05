@@ -336,7 +336,11 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
 	| { type: 'playlist_redo' }
-	| { type: 'rescue_resume'; decks: Array<{ deck: DeckId; position_ms: number }> }
+	| {
+			type: 'rescue_resume';
+			decks: Array<{ deck: DeckId; position_ms: number }>;
+			master_deck: DeckId;
+	  }
 	| { type: 'rescue_stop_all' };
 
 export interface PerformanceDeckSnapshot {
@@ -1289,7 +1293,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type };
 	}
 	if (type === 'rescue_resume') {
-		_exactKeys(record, ['type', 'decks']);
+		_exactKeys(record, ['type', 'decks', 'master_deck']);
 		if (!Array.isArray(record.decks) || record.decks.length === 0) {
 			throw new RangeError('rescue_resume requires at least one deck');
 		}
@@ -1300,7 +1304,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 			return { deck: _deck(row.deck), position_ms };
 		});
-		return { type, decks };
+		if (record.master_deck === undefined) {
+			throw new TypeError('rescue_resume requires master_deck (RESCUE-06)');
+		}
+		const master_deck = _deck(record.master_deck);
+		if (!decks.some((entry) => entry.deck === master_deck)) {
+			throw new RangeError(`rescue_resume master_deck ${master_deck} is not one of the resumed decks`);
+		}
+		return { type, decks, master_deck };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -2565,7 +2576,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			deck: entry.deck,
 			positionSec: entry.position_ms / 1000
 		}));
-		await engine.rescueResumeTogether(plans);
+		await engine.rescueResumeTogether(plans, command.master_deck);
 		_rescueRestoredDecks = command.decks.map((entry) => entry.deck);
 	} else if (command.type === 'rescue_stop_all') {
 		const decks = _rescueRestoredDecks.length > 0 ? _rescueRestoredDecks : DECK_IDS.filter(

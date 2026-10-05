@@ -28,6 +28,9 @@ from apps.shared.platform_paths import load_path_map
 from apps.shared.state import machine_identity
 
 _SQL_CHUNK: int = 500
+#: Age past which an UNCHANGED probe answer is written back (PERF-RB-05). Ten
+#: minutes: twenty TTLs, so the index still tracks disk truth across restarts.
+UNCHANGED_REWRITE_AFTER_S: float = 600.0
 
 
 @dataclass(frozen=True)
@@ -120,18 +123,33 @@ def upsert_rows(
     namespace: str,
     rows: Sequence[tuple[str, int | None]],
 ) -> None:
-    """Idempotent write of probed paths under ``namespace``."""
+    """Idempotent write of probed paths under ``namespace``.
+
+    A row whose answer did not change is rewritten only once its stored
+    ``checked_at`` is older than :data:`UNCHANGED_REWRITE_AFTER_S` (PERF-RB-05).
+    Inside the process the L1 cache (``config._FILE_EXISTS_CACHE``) already
+    holds the fresh answer, so the only thing an unchanged rewrite bought was a
+    newer ``checked_at`` for the next process, and ``checked_at`` is indexed.
+    With ``FILE_EXISTS_TTL_S`` at 30 s, shorter than one All Tracks walk, every
+    walk rewrote every row: on the silver preview (Mon 5 Oct 2026) that was the
+    whole of a 300-500 MB WAL, about 1.5 MB/s, all ``path_availability`` and
+    ``idx_path_availability_checked`` pages. A changed size is always written.
+    """
     if not rows:
         return
-    checked_at = _checked_at_iso()
+    now = datetime.now(UTC)
+    checked_at = _checked_at_iso(now)
+    rewrite_before = _checked_at_iso(now - timedelta(seconds=UNCHANGED_REWRITE_AFTER_S))
     conn.executemany(
         "INSERT INTO path_availability("
         "resolver_namespace, logical_path, materialised_size, checked_at) "
         "VALUES (?, ?, ?, ?) "
         "ON CONFLICT(resolver_namespace, logical_path) DO UPDATE SET "
         "materialised_size = excluded.materialised_size, "
-        "checked_at = excluded.checked_at",
-        [(namespace, path, size, checked_at) for path, size in rows],
+        "checked_at = excluded.checked_at "
+        "WHERE path_availability.materialised_size IS NOT excluded.materialised_size "
+        "OR path_availability.checked_at < ?",
+        [(namespace, path, size, checked_at, rewrite_before) for path, size in rows],
     )
 
 

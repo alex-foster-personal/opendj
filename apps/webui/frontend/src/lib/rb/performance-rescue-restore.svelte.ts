@@ -9,6 +9,7 @@ import {
 	formatElapsedAgo,
 	gigPlaybackEligible,
 	RESCUE_DECODE_CEILING_MS,
+	rescueResumeMasterDeck,
 	type RescueResumeException,
 	type RescueResumeTarget
 } from '$lib/rb/performance-rescue-math';
@@ -217,7 +218,11 @@ export async function runRescuePlaybackRestore(
 		decks: targets.map((target) => ({
 			deck: target.deck,
 			position_ms: target.target_position_ms
-		}))
+		})),
+		master_deck: rescueResumeMasterDeck(
+			snapshot.master_deck,
+			targets.map((target) => target.deck)
+		)
 	});
 
 	const ago = formatElapsedAgo(elapsedWallMs);

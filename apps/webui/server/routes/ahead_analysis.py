@@ -2,7 +2,9 @@
 
   GET  /ahead-analysis/coverage   per lane (strip, loudness, waveform,
                                   beatgrid, key): done / missing / failed with
-                                  named reasons over the whole library
+                                  named reasons over the whole library, served
+                                  from the drain's last snapshot (computed_at,
+                                  coverage_age_s); never waits on a running tick
   POST /ahead-analysis/retry      re-arm failed tracks and unavailable lanes
   POST /ahead-analysis/bump/{id}  move one track to the front of the drain
 

@@ -121,7 +121,9 @@ test('the chip re-reads status on a poll under the heartbeat stale window', () =
 	assert.ok(poll, 'CHIP_POLL_MS must be exported from cloudsync-view');
 	const pollMs = Number(poll[1].replaceAll('_', ''));
 	assert.ok(pollMs > 0 && pollMs < 45_000, `poll ${pollMs} ms must be under STALE_AFTER_S (45 s)`);
-	assert.match(CHIP, /setInterval\(\(\) => \{\s*if \(!document\.hidden\) void load\(\);\s*\}, CHIP_POLL_MS\)/);
+	assert.match(CHIP, /setInterval\(\(\) => \{\s*if \(!document\.hidden\) void loadOnce\(\);\s*\}, CHIP_POLL_MS\)/);
+	// PERF-RB-04: the poll reads through the coalesced loader, so reads never stack.
+	assert.match(CHIP, /const loadOnce = coalesce\(load\);/);
 	assert.match(CHIP, /clearInterval\(timer\)/);
 });
 

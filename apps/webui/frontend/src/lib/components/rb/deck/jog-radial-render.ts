@@ -8,7 +8,7 @@ import {
 	JOG_WHEEL_FACE_RADIUS,
 	JOG_WHEEL_FACE_STROKE_WIDTH
 } from '../wave/wave-math';
-import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
+import { vocalAlpha, WAVE_UPPER_BAND_ALPHA, type WavePalette } from '../wave/render';
 
 /** Translucent scrim behind the BPM/pitch/range text (viewBox units, center 50,50). */
 export const JOG_RADIAL_INNER_RADIUS = 18;
@@ -27,17 +27,11 @@ export const JOG_RADIAL_HIGH_BAND_SCALE = 0.6;
 export const JOG_RADIAL_MID_BAND_SCALE = 0.85;
 export const JOG_RADIAL_NORM_FLOOR = 0.1;
 
-const BAND_LOW_STOPPED = '#e8a13a';
-const BAND_MID_STOPPED = 'rgba(61, 125, 217, 0.85)';
-const BAND_HIGH_STOPPED = 'rgba(207, 224, 242, 0.9)';
-const BAND_MONO_STOPPED = '#3d7dd9';
-
-const BAND_LOW_PLAYING = '#c47a20';
-const BAND_MID_PLAYING = '#2a5a9e';
-const BAND_HIGH_PLAYING = '#3a4048';
-
-/** Playing wheel face fill - tests assert high band luminance stays off this. */
-export const JOG_RADIAL_PLAYING_FACE = '#f2f0e8';
+/** Band colours come from the SAME source as the main wavestack rows:
+ * readPalette() over the .perf-root --rb-wave-* vars, so the wheel follows the
+ * theme, the skin and Settings > Waveform colors exactly like the deck rows.
+ * No colour literal lives in this file (jog-radial-waveform.test.mjs pins it). */
+export type JogRadialPalette = Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono' | 'vocal'>;
 
 export interface StripVocalRegion {
 	start_s: number;
@@ -61,18 +55,11 @@ export interface JogRadialPreview {
 export interface JogRadialFrame {
 	widthPx: number;
 	heightPx: number;
-	playingFace: boolean;
+	palette: JogRadialPalette;
 	kind: 'tri' | 'mono';
 	preview: JogRadialPreview;
 	vocals: StripVocals | null;
 	durationSec: number | null;
-}
-
-interface BandPalette {
-	low: string;
-	mid: string;
-	high: string;
-	mono: string;
 }
 
 interface BandNorms {
@@ -132,7 +119,11 @@ export function jogRadialCacheKey(
 		String(dpr),
 		frame.widthPx,
 		frame.heightPx,
-		frame.playingFace ? 'play' : 'stop',
+		frame.palette.low,
+		frame.palette.mid,
+		frame.palette.high,
+		frame.palette.mono,
+		frame.palette.vocal,
 		frame.kind,
 		String(frame.preview.length),
 		String(frame.durationSec ?? ''),
@@ -166,23 +157,6 @@ function _amp(v: number, norm: number): number {
 	return Math.pow(Math.min(1, v / norm), JOG_RADIAL_AMP_GAMMA);
 }
 
-function _palette(playingFace: boolean): BandPalette {
-	if (playingFace) {
-		return {
-			low: BAND_LOW_PLAYING,
-			mid: BAND_MID_PLAYING,
-			high: BAND_HIGH_PLAYING,
-			mono: BAND_MID_PLAYING
-		};
-	}
-	return {
-		low: BAND_LOW_STOPPED,
-		mid: BAND_MID_STOPPED,
-		high: BAND_HIGH_STOPPED,
-		mono: BAND_MONO_STOPPED
-	};
-}
-
 function _vbScale(widthPx: number): number {
 	return widthPx / 100;
 }
@@ -213,7 +187,7 @@ function _paintBands(
 	cx: number,
 	cy: number,
 	scale: number,
-	palette: BandPalette,
+	palette: JogRadialPalette,
 	norms: BandNorms
 ): void {
 	const n = frame.preview.length;
@@ -237,8 +211,12 @@ function _paintBands(
 		const rMi = polarRadius(mi * JOG_RADIAL_MID_BAND_SCALE, rInner, rOuter);
 		const rHi = polarRadius(hi * JOG_RADIAL_HIGH_BAND_SCALE, rInner, rOuter);
 		_fillWedge(ctx, cx, cy, scale, rInner, rLo, a0, a1, palette.low);
+		// Same layering as the deck rows (render.ts _drawBands): opaque low,
+		// mid and high at WAVE_UPPER_BAND_ALPHA so they read through each other.
+		ctx.globalAlpha = WAVE_UPPER_BAND_ALPHA;
 		_fillWedge(ctx, cx, cy, scale, rInner, rMi, a0, a1, palette.mid);
 		_fillWedge(ctx, cx, cy, scale, rInner, rHi, a0, a1, palette.high);
+		ctx.globalAlpha = 1;
 	}
 }
 
@@ -255,7 +233,7 @@ function _paintVocals(
 	if (vocals.status !== 'rekordbox' && vocals.status !== 'demucs') return;
 	const rInner = (JOG_RADIAL_OUTER_RADIUS - 2) * scale;
 	const rOuter = JOG_RADIAL_OUTER_RADIUS * scale;
-	ctx.fillStyle = VOCAL_BLUE;
+	ctx.fillStyle = frame.palette.vocal;
 	for (const region of vocals.regions) {
 		const { startRad, endRad } = vocalArcAngles(region, durationSec);
 		if (endRad <= startRad) continue;
@@ -277,9 +255,8 @@ export function paintJogRadial(ctx: CanvasRenderingContext2D, frame: JogRadialFr
 	const cx = widthPx / 2;
 	const cy = heightPx / 2;
 	const scale = _vbScale(widthPx);
-	const palette = _palette(frame.playingFace);
 	const norms = _normsFor(frame.preview);
-	_paintBands(ctx, frame, cx, cy, scale, palette, norms);
+	_paintBands(ctx, frame, cx, cy, scale, frame.palette, norms);
 	_paintVocals(ctx, frame, cx, cy, scale);
 }
 
