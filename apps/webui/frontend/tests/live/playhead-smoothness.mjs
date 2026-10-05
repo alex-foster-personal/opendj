@@ -44,8 +44,9 @@ const percentile = (values, p) => {
 };
 const round = (value) => (value === null ? null : Math.round(value * 100) / 100);
 
-function scoreSeries(frames, key, rate) {
+function scoreSeries(frames, key, rate, steadyMaxDt) {
 	const devs = [];
+	const steady = []; // frames no longer than 2x the median interval: smoothing, not frame-rate hitches
 	let holds = 0;
 	for (let i = 1; i < frames.length; i++) {
 		const a = frames[i - 1].v[key];
@@ -55,6 +56,7 @@ function scoreSeries(frames, key, rate) {
 		const moved = b - a;
 		if (moved === 0) holds++;
 		devs.push(Math.abs(moved - rate * dt));
+		if (dt <= steadyMaxDt) steady.push(Math.abs(moved - rate * dt));
 	}
 	const minutes = (frames[frames.length - 1].t - frames[0].t) / 60000;
 	return {
@@ -62,6 +64,9 @@ function scoreSeries(frames, key, rate) {
 		p50_ms: round(percentile(devs, 0.5)),
 		p95_ms: round(percentile(devs, 0.95)),
 		max_ms: round(devs.length === 0 ? null : Math.max(...devs)),
+		steady_pairs: steady.length,
+		steady_p50_ms: round(percentile(steady, 0.5)),
+		steady_p95_ms: round(percentile(steady, 0.95)),
 		holds,
 		jumps_over_15ms_per_min: round(devs.filter((d) => d > 15).length / minutes),
 		jumps_over_50ms_per_min: round(devs.filter((d) => d > 50).length / minutes)
@@ -114,20 +119,22 @@ try {
 			return { playing: s.playing, pos: Math.round(s.position_ms), pitch: s.pitch, sync: s.beat_sync_enabled ?? null };
 		}, d);
 	out.before = { 1: await deckState(1), 2: await deckState(2) };
-	const frames = await page.evaluate(
+	const { sampled: frames, rafTicks } = await page.evaluate(
 		(ms) =>
 			new Promise((resolve) => {
 				const trace = globalThis.__mdtPlayheadTrace;
 				const sampled = [];
 				const channel = new MessageChannel();
-				const pending = [];
-				channel.port1.onmessage = () => sampled.push({ t: pending.shift(), v: { ...trace } });
+				let lastFrameT = null; // a message delayed past the next frame reads THAT frame's values, so pair with the latest frame
+				channel.port1.onmessage = () => { if (sampled.length === 0 || sampled[sampled.length - 1].t !== lastFrameT) sampled.push({ t: lastFrameT, v: { ...trace } }); };
 				const t0 = performance.now();
+				let rafTicks = 0;
 				const tick = (t) => {
-					pending.push(t);
+					lastFrameT = t;
+					rafTicks++;
 					channel.port2.postMessage(0); // runs after this frame's rAF callbacks and their flush
 					if (t - t0 < ms) requestAnimationFrame(tick);
-					else setTimeout(() => resolve(sampled), 100);
+					else setTimeout(() => resolve({ sampled, rafTicks }), 100);
 				};
 				requestAnimationFrame(tick);
 			}),
@@ -137,7 +144,8 @@ try {
 	const intervals = frames.slice(1).map((f, i) => f.t - frames[i].t);
 	const seconds = (frames[frames.length - 1].t - frames[0].t) / 1000;
 	out.fps = {
-		fps: round(frames.length / seconds),
+		fps: round(rafTicks / seconds),
+		sampled_frames: frames.length,
 		frames: frames.length,
 		interval_p50_ms: round(percentile(intervals, 0.5)),
 		interval_p95_ms: round(percentile(intervals, 0.95)),
@@ -155,7 +163,7 @@ try {
 	for (const key of elementKeys) {
 		const deck = Number(key.split(':')[1]);
 		const rate = (out.before[deck].pitch + out.after[deck].pitch) / 2;
-		out.elements[key] = scoreSeries(frames, key, rate);
+		out.elements[key] = scoreSeries(frames, key, rate, 2 * percentile(intervals, 0.5));
 	}
 	const first = frames[0].v;
 	const last = frames[frames.length - 1].v;

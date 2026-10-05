@@ -30,6 +30,17 @@ const _clocks: Record<DeckId, PlayheadClockState> = { 1: initPlayheadClock(), 2:
 const _revision: Record<DeckId, number> = $state({ 1: 0, 2: 0, 3: 0, 4: 0 });
 
 /**
+ * The current frame's time: `document.timeline.currentTime` is the rAF
+ * timestamp of the frame being produced, the same for every element in it, so
+ * elements painted early or late within one frame still agree. Falls back to
+ * `performance.now()` where there is no document timeline (node tests).
+ */
+function _frameNowMs(): number {
+	const current = typeof document === 'undefined' ? null : document.timeline?.currentTime;
+	return typeof current === 'number' ? current : performance.now();
+}
+
+/**
  * When the presented position was true: the output timestamp's
  * `performanceTime` while the device clock drives presentation, else (the
  * sample-clock fallback, or an unreadable timestamp) the moment it was read.
@@ -45,7 +56,7 @@ export function presentedSampleAtMs(
 }
 
 /** One authoritative position for `deck`, true at `sampledAtMs`. */
-export function notePositionSample(deck: DeckId, view: PlayheadDeckView, sampledAtMs: number, nowMs: number = performance.now()): void {
+export function notePositionSample(deck: DeckId, view: PlayheadDeckView, sampledAtMs: number, nowMs: number = _frameNowMs()): void {
 	const sample = {
 		positionMs: view.position_ms,
 		sampledAtMs,
@@ -64,7 +75,7 @@ export function notePositionSample(deck: DeckId, view: PlayheadDeckView, sampled
  * clock has no playing sample yet, draws its published position exactly: a
  * paused cursor, a seek while paused and a fresh load are never projected.
  */
-export function playheadMs(deck: DeckId, view: Pick<PlayheadDeckView, 'position_ms' | 'playing'>, nowMs: number = performance.now()): number {
+export function playheadMs(deck: DeckId, view: Pick<PlayheadDeckView, 'position_ms' | 'playing'>, nowMs: number = _frameNowMs()): number {
 	void _revision[deck];
 	const clock = _clocks[deck];
 	if (!view.playing || clock.anchor === null || !clock.anchor.playing) return view.position_ms;
