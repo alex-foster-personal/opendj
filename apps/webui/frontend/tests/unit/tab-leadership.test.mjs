@@ -258,8 +258,9 @@ function page(locks, clientId, initial = {}) {
 	const leadership = createTabLeadership({
 		locks,
 		onChange: (snapshot) => {
+			const was = snapshots.at(-1)?.role;
 			snapshots.push(snapshot);
-			if (snapshot.role === 'leader') mirror.publish();
+			if (snapshot.role === 'leader' && was !== 'leader') mirror.publish();
 		}
 	});
 	mirror = createLeasedMirrorPublisher({
