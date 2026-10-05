@@ -93,3 +93,28 @@ test('vocal arcs paint only for rekordbox and demucs statuses in the painter', a
 	assert.match(painter, /vocals\.status !== 'rekordbox' && vocals\.status !== 'demucs'/);
 	assert.doesNotMatch(painter, /not_analyzed[\s\S]{0,80}regions/);
 });
+
+test('radial mode draws a red playhead across the bands at the progress angle', () => {
+	assert.match(
+		jogDialSource,
+		/\{:else\}[\s\S]{0,400}class="radial-playhead"[\s\S]{0,400}stroke="#d0342c"[\s\S]{0,200}rotate\(\$\{tickAngle\} 50 50\)/,
+		'with the radial waveform showing, the deck still needs a red line where playback is up to'
+	);
+});
+
+test('waveform bands start near the hub and the text disc is a translucent scrim', async () => {
+	radial = await loadTypeScriptModule('src/lib/components/rb/deck/jog-radial-render.ts');
+	assert.ok(
+		radial.JOG_RADIAL_WAVE_INNER_RADIUS < radial.JOG_RADIAL_INNER_RADIUS,
+		'bands must run under the text scrim, not stop at its edge'
+	);
+	const painter = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/deck/jog-radial-render.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(painter, /const rInner = JOG_RADIAL_WAVE_INNER_RADIUS;/);
+	const scrim = jogDialSource.match(/\.dial-wrap\.dial-radial-wave \.wheel-fill-inner \{([^}]*)\}/);
+	assert.ok(scrim, 'radial inner disc rule present');
+	const opacity = Number(/fill-opacity:\s*([0-9.]+)/.exec(scrim[1])?.[1]);
+	assert.ok(opacity > 0 && opacity < 1, 'the inner disc must be translucent, never an opaque black cover');
+});
