@@ -25,16 +25,17 @@ export const UI_SKIN_SETTING: SettingDef = {
 	id: 'ui_skin',
 	label: 'UI skin',
 	group: 'performance',
-	keywords: ['skin', 'theme', 'mono', 'grayscale', 'gray', 'minimal', 'dev'],
+	keywords: ['skin', 'theme', 'light', 'gothic', 'mono', 'grayscale', 'gray', 'minimal', 'dev'],
 	title: 'Chrome skin layered over the light/dark theme',
 	detail:
-		'Default keeps the rekordbox-style chrome. Mono dev is a near-black grayscale skin with hairline borders, square controls and monospace type. Pair it with Waveform colors: Mono grayscale and Waveform design: Blocks.',
+		'Default keeps the rekordbox-style chrome. Mono dev is a near-black grayscale skin with hairline borders, square controls and monospace type. Light is the warm light skin. The top-bar skin button cycles Default, Gothic, Light. Pair Mono dev with Waveform colors: Mono grayscale and Waveform design: Blocks.',
 	implemented: true,
 	control: {
 		kind: 'enum',
 		options: [
 			{ value: 'default', label: 'Default' },
-			{ value: 'mono-dev', label: 'Mono dev (preview)' }
+			{ value: 'mono-dev', label: 'Gothic (mono dev preview)' },
+			{ value: 'light', label: 'Light' }
 		]
 	}
 };

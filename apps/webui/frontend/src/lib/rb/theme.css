@@ -238,6 +238,69 @@ html[data-skin='mono-dev'] .perf-root .readout .bpm {
 	letter-spacing: -0.02em;
 }
 
+/* -------- skin: light --------
+ * Warm light chrome, the third stop on the top-bar skin button. Chrome tokens
+ * come from the maintainer's claude.ai "Performance Light Pass" (LIGHT palette); the
+ * 3Band wave bands and master fill/ink keep the light theme's values because
+ * that design predates #4219. Defines every token mono-dev defines, so no
+ * dark value leaks through (tests/unit/skin-cycle-light.test.mjs). Like
+ * mono-dev it wins over either theme. color-scheme is !important because
+ * prefs.svelte.ts writes the theme's color-scheme as an inline style. */
+html[data-skin='light'] {
+	color-scheme: light !important;
+}
+html[data-skin='light'] .perf-root {
+	--rb-bg: #f7f3eb;
+	--rb-panel: #fffdf8;
+	--rb-panel-raised: #eee8dd;
+	--rb-waverow-secondary: #fffdf8;
+	--rb-border: #b8b0a3;
+	--rb-text: #27241f;
+	--rb-text-dim: #5d574e;
+	--rb-accent: #175ea8;
+	--rb-accent-glow: rgba(23, 94, 168, 0.35);
+	--rb-green: #1d7035;
+	--rb-orange: #a44b11;
+	--rb-wave-low: #1d4fa3;
+	--rb-wave-mid: #9a5a00;
+	--rb-wave-high: #4a4f57;
+	--rb-wave-mono: #2166b1;
+	--rb-wave-vocal: #1f6fb0;
+	--rb-red: #ad2420;
+	--rb-yellow: #927000;
+	--rb-select: #d6e5f5;
+	--rb-master: #856500;
+	--rb-master-ink: #fffdf8;
+	--rb-master-text: #7a5c00;
+	--rb-font: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', Roboto,
+		sans-serif;
+	--rb-fs-browser: 11px;
+	--rb-fs-label: 10px;
+	--rb-waverow-h: 43px;
+	--rb-status-dot-filter: none;
+	--rb-rail-spotify: #1d7035;
+	--rb-rail-spotify-arc: transparent;
+	--rb-rail-files: #2166b1;
+	--rb-rail-beatport: #6b3fb0;
+	--rb-rail-record: #ad2420;
+	--rb-knob-warn: var(--rb-orange);
+	--rb-knob-alarm: var(--rb-red);
+	--rb-key-compat-border: initial;
+	--rb-artwork-filter: none;
+}
+/* section 2: deck ground and dividers are component-local dark literals
+ * (performance/+page.svelte); light equivalents from the design's
+ * LIGHT_SURFACES map. Other hardcoded dark wells are PR follow-ups. */
+html[data-skin='light'] .perf-root :is(.deck-area, .deck-col) {
+	background: #efe9dd;
+}
+html[data-skin='light'] .perf-root .deck-col:first-child {
+	border-right-color: var(--rb-border);
+}
+html[data-skin='light'] .perf-root .deck-col:last-child {
+	border-left-color: var(--rb-border);
+}
+
 /* -------- panel chrome -------- */
 .perf-root .rb-panel {
 	background: var(--rb-panel);

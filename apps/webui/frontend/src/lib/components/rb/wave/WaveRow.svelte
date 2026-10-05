@@ -263,9 +263,11 @@
 		const el = canvasEl;
 		if (!el) return;
 		// Re-resolve the CSS-var palette when the theme or the waveform band
-		// palette changes (issue #4219): both swap the --rb-wave-* vars.
+		// palette or the skin changes (issue #4219, skin cycle): all three swap
+		// the --rb-wave-* vars.
 		void uiPrefs.theme;
 		void uiPrefs.wave_palette;
+		void uiPrefs.ui_skin;
 		palette = readPalette(el); // throws if not under .perf-root
 		const observer = new ResizeObserver((entries) => {
 			const rect = entries[0].contentRect;
