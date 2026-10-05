@@ -252,3 +252,57 @@ test('[RESCUE-07] a shared-instant start (Gig rescue) still claims a master', ()
 	assert.ok(branch, 'play() keeps its startAtContextSec branch');
 	assert.match(branch[1], /_electPlayingMaster\(\{ reason: 'play-claim' \}\)/);
 });
+
+// REQ: RESCUE-07
+test('[RESCUE-07] RUNNING it: a remount over a live engine restores nothing and loads onto no deck', async () => {
+	const raw = snap.serializePerformanceSession(_snapshotInput());
+	const store = new Map([['mdt.rb.performance-session.v1', raw]]);
+	const commands = [];
+	const infos = [];
+	const info = mock.method(console, 'info', (message) => infos.push(String(message)));
+	const live = { 1: 'sid-a', 2: 'sid-b', 3: null, 4: null };
+	const query = () => {
+		const decks = {};
+		for (const deckId of [1, 2, 3, 4]) {
+			decks[deckId] = {
+				..._deck({ stable_id: live[deckId], playing: deckId === 2 }),
+				stems: { available_controls: ['vocal', 'instrumental', 'drums'], controls: _stems() }
+			};
+		}
+		return {
+			browser: { active_playlist: null },
+			master_deck: 2,
+			mixer: { crossfader: 0.5, master: 0.8, channels: { 1: _channel(), 2: _channel(), 3: _channel(), 4: _channel() } },
+			decks
+		};
+	};
+	let dispose = () => {};
+	try {
+		dispose = session.installPerformanceSessionRestore({
+			location: { pathname: '/performance', search: '', href: 'http://x/performance' },
+			storage: { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) },
+			replaceState: () => {},
+			commandSession: () => 1,
+			operatorMaster: () => null,
+			now: () => NOW,
+			autoPlayEnabled: () => true,
+			document: { hidden: false, addEventListener: () => {}, removeEventListener: () => {} },
+			window: { addEventListener: () => {}, removeEventListener: () => {} },
+			setInterval: () => 0,
+			clearInterval: () => {},
+			dispatch: async (command) => {
+				commands.push(command);
+			},
+			query
+		});
+		for (let i = 0; i < 50 && !infos.some((m) => m.startsWith('[session-restore]')); i += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+	} finally {
+		dispose();
+		info.mock.restore();
+	}
+	assert.deepEqual(commands, [], 'no load, seek, tempo or mixer command replayed over live decks');
+	assert.ok(infos.some((m) => /skipped: deck\(s\) 1,2 already loaded/.test(m)), JSON.stringify(infos));
+	assert.deepEqual(session.liveDecksAtRestore({ 1: { stable_id: null }, 2: { stable_id: 'x' }, 3: { stable_id: null }, 4: { stable_id: null } }), [2]);
+});
