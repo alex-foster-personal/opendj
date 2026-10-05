@@ -20,6 +20,7 @@
  *   - if a 409 lease_held does not demote the tab then broken
  *   - if a demoted tab keeps PUTting (409 console spam) then broken
  *   - if a lease release does not promote the other browser's tab then broken
+ *   - if a reloaded page PUTs into the previous page's held lease (a 409) then broken
  */
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
@@ -191,7 +192,7 @@ let clockMs;
 
 /** The lease rules of apps/webui/server/routes/state.py, in memory. */
 function fakeEngine() {
-	const state = { lease: null, mirror: null, requests: [], rules: { audible: true } };
+	const state = { lease: null, mirror: null, requests: [], refusals: [], rules: { audible: true } };
 	const live = () => (state.lease !== null && state.lease.expires > clockMs ? state.lease : null);
 	const json = (status, body) =>
 		new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -209,6 +210,7 @@ function fakeEngine() {
 				((state.rules.audible && claimant.playing === true && holderDoc.playing !== true && current.operator !== true) ||
 					(holderDoc.visible === false && holderDoc.playing !== true && claimant.visible !== false));
 			if (current !== null && current.holder !== id && headers['x-opendj-lease-takeover'] !== '1' && !handover) {
+				state.refusals.push(id);
 				return json(409, { accepted: false, reason: 'lease_held', held: true, holder: current.holder });
 			}
 			const operator = headers['x-opendj-lease-takeover'] === '1' || (current !== null && current.holder === id && current.operator === true);
@@ -305,7 +307,7 @@ test('same browser: only the leader PUTs; closing it promotes the follower', asy
 	b.leadership.dispose();
 });
 
-test('two browsers: the second is refused once, then reads the lease instead of PUTting', async () => {
+test('two browsers: the second reads the lease and never PUTs into it', async () => {
 	const a = page(fakeLocks(), 'chrome');
 	await flush();
 	const b = page(fakeLocks(), 'agent-pane');
@@ -318,9 +320,10 @@ test('two browsers: the second is refused once, then reads the lease instead of 
 		b.mirror.publish();
 		await flush();
 	}
-	assert.equal(puts('agent-pane'), 1, 'exactly one refused PUT, then silence');
+	assert.equal(puts('agent-pane'), 0, 'the lease is read first, so not even one refused PUT');
+	assert.deepEqual(engine.refusals, [], 'no 409 at all');
 	const leaseReads = engine.requests.filter((r) => r.url === LEASE_PATH).length;
-	assert.ok(leaseReads >= 3 && leaseReads <= 4, `lease re-read every ${LEASE_RECHECK_MS} ms, got ${leaseReads}`);
+	assert.ok(leaseReads >= 4 && leaseReads <= 5, `one pre-PUT read, then every ${LEASE_RECHECK_MS} ms, got ${leaseReads}`);
 	assert.equal(engine.mirror.client_id, 'chrome', 'the leader mirror was never overwritten');
 	// Chrome closes: its DELETE releases the lease, and the pane takes over.
 	await engine.fetch(MIRROR_PATH, { method: 'DELETE', headers: { 'x-opendj-client-id': 'chrome' } });
@@ -329,6 +332,44 @@ test('two browsers: the second is refused once, then reads the lease instead of 
 	await flush();
 	assert.equal(b.role(), 'leader');
 	assert.equal(engine.mirror.client_id, 'agent-pane', 'promotion published at once');
+});
+
+/** Reload page `old` in its own browser: the old document dies (its lock goes
+ * with it) and a new document with a fresh client id and a free lock loads. */
+function reload(old, clientId, { released }) {
+	if (released) engine.fetch(MIRROR_PATH, { method: 'DELETE', headers: { 'x-opendj-client-id': old.clientId } });
+	old.leadership.dispose();
+	return page(fakeLocks(), clientId);
+}
+
+test('a reloaded page never PUTs into the previous page\'s held lease (main E2E run 37383098288)', async () => {
+	const before = page(fakeLocks(), 'load-1');
+	await flush();
+	await run(2, before);
+	assert.equal(engine.lease.holder, 'load-1', 'precondition: the first load holds the lease');
+	// pagehide's keepalive DELETE never reached the engine (a killed page, a
+	// closed Playwright context), so the old lease lives out its 10 s TTL.
+	const after = reload(before, 'load-2', { released: false });
+	await flush();
+	assert.equal(after.role(), 'follower', 'it waits as a viewer while the old lease lives');
+	assert.equal(after.leadership.snapshot().reason, 'another-browser');
+	await run(TTL_MS / 1000 - 3, after);
+	assert.equal(puts('load-2'), 0, 'no PUT while the old lease is live');
+	await run(4, after);
+	assert.equal(after.role(), 'leader', 'it leads once the old lease lapses');
+	assert.equal(engine.mirror.client_id, 'load-2');
+	assert.deepEqual(engine.refusals, [], 'not one 409, so Chromium logs no console error');
+});
+
+test('a reload whose pagehide released the lease leads at once, still without a 409', async () => {
+	const before = page(fakeLocks(), 'load-1');
+	await flush();
+	const after = reload(before, 'load-2', { released: true });
+	await flush();
+	assert.equal(after.role(), 'leader');
+	assert.equal(engine.mirror.client_id, 'load-2', 'the first PUT followed the lease read at once');
+	assert.equal(puts('load-2'), 1);
+	assert.deepEqual(engine.refusals, []);
 });
 
 test('two browsers: a crashed holder hands over after the lease lapses', async () => {
