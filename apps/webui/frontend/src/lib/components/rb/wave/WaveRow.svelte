@@ -398,9 +398,12 @@
 
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
-		const pulse = syncPlayheadTone === 'drift';
-		const hovered = deckHoverUi.deckId === deckId;
-		if (!(deck.playing || seeking || waveformSeekArmed !== null || partnerMoving || (hovered && (pulse || masterMoving)))) return;
+		// The hover and drift-pulse inputs are read ONLY when nothing else keeps the
+		// loop running. Read unconditionally, a follower's sync tone flipping mid-frame
+		// re-ran this effect, cancelled the frame already queued and dropped one
+		// (ANIM-CLOCK-01: about one frame a second on the follower's strip).
+		const running = deck.playing || seeking || waveformSeekArmed !== null || partnerMoving;
+		if (!running && !(deckHoverUi.deckId === deckId && (syncPlayheadTone === 'drift' || masterMoving))) return;
 		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
 			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);
