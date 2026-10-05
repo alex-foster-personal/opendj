@@ -38,7 +38,7 @@ def _listing_status(state_db_path: Path, sid: str, path: str) -> str:
 def test_unchecked_missing_path_is_not_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] an unchecked row's local path is missing [then] it is not present."""
+    """[if] an unchecked row's local path is missing [then] it is not present, [else stop]."""
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
     sids, paths = _seed_library(state_db_path, track_count=1)
@@ -57,7 +57,7 @@ def test_unchecked_missing_path_is_not_available(
 def test_present_file_still_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] the local file is on disk [then] the row stays present."""
+    """[if] the local file is on disk [then] the row stays present, [else stop]."""
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
     sids, paths = _seed_library(state_db_path, track_count=1)
@@ -74,7 +74,7 @@ def test_present_file_still_available(
 def test_streaming_uri_is_not_playable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] a tidal URI is stored as streaming [then] playable counts present only."""
+    """[if] a tidal URI is stored as streaming [then] playable counts present only, [else stop]."""
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
     sids, paths = _seed_library(state_db_path, track_count=2)
@@ -112,7 +112,7 @@ def test_streaming_uri_is_not_playable(
 def test_unchecked_lookup_pages_under_the_real_sqlite_variable_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] membership exceeds the connection's bind limit [then] known ids stay known.
+    """[if] membership exceeds the connection's bind limit [then] known ids stay known, [else stop].
 
     One IN (...) per id raises "too many SQL variables" on the packaged
     SQLite (limit 999). The lookup then used to treat the whole playlist as
@@ -155,8 +155,7 @@ def test_unchecked_lookup_pages_under_the_real_sqlite_variable_limit(
 def test_tree_summary_does_not_count_an_unchecked_index_hit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] a copied index says present and there is no availability row
-    [then] the tree does not count the track, and it does not stat."""
+    """[if] a copied index says present and there is no availability row [then] the tree does not count the track and it does not stat, [else stop]."""
     data_dir = tmp_path / "data"
     state_db_path = _configure_data_dir(monkeypatch, data_dir)
     sids, paths = _seed_library(state_db_path, track_count=1)
@@ -180,7 +179,7 @@ def test_tree_summary_does_not_count_an_unchecked_index_hit(
 # REQ: LIBM-167
 @pytest.mark.requirement("LIBM-167")
 def test_in_memory_health_does_not_call_an_unconfirmed_track_playable() -> None:
-    """[if] the backend has no track_availability row [then] playable is 0."""
+    """[if] the backend has no track_availability row [then] playable is 0, [else stop]."""
     backend = InMemoryBackend()
     backend.seed_track(Track(stable_id="s1", file_path="/tmp/not-here.mp3"))
 

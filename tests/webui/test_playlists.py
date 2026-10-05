@@ -183,6 +183,25 @@ def test_get_playlists_timing_at_scale(monkeypatch, tmp_path: Path):
         path_index.upsert_rows(
             conn, namespace, [(path, 1) for path in paths],
         )
+        # #5383: a path_availability hit is not "present" until the row has
+        # been checked. The tree summary leaves unchecked ids pending and
+        # available_count skips them. These files are on disk and indexed;
+        # record that check so the count still covers every member.
+        for sid, path in zip(items, paths, strict=True):
+            conn.execute(
+                "INSERT INTO tracks(stable_id, stable_id_tier, title, "
+                "artists_json, album, isrc, duration_ms, file_path, "
+                "content_hash, created_at, updated_at) "
+                "VALUES (?, 'fingerprint', ?, '[]', NULL, NULL, 180000, ?, "
+                "NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                (sid, sid, path),
+            )
+            conn.execute(
+                "INSERT INTO track_availability("
+                "stable_id, state, checked_path, checked_at) "
+                "VALUES (?, 'present', ?, '2026-01-01T00:00:00Z')",
+                (sid, path),
+            )
         conn.commit()
     finally:
         conn.close()
