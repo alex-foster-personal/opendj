@@ -16,6 +16,7 @@ Regression one-liners:
 from __future__ import annotations
 
 import inspect
+import logging
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -265,3 +266,22 @@ def test_the_daemon_starts_the_first_scan_at_startup(
     # The daemon factory is the one place this is wired; a refactor that
     # drops the call leaves the first read to start the scan again.
     assert "warm_summary_snapshot(app, backend)" in inspect.getsource(app_module._build_default_app)
+
+
+@pytest.mark.requirement("HEALTH-15")
+def test_a_slow_scan_is_logged_at_warning(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] a scan reaches the slow threshold [then] it logs a WARNING, [else stop]."""
+    monkeypatch.setattr(reconcile_routes, "SLOW_SCAN_WARN_S", 0.0)
+    with caplog.at_level(logging.INFO, logger=reconcile_routes.__name__):
+        fields = reconcile_routes.scan_summary(app.state.backend)
+    slow = [r for r in caplog.records if "reconcile summary: scanned" in r.getMessage()]
+    assert fields["total_tracks"] == 1 and isinstance(fields["computed_at"], float)
+    assert [r.levelno for r in slow] == [logging.WARNING]
+    # Control: below the threshold the same line stays at INFO.
+    caplog.clear()
+    monkeypatch.setattr(reconcile_routes, "SLOW_SCAN_WARN_S", 3600.0)
+    with caplog.at_level(logging.INFO, logger=reconcile_routes.__name__):
+        reconcile_routes.scan_summary(app.state.backend)
+    assert [r.levelno for r in caplog.records if "scanned" in r.getMessage()] == [logging.INFO]

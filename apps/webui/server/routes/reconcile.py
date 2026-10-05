@@ -99,6 +99,8 @@ _MAX_SCAN_PAGES: int = 1000
 #: The scan took 39 to 61 s on the silver preview beside the analysis drain
 #: (Mon 5 Oct 2026), so it must not run on every read (HEALTH-15).
 SUMMARY_MAX_AGE_S: float = 60.0
+#: A summary scan at least this slow is logged at WARNING.
+SLOW_SCAN_WARN_S: float = 10.0
 SUMMARY_CACHED_HELP = (
     "Answer at once from the last library scan instead of scanning for this "
     "request. `age_s` says how old it is; when `refreshing` is true a newer "
@@ -510,7 +512,13 @@ def scan_summary(backend: StateBackend) -> dict[str, object]:
     referenced = {sid for pl in playlists for sid in pl.items}
     orphan_broken = sum(1 for sid in broken_ids if sid not in referenced)
     availability = _availability(backend)
-    log.info("reconcile summary: scanned %d tracks in %.1f s", total_tracks, time.monotonic() - started)
+    elapsed = time.monotonic() - started
+    # A slow scan is the regression signal (HEALTH-15): it reaches the log at
+    # WARNING, which the daemon log keeps, so it is visible without a profiler.
+    log.log(
+        logging.WARNING if elapsed >= SLOW_SCAN_WARN_S else logging.INFO,
+        "reconcile summary: scanned %d tracks in %.1f s", total_tracks, elapsed,
+    )
     return {
         "total_tracks": total_tracks,
         "total_broken": len(broken_ids),
