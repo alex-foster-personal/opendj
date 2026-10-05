@@ -97,8 +97,9 @@ _MAX_SCAN_PAGES: int = 1000
 
 #: A ``cached`` summary read older than this starts one background rescan.
 #: The scan took 39 to 61 s on the silver preview beside the analysis drain
-#: (Mon 5 Oct 2026), so it must not run on every read (HEALTH-15).
-SUMMARY_MAX_AGE_S: float = 60.0
+#: (Mon 5 Oct 2026), up to 103 s after a restart, and at 60 s the tabs kept one
+#: running about half the time; 5 min allows one scan per 5 min of reads (HEALTH-15).
+SUMMARY_MAX_AGE_S: float = 300.0
 #: A summary scan at least this slow is logged at WARNING.
 SLOW_SCAN_WARN_S: float = 10.0
 SUMMARY_CACHED_HELP = (
