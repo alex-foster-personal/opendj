@@ -987,8 +987,13 @@ export function dualSinkAssignment(args: {
 		args.selectedCueId !== null && args.outputs.some((output) => output.id === args.selectedCueId)
 			? args.selectedCueId
 			: null;
+	// MAIN on the CUE device is not two outputs: the native shell pins the
+	// macOS default to it, so the room gets nothing while every probe reads
+	// healthy (silver, Mon 5 Oct 2026). Such a master is re-picked below.
 	const masterStillPresent =
-		args.selectedMasterId !== null && args.outputs.some((output) => output.id === args.selectedMasterId)
+		args.selectedMasterId !== null &&
+		args.selectedMasterId !== cueId &&
+		args.outputs.some((output) => output.id === args.selectedMasterId)
 			? args.selectedMasterId
 			: null;
 	const room =
