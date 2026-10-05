@@ -73,6 +73,11 @@ export type { WavePalette } from './cues';
  * Shared by the wavestack rows, deck strip and browser preview strips. */
 export const VOCAL_BLUE = '#4fb2ff';
 
+/** Mid and high bands paint at this alpha over the opaque low band, so the
+ * stacked tri-band reads through itself. Shared with the jog-wheel radial
+ * painter (jog-radial-render.ts) so the two cannot drift apart. */
+export const WAVE_UPPER_BAND_ALPHA = 0.9;
+
 /** Height of the vocal bar layer in CSS px ('2px-ish' per requirement). */
 export const VOCAL_BAR_PX = 2;
 
@@ -165,7 +170,24 @@ const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
 interface WaveBandImage {
 	canvas: HTMLCanvasElement;
 	key: string;
+	/** px per track-second the image was built at; draw scales from this. */
+	pxPerS: number;
 }
+
+/**
+ * Band image reuse across tempo (PERF-GRID-02). The image is laid out in
+ * TRACK time, so deck pitch only changes the horizontal scale it is drawn
+ * at. The Beat Sync phase lock nudges a follower's pitch every few hundred
+ * ms; keying the image on the live px-per-second rebuilt the whole-track
+ * image on every nudge. Now an image is reused, scaled at draw, while the
+ * live scale stays within PITCH_TOLERANCE of the scale it was built at. A
+ * real tempo move (a fader throw, a new master) still rebuilds, so the
+ * resampling never exceeds 3%. Width, height, design and palette still
+ * select their own image.
+ */
+export const BAND_CACHE_CFG = {
+	PITCH_TOLERANCE: 0.03
+} as const;
 
 /**
  * Band geometry is the expensive part of a scrolling waveform. It changes only
@@ -373,13 +395,30 @@ function _drawCachedBands(
 		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 		return;
 	}
-	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
+	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
 	let image = _bandImages.get(waveform);
-	if (image === undefined || image.key !== key) {
-		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key };
+	if (image === undefined || image.key !== key || !bandImageScaleReusable(image.pxPerS, pxPerS)) {
+		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key, pxPerS };
 		_bandImages.set(waveform, image);
 	}
-	ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
+	if (image.pxPerS === pxPerS) {
+		ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
+		return;
+	}
+	// Scaled blit of only the visible track span, clipped to the image.
+	const scale = pxPerS / image.pxPerS;
+	const tStart = Math.max(0, tLeft);
+	const tEnd = Math.min(durS, tLeft + w / pxPerS);
+	if (!(tEnd > tStart)) return;
+	const sx = tStart * image.pxPerS;
+	const sw = Math.min(image.canvas.width, tEnd * image.pxPerS) - sx;
+	if (!(sw > 0)) return;
+	ctx.drawImage(image.canvas, sx, 0, sw, image.canvas.height, (tStart - tLeft) * pxPerS, 0, sw * scale, image.canvas.height);
+}
+
+/** True when an image built at `builtPxPerS` may be drawn at `livePxPerS`. */
+export function bandImageScaleReusable(builtPxPerS: number, livePxPerS: number): boolean {
+	return Math.abs(livePxPerS / builtPxPerS - 1) <= BAND_CACHE_CFG.PITCH_TOLERANCE;
 }
 
 function _buildBandImage(
@@ -501,7 +540,7 @@ function _drawBands(
 	}
 	ctx.fillStyle = palette.low;
 	ctx.fill(lowPath);
-	ctx.globalAlpha = 0.9;
+	ctx.globalAlpha = WAVE_UPPER_BAND_ALPHA;
 	ctx.fillStyle = palette.mid;
 	ctx.fill(midPath);
 	ctx.fillStyle = palette.high;
@@ -517,6 +556,18 @@ interface BlocksSpec {
 /** Median beat period of the grid in seconds; null without a usable grid. */
 export function beatPeriodS(beats: readonly AnlzBeat[] | undefined): number | null {
 	if (beats === undefined || beats.length < 2) return null;
+	// Called once per painted frame per deck; the grid is replaced, never
+	// edited in place, so identity plus length is its version (PERF-GRID-01).
+	const memo = _beatPeriodMemo.get(beats);
+	if (memo !== undefined && memo.length === beats.length) return memo.period;
+	const period = _medianBeatPeriodS(beats);
+	_beatPeriodMemo.set(beats, { length: beats.length, period });
+	return period;
+}
+
+const _beatPeriodMemo = new WeakMap<readonly AnlzBeat[], { length: number; period: number | null }>();
+
+function _medianBeatPeriodS(beats: readonly AnlzBeat[]): number | null {
 	const gaps: number[] = [];
 	for (let i = 1; i < beats.length; i++) {
 		const gap = beats[i].t - beats[i - 1].t;

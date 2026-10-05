@@ -1,5 +1,6 @@
 export { noteMasterSilence, resetMasterSilenceWatch } from '$lib/rb/master-silence-report';
 export {
+	notePositionSample,
 	notePresentationClock,
 	notePresentationTickFailure,
 	readOutputTimestamp,

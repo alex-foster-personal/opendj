@@ -38,15 +38,35 @@ function _deckInput(id: TransitionDeckInput['id']): TransitionDeckInput {
 		position_ms: deck.position_ms,
 		cue_ms: deck.cue_ms,
 		bpm: deck.bpm,
-		phrases: (deck.anlz?.phrases ?? []).map((phrase) => ({
+		phrases: _mappedOnce(_phraseMemo, deck.anlz?.phrases ?? _EMPTY, (phrase) => ({
 			start_ms: phrase.start_s * 1000,
 			end_ms: phrase.end_s * 1000
 		})),
-		beatgrid: (deck.anlz?.beatgrid.beats ?? []).map((beat) => ({
+		beatgrid: _mappedOnce(_beatMemo, deck.anlz?.beatgrid.beats ?? _EMPTY, (beat) => ({
 			n: beat.n,
 			time_ms: beat.t * 1000
 		}))
 	};
+}
+
+// PERF-GRID-03: the chip's `$derived(readTransition())` re-runs on every
+// transport tick, and mapping a ~1,000-beat grid through Svelte proxies each
+// time was a top main-thread cost with two decks playing. Analysis arrays
+// are replaced, never edited in place, so identity plus length keys the copy.
+const _EMPTY: readonly never[] = [];
+const _phraseMemo = new WeakMap<object, { length: number; mapped: { start_ms: number; end_ms: number }[] }>();
+const _beatMemo = new WeakMap<object, { length: number; mapped: { n: number; time_ms: number }[] }>();
+
+function _mappedOnce<S, T>(
+	memo: WeakMap<object, { length: number; mapped: T[] }>,
+	source: readonly S[],
+	map: (item: S) => T
+): T[] {
+	const hit = memo.get(source);
+	if (hit !== undefined && hit.length === source.length) return hit.mapped;
+	const mapped = source.map(map);
+	memo.set(source, { length: source.length, mapped });
+	return mapped;
 }
 
 function _input(): TransitionInput {

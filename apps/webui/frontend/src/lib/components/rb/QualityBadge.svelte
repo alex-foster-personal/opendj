@@ -77,6 +77,8 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		/* Skin hook: Gothic (mono-dev) grays the whole ramp (theme.css). */
+		filter: var(--rb-quality-filter, none);
 	}
 
 	.q-label {

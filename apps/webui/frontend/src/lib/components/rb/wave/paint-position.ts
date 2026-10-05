@@ -35,6 +35,18 @@
  * presentation clock is not trusted, so a genuine stall is exactly as
  * visible as before: the freeze detector folds `deck.position_ms` directly,
  * never this projected value.
+ *
+ * Anchor = the engine's sample time, not the frame that noticed it (Mon 5 Oct
+ * 2026, "waveforms slip apart even though they are syncing"). Each WaveRow
+ * runs its own rAF loop, and the engine's `_tick` is another: a row whose
+ * callback runs BEFORE the tick sees each sample one frame late, and anchoring
+ * there projects it forward from the wrong instant. Two synced decks then
+ * painted a frame apart (measured on demon-llama at a busy page's ~7 fps: 80 to
+ * 190 ms of beat phase on screen while the engine held them 1 ms apart). The
+ * engine now records when it sampled each position (`notePositionSample`), and
+ * a row projects from that instant, so every row paints every deck from the
+ * same clock. `sampledAtMs` null (a position written outside the per-frame
+ * publish, e.g. a seek) keeps the notice-time anchor.
  */
 
 export interface PositionInterpolatorState {
@@ -58,6 +70,8 @@ export function initPositionInterpolatorState(): PositionInterpolatorState {
  *                while frozen/stalled) -- interpolating a stalled clock would
  *                hide the exact failure `playheadFrozen` exists to surface.
  * @param rate    Track-ms advanced per real ms (e.g. `deck.pitch`).
+ * @param sampledAtMs When the engine sampled `raw` (`performance.now()`), or
+ *                null when unknown; see the module note above.
  */
 export function interpolatedPositionMs(
 	state: PositionInterpolatorState,
@@ -65,12 +79,14 @@ export function interpolatedPositionMs(
 	nowMs: number,
 	playing: boolean,
 	trusted: boolean,
-	rate: number
+	rate: number,
+	sampledAtMs: number | null
 ): number {
 	if (raw !== state.lastRawPositionMs) {
 		state.lastRawPositionMs = raw;
 		state.lastRawAtMs = nowMs;
 	}
+	if (sampledAtMs !== null) state.lastRawAtMs = sampledAtMs;
 	if (!playing || !trusted) return raw;
 	return raw + (nowMs - state.lastRawAtMs) * rate;
 }
@@ -86,10 +102,11 @@ export function paintPositionMsFor(
 	nowMs: number,
 	playing: boolean,
 	trusted: boolean,
-	rate: number
+	rate: number,
+	sampledAtMs: number | null
 ): number {
 	if (scrubPreviewMs !== null) return scrubPreviewMs;
-	return interpolatedPositionMs(state, raw, nowMs, playing, trusted, rate);
+	return interpolatedPositionMs(state, raw, nowMs, playing, trusted, rate, sampledAtMs);
 }
 
 /** The subset of `DeckState` `paintPositionMs` below actually reads. */
@@ -111,9 +128,11 @@ export function paintPositionMs(
 	scrubPreviewMs: number | null,
 	deck: PaintPositionDeck,
 	clockUntrusted: boolean,
-	nowMs: number
+	nowMs: number,
+	sampledAtMs: number | null
 ): number {
-	return paintPositionMsFor(state, scrubPreviewMs, deck.position_ms, nowMs, deck.playing, !clockUntrusted, deck.pitch);
+	const { position_ms: raw, playing, pitch } = deck;
+	return paintPositionMsFor(state, scrubPreviewMs, raw, nowMs, playing, !clockUntrusted, pitch, sampledAtMs);
 }
 
 /**
