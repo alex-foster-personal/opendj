@@ -102,7 +102,7 @@ import {
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
-import { deriveKeySyncStatus, type KeySyncStatus } from '$lib/player/key/key-sync-status';
+import { deriveKeySyncStatus, refineKeySyncStatus, type KeySyncStatus } from '$lib/player/key/key-sync-status';
 import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
@@ -898,8 +898,14 @@ function _keySyncPlan(deck: DeckId, masterDeck: DeckId, sourceBaseline: number):
 	};
 }
 
-/** Whether this deck's KEY SYNC arm is actually following a master now. */
+/** Whether this deck's KEY SYNC arm is actually following a master now:
+ * 'following' only once the PRESENTED shift sits on the current target. */
 export function keySyncStatus(deck: DeckId): KeySyncStatus {
+	return refineKeySyncStatus(_keySyncArmStatus(deck), keySyncPreview(deck)?.deltaSemitones ?? null);
+}
+
+/** Arm-level status from published state: which decks the follow pass owns. */
+function _keySyncArmStatus(deck: DeckId): KeySyncStatus {
 	return deriveKeySyncStatus(deck, deckStates);
 }
 
@@ -1078,7 +1084,7 @@ function _queueKeySyncFollow(): void {
 	queueMicrotask(() => {
 		_keySyncFollowQueued = false;
 		for (const deck of DECK_IDS) {
-			if (keySyncStatus(deck) !== 'following') continue;
+			if (_keySyncArmStatus(deck) !== 'following') continue;
 			void _applyKeySyncFollow(deck).catch((error: unknown) => _disengageKeySync(deck, error));
 		}
 	});
@@ -3919,7 +3925,7 @@ class RbAudioEngine implements AudioEngine {
 		// No master yet (session restore replays this before any master is
 		// elected) is the ARMED state keySyncStatus reports; the follow pass
 		// applies it when a master appears.
-		if (keySyncStatus(deck) !== 'following') return;
+		if (_keySyncArmStatus(deck) !== 'following') return;
 		try {
 			await _applyKeySyncFollow(deck);
 		} catch (error) {

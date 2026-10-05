@@ -16,6 +16,7 @@ import type { DeckId } from '$lib/rb/deck-id';
 export type KeySyncStatus =
 	| 'off'
 	| 'following'
+	| 'syncing'
 	| 'waiting-no-master'
 	| 'waiting-is-master'
 	| 'waiting-no-key';
@@ -44,9 +45,24 @@ export function deriveKeySyncStatus(
 	return 'following';
 }
 
+/** Narrow 'following' to what the deck actually PLAYS: it holds only when a
+ * plan is derivable and the presented shift already sits on its target
+ * (delta 0). Otherwise the follow is still being applied ('syncing') and the
+ * light must stay off. The engine passes `keySyncPreview(deck).deltaSemitones`,
+ * or null when no plan is derivable yet (live deck before presentation). */
+export function refineKeySyncStatus(
+	status: KeySyncStatus,
+	presentedDeltaSemitones: number | null
+): KeySyncStatus {
+	if (status !== 'following') return status;
+	return presentedDeltaSemitones === 0 ? 'following' : 'syncing';
+}
+
 /** Hover copy for each status, shared by the deck header and agents. */
 export function keySyncStatusTitle(status: Exclude<KeySyncStatus, 'off' | 'following'>): string {
 	switch (status) {
+		case 'syncing':
+			return "KEY SYNC ARMED - not following yet: the master's key is still being applied to the presented audio.";
 		case 'waiting-no-master':
 			return 'KEY SYNC ARMED - not following: no loaded master deck yet. Applies when a master is selected.';
 		case 'waiting-is-master':

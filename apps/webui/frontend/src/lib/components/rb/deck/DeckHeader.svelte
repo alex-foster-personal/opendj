@@ -165,8 +165,17 @@
 	});
 	// Lit only while the follow really holds (DECKUX-34): an arm that is
 	// waiting on a master reads as ARMED, never as ON over a wrong key.
-	// keySyncStatus reads only $state deckStates fields, so this tracks them.
-	const keySyncState: KeySyncStatus = $derived(keySyncStatus(deckId));
+	// keySyncStatus also reads the engine's presented plan (not $state), so
+	// re-derive on the same published fields keySyncPlan tracks above.
+	const keySyncState: KeySyncStatus = $derived.by(() => {
+		void keySyncPlan;
+		for (const candidate of DECK_IDS) {
+			void deckStates[candidate].is_master;
+			void deckStates[candidate].stable_id;
+		}
+		void deck.key_sync_enabled;
+		return keySyncStatus(deckId);
+	});
 	const keySyncTitle: string = $derived(
 		keySyncState === 'following'
 			? 'KEY SYNC ON - this deck follows the selected master key'

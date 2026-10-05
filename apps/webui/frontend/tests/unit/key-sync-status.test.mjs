@@ -6,6 +6,7 @@
  * - if the master reads 'following' then a deck can claim to follow itself
  * - if an arm with no loaded master reads 'following' then restore lights a wrong key
  * - if an arm without a Camelot key on either side reads 'following' then the follow cannot be derived
+ * - if 'following' survives a non-zero presented delta or an underivable plan then the light shows a key not yet playing
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -62,8 +63,16 @@ test('an armed deck waits when either side has no Camelot key', () => {
 });
 
 test('every waiting status has operator copy that says it is not following', () => {
-	for (const status of ['waiting-no-master', 'waiting-is-master', 'waiting-no-key']) {
+	for (const status of ['syncing', 'waiting-no-master', 'waiting-is-master', 'waiting-no-key']) {
 		assert.match(mod.keySyncStatusTitle(status), /ARMED - not following/);
 	}
 	assert.throws(() => mod.deriveKeySyncStatus(5, decks({})), RangeError);
+});
+
+test('following holds only once the presented shift sits on the target', () => {
+	assert.equal(mod.refineKeySyncStatus('following', 0), 'following');
+	assert.equal(mod.refineKeySyncStatus('following', 2), 'syncing', 'a pending follow is not yet audible');
+	assert.equal(mod.refineKeySyncStatus('following', null), 'syncing', 'an underivable plan is not a follow');
+	assert.equal(mod.refineKeySyncStatus('waiting-no-master', 0), 'waiting-no-master');
+	assert.equal(mod.refineKeySyncStatus('off', null), 'off');
 });

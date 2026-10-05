@@ -328,6 +328,20 @@ test('master key nudge: the follower re-follows the master new audible key', asy
 	assert.equal(deck(3).key_shift_semitones, 0, 'an unarmed deck must never be moved by the follow pass');
 });
 
+test('between a master change and the follow landing, the follower reads syncing, never following', async () => {
+	await followDeck1();
+	// The immediate (paused) key-shift path publishes synchronously inside
+	// nudgeKey; the follow pass is queued, so this is the in-flight window a
+	// live deck sits in until its schedule is presented.
+	const pending = audio.engine.nudgeKey(1, 1);
+	assert.equal(deck(1).key_shift_semitones, 1);
+	assert.notEqual(deck(2).key_shift_semitones, expectedFollowShift(2, 1), 'fixture must need a re-follow');
+	assert.equal(audio.keySyncStatus(2), 'syncing', 'a lit KEY SYNC here would show a key that is not playing');
+	await pending;
+	await settle();
+	assertFollowing(2, 1, 'after the follow lands');
+});
+
 test('master tempo with Master Tempo OFF: the follower re-follows the varispeed key change', async () => {
 	await followDeck1();
 	const before = deck(2).key_shift_semitones;
