@@ -62,6 +62,16 @@
 	--rb-knob-alarm: var(--rb-red);    /* EQ dial past ~50% throw */
 	--rb-artwork-filter: none;         /* mono-dev grays artwork; html-level too, for pages outside .perf-root */
 	--rb-key-compat-border: initial;   /* unset: the compatible-key ring uses the master key's hue */
+	--rb-issue-square: initial;        /* unset: library minor-issue '!' square keeps its amber fill */
+	--rb-issue-square-ink: initial;    /* unset: the '!' glyph on that square stays near-black */
+	--rb-quality-filter: none;         /* QLT venue badges keep their colour ramp */
+	--rb-bpm-mismatch-ring: initial;   /* unset: off-tempo BPM cells keep their red severity rings */
+	--rb-bpm-mismatch-text: initial;   /* unset: off-tempo BPM numbers keep the column's dim text */
+	--rb-stem-vocal: initial;          /* unset: stem chips, tags, dials and rows use STEM_COLORS (stem-colors.ts) */
+	--rb-stem-instrumental: initial;
+	--rb-stem-drums: initial;
+	--rb-stem-bass: initial;
+	--rb-stem-other: initial;
 
 	/* -------- layout metrics -------- */
 	--rb-topbar-h: 28px;         /* section 1 */
@@ -195,6 +205,21 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-knob-alarm: #f4f4f4;
 	--rb-key-compat-border: #f4f4f4;
 	--rb-artwork-filter: grayscale(1) contrast(1.05);
+	/* Library warnings in gray: the minor-issue '!' is a light square with a
+	   black glyph (still the brightest thing in its cell), QLT badges go
+	   grayscale, and an off-tempo BPM just dims instead of ringing red. */
+	--rb-issue-square: #d6d6d6;
+	--rb-issue-square-ink: #0a0a0a;
+	--rb-quality-filter: grayscale(1);
+	--rb-bpm-mismatch-ring: transparent;
+	--rb-bpm-mismatch-text: #666666;
+	/* Stems: low-chroma tints, still five distinct hues, so they stop
+	   shouting against the gray chrome. */
+	--rb-stem-vocal: #8ea6ba;
+	--rb-stem-instrumental: #98ab8c;
+	--rb-stem-drums: #b8a088;
+	--rb-stem-bass: #a59cba;
+	--rb-stem-other: #86aea6;
 }
 /* Track artwork in grayscale, color back on hover. Keyed on the artwork
  * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it
@@ -236,6 +261,11 @@ html[data-skin='mono-dev'] .perf-root .readout .bpm {
 	font-weight: 500;
 	color: #bdbdbd;
 	letter-spacing: -0.02em;
+}
+/* Off-tempo library BPM: no red ring (token above), and one step dimmer than
+ * the column's already-dim numbers, so a mismatch reads as "not for now". */
+html[data-skin='mono-dev'] .perf-root .c-bpm:is(.bpm-warn, .bpm-danger, .bpm-critical) {
+	color: var(--rb-bpm-mismatch-text);
 }
 
 /* -------- skin: light --------
@@ -287,6 +317,16 @@ html[data-skin='light'] .perf-root {
 	--rb-knob-alarm: var(--rb-red);
 	--rb-key-compat-border: initial;
 	--rb-artwork-filter: none;
+	--rb-issue-square: initial;
+	--rb-issue-square-ink: initial;
+	--rb-quality-filter: none;
+	--rb-bpm-mismatch-ring: initial;
+	--rb-bpm-mismatch-text: initial;
+	--rb-stem-vocal: initial;
+	--rb-stem-instrumental: initial;
+	--rb-stem-drums: initial;
+	--rb-stem-bass: initial;
+	--rb-stem-other: initial;
 }
 /* section 2: deck ground and dividers are component-local dark literals
  * (performance/+page.svelte); light equivalents from the design's

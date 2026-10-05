@@ -2955,9 +2955,11 @@
 		background: color-mix(in srgb, #a855f7 12%, transparent);
 	}
 	.c-bpm.bpm-compatible { box-shadow: inset 0 0 0 1px var(--rb-green); }
-	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px #d45a4f; }
-	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px #e14238; }
-	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px #ff2f25; }
+	/* Skin hook: Gothic (mono-dev) drops the red ring (--rb-bpm-mismatch-ring)
+	 * and dims the number instead (theme.css, mono-dev section 2). */
+	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #d45a4f); }
+	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #e14238); }
+	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px var(--rb-bpm-mismatch-ring, #ff2f25); }
 	tr.rb-row-paired td {
 		box-shadow: inset 0 -2px 0 color-mix(in srgb, #a855f7 85%, transparent);
 	}
