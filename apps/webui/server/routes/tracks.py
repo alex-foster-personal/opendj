@@ -107,15 +107,42 @@ def _lyrics_available(cache_directory: str, stable_id: str) -> bool:
     * an id that is not one file name (empty, a path separator, a NUL, a
       character no file name can hold) is "no lyrics" and reaches nothing;
     * any error (the cache path is a file, the directory is unreadable, the
-      volume went away) is "no lyrics" for that id, never a failed page.
+      volume went away) is "no lyrics" for that id, never a failed page;
+    * an ASR entry that is only Whisper hallucinations (LYRICS-12) is "no
+      lyrics", so the flag and ``GET /{stable_id}/lyrics`` agree.
     """
     if not stable_id or "/" in stable_id or os.sep in stable_id:
         return False
+    path = os.path.join(cache_directory, f"{stable_id}.json")
     try:
-        entry = os.lstat(os.path.join(cache_directory, f"{stable_id}.json"))
+        entry = os.lstat(path)
     except (OSError, ValueError):
         return False
-    return stat.S_ISREG(entry.st_mode)
+    return stat.S_ISREG(entry.st_mode) and not _is_hallucination_only(path, entry)
+
+
+#: path -> (mtime_ns, size, hallucination_only). Cache entries are written by
+#: atomic replace, so an unchanged (mtime, size) means an unchanged verdict and
+#: a page of rows pays one ``lstat`` each after the first read of a file.
+_HALLUCINATION_MEMO: dict[str, tuple[int, int, bool]] = {}
+
+
+def _is_hallucination_only(path: str, entry: os.stat_result) -> bool:
+    """LYRICS-12: the entry is an ASR transcript the read route answers 404 for.
+
+    A corrupt entry is left to the lyrics read to report (False here), so this
+    flag only ever narrows what the lstat said.
+    """
+    memo = _HALLUCINATION_MEMO.get(path)
+    if memo is not None and memo[0] == entry.st_mtime_ns and memo[1] == entry.st_size:
+        return memo[2]
+    try:
+        lyrics = lyrics_cache.load(Path(path))
+    except (OSError, TypeError, ValueError):
+        lyrics = None
+    verdict = lyrics is not None and servable_lyrics(lyrics) is None
+    _HALLUCINATION_MEMO[path] = (entry.st_mtime_ns, entry.st_size, verdict)
+    return verdict
 
 
 def _lyrics_available_bulk(data_dir: Path, stable_ids: list[str]) -> dict[str, bool]:
