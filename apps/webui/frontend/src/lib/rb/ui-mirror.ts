@@ -79,6 +79,8 @@ export function buildUiMirror(): Record<string, unknown> {
 	return {
 		client_open: true,
 		client_id: MIRROR_CLIENT_ID,
+		// AGENT-18: the engine hands the lease away from a hidden, silent tab.
+		tab: { visible: document.visibilityState === 'visible' },
 		published_at: new Date().toISOString(),
 		// The elected master, and so the deck a Duration times against when
 		// no clock is named. Without it an agent cannot resolve its own
@@ -158,6 +160,10 @@ export function buildUiMirror(): Record<string, unknown> {
 	};
 }
 
+function _anyDeckPlaying(): boolean {
+	return Object.values(queryPerformanceState().decks).some((deck) => deck.playing);
+}
+
 export function installUiMirror(leadership: TabLeadership): () => void {
 	// The engine only knows a performance page is open once it has ACCEPTED a
 	// mirror publish, and every /api/v1/commands route answers 409 until then.
@@ -173,6 +179,8 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 		leadership,
 		clientId: MIRROR_CLIENT_ID,
 		build: buildUiMirror,
+		isPlaying: _anyDeckPlaying,
+		isVisible: () => document.visibilityState === 'visible',
 		beforePublish: (nowMs) => {
 			if (
 				lastPublishAtMs !== null &&
@@ -193,6 +201,10 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 	});
 	mirror.publish();
 	const interval = window.setInterval(mirror.publish, 1000);
+	// The operator's latest touch makes this the operator's tab (see the claim rules).
+	const noteGesture = (): void => mirror.noteGesture();
+	window.addEventListener('pointerdown', noteGesture, { capture: true, passive: true });
+	window.addEventListener('keydown', noteGesture, { capture: true, passive: true });
 	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish);
 	// A follower never published, so it has nothing to close; deleting would
 	// blank the leader's live mirror under it.
@@ -212,6 +224,8 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 		// is deleted, so teardown never leaves a poll asking about a page the
 		// engine has just been told is gone.
 		window.removeEventListener('pagehide', closeMirrorIfLeader);
+		window.removeEventListener('pointerdown', noteGesture, { capture: true });
+		window.removeEventListener('keydown', noteGesture, { capture: true });
 		mirror.forget();
 		uninstallOrderPoll();
 		window.clearInterval(interval);

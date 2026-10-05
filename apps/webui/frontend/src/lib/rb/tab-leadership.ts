@@ -59,6 +59,12 @@ export interface TabLeadership {
 	holdsLocalLock(): boolean;
 	/** The operator pressed "Take control": steal the lock and the lease. */
 	takeControl(): void;
+	/**
+	 * Claim leadership without the operator: steal the local lock if a sibling
+	 * holds it and publish next. With `takeover: false` the engine decides
+	 * (it hands over only from an idle or hidden holder to an audible writer).
+	 */
+	claim(opts: { takeover: boolean }): void;
 	/** Returns true once after `takeControl`: the next mirror PUT asks for takeover. */
 	consumeTakeover(): boolean;
 	/** The engine refused our mirror PUT because `holder` holds the lease. */
@@ -167,6 +173,21 @@ export function createTabLeadership(deps: {
 			);
 	}
 
+	const claim = (opts: { takeover: boolean }): void => {
+		if (disposed) return;
+		if (opts.takeover) takeoverPending = true;
+		leaseHolder = null;
+		if (locks !== null && !hasLock) {
+			queued?.abort();
+			queued = null;
+			locks.request(lockName, { steal: true }, hold).then(
+				() => onHeldSettled(undefined),
+				(error: unknown) => onHeldSettled(error)
+			);
+		}
+		emit();
+	};
+
 	return {
 		snapshot,
 		subscribe(listener) {
@@ -178,19 +199,9 @@ export function createTabLeadership(deps: {
 		isLeader: () => decided && hasLock && leaseHolder === null,
 		holdsLocalLock: () => decided && hasLock,
 		takeControl() {
-			if (disposed) return;
-			takeoverPending = true;
-			leaseHolder = null;
-			if (locks !== null && !hasLock) {
-				queued?.abort();
-				queued = null;
-				locks.request(lockName, { steal: true }, hold).then(
-					() => onHeldSettled(undefined),
-					(error: unknown) => onHeldSettled(error)
-				);
-			}
-			emit();
+			claim({ takeover: true });
 		},
+		claim,
 		consumeTakeover() {
 			const pending = takeoverPending;
 			takeoverPending = false;
