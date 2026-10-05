@@ -4,6 +4,7 @@
  * Run from apps/webui/frontend against a real engine backend:
  *
  *   node tests/live/playhead-smoothness.mjs <port> <label> [split=0|1] [backend=http://127.0.0.1:8728]
+ *   pnpm run test:live:playhead-smoothness <port> <label> [split] [backend]   (the same)
  *
  * Starts its own vite dev server on <port> (proxying /api to the backend), loads
  * two tracks into decks 1 and 2 through window.musicDjToolsPerformance, plays
