@@ -19,6 +19,7 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
 	import ControlExplainer from './ControlExplainer.svelte';
 	import { readPalette, resolveStripWaveformKind } from '$lib/components/rb/wave/render';
 	import {
@@ -233,7 +234,7 @@
 			widthPx: css,
 			heightPx: css,
 			palette,
-			kind: resolveStripWaveformKind(deck.anlz.waveform.kind, uiPrefs.waveform_design),
+			kind: resolveStripWaveformKind(deck.anlz.waveform.kind, effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin)),
 			preview: previewBands,
 			vocals: radialVocals,
 			durationSec: radialDurationSec
