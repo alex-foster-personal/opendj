@@ -310,6 +310,21 @@
 						stroke-linecap="round"
 						transform={`rotate(${tickAngle} 50 50)`}
 					/>
+				{:else}
+					<!-- Radial waveform: track start sits at 12 o-clock and runs clockwise, so the
+					     playhead is a red line across the bands at the same angle as the trail. -->
+					<line
+						class="radial-playhead"
+						data-testid={`jog-radial-playhead-deck-${deck.deck_id}`}
+						x1="50"
+						y1={50 - JOG_RADIAL_INNER_RADIUS}
+						x2="50"
+						y2={markInnerY}
+						stroke="#d0342c"
+						stroke-width="2"
+						stroke-linecap="round"
+						transform={`rotate(${tickAngle} 50 50)`}
+					/>
 				{/if}
 			{/if}
 			<text x="50" y="47" class="bpm">{bpmText}</text>
@@ -470,14 +485,16 @@
 		fill: #f2f0e8;
 		stroke: #fff;
 	}
-	/* DECKUX-02: keep the polar band (r=18..39) open over the canvas; only
-	 * the inner text disc stays opaque. Playing-face CSS must not refill the
-	 * full r=40 face over the waveform. */
+	/* DECKUX-02: keep the polar band (r=6..39) open over the canvas. The
+	 * inner text disc is a translucent scrim, never an opaque cover: the
+	 * waveform runs under the BPM text and the halo below keeps it legible.
+	 * Playing-face CSS must not refill the full r=40 face over the waveform. */
 	.dial-wrap.dial-radial-wave .wheel-fill {
 		fill: none;
 	}
 	.dial-wrap.dial-radial-wave .wheel-fill-inner {
 		fill: #14171d;
+		fill-opacity: 0.5;
 	}
 	.dial-wrap.dial-radial-wave.dial-playing .wheel-fill {
 		fill: none;
@@ -485,6 +502,17 @@
 	}
 	.dial-wrap.dial-radial-wave.dial-playing .wheel-fill-inner {
 		fill: #f2f0e8;
+		fill-opacity: 0.6;
+	}
+	.dial-wrap.dial-radial-wave .dial text {
+		paint-order: stroke;
+		stroke: #14171d;
+		stroke-width: 2.5px;
+		stroke-opacity: 0.85;
+		stroke-linejoin: round;
+	}
+	.dial-wrap.dial-radial-wave.dial-playing .dial text {
+		stroke: #f2f0e8;
 	}
 	/* Pin f19a1b2a455a: white rim marks only. .downbeat (beat 1) is thicker
 	 * than the rest; nothing here reaches inside the r=40 wheel face. */
