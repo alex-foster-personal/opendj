@@ -9734,6 +9734,11 @@
           "tracks": {
             "title": "Tracks",
             "type": "integer"
+          },
+          "tracks_playable": {
+            "default": 0,
+            "title": "Tracks Playable",
+            "type": "integer"
           }
         },
         "required": [
@@ -19217,6 +19222,17 @@
             ],
             "title": "File Exists"
           },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
           "genre": {
             "anyOf": [
               {
@@ -23962,6 +23978,17 @@
               }
             ],
             "title": "File Exists"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
           },
           "genre": {
             "anyOf": [
