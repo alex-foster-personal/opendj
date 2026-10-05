@@ -3,7 +3,7 @@
 Daemon thread started from the webui lifespan. Dedupes paths, batches stats,
 and upserts into ``path_availability`` without blocking request handlers.
 
-It is also the ONE writer of that index while the server runs (STATE-16): a
+It is also the ONE writer of that index while the server runs (STATE-18): a
 request that stats paths itself hands the answers over with :func:`record`
 instead of opening a write connection. A read endpoint that writes waits on
 whoever holds the state.db writer lock, so ``GET /api/v1/tracks`` answered

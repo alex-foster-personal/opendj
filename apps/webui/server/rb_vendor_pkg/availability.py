@@ -145,7 +145,7 @@ def _record_stats(namespace: str, sizes: Mapping[str, int | None], now: float) -
     """Cache this request's stats in L1, and persist them off the request thread.
 
     A read request never opens a write connection while the server runs
-    (STATE-16): the running refresher persists the rows, so a writer holding
+    (STATE-18): the running refresher persists the rows, so a writer holding
     the state.db lock cannot turn ``GET /api/v1/tracks`` into a 503. With no
     refresher running (CLI, script, no-lifespan test) the rows are written
     here, as before, because nothing else would write them.

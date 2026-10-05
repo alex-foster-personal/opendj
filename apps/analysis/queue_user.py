@@ -110,7 +110,7 @@ def require_lane(lane: str) -> str:
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
     """Queue tables, ``position`` column, and the two standing batches.
 
-    Writes only what is missing (STATE-16). Every ``GET /api/v1/library-jobs``
+    Writes only what is missing (STATE-18). Every ``GET /api/v1/library-jobs``
     and the 1 Hz library-jobs tick call this, and an ``INSERT OR IGNORE`` of a
     batch that already exists still takes the state.db writer lock, so a busy
     writer turned a read into 503 ``STATE_STORE_BUSY``. The ``IF NOT EXISTS``
