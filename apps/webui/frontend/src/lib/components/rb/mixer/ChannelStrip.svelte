@@ -18,7 +18,7 @@
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
-	import { STEM_COLORS } from '$lib/rb/stem-colors';
+	import { stemCssColor } from '$lib/rb/stem-colors';
 	import {
 		STEM_DIAL_LABELS,
 		stemDialAssignment,
@@ -231,7 +231,7 @@
 				value: deck.stems.controls[stem].gain,
 				onchange: (value) => onStemGain(stem, value),
 				knobRole: stemKnobRole(stem),
-				accentColor: STEM_COLORS[stem],
+				accentColor: stemCssColor(stem),
 				accessibleLabel: `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`,
 				stemControl: stem
 			};
