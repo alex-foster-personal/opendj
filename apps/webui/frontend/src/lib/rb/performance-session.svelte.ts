@@ -229,6 +229,8 @@ export function createSessionSnapshotWriter(opts: {
 	};
 }
 
+const RESTORE_DISPOSED = 'performance session restore was disposed';
+
 async function _restoreDeck(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
@@ -246,6 +248,9 @@ async function _restoreDeck(
 		if (snapshot === null) return;
 		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot, query);
 	} catch (exc) {
+		// AGENT-18: a restore disposed by losing the lease stops here, quietly, rather
+		// than toasting one error per remaining deck; the next promotion resumes it.
+		if (exc instanceof Error && exc.message === RESTORE_DISPOSED) throw exc;
 		const message = exc instanceof Error ? exc.message : String(exc);
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
 	}
@@ -341,8 +346,6 @@ async function _resumeUrlDecks(
 		await _restoreDeck(dispatch, query, deckId, stable_id, 0, null);
 	}
 }
-
-const RESTORE_DISPOSED = 'performance session restore was disposed';
 
 export function installPerformanceSessionRestore(
 	opts: PerformanceSessionRestoreOptions = {}

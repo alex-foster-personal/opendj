@@ -14,10 +14,11 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let session;
+let stores;
 let deeplink;
 
 before(async () => {
-	({ session } = await loadTypeScriptModule('tests/unit/fixtures/performance-session-restore-entry.ts'));
+	({ session, stores } = await loadTypeScriptModule('tests/unit/fixtures/performance-session-restore-entry.ts'));
 	deeplink = await loadTypeScriptModule('src/lib/rb/performance-deeplink.ts');
 });
 
@@ -146,7 +147,8 @@ test('bug #31: a restore disposed by losing the lease mid-flight raises no unhan
 			setInterval: () => 1,
 			clearInterval: () => {},
 			commandSession: () => 1,
-			operatorMaster: () => null
+			operatorMaster: () => null,
+			resumeInterruptedRestore: true
 		});
 		for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
 		dispose(); // the lease is lost while deck 1 is still loading
@@ -158,4 +160,6 @@ test('bug #31: a restore disposed by losing the lease mid-flight raises no unhan
 		process.off('unhandledRejection', onUnhandled);
 	}
 	assert.deepEqual(unhandled, []);
+	const restoreToasts = stores.toasts.filter((toast) => String(toast.message).startsWith('session restore deck'));
+	assert.deepEqual(restoreToasts.map((toast) => toast.message), [], 'and no error toast per remaining deck');
 });

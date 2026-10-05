@@ -190,7 +190,8 @@ test('a restore cut short by demotion is resumed on re-promotion, then never aga
 			'session restore skipDeckRestore=true'
 		]
 	);
-	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 1);
+	// Bug #31: every promotion resumes from the rescue ring (the demoted tab was silenced).
+	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 3);
 });
 
 test('mutation control: without the settled signal every re-promotion would resume', async () => {
