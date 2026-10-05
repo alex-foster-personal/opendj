@@ -9,7 +9,9 @@
 	 * - Middle number: ArrayBuffers in the row-select prefetch cache.
 	 * - Right number: approx retained MB = JS heap + decoded PCM (often
 	 *   outside the heap). ANLZ/prefetch are already inside the heap - do
-	 *   not sum them again. Hover titles explain all (CLAUDE.md rule).
+	 *   not sum them again. The readouts carry no per-item title: one shared
+	 *   card (PERF-UI-10, $lib/rb/perf-readout-card) explains all of them
+	 *   (CLAUDE.md rule), opens on hover and pins on click.
 	 *   On a webview without performance.memory (WKWebView - the shipping
 	 *   Tauri shell) the heap term does not exist, so the figure is decoded
 	 *   PCM only, wears a '*' and carries its own threshold pair. The model
@@ -57,6 +59,14 @@
 		pushSample
 	} from '$lib/rb/perf-meter-model';
 	import { readPerfEvents, recordPerfEvent, resetPerfEventLog } from '$lib/rb/perf-event-log';
+	import {
+		isPerfCardOpen,
+		nextPerfCardState,
+		PERF_CARD_CLOSED,
+		perfReadoutRows,
+		type PerfCardEvent,
+		type PerfCardState
+	} from '$lib/rb/perf-readout-card';
 	import PerfMeterSpark from './PerfMeterSpark.svelte';
 
 	const CHART_CAP = 60;
@@ -74,7 +84,13 @@
 			`LRU + byte budget - prevents RAM pressure that causes audible skips. ${tierHoverSuffix()}`
 	);
 
+	// PERF-UI-10: one card for every compact readout. Hover opens it; a click
+	// pins it. monitorOpen is the pin, and also gates the heavier sampler and
+	// the chart / breakdown section below the readout rows.
+	let cardState = $state<PerfCardState>(PERF_CARD_CLOSED);
 	let monitorOpen = $state(false);
+	let rootEl: HTMLDivElement | null = $state(null);
+	const cardOpen = $derived(isPerfCardOpen(cardState));
 	let memoryText = $state('0M');
 	let memoryLevel: 'ok' | 'warn' | 'crit' = $state('ok');
 	let memoryHover = $state('');
@@ -104,6 +120,21 @@
 			churnScore: readProcessFamilySnapshot()?.churnScore ?? null,
 			compressorRate: readProcessFamilySnapshot()?.compressorRate ?? null,
 			processes: readProcessFamilySnapshot()
+		})
+	);
+
+	const hzText = $derived(hz === null ? '--' : `${hz}`);
+	const waveformText = $derived(waveformStutter.active ? `W${waveformStutter.stutters}` : 'W--');
+	const readoutRows = $derived(
+		perfReadoutRows({
+			hzText,
+			hzDetail: audioHealthHover(),
+			cacheText: `${cacheN}`,
+			cacheDetail: cacheHover,
+			waveformText,
+			waveformDetail: waveformStutterHover(),
+			memoryText,
+			memoryDetail: memoryHover
 		})
 	);
 
@@ -168,8 +199,20 @@
 		};
 	}
 
-	function _toggleMonitor(): void {
-		monitorOpen = !monitorOpen;
+	function _cardEvent(event: PerfCardEvent): void {
+		cardState = nextPerfCardState(cardState, event);
+		monitorOpen = cardState.pinned;
+	}
+
+	function _onWindowPointerDown(event: PointerEvent): void {
+		if (!cardState.pinned || rootEl === null) return;
+		if (event.target instanceof Node && rootEl.contains(event.target)) return;
+		_cardEvent('outside');
+	}
+
+	function _onWindowKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Escape' || !cardOpen) return;
+		_cardEvent('escape');
 	}
 
 	function _handleReset(reset: 'prefetch' | 'anlz' | 'perf-ring'): void {
@@ -279,27 +322,55 @@
 	});
 </script>
 
-<div class="perf-meters-root">
+<svelte:window onpointerdown={_onWindowPointerDown} onkeydown={_onWindowKeydown} />
+
+<!-- PERF-UI-10: the compact readouts share ONE container and ONE card. No
+     readout carries its own title, so neither the single-hover layer nor
+     WKWebView draws a per-item tooltip; data-custom-tip marks the container
+     as drawing its own rich hover. -->
+<div
+	class="perf-meters-root"
+	bind:this={rootEl}
+	onpointerenter={() => _cardEvent('enter')}
+	onpointerleave={() => _cardEvent('leave')}
+>
 	<button
 		type="button"
 		class="perf-meters-compact"
-		aria-expanded={monitorOpen}
+		data-custom-tip=""
+		aria-expanded={cardOpen}
 		aria-controls="perf-meters-panel"
-		onclick={_toggleMonitor}
+		aria-pressed={cardState.pinned}
+		onclick={() => _cardEvent('toggle')}
 	>
-		<span class="perf-meter" class:warn={hzDisplayLevel === 'warn'} class:crit={hzDisplayLevel === 'crit'} title={audioHealthHover()}>{hz === null ? '--' : `${hz}`}</span>
-		<span class="perf-meter cache-n" title={cacheHover}>{cacheN}</span>
-		<span class="perf-meter" class:warn={waveformStutterWarn} title={waveformStutterHover()}>{waveformStutter.active ? `W${waveformStutter.stutters}` : 'W--'}</span>
+		<span class="perf-meter" class:warn={hzDisplayLevel === 'warn'} class:crit={hzDisplayLevel === 'crit'}>{hzText}</span>
+		<span class="perf-meter cache-n">{cacheN}</span>
+		<span class="perf-meter" class:warn={waveformStutterWarn}>{waveformText}</span>
 		<span
 			class="perf-meter memory-mb"
 			class:warn={memoryLevel === 'warn'}
 			class:crit={memoryLevel === 'crit'}
-			title={memoryHover}
 		>{memoryText}</span>
 	</button>
 
-	{#if monitorOpen}
-		<div id="perf-meters-panel" class="perf-meters-panel" role="region" aria-label="Performance monitor">
+	{#if cardOpen}
+		<div id="perf-meters-panel" class="perf-meters-panel" role="region" aria-label="Performance readouts">
+			<dl class="perf-readout-rows">
+				{#each readoutRows as row (row.key)}
+					<div class="perf-readout-row" data-readout={row.key}>
+						<dt class="perf-readout-name">{row.name}</dt>
+						<dd class="perf-readout-value">{row.value}</dd>
+						<dd class="perf-readout-explainer">{row.explainer}</dd>
+						<dd class="perf-readout-detail">{row.detail}</dd>
+					</div>
+				{/each}
+			</dl>
+			<p class="perf-readout-pin-hint">
+				{cardState.pinned
+					? 'Pinned. Click the readouts again, press Escape or click outside to close.'
+					: 'Click the readouts to pin this card and see the history and resets.'}
+			</p>
+		{#if monitorOpen}
 			<div class="perf-meters-charts">
 				<PerfMeterSpark values={hzChart} label="Hz" title="Presentation publish rate over recent samples." />
 				<PerfMeterSpark values={cacheChart} label="Cache MB" title="Prefetch + ANLZ cache footprint over recent samples." />
@@ -327,6 +398,7 @@
 				For Chromium dev sessions, use Chrome Task Manager (Shift+Esc) to capture
 				tab-renderer CPU and memory; see the performance register.
 			</p>
+		{/if}
 		</div>
 	{/if}
 </div>
@@ -373,15 +445,53 @@
 	.perf-meters-panel {
 		position: absolute;
 		top: 100%;
-		right: 0;
+		left: 0;
 		z-index: 200;
 		margin-top: 4px;
 		padding: 8px;
-		min-width: 280px;
+		min-width: 320px;
+		max-width: min(420px, calc(100vw - 32px));
 		background: var(--rb-surface, #1a1a1a);
 		border: 1px solid var(--rb-border, #333);
 		border-radius: 4px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+	}
+	.perf-readout-rows {
+		margin: 0 0 6px;
+		display: grid;
+		gap: 6px;
+		font-size: 11px;
+	}
+	.perf-readout-row {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		column-gap: 8px;
+	}
+	.perf-readout-name {
+		color: var(--rb-text, #ddd);
+		font-weight: 600;
+	}
+	.perf-readout-value {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+		color: var(--rb-text, #ddd);
+	}
+	.perf-readout-explainer,
+	.perf-readout-detail {
+		grid-column: 1 / -1;
+		margin: 1px 0 0;
+		color: var(--rb-text-dim);
+		line-height: 1.35;
+	}
+	.perf-readout-detail {
+		font-size: 10px;
+		opacity: 0.8;
+	}
+	.perf-readout-pin-hint {
+		margin: 4px 0 8px;
+		font-size: 10px;
+		color: var(--rb-text-dim);
 	}
 	.perf-meters-charts {
 		display: flex;
