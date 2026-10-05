@@ -100,13 +100,17 @@ test('left edge plus width never passes the next left edge', () => {
 	}
 });
 
-test('the rendered line starts at the playhead and is capped to the next line', () => {
+test('the rendered line starts at the playhead and is capped to the next line on its row', () => {
+	// Two-row layout (LYR-09, decision G, Mon 5 Oct 2026): entry i sits on row
+	// i % 2, so a line is capped at the next line on ITS row (i + 2), less the
+	// entry gap; the neighbour on the other row cannot collide with it.
 	const html = ssr.render(ssr.LyricsLane, {
 		props: {
 			lyrics: {
 				lines: [
 					{ start_ms: 5_000, text: 'alpha' },
-					{ start_ms: 8_000, text: 'bravo' }
+					{ start_ms: 6_000, text: 'bravo' },
+					{ start_ms: 8_000, text: 'charlie' }
 				]
 			},
 			loadError: null,
@@ -115,17 +119,21 @@ test('the rendered line starts at the playhead and is capped to the next line', 
 		}
 	}).body;
 	const spans = [...html.matchAll(/<span[^>]*class="lyric-line[^"]*"[^>]*>/g)].map((m) => m[0]);
-	assert.equal(spans.length, 2);
+	assert.equal(spans.length, 3);
 	assert.match(spans[0], /left:\s*50%/);
-	assert.match(spans[0], /max-width:\s*12\.5%/);
+	assert.match(spans[0], /data-row="0"/);
+	assert.match(spans[1], /data-row="1"/);
+	assert.match(spans[0], /max-width:\s*calc\(12\.5% - 6px\)/);
 	assert.doesNotMatch(spans[1], /max-width/);
+	assert.doesNotMatch(spans[2], /max-width/);
 });
 
-test('the line is left-anchored on a mostly opaque backing', () => {
+test('the line is left-anchored on the skin lyric box', () => {
+	// Decision G (Mon 5 Oct 2026) replaced the 85% app-background backing with
+	// a black box at --rb-lyric-box-alpha plus a black outline, over the wave.
 	const rule = LANE.slice(LANE.indexOf('.lyric-line {'), LANE.indexOf('.lyric-line.active'));
 	assert.doesNotMatch(rule, /translateX\(-50%\)/);
 	assert.match(rule, /text-overflow:\s*ellipsis/);
-	const backing = rule.match(/background:\s*color-mix\(in srgb, var\(--rb-bg\) (\d+)%, transparent\)/);
-	assert.ok(backing, 'line needs a backing mixed from the app background');
-	assert.ok(Number(backing[1]) >= 80, 'backing must be at least 80% opaque');
+	assert.match(rule, /background:\s*rgb\(0 0 0 \/ var\(--rb-lyric-box-alpha\)\)/);
+	assert.match(rule, /text-shadow:[^;]*var\(--rb-lyric-outline-px\)/);
 });

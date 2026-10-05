@@ -309,6 +309,59 @@ def _run_verdict_step(tmp_path: Path, outcome: str, rc: str, quarantine: str) ->
     ).returncode
 
 
+def test_the_contracts_cargo_job_uploads_junit_and_applies_the_verdict() -> None:
+    """A cargo job with no Trunk upload and no verdict step fails this test.
+
+    Both suites must emit JUnit, stage it for the isolated uploader, and be
+    decided by the same verdict script the pytest shards use. nextest exit
+    100 is the only code mapped to pytest's tests-failed exit (1).
+    """
+    job = _jobs()["contracts"]
+    assert job["needs"] == ["scope", LIST_JOB], job["needs"]
+    for clause in ("!cancelled()", "needs.scope.result == 'success'"):
+        assert clause in job["if"], job["if"]
+    assert "TRUNK_API_TOKEN" not in yaml.safe_dump(job)
+
+    steps = job["steps"]
+    for step_id, manifest, junit_name in (
+        ("desktop-rust", "apps/desktop/src-tauri/Cargo.toml", "junit-rust-desktop.xml"),
+        ("audio-rust", "apps/audio-engine/Cargo.toml", "junit-rust-audio.xml"),
+    ):
+        step = _step("contracts", step_id=step_id)
+        assert step["continue-on-error"] is True
+        run = step["run"]
+        assert f"cargo nextest run --manifest-path {manifest} --locked" in run
+        assert "--profile ci" in run
+        assert 'if [ "$rc" -eq 100 ]; then' in run
+        assert 'echo "rc=1" >> "$GITHUB_OUTPUT"' in run
+        assert junit_name in run
+
+    verdict = steps[-1]
+    assert verdict["name"] == "Cargo verdict (nextest exit code, Trunk quarantine applied)"
+    assert verdict["if"] == "always()"
+    assert "continue-on-error" not in verdict
+    assert "scripts/ci_trunk_quarantine_verdict.py" in verdict["run"]
+    assert verdict["env"]["TRUNK_QUARANTINE_LIST"] == f"${{{{ needs.{LIST_JOB}.outputs.list }}}}"
+    assert "--pytest-rc" in verdict["run"]
+
+    text = yaml.safe_dump(job)
+    for artifact in (
+        "ci-insights-rust-desktop-attempt-${{ github.run_attempt }}",
+        "ci-insights-rust-audio-attempt-${{ github.run_attempt }}",
+    ):
+        assert artifact in text, artifact
+
+    insights = _jobs()["ci-insights"]
+    assert "contracts" in insights["needs"]
+    for suite in ("desktop", "audio"):
+        upload = _step("ci-insights", step_id=f"trunk-flaky-tests-rust-{suite}")
+        assert str(upload["uses"]).startswith("trunk-io/analytics-uploader@")
+        assert str(upload["with"]["quarantine"]).lower() == "false"
+        assert upload["with"]["junit-paths"] == f"staged-rust-{suite}/junit-rust-{suite}.xml"
+        assert upload.get("continue-on-error") is True
+        assert "secrets.TRUNK_API_TOKEN" in yaml.safe_dump(upload)
+
+
 @pytest.mark.parametrize(
     ("outcome", "rc", "quarantine", "want"),
     [

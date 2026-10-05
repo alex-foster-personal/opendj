@@ -120,6 +120,21 @@ def _uv_lock(package: str) -> Callable[[list[Path]], set[str]]:
     return derive
 
 
+def _workflow_env(var: str) -> Callable[[list[Path]], set[str]]:
+    def derive(paths: list[Path]) -> set[str]:
+        found: set[str] = set()
+        for path in paths:
+            document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for job in (document.get("jobs") or {}).values():
+                for step in job.get("steps") or []:
+                    value = (step.get("env") or {}).get(var)
+                    if value is not None:
+                        found.add(str(value))
+        return found
+
+    return derive
+
+
 def _pnpm_lock(package: str) -> Callable[[list[Path]], set[str]]:
     def derive(paths: list[Path]) -> set[str]:
         return {
@@ -136,6 +151,7 @@ def _pnpm_lock(package: str) -> Callable[[list[Path]], set[str]]:
 REPO_PINS: dict[str, Callable[[list[Path]], set[str]]] = {
     "pnpm": _package_manager("pnpm"),
     "cargo-audit": _cargo_install("cargo-audit"),
+    "cargo-nextest": _workflow_env("CARGO_NEXTEST_VERSION"),
     "rust-cargo": _action_input("dtolnay/rust-toolchain", "toolchain"),
     "rust-rustc": _action_input("dtolnay/rust-toolchain", "toolchain"),
     "toolcache-python": _action_input("actions/setup-python", "python-version"),
@@ -343,6 +359,7 @@ SOURCE_GLOBS: dict[str, tuple[str, ...]] = {
     "_package_manager": ("apps/**/package.json",),
     "_pnpm_lock": ("apps/**/pnpm-lock.yaml",),
     "_uv_lock": ("uv.lock",),
+    "_workflow_env": WORKFLOW_GLOBS,
 }
 
 

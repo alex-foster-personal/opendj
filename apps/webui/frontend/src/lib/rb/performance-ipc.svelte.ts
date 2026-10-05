@@ -116,9 +116,14 @@ import {
 	setLibraryPanelCollapsed,
 	setShowStems,
 	setWaveformDesign,
+	setUiSkin,
+	setWavePalette,
+	setWaveSplitMaster,
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
 import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
+import { parseWavePalette, type WavePaletteChoice } from '$lib/rb/wave-palette';
+import { parseUiSkin, parseWaveSplitMaster, type UiSkin, type WaveSplitMaster } from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -236,6 +241,7 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesign }
+	| { type: 'set_skin'; ui_skin: UiSkin; wave_palette: WavePaletteChoice; wave_split_master: WaveSplitMaster }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
@@ -495,6 +501,9 @@ export interface PerformanceState {
 	ui: {
 		show_stems: boolean;
 		waveform_design: WaveformDesign;
+		ui_skin: UiSkin;
+		wave_palette: WavePaletteChoice;
+		wave_split_master: WaveSplitMaster;
 	};
 }
 
@@ -1321,6 +1330,16 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
+	if (type === 'set_skin') {
+		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
+		const ui_skin = parseUiSkin(record.ui_skin);
+		const wave_palette = parseWavePalette(record.wave_palette);
+		const wave_split_master = parseWaveSplitMaster(record.wave_split_master);
+		if (ui_skin === undefined || wave_palette === undefined || wave_split_master === undefined) {
+			throw new TypeError('set_skin requires ui_skin, wave_palette and wave_split_master');
+		}
+		return { type, ui_skin, wave_palette, wave_split_master };
+	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
 		const design = parseWaveformDesign(record.design);
@@ -1913,7 +1932,10 @@ export function queryPerformanceState(): PerformanceState {
 		feedback_marks: performanceFeedbackSummary(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
-			waveform_design: uiPrefs.waveform_design
+			waveform_design: uiPrefs.waveform_design,
+			ui_skin: uiPrefs.ui_skin,
+			wave_palette: uiPrefs.wave_palette,
+			wave_split_master: uiPrefs.wave_split_master
 		}
 	};
 }
@@ -2011,6 +2033,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
 		command.type === 'set_waveform_design' ||
+		command.type === 'set_skin' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -2338,6 +2361,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setShowStems(command.enabled);
 	} else if (command.type === 'set_waveform_design') {
 		setWaveformDesign(command.design);
+	} else if (command.type === 'set_skin') {
+		setUiSkin(command.ui_skin);
+		setWavePalette(command.wave_palette);
+		setWaveSplitMaster(command.wave_split_master);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.
