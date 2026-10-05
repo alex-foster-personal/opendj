@@ -330,6 +330,8 @@
      as drawing its own rich hover. -->
 <div
 	class="perf-meters-root"
+	role="group"
+	aria-label="Performance readouts"
 	bind:this={rootEl}
 	onpointerenter={() => _cardEvent('enter')}
 	onpointerleave={() => _cardEvent('leave')}
@@ -354,7 +356,7 @@
 	</button>
 
 	{#if cardOpen}
-		<div id="perf-meters-panel" class="perf-meters-panel" role="region" aria-label="Performance readouts">
+		<div id="perf-meters-panel" class="perf-meters-panel" role="region" aria-label="Performance readout details">
 			<dl class="perf-readout-rows">
 				{#each readoutRows as row (row.key)}
 					<div class="perf-readout-row" data-readout={row.key}>
