@@ -133,7 +133,7 @@ def test_server_bounds_graceful_shutdown_window(
 ) -> None:
     """The webui daemon's uvicorn.run gets the same bounded shutdown apps.engine_core uses.
 
-    [if] apps.webui.server boots [then] uvicorn.run is given timeout_graceful_shutdown [else stop].
+    [if] apps.webui.server boots [then] uvicorn.run gets timeout_graceful_shutdown, [else stop].
     """
     monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "8697")
     calls = _capture_uvicorn(monkeypatch)
@@ -148,7 +148,7 @@ def test_missing_graceful_shutdown_timeout_is_caught(
 ) -> None:
     """Mutation control for the test above: a pre-fix-shaped call must fail it.
 
-    [if] uvicorn.run is called with no timeout_graceful_shutdown [then ⛔️] the shared check fails.
+    [if] uvicorn.run is called with no timeout_graceful_shutdown [then] the shared check fails, [else stop].
 
     Without this, the assertion in test_server_bounds_graceful_shutdown_window
     could pass no matter what uvicorn.run was actually given.
