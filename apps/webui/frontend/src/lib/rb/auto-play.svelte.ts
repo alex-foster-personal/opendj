@@ -45,7 +45,7 @@ import {
 	type AutoPlayHandoffPhase,
 	type AutoPlayMasterPromotion
 } from '$lib/rb/auto-play';
-import { clearChartedAutoPlayOrder, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
+import { clearChartedAutoPlayOrder, deckSongIdentities, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
 import {
 	applyAutoPlayIdleDisarmAction,
 	isAutoPlayArmedEmptyActive,
@@ -404,7 +404,8 @@ async function _tick(): Promise<void> {
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		min_tempo_ratio: bounds.min,
 		max_tempo_ratio: bounds.max,
-		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach
+		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
+		exclude_identities: deckSongIdentities()
 	});
 	if (nextId === null) {
 		const feed = getAutoPlayPlaylist();
