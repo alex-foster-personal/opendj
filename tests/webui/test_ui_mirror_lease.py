@@ -312,16 +312,16 @@ def test_another_leased_tabs_clock_does_not_make_it_stale(monkeypatch: pytest.Mo
         ahead = {"x-opendj-lease": "x"}
         put = await client.put(
             "/api/v1/state/ui-mirror",
-            json={"client_id": "x", "published_at": "2026-10-05T21:14:20.000Z", "decks": {"1": {"playing": True}}},
+            json={"client_id": "x", "published_at": "2026-10-05T21:14:20.000Z", "decks": {"1": {"playing": False}}},
             headers=ahead,
         )
         assert put.status_code == 202
         behind = await client.put(
             "/api/v1/state/ui-mirror",
-            json={"client_id": "y", "published_at": "2026-10-05T21:14:18.000Z", "decks": {}},
-            headers={"x-opendj-lease": "y", "x-opendj-lease-takeover": "1"},
+            json={"client_id": "y", "published_at": "2026-10-05T21:14:18.000Z", "decks": {"1": {"playing": True}}},
+            headers={"x-opendj-lease": "y"},
         )
-        assert behind.status_code == 202, "a takeover from a slower clock still lands"
+        assert behind.status_code == 202, "an audible handover from a slower clock still lands"
         renew = await client.put(
             "/api/v1/state/ui-mirror",
             json={"client_id": "y", "published_at": "2026-10-05T21:14:19.000Z", "decks": {}},
