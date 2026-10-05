@@ -60,6 +60,14 @@ function liveState() {
 	};
 }
 
+/** A freshly loaded page: nothing on any deck yet, so a restore runs (RESCUE-07
+ * skips a restore that would replay over decks already loaded). */
+function emptyState() {
+	const state = liveState();
+	state.decks = { 1: deck(null, false), 2: deck(null, false), 3: deck(null, false), 4: deck(null, false) };
+	return state;
+}
+
 function harness(state, initial = null) {
 	const store = new Map();
 	if (initial !== null) store.set(snapshotModule.PERFORMANCE_SESSION_STORAGE_KEY, initial);
@@ -183,7 +191,7 @@ test('a session restore installed after its route already unmounted never writes
 
 test('restore does not replay a master of 0 that no operator chose', async () => {
 	globalThis.window = {};
-	const h = harness(liveState(), serializedSnapshot(0));
+	const h = harness(emptyState(), serializedSnapshot(0));
 	try {
 		const dispose = session.installPerformanceSessionRestore(h.options);
 		await settle();
@@ -205,7 +213,7 @@ test('restore replays a master of 0 the operator set, and any non-zero level (co
 			[serializedSnapshot(0, { master_set_by_operator: true }), 0],
 			[serializedSnapshot(0.16), 0.16]
 		]) {
-			const h = harness(liveState(), raw);
+			const h = harness(emptyState(), raw);
 			const dispose = session.installPerformanceSessionRestore(h.options);
 			await settle();
 			dispose();
