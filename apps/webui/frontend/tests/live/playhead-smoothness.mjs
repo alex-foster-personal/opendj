@@ -35,7 +35,6 @@ const MASTER = '66b83341e26c955be715f46bf6c8f9f67722fb33'; // Adieu, 126 bpm
 const FOLLOWER = 'fafa16b3781d1058fbd0c301a5c9c12cd0c2c915'; // Along Came Polly, 124 bpm
 const SETTLE_MS = 6000;
 const MEASURE_MS = 15000;
-const PREFS_KEY = 'mdt.rb.ui-prefs.v1';
 if (!Number.isInteger(PORT)) throw new Error('usage: node tests/live/playhead-smoothness.mjs <port> <label> [split] [backend]');
 
 const percentile = (values, p) => {
@@ -81,10 +80,9 @@ try {
 	const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
-	await page.addInitScript(([split, key]) => {
+	await page.addInitScript(() => {
 		globalThis.__mdtPlayheadTrace = {};
-		if (split) window.localStorage.setItem(key, JSON.stringify({ wave_split_master: 'on' }));
-	}, [SPLIT, PREFS_KEY]);
+	});
 	await page.goto(`http://127.0.0.1:${PORT}/performance`, { waitUntil: 'domcontentloaded', timeout: 180_000 });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, { timeout: 180_000 });
 	const ipc = (cmd) => page.evaluate((c) => window.musicDjToolsPerformance.dispatch(c), cmd);
@@ -97,6 +95,10 @@ try {
 			[d, id],
 			{ timeout: 120_000 }
 		);
+	if (SPLIT) {
+		const ui = await page.evaluate(() => window.musicDjToolsPerformance.query().ui);
+		await ipc({ type: 'set_skin', ui_skin: ui.ui_skin, wave_palette: ui.wave_palette, wave_split_master: 'on' });
+	}
 	await ipc({ type: 'load', deck: 1, stable_id: MASTER });
 	await waitLoaded(1, MASTER);
 	await ipc({ type: 'load', deck: 2, stable_id: FOLLOWER });
