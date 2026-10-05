@@ -205,23 +205,29 @@ export function installUiMirror(): () => void {
 	mirror.publish();
 	const interval = window.setInterval(mirror.publish, 1000);
 	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish);
-	return () => {
-		// Order matters: drop the registration and stop the poll BEFORE the mirror
-		// is deleted, so teardown never leaves a poll asking about a page the
-		// engine has just been told is gone.
-		const wasLeader = leadership.isLeader();
-		mirror.forget();
-		uninstallOrderPoll();
-		window.clearInterval(interval);
-		leadership.dispose();
-		bindTabLeadership(null);
-		// A follower never published, so it has nothing to close; deleting here
-		// would blank the leader's live mirror under it.
-		if (!wasLeader) return;
+	// A follower never published, so it has nothing to close; deleting would
+	// blank the leader's live mirror under it.
+	const closeMirrorIfLeader = (): void => {
+		if (!leadership.isLeader()) return;
 		void fetch(MIRROR_PATH, {
 			method: 'DELETE',
 			keepalive: true,
 			headers: { 'x-opendj-client-id': MIRROR_CLIENT_ID }
 		}).catch(() => {});
+	};
+	// Closing a TAB never runs the route's unmount, so without this the lease
+	// outlives the closed leader by up to its 10 s TTL and the next tab waits.
+	window.addEventListener('pagehide', closeMirrorIfLeader);
+	return () => {
+		// Order matters: drop the registration and stop the poll BEFORE the mirror
+		// is deleted, so teardown never leaves a poll asking about a page the
+		// engine has just been told is gone.
+		window.removeEventListener('pagehide', closeMirrorIfLeader);
+		mirror.forget();
+		uninstallOrderPoll();
+		window.clearInterval(interval);
+		closeMirrorIfLeader();
+		leadership.dispose();
+		bindTabLeadership(null);
 	};
 }
