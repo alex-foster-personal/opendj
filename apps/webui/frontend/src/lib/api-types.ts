@@ -13709,13 +13709,15 @@ export interface components {
              * Age S
              * @default 0
              */
-            age_s: number;
+            age_s: number | null;
             /** Availability */
             availability?: {
                 [key: string]: number;
             } | null;
+            /** Computed At */
+            computed_at?: number | null;
             /** Orphan Broken */
-            orphan_broken: number;
+            orphan_broken: number | null;
             /** Playlists */
             playlists: components["schemas"]["PlaylistBrokenSummary"][];
             /** Refresh Error */
@@ -13726,9 +13728,9 @@ export interface components {
              */
             refreshing: boolean;
             /** Total Broken */
-            total_broken: number;
+            total_broken: number | null;
             /** Total Tracks */
-            total_tracks: number;
+            total_tracks: number | null;
         };
         /**
          * RecorderDevicesResponse
@@ -24878,7 +24880,7 @@ export interface operations {
     reconcile_summary_api_v1_reconcile_summary_get: {
         parameters: {
             query?: {
-                /** @description Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. With no scan yet the answer is 503 RECONCILE_SUMMARY_WARMING and a scan starts: ask again after Retry-After. Without this the library is scanned for this request. */
+                /** @description Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. Before the first scan has finished the counts, `computed_at` and `age_s` are null and `refreshing` is true: ask again shortly. Without this the library is scanned for this request. */
                 cached?: boolean;
             };
             header?: never;
@@ -24904,13 +24906,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
-            };
-            /** @description `cached` was asked and no scan has finished yet */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
