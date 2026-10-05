@@ -14,7 +14,6 @@ from apps.cloud.lyrics_asr_source import (
     LYRICS_ASR_NOT_FOUND,
     LYRICS_ASR_PRESIGN_FAILED,
 )
-from apps.lyrics.asr_hallucination import ASR_SOURCE, filter_asr_lines
 from apps.lyrics.asr_lines import group_asr_words_into_lines, parse_asr_words
 from apps.lyrics.cache import Lyrics
 from apps.shared.state.machine_identity import get_or_create_machine_id
@@ -109,15 +108,15 @@ class AsrLyricsProvider:
         return _parse_transcript(body, stable_id)
 
     def fetch_lyrics(self, stable_id: str) -> Lyrics | None:
-        """Return grouped line lyrics, or None when no real lyric lines survive."""
+        """Return grouped line lyrics, or None when the transcript has zero words."""
         transcript = self.fetch_transcript(stable_id)
         words = parse_asr_words(list(transcript.words))
         if not words:
             return None
-        asr_filter = filter_asr_lines(group_asr_words_into_lines(words))
-        if asr_filter.no_lyrics:
+        lines = group_asr_words_into_lines(words)
+        if not lines:
             return None
-        return Lyrics(stable_id, ASR_SOURCE, asr_filter.kept)
+        return Lyrics(stable_id, "asr", lines)
 
 
 def _map_transport_error(exc: SyncTransportError) -> Exception:

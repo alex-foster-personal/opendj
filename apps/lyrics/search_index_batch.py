@@ -20,7 +20,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal
 
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.asr_hallucination import servable_lyrics
@@ -44,11 +43,6 @@ DEFAULT_BATCH_MAX_DOCS = 100
 #: the blast radius of anything else that makes ``candidates`` look smaller
 #: than ``indexed`` so a transient condition can never cost the whole index.
 MAX_REMOVAL_FRACTION = 0.5
-
-#: A readable cache entry with nothing to index: an ASR transcript of only
-#: Whisper hallucinations (LYRICS-12). Not corrupt and not pending work.
-NoLyrics = Literal["no-lyrics"]
-_NO_LYRICS: Final[NoLyrics] = "no-lyrics"
 
 
 # ----- single-document mutations ------------------------------------------
@@ -115,7 +109,6 @@ class IndexBatch:
     docs_indexed: int
     pending: int
     done: bool
-    no_lyrics: int = 0
 
 
 def _cache_fingerprint(lyrics_dir: Path) -> str:
@@ -172,11 +165,9 @@ def index_batch(
         candidates = _on_disk_ids(lyrics_dir)
         indexed = indexed_ids(conn)
         removed = _remove_stale_rows(conn, indexed, candidates, force_rebuild=force_rebuild)
-        added, corrupt, no_lyrics = _add_new_candidates(
-            conn, lyrics_dir, candidates, indexed, max_docs
-        )
+        added, corrupt = _add_new_candidates(conn, lyrics_dir, candidates, indexed, max_docs)
         docs_indexed = count_documents(conn)
-        pending = max(0, len(candidates) - docs_indexed - corrupt - no_lyrics)
+        pending = max(0, len(candidates) - docs_indexed - corrupt)
         conn.execute(
             "UPDATE lyrics_index_meta SET docs_indexed = ?,"
             " committed_batches = committed_batches + 1,"
@@ -194,7 +185,6 @@ def index_batch(
         docs_indexed=docs_indexed,
         pending=pending,
         done=pending == 0,
-        no_lyrics=no_lyrics,
     )
 
 
@@ -286,11 +276,10 @@ def _add_new_candidates(
     candidates: set[str],
     indexed: set[str],
     max_docs: int,
-) -> tuple[int, int, int]:
-    """Add up to ``max_docs`` new candidates. Returns ``(added, corrupt, no_lyrics)``."""
+) -> tuple[int, int]:
+    """Add up to ``max_docs`` new candidates. Returns ``(added, corrupt)``."""
     added = 0
     corrupt = 0
-    no_lyrics = 0
     budget = max_docs
     for stable_id in sorted(candidates - indexed):
         if budget <= 0:
@@ -298,12 +287,11 @@ def _add_new_candidates(
         document = _load_candidate(lyrics_dir, stable_id)
         if document is None:
             corrupt += 1
-        elif isinstance(document, str):  # _NO_LYRICS
-            no_lyrics += 1
-        elif add_document(conn, document):
+            continue
+        if add_document(conn, document):
             added += 1
             budget -= 1
-    return added, corrupt, no_lyrics
+    return added, corrupt
 
 
 def _on_disk_ids(lyrics_dir: Path) -> set[str]:
@@ -312,11 +300,8 @@ def _on_disk_ids(lyrics_dir: Path) -> set[str]:
     return {path.stem for path in lyrics_dir.glob("*.json")}
 
 
-def _load_candidate(
-    lyrics_dir: Path, stable_id: str
-) -> LyricSearchDocument | NoLyrics | None:
-    """Parse one cache file into a search document, None if corrupt, or
-    ``_NO_LYRICS`` for an ASR entry that is only hallucinations (LYRICS-12).
+def _load_candidate(lyrics_dir: Path, stable_id: str) -> LyricSearchDocument | None:
+    """Parse one cache file into a search document, or None if it is corrupt.
 
     Mirrors ``valid_lyrics_ids``: a filename alone is not done, and an entry
     whose own ``stable_id`` disagrees with its filename is rejected too.
@@ -328,11 +313,13 @@ def _load_candidate(
         return None
     if entry is None or entry.stable_id != stable_id:
         return None
-    servable = servable_lyrics(entry)
-    if servable is None:
-        return _NO_LYRICS
+    # LYRICS-12: an ASR entry that is only Whisper hallucinations has nothing
+    # to index. It joins ``corrupt``: never indexed, never pending work.
+    entry = servable_lyrics(entry)
+    if entry is None:
+        return None
     try:
-        return build_search_document(servable)
+        return build_search_document(entry)
     except ValueError:
         return None
 
