@@ -172,3 +172,44 @@ def test_a_lease_header_that_disagrees_with_the_body_is_refused(monkeypatch: pyt
         assert (await client.get("/api/v1/state/ui-mirror/lease")).json()["held"] is False
 
     _run(monkeypatch, body)
+
+
+async def _put_at(client: AsyncClient, tab: str, published_at: str, *, playing: bool) -> Response:
+    payload = {"client_open": True, "client_id": tab, "published_at": published_at, "decks": {"1": {"playing": playing}}}
+    return await client.put("/api/v1/state/ui-mirror", json=payload)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_a_stale_snapshot_never_replaces_a_fresher_one(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] a PUT is older than the stored snapshot [then] 409 stale_snapshot, logged, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_at(client, "live", "2026-10-05T20:04:00.000Z", playing=True)).status_code == 202
+        clock.now_s += 1
+        stale = await _put_at(client, "dead-page", "2026-10-05T19:59:00.000Z", playing=False)
+        assert stale.status_code == 409
+        assert stale.json()["reason"] == "stale_snapshot"
+        mirror = (await client.get("/api/v1/state/ui-mirror")).json()
+        assert mirror["client_id"] == "live"
+        assert mirror["decks"]["1"]["playing"] is True
+        assert (await _put_at(client, "live", "2026-10-05T20:04:01.000Z", playing=True)).status_code == 202
+
+    with caplog.at_level("WARNING"):
+        _run(monkeypatch, body)
+    assert any("stale_snapshot" in r.message and "dead-page" in r.message for r in caplog.records)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_an_old_stored_snapshot_yields_to_any_writer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the stored snapshot is older than the TTL [then] a skewed-clock writer is accepted, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_at(client, "a", "2026-10-05T20:04:00.000Z", playing=False)).status_code == 202
+        clock.now_s += state_routes.LEASE_TTL_S - 1
+        assert (await _put_at(client, "b", "2026-10-05T20:03:59.000Z", playing=True)).status_code == 409
+        clock.now_s += 2
+        assert (await _put_at(client, "b", "2026-10-05T20:03:59.500Z", playing=True)).status_code == 202
+
+    _run(monkeypatch, body)

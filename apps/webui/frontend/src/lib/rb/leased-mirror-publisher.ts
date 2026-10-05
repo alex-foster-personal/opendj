@@ -92,6 +92,10 @@ export function createLeasedMirrorPublisher(deps: {
 				const refusal = (await response.json()) as { reason?: string; holder?: unknown };
 				if (refusal.reason === 'lease_held' && typeof refusal.holder === 'string') {
 					deps.leadership.noteLeaseConflict(refusal.holder);
+				} else if (refusal.reason === 'stale_snapshot') {
+					// Our own slow PUT overtaken by a newer one: the engine kept the
+					// newer snapshot, which is the point. Nothing to demote.
+					console.info('ui-mirror: an out-of-order publish was dropped by the engine');
 				} else {
 					// Not the lease: a real defect, logged rather than absorbed.
 					console.error(`ui-mirror publish refused: ${JSON.stringify(refusal)}`);
