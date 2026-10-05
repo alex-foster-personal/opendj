@@ -1,4 +1,4 @@
-"""HEALTH-POOL-01: /health must not queue behind the shared sync threadpool.
+"""CAT-05: /health must not queue behind the shared sync threadpool.
 
 [if] every token of the shared default AnyIO threadpool is held by slow sync
 routes [then] GET /api/v1/health still answers within its own short budget,
@@ -16,7 +16,7 @@ from httpx import ASGITransport, AsyncClient
 from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes import health as health_routes
 
-pytestmark = pytest.mark.requirement("HEALTH-POOL-01")
+pytestmark = pytest.mark.requirement("CAT-05")
 
 _SATURATING_ROUTES = 4
 
