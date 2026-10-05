@@ -100,6 +100,7 @@
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
+	import MainOutputFaultBanner from './MainOutputFaultBanner.svelte';
 	import {
 		APP_MODES,
 		LOCAL_STEMS_EXECUTOR_FLAG_ID,
@@ -826,6 +827,8 @@
 				</button>
 			</div>
 		{/if}
+		<!-- CUEOUT-25: MAIN on the headphone CUE device, or a failed MAIN route. -->
+		<MainOutputFaultBanner />
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.
