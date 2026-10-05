@@ -16,7 +16,7 @@
 import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
-import { api, unwrap } from '$lib/api/client';
+import { api, readApiErrorCode, readApiErrorStatus, unwrap } from '$lib/api/client';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
@@ -601,19 +601,38 @@ export async function listPlaylistTracksPage(
 /** Validated generated-contract summary of playable and broken library rows. */
 export type ReconcileSummary = components['schemas']['ReconcileSummary'];
 
-/** The summary scans every row; past this the Library health dot goes grey
- * "unknown" instead of waiting on a request that may never answer. */
+/** A cached read answers from the last scan in milliseconds; past this the
+ * Library health dot goes grey "unknown" instead of waiting on a request that
+ * may never answer. */
 export const RECONCILE_SUMMARY_TIMEOUT_MS = 30_000;
 
-/** Fetch aggregate reconciliation counts without inventing a usable library state. */
+/** The engine has not finished its first library scan, so it has no counts
+ * yet (HEALTH-15). Not a failure and not a verdict: ask again shortly. */
+export class ReconcileSummaryWarming extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ReconcileSummaryWarming';
+	}
+}
+
+/** Fetch aggregate reconciliation counts without inventing a usable library state.
+ *
+ * Asks `cached` (HEALTH-15): the engine answers from its last library scan in
+ * milliseconds, with `age_s` / `refreshing`, and never scans for this request.
+ * Throws {@link ReconcileSummaryWarming} until the first scan has finished. */
 export async function getReconcileSummary(
 	timeoutMs: number = RECONCILE_SUMMARY_TIMEOUT_MS
 ): Promise<ReconcileSummary> {
 	const { signal, clear } = timeoutSignal(timeoutMs);
 	let summary: ReconcileSummary;
 	try {
-		summary = await unwrap(api.GET('/api/v1/reconcile/summary', { signal }));
+		summary = await unwrap(
+			api.GET('/api/v1/reconcile/summary', { params: { query: { cached: true } }, signal })
+		);
 	} catch (error: unknown) {
+		if (readApiErrorStatus(error) === 503 && readApiErrorCode(error) === 'RECONCILE_SUMMARY_WARMING') {
+			throw new ReconcileSummaryWarming(error instanceof Error ? error.message : String(error));
+		}
 		if (signal.aborted) {
 			throw new Error(`reconcile summary request timed out after ${timeoutMs / 1000} s`, {
 				cause: error

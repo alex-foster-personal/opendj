@@ -215,7 +215,8 @@ def test_empty_library(tmp_path: Path,
     # to scan, and "unknown" must not read as "nothing is broken".
     assert summary == {"total_tracks": 0, "total_broken": 0,
                        "orphan_broken": 0, "playlists": [],
-                       "availability": None}
+                       "availability": None, "age_s": 0.0,
+                       "refreshing": False, "refresh_error": None}
 
 
 # --- summary scan: counts without whole Track rows (HEALTH-11) ---------------------

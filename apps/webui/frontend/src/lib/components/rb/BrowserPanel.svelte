@@ -22,6 +22,7 @@
 		fetchRbMeta,
 		getHealth,
 		getReconcileSummary,
+		ReconcileSummaryWarming,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -36,6 +37,8 @@
 		coverageDot as _coverageDot,
 		createCoverageRefresh,
 		HEALTH_REFETCH_MS,
+		RECONCILE_RECHECK_DELAYS_MS,
+		type CoverageOutcome,
 		libraryHealthDot as _computeLibraryHealthDot,
 		unknownDot as _unknownDot,
 		type LibraryHealthDot
@@ -358,7 +361,6 @@
 	/** The reconcile summary's per-machine breakdown; 'unknown' when the
 	 * engine answered without one, null until the first answer lands. */
 	let libraryAvailability = $state<unknown>(null);
-	let reconcileReadGeneration = 0;
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -1066,6 +1068,7 @@
 			clearInterval(libraryFallbackTimer);
 			clearInterval(healthRefetchTimer);
 			_coverageRefresh.dispose();
+			_reconcileRefresh.dispose();
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -1112,19 +1115,36 @@
 		);
 	}
 
-	async function _loadReconcileSummary(): Promise<void> {
-		const generation = ++reconcileReadGeneration;
-		libraryAvailability = null;
+	// HEALTH-15: the summary is the engine's last library scan, served at once.
+	// One read at a time; a scan still running (or not finished yet) is asked
+	// again on RECONCILE_RECHECK_DELAYS_MS instead of being waited on.
+	const _reconcileRefresh = createCoverageRefresh(
+		_readReconcileSummary,
+		RECONCILE_RECHECK_DELAYS_MS
+	);
+
+	function _loadReconcileSummary(): Promise<void> {
+		return _reconcileRefresh.load();
+	}
+
+	async function _readReconcileSummary(): Promise<CoverageOutcome> {
 		try {
 			const summary = await getReconcileSummary();
-			if (generation !== reconcileReadGeneration) return;
 			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			libraryAvailability = summary.availability ?? 'unknown';
-			allTracksReconcileError = null;
+			const refreshError = summary.refresh_error ?? null;
+			// A scan that failed leaves the last good counts, which are then
+			// unchecked: the light says so instead of quoting them as current.
+			allTracksReconcileError =
+				refreshError === null ? null : `the last library scan failed (${refreshError})`;
+			return { ok: true, refreshing: summary.refreshing === true, refresh_error: refreshError };
 		} catch (error: unknown) {
-			if (generation !== reconcileReadGeneration) return;
+			if (error instanceof ReconcileSummaryWarming) {
+				return { ok: true, refreshing: true, refresh_error: null };
+			}
 			allTracksReconcileError = error instanceof Error ? error.message : String(error);
+			return { ok: false };
 		}
 	}
 
