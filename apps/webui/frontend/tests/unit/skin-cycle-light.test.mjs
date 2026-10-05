@@ -27,8 +27,7 @@ function customProps(selector) {
 }
 
 /** Fake browser globals so prefs.svelte.ts persists and applies the skin like it does in the app. */
-function installBrowser(stored) {
-	const store = new Map(stored === undefined ? [] : [[STORAGE_KEY, JSON.stringify(stored)]]);
+function installBrowser(store = new Map()) {
 	const localStorage = {
 		getItem: (k) => (store.has(k) ? store.get(k) : null),
 		setItem: (k, v) => void store.set(k, String(v)),
@@ -76,7 +75,7 @@ test('if light is not a parseable skin then set_skin and the ui_skin setting can
 });
 
 test('if cycleUiSkin does not persist ui_skin and apply data-skin then the choice is lost on reload', async () => {
-	const store = installBrowser(undefined);
+	const store = installBrowser();
 	const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
 	assert.equal(prefs.uiPrefs.ui_skin, 'default');
 	assert.equal(prefs.cycleUiSkin(), 'mono-dev');
@@ -91,7 +90,11 @@ test('if cycleUiSkin does not persist ui_skin and apply data-skin then the choic
 });
 
 test('if a stored light skin is not restored on boot then persistence only works within one session', async () => {
-	installBrowser({ ui_skin: 'light' });
+	// Write the blob through the real setter: the loader rejects a partial blob.
+	const store = installBrowser();
+	const first = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
+	first.setUiSkin('light');
+	installBrowser(store);
 	const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
 	assert.equal(prefs.uiPrefs.ui_skin, 'light');
 	assert.equal(globalThis.document.documentElement.dataset.skin, 'light');
