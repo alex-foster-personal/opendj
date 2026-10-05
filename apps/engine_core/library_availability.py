@@ -596,7 +596,7 @@ class LibraryAvailabilityWorker:
             self._status.processed_total += report.total
         return report.changed
 
-    def _run_full_probe(self, conn: sqlite3.Connection, req: _FullProbeRequest) -> None:
+    def _run_full_probe(self, conn: sqlite3.Connection, req: _FullProbeRequest) -> bool:
         rows = avail.probe(conn, volumes_root=self._volumes_root)
         avail.commit_availability_batch(
             conn,
@@ -611,15 +611,26 @@ class LibraryAvailabilityWorker:
             self._scan_awaiting_volume = False
             self._sweep_baseline_present = None
             self._full_probe = None
+        # True, not None: `_attempt_with_lock_retries` uses None for
+        # "gave up or shutting down", and a full probe has no other result.
+        return True
 
     def _run_loop(self) -> None:
         while not self._stop.is_set():
             if not self._wake.wait(timeout=_POLL_IDLE_S):
-                if self._count_pending() > 0:
-                    with self._lock:
-                        phase = self._status.phase
-                    if phase not in {"refused", "failed"}:
-                        self._wake.set()
+                with self._lock:
+                    phase = self._status.phase
+                    # A full probe (and any priority ids taken back after a
+                    # locked round) is queued work even when every live row
+                    # is already settled. Pending-only wake left that request
+                    # stuck after the retry budget was spent.
+                    queued_request = (
+                        self._full_probe is not None or bool(self._priority_ids)
+                    )
+                if phase not in {"refused", "failed"} and (
+                    queued_request or self._count_pending() > 0
+                ):
+                    self._wake.set()
                 continue
             self._wake.clear()
             if self._stop.is_set():
