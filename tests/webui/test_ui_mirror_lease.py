@@ -213,3 +213,76 @@ def test_an_old_stored_snapshot_yields_to_any_writer(monkeypatch: pytest.MonkeyP
         assert (await _put_at(client, "b", "2026-10-05T20:03:59.500Z", playing=True)).status_code == 202
 
     _run(monkeypatch, body)
+
+
+async def _put_tab(
+    client: AsyncClient, tab: str, *, playing: bool, visible: bool = True, takeover: bool = False
+) -> Response:
+    headers = {"x-opendj-lease": tab}
+    if takeover:
+        headers["x-opendj-lease-takeover"] = "1"
+    payload = {
+        "client_open": True,
+        "client_id": tab,
+        "tab": {"visible": visible},
+        "decks": {"1": {"playing": playing}, "2": {"playing": False}},
+    }
+    return await client.put("/api/v1/state/ui-mirror", json=payload, headers=headers)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_a_playing_claimant_takes_the_lease_from_a_silent_holder(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] the holder is silent and a playing tab publishes [then] it takes the lease, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_tab(client, "idle-chrome", playing=False)).status_code == 202
+        lease = (await client.get("/api/v1/state/ui-mirror/lease")).json()
+        assert lease["holder_playing"] is False
+        assert (await _put_tab(client, "agent-pane", playing=True)).status_code == 202
+        lease = (await client.get("/api/v1/state/ui-mirror/lease")).json()
+        assert lease["holder"] == "agent-pane"
+        assert lease["holder_playing"] is True
+        assert (await _put_tab(client, "idle-chrome", playing=False)).status_code == 409
+
+    with caplog.at_level("WARNING"):
+        _run(monkeypatch, body)
+    assert any("audible_over_silent" in r.message and "agent-pane" in r.message for r in caplog.records)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_a_playing_holder_keeps_the_lease(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the holder is playing [then] another playing or idle tab is refused, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_tab(client, "a", playing=True, visible=False)).status_code == 202
+        assert (await _put_tab(client, "b", playing=True)).status_code == 409
+        assert (await _put_tab(client, "b", playing=False)).status_code == 409
+
+    _run(monkeypatch, body)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_a_hidden_idle_holder_yields_to_a_visible_tab(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the holder is hidden and silent [then] a visible idle tab takes the lease, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_tab(client, "a", playing=False, visible=False)).status_code == 202
+        assert (await client.get("/api/v1/state/ui-mirror/lease")).json()["holder_yieldable"] is True
+        assert (await _put_tab(client, "c", playing=False, visible=False)).status_code == 409, "control"
+        assert (await _put_tab(client, "b", playing=False, visible=True)).status_code == 202
+        assert (await client.get("/api/v1/state/ui-mirror/lease")).json()["holder"] == "b"
+
+    _run(monkeypatch, body)
+
+
+@pytest.mark.requirement("AGENT-18")
+def test_a_visible_idle_holder_is_not_displaced_by_an_idle_tab(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] holder and claimant are both visible and silent [then] the claimant is refused, [else stop]."""
+
+    async def body(client: AsyncClient, clock: _Clock) -> None:
+        assert (await _put_tab(client, "a", playing=False)).status_code == 202
+        assert (await _put_tab(client, "b", playing=False)).status_code == 409
+
+    _run(monkeypatch, body)
