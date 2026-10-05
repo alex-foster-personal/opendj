@@ -32,7 +32,7 @@ Rationale: the research (`17-RESEARCH.md` §2, `docs/launcher-tech-survey.md` §
 ## Deferred manual checklist (to run on a machine with djay Pro installed)
 
 1. Launch djay Pro in **windowed** mode (not fullscreen -- see Concern #1).
-2. Place a real mp3/m4a at `/Users/dev3/Music/test-track.mp3` (or paste an existing RB track path via `python -c "from apps.shared.rekordbox_db import open_db, iter_tracks; import itertools; print(next(itertools.islice(iter_tracks(open_db()), 0, 1)).file_path)"`).
+2. Place a real mp3/m4a at `/Users/dev/Music/test-track.mp3` (or paste an existing RB track path via `python -c "from apps.shared.rekordbox_db import open_db, iter_tracks; import itertools; print(next(itertools.islice(iter_tracks(open_db()), 0, 1)).file_path)"`).
 3. `cd apps/launcher/spikes/djay-drag && pnpm install && pnpm tauri dev`.
 4. Paste the path; press-and-hold the button; drag onto djay's Deck A.
 5. Verify djay loads the track.

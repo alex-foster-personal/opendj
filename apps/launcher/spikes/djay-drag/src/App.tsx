@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 
 export default function App() {
-  const [path, setPath] = useState("/Users/dev3/Music/test-track.mp3");
+  const [path, setPath] = useState("/Users/dev/Music/test-track.mp3");
   const [msg, setMsg] = useState<string>("");
 
   const onDragDown = async (e: React.MouseEvent) => {
