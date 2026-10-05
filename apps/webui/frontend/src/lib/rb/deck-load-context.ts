@@ -38,6 +38,12 @@
  */
 
 import { ApiError } from '$lib/api/errors';
+import {
+	deckLoadPlainHeadline,
+	libraryFailureCodeInText,
+	LIBRARY_LOAD_FAILURE_WORDS,
+	trackTitleBeforeCode
+} from '$lib/rb/deck-load-failure-copy';
 import { reportClientError, type ClientErrorContext } from '$lib/client-error-reporting';
 import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
@@ -379,14 +385,9 @@ export function stickLoadFailureWords(cause: unknown): string | null {
  * (apps/adapters/rekordbox/paths.py resolve_playable_audio, and the audio
  * route's open probe). The reason goes in the HEADLINE (pin a4898e22): a
  * generic "could not load the track" made the operator expand the toast to
- * learn the file was simply missing. */
-const LIBRARY_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([
-	['TRACK_NOT_FOUND', 'this track is no longer in the library'],
-	['AUDIO_FILE_MISSING', "this track's audio file is missing on this machine"],
-	['CLOUD_ASSET_UNAVAILABLE', "this track's audio is not on this machine and could not be fetched"],
-	['CLOUD_POLICY_UNCONFIGURED', 'cloud audio is not set up on this machine, so this track cannot be fetched'],
-	['AUDIO_ACCESS_BLOCKED', "this track's file did not open in time - its drive or folder is not answering"]
-]);
+ * learn the file was simply missing. The map itself lives in
+ * deck-load-failure-copy.ts so the toast formatter can use it without
+ * importing this module. */
 
 /** What fetch rejects with when nothing answered. The text is the browser's
  * own and differs per engine (Chromium, WebKit, Gecko). */
@@ -427,13 +428,38 @@ export function rethrowLibraryTrackLookupError(error: unknown): never {
 	throw libraryTrackLookupError(error);
 }
 
-/** The toast headline for a failed deck load: always names the reason. */
-export function deckLoadFailureHeadline(deck: 1 | 2 | 3 | 4, cause: unknown): string {
+function _causeText(cause: unknown): string {
+	if (cause instanceof Error) return cause.message;
+	if (typeof cause === 'string') return cause;
+	return '';
+}
+
+/** A library failure code from `cause.code`, else from the load message text. */
+function _libraryFailureCode(cause: unknown, loadMessage: string | undefined): string | undefined {
+	const direct = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
+	if (typeof direct === 'string' && LIBRARY_LOAD_FAILURE_WORDS.has(direct)) return direct;
+	return libraryFailureCodeInText(loadMessage ?? '') ?? libraryFailureCodeInText(_causeText(cause));
+}
+
+/**
+ * The toast headline for a failed deck load: the deck, the full title (even
+ * when the title contains " - "), and the plain sentence for a known code.
+ * `loadMessage` is the `title: CODE: detail` string the log keeps verbatim.
+ */
+export function deckLoadFailureHeadline(
+	deck: 1 | 2 | 3 | 4,
+	cause: unknown,
+	loadMessage?: string
+): string {
 	const stickWords = stickLoadFailureWords(cause);
 	if (stickWords !== null) return stickWords;
-	const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : null;
-	const words = typeof code === 'string' ? LIBRARY_LOAD_FAILURE_WORDS.get(code) : undefined;
-	if (words !== undefined) return `Deck ${deck}: ${words}`;
+	const code = _libraryFailureCode(cause, loadMessage);
+	if (code !== undefined) {
+		const source = [loadMessage, _causeText(cause)].filter((part) => part !== '').join('\n');
+		const title = trackTitleBeforeCode(source, code);
+		const plain = deckLoadPlainHeadline(deck, title, code, source);
+		if (plain !== null) return plain;
+	}
 	if (cause instanceof Error && cause.name === 'EncodingError') {
 		return `Deck ${deck}: this track's audio file could not be decoded`;
 	}
@@ -464,7 +490,7 @@ function _pushDeckLoadFailureToast(
 		context,
 		groupKey,
 		undefined,
-		{ headline: deckLoadFailureHeadline(deck, cause) }
+		{ headline: deckLoadFailureHeadline(deck, cause, message) }
 	);
 	if (typeof cause === 'object' && cause !== null) _toastedLoadFailures.add(cause);
 }

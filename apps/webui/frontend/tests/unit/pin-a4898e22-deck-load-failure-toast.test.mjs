@@ -39,11 +39,11 @@ beforeEach(() => {
 });
 
 const CODED = [
-	['TRACK_NOT_FOUND', 404, 'Deck 3: this track is no longer in the library'],
-	['AUDIO_FILE_MISSING', 404, "Deck 3: this track's audio file is missing on this machine"],
-	['CLOUD_ASSET_UNAVAILABLE', 404, "Deck 3: this track's audio is not on this machine and could not be fetched"],
-	['CLOUD_POLICY_UNCONFIGURED', 503, 'Deck 3: cloud audio is not set up on this machine, so this track cannot be fetched'],
-	['AUDIO_ACCESS_BLOCKED', 503, "Deck 3: this track's file did not open in time - its drive or folder is not answering"]
+	['TRACK_NOT_FOUND', 404, 'Deck 3: couldn\'t load "Placeholder Title". This track is no longer in the library.'],
+	['AUDIO_FILE_MISSING', 404, 'Deck 3: couldn\'t load "Placeholder Title". This track\'s audio file is missing on this machine.'],
+	['CLOUD_ASSET_UNAVAILABLE', 404, 'Deck 3: couldn\'t load "Placeholder Title". This track\'s audio is not on this machine and could not be fetched.'],
+	['CLOUD_POLICY_UNCONFIGURED', 503, 'Deck 3: couldn\'t load "Placeholder Title". Cloud audio is not set up on this machine, so this track cannot be fetched.'],
+	['AUDIO_ACCESS_BLOCKED', 503, 'Deck 3: couldn\'t load "Placeholder Title". This track\'s file did not open in time - its drive or folder is not answering.']
 ];
 
 test('a known load failure code names the reason in the headline', () => {
@@ -148,7 +148,7 @@ test("the track lookup's bare 404 reads as TRACK_NOT_FOUND, and nothing else is 
 	const response = new Response(null, { status: 404 });
 	const lookup = harness.libraryTrackLookupError(new harness.ApiError(404, 'HTTP_404', 'Not Found', response));
 	assert.equal(lookup.code, 'TRACK_NOT_FOUND');
-	assert.equal(harness.deckLoadFailureHeadline(1, lookup), 'Deck 1: this track is no longer in the library');
+	assert.equal(harness.deckLoadFailureHeadline(1, lookup), 'Deck 1: This track is no longer in the library.');
 	// Controls: a coded 404 (a stick), another status, and a non-ApiError pass through as the same object.
 	const stick = new harness.ApiError(404, 'USB_TRACK_NOT_FOUND', 'gone', response);
 	assert.equal(harness.libraryTrackLookupError(stick), stick);

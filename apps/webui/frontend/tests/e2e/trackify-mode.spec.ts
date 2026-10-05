@@ -203,7 +203,7 @@ test('control: an ordinary failed load keeps the engine toast and reports once',
 	expect(reports.deckLoad[0].stored).toBe(true);
 	const added = await _readAddedToasts(page);
 	expect(
-		added.filter((text) => text.includes('Deck 1: this track is no longer in the library')),
+		added.filter((text) => text.includes('This track is no longer in the library.')),
 		`if the engine toast is muted for every caller then a Gig load fails silently, and the engine and the dispatcher must not both toast it (pin a4898e22): ${JSON.stringify(added)}`
 	).toHaveLength(1);
 	expect(

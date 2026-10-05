@@ -542,6 +542,35 @@ def upsert_location(
     return location_id
 
 
+def should_attach_local_primary(
+    conn: sqlite3.Connection,
+    *,
+    stable_id: str,
+    file_path: str | None,
+    machine_id: str,
+    wrote_path_here: bool,
+) -> bool:
+    """Whether this machine may own a local primary for ``file_path``.
+
+    A cloud-synced ``tracks.file_path`` was written on the origin machine.
+    Stamping it as a local primary here makes availability count another
+    machine's disk (schema v6 / ADR 08). Attach only when this write
+    inserted or changed the path, the path resolves on this machine, or
+    this machine already has that location and is refreshing it.
+    """
+    if not file_path or not locations_table_ready(conn):
+        return False
+    if wrote_path_here:
+        return True
+    _venue_key, _venue_rank, available = _probe_file(file_path)
+    if available:
+        return True
+    return (
+        _find_existing(conn, stable_id, machine_id, "local", file_path, None)
+        is not None
+    )
+
+
 def sync_primary_local(
     conn: sqlite3.Connection,
     *,
