@@ -1,4 +1,4 @@
-"""STATE-16: a library read never waits on the state.db writer lock.
+"""STATE-18: a library read never waits on the state.db writer lock.
 
 [if] a writer holds state.db [then] GET /api/v1/tracks still answers 200, [else stop].
 """
@@ -24,7 +24,7 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 from .conftest import TEST_HOST_BASE_URL, _stub_rb_vendor
 from .test_rb_availability_budget import _configure_data_dir, _seed_library
 
-pytestmark = pytest.mark.requirement("STATE-16")
+pytestmark = pytest.mark.requirement("STATE-18")
 
 
 @contextmanager
@@ -57,7 +57,7 @@ def _wait_until(predicate: Callable[[], bool], timeout_s: float) -> bool:
     return predicate()
 
 
-@pytest.mark.requirement("STATE-16")
+@pytest.mark.requirement("STATE-18")
 def test_tracks_listing_answers_while_a_writer_holds_the_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -91,7 +91,7 @@ def test_tracks_listing_answers_while_a_writer_holds_the_lock(
         ), "the refresher never persisted the request's stats"
 
 
-@pytest.mark.requirement("STATE-16")
+@pytest.mark.requirement("STATE-18")
 def test_refresher_keeps_rows_and_survives_a_busy_writer_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -123,7 +123,7 @@ def test_refresher_keeps_rows_and_survives_a_busy_writer_lock(
         refresher.stop()
 
 
-@pytest.mark.requirement("STATE-16")
+@pytest.mark.requirement("STATE-18")
 def test_probe_without_a_running_refresher_persists_inline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -139,7 +139,7 @@ def test_probe_without_a_running_refresher_persists_inline(
     assert _indexed_sizes(state_db_path, data_dir, paths) == {path: 131 for path in paths}
 
 
-@pytest.mark.requirement("STATE-16")
+@pytest.mark.requirement("STATE-18")
 def test_library_jobs_listing_answers_while_a_writer_holds_the_lock(tmp_path: Path) -> None:
     """[if] a writer holds state.db [then] GET /library-jobs is 200 inside busy_timeout, [else stop]."""
     from apps.analysis import queue_user
