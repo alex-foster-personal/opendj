@@ -344,7 +344,6 @@ def test_a_shared_reason_every_track_reproduces_alone_closes_the_lane() -> None:
 def test_solo_reruns_stop_when_a_deck_starts_playing() -> None:
     """[if] a deck starts during the solo reruns [then] no further track runs, [else stop]."""
     world = _one_bad_track_world("t0")
-    drain = world.drain()
 
     def run_lane(lane: str, _backend: str, ids: list[str]) -> dict[str, str]:
         world.lane_runs.append((lane, list(ids)))
@@ -352,6 +351,7 @@ def test_solo_reruns_stop_when_a_deck_starts_playing() -> None:
         return dict.fromkeys(ids, RUN_ABORT)
 
     world.run_lane = run_lane  # type: ignore[method-assign]
+    drain = world.drain()
     drain.tick()
     assert world.lane_runs == [("loudness", ["t0", "t1", "t2", "t3"])]
     assert drain.coverage()["lanes"]["loudness"]["unavailable"] is None
