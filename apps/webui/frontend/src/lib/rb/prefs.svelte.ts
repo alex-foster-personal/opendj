@@ -852,3 +852,22 @@ export function setWaveSplitMaster(next: WaveSplitMaster): void {
 	uiPrefs.wave_split_master = next;
 	_persist();
 }
+
+// ------------------------------------------------- ?skin= URL override
+
+/** Shareable skin link: `?skin=mono-dev` applies and persists the skin plus
+ * its matching waveform look in any browser; `?skin=default` reverts. An
+ * unknown value throws via parseUiSkin rather than silently ignoring it. */
+function _applySkinFromUrl(): void {
+	if (typeof window === 'undefined') return;
+	const raw = new URLSearchParams(window.location.search).get('skin');
+	if (raw === null) return;
+	const skin = parseUiSkin(raw) as UiSkin;
+	setUiSkin(skin);
+	if (skin === 'mono-dev') {
+		setWavePalette('mono');
+		setWaveformDesign('blocks');
+	}
+}
+
+_applySkinFromUrl();
