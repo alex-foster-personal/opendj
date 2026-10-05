@@ -1,3 +1,4 @@
+// requirement: OSSPUB-07
 /**
  * OSSPUB-07 (the maintainer, Mon 5 Oct 2026): a quiet alpha badge and the Open DJ brand font.
  *
@@ -10,6 +11,8 @@
  *   does not name the shipped Anybody face, then broken
  * - if the brand font leaks onto the track list or data tables, then
  *   tabular numerals lose legibility: broken
+ * - if the bottom-tray wordmark renders bold or in the 800-only brand face,
+ *   or the welcome title loses its bold brand face, then broken
  */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -40,7 +43,6 @@ function svelteFiles(dir) {
 
 const BRAND_SURFACES = [
 	['lib/components/preflight/PreflightScreen.svelte', '.preflight-name'],
-	['lib/components/rb/BrowserPanel.svelte', '.wordmark'],
 	['lib/components/rb/EditSuiteModal.svelte', '.es-header h2'],
 	['lib/components/rb/MidiPanel.svelte', '.drawer-title'],
 	['lib/components/rb/FeedbackPanel.svelte', '.fb-panel-title'],
@@ -106,5 +108,17 @@ test('OSSPUB-07 if the brand font leaks onto the track list or tables then broke
 		.filter((path) => !brandFiles.has(path) && readFileSync(path, 'utf8').includes('--rb-font-brand'))
 		.map((path) => path.slice(SRC.length + 1));
 	assert.deepEqual(leaks, [], 'only the listed brand surfaces may use --rb-font-brand');
-	assert.equal(read('lib/components/rb/BrowserPanel.svelte').match(/--rb-font-brand/g)?.length, 1);
+});
+
+test('OSSPUB-07 if the tray wordmark is bold or uses the 800-only brand face, or the welcome title loses its bold brand face, then broken', () => {
+	// The only shipped Anybody face is weight 800, so any element set in it
+	// draws bold whatever its font-weight says: regular needs the UI font.
+	const face = read('app.css').match(/@font-face\s*\{([^}]*)\}/)?.[1] ?? '';
+	assert.match(face, /font-weight:\s*800;/, 'control: the shipped brand face is the 800 instance');
+	const wordmark = cssRule(read('lib/components/rb/BrowserPanel.svelte'), '.wordmark');
+	assert.match(wordmark, /font-weight:\s*400;/);
+	assert.doesNotMatch(wordmark, /--rb-font-brand|Anybody/);
+	const welcome = cssRule(read('lib/components/preflight/PreflightScreen.svelte'), '.preflight-name');
+	assert.match(welcome, /font-family:\s*var\(--rb-font-brand\);/);
+	assert.match(welcome, /font-weight:\s*700;/);
 });
