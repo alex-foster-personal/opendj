@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from apps.cloud import stem_index
 from apps.lyrics import cache as lyrics_cache
+from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.shared import audio_quality
 from apps.shared.events import publish
 from apps.shared.paths import STATE_DB
@@ -496,10 +497,18 @@ def get_track_lyrics(stable_id: str, request: Request) -> TrackLyricsOut:
         raise ValueError(f"lyrics-cache identity mismatch for {stable_id!r}")
     if not lyrics.lines:
         raise ValueError(f"lyrics-cache contains no line-level lyrics for {stable_id!r}")
+    servable = servable_lyrics(lyrics)
+    if servable is None:
+        # LYRICS-12: an ASR transcript of only Whisper hallucinations ("Thank
+        # you.", subtitle credits) is an instrumental, not lyrics.
+        raise HTTPException(
+            status_code=404,
+            detail=f"ASR transcript for {stable_id!r} is hallucination only: no lyrics",
+        )
     return TrackLyricsOut(
-        stable_id=lyrics.stable_id,
-        source=lyrics.source,
-        lines=[{"start_ms": line.start_ms, "text": line.text} for line in lyrics.lines],
+        stable_id=servable.stable_id,
+        source=servable.source,
+        lines=[{"start_ms": line.start_ms, "text": line.text} for line in servable.lines],
     )
 
 
