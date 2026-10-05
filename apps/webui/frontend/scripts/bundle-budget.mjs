@@ -343,7 +343,16 @@ const BUDGETS = [
   // RAISED Mon 5 Oct 2026 (+1 KiB, PR #5441 CHROME-12/13, V1 budget rule of up to
   // 4 KiB per V1 PR): the top-bar skin button cycles Default, Gothic and Light, and
   // set_skin carries the skin over IPC. CI measured 260,232 against 260,096 (+136).
-  { name: 'performance', limit: 261120, measured: 260232, note: '/performance and children' },
+  // RAISED Mon 5 Oct 2026 (+1 KiB, PR #5471 AGENT-18, V1 budget rule of up to 4 KiB per
+  // V1 PR): one leader tab per engine. The Web Locks controller, the leased mirror
+  // publisher and the follower banner are first-paint on /performance because the
+  // election must run before the first mirror PUT. CI measured 261,862 against 261,120
+  // (+742). Payback, not yet measured: load TabLeaderBanner only when a tab is a follower.
+  // RAISED Mon 5 Oct 2026 (+1 KiB, PR #5482 AGENT-18 follow-up, V1 budget rule): follower
+  // tabs are pure viewers (leader-only writers) and the playing tab claims the lease
+  // (decideFollowerClaim). Local build measured 262,224 against 262,144 (+80). Payback
+  // is the same as #5471's: load TabLeaderBanner only when a tab is a follower.
+  { name: 'performance', limit: 263168, measured: 262224, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

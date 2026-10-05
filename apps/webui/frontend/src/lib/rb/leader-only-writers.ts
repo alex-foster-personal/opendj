@@ -11,7 +11,9 @@
  *
  * Deck restore (rescue auto-restore, then the session snapshot) happens on the
  * FIRST promotion only. A tab that loses leadership and later regains it keeps
- * its decks as they are and only restarts its writers.
+ * its decks as they are and only restarts its writers, unless that first deck
+ * restore never finished: then it loads the URL's still-empty decks first, so
+ * the writer cannot publish a half-restored engine and drop d3/d4 from the URL.
  *
  * The real installers are injected so this ordering is unit tested without the
  * audio engine (`tests/unit/leader-only-writers.test.mjs`).
@@ -23,7 +25,11 @@ export interface LeaderOnlyWriterDeps {
 	/** Loads decks from the rescue ring; resolves true when it handled the restore. */
 	runRescueAutoRestore: () => Promise<boolean>;
 	/** Restores the session snapshot (unless skipped) and starts its writer. */
-	installSessionRestore: (opts: { skipDeckRestore: boolean }) => () => void;
+	installSessionRestore: (opts: {
+		skipDeckRestore: boolean;
+		resumeInterruptedRestore: boolean;
+		onDeckRestoreSettled: () => void;
+	}) => () => void;
 	installRescueRingWriter: () => () => void;
 	installDeckObserver: () => () => void;
 	installPlayCounter: () => () => void;
@@ -50,6 +56,9 @@ export function installLeaderOnlyRestore(
 		'leadership' | 'runRescueAutoRestore' | 'installSessionRestore' | 'installRescueRingWriter'
 	>
 ): () => void {
+	// True once a deck restore ran to its end in THIS tab. Until then a
+	// re-promotion resumes it rather than skipping it (`_resumeUrlDecks`).
+	let deckRestoreSettled = false;
 	return whileLeader(deps.leadership, (priorRuns) => {
 		let stopped = false;
 		let uninstallSession: (() => void) | null = null;
@@ -59,7 +68,14 @@ export function installLeaderOnlyRestore(
 			// Leadership can be lost (or the route unmount) while the rescue
 			// fetch is in flight; nothing installed after that would be undone.
 			if (stopped) return;
-			uninstallSession = deps.installSessionRestore({ skipDeckRestore: rescueHandled });
+			const resume = priorRuns > 0 && !deckRestoreSettled;
+			uninstallSession = deps.installSessionRestore({
+				skipDeckRestore: rescueHandled && !resume,
+				resumeInterruptedRestore: resume,
+				onDeckRestoreSettled: () => {
+					deckRestoreSettled = true;
+				}
+			});
 			uninstallRescueWriter = deps.installRescueRingWriter();
 		})();
 		return () => {
