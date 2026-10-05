@@ -67,6 +67,7 @@ import {
 	nativeOutputsAsHeadphoneOutputs,
 	type NativeCueSinkEvent
 } from '$lib/player/cue-native-sink';
+import { assertMainIsNotCue, masterRepairedFromCue } from '$lib/player/main-cue-collision';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -987,8 +988,13 @@ export function dualSinkAssignment(args: {
 		args.selectedCueId !== null && args.outputs.some((output) => output.id === args.selectedCueId)
 			? args.selectedCueId
 			: null;
+	// MAIN on the CUE device is not two outputs: the native shell pins the
+	// macOS default to it, so the room gets nothing while every probe reads
+	// healthy (silver, Mon 5 Oct 2026). Such a master is re-picked below.
 	const masterStillPresent =
-		args.selectedMasterId !== null && args.outputs.some((output) => output.id === args.selectedMasterId)
+		args.selectedMasterId !== null &&
+		args.selectedMasterId !== cueId &&
+		args.outputs.some((output) => output.id === args.selectedMasterId)
 			? args.selectedMasterId
 			: null;
 	const room =
@@ -2155,11 +2161,26 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 			})
 		);
 	}
+	const repaired = masterRepairedFromCue({
+		previousMasterId,
+		cueId: assignment.cueId,
+		nextMasterId: assignment.masterId,
+		autoPinnedMaster: assignment.autoPinnedMaster
+	});
+	if (repaired !== null) {
+		const label = (id: string): string => mixerState.headphones.outputs.find((output) => output.id === id)?.label ?? id;
+		const message = `MAIN output was on the headphone CUE device ${label(repaired.from)}; moved MAIN to ${label(repaired.to)} so the room can hear the mix.`;
+		access.notices.push(message);
+		recordPerfEvent('main-output-repaired-from-cue', message, null, 'warn');
+	}
 	mixerState.headphones.device_access = access;
 	applyHeadphoneMix();
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
+		// Persist only once the repaired MAIN is actually pinned, so a saved
+		// conflicting assignment cannot come back on the next launch.
+		if (repaired !== null) _rememberSavedOutput('master', repaired.to);
 	} catch (error) {
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('headphone output enumeration failed', error);
@@ -2397,6 +2418,13 @@ export async function selectMasterOutput(
 ): Promise<void> {
 	const generation = _headphoneGeneration;
 	const previousId = mixerState.headphones.selected_master_output_device_id;
+	// CUEOUT-25: refused before the try, so a refusal never marks the live
+	// MAIN route failed; the current MAIN keeps playing.
+	assertMainIsNotCue(
+		deviceId,
+		mixerState.headphones.selected_output_device_id,
+		mixerState.headphones.output_mode
+	);
 	try {
 		_requireOutputSelectionApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
