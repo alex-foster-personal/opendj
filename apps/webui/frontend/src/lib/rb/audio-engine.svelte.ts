@@ -267,12 +267,14 @@ import {
 	composeStretchSemitones,
 	deriveKeySyncNudge,
 	deriveKeySyncSemitones,
+	deriveKeySyncStatus,
 	deriveKeySyncTargetManualShift,
 	effectiveCamelotKey,
 	masterTempoSemitones,
-	parseCamelotKey
+	parseCamelotKey,
+	refineKeySyncStatus
 } from '$lib/player/key/camelot';
-import type { CamelotKey } from '$lib/player/key/camelot';
+import type { CamelotKey, KeySyncStatus } from '$lib/player/key/camelot';
 import {
 	disarmSafetyLoopOnExplicitExit,
 	exactBeatLoopRangeMs,
@@ -327,6 +329,7 @@ import {
 	slipTempoBoundariesAfterAnchor
 } from '$lib/player/transport/presentation';
 import type {
+	KeySyncEffectiveOffsetSource,
 	PresentedTransportObservation,
 	PresentedTransportSchedule,
 	PresentedTransportTimeline,
@@ -863,38 +866,17 @@ export function applyPausedDeckControlSettings(
 	};
 }
 
-/** Listener-facing KEY SYNC plan for UI and browser agents. The preview is
- * deliberately calculated from the exact same control and presented-audio
- * sources as `syncKey`, never from a visible but potentially stale deck field. */
+/** Listener-facing KEY SYNC plan for UI, agents and the follow pass, from the
+ * exact control and presented-audio sources, never a possibly stale deck field. */
 export interface KeySyncPreview {
 	masterDeck: DeckId;
 	targetManualShiftSemitones: number;
 	deltaSemitones: number;
 }
 
-export interface KeySyncEffectiveOffsetSource {
-	audible: boolean;
-	transportPending: boolean;
-	pendingMutation: boolean;
-	control: DeckControlSettings;
-	presentation: PresentedTransportTimeline;
-}
-
-function _keySyncPlan(deck: DeckId, masterDeck: DeckId, sourceBaseline: number): KeySyncPreview {
-	const source = deckStates[deck];
-	const master = deckStates[masterDeck];
-	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(
-		source.key,
-		master.key,
-		_effectiveAudibleSemitones(deck),
-		_effectiveAudibleSemitones(masterDeck),
-		sourceBaseline
-	);
-	return {
-		masterDeck,
-		targetManualShiftSemitones,
-		deltaSemitones: targetManualShiftSemitones - sourceBaseline
-	};
+/** DECKUX-34: 'following' only once the PRESENTED shift sits on the current target. */
+export function keySyncStatus(deck: DeckId): KeySyncStatus {
+	return refineKeySyncStatus(deriveKeySyncStatus(deck, deckStates), keySyncPreview(deck)?.deltaSemitones ?? null);
 }
 
 /** Return null only when an input or output-presented plan is unavailable. */
@@ -915,7 +897,9 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 	const sourceInput = _keySyncSource(deck);
 	const masterInput = _keySyncSource(masterDeck);
 	if (!keySyncPreviewAvailable(sourceInput) || !keySyncPreviewAvailable(masterInput)) return null;
-	return _keySyncPlan(deck, masterDeck, keySyncManualShiftBaseline(sourceInput));
+	const baseline = keySyncManualShiftBaseline(sourceInput);
+	const targetManualShiftSemitones = deriveKeySyncTargetManualShift(source.key, master.key, keySyncEffectiveAudibleSemitones(sourceInput), keySyncEffectiveAudibleSemitones(masterInput), baseline);
+	return { masterDeck, targetManualShiftSemitones, deltaSemitones: targetManualShiftSemitones - baseline };
 }
 
 /** Set the loaded deck track's rating (deck-header pin 4de63478782c). Same
@@ -1052,6 +1036,34 @@ function _assignMaster(deck: DeckId | null, reason?: MasterReason): void {
 	_masterDeck = deck;
 	if (reason !== undefined) _masterReason = reason;
 	for (const candidate of DECK_IDS) deckStates[candidate].is_master = candidate === deck;
+	_queueKeySyncFollow();
+}
+
+// KEY SYNC follow (DECKUX-34): one coalesced, diff-gated pass per master/control/presented change.
+let _keySyncFollowQueued = false;
+function _queueKeySyncFollow(): void {
+	if (_keySyncFollowQueued) return;
+	_keySyncFollowQueued = true;
+	queueMicrotask(() => {
+		_keySyncFollowQueued = false;
+		for (const deck of DECK_IDS.filter((d) => deriveKeySyncStatus(d, deckStates) === 'following')) {
+			void _applyKeySyncFollow(deck).catch((error: unknown) => {
+				_disarmKeySync(deck);
+				pushToast(`KEY SYNC deck ${deck} turned off - could not follow the master: ${error instanceof Error ? error.message : String(error)}`, 'error');
+			});
+		}
+	});
+}
+
+/** No plan yet (live deck before presentation) waits for the next presented revision. */
+async function _applyKeySyncFollow(deck: DeckId): Promise<void> {
+	const plan = keySyncPreview(deck);
+	if (plan !== null && plan.targetManualShiftSemitones !== _desiredKeyShiftSemitones(deck)) await _setDeckKeyShift(deck, plan.targetManualShiftSemitones);
+}
+
+function _disarmKeySync(deck: DeckId): void {
+	deckStates[deck].key_sync_enabled = false;
+	_rt[deck].keySyncBaselineSemitones = null;
 }
 
 function _ownedMaster(): DeckId | null {
@@ -1538,6 +1550,7 @@ function _applyPausedDeckControlSettings(
 	rt.controlKeyShiftSemitones = next.keyShiftSemitones;
 	st.pitch = next.tempoRatio;
 	st.master_tempo_enabled = next.masterTempoEnabled;
+	_queueKeySyncFollow();
 	return next;
 }
 
@@ -1585,14 +1598,6 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 function _desiredKeyShiftSemitones(deck: DeckId): number {
 	const rt = _rt[deck];
 	return rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
-}
-
-function _effectiveAudibleSemitones(deck: DeckId): number {
-	return keySyncEffectiveAudibleSemitones(_keySyncSource(deck));
-}
-
-function _keySyncManualShiftBaseline(deck: DeckId): number {
-	return keySyncManualShiftBaseline(_keySyncSource(deck));
 }
 
 function _keySyncSource(deck: DeckId): KeySyncEffectiveOffsetSource {
@@ -1832,6 +1837,7 @@ function _publishPresentedTransport(
 	// .planning/hardening-ledger/decisions/presentation-clock-fallback.md.
 	// CUEOUT-14: the room hears everything master_delay_ms later than the
 	// render clock, so the playhead and PLAY light lag by exactly that.
+	const presentedRevisionBefore = rt.presentation.presented_revision;
 	const observation = observePresentedTransportTimeline(
 		rt.presentation,
 		outputTimestamp,
@@ -1841,6 +1847,7 @@ function _publishPresentedTransport(
 	);
 	notePresentationClock(deck, observation.clock_stalled);
 	if (!observation.accepted) return observation;
+	if (rt.presentation.presented_revision !== presentedRevisionBefore) _queueKeySyncFollow();
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
@@ -3827,17 +3834,10 @@ class RbAudioEngine implements AudioEngine {
 			throw new RangeError(`nudgeKey: semitones must be -1 or 1, got ${semitones}`);
 		}
 		_requireLoaded(deck, 'nudgeKey');
-		await _setDeckKeyShift(deck, _desiredKeyShiftSemitones(deck) + semitones);
-	}
-
-	async syncKey(deck: DeckId): Promise<void> {
-		_requireLoaded(deck, 'syncKey');
-		const masterDeck = _masterDeck;
-		if (masterDeck === null) throw new Error('KEY SYNC requires an elected loaded master deck');
-		if (masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
-		_requireLoaded(masterDeck, 'KEY SYNC master');
-		const deckManualShiftSemitones = _keySyncManualShiftBaseline(deck);
-		await _setDeckKeyShift(deck, _keySyncPlan(deck, masterDeck, deckManualShiftSemitones).targetManualShiftSemitones);
+		const next = _desiredKeyShiftSemitones(deck) + semitones;
+		_assertKeyShift(next); // validate first: a refused nudge must not disarm KEY SYNC
+		_disarmKeySync(deck); // the operator took the key back; a follow pass would undo it
+		await _setDeckKeyShift(deck, next);
 	}
 
 	async setKeySync(deck: DeckId, enabled: boolean): Promise<void> {
@@ -3854,9 +3854,13 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		_requireLoaded(deck, 'setKeySync');
-		rt.keySyncBaselineSemitones = _keySyncManualShiftBaseline(deck);
-		st.key_sync_enabled = true;
-		await this.syncKey(deck);
+		if (_masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
+		if (!st.key_sync_enabled) { // re-enabling keeps the operator's ORIGINAL baseline
+			rt.keySyncBaselineSemitones = keySyncManualShiftBaseline(_keySyncSource(deck));
+			st.key_sync_enabled = true;
+		}
+		// No usable master (restore runs before election) stays ARMED; the follow pass applies it later.
+		if (deriveKeySyncStatus(deck, deckStates) === 'following') await _applyKeySyncFollow(deck).catch((error: unknown) => { _disarmKeySync(deck); throw error; });
 	}
 
 	async unload(deck: DeckId): Promise<void> {
