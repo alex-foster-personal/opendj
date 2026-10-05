@@ -21,8 +21,6 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
-		getReconcileSummary,
-		ReconcileSummaryWarming,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -33,12 +31,11 @@
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
+	import { createReconcileSummaryRefresh } from '$lib/rb/reconcile-summary-refresh';
 	import {
 		coverageDot as _coverageDot,
 		createCoverageRefresh,
 		HEALTH_REFETCH_MS,
-		RECONCILE_RECHECK_DELAYS_MS,
-		type CoverageOutcome,
 		libraryHealthDot as _computeLibraryHealthDot,
 		unknownDot as _unknownDot,
 		type LibraryHealthDot
@@ -1115,37 +1112,18 @@
 		);
 	}
 
-	// HEALTH-15: the summary is the engine's last library scan, served at once.
-	// One read at a time; a scan still running (or not finished yet) is asked
-	// again on RECONCILE_RECHECK_DELAYS_MS instead of being waited on.
-	const _reconcileRefresh = createCoverageRefresh(
-		_readReconcileSummary,
-		RECONCILE_RECHECK_DELAYS_MS
-	);
+	// HEALTH-15: the engine's last library scan, one read in flight at a time.
+	const _reconcileRefresh = createReconcileSummaryRefresh((read) => {
+		if (read.counts !== null) {
+			allTracksNonBrokenCount = read.counts.nonBroken;
+			allTracksBrokenCount = read.counts.broken;
+			libraryAvailability = read.counts.availability;
+		}
+		allTracksReconcileError = read.error;
+	});
 
 	function _loadReconcileSummary(): Promise<void> {
 		return _reconcileRefresh.load();
-	}
-
-	async function _readReconcileSummary(): Promise<CoverageOutcome> {
-		try {
-			const summary = await getReconcileSummary();
-			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
-			allTracksBrokenCount = summary.total_broken;
-			libraryAvailability = summary.availability ?? 'unknown';
-			const refreshError = summary.refresh_error ?? null;
-			// A scan that failed leaves the last good counts, which are then
-			// unchecked: the light says so instead of quoting them as current.
-			allTracksReconcileError =
-				refreshError === null ? null : `the last library scan failed (${refreshError})`;
-			return { ok: true, refreshing: summary.refreshing === true, refresh_error: refreshError };
-		} catch (error: unknown) {
-			if (error instanceof ReconcileSummaryWarming) {
-				return { ok: true, refreshing: true, refresh_error: null };
-			}
-			allTracksReconcileError = error instanceof Error ? error.message : String(error);
-			return { ok: false };
-		}
 	}
 
 	async function _init(): Promise<void> {
