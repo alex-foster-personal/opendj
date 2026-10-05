@@ -5,8 +5,8 @@ import { test } from 'node:test';
 import { compile } from 'svelte/compiler';
 
 const EQ_DEFAULT_SIZE = 30;
-const EXPECTED_TRIM_SIZE = 21;
-const EXPECTED_FILTER_SIZE = 39;
+const EXPECTED_TRIM_SIZE = 24;
+const EXPECTED_FILTER_SIZE = 36;
 
 // Pin 8cabf5b1df1e:
 // [if] a knob is resized [then] its dial and pointer target resize but its caption remains legible 8px text [else ⛔️]
@@ -53,13 +53,13 @@ test('Knob.svelte exposes a size prop that drives the visual SVG and makes the w
 	);
 });
 
-test('pin 4eebbc65a699 ChannelStrip TRIM is 30% smaller than EQ dials in MORE mode', async () => {
+test('MIXUX-03 ChannelStrip TRIM is 20% smaller than EQ dials in MORE mode', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 
 	const constMatch = src.match(/const TRIM_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(constMatch, 'expected a named TRIM_SIZE constant, not a magic number on the Knob line');
 	assert.equal(Number(constMatch[1]), EXPECTED_TRIM_SIZE);
-	assert.equal(EXPECTED_TRIM_SIZE, EQ_DEFAULT_SIZE * 0.7);
+	assert.equal(EXPECTED_TRIM_SIZE, EQ_DEFAULT_SIZE * 0.8);
 
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 
@@ -105,12 +105,12 @@ test('pin 4eebbc65a699 ChannelStrip TRIM is 30% smaller than EQ dials in MORE mo
 	assert.ok(Number(lessEqSizeMatch[1]) < 30, 'LESS_EQ_SIZE must actually be smaller than the 30px EQ default');
 });
 
-test('pin 4eebbc65a699 ChannelStrip FILTER slot is 30% larger than EQ dials and wired live', async () => {
+test('MIXUX-03 ChannelStrip FILTER slot is 20% larger than EQ dials and wired live', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 	const constMatch = src.match(/const FILTER_SLOT_SIZE = (\d+(?:\.\d+)?);/);
 	assert.ok(constMatch, 'FILTER slot needs a named size rather than a magic number');
 	assert.equal(Number(constMatch[1]), EXPECTED_FILTER_SIZE);
-	assert.equal(EXPECTED_FILTER_SIZE, EQ_DEFAULT_SIZE * 1.3);
+	assert.equal(EXPECTED_FILTER_SIZE, EQ_DEFAULT_SIZE * 1.2);
 
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 	const filterKnob = src.match(knobTag('FILTER'));
