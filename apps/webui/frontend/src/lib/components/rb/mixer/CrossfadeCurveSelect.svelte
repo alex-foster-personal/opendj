@@ -38,9 +38,10 @@
 		font-size: 7px;
 		/* 72px clipped "magic crossfader" under the native chevron, so the
 		   label ran into the arrow at every width (both skins, Tue 6 Oct
-		   2026). Room for the widest option plus the chevron; the crossfader
+		   2026). It sizes to its widest option plus the chevron (no cap: the
+		   gothic skin is monospace and wider still); the crossfader
 		   beside it is flex: 1 and gives the width up. */
-		max-width: 92px;
+		flex: none;
 		padding: 0 2px;
 		align-self: center;
 		max-height: 28px;
