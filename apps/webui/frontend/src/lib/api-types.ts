@@ -7389,12 +7389,18 @@ export interface components {
             default_device_name?: string | null;
             /** Default Device Uid */
             default_device_uid?: string | null;
+            /** Default Muted By Jack */
+            default_muted_by_jack?: boolean | null;
             /** Device Delivering */
             device_delivering: boolean | null;
             /** Hal Overload Recent */
             hal_overload_recent?: boolean | null;
             /** Io Cycles Advanced */
             io_cycles_advanced?: boolean | null;
+            /** Master Pin Fault */
+            master_pin_fault?: {
+                [key: string]: unknown;
+            } | null;
             /** Probe Available */
             probe_available: boolean;
             /** Reason */
@@ -10445,6 +10451,12 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /** Muted By Jack */
+            muted_by_jack?: boolean | null;
+            /** Physical Id */
+            physical_id?: string | null;
+            /** Transport */
+            transport?: string | null;
         };
         /** HeadphoneStateOut */
         HeadphoneStateOut: {
@@ -10480,6 +10492,8 @@ export interface components {
             selected_master_output_device_id: string | null;
             /** Selected Output Device Id */
             selected_output_device_id: string | null;
+            /** Split Reason */
+            split_reason?: string | null;
             /** Supported */
             supported: boolean;
         };

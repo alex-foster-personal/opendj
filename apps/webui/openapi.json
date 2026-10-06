@@ -1511,6 +1511,17 @@
             ],
             "title": "Default Device Uid"
           },
+          "default_muted_by_jack": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Muted By Jack"
+          },
           "device_delivering": {
             "anyOf": [
               {
@@ -1543,6 +1554,18 @@
               }
             ],
             "title": "Io Cycles Advanced"
+          },
+          "master_pin_fault": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Pin Fault"
           },
           "probe_available": {
             "title": "Probe Available",
@@ -9530,6 +9553,39 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "muted_by_jack": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muted By Jack"
+          },
+          "physical_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Id"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
           }
         },
         "required": [
@@ -9654,6 +9710,17 @@
               }
             ],
             "title": "Selected Output Device Id"
+          },
+          "split_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Reason"
           },
           "supported": {
             "title": "Supported",
