@@ -19,7 +19,6 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
 	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
