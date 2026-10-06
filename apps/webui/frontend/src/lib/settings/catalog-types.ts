@@ -53,9 +53,9 @@ export interface SettingDef {
 	label: string;
 	group: SettingGroupId;
 	keywords: readonly string[];
-	/** Short RHS hover tooltip. */
+	/** Short summary, indexed by settings search. Not rendered as a hover tooltip: cards show `detail` instead (Mon 5 Oct 2026). */
 	title: string;
-	/** Longer explanation shown on focus/hover. */
+	/** Longer explanation, always visible under the row (no hover-to-expand). */
 	detail: string;
 	/** false = grayed inert todo (PARITY-TODO). Hidden unless the
 	 * "Show developer pages" pref (show_dev_ui) is on. */

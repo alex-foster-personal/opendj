@@ -116,8 +116,10 @@ const HIGH_BAND_SCALE = 0.6;
 const MID_BAND_SCALE = 0.85;
 
 /** 'blocks' design geometry: BLOCK_BAR_PX-wide bars on a BLOCK_PITCH_PX
- * pitch, i.e. a 1px gap, ONE-SIDED: bars grow up from the bottom baseline.
- * Rendering style only, heights are the real data. */
+ * pitch, i.e. a 1px gap. A full deck row paints them MIRRORED about the
+ * centerline (the standard waveform, the maintainer Tue 6 Oct 2026); each half of a
+ * split row and the small strips paint them ONE-SIDED, growing up from a
+ * bottom baseline. Rendering style only, heights are the real data. */
 export const BLOCK_BAR_PX = 2;
 export const BLOCK_PITCH_PX = 3;
 
@@ -253,6 +255,10 @@ export interface WaveRowFrame {
 	waveformDesign?: WaveformDesign;
 	/** 'blocks' height model; default BLOCKS_CFG.VARIANT_DEFAULT. */
 	blocksVariant?: BlocksVariant;
+	/** 'blocks' geometry: true (default) = mirrored about the centerline,
+	 * the standard full row; false = one-sided from the bottom baseline,
+	 * which each half of a split row passes (split-row.ts). */
+	blocksMirrored?: boolean;
 	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
 	masterDownbeatOverlay?: MasterDownbeatOverlay | null;
 	/** Pending deferred seek ghost playhead (ms). */
@@ -283,7 +289,8 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	if (frame.anlz !== null && durS > 0) {
 		const blocks: BlocksSpec = {
 			variant: frame.blocksVariant ?? BLOCKS_CFG.VARIANT_DEFAULT,
-			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats)
+			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats),
+			mirrored: frame.blocksMirrored ?? true
 		};
 		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design, blocks);
 	}
@@ -395,7 +402,7 @@ function _drawCachedBands(
 		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 		return;
 	}
-	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
+	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
 	let image = _bandImages.get(waveform);
 	if (image === undefined || image.key !== key || !bandImageScaleReusable(image.pxPerS, pxPerS)) {
 		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key, pxPerS };
@@ -453,7 +460,7 @@ function _drawBands(
 	h: number,
 	palette: WavePalette,
 	design: WaveformDesign,
-	blocks: BlocksSpec = { variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null }
+	blocks: BlocksSpec = { variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true }
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
@@ -471,7 +478,9 @@ function _drawBands(
 		const blocksPerBeat =
 			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
 		const heights = blockHeights(bands, w, norms, blocks.variant, blocksPerBeat);
-		paintStackedBlocks(ctx, heights, mono ? null : blockBandShares(bands, w, norms), h, h - MARKER_BAND_PX - 1, palette);
+		const shares = mono ? null : blockBandShares(bands, w, norms);
+		if (blocks.mirrored) paintStackedBlocks(ctx, heights, shares, centerY, halfH, palette, true);
+		else paintStackedBlocks(ctx, heights, shares, h, h - MARKER_BAND_PX - 1, palette, false);
 		return;
 	}
 
@@ -551,6 +560,8 @@ function _drawBands(
 interface BlocksSpec {
 	variant: BlocksVariant;
 	beatPeriodS: number | null;
+	/** true = bars mirrored about the centerline; false = one-sided. */
+	mirrored: boolean;
 }
 
 /** Median beat period of the grid in seconds; null without a usable grid. */
@@ -683,16 +694,20 @@ export function blockBandShares(
 	return out;
 }
 
-/** Paint one-sided blocks. shares null = single mono color; else stacked
- * like tri-band: low (darkest) at the block height, mid and high in front at
- * their share of it (scaled like the tri-band core). */
+/** Paint blocks. shares null = single mono color; else stacked like
+ * tri-band: low (darkest) at the block height, mid and high in front at
+ * their share of it (scaled like the tri-band core). mirrored = false: bars
+ * grow up from `anchorY` (the bottom baseline), at most `maxBarH` tall.
+ * mirrored = true: `anchorY` is the centerline and each bar extends up to
+ * `maxBarH` above AND below it. */
 export function paintStackedBlocks(
 	ctx: CanvasRenderingContext2D,
 	heights: Float32Array,
 	shares: { low: Float32Array; mid: Float32Array; high: Float32Array } | null,
-	baselineY: number,
+	anchorY: number,
 	maxBarH: number,
-	palette: Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>
+	palette: Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>,
+	mirrored: boolean
 ): void {
 	const layers: [string, Float32Array | null, number][] =
 		shares === null
@@ -707,7 +722,7 @@ export function paintStackedBlocks(
 		for (let b = 0; b < heights.length; b++) {
 			const frac = share === null ? 1 : share[b] * scale;
 			const barH = Math.round(heights[b] * frac * maxBarH);
-			if (barH > 0) path.rect(b * BLOCK_PITCH_PX, baselineY - barH, BLOCK_BAR_PX, barH);
+			if (barH > 0) path.rect(b * BLOCK_PITCH_PX, anchorY - barH, BLOCK_BAR_PX, mirrored ? barH * 2 : barH);
 		}
 		ctx.fillStyle = color;
 		ctx.fill(path);

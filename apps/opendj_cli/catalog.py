@@ -304,7 +304,8 @@ _VERBS: tuple[Verb, ...] = (
         arg("ui_skin", "enum", enum_value(UI_SKIN_VALUES), "default|mono-dev|light"),
         arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "auto|rekordbox|legacy|mono"),
         arg("wave_split_master", "enum", enum_value(WAVE_SPLIT_MASTER_VALUES), "auto|on|off"),
-    ), note="Skin preview: chrome skin, waveform palette and split master waveform in one call."),
+    ), note="Skin preview: chrome skin, waveform palette and split master waveform in one call. "
+            "wave_split_master is opt-in: auto = off on every skin (mirrored rows), on = split."),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
     # RESCUE-01 HTTP parity (not command-bus verbs):
