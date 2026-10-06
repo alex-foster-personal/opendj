@@ -23,8 +23,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const API_BASE = 'https://deck-stop-log.example.test';
 const SID = 'd'.repeat(40);
 const STRETCH_STUB = fileURLToPath(new URL('./fixtures/stretch-deck-processor-load-stub.ts', import.meta.url));
-/** One second of audio: long enough to play, short enough to play out in a test. */
-const TRACK_BYTES = 4 * 48_000;
+/** One minute of audio by default; the end-of-track test swaps in one second. */
+const MINUTE_BYTES = 4 * 48_000 * 60;
+const SECOND_BYTES = 4 * 48_000;
+let trackBytes = MINUTE_BYTES;
 const realFetch = globalThis.fetch;
 const realSetTimeout = globalThis.setTimeout;
 const realSetInterval = globalThis.setInterval;
@@ -68,8 +70,9 @@ function installDaemon() {
 		if (url.endsWith('/hot-cues')) {
 			return json(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({ slot, cue: null, revision: `empty-${slot}` })));
 		}
-		if (url.endsWith('/audio')) return new Response(new Uint8Array(TRACK_BYTES));
+		if (url.endsWith('/audio')) return new Response(new Uint8Array(trackBytes));
 		if (url.endsWith('/stems')) return json({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }, 404);
+		if (url.endsWith('/rb-meta')) return json({ detail: { code: 'RB_META_NOT_FOUND', message: 'no rekordbox row' } }, 404);
 		if (url.endsWith(`/tracks/${SID}`)) return json({ stable_id: SID, title: 'Stop', artist: 'Fixture', bpm: null });
 		throw new Error(`unexpected request ${url}`);
 	};
@@ -120,6 +123,7 @@ beforeEach(async () => {
 	FakeAudioContext.instances = [];
 	m.registry.resetAudioContextRegistryForTest();
 	for (const toast of [...m.stores.toasts]) m.stores.dismissToast(toast.logId);
+	trackBytes = MINUTE_BYTES;
 	installDaemon();
 	m.perf.resetPerfEventLog();
 	m.stopLog.resetDeckStopLogForTest();
@@ -207,6 +211,7 @@ test('the silence-dropout act logs cause engine; any other in-app dispatch logs 
 });
 
 test('a track playing out logs cause end-of-track', async () => {
+	trackBytes = SECOND_BYTES;
 	await loadAndPlay();
 	await until(() => !deck().playing, 'the one-second track plays out', 6000);
 	const stop = m.stopLog.readLastDeckStop(1);

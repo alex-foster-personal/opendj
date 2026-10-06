@@ -3411,6 +3411,10 @@ class RbAudioEngine implements AudioEngine {
 			this.clearQuantizedLaunch(deck);
 			const rt = _rt[deck], st = deckStates[deck];
 			if (rt.processor === null || rt.durationSec <= 0 || st.stable_id === null) {
+				// PLAY-18: no schedule runs here, so this stop is logged here.
+				if (rt.desiredActive || st.playing) {
+					recordDeckStop({ deck, cause: deckStopCause(deck, readPauseOrigin()), position_ms: st.position_ms, stable_id: st.stable_id });
+				}
 				rt.desiredActive = st.playing = st.audible = st.transport_pending = false;
 				return;
 			}
@@ -3579,8 +3583,15 @@ class RbAudioEngine implements AudioEngine {
 			_quantizedLaunchAt[deck] = null;
 		}
 		if (!rt.controlActive) {
+			// PLAY-18: a deck showing play whose start has not landed yet is
+			// stopped here, with no schedule to log it. An armed launch shows
+			// paused, so cancelling one is not a stop.
+			const st = deckStates[deck];
+			if (st.playing) {
+				recordDeckStop({ deck, cause: deckStopCause(deck, readPauseOrigin()), position_ms: st.position_ms, stable_id: st.stable_id });
+			}
 			rt.desiredActive = false;
-			deckStates[deck].playing = false;
+			st.playing = false;
 		}
 	}
 
