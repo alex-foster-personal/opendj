@@ -123,8 +123,15 @@ const MID_BAND_SCALE = 0.85;
 export const BLOCK_BAR_PX = 2;
 export const BLOCK_PITCH_PX = 3;
 
-/** How a block's height is derived from its band data (skin preview):
- *  - max:      per-block max of all bands, gamma-lifted (the original).
+/** How a block's height is derived from its band data (skin preview).
+ * Every variant reads band values normalized to the track's TRUE per-band
+ * peak (bandPeaksFor), so no input exceeds full scale and nothing is clamped
+ * (the maintainer, Tue 6 Oct 2026, bug B5: the old p99 divisor pushed every block
+ * whose bucket max beat the per-point p99 past 1.0, and the clamp painted
+ * those as solid full-height runs). The default is 'max': peak-normalized,
+ * then the same v^AMP_GAMMA display curve the tri-band rows use, which maps
+ * 0..1 onto 0..1 and reaches 1.0 only at the track's own peak.
+ *  - max:      per-block max of all bands, gamma-lifted (the default).
  *  - kick:     LOW band dominant, mid/high minor, gamma > 1 (expands peaks).
  *  - contrast: stretched between the rolling min/max over ~1 beat, scaled
  *              by that window's max so quiet sections stay quiet.
@@ -134,7 +141,9 @@ export const BLOCK_PITCH_PX = 3;
 export type BlocksVariant = 'max' | 'kick' | 'contrast' | 'onset' | 'blend';
 
 export const BLOCKS_CFG = {
-	VARIANT_DEFAULT: 'blend' as BlocksVariant,
+	/** 'max', no contrast expansion (B5). 'blend' and the rest stay for the
+	 * /mockups/blocks-variance comparison only. */
+	VARIANT_DEFAULT: 'max' as BlocksVariant,
 	/** 0.25: whole-track neighbor variance 2.56x max on Strobe (contrast alone was 12x). */
 	BLEND_CONTRAST: 0.25,
 	KICK_LOW_WEIGHT: 0.8,
@@ -142,9 +151,9 @@ export const BLOCKS_CFG = {
 	CONTRAST_WINDOW_BEATS: 1,
 	ONSET_WINDOW_BEATS: 0.25,
 	ONSET_FLOOR: 0.2,
-	/** contrast/onset need a beat period; with no beat grid they paint as
-	 * 'kick' (stated here, not hidden in the painter). */
-	NO_GRID_VARIANT: 'kick' as BlocksVariant
+	/** contrast/onset/blend need a beat period; with no beat grid they paint
+	 * as 'max' (stated here, not hidden in the painter). */
+	NO_GRID_VARIANT: 'max' as BlocksVariant
 } as const;
 
 /** Perceptual amplitude shaping (rendering only, the band DATA is never
@@ -225,6 +234,28 @@ export function bandNormsFor(waveform: AnlzWaveform): BandNorms {
 	};
 	_normCache.set(waveform, norms);
 	return norms;
+}
+
+/** Per-waveform true peak cache - computed once per anlz payload. */
+const _peakCache = new WeakMap<AnlzWaveform, BandNorms>();
+
+function _peak(values: readonly number[]): number {
+	let peak = 0;
+	for (const v of values) if (v > peak) peak = v;
+	return peak > 0 ? peak : 1;
+}
+
+/** Per-band TRUE peak over the whole detail array: the 'blocks' divisor.
+ * Dividing by it keeps every block <= 1 without a clamp, so the loudest
+ * moment of THIS track reaches full height and nothing else is pushed there.
+ * A silent band divides by 1 (it stays 0, never NaN). */
+export function bandPeaksFor(waveform: AnlzWaveform): BandNorms {
+	const cached = _peakCache.get(waveform);
+	if (cached !== undefined) return cached;
+	const bands = waveform.detail;
+	const peaks: BandNorms = { low: _peak(bands.low), mid: _peak(bands.mid), high: _peak(bands.high) };
+	_peakCache.set(waveform, peaks);
+	return peaks;
 }
 
 function _amp(v: number, norm: number): number {
@@ -475,10 +506,13 @@ function _drawBands(
 	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
 
 	if (design === 'blocks') {
+		// True peaks, not p99 (B5): a block is a bucket MAX of several detail
+		// points, so a p99 divisor puts most of a loud section past full scale.
+		const peaks = bandPeaksFor(waveform);
 		const blocksPerBeat =
 			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
-		const heights = blockHeights(bands, w, norms, blocks.variant, blocksPerBeat);
-		const shares = mono ? null : blockBandShares(bands, w, norms);
+		const heights = blockHeights(bands, w, peaks, blocks.variant, blocksPerBeat);
+		const shares = mono ? null : blockBandShares(bands, w, peaks);
 		if (blocks.mirrored) paintStackedBlocks(ctx, heights, shares, centerY, halfH, palette, true);
 		else paintStackedBlocks(ctx, heights, shares, h, h - MARKER_BAND_PX - 1, palette, false);
 		return;
@@ -594,7 +628,10 @@ function _rollingWindow(values: Float32Array, i: number, half: number): [number,
 }
 
 /** Per-block heights 0..1 for the 'blocks' design over a widthPx surface.
- * Pure (exported for tests): band DATA is read, never modified. */
+ * `norms` must be the per-band TRUE peaks (bandPeaksFor): heights are not
+ * clamped, so a smaller divisor shows up as a height above 1 instead of a
+ * silent full-height plateau. Pure (exported for tests): band DATA is read,
+ * never modified. */
 export function blockHeights(
 	bands: AnlzWaveform['detail'],
 	widthPx: number,
@@ -615,9 +652,9 @@ export function blockHeights(
 		const lo = _bucketMax(bands.low, p0, p1);
 		const mi = _bucketMax(bands.mid, p0, p1);
 		const hi = _bucketMax(bands.high, p0, p1);
-		low[b] = Math.min(1, lo / norms.low);
-		rest[b] = Math.min(1, Math.max(mi / norms.mid, hi / norms.high));
-		all[b] = Math.min(1, Math.max(lo, mi, hi) / monoNorm);
+		low[b] = lo / norms.low;
+		rest[b] = Math.max(mi / norms.mid, hi / norms.high);
+		all[b] = Math.max(lo, mi, hi) / monoNorm;
 	}
 	const out = new Float32Array(count);
 	const effective =

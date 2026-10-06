@@ -10,7 +10,7 @@
 	import { fetchAnlz, fetchTrackBypassingHttpCache } from '$lib/rb/api-rb';
 	import {
 		adjacentBlockVariance,
-		bandNormsFor,
+		bandPeaksFor,
 		beatPeriodS,
 		blockHeights,
 		BLOCK_PITCH_PX,
@@ -54,7 +54,7 @@
 		const pxPerS = WIDTH / WAVE_WINDOW_S;
 		const period = beatPeriodS(anlz.beatgrid?.beats);
 		const bpb = period === null ? null : (period * pxPerS) / BLOCK_PITCH_PX;
-		const norms = bandNormsFor(anlz.waveform);
+		const norms = bandPeaksFor(anlz.waveform);
 		VARIANTS.forEach((variant, i) => {
 			const el = canvases[i];
 			el.width = WIDTH * dpr;
