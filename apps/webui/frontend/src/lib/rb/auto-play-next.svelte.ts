@@ -89,11 +89,11 @@ async function _releaseOutgoing(deck: DeckId | null, restoreEq: boolean): Promis
 	}
 	_releaseInFlight = (async () => {
 		if (_loopEngaged) {
-			await dispatchPerformanceCommand({ type: 'loop', deck, loop: null });
+			await dispatchPerformanceCommand({ type: 'loop', deck, loop: null }, undefined, 'autoplay-handoff');
 			_loopEngaged = false;
 		}
 		if (restoreEq && _eqDucked) {
-			await dispatchPerformanceCommand({ type: 'eq', deck, band: 'low', value: 0.5 });
+			await dispatchPerformanceCommand({ type: 'eq', deck, band: 'low', value: 0.5 }, undefined, 'autoplay-handoff');
 			_eqDucked = false;
 		}
 	})();
@@ -172,7 +172,7 @@ export async function armAutoPlayNext(
 			deck: outgoing.id,
 			beats: plan.beats,
 			start_ms: plan.start_ms
-		});
+		}, undefined, 'autoplay-handoff');
 	} catch {
 		pushToast('auto-play next: loop engage failed', 'error');
 		return false;
@@ -230,7 +230,7 @@ async function _tick(config: AutoPlayNextConfig): Promise<void> {
 			deck: outgoing,
 			band: 'low',
 			value: duckedLowEqKnob(config.lowEqDuckFraction)
-		});
+		}, undefined, 'autoplay-handoff');
 		_eqDucked = true;
 		_dropMs = approximateDropMs(beats, enteredMs, config);
 		if (_dropMs === null) {

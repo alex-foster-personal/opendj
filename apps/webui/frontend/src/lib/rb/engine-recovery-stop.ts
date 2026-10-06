@@ -8,7 +8,8 @@
  * set could not resume on its own even once the engine was healthy again.
  *
  * The rebuild path tags the stop with a reason here. While a tag is set,
- * AutoPlay's idle disarm and its silent-idle stall stand down: AutoPlay stays
+ * AutoPlay's idle clock and its silent-idle stall stand down (since PLAY-18 idle
+ * never disarms at all): AutoPlay stays
  * enabled and armed, and carries on as soon as a deck plays again, which is the
  * moment the tag is cleared.
  */

@@ -47,11 +47,10 @@ import {
 } from '$lib/rb/auto-play';
 import { clearChartedAutoPlayOrder, deckSongIdentities, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';
 import {
-	applyAutoPlayIdleDisarmAction,
 	isAutoPlayArmedEmptyActive,
 	noteAutoPlayArmedEmptyOnEnable,
 	noteAutoPlayPlaybackStarted,
-	planAutoPlayIdleDisarm,
+	trackAutoPlayIdleClock,
 	readAutoPlayIdleSinceMs,
 	resetAutoPlayIdleClock,
 	shouldRaiseAutoPlayNoMasterStall,
@@ -66,7 +65,7 @@ import {
 } from '$lib/rb/autoplay-silence-recover';
 import { clearEngineRecoveryStop, engineRecoveryStopReason } from '$lib/rb/engine-recovery-stop';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
-import { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import {
 	activateAutoPlayQueue,
@@ -127,8 +126,6 @@ let _claimedIds = new Set<string>();
 /** Deferred master promotion, retried until the follower is audible (row 18). */
 let _pendingMaster: { deck: DeckId; stable_id: string } | null = null;
 let _promoting = false;
-/** Idle disarm with an active PLAY-08 stall keeps the banner after the pref drops. */
-let _disarmRetainStall = false;
 /** Last pickSourceDeck id, used when every deck has stopped (issue #2153). */
 let _lastSourceStableId: string | null = null;
 /** PLAY-15: since when a deck has been playing with no playing master. */
@@ -227,10 +224,10 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	try {
 		const occupied = deckStates[follower].stable_id;
 		if (occupied !== null && occupied !== nextId) {
-			await dispatchPerformanceCommand({ type: 'unload', deck: follower });
+			await dispatchPerformanceCommand({ type: 'unload', deck: follower }, undefined, 'autoplay-handoff');
 		}
 		if (deckStates[follower].stable_id !== nextId) {
-			await dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId });
+			await dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId }, undefined, 'autoplay-handoff');
 		}
 	} catch (error: unknown) {
 		throw new AutoPlayHandoffError('load', error);
@@ -239,7 +236,7 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	try {
 		const syncSkip = await applyAutoPlayBeatSyncDecision(source, follower);
 		if (syncSkip !== null) pushToast(syncSkip, 'info');
-		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
+		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true }, undefined, 'autoplay-handoff');
 		noteAutoPlayFollowerPlayDispatched();
 	} catch (error: unknown) {
 		throw new AutoPlayHandoffError('commit', error);
@@ -281,7 +278,7 @@ async function _promoteMaster(): Promise<void> {
 		_promoting = true;
 		const generation = _generation;
 		try {
-			await dispatchPerformanceCommand({ type: 'master', deck: pending.deck });
+			await dispatchPerformanceCommand({ type: 'master', deck: pending.deck }, undefined, 'autoplay-handoff');
 		} catch (error: unknown) {
 			if (!_armedAt(generation)) return;
 			const message = error instanceof Error ? error.message : String(error);
@@ -349,23 +346,16 @@ async function _tick(): Promise<void> {
 		// Bug #58: a deck playing again ends any engine-recovery stop.
 		clearEngineRecoveryStop();
 	}
-	const idlePlan = planAutoPlayIdleDisarm({
+	// PLAY-18: idle only advances the stall clock. It never writes the
+	// operator's toggle; the mirror says armed=false, no-deck-playing.
+	trackAutoPlayIdleClock({
 		enabled: uiPrefs.auto_play_enabled,
 		snaps,
 		pending_master: _pendingMaster !== null,
 		silence_recovering: isSilenceRecovering(),
 		engine_recovery_stop: engineRecoveryStopReason(),
-		now_ms: Date.now(),
-		stall_active: readAutoPlayStall() !== null
+		now_ms: Date.now()
 	});
-	if (
-		applyAutoPlayIdleDisarmAction(idlePlan, (retainStall) => {
-			_disarmRetainStall = retainStall;
-			setAutoPlayEnabled(false);
-		}) === 'disarmed'
-	) {
-		return;
-	}
 
 	const sourceStableId =
 		_lastSourceStableId ?? snaps.find((d) => d.stable_id !== null)?.stable_id ?? null;
@@ -632,10 +622,9 @@ export function installAutoPlay(): () => void {
 				_chartKeyRef.current = null;
 				clearAutoPlayOrder();
 				clearAutoPlayQueue();
-				if (!_disarmRetainStall) {
-					clearAutoPlayStall();
-				}
-				_disarmRetainStall = false;
+				// PLAY-18: only a user turns AutoPlay off, so a stall has
+				// nothing left to explain once they have.
+				clearAutoPlayStall();
 			}
 		});
 	});
@@ -655,7 +644,6 @@ export function installAutoPlay(): () => void {
 		resetAutoPlayIdleClock();
 		resetAutoPlaySilenceRecovery();
 		_noMasterSinceMs = null;
-		_disarmRetainStall = false;
 		_claimedIds = new Set();
 		_playedIds = new Set();
 		_unplayableIds = new Set();

@@ -132,7 +132,16 @@ test('RUNNING it: the autoplay command switches AutoPlay and the next mirror rea
 		// The agent order runs inside the page's command session, as on /performance.
 		globalThis.window ??= {};
 		uninstallIpc = live.installPerformanceBrowserIpc();
-		const off = await live.executeAgentOrder({ kind: 'single', payload: { type: 'autoplay', enabled: false } });
+		// PLAY-18: an off without user provenance is refused and changes nothing.
+		const unowned = await live.executeAgentOrder({ kind: 'single', payload: { type: 'autoplay', enabled: false } });
+		assert.equal(unowned.steps[0].status, 'failed', 'if an agent can switch AutoPlay off with no user ask then broken');
+		assert.match(unowned.steps[0].error, /only a user turns AutoPlay off/);
+		assert.equal(live.uiPrefs.auto_play_enabled, true);
+
+		const off = await live.executeAgentOrder({
+			kind: 'single',
+			payload: { type: 'autoplay', enabled: false, by_user: true }
+		});
 		assert.deepEqual(off.steps, [{ status: 'succeeded' }]);
 		assert.deepEqual(off.mirror_delta.changed.ui, { auto_play_enabled: false });
 		assert.equal(live.uiPrefs.auto_play_enabled, false);

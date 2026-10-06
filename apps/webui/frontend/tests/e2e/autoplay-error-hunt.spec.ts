@@ -34,14 +34,14 @@ import {
 	unexpectedSignatures,
 	writeHuntReport
 } from './support/autoplay-error-hunt-report';
-import { AUTO_PLAY_IDLE_DISARM_MS } from '../../src/lib/rb/autoplay-idle';
+import { AUTO_PLAY_IDLE_MS } from '../../src/lib/rb/autoplay-idle';
 import { autoplayHuntFixture } from './support/fixture-manifest';
 
 const ALLOW_PATH = fileURLToPath(new URL('./autoplay-error-hunt.allow.json', import.meta.url));
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const TRACK_ROW = '[data-testid="track-row"]';
 const PAST_GUARD_MS = 700;
-const STALL_MS = AUTO_PLAY_IDLE_DISARM_MS;
+const STALL_MS = AUTO_PLAY_IDLE_MS;
 const ACTION_INTERVAL_MS = 2_000;
 const MASTER_VOLUME = 0.05;
 const EQ_BANDS = ['high', 'mid', 'low'] as const;

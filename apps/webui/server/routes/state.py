@@ -238,6 +238,45 @@ def _mirror_store(request: Request) -> dict[str, Any] | None:
     return mirror
 
 
+def _last_stop(document: dict[str, Any] | None, deck_id: str) -> dict[str, Any] | None:
+    decks = document.get("decks") if isinstance(document, dict) else None
+    deck = decks.get(deck_id) if isinstance(decks, dict) else None
+    stop = deck.get("last_stop") if isinstance(deck, dict) else None
+    return stop if isinstance(stop, dict) else None
+
+
+def _log_new_deck_stops(previous: dict[str, Any] | None, body: dict[str, Any]) -> None:
+    """PLAY-18: one engine log line per deck stop the page reports.
+
+    The page records every stop with its cause (deck-stop-log.ts) and publishes
+    the latest as the deck's ``last_stop``. WARNING because the engine log keeps
+    WARNING and up, and an unattributed stop is exactly what a soak has to find
+    afterwards. ``missed`` counts stops overwritten between two publishes.
+    """
+    decks = body.get("decks")
+    if not isinstance(decks, dict):
+        return
+    for deck_id in decks:
+        stop = _last_stop(body, deck_id)
+        prior = _last_stop(previous, deck_id)
+        if stop is None or stop == prior:
+            continue
+        seq, prior_seq = stop.get("seq"), (prior or {}).get("seq")
+        missed = seq - prior_seq - 1 if isinstance(seq, int) and isinstance(prior_seq, int) and seq > prior_seq else 0
+        _LOG.warning(
+            "deck-stop deck=%s cause=%s user_pause=%s seq=%s missed=%s position_ms=%s stable_id=%s at=%s client=%s",
+            deck_id,
+            stop.get("cause"),
+            stop.get("user_pause"),
+            seq,
+            missed,
+            stop.get("position_ms"),
+            stop.get("stable_id"),
+            stop.get("at"),
+            body.get("client_id"),
+        )
+
+
 @router.put("/ui-mirror", status_code=202, response_model=None)
 async def publish_ui_mirror(
     request: Request,
@@ -309,6 +348,7 @@ async def publish_ui_mirror(
         request.app.state.ui_mirror_lease = MirrorLease(
             lease_id, monotonic() + LEASE_TTL_S, operator_claimed=operator_claimed
         )
+    _log_new_deck_stops(current_doc, body)
     stored = deepcopy(body)
     stored["received_at"] = _received_at()
     request.app.state.ui_mirror = stored

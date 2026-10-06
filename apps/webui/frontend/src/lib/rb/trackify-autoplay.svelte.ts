@@ -212,7 +212,7 @@ async function _retireSupersededLoad(
 	// session").
 	if (currentGigRuntimeGeneration() !== ownRuntimeGeneration) return;
 	if (deckStates[deck].stable_id === nextId) {
-		await dispatchPerformanceCommand({ type: 'unload', deck });
+		await dispatchPerformanceCommand({ type: 'unload', deck }, undefined, 'autoplay-handoff');
 	}
 }
 
@@ -225,7 +225,7 @@ async function _dispatchLoadSequence(
 	_lastDispatchedGeneration = generation;
 	const superseded = (): boolean => generation !== _loadGeneration;
 	if (deckStates[deck].stable_id !== null && deckStates[deck].stable_id !== nextId) {
-		await dispatchPerformanceCommand({ type: 'unload', deck });
+		await dispatchPerformanceCommand({ type: 'unload', deck }, undefined, 'autoplay-handoff');
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
 	if (deckStates[deck].stable_id !== nextId) {
@@ -235,10 +235,10 @@ async function _dispatchLoadSequence(
 			stable_id: nextId,
 			stems: false,
 			suppressCommandErrorToast: true
-		});
+		}, undefined, 'autoplay-handoff');
 		if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 	}
-	await dispatchPerformanceCommand({ type: 'play', deck, playing: true });
+	await dispatchPerformanceCommand({ type: 'play', deck, playing: true }, undefined, 'autoplay-handoff');
 	if (superseded()) return _retireSupersededLoad(deck, nextId, generation, ownRuntimeGeneration);
 }
 

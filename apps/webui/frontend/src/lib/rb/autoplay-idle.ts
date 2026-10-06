@@ -1,26 +1,24 @@
 /**
- * PLAY-09 / issue #1878: disarm AutoPlay once every deck has been stopped long
- * enough with no pending master promotion (hunt `stall:autoplay-idle`).
- * PLAY-12 / issue #3884: 30s silent stall, 31s post-playback disarm, 3min
- * armed-empty grace when enabled with nothing playing.
+ * PLAY-09 / issue #1878, PLAY-12 / issue #3884, revised by PLAY-18 (Tue 6 Oct 2026):
+ * the idle clock behind the 30 s silent stall.
+ *
+ * PLAY-18: idle NEVER writes the operator's AutoPlay toggle. It used to call
+ * `setAutoPlayEnabled(false)` after 31 s (3 min when armed with nothing
+ * playing), which made the mirror read `disabled`, exactly what the maintainer turning it
+ * off reads (05:21Z and 05:58Z Tue 6 Oct 2026). Now AutoPlay stays enabled,
+ * the mirror reports `armed: false` with reason `no-deck-playing`, and it
+ * re-arms by itself the moment a deck plays. Only a user turns it off.
  */
 
 /**
- * Both decks stopped while AutoPlay stays armed (issue #1878 / hunt
- * `stall:autoplay-idle`). Must stay greater than AUTO_PLAY_SILENT_STALL_MS so
- * the stall fires before disarm (PLAY-08 retain_stall).
+ * The post-playback idle threshold the error hunt waits out
+ * (`tests/e2e/autoplay-error-hunt.spec.ts`). Greater than
+ * AUTO_PLAY_SILENT_STALL_MS so the stall is up by then.
  */
-export const AUTO_PLAY_IDLE_DISARM_MS = 31_000;
+export const AUTO_PLAY_IDLE_MS = 31_000;
 
 /** PLAY-08: raise a stall when AutoPlay is armed but nothing is playing (issue #2153). */
 export const AUTO_PLAY_SILENT_STALL_MS = 30_000;
-
-/** PLAY-12: disarm when armed with no deck playing and none has started since enable. */
-export const AUTO_PLAY_ARMED_EMPTY_DISARM_MS = 180_000;
-
-export type AutoPlayIdleDisarmPlan =
-	| { action: 'continue'; idle_since_ms: number | null }
-	| { action: 'disarm'; retain_stall: boolean };
 
 /** Module clock for the poll; reset on install/uninstall and when playback resumes. */
 let _idleSinceMs: number | null = null;
@@ -52,12 +50,10 @@ export function isAutoPlayArmedEmptyActive(): boolean {
 	return _armedEmptyActive;
 }
 
-export function effectiveAutoPlayIdleDisarmMs(input: { armed_empty_active: boolean }): number {
-	return input.armed_empty_active ? AUTO_PLAY_ARMED_EMPTY_DISARM_MS : AUTO_PLAY_IDLE_DISARM_MS;
-}
-
 /**
  * Enter armed-empty mode on enable when nothing is playing; clear when disabled.
+ * Armed-empty suppresses the silent stall until a deck first plays (PLAY-12):
+ * switching AutoPlay on over silent decks is not a stall.
  */
 export function noteAutoPlayArmedEmptyOnEnable(input: {
 	enabled: boolean;
@@ -82,33 +78,11 @@ export function noteAutoPlayPlaybackStarted(): void {
 }
 
 /**
- * Disarm AutoPlay once every deck has been stopped long enough and no master
- * promotion is still settling.
+ * PLAY-18: advance the idle clock for one poll and return when idle began (null
+ * while anything is playing, a master promotion is settling, silence recovery
+ * runs, or the engine stopped the decks itself, bug #58). It never disarms.
  */
-export function shouldDisarmAutoPlayIdle(input: {
-	enabled: boolean;
-	any_playing: boolean;
-	pending_master: boolean;
-	silence_recovering?: boolean | undefined;
-	/** Bug #58: the engine stopped the decks while recovering its graph. */
-	engine_recovery_stop?: string | null | undefined;
-	idle_since_ms: number | null;
-	now_ms: number;
-	armed_empty_active: boolean;
-}): boolean {
-	if (!input.enabled) return false;
-	if (input.any_playing) return false;
-	if (input.pending_master) return false;
-	if (input.silence_recovering === true) return false;
-	if (_isEngineRecoveryStop(input.engine_recovery_stop)) return false;
-	if (input.idle_since_ms === null) return false;
-	const threshold = effectiveAutoPlayIdleDisarmMs({
-		armed_empty_active: input.armed_empty_active
-	});
-	return input.now_ms - input.idle_since_ms >= threshold;
-}
-
-export function planAutoPlayIdleDisarm(input: {
+export function trackAutoPlayIdleClock(input: {
 	enabled: boolean;
 	snaps: readonly { playing: boolean }[];
 	pending_master: boolean;
@@ -116,43 +90,19 @@ export function planAutoPlayIdleDisarm(input: {
 	/** Bug #58: the engine stopped the decks while recovering its graph. */
 	engine_recovery_stop?: string | null | undefined;
 	now_ms: number;
-	stall_active: boolean;
-}): AutoPlayIdleDisarmPlan {
-	if (!input.enabled) {
+}): number | null {
+	const idle =
+		input.enabled &&
+		!input.snaps.some((d) => d.playing) &&
+		!input.pending_master &&
+		input.silence_recovering !== true &&
+		!_isEngineRecoveryStop(input.engine_recovery_stop);
+	if (!idle) {
 		_idleSinceMs = null;
-		return { action: 'continue', idle_since_ms: null };
+		return null;
 	}
-	const anyPlaying = input.snaps.some((d) => d.playing);
-	if (
-		anyPlaying ||
-		input.pending_master ||
-		input.silence_recovering === true ||
-		_isEngineRecoveryStop(input.engine_recovery_stop)
-	) {
-		_idleSinceMs = null;
-		return { action: 'continue', idle_since_ms: null };
-	}
-	if (_idleSinceMs === null) {
-		_idleSinceMs = input.now_ms;
-	}
-	const armedEmptyActive = isAutoPlayArmedEmptyActive();
-	if (
-		!shouldDisarmAutoPlayIdle({
-			enabled: input.enabled,
-			any_playing: anyPlaying,
-			pending_master: input.pending_master,
-			silence_recovering: input.silence_recovering,
-			engine_recovery_stop: input.engine_recovery_stop,
-			idle_since_ms: _idleSinceMs,
-			now_ms: input.now_ms,
-			armed_empty_active: armedEmptyActive
-		})
-	) {
-		return { action: 'continue', idle_since_ms: _idleSinceMs };
-	}
-	_idleSinceMs = null;
-	_armedEmptyActive = false;
-	return { action: 'disarm', retain_stall: input.stall_active };
+	_idleSinceMs ??= input.now_ms;
+	return _idleSinceMs;
 }
 
 export function shouldRaiseAutoPlaySilentStall(input: {
@@ -178,15 +128,6 @@ export function shouldRaiseAutoPlaySilentStall(input: {
 	if (input.idle_since_ms === null) return false;
 	if (input.source_stable_id === null || input.source_stable_id === '') return false;
 	return input.now_ms - input.idle_since_ms >= AUTO_PLAY_SILENT_STALL_MS;
-}
-
-export function applyAutoPlayIdleDisarmAction(
-	plan: AutoPlayIdleDisarmPlan,
-	onDisarm: (retainStall: boolean) => void
-): 'continue' | 'disarmed' {
-	if (plan.action !== 'disarm') return 'continue';
-	onDisarm(plan.retain_stall);
-	return 'disarmed';
 }
 
 export function clearAutoPlayChartedOrder(

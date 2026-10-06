@@ -37,30 +37,11 @@ export interface AgentOrder {
 interface AgentStepResult {
 	status: 'succeeded' | 'failed' | 'skipped';
 	error?: string;
-	/** browser_select_playlist answers at first rows; `complete` false means more are coming. */
-	result?: { complete: boolean; rows_loaded: number };
-}
-
-/**
- * DECKUX-39: the command types whose OFF only a person may ask for. An agent
- * order is a COMMAND, so an off without `by_user: true` is refused (the engine
- * already answered 422 for it; this is the page's half), never reverted.
- * App-internal paths (restores, the IPC bridge) revert with a WARN instead.
- * Mirrors USER_ONLY_OFF in apps/webui/server/routes/commands.py.
- */
-export const USER_ONLY_OFF: Readonly<Record<string, string>> = { quantize: 'Quantize' };
-
-export function userOnlyOffRefusal(commandType: string): string {
-	return `${commandType} off refused: only a user turns ${USER_ONLY_OFF[commandType]} off; send by_user: true when a person asked for this`;
 }
 
 function _command(value: unknown): PerformanceCommand {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
 		throw new TypeError('agent order command must be an object');
-	}
-	const record = value as Record<string, unknown>;
-	if (typeof record.type === 'string' && record.type in USER_ONLY_OFF && record.enabled === false && record.by_user !== true) {
-		throw new Error(userOnlyOffRefusal(record.type));
 	}
 	return value as PerformanceCommand;
 }
@@ -81,26 +62,9 @@ function _changed(before: unknown, after: unknown): unknown {
 	return Object.keys(changed).length === 0 ? undefined : changed;
 }
 
-/** SET-12: a master REC start pushes this order so the tap connects at once
- *  instead of at the REC rail's next status poll (which lost ~4.5 s). */
-async function _recordMasterTap(command: Record<string, unknown>): Promise<void> {
-	if (typeof command.session_id !== 'string') throw new TypeError('record_master_tap needs session_id');
-	await (await import('$lib/sets/master-mix-capture')).ensureMasterMixCapture(command.session_id);
-}
-
 async function _one(command: unknown): Promise<AgentStepResult> {
 	try {
-		const order = _command(command) as unknown as Record<string, unknown>;
-		if (order.type === 'record_master_tap') await _recordMasterTap(order);
-		else if (order.type === 'record_master_tap_cancel') {
-			// The start gave up on the tap: tear it down, never stream (SET-12).
-			(await import('$lib/sets/master-mix-capture')).cancelMasterMixCapture(String(order.session_id));
-		} else {
-			const after = await dispatchPerformanceCommand(_command(command));
-			if (order.type === 'browser_select_playlist' && after.browser.load !== null) {
-				return { status: 'succeeded', result: { ...after.browser.load } };
-			}
-		}
+		await dispatchPerformanceCommand(_command(command), undefined, 'agent-command');
 		return { status: 'succeeded' };
 	} catch (error) {
 		return { status: 'failed', error: _message(error) };
@@ -149,7 +113,7 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 			? Math.min(1, (performance.now() - startedAt) / over.n)
 			: durationProgress(plan, queryPerformanceState().decks[clockDeck].position_ms);
 		const value = start + (ramp.to - start) * progress;
-		await dispatchPerformanceCommand({ ...command, value });
+		await dispatchPerformanceCommand({ ...command, value }, undefined, 'agent-command');
 		if (progress === 1) break;
 		await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
 	}
@@ -210,23 +174,6 @@ export interface PerformancePageRegistration {
 	forget: () => void;
 }
 
-/** How long the loop waits after a failed claim before asking again. */
-export const CLAIM_RETRY_MS = 1_000;
-
-/**
- * The engine's answer to an order result. Never fatal: the order already ran
- * on this page, and a dead loop would stop every later one.
- * 404/410: the engine withdrew the order (its waiter gave up), expected.
- */
-function _reportResultAnswer(orderId: string, status: number): void {
-	if (status >= 200 && status < 300) return;
-	if (status === 404 || status === 410) {
-		console.info(`agent order ${orderId}: the engine had withdrawn it (${status}); polling on`);
-		return;
-	}
-	console.warn(`agent order ${orderId}: result answered ${status}; polling on`);
-}
-
 function _sleep(ms: number): Promise<void> {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -245,7 +192,6 @@ export async function pollAgentOrders(
 	isRunning: () => boolean
 ): Promise<void> {
 	let reportedUnheld = false;
-	let reportedClaimFailure = false;
 	while (isRunning()) {
 		if (!page.isRegistered()) {
 			// Registration wakes the loop at once; the timer only re-checks
@@ -272,30 +218,11 @@ export async function pollAgentOrders(
 			await _sleep(IDLE_POLL_MS);
 			continue;
 		}
-		// Every other non-2xx is a real defect: loud (console.error reaches the
-		// client error log), once per outage, and NEVER fatal. A dead loop
-		// silently disables every agent command on this page (play, autoplay,
-		// the watchdog's resume), so only the route's uninstall ends it.
-		if (!response.ok) {
-			if (!reportedClaimFailure) {
-				console.error(`agent order poll failed: ${response.status}; retrying every ${CLAIM_RETRY_MS} ms`);
-				reportedClaimFailure = true;
-			}
-			await _sleep(CLAIM_RETRY_MS);
-			continue;
-		}
-		if (reportedClaimFailure) {
-			console.info('agent order poll recovered');
-			reportedClaimFailure = false;
-		}
-		let next: ({ id: string } & AgentOrder) | null;
-		try {
-			next = (await response.json()) as ({ id: string } & AgentOrder) | null;
-		} catch (error) {
-			console.error(`agent order poll: unreadable claim body (${_message(error)}); polling on`);
-			await _sleep(CLAIM_RETRY_MS);
-			continue;
-		}
+		// Every other non-2xx is a real defect and is raised, not absorbed: it
+		// reaches the client error log exactly as loudly as any other broken
+		// call, because nothing here knows how to make it right.
+		if (!response.ok) throw new Error(`agent order poll failed: ${response.status}`);
+		const next = (await response.json()) as ({ id: string } & AgentOrder) | null;
 		if (next !== null) {
 			let result: Awaited<ReturnType<typeof executeAgentOrder>>;
 			try {
@@ -310,12 +237,11 @@ export async function pollAgentOrders(
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify(result)
 				});
-			} catch (error) {
-				console.warn(`agent order ${next.id}: result could not be posted (${_message(error)}); polling on`);
+			} catch {
 				await _sleep(IDLE_POLL_MS);
 				continue;
 			}
-			_reportResultAnswer(next.id, complete.status);
+			if (!complete.ok) throw new Error(`agent order result failed: ${complete.status}`);
 			republish();
 			// Straight back to the long poll: a timer here would cost a hidden
 			// tab up to a minute before it could even ask for the next order.

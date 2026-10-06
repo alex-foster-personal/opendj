@@ -118,6 +118,7 @@ import {
 	setPlayingPositionReader,
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
+import { deckStopCause, recordDeckStop } from '$lib/rb/deck-stop-log';
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
@@ -747,6 +748,7 @@ function _markDecksReattaching(input: { retry: number; of: number; delay_ms: num
 			if (rt.desiredActive || st.playing) {
 				stoppedPlayingDeck = true;
 				_reattachWasPlaying.add(deck);
+				recordDeckStop({ deck, cause: 'engine', position_ms: st.position_ms, stable_id: st.stable_id });
 			}
 			recordUnexpectedPause({
 				cause: 'worklet-error',
@@ -1411,6 +1413,9 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.controlKeyShiftSemitones = 0;
 	rt.presentation = createPresentedTransportTimeline(0);
 	rt.nextScheduleRevision = 0;
+	if (rt.desiredActive || st.playing) {
+		recordDeckStop({ deck, cause: 'engine', position_ms: positionMs, stable_id: st.stable_id });
+	}
 	rt.desiredActive = false;
 	recordUnexpectedPause({
 		cause: 'worklet-error',
@@ -1491,6 +1496,10 @@ async function _scheduleDeck(
 			processor_error: st.processor_error,
 			context_state: _ctx?.state ?? 'uninitialized'
 		});
+		// PLAY-18: the same falling edge, logged with its cause.
+		if (rt.desiredActive) {
+			recordDeckStop({ deck, cause: deckStopCause(deck, readPauseOrigin()), position_ms: st.position_ms, stable_id: st.stable_id });
+		}
 	}
 	rt.desiredActive = active;
 	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
@@ -2979,6 +2988,10 @@ class RbAudioEngine implements AudioEngine {
 		_phaseLock.clearAll();
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
+			// PLAY-18: tearing the engine down with a deck playing is a stop too.
+			if (rt.desiredActive || deckStates[deck].playing) {
+				recordDeckStop({ deck, cause: 'reload', position_ms: deckStates[deck].position_ms, stable_id: deckStates[deck].stable_id });
+			}
 			rt.loadToken += 1;
 			_releasePendingStemUpgrade(rt);
 			const processor = detachProcessorForDisposal(rt);

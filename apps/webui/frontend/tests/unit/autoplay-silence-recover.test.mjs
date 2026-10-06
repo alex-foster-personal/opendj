@@ -10,7 +10,7 @@ const ENTRY = [
 	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
-	"export { AUTO_PLAY_IDLE_DISARM_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';",
+	"export { AUTO_PLAY_IDLE_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';",
 	"export { isSilenceRecovering, noteAutoPlaySilenceDropout, resetAutoPlaySilenceRecovery } from '$lib/rb/autoplay-silence-recover';"
 ].join('\n');
 
@@ -103,7 +103,7 @@ test('RUNNING it: silence recovery keeps AutoPlay armed past idle threshold', as
 		mod.deckStates[1].playing = false;
 		mod.deckStates[1].audible = false;
 		await settle();
-		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS + 1);
+		mock.timers.tick(mod.AUTO_PLAY_IDLE_MS + 1);
 		await settle();
 		assert.equal(mod.uiPrefs.auto_play_enabled, true);
 		assert.equal(mod.isSilenceRecovering(), true);

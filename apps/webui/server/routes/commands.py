@@ -255,7 +255,7 @@ def _order_commands(body: dict[str, Any]) -> list[Any]:
 
 
 def _check_autoplay_commands(body: dict[str, Any]) -> None:
-    """AGENT-20: ``{"type": "autoplay", "enabled": <bool>}`` and nothing else.
+    """AGENT-20: ``{"type": "autoplay", "enabled": <bool>}`` plus PLAY-18's optional ``by_user``.
 
     The page validates it again before dispatch; checking here too means a
     malformed switch is a 422 at once, not a failed step after a page round trip.
@@ -263,12 +263,21 @@ def _check_autoplay_commands(body: dict[str, Any]) -> None:
     for command in _order_commands(body):
         if not isinstance(command, dict) or command.get("type") != "autoplay":
             continue
-        if set(command) != {"type", "enabled"}:
+        if set(command) not in ({"type", "enabled"}, {"type", "enabled", "by_user"}):
             raise ValueError(
-                f"autoplay takes exactly type and enabled, got {sorted(command)}"
+                f"autoplay takes type, enabled and an optional by_user, got {sorted(command)}"
             )
         if not isinstance(command["enabled"], bool):
             raise TypeError(f"autoplay enabled must be boolean, got {command['enabled']!r}")
+        # PLAY-18: an off needs user provenance; the page refuses it too, but a
+        # 422 here costs no page round trip.
+        if "by_user" in command and not isinstance(command["by_user"], bool):
+            raise TypeError(f"autoplay by_user must be boolean, got {command['by_user']!r}")
+        if command["enabled"] is False and command.get("by_user") is not True:
+            raise ValueError(
+                "autoplay off refused: only a user turns AutoPlay off (PLAY-18); "
+                "send by_user: true when relaying a person's ask"
+            )
 
 
 #: DECKUX-39: command types whose OFF only a person may ask for, and the name

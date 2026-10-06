@@ -37,6 +37,11 @@ def _doc(**fields: Any) -> dict[str, Any]:
     return {"client_open": True, "client_id": "tab-a", "decks": {}, "mirror_schema": 2, **ARMED, **fields}
 
 
+def _switch(enabled: bool) -> dict[str, Any]:
+    """PLAY-18: an off carries user provenance, an on does not need it."""
+    return {"type": "autoplay", "enabled": enabled, **({} if enabled else {"by_user": True})}
+
+
 def _run(body: Any) -> None:
     async def run() -> None:
         async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
@@ -160,10 +165,10 @@ def test_the_autoplay_command_reaches_the_page_and_its_mirror_follows() -> None:
             (True, ARMED),
         ):
             order = asyncio.create_task(
-                client.post("/api/v1/commands", json={"single": {"type": "autoplay", "enabled": enabled}})
+                client.post("/api/v1/commands", json={"single": _switch(enabled)})
             )
             claimed = await _claim_and_complete(client, {"ui": {"auto_play_enabled": enabled}})
-            assert claimed["payload"] == {"type": "autoplay", "enabled": enabled}
+            assert claimed["payload"] == _switch(enabled)
             response = await order
             assert response.status_code == 200
             assert response.json()["mirror_delta"]["changed"]["ui"]["auto_play_enabled"] is enabled
@@ -185,6 +190,9 @@ def test_the_autoplay_command_reaches_the_page_and_its_mirror_follows() -> None:
         {"single": {"type": "autoplay", "enabled": True, "deck": 1}},
         {"sequence": [{"type": "play", "deck": 1}, {"type": "autoplay", "enabled": None}]},
         {"parallel": [{"type": "autoplay", "on": True}]},
+        {"single": {"type": "autoplay", "enabled": False}},
+        {"single": {"type": "autoplay", "enabled": False, "by_user": False}},
+        {"single": {"type": "autoplay", "enabled": True, "by_user": "yes"}},
     ],
 )
 def test_a_malformed_autoplay_command_is_refused_before_the_page_sees_it(order: dict[str, Any]) -> None:

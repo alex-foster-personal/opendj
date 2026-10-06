@@ -97,6 +97,7 @@ import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
 import { deckFacingMessage } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
+import { allDecks, withDeckCommandSource, type CommandSource } from './deck-stop-log';
 import type { TransitionStatus } from './transition-classifier';
 import {
 	assertLoopGridBase,
@@ -324,8 +325,9 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'show_stems'; enabled: boolean }
-	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. */
-	| { type: 'autoplay'; enabled: boolean }
+	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. PLAY-18:
+	 * only a user turns it off, so `enabled: false` needs `by_user: true`. */
+	| { type: 'autoplay'; enabled: boolean; by_user?: boolean }
 	| { type: 'feedback_mark'; vote: 'bad' | 'good' | 'great' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
@@ -1387,8 +1389,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
 	if (type === 'autoplay') {
-		_exactKeys(record, ['type', 'enabled']);
-		return { type, enabled: _boolean('enabled', record.enabled) };
+		if (record.by_user === undefined) {
+			_exactKeys(record, ['type', 'enabled']);
+			return { type, enabled: _boolean('enabled', record.enabled) };
+		}
+		_exactKeys(record, ['type', 'enabled', 'by_user']);
+		return { type, enabled: _boolean('enabled', record.enabled), by_user: _boolean('by_user', record.by_user) };
 	}
 	if (type === 'set_skin') {
 		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
@@ -2813,7 +2819,7 @@ async function _dispatchWithinPreset(requested: PerformanceCommand): Promise<Per
 	const deck = _commandDeck(command);
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 	try {
-		await _execute(command);
+		await _executeAs(command, undefined, 'app-command');
 	} catch (error) {
 		_persistCommandError(deck, error, command);
 		throw error;
@@ -3158,6 +3164,30 @@ function _quantizeDefaultOn(command: PerformanceCommand, caller: string): Perfor
 }
 
 /**
+ * PLAY-18: run one command with its source registered on the decks it can
+ * stop, so the engine logs any stop it causes with that cause. A deckless
+ * command registers nowhere, except the one that stops every deck.
+ */
+function _executeAs(command: PerformanceCommand, pressT0Ms: number | undefined, source: CommandSource): Promise<void> {
+	const deck = _commandDeck(command);
+	const decks = deck !== null ? [deck] : command.type === 'rescue_stop_all' ? allDecks() : [];
+	return withDeckCommandSource(decks, source, () => _execute(command, pressT0Ms));
+}
+
+/**
+ * PLAY-18 (CORE, Tue 6 Oct 2026): only a USER turns AutoPlay off, the same
+ * provenance rule as Quantize. Refused rather than rewritten, so an agent that
+ * meant to stop AutoPlay learns at once that it must relay a person's ask.
+ */
+function _refuseNonUserAutoPlayOff(command: PerformanceCommand, caller: string): void {
+	if (command.type !== 'autoplay' || command.enabled || command.by_user === true) return;
+	console.warn(`[autoplay] AutoPlay off without user provenance refused (PLAY-18); caller: ${caller}`);
+	throw new Error(
+		'autoplay off refused: only a user turns AutoPlay off (PLAY-18); send by_user: true when relaying a person\'s ask'
+	);
+}
+
+/**
  * Q1-DEFAULT-ON: every load starts with Quantize on. A user's off holds for
  * the track it was made on and ends here, on the next successful load.
  */
@@ -3172,7 +3202,8 @@ async function _dispatchUnknown(
 	message: unknown,
 	commandGeneration: number,
 	pressT0Ms: number | undefined,
-	caller: string
+	caller: string,
+	source: CommandSource
 ): Promise<PerformanceState> {
 	_assertCommandSession(commandGeneration);
 	let command: PerformanceCommand;
@@ -3183,6 +3214,12 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	command = _quantizeDefaultOn(command, caller);
+	try {
+		_refuseNonUserAutoPlayOff(command, caller);
+	} catch (error) {
+		_persistCommandError(null, error, command);
+		throw error;
+	}
 	const deck = _commandDeck(command);
 	if (command.type === 'load') {
 		onDeckLoadStart(command.deck);
@@ -3246,7 +3283,7 @@ async function _dispatchUnknown(
 		try {
 			const acquired = _commandScheduler.runImmediatelyIfIdle('headphone', async () => {
 				_assertCommandSession(commandGeneration);
-				await _execute(command, pressT0Ms);
+				await _executeAs(command, pressT0Ms, source);
 			});
 			await acquired;
 			_assertCommandSession(commandGeneration);
@@ -3263,7 +3300,7 @@ async function _dispatchUnknown(
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
 			_assertCommandSession(commandGeneration);
-			await _execute(command, pressT0Ms);
+			await _executeAs(command, pressT0Ms, source);
 			_assertCommandSession(commandGeneration);
 			return _completeCommand(command);
 		} catch (error) {
@@ -3287,7 +3324,7 @@ async function _dispatchUnknown(
 			// Q1: this body starts only AFTER the scope wait above, which is
 			// exactly the gap press_to_schedule_ms exists to expose.
 			if (_tempoCoalescer.runs(deck, tempoTicket)) {
-				await _execute(command, pressT0Ms);
+				await _executeAs(command, pressT0Ms, source);
 			}
 			_assertCommandSession(commandGeneration);
 			return _completeCommand(command);
@@ -3318,11 +3355,24 @@ async function _dispatchUnknown(
 	});
 }
 
+/**
+ * `source` (PLAY-18) says who is asking, so a stop this command causes is
+ * logged with its cause: AutoPlay passes `autoplay-handoff`, the agent order
+ * executor `agent-command`, the UI boundary `user-ui`. Anything else is an
+ * `app-command`.
+ */
 export async function dispatchPerformanceCommand(
 	command: PerformanceCommand,
-	pressT0Ms?: number
+	pressT0Ms?: number,
+	source: CommandSource = 'app-command'
 ): Promise<PerformanceState> {
-	return _dispatchUnknown(command, _currentCommandSession(), pressT0Ms, dispatchCallerFromStack(new Error().stack));
+	return _dispatchUnknown(
+		command,
+		_currentCommandSession(),
+		pressT0Ms,
+		dispatchCallerFromStack(new Error().stack),
+		source
+	);
 }
 
 /**
@@ -3354,7 +3404,7 @@ export async function runPerformanceCommandFromUi(
 	pressT0Ms: number = performance.now()
 ): Promise<PerformanceUiCommandResult> {
 	try {
-		await dispatchPerformanceCommand(command, pressT0Ms);
+		await dispatchPerformanceCommand(command, pressT0Ms, 'user-ui');
 		return { ok: true };
 	} catch (error) {
 		if (error instanceof ScopedCommandInvalidatedError) {
@@ -3410,7 +3460,8 @@ export function installPerformanceBrowserIpc(): () => void {
 				message,
 				commandGeneration,
 				_validatedPressStamp(pressT0Ms),
-				'window.musicDjToolsPerformance.dispatch (IPC bridge)'
+				'window.musicDjToolsPerformance.dispatch (IPC bridge)',
+				'agent-command'
 			),
 		query: () => {
 			_assertCommandSession(commandGeneration);

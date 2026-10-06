@@ -104,9 +104,9 @@ export async function applyAutoPlayBeatSyncDecision(
 	});
 	const currentlyOn = deckStates[follower].beat_sync_enabled;
 	if (decision === 'enable' && !currentlyOn) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true });
+		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true }, undefined, 'autoplay-handoff');
 	} else if (decision === 'disable' && currentlyOn) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false });
+		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false }, undefined, 'autoplay-handoff');
 	}
 	if (!source.beat_sync_enabled || probe.ok) return null;
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);

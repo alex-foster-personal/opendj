@@ -4,6 +4,8 @@ import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState, outputDeviceLivenessState } from './master-silence-report';
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { readAutoPlayMirrorStatus } from './auto-play.svelte';
+import { readLastDeckStop } from './deck-stop-log';
+import type { DeckId } from './deck-slots';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import type { TabLeadership } from './tab-leadership';
@@ -123,7 +125,10 @@ export function buildUiMirror(): Record<string, unknown> {
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
 				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
 				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
-				phrases: deck.phrases
+				phrases: deck.phrases,
+				// PLAY-18: the deck's last stop and its cause; user_pause is true only
+				// when a person stopped it. The engine logs each new one on ingest.
+				last_stop: readLastDeckStop(Number(id) as DeckId)
 			}])
 		),
 		browser: {
