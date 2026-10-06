@@ -35,6 +35,7 @@ function makeHost({ idle = true } = {}) {
 	const timers = new Map();
 	let nextHandle = 1;
 	let pendingIdle = null;
+	const warnings = [];
 	const host = {
 		setTimer(run, ms) {
 			const handle = nextHandle++;
@@ -48,10 +49,12 @@ function makeHost({ idle = true } = {}) {
 			? (run) => {
 					pendingIdle = run;
 				}
-			: null
+			: null,
+		warn: (message) => warnings.push(message)
 	};
 	return {
 		host,
+		warnings,
 		/** Fire every timer currently armed, once. */
 		tickTimers() {
 			const due = [...timers.entries()];
@@ -232,6 +235,19 @@ test('a listing walk that never settles cannot strand the queue', () => {
 	for (let i = 0; i < polls + 1 && ran.length === 0; i += 1) clock.tickTimers();
 
 	assert.deepEqual(ran, ['a'], 'an abandoned walk releases at the ceiling');
+	assert.equal(clock.warnings.length, 1, 'the ceiling firing is a defect upstream and must WARN');
+	assert.match(clock.warnings[0], /WARN .*ceiling.*1 hold\(s\) never settled.*: a$/);
+});
+
+// #5549: a walk nobody settled cost every boot the full ceiling, silently.
+test('a release with every hold settled does not WARN', () => {
+	const settle = scheduler.listingWalkStarted();
+	scheduler.defer('a', () => ran.push('a'));
+	releaseNormally(clock);
+	settle();
+	clock.tickTimers();
+	assert.deepEqual(ran, ['a']);
+	assert.deepEqual(clock.warnings, [], 'only the ceiling path warns');
 });
 
 test('a task deferred after the window has closed runs immediately', () => {

@@ -101,6 +101,8 @@ export interface BootHost {
 	clearTimer: (handle: number) => void;
 	/** The browser's idle callback, or null where the platform has none. */
 	whenIdle: ((run: () => void, timeoutMs: number) => void) | null;
+	/** Where the ceiling's WARN goes. Defaults to console.warn. */
+	warn?: (message: string) => void;
 }
 
 export interface BootScheduler {
@@ -181,6 +183,17 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 	function _releaseOnceDecksAreFree(): void {
 		timer = null;
 		if (holds === 0 || yieldedMs >= DECK_LOAD_YIELD_MAX_MS) {
+			// The ceiling is the fail-safe that keeps deferred work from being
+			// starved. Firing it means a hold (a deck load or the boot listing
+			// walk) never settled, which is a defect upstream, so say so loudly
+			// instead of quietly paying 10 s on every boot (the #5549 case).
+			if (holds > 0) {
+				(host.warn ?? console.warn)(
+					`[boot-scheduler] WARN released ${queue.length} deferred boot task(s) at the ` +
+						`${DECK_LOAD_YIELD_MAX_MS} ms ceiling with ${holds} hold(s) never settled ` +
+						`(a deck load or the boot listing walk): ${queue.map((entry) => entry.label).join(', ')}`
+				);
+			}
 			_release();
 			return;
 		}

@@ -87,6 +87,7 @@ export function resetLibraryBootHydrationForTests(): void {
 	setPrefsHydratorForTests(null);
 	setFallbackTracksFetchForTests(null);
 	setFallbackPlaylistsFetchForTests(null);
+	setLoadBootIndexForTests(null);
 }
 
 function bootNowMs(): number {
@@ -117,12 +118,26 @@ export function startLibraryBootHydration(listingWalkRuns = true): void {
 	};
 	// LIBM-171: the whole index follows the first page (the engine is GIL-bound,
 	// so not beside it). A failure here is the pane's to report when it loads.
+	// The index IS the boot listing, so its arrival (or failure) ends the walk.
+	// Without this, a pane that paints from the index this load already holds
+	// never fetches a last page or calls loadAllTracksIndex(), nothing settles
+	// the walk, and every deferred boot task (feedback todos, auth/me, jobs,
+	// telemetry, ...) waits for boot-scheduler's 10 s ceiling. Measured on main
+	// after #5549, Tue 6 Oct 2026: feedback hydrated at 12.5 s, not ~3.5 s.
 	if (listingWalkRuns) {
 		void bootPrefetch.tracksPromise
 			.catch(() => undefined)
-			.then(() => loadLibraryIndex())
-			.catch(() => undefined);
+			.then(() => loadBootIndex())
+			.catch(() => undefined)
+			.finally(() => bootListingWalkSettled());
 	}
+}
+
+let loadBootIndex: () => Promise<unknown> = () => loadLibraryIndex();
+
+/** Test seam: inject the boot index load without mocking library-index. */
+export function setLoadBootIndexForTests(fn: (() => Promise<unknown>) | null): void {
+	loadBootIndex = fn ?? (() => loadLibraryIndex());
 }
 
 /** Read-only boot prefetch state; throws if hydration was never started. */

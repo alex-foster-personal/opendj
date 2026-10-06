@@ -79,6 +79,8 @@ test('bootPlaylistsPrefetch falls back to fast list when fast prefetch rejects',
 // requirement: LIBM-138
 function seedBootWalk(pages) {
 	const asked = [];
+	// These cases are about the paged walk, so the boot index never lands here.
+	hydration.setLoadBootIndexForTests(() => new Promise(() => {}));
 	hydration.setPrefsHydratorForTests(async () => {});
 	hydration.setFetchBootPlaylistsForTests(() => Promise.resolve([]));
 	hydration.setFetchBootTracksPageForTests((limit, cursor) => {
@@ -190,4 +192,30 @@ test('only the performance route runs the boot listing walk', () => {
 	for (const pathname of ['/', '/settings', '/cloudsync', '/performance/extra', '/prep']) {
 		assert.equal(hydration.routeRunsBootListingWalk(pathname), false, pathname);
 	}
+});
+
+// requirement: LIBM-171
+// [if] the boot index arrives [then] the boot walk is over, even with more pages left, [else stop].
+test('the boot index ends the walk, so deferred boot work is not held to the ceiling', async () => {
+	seedBootWalk({ first: { items: [], next_cursor: 'c1' } });
+	let resolveIndex;
+	hydration.setLoadBootIndexForTests(() => new Promise((resolve) => (resolveIndex = resolve)));
+	hydration.startLibraryBootHydration();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(hydration.bootListingWalkInFlight(), true, 'the index is still loading');
+	resolveIndex({ items: [] });
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(
+		hydration.bootListingWalkInFlight(),
+		false,
+		'a pane that paints from the held index never fetches a last page, so the index must settle the walk'
+	);
+});
+
+test('a boot index that fails still ends the walk', async () => {
+	seedBootWalk({ first: { items: [], next_cursor: 'c1' } });
+	hydration.setLoadBootIndexForTests(() => Promise.reject(new Error('index 503')));
+	hydration.startLibraryBootHydration();
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(hydration.bootListingWalkInFlight(), false, 'a dead index must not hold boot work');
 });
