@@ -80,8 +80,8 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.process_priority import background_argv, lowered_priority
-from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server import enrich_sources
+from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
 from apps.webui.server.ahead_analysis_siblings import with_path_siblings
 
