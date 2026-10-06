@@ -149,7 +149,7 @@ def test_drain_coverage_carries_usable_and_drain_states() -> None:
     [
         ("/Users/me/Music/Convert/deemix Music/a.mp3", "~/Music/Convert"),
         ("/Users/me/Music/a.mp3", "~/Music"),
-        ("/Users/elsewhere/Documents/TuneFab/x/a.mp3", "/Users/elsewhere/Documents/TuneFab"),
+        ("/Users/someone-else/Documents/TuneFab/x/a.mp3", "/Users/someone-else/Documents/TuneFab"),
         ("/Volumes/SLATER/crate/a.mp3", "/Volumes/SLATER"),
         ("/contents_815473895/x/a.mp3", "/contents_815473895/x"),
     ],
@@ -164,13 +164,13 @@ def test_coverage_api_and_enrich_summary_name_absent_folders(library: Library) -
     library.client.app.include_router(enrich_routes.router, prefix="/api/v1")
     fx.seed_track(library.state_db, "here", str(fx.audio_file(library.music, "a.mp3")))
     for i in range(3):
-        fx.seed_track(library.state_db, f"g{i}", f"/Users/elsewhere/Music/Convert/set{i}/t.mp3")
-    fx.seed_track(library.state_db, "h", "/Users/elsewhere/Documents/TuneFab/t.mp3")
+        fx.seed_track(library.state_db, f"g{i}", f"/Users/someone-else/Music/Convert/set{i}/t.mp3")
+    fx.seed_track(library.state_db, "h", "/Users/someone-else/Documents/TuneFab/t.mp3")
     coverage = library.client.get("/api/v1/ingest/coverage").json()
     assert coverage["availability"]["off_machine"] == 4
     assert coverage["absent_folders"] == [
-        {"folder": "/Users/elsewhere/Music/Convert", "tracks": 3},
-        {"folder": "/Users/elsewhere/Documents/TuneFab", "tracks": 1},
+        {"folder": "/Users/someone-else/Music/Convert", "tracks": 3},
+        {"folder": "/Users/someone-else/Documents/TuneFab", "tracks": 1},
     ]
     summary = library.client.get("/api/v1/enrich/summary").json()
     assert summary["coverage"]["absent_folders"] == coverage["absent_folders"], (
