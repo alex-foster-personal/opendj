@@ -63,7 +63,12 @@ test('the edit actions sit behind one pencil and the header stays one line', asy
 	await pencil.click();
 	for (const item of items) await expect(item).toBeVisible();
 	// The pointer is still on the pencil: its hover tip must not draw over the open menu.
-	await expect(page.locator('.single-hover-tip')).toBeHidden();
+	// (Hidden, or kept only as the screen-reader copy that aria-describedby points at.)
+	const tipDrawn = await page.evaluate(() => {
+		const tip = document.getElementById('single-hover-tip');
+		return tip !== null && !tip.hidden && !tip.classList.contains('single-hover-tip-sr');
+	});
+	expect(tipDrawn, 'the pencil hover tip draws over its own open menu').toBe(false);
 	// Nothing is selected yet: the two selection actions say why they are off.
 	await expect(items[0]).toBeDisabled();
 	await expect(items[1]).toBeDisabled();
