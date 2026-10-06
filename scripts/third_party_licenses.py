@@ -241,15 +241,61 @@ def _pnpm_bin() -> str:
     return path
 
 
-def js_components(frontend_dir: Path) -> list[Component]:
-    if not (frontend_dir / "node_modules").is_dir():
-        raise LicenseInventoryError(f"{frontend_dir}/node_modules missing: run `pnpm install --frozen-lockfile` first")
-    listing = subprocess.run(
+_INDEX_ERROR = "ERR_PNPM_MISSING_PACKAGE_INDEX_FILE"
+_INDEX_PACKAGE = re.compile(
+    r"ERR_PNPM_MISSING_PACKAGE_INDEX_FILE\b.*?((?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)@"
+)
+
+
+def _pnpm_failure_detail(listing: subprocess.CompletedProcess[str]) -> str:
+    """One line of pnpm's own text. stderr is empty when pnpm wrote the error to stdout."""
+    err = (listing.stderr or "").strip()
+    text = err if err else (listing.stdout or "").strip()
+    return " ".join(text.split())
+
+
+def _pnpm_licenses_list(frontend_dir: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [_pnpm_bin(), "licenses", "list", "--json", "--long"],
         cwd=frontend_dir, capture_output=True, text=True, check=False,
     )
+
+
+def _repair_missing_package_index(frontend_dir: Path, detail: str) -> None:
+    match = _INDEX_PACKAGE.search(detail)
+    package = match.group(1) if match else "unknown package"
+    print(
+        f"[WARN] pnpm store missing package index for {package}; removing node_modules and reinstalling once",
+        file=sys.stderr,
+    )
+    modules = frontend_dir / "node_modules"
+    if modules.exists():
+        shutil.rmtree(modules)
+    install = subprocess.run(
+        [_pnpm_bin(), "install", "--frozen-lockfile"],
+        cwd=frontend_dir, capture_output=True, text=True, check=False,
+    )
+    if install.returncode != 0:
+        raise LicenseInventoryError(
+            f"pnpm install --frozen-lockfile failed after removing node_modules: {_pnpm_failure_detail(install)}"
+        )
+
+
+def js_components(frontend_dir: Path) -> list[Component]:
+    if not (frontend_dir / "node_modules").is_dir():
+        raise LicenseInventoryError(f"{frontend_dir}/node_modules missing: run `pnpm install --frozen-lockfile` first")
+    listing = _pnpm_licenses_list(frontend_dir)
     if listing.returncode != 0:
-        raise LicenseInventoryError(f"pnpm licenses list failed:\n{listing.stderr}")
+        detail = _pnpm_failure_detail(listing)
+        combined = (listing.stderr or "") + (listing.stdout or "")
+        if _INDEX_ERROR in combined:
+            _repair_missing_package_index(frontend_dir, detail)
+            listing = _pnpm_licenses_list(frontend_dir)
+            if listing.returncode != 0:
+                detail = _pnpm_failure_detail(listing)
+                raise LicenseInventoryError(f"pnpm licenses list failed: {detail}")
+        else:
+            raise LicenseInventoryError(f"pnpm licenses list failed: {detail}")
     installed: dict[str, tuple[str, str, Path]] = {}
     for license_name, packages in json.loads(listing.stdout).items():
         for package in packages:

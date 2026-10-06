@@ -528,11 +528,18 @@ def _add_test_health_route(app: Any, boot_id: str) -> None:
         tags=["health"],
         name="engine_health",
     )
-    def engine_health(
+    async def engine_health(
         request: Request,
         backend: Annotated[StateBackend, Depends(get_read_state)],
     ) -> EngineHealthOut:
-        base = legacy_health(request, backend)
+        # #5494 made routes.health.health `async def`; this fixture mirrors
+        # apps/engine_core/app.py's own engine_health wrapper (fixed in
+        # e8202e746) and had the identical bug: calling the now-async
+        # legacy handler without awaiting it returns a coroutine, and
+        # `.model_dump()` on that raises AttributeError -- which the CLI
+        # then reports as a dead/erroring engine rather than real health
+        # data (tests/opendj_cli/test_engine_identity.py, test_cli_*).
+        base = await legacy_health(request, backend)
         return EngineHealthOut(
             **base.model_dump(),
             contract_rev=app.state.contract_rev,

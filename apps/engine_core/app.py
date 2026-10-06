@@ -398,11 +398,11 @@ def _add_health_route(app: FastAPI) -> None:
         tags=["health"],
         name="engine_health",
     )
-    def engine_health(
+    async def engine_health(
         request: Request,
         backend: Annotated[StateBackend, Depends(get_read_state)],
     ) -> EngineHealthOut:
-        base = legacy_health(request, backend)
+        base = await legacy_health(request, backend)
         return EngineHealthOut(
             **base.model_dump(),
             contract_rev=request.app.state.contract_rev,

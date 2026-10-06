@@ -7,3 +7,4 @@
 export * as session from '$lib/rb/performance-session.svelte';
 export * as snapshot from '$lib/rb/performance-session-snapshot';
 export * as ipc from '$lib/rb/performance-ipc.svelte';
+export * as stores from '$lib/stores.svelte';

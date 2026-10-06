@@ -153,7 +153,7 @@ import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/c
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
-import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -341,7 +341,11 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
 	| { type: 'playlist_redo' }
-	| { type: 'rescue_resume'; decks: Array<{ deck: DeckId; position_ms: number }> }
+	| {
+			type: 'rescue_resume';
+			decks: Array<{ deck: DeckId; position_ms: number }>;
+			master_deck: DeckId;
+	  }
 	| { type: 'rescue_stop_all' };
 
 export interface PerformanceDeckSnapshot {
@@ -456,6 +460,9 @@ export interface PerformanceState {
 		per_deck: Record<DeckId, 'pending' | 'decoded' | 'failed'>;
 		started_at_ms: number;
 	};
+	/** RESCUE-07: decks a reload stopped and the banner offers to resume (null when
+	 * no offer). Agents act on it with `play` per deck, first deck first. */
+	reload_resume: { decks: DeckId[]; error: string | null } | null;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
@@ -1298,7 +1305,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type };
 	}
 	if (type === 'rescue_resume') {
-		_exactKeys(record, ['type', 'decks']);
+		_exactKeys(record, ['type', 'decks', 'master_deck']);
 		if (!Array.isArray(record.decks) || record.decks.length === 0) {
 			throw new RangeError('rescue_resume requires at least one deck');
 		}
@@ -1309,7 +1316,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 			return { deck: _deck(row.deck), position_ms };
 		});
-		return { type, decks };
+		if (record.master_deck === undefined) {
+			throw new TypeError('rescue_resume requires master_deck (RESCUE-06)');
+		}
+		const master_deck = _deck(record.master_deck);
+		if (!decks.some((entry) => entry.deck === master_deck)) {
+			throw new RangeError(`rescue_resume master_deck ${master_deck} is not one of the resumed decks`);
+		}
+		return { type, decks, master_deck };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -1691,6 +1705,50 @@ function _quantizedLaunchArmedSnapshot(
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
+// ------------------------------------------- narrow reads for UI $derived
+
+/*
+ * PERF-GRID-03: a component that needs ONE field must not `$derived` the whole
+ * `queryPerformanceState()`. That snapshot reads every deck's position, so the
+ * derived re-ran on every transport tick and rebuilt four deck snapshots plus
+ * the transition read each time. Measured on demon-llama with two synced
+ * decks playing: 61% of main-thread time after the grid memo landed. These
+ * accessors return exactly what the matching snapshot field holds and track
+ * only what that field depends on.
+ *
+ * The two armed countdowns are clock-derived (`remaining_ms`, expiry read as
+ * null), so while one is armed it also tracks the decks' positions: it then
+ * ticks and expires exactly as the full snapshot did, and costs nothing while
+ * nothing is armed.
+ */
+
+function _trackTransportTicks(): void {
+	for (const deckId of DECK_IDS) void getDeckState(deckId).position_ms;
+}
+
+/** Same value as `queryPerformanceState().master_mode`. */
+export function queryMasterMode(): MasterMode {
+	return getMasterMode();
+}
+
+/** Same value as `queryPerformanceState().decks[deckId].waveform_seek_armed`. */
+export function queryWaveformSeekArmed(
+	deckId: DeckId
+): { target_position_ms: number; remaining_ms: number } | null {
+	if (waveformSeekArmed[deckId] === null) return null;
+	_trackTransportTicks();
+	return _waveformSeekArmedSnapshot(deckId);
+}
+
+/** Same value as `queryPerformanceState().decks[deckId].quantized_launch_armed`. */
+export function queryQuantizedLaunchArmed(
+	deckId: DeckId
+): { remaining_ms: number; launch_at_context_sec: number } | null {
+	if (quantizedLaunchArmed[deckId] === null) return null;
+	_trackTransportTicks();
+	return _quantizedLaunchArmedSnapshot(deckId);
+}
+
 function _openPairingSnapshot(): PairingSnapshot {
 	const loaded = DECK_IDS.flatMap((deckId) => {
 		const deck = getDeckState(deckId);
@@ -1893,6 +1951,10 @@ export function queryPerformanceState(): PerformanceState {
 			per_deck: { ...rescueRestoreStatus.per_deck },
 			started_at_ms: rescueRestoreStatus.started_at_ms
 		},
+		reload_resume:
+			reloadResume.offer === null
+				? null
+				: { decks: [...reloadResume.offer.decks], error: reloadResume.error },
 		preview: {
 			stable_id: previewCue.stable_id,
 			playing: previewCue.playing,
@@ -2532,7 +2594,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			deck: entry.deck,
 			positionSec: entry.position_ms / 1000
 		}));
-		await engine.rescueResumeTogether(plans);
+		await engine.rescueResumeTogether(plans, command.master_deck);
 		_rescueRestoredDecks = command.decks.map((entry) => entry.deck);
 	} else if (command.type === 'rescue_stop_all') {
 		const decks = _rescueRestoredDecks.length > 0 ? _rescueRestoredDecks : DECK_IDS.filter(

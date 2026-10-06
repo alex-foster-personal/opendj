@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.lyrics.cache import LyricLine, cache_path, load
 
 
@@ -51,6 +52,9 @@ def matched_snippet(data_dir: Path, stable_id: str, query: str) -> str | None:
     if not terms:
         return None
     lyrics = load(cache_path(data_dir, stable_id))
+    # LYRICS-12: never quote a hallucination line; a hallucination-only entry
+    # is no hit, even while an index built before schema v3 still holds it.
+    lyrics = None if lyrics is None else servable_lyrics(lyrics)
     if lyrics is None:
         return None
     return _best_line(lyrics.lines, terms).text
