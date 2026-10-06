@@ -57,11 +57,11 @@ import {
 } from '$lib/stores.svelte';
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
-import { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
 import {
 	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
+	reinstallAcrossHotUpdates,
 	setAnalysisSource,
 	type AnalysisSource,
 	type AnalysisSourceFeature

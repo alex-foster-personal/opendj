@@ -86,7 +86,6 @@ import {
  */
 
 import { pushToast } from '$lib/stores.svelte';
-import { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import {
@@ -146,6 +145,7 @@ import {
 	invalidateAnlzCacheEntry,
 	isAnlzEntryUsable,
 	revalidateAnlz,
+	reinstallAcrossHotUpdates,
 	refreshAnlzCacheEntry,
 	upgradeDeckBeatgrid,
 	createBeatgridResyncGuards,
