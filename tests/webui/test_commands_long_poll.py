@@ -1,4 +1,5 @@
 """AGENT-19: the order claim is a long poll, so a hidden leader tab gets orders at once.
+[if] an order is posted while a claim is held [then] the claim answers at once, [else stop].
 
 A hidden tab throttles timers (Chrome: 1 s, a timer chain once a minute after five
 hidden minutes), so the page's 50 ms claim poll paid that per order. A held network
