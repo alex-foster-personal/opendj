@@ -39,9 +39,9 @@ from ..etag import compute_etag
 from ..models import (
     LyricsUnavailableOut,
     QualityRungOut,
-    TrackListItemOut,
     TrackIndexItemOut,
     TrackIndexOut,
+    TrackListItemOut,
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
