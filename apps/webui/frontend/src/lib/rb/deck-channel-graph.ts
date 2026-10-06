@@ -410,3 +410,14 @@ export {
 	type DjOutputProfile
 } from '$lib/rb/audio-output-topology';
 export { clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/audio-output-status.svelte';
+// Bug #58 graph-rebuild retry and the engine-recovery stop marker, re-exported
+// for audio-engine.svelte.ts so that file stays inside the import fan-out ratchet.
+export {
+	ENGINE_RECOVERED_PRESS_PLAY,
+	GRAPH_REBUILD_EXHAUSTED_MESSAGE,
+	GRAPH_REBUILD_RETRY_DELAYS_MS,
+	planResumeAfterRebuild,
+	rebuildGraphWithRetries,
+	reattachingDeckMessage
+} from '$lib/rb/graph-rebuild-retry';
+export { markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';
