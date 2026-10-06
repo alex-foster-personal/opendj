@@ -32,6 +32,8 @@ import {
 	shouldSkipPerformanceSessionRestore
 } from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
+import { planReloadResumeOffer } from '$lib/rb/reload-resume';
+import { offerReloadResume } from '$lib/rb/reload-resume.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
 export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
@@ -62,6 +64,9 @@ export interface PerformanceSessionRestoreOptions {
 	 * writer stops when it ends. Defaults to the live performance IPC. */
 	commandSession?: () => number | null;
 	operatorMaster?: () => number | null;
+	/** RESCUE-07: whether AutoPlay is on, for the reload-resume log line and banner.
+	 * The page passes uiPrefs; unset (tests, other mounts) reads as off. */
+	autoPlayEnabled?: () => boolean;
 }
 
 function _snapshotInputFromState(
@@ -84,7 +89,8 @@ function _snapshotInputFromState(
 			quantize_enabled: deck.quantize_enabled,
 			beat_sync_enabled: deck.beat_sync_enabled,
 			master_tempo_enabled: deck.master_tempo_enabled,
-			key_sync_enabled: deck.key_sync_enabled
+			key_sync_enabled: deck.key_sync_enabled,
+			playing: deck.playing
 		};
 		const channel = state.mixer.channels[deckId];
 		channels[deckId] = {
@@ -112,6 +118,7 @@ function _snapshotInputFromState(
 	return {
 		captured_at_ms,
 		playlist_id,
+		master_deck: state.master_deck,
 		decks,
 		mixer: {
 			crossfader: state.mixer.crossfader,
@@ -298,14 +305,35 @@ export function shouldRestoreSessionMaster(snapshot: PerformanceSessionSnapshot)
 	return snapshot.mixer.master > 0 || snapshot.mixer.master_set_by_operator === true;
 }
 
+/** RESCUE-07: decks already holding a track when a restore starts. */
+export function liveDecksAtRestore(
+	decks: Record<DeckId, { stable_id: string | null }>
+): DeckId[] {
+	return DECK_IDS.filter((deckId) => decks[deckId]?.stable_id != null);
+}
+
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
 	snapshot: PerformanceSessionSnapshot | null,
 	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
-	skipDeckRestore: boolean
+	skipDeckRestore: boolean,
+	now: () => number = () => Date.now(),
+	autoPlayEnabled: () => boolean
 ): Promise<void> {
 	if (skipDeckRestore) return;
+	// RESCUE-07: restore only into an empty engine. When the route remounts
+	// over a running one (a dev hot reload, or a double mount) the live decks
+	// are newer than the snapshot, and replaying it loaded onto a playing deck
+	// ("load: deck 2 must be fully stopped before replacement", silver preview
+	// Mon 5 Oct 2026 19:19:45Z and 20:06:11Z) and yanked live tempo settings.
+	const liveDecks = liveDecksAtRestore(query().decks);
+	if (liveDecks.length > 0) {
+		console.info(
+			`[session-restore] skipped: deck(s) ${liveDecks.join(',')} already loaded, so this is a remount over a live engine`
+		);
+		return;
+	}
 	if (snapshot !== null) {
 		await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
 		if (shouldRestoreSessionMaster(snapshot)) {
@@ -324,6 +352,13 @@ async function _restoreSession(
 				: 0;
 		await _restoreDeck(dispatch, query, deckId, stable_id, position_ms, snapshot);
 	}
+	// RESCUE-07: decks that were playing come back stopped (a reload is not a
+	// Gig rescue, and the browser will not start audio before a click), so say
+	// so and offer the click, rather than landing silently stopped.
+	offerReloadResume(
+		planReloadResumeOffer({ snapshot, decks: query().decks, now_ms: now() }),
+		autoPlayEnabled()
+	);
 }
 
 /**
@@ -399,7 +434,10 @@ export function installPerformanceSessionRestore(
 	const guardedQuery: typeof query = () => { assertActive(); return query(); };
 	const restore = opts.resumeInterruptedRestore === true && !skipFromLibrary
 		? _resumeUrlDecks(guardedDispatch, guardedQuery, urlDeckIds)
-		: _restoreSession(guardedDispatch, guardedQuery, snapshot, urlDeckIds, skipDeckRestore);
+		: _restoreSession(
+			guardedDispatch, guardedQuery, snapshot, urlDeckIds, skipDeckRestore,
+			nowFn, opts.autoPlayEnabled ?? (() => false)
+		);
 	void restore.finally(() => {
 		if (disposed) return;
 		opts.onDeckRestoreSettled?.();

@@ -141,8 +141,10 @@
 		_syncTimer();
 		void _poll();
 		try {
+			// Cached (HEALTH-12): a hover must not start a whole-library measure.
+			// Uncached, each hover ran one, 43 to 60 s on the silver preview.
 			[coverage, config, queue] = await Promise.all([
-				getIngestCoverage(),
+				getIngestCoverage({ cached: true }),
 				getIngestConfig(),
 				getAnalysisQueue()
 			]);

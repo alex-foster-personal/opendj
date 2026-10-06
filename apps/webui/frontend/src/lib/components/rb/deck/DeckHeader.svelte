@@ -17,7 +17,7 @@
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { beatSyncGridWarning } from '$lib/rb/beat-sync-math';
-	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
+	import { queryMasterMode } from '$lib/rb/performance-ipc.svelte';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/camelot';
@@ -93,7 +93,7 @@
 		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.',
 		'A locked deck is kept on the beat by tempo trims of at most 0.3%, and re-joined when it is more than 15 ms off. An orange ! means this track has an uneven beatgrid, so the lock may wander.'
 	]);
-	const masterMode = $derived(queryPerformanceState().master_mode);
+	const masterMode = $derived(queryMasterMode());
 	const masterTitle: string = $derived(
 		deck.stable_id === null
 			? 'no track loaded'

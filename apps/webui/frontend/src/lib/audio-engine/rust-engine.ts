@@ -11,7 +11,7 @@ import { fetchAnlzForDeckLoad } from '$lib/components/rb/wave/anlz-cache.svelte'
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
-import { createFrameBackstop } from '$lib/rb/frame-backstop';
+import { createFrameBackstop, notePositionSample } from '$lib/rb/engine-clock-reports';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import {
@@ -410,7 +410,9 @@ function _startRaf(): void {
 			if (st === undefined || st.stable_id === null || !d.playing) continue;
 			if (lastState.frame <= (loadFences[d.deck as DeckId] ?? -1)) continue;
 			const p = client.positionMs(d.deck);
-			if (p !== null) st.position_ms = p;
+			if (p === null) continue;
+			st.position_ms = p;
+			notePositionSample(d.deck as DeckId, st, performance.now()); // every playhead projects from this instant (ANIM-CLOCK-01)
 		}
 	};
 	rafId = requestAnimationFrame(tick);

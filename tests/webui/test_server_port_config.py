@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from apps.shared.uvicorn_shutdown import GRACEFUL_SHUTDOWN_S
 from apps.webui.port_config import BACKEND_ENV, FRONTEND_ENV, PortConfigError, WebuiPorts
 from apps.webui.server import __main__ as server_cli
 
@@ -69,6 +70,7 @@ def test_server_uses_worktree_backend_port_when_cli_port_is_absent(
             "port": 8697,
             "reload": False,
             "factory": True,
+            "timeout_graceful_shutdown": GRACEFUL_SHUTDOWN_S,
         }
     ]
 
@@ -117,5 +119,49 @@ def test_missing_worktree_backend_port_requires_explicit_cli_port(
 
     assert exc_info.value.code == 2
     assert calls == []
+
+
+def _assert_bounded_graceful_shutdown(calls: list[dict[str, Any]]) -> None:
+    """The one assertion both the real and the mutation-control test share."""
+    assert len(calls) == 1
+    assert calls[0].get("timeout_graceful_shutdown") == GRACEFUL_SHUTDOWN_S
+
+
+@pytest.mark.requirement("INSTALL-35")
+def test_server_bounds_graceful_shutdown_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The webui daemon's uvicorn.run gets the same bounded shutdown apps.engine_core uses.
+
+    [if] apps.webui.server boots [then] uvicorn.run gets timeout_graceful_shutdown, [else stop].
+    """
+    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "8697")
+    calls = _capture_uvicorn(monkeypatch)
+
+    assert server_cli.main(["--prod"]) == 0
+    _assert_bounded_graceful_shutdown(calls)
+
+
+@pytest.mark.requirement("INSTALL-35")
+def test_missing_graceful_shutdown_timeout_is_caught(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation control for the test above: a pre-fix-shaped call must fail it.
+
+    [if] uvicorn.run is called with no timeout_graceful_shutdown [then] the shared check fails, [else stop].
+
+    Without this, the assertion in test_server_bounds_graceful_shutdown_window
+    could pass no matter what uvicorn.run was actually given.
+    """
+    pre_fix_call: dict[str, Any] = {
+        "application": "apps.webui.server.app:create_process_app",
+        "host": "127.0.0.1",
+        "port": 8697,
+        "reload": False,
+        "factory": True,
+    }
+    with pytest.raises(AssertionError):
+        _assert_bounded_graceful_shutdown([pre_fix_call])
+
 
 pytestmark = pytest.mark.rb_parity

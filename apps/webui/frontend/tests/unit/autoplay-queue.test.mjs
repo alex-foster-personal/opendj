@@ -91,8 +91,8 @@ describe('PLAY-05 AutoPlay queue entries', () => {
 		// calls into the extracted module, and the extracted module is the one
 		// still handing the queue module its exact planned chain.
 		assert.ok(
-			CONTROLLER_SOURCE.includes(
-				"import { clearChartedAutoPlayOrder, refreshChartedAutoPlayOrder } from '$lib/rb/auto-play-chart-order';"
+			/import \{[^}]*\brefreshChartedAutoPlayOrder\b[^}]*\} from '\$lib\/rb\/auto-play-chart-order';/.test(
+				CONTROLLER_SOURCE
 			) && CONTROLLER_SOURCE.includes('refreshChartedAutoPlayOrder({'),
 			'if the controller does not wire in the charted-order refresh then queue and playback can disagree - broken'
 		);
