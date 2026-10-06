@@ -173,7 +173,9 @@ import {
 import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
+	canPhaseLockTo,
 	deckHasRealBeatGrid,
+	deckHasTrustedBeatGrid,
 	effectiveBeatSync,
 	effectiveQuantize,
 	gridFeatureInertTip,
@@ -3352,6 +3354,10 @@ class RbAudioEngine implements AudioEngine {
 			: resumeSec;
 		const syncClock = _syncClockMaster();
 		const owned = _ownedMaster();
+		if (syncActive && syncClock !== null && syncClock !== deck && !deckHasTrustedBeatGrid(deckStates[syncClock])) {
+			// PLAY-25: a gridless master is a reason to start unsynced, never to refuse.
+			console.info(`[beat-sync] deck ${deck} starts unsynced: master deck ${syncClock} has no usable beat grid`);
+		}
 		const schedulePlainTransport = async (forcedWhen?: number): Promise<void> => {
 			const minimumWhen = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			const when =
@@ -3370,7 +3376,7 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
-			if (syncClock !== null && syncActive) {
+			if (syncClock !== null && canPhaseLockTo(st, deckStates[syncClock])) {
 				await _synchronizeFollowers(syncClock, [deck], {
 					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
@@ -3381,14 +3387,14 @@ class RbAudioEngine implements AudioEngine {
 			await schedulePlainTransport();
 			_electPlayingMaster({ reason: 'play-claim' });
 			const elected = _masterDeck;
-			if (elected !== null && elected !== deck && syncActive) {
+			if (elected !== null && elected !== deck && canPhaseLockTo(st, deckStates[elected])) {
 				await _synchronizeFollowers(elected, [deck], {
 					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
 			}
 		} else if (_masterMode === 'locked' && owned === deck && syncClock === null) {
 			await schedulePlainTransport();
-		} else if (syncClock === deck || !syncActive) {
+		} else if (syncClock === deck || !syncActive || (syncClock !== null && !canPhaseLockTo(st, deckStates[syncClock]))) {
 			await schedulePlainTransport();
 		} else if (syncClock !== null) {
 			await _synchronizeFollowers(syncClock, [deck], {

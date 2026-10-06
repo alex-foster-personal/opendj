@@ -143,6 +143,24 @@ export function effectiveBeatSync(st: Pick<DeckState, 'anlz' | 'beat_sync_enable
 }
 
 /**
+ * PLAY-25: may this follower phase-lock to that master right now?
+ *
+ * Both decks need a trusted grid: the follower's own (`effectiveBeatSync`) AND
+ * the master's. Tue 6 Oct 2026, silver preview 17:35Z: with Beat Sync Max on,
+ * AutoPlay loaded the next track on deck 1 while the playing master (deck 2)
+ * had a 0-beat grid. `play` joined deck 1 to deck 2's phase, `requireBeatGrid`
+ * threw on the master, the handoff aborted after the load, and the set went
+ * silent when deck 2 ran out. A gridless master means the follower starts
+ * unsynced, never that it does not start.
+ */
+export function canPhaseLockTo(
+	follower: Pick<DeckState, 'anlz' | 'beat_sync_enabled'>,
+	master: Pick<DeckState, 'anlz'>
+): boolean {
+	return effectiveBeatSync(follower) && deckHasTrustedBeatGrid(master);
+}
+
+/**
  * Whether a LOADED track's missing or untrusted grid is what makes this deck's
  * sync and quantize controls inert.
  *
