@@ -147,18 +147,36 @@ async function openHiddenLeader(baseURL: string, request: APIRequestContext): Pr
 	const target = targets.find((candidate) => candidate.type === 'page');
 	if (target === undefined) throw new Error('no page target in the plain Chromium');
 	const page = await RawPage.open(target.webSocketDebuggerUrl);
+	// A previous test's page may still hold the 10 s lease. Opening under it
+	// makes this page a lease-blocked follower, and a hidden, silent follower
+	// never re-claims (AGENT-18), so start only once the lease is free.
+	await expect
+		.poll(async () => ((await (await request.get('/api/v1/state/ui-mirror/lease')).json()) as { held: boolean }).held, {
+			timeout: 20_000,
+			message: 'the previous holder lease must lapse first'
+		})
+		.toBe(false);
 	await page.send('Page.navigate', { url: `${baseURL}/performance` });
 	await expect
 		.poll(() => page.evaluate<number | null>('window.musicDjToolsPerformance?.version ?? null'), {
 			timeout: 90_000
 		})
 		.toBe(1);
+	// The lease holder must be THIS page's current mirror client, read twice
+	// 3 s apart, so a page that reloaded (new client id) is not mistaken for it.
+	const holdsLease = async (): Promise<boolean> => {
+		const lease = (await (await request.get('/api/v1/state/ui-mirror/lease')).json()) as {
+			held: boolean;
+			holder: string | null;
+		};
+		const mirror = (await (await request.get('/api/v1/state/ui-mirror')).json()) as { client_id?: string };
+		return lease.held && lease.holder === mirror.client_id;
+	};
 	await expect
-		.poll(
-			async () => ((await (await request.get('/api/v1/state/ui-mirror/lease')).json()) as { held: boolean }).held,
-			{ timeout: 30_000, message: 'the page must hold the mirror lease (it is the leader)' }
-		)
+		.poll(holdsLease, { timeout: 30_000, message: 'the page must hold the mirror lease (it is the leader)' })
 		.toBe(true);
+	await sleep(3_000);
+	expect(await holdsLease(), 'leadership must be stable before hiding').toBe(true);
 	return { page, browser, profile };
 }
 
