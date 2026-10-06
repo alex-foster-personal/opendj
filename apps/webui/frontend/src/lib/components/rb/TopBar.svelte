@@ -1206,7 +1206,11 @@
 	     - the command input failed its hit test just above every restore
 	       boundary (1258-1296, 1449-1455, then 1481-1487, 1534-1552,
 	       1741-1746 and 1752-1770 as each earlier band was closed).
-	   Same tiers, same order, same rule (last failing width plus 25px). Below
+	   Same tiers, same order, same rule (last failing width plus 25px), but
+	   READ-ONLY chrome only: max-height 799px includes Playwright's default
+	   1280x720 and many laptop windows, so no control may yield here that the
+	   width tiers above keep. Re-swept at 600, 720 and 800px high after that
+	   narrowing: 0 crushed widths, overflow only at 790-791px (1-2px). Below
 	   1023px nothing evictable is left, so SOURCE abbreviates the way BSM, STG
 	   and AP already do; it keeps its aria-label and its menu. Placed after
 	   the base rules so the pair-long/pair-short swap wins. */
@@ -1225,11 +1229,13 @@
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
+	/* READ-ONLY status only. The Gig/Prep posture buttons and the refresh-analysis
+	   button are controls, and a short window is Playwright's default 1280x720
+	   as well as many real laptops: hiding them there removed controls people
+	   and seven e2e specs use (run 37427746065). They keep #5564's width tier. */
 	@media (max-height: 799px) and (max-width: 1321px) {
 		.rb-topbar :global(.perf-meters-root),
-		.rb-topbar :global(.posture-chip),
-		.rb-topbar :global(.cloudsync-status),
-		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
+		.rb-topbar :global(.cloudsync-status) { display: none; }
 	}
 	@media (max-height: 799px) and (max-width: 833px) {
 		.rb-topbar :global(.src-toggle) { font-size: 0; }
