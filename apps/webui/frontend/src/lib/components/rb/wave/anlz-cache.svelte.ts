@@ -417,11 +417,23 @@ export type AuthoritativeAnlzGridSink = (
 ) => void | Promise<void>;
 let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
 
-export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink): void {
+// Re-exported for the installer (audio-engine.svelte.ts), which already imports
+// this module: the quality ratchet caps how many modules one file imports from.
+export { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
+/** Returns the uninstall, for the installer's `reinstallAcrossHotUpdates`: a dev
+ * hot update re-runs audio-engine.svelte.ts while this module keeps its state,
+ * so without it the re-run hits the once-only guard. Production never calls it. */
+export function installAuthoritativeAnlzGridSink(sink: AuthoritativeAnlzGridSink): () => void {
 	if (_authoritativeGridSink !== null) {
 		throw new Error('an authoritative anlz grid sink is already installed');
 	}
 	_authoritativeGridSink = sink;
+	return () => {
+		if (_authoritativeGridSink !== sink) {
+			throw new Error('authoritative anlz grid sink ownership changed');
+		}
+		_authoritativeGridSink = null;
+	};
 }
 
 /** Notifies the installed sink (if any) that `stable_id` settled WITHOUT a
@@ -448,11 +460,18 @@ export function notifyGridlessSettlement(
 export type AuthoritativeAnlzErrorSink = (stable_id: string, code: string) => void;
 let _authoritativeErrorSink: AuthoritativeAnlzErrorSink | null = null;
 
-export function installAuthoritativeAnlzErrorSink(sink: AuthoritativeAnlzErrorSink): void {
+/** Returns the uninstall; same HMR reason as `installAuthoritativeAnlzGridSink`. */
+export function installAuthoritativeAnlzErrorSink(sink: AuthoritativeAnlzErrorSink): () => void {
 	if (_authoritativeErrorSink !== null) {
 		throw new Error('an authoritative anlz error sink is already installed');
 	}
 	_authoritativeErrorSink = sink;
+	return () => {
+		if (_authoritativeErrorSink !== sink) {
+			throw new Error('authoritative anlz error sink ownership changed');
+		}
+		_authoritativeErrorSink = null;
+	};
 }
 
 /** Records an authoritative `RbApiError` for `stable_id` AND notifies any
