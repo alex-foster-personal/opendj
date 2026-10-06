@@ -78,6 +78,7 @@ from typing import Any
 from apps.webui.server import coverage_cloud_vocals as cloud_vocals_mod
 from apps.webui.server import coverage_drain_analysis as analysis_step
 from apps.webui.server import coverage_outcomes as outcomes_mod
+from apps.webui.server.boot_grace import NO_GRACE, BootGrace
 from apps.webui.server.coverage_drain_analysis import (
     ANALYSIS_NICENESS,
     LOAD_SETTLE_S,
@@ -94,7 +95,6 @@ from apps.webui.server.coverage_drain_jobs import (
     vocals_capability_refusal,
     vocals_job,
 )
-from apps.webui.server.boot_grace import NO_GRACE, BootGrace
 from apps.webui.server.coverage_drain_state import DrainConfig, DrainStatus, config_path
 from apps.webui.server.coverage_stems_terminal import StemsCheck
 from apps.webui.server.routes.ingest_coverage import CoverageSnapshot, Target

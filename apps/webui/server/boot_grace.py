@@ -25,6 +25,7 @@ Requirements (mini-PRD):
     [if] BOOT_GRACE_S passes with no index [then] active() is False and wait() returns
     [if] the scanner is stopping [then] wait() returns without waiting out the grace
 """
+
 from __future__ import annotations
 
 import threading

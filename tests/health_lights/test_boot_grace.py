@@ -10,6 +10,7 @@ Regression lines:
 
 [if] a scanner runs inside the grace, or waits past 60 s [then] fail, [else stop].
 """
+
 from __future__ import annotations
 
 import threading
@@ -62,9 +63,9 @@ def _drain(tmp_path: Path, grace: bg.BootGrace) -> tuple[cd.CoverageDrain, list[
     return drain, snapshots
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the grace itself
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_the_grace_holds_until_60s_then_lets_go() -> None:
     """[if] 59.9 s pass with no index [then] active, and at 60 s not, [else stop]."""
     clock = Clock()
@@ -116,9 +117,9 @@ def test_the_daemon_factory_arms_the_grace_before_the_startup_scan() -> None:
     assert source.index("boot_grace.arm(app)") < source.index("reconcile_routes.warm_summary_snapshot(app, backend)")
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the three scanners
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_the_coverage_drain_takes_no_snapshot_inside_the_grace(tmp_path: Path) -> None:
     """[if] the grace holds [then] no drain snapshot; after end() one, [else stop]."""
     clock = Clock()
@@ -200,9 +201,9 @@ def test_the_path_refresher_flushes_nothing_inside_the_grace(tmp_path: Path, mon
         refresher.stop()
 
 
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # the index ends it
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_serving_the_index_ends_the_boot_grace(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] GET /tracks/index answers [then] the engine boot grace is over, [else stop]."""
     grace = bg.BootGrace(bg.BOOT_GRACE_S)

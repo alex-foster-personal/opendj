@@ -11,10 +11,9 @@ from fastapi import FastAPI
 
 from apps.lyrics.service import LyricsFetchService
 from apps.shared.events import publish
-from apps.webui.server import boot_grace
+from apps.webui.server import boot_grace, coverage_memory, coverage_recency, stem_cache_enforcer
 from apps.webui.server import coverage_cloud_vocals as cloud_vocals_mod
 from apps.webui.server import coverage_drain_analysis as analysis_step
-from apps.webui.server import coverage_memory, coverage_recency, stem_cache_enforcer
 from apps.webui.server import coverage_outcomes as outcomes_mod
 from apps.webui.server import coverage_stems_terminal as stems_terminal
 from apps.webui.server.coverage_drain import CoverageDrain
