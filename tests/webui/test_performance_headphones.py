@@ -585,7 +585,7 @@ def test_create_app_mounts_every_headphone_route(client) -> None:
 
 @pytest.mark.requirement("CUEOUT-26")
 def test_get_headphones_carries_the_same_device_split_and_the_jack_fields() -> None:
-    """[if] the page mirrors an automatic same-device split [then] GET /performance/headphones shows split_reason and the jack-muted output, [else stop]."""
+    """[if] the page mirrors a same-device split [then] GET shows split_reason and the muted output, [else stop]."""
 
     async def run() -> None:
         headphones = dict(_DEFAULT_HEADPHONES)
