@@ -3413,6 +3413,9 @@
 				>
 					MASTER <span class="caret">▾</span>
 				</button>
+				<!-- LIBUX-49: at the toolbar's left end, clear of the search box (which grows
+					 leftwards) and of the feedback dock over the bottom-right corner. -->
+				<LibraryEditMenu hasSelection={pane.selected_ids.length > 0} onpick={(action) => void openEditModal(action)} />
 				<button
 					class="icon-btn"
 					class:active={uiPrefs.library_density === 'compact'}
@@ -3549,9 +3552,6 @@
 				>
 					← Back
 				</button>
-				<!-- LIBUX-49: left of the search, clear of the feedback dock that floats over
-					 the bottom-right corner when the library header is the window's last row. -->
-				<LibraryEditMenu hasSelection={pane.selected_ids.length > 0} onpick={(action) => void openEditModal(action)} />
 				<div class="search-stack">
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
