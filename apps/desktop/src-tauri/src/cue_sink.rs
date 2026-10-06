@@ -297,6 +297,9 @@ pub struct OutputDevice {
     pub transport: &'static str,
     pub is_default: bool,
     pub builtin_role: BuiltinRole,
+    /// The output data source four-char code (`ispk`, `hdpn`), when readable.
+    /// Diagnostic: it says whether the role came from CoreAudio or the UID.
+    pub data_source: Option<String>,
     /// `kAudioDevicePropertyJackIsConnected` where the device answers it.
     pub jack_connected: Option<bool>,
 }
@@ -336,6 +339,7 @@ pub fn devices_json(devices: &[OutputDevice]) -> Value {
                     "transport": d.transport,
                     "is_default": d.is_default,
                     "builtin_role": d.builtin_role.as_json(),
+                    "data_source": d.data_source,
                     "jack_connected": d.jack_connected,
                     "muted_by_jack": muted_by_jack(d, devices),
                     "physical_uid": physical_output_uid(&d.uid, devices),
@@ -970,6 +974,7 @@ mod platform {
                 transport,
                 is_default: Some(id) == default,
                 builtin_role,
+                data_source: data_source.map(|code| String::from_utf8_lossy(&code.to_be_bytes()).into_owned()),
                 jack_connected,
             });
         }
@@ -1374,6 +1379,7 @@ mod tests {
             transport: "other",
             is_default,
             builtin_role: BuiltinRole::NotBuiltin,
+            data_source: None,
             jack_connected: None,
         }
     }
