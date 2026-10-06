@@ -117,6 +117,7 @@ export function _defaultHeadphones(): HeadphoneState {
 		selected_master_output_device_id: null,
 		selected_input_device_id: null,
 		output_mode: 'practice',
+		split_reason: null,
 		head_delay_ms: persisted.head_delay_ms,
 		alignment_mode: persisted.alignment_mode,
 		master_delay_ms: persisted.master_delay_ms,

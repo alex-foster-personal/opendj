@@ -51,6 +51,14 @@ def _request(
     return payload
 
 
+def _fault_line(fault: object) -> str:
+    if fault is None:
+        return "none"
+    if isinstance(fault, dict):
+        return f"{fault.get('kind')} ({fault.get('stage')}): {fault.get('message')}"
+    raise TypeError(f"master_pin_fault must be an object or null, got {fault!r}")
+
+
 def run_health(
     rest: Sequence[str],
     *,
@@ -76,7 +84,8 @@ def run_health(
         print(
             f"verdict: {payload.get('verdict')}\n"
             f"device_delivering: {payload.get('device_delivering')}\n"
-            f"reason: {payload.get('reason')}"
+            f"reason: {payload.get('reason')}\n"
+            f"master_pin_fault: {_fault_line(payload.get('master_pin_fault'))}"
         )
     return EXIT_CONFIRMED
 

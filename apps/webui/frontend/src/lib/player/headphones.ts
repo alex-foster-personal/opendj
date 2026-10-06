@@ -67,7 +67,14 @@ import {
 	nativeOutputsAsHeadphoneOutputs,
 	type NativeCueSinkEvent
 } from '$lib/player/cue-native-sink';
-import { assertMainIsNotCue, masterRepairedFromCue } from '$lib/player/main-cue-collision';
+import {
+	assertMasterCanSound,
+	masterRepairedFromCue,
+	outputCannotSound,
+	physicalOutputId,
+	sameDeviceSplitText,
+	sameOutputDevice
+} from '$lib/player/main-cue-collision';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -955,6 +962,11 @@ export function inputLooksLikeHandsfree(label: string): boolean {
 	return /headphone|headset|hands-?free|airpods|bluetooth|\bhfp\b/i.test(label);
 }
 
+/** Transports a label guess must never auto-pick as the room: a virtual
+ * device (BlackHole, a loopback) plays to nothing, and a display may have no
+ * speakers. The operator can still choose either explicitly. */
+const _AUTO_PICK_EXCLUDED_TRANSPORTS: ReadonlySet<string> = new Set(['virtual', 'display']);
+
 export function preferredMasterOutputDeviceId(
 	outputs: readonly HeadphoneOutput[],
 	excludeId: string | null
@@ -962,12 +974,32 @@ export function preferredMasterOutputDeviceId(
 	if (excludeId !== null && typeof excludeId !== 'string') {
 		throw new TypeError('excluded master output id must be a string or null');
 	}
-	const candidates = outputs.filter((output) => output.id !== excludeId && output.id.trim() !== '');
+	// CUEOUT-26: never the jack-muted speakers, and never the excluded (cue)
+	// device under another name: the speaker/jack pair is one physical output.
+	const candidates = outputs.filter(
+		(output) =>
+			output.id.trim() !== '' &&
+			!outputCannotSound(outputs, output.id) &&
+			(excludeId === null || !sameOutputDevice(outputs, output.id, excludeId))
+	);
 	const speakers = candidates.find((output) => outputLooksLikeSpeakers(output.label));
 	if (speakers !== undefined) return speakers.id;
-	const notPhones = candidates.find((output) => !outputLooksLikeHeadphones(output.label));
+	const notPhones = candidates.find(
+		(output) =>
+			!outputLooksLikeHeadphones(output.label) &&
+			(output.transport === undefined || !_AUTO_PICK_EXCLUDED_TRANSPORTS.has(output.transport))
+	);
 	return notPhones?.id ?? null;
 }
+
+export type DualSinkAssignment = {
+	masterId: string | null;
+	cueId: string | null;
+	autoPinnedMaster: boolean;
+	/** CUEOUT-26: MAIN and CUE are one physical output, so the cue runs as
+	 * split cue (master L / cue R) on `masterId` instead of two outputs. */
+	splitSameDevice?: true;
+};
 
 export function dualSinkAssignment(args: {
 	outputs: readonly HeadphoneOutput[];
@@ -977,31 +1009,38 @@ export function dualSinkAssignment(args: {
 	 * the Mac app). Preferred over a label guess so auto-pinning MASTER keeps
 	 * the room where it is instead of moving it to the laptop speakers. */
 	currentRoomId?: string | null;
-}): { masterId: string | null; cueId: string | null; autoPinnedMaster: boolean } {
+}): DualSinkAssignment {
 	if (args.selectedCueId !== null && typeof args.selectedCueId !== 'string') {
 		throw new TypeError('selected cue output id must be a string or null');
 	}
 	if (args.selectedMasterId !== null && typeof args.selectedMasterId !== 'string') {
 		throw new TypeError('selected master output id must be a string or null');
 	}
-	const cueId =
-		args.selectedCueId !== null && args.outputs.some((output) => output.id === args.selectedCueId)
-			? args.selectedCueId
-			: null;
-	// MAIN on the CUE device is not two outputs: the native shell pins the
-	// macOS default to it, so the room gets nothing while every probe reads
-	// healthy (silver, Mon 5 Oct 2026). Such a master is re-picked below.
-	const masterStillPresent =
-		args.selectedMasterId !== null &&
-		args.selectedMasterId !== cueId &&
-		args.outputs.some((output) => output.id === args.selectedMasterId)
+	const present = (id: string | null | undefined): id is string =>
+		id !== undefined && id !== null && args.outputs.some((output) => output.id === id);
+	const cueId = present(args.selectedCueId) ? args.selectedCueId : null;
+	const splitOn = (deviceId: string, autoPinnedMaster: boolean): DualSinkAssignment => ({
+		masterId: physicalOutputId(args.outputs, deviceId),
+		cueId,
+		autoPinnedMaster,
+		splitSameDevice: true
+	});
+	// CUEOUT-26: a MAIN the headphone jack has muted is no MAIN: re-picked below.
+	const usableMaster =
+		present(args.selectedMasterId) && !outputCannotSound(args.outputs, args.selectedMasterId)
 			? args.selectedMasterId
 			: null;
+	// MAIN on the CUE device is not two outputs: the room would get nothing
+	// while every probe reads healthy (silver, Mon 5 Oct 2026). CUEOUT-26: it
+	// is one output, so it runs as split cue on that device.
+	if (cueId !== null && usableMaster !== null && sameOutputDevice(args.outputs, usableMaster, cueId)) {
+		return splitOn(cueId, false);
+	}
+	const masterStillPresent = usableMaster;
 	const room =
-		args.currentRoomId !== undefined &&
-		args.currentRoomId !== null &&
-		args.currentRoomId !== cueId &&
-		args.outputs.some((output) => output.id === args.currentRoomId)
+		present(args.currentRoomId) &&
+		!outputCannotSound(args.outputs, args.currentRoomId) &&
+		(cueId === null || !sameOutputDevice(args.outputs, args.currentRoomId, cueId))
 			? args.currentRoomId
 			: null;
 	if (masterStillPresent === null && room !== null) {
@@ -1012,6 +1051,9 @@ export function dualSinkAssignment(args: {
 		if (preferred !== null) {
 			return { masterId: preferred, cueId, autoPinnedMaster: true };
 		}
+		// No other output can sound (a MacBook with wired headphones in its
+		// jack): the room and the cue are one output, so split cue on it.
+		return splitOn(cueId, true);
 	}
 	if (masterStillPresent === null) {
 		const speakers = preferredMasterOutputDeviceId(args.outputs, cueId);
@@ -1098,6 +1140,8 @@ export function setHeadphoneOutputMode(mode: unknown): void {
 	if (mode !== 'two_outputs') {
 		_clearHeadphoneSelection();
 	}
+	// The operator picked this mode; it is no longer CUEOUT-26's automatic split.
+	mixerState.headphones.split_reason = null;
 	mixerState.headphones.output_mode = mode;
 	applyHeadphoneMix();
 }
@@ -1275,6 +1319,19 @@ function _onNativeCueEvent(event: NativeCueSinkEvent): void {
 				'info'
 			);
 			return;
+		case 'master_pin_released': {
+			// CUEOUT-26: the shell dropped a MAIN pin that could not sound or
+			// that the system kept overriding. MAIN now follows the system
+			// output; say why, then let a refresh re-plan (split cue when MAIN
+			// and CUE are one output) instead of re-pinning the same device.
+			mixerState.headphones.selected_master_output_device_id = null;
+			mixerState.headphones.routes.master = { state: 'default', selected: false };
+			mixerState.headphones.error = event.message;
+			recordPerfEvent(`native-master-pin-released-${event.reason}`, event.message, null, 'warn');
+			pushToast(event.message, 'error');
+			_onHeadphoneDeviceChange();
+			return;
+		}
 		case 'stats':
 			return;
 		case 'disconnected':
@@ -1694,6 +1751,53 @@ function _unwatchHeadphoneDeviceChanges(): void {
 	_watchingDeviceChanges = false;
 }
 
+/**
+ * CUEOUT-26: MAIN and CUE are one physical output, so run the cue as split
+ * cue on it (master L / cue R, `split_cable`) instead of two outputs: close
+ * the separate cue sink, pin MAIN to that output, and say so. The saved CUE is
+ * kept (this is not the operator clearing it), but it is not auto-restored as
+ * a second sink while the split holds.
+ */
+async function _enterSameDeviceSplit(deviceId: string, monitorSource: MonitorSource | undefined): Promise<void> {
+	if (monitorSource === undefined) {
+		throw new Error(`split cue on ${deviceId} needs the audio graph to pin MAIN, and none is running yet`);
+	}
+	_stopHeadphoneLiveness();
+	await silenceVanishedCueOutput(_headphoneNodes);
+	mixerState.headphones.selected_output_device_id = null;
+	mixerState.headphones.active = false;
+	mixerState.headphones.routes.cue = { state: 'default', selected: false };
+	_cueClearedByOperator = true;
+	if (mixerState.headphones.selected_master_output_device_id !== deviceId) {
+		const { context, masterGain } = monitorSource();
+		ensureHeadphoneGraph(context, masterGain);
+		await _applyMasterSink(deviceId, context);
+		_lastMonitorSource = monitorSource;
+	}
+	mixerState.headphones.selected_master_output_device_id = deviceId;
+	mixerState.headphones.output_mode = 'split_cable';
+	mixerState.headphones.split_reason = 'same_device';
+	applyHeadphoneMix();
+	const label = mixerState.headphones.outputs.find((output) => output.id === deviceId)?.label ?? deviceId;
+	const message = sameDeviceSplitText(label);
+	recordPerfEvent('cue-split-same-device', message, null, 'warn');
+	pushToast(message, 'info');
+}
+
+/** CUEOUT-26: the output an automatic split ran on is gone, so the split
+ * ends: back to master-only two outputs, never a split on whatever remains. */
+function _exitSameDeviceSplitIfItsOutputVanished(): string | null {
+	const hp = mixerState.headphones;
+	if (hp.split_reason !== 'same_device' || hp.output_mode !== 'split_cable') return null;
+	const sharedId = hp.selected_master_output_device_id;
+	if (sharedId !== null && hp.outputs.some((output) => output.id === sharedId)) return null;
+	hp.output_mode = 'two_outputs';
+	hp.split_reason = null;
+	hp.selected_master_output_device_id = null;
+	hp.routes.master = { state: 'default', selected: false };
+	return `The output split cue was running on (${sharedId ?? 'unknown'}) is gone; split cue is off and MAIN follows the system output.`;
+}
+
 function _clearHeadphoneSelection(): void {
 	_stopHeadphoneLiveness();
 	mixerState.headphones.selected_output_device_id = null;
@@ -2099,6 +2203,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	}
 	mixerState.headphones.outputs = listing.outputs;
 	mixerState.headphones.inputs = listing.inputs;
+	const splitEnded = _exitSameDeviceSplitIfItsOutputVanished();
 	const previousMasterId = mixerState.headphones.selected_master_output_device_id;
 	const previousCueId = mixerState.headphones.selected_output_device_id;
 	if (previousCueId !== null) _rememberedCueId = previousCueId;
@@ -2115,7 +2220,11 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
 		currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
 	});
-	mixerState.headphones.selected_master_output_device_id = assignment.masterId;
+	// CUEOUT-26: a split is applied below by _enterSameDeviceSplit, which pins
+	// MAIN itself; leave the previous MAIN in place until that pin lands.
+	if (assignment.splitSameDevice !== true) {
+		mixerState.headphones.selected_master_output_device_id = assignment.masterId;
+	}
 	if (assignment.masterId === null) {
 		mixerState.headphones.routes.master = { state: 'default', selected: false };
 	}
@@ -2173,8 +2282,22 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		access.notices.push(message);
 		recordPerfEvent('main-output-repaired-from-cue', message, null, 'warn');
 	}
+	if (splitEnded !== null) {
+		access.notices.push(splitEnded);
+		recordPerfEvent('cue-split-same-device-ended', splitEnded, null, 'warn');
+	}
 	mixerState.headphones.device_access = access;
 	applyHeadphoneMix();
+	if (assignment.splitSameDevice === true && assignment.masterId !== null) {
+		try {
+			await _enterSameDeviceSplit(assignment.masterId, monitorSource ?? _lastMonitorSource);
+			_assertCurrentHeadphoneOperation(generation, null);
+		} catch (error) {
+			_assertCurrentHeadphoneOperation(generation, null);
+			throw _headphoneError('split cue on the shared output failed', error);
+		}
+		return;
+	}
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
@@ -2357,8 +2480,25 @@ export async function selectHeadphoneOutput(
 			if (live !== null && mixerState.headphones.active) _startHeadphoneLiveness(live);
 			return;
 		}
+		const sameDevice = dualSinkAssignment({
+			outputs: mixerState.headphones.outputs,
+			selectedCueId: deviceId,
+			selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+			currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
+		});
+		if (sameDevice.splitSameDevice === true && sameDevice.masterId !== null) {
+			// CUEOUT-26: this CUE is the room's own output, so it cannot be a
+			// second sink: split cue on it, and remember it as the operator's CUE.
+			await _enterSameDeviceSplit(sameDevice.masterId, monitorSource);
+			_assertCurrentHeadphoneOperation(generation, null);
+			_rememberedCueId = deviceId;
+			_rememberSavedOutput('cue', deviceId);
+			_lastMonitorSource = monitorSource;
+			return;
+		}
 		mixerState.headphones.selected_output_device_id = deviceId;
 		mixerState.headphones.output_mode = 'two_outputs';
+		mixerState.headphones.split_reason = null;
 		mixerState.headphones.error = null;
 		const { context, masterGain } = monitorSource();
 		nodes = ensureHeadphoneGraph(context, masterGain);
@@ -2418,13 +2558,28 @@ export async function selectMasterOutput(
 ): Promise<void> {
 	const generation = _headphoneGeneration;
 	const previousId = mixerState.headphones.selected_master_output_device_id;
-	// CUEOUT-25: refused before the try, so a refusal never marks the live
+	// CUEOUT-26: refused before the try, so a refusal never marks the live
 	// MAIN route failed; the current MAIN keeps playing.
-	assertMainIsNotCue(
-		deviceId,
-		mixerState.headphones.selected_output_device_id,
-		mixerState.headphones.output_mode
-	);
+	assertMasterCanSound(deviceId, mixerState.headphones.outputs);
+	const cueId = mixerState.headphones.selected_output_device_id;
+	if (
+		mixerState.headphones.output_mode === 'two_outputs' &&
+		cueId !== null &&
+		sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)
+	) {
+		// CUEOUT-25 refused this; CUEOUT-26: MAIN on the CUE's own output is
+		// split cue on that output (master L / cue R), never a silent room.
+		await _enterSameDeviceSplit(physicalOutputId(mixerState.headphones.outputs, cueId), monitorSource);
+		_assertCurrentHeadphoneOperation(generation, null);
+		_rememberSavedOutput('master', deviceId);
+		return;
+	}
+	const leavingSplitFrom =
+		mixerState.headphones.split_reason === 'same_device' &&
+		previousId !== null &&
+		!sameOutputDevice(mixerState.headphones.outputs, deviceId, previousId)
+			? previousId
+			: null;
 	try {
 		_requireOutputSelectionApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
@@ -2447,6 +2602,14 @@ export async function selectMasterOutput(
 		}
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('master output selection failed', error);
+	}
+	if (leavingSplitFrom !== null) {
+		// A MAIN on a genuinely different output ends the automatic split: the
+		// shared output goes back to being the separate HEADPHONE CUE sink.
+		mixerState.headphones.split_reason = null;
+		mixerState.headphones.output_mode = 'two_outputs';
+		_cueClearedByOperator = false;
+		await selectHeadphoneOutput(leavingSplitFrom, monitorSource);
 	}
 }
 

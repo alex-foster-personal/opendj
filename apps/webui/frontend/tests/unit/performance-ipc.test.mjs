@@ -1067,6 +1067,7 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			selected_master_output_device_id: null,
 			selected_input_device_id: null,
 			output_mode: 'practice',
+			split_reason: null,
 			head_delay_ms: 0,
 			alignment_mode: 'hybrid',
 			master_delay_ms: 0,

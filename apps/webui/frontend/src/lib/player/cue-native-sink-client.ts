@@ -95,6 +95,7 @@ export class NativeCueSinkClient {
 			case 'device_lost':
 			case 'stats':
 			case 'master_reasserted':
+			case 'master_pin_released':
 				this.emit(payload as NativeCueSinkEvent);
 				return;
 			case 'error':
