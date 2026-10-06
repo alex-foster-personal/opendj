@@ -83,6 +83,7 @@ from apps.shared.process_priority import background_argv, lowered_priority
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server import enrich_sources
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
+from apps.webui.server.ahead_analysis_siblings import with_path_siblings
 
 log = logging.getLogger(__name__)
 
@@ -286,6 +287,9 @@ class AheadSources:
     declined_fn: Callable[[str, str], dict[str, str]]
     #: field -> {sid: source} of real library values (ENRICH-02); None reports no ``usable``.
     library_values_fn: Callable[[str], dict[str, str]] | None = None
+    #: present stable_id -> file path; with it a row whose file a sibling row already
+    #: covers counts as done for that lane (#5578). None keeps per-row selection.
+    paths_fn: Callable[[], Mapping[str, str]] | None = None
 
 
 class AheadDrain:
@@ -410,6 +414,12 @@ class AheadDrain:
             self._write_strips(targets)
         return bool(targets)
 
+    def _lane_done(self, lane: str, backend: str) -> set[str]:
+        """Rows with the lane's result, plus their same-file siblings (#5578)."""
+        done = self._src.done_fn(lane, backend)
+        return done if self._src.paths_fn is None else with_path_siblings(done, self._src.paths_fn())
+
+
     def _plan_lane_work(self, present: list[str], bumped: list[str]) -> tuple[str, list[str]] | None:
         # done_fn is one query per lane: read it ONCE, never once per track
         # (silver, Mon 5 Oct 2026: 2270 x 4 queries a tick took over 11 min).
@@ -417,7 +427,7 @@ class AheadDrain:
         for lane, backend in LANE_ORDER:
             if lane in self._status.unavailable:
                 continue
-            done = self._src.done_fn(lane, backend)
+            done = self._lane_done(lane, backend)
             missing[lane] = [sid for sid in present if sid not in done]
         return next_lane_work(missing, self._lane_failed, self._status.unavailable, bumped)
 
@@ -565,7 +575,7 @@ class AheadDrain:
         }
         present_set = set(present)
         for lane, backend in LANE_ORDER:
-            done = self._src.done_fn(lane, backend)
+            done = self._lane_done(lane, backend)
             counts = coverage_counts(present, done, dict(self._lane_failed[lane]))
             declined = {
                 sid: why for sid, why in self._src.declined_fn(lane, backend).items() if sid in present_set
@@ -707,7 +717,7 @@ def build_for_app(app: Any) -> AheadDrain:
     from apps.webui.server.routes import ingest as ingest_routes
 
     db = str(app.state.state_db_path)
-    cache: dict[str, Any] = {"at": 0.0, "ids": [], "mapped": set()}
+    cache: dict[str, Any] = {"at": 0.0, "ids": [], "mapped": set(), "paths": {}}
 
     def present() -> list[str]:
         # The coverage snapshot is the engine's one "playable here" measure;
@@ -715,6 +725,7 @@ def build_for_app(app: Any) -> AheadDrain:
         if time.monotonic() - cache["at"] > IDLE_INTERVAL_S:
             snapshot = ingest_routes.build_snapshot(app)
             cache["ids"] = list(dict.fromkeys(sid for sid, _path in snapshot.on_disk))
+            cache["paths"] = dict(snapshot.on_disk)
             cache["mapped"] = set(bulk_rb_meta(cache["ids"]))
             cache["at"] = time.monotonic()
         return list(cache["ids"])
@@ -765,6 +776,7 @@ def build_for_app(app: Any) -> AheadDrain:
             refresh_tags_fn=refresh_tags,
             declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
             library_values_fn=lambda field: library_value_sources(ingest_routes.open_ro, field),
+            paths_fn=lambda: dict(cache["paths"]),
         ),
         startup_grace_s=STARTUP_GRACE_S,
     )
