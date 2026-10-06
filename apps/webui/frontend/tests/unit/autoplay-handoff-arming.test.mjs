@@ -20,6 +20,8 @@
  *   [⛔️ if it does not: the two tests above would pass against a dead poll].
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { before, describe, it, test } from 'node:test';
 
 import { installTimerProbe, loadRuneModule } from './load-rune-module.mjs';
@@ -239,4 +241,34 @@ test('[PLAY-20] mutation control: left on, the same window crossing does hand of
 			'the armed controller must reach the handoff, or the test above proves nothing'
 		);
 	});
+});
+
+// ----- wiring: the controller hands the handoff its real arming ---------------
+
+/**
+ * SHAPE GUARD. The live test above cannot reach the in-flight window: in a
+ * unit runtime the follower load fails (no AudioContext), so the handoff never
+ * gets past its load step. What it cannot see, this pins: the controller must
+ * pass the handoff the SAME arming check `_tick` captured, so wiring
+ * `stillArmed: () => true` (or a fresh `_generation` read) is caught here.
+ */
+test('[PLAY-20] SHAPE GUARD: the controller wires stillArmed to the arming _tick captured', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	const start = source.indexOf('async function _handoff(');
+	assert.notEqual(start, -1, '_handoff could not be located: this guard asserts nothing');
+	const body = source.slice(start, source.indexOf('\n}\n', start));
+	assert.match(body, /\bgeneration: number\b/, '_handoff must take the arming generation from _tick');
+	assert.match(
+		body,
+		/runAutoPlayHandoff\(nextId, \{\s*stillArmed: \(\) => _armedAt\(generation\),/,
+		'if the controller wires stillArmed to anything but _armedAt(generation) then broken'
+	);
+	assert.match(
+		source,
+		/await _handoff\(source, follower, nextId, generation\);/,
+		'_tick must pass the generation it armed under, not a fresh read'
+	);
 });
