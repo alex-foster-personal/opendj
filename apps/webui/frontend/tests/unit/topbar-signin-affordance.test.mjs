@@ -51,7 +51,9 @@ function mediaBlock(source, query) {
 	throw new Error(`@media ${query} is not brace-balanced`);
 }
 
-const NARROW = mediaBlock(topbar, '(max-width: 1160px)');
+// The read-only status tier. 1257px since Tue 6 Oct 2026: the pinned Settings and
+// skin toggle (#5456) moved it up from 1160px (see the note on that tier).
+const NARROW = mediaBlock(topbar, '(max-width: 1257px)');
 const COMMAND = mediaBlock(topbar, '(max-width: 1023px)');
 
 test('TopBar.svelte still compiles', () => {

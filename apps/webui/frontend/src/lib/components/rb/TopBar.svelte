@@ -1106,25 +1106,36 @@
 		.rb-topbar .topbar-slot-utility,
 		.rb-topbar .clock { display: none; }
 	}
-	@media (max-width: 1415px) {
+	@media (max-width: 1448px) {
 		/* Was 1210px. The inert view-icon cluster, LINK and PAD are 233px of
 		   placeholder chrome that operate nothing; the deficits above 1211px run
 		   to 138px, so 1415px is the last measured failing width plus the same
 		   25px margin the other tiers use. Only the cluster's INERT members go:
 		   the 2-deck toggle is a real control since V1 (PR #4923) and is about
-		   22px, well inside the ~95px this tier frees at its tightest width. */
+		   22px, well inside the ~95px this tier frees at its tightest width.
+		   Was 1415px until Tue 6 Oct 2026: pinning Settings and the skin toggle
+		   (#5456, ~74px that no tier evicts) crushed the command input across
+		   [1416px, 1423px] in a 1px elementFromPoint sweep (the input's centre hit
+		   the skin toggle), so 1448px is 1423px plus the same 25px margin. */
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
-	@media (max-width: 1160px) {
+	@media (max-width: 1257px) {
 		/* New tier. Status first (see the note above), and the chrome the 825px
 		   tier used to evict, which now has to go 300px earlier because the label
 		   is still in the row at those widths. Was 1125px: keeping Create pairing
 		   in the row at every width (PR #4014, as "Pair" below 1740px) crushed
 		   the command entry across [1126px, 1133px] in a 1px elementFromPoint
 		   sweep (tests/e2e/topbar-source-toggle.spec.ts failed at 1130px), so
-		   1160px is that last failing width plus the same ~25px margin. */
+		   1160px is that last failing width plus the same ~25px margin.
+		   Was 1160px until Tue 6 Oct 2026: the pinned Settings and skin toggle
+		   (#5456) are ~74px that no tier evicts, and they crushed the command
+		   input across [1161px, 1232px] (1px sweep, every width in that band
+		   except two narrow islands where the hit test happened to land). Status
+		   still yields before any control, so this tier moved, not Pair: 1257px
+		   is 1232px plus the same 25px margin. Create pairing keeps its own
+		   1160px tier below. */
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.posture-chip),
 		.rb-topbar :global(.cloudsync-status),
