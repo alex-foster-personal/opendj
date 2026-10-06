@@ -8,6 +8,7 @@ the loop, not SQL.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 
@@ -50,6 +51,38 @@ def declined_ids(
     return {row[0]: str(row[1]) for row in rows}
 
 
+def library_value_sources(conn_factory: Callable[[], sqlite3.Connection], field: str) -> dict[str, str]:
+    """stable_id -> source for every live ``track_fields`` row holding a REAL
+    value of ``field``: a BPM above zero, a non-empty key. rekordbox writes
+    ``0.0`` for a track it never analysed, which is no BPM at all."""
+    conn = conn_factory()
+    try:
+        rows = conn.execute(
+            "SELECT stable_id, source, value_json FROM track_fields "
+            "WHERE field_name = ? AND deleted_at IS NULL",
+            (field,),
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return {}
+        raise
+    finally:
+        conn.close()
+    return {str(sid): str(source) for sid, source, raw in rows if _is_real_value(raw)}
+
+
+def _is_real_value(raw: object) -> bool:
+    try:
+        value = json.loads(str(raw))
+    except ValueError:
+        return False
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return value > 0
+    return isinstance(value, str) and value.strip() != ""
+
+
 def producer_version(backend: str) -> str:
     """The CURRENT producer version, from each lane's light version module
     (importing the backend itself would pull model code into the engine)."""
@@ -69,4 +102,4 @@ def producer_version(backend: str) -> str:
     return versions[backend]
 
 
-__all__ = ["declined_ids", "done_ids", "producer_version"]
+__all__ = ["declined_ids", "done_ids", "library_value_sources", "producer_version"]

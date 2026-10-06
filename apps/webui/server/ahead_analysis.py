@@ -74,7 +74,8 @@ from typing import Any
 
 from apps.shared.process_priority import lowered_priority
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
-from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
+from apps.webui.server import enrich_sources
+from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
 
 log = logging.getLogger(__name__)
 
@@ -270,6 +271,8 @@ class AheadSources:
     #: (status failed: key no_tonal_center, beatgrid grid_fit_*). They are
     #: produced, so never re-run, but they are not a value either.
     declined_fn: Callable[[str, str], dict[str, str]]
+    #: field -> {sid: source} of real library values (ENRICH-02); None reports no ``usable``.
+    library_values_fn: Callable[[str], dict[str, str]] | None = None
 
 
 class AheadDrain:
@@ -489,6 +492,9 @@ class AheadDrain:
         return {
             **self._coverage,
             "state": self._status.state,
+            "drain": enrich_sources.lane_drain_states(
+                self._status.state, self._coverage.get("lanes", {}), [lane for lane, _b in LANE_ORDER]
+            ),
             "strips_written": self._status.strips_written,
             "tags_refreshed": self._status.tags_refreshed,
             "lane_batches": self._status.lane_batches,
@@ -530,7 +536,8 @@ class AheadDrain:
         }
         present_set = set(present)
         for lane, backend in LANE_ORDER:
-            counts = coverage_counts(present, self._src.done_fn(lane, backend), dict(self._lane_failed[lane]))
+            done = self._src.done_fn(lane, backend)
+            counts = coverage_counts(present, done, dict(self._lane_failed[lane]))
             declined = {
                 sid: why for sid, why in self._src.declined_fn(lane, backend).items() if sid in present_set
             }
@@ -541,6 +548,10 @@ class AheadDrain:
             counts["declined"] = len(declined)
             counts["declined_reasons"] = reasons
             counts["unavailable"] = self._status.unavailable.get(lane)
+            field = enrich_sources.VALUE_FIELDS.get(lane)
+            if field is not None and self._src.library_values_fn is not None:
+                own = set(done) - set(declined)
+                counts["usable"] = enrich_sources.usable_counts(present, self._src.library_values_fn(field), own)
             lanes[lane] = counts
         return {"present": len(present), "rekordbox_mapped": len(mapped), "lanes": lanes}
 
@@ -723,6 +734,7 @@ def build_for_app(app: Any) -> AheadDrain:
             blank_tags_fn=blank_tags,
             refresh_tags_fn=refresh_tags,
             declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
+            library_values_fn=lambda field: library_value_sources(ingest_routes.open_ro, field),
         )
     )
 

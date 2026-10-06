@@ -65,6 +65,8 @@ from apps.webui.server import coverage_outcomes as outcomes_mod
 from apps.webui.server.routes import ingest_job
 
 STEPS: tuple[str, ...] = ("analysis", "stems", "vocals", "lyrics")
+#: Folders of not-on-this-Mac rows the response names, largest first (ENRICH-02).
+ABSENT_FOLDERS_SHOWN: int = 8
 Target = tuple[str, str]
 
 
@@ -346,6 +348,10 @@ def response_fields(snapshot: CoverageSnapshot) -> dict[str, object]:
         "missing": {step: len(targets) for step, targets in snapshot.missing.items()},
         "corrupt": {step: len(targets) for step, targets in snapshot.corrupt.items()},
         "availability": snapshot.playability.counts(),
+        "absent_folders": [
+            {"folder": folder, "tracks": rows}
+            for folder, rows in snapshot.playability.absent_folders[:ABSENT_FOLDERS_SHOWN]
+        ],
         "done": {step: counts[step].done for step in STEPS},
         "terminal": {step: counts[step].terminal for step in STEPS},
         "failed": {step: counts[step].failed for step in STEPS},

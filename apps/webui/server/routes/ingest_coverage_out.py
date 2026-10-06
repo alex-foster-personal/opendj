@@ -10,7 +10,7 @@ import threading
 from collections.abc import Callable
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from apps.webui.server import coverage_cache
 from apps.webui.server.routes import ingest_coverage
@@ -21,6 +21,13 @@ COVERAGE_CACHED_HELP = (
     "is being taken and a read shortly after gets it. Without this "
     "the library is measured for this request."
 )
+
+
+class AbsentFolderOut(BaseModel):
+    """One folder that library rows point into and this Mac does not have."""
+
+    folder: str
+    tracks: int
 
 
 class CoverageOut(BaseModel):
@@ -38,6 +45,10 @@ class CoverageOut(BaseModel):
     missing: dict[str, int]
     corrupt: dict[str, int]
     availability: dict[str, int]
+    #: Where the ``broken_here`` + ``off_machine`` rows point, largest folder
+    #: first, at most ``ABSENT_FOLDERS_SHOWN`` (ENRICH-02). Default empty so a
+    #: cached reading taken before the field existed still validates.
+    absent_folders: list[AbsentFolderOut] = Field(default_factory=list)
     done: dict[str, int]
     terminal: dict[str, int]
     failed: dict[str, int]
@@ -99,4 +110,4 @@ def read_coverage(
     )
 
 
-__all__ = ["COVERAGE_CACHED_HELP", "CoverageOut", "cache_for", "read_coverage"]
+__all__ = ["COVERAGE_CACHED_HELP", "AbsentFolderOut", "CoverageOut", "cache_for", "read_coverage"]

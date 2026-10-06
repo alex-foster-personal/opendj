@@ -23,6 +23,9 @@ Requirements (mini-PRD):
     [if] stems are pending and no decision is stored [then] stems is asked
     [if] the stored decision is "never" [then] stems is not asked, and the card says so
     [if] stems have no source on this host [then] stems is not asked, and the reason is shown
+  ✔︎ the card's numbers are the coverage API's numbers (ENRICH-02)
+    [if] the coverage reading names absent rows by folder [then] the summary carries them unchanged
+    [if] the drain reports usable values and drain states [then] ``analysis`` carries them unchanged
 """
 from __future__ import annotations
 
@@ -140,6 +143,10 @@ def build_summary(
         "analysis_error": analysis_error,
         "coverage": None if coverage is None else {
             "on_disk": coverage["on_disk"],
+            # ENRICH-02: rows whose file is not on this Mac, by bucket and folder,
+            # straight from the coverage reading (never recounted here).
+            "availability": dict(coverage.get("availability", {})),
+            "absent_folders": list(coverage.get("absent_folders", [])),
             "done": {k: coverage["done"].get(k, 0) for k in ("stems", "lyrics")},
             "terminal": {k: coverage["terminal"].get(k, 0) for k in ("stems", "lyrics")},
             "failed": {k: coverage["failed"].get(k, 0) for k in ("stems", "lyrics")},

@@ -119,3 +119,132 @@ test('a declined or impossible stems lane does not by itself force the card open
 	assert.equal(card.needsAttention(noSource, null, null), false);
 	assert.equal(card.collapsedLine(noSource).text, 'Library: nothing left running');
 });
+
+/* ENRICH-02: honest sources, drain states and absent files (the maintainer's silver library, Tue 6 Oct 2026). */
+
+const silverUsable = (ready, bySource) => ({ denominator: 'present', total: 2270, ready, none: 2270 - ready, by_source: bySource });
+
+function silver(drainState = 'paused_playing', extra = {}) {
+	const lane = (done, more = {}) => ({ total: 2270, done, missing: 2270 - done, failed: 0, declined: 0, unavailable: null, ...more });
+	return summary(
+		{},
+		{
+			analysis: {
+				lanes: {
+					tags: { total: 2270, done: 2270, missing: 0, failed: 0 },
+					strip: { total: 28, done: 28, missing: 0, failed: 0 },
+					loudness: lane(275),
+					waveform: lane(57),
+					beatgrid: lane(16, { usable: silverUsable(2270, { rekordbox: 2254, open_dj: 16 }) }),
+					key: lane(19, { usable: silverUsable(2243, { rekordbox: 2243 }) })
+				},
+				drain: Object.fromEntries(
+					['loudness', 'waveform', 'beatgrid', 'key'].map((l) => [l, { state: drainState, waiting_on: null, reason: null }])
+				)
+			},
+			...extra
+		}
+	);
+}
+
+test('BPM reads as ready from rekordbox, with Open DJ re-analysis as a dim second line', () => {
+	const lines = card.analysisLines(silver()).filter((l) => l.lane === 'beatgrid');
+	assert.deepEqual(
+		lines.map((l) => [l.tone, l.text]),
+		[
+			['ready', 'BPM: 2,270 of 2,270 tracks ready (2,254 from rekordbox, 16 from Open DJ)'],
+			['note', 'Open DJ beatgrid re-analysis: 16 of 2,270, paused while a deck is playing']
+		]
+	);
+});
+
+test('a key gap is said as a count with its denominator, still not red', () => {
+	const [value] = card.analysisLines(silver()).filter((l) => l.lane === 'key');
+	assert.equal(value.tone, 'working');
+	assert.equal(value.text, 'Key: 2,243 of 2,270 tracks ready (2,243 from rekordbox), 27 with none yet');
+	assert.equal(value.title, 'Counted over the 2,270 tracks whose audio is on this computer');
+});
+
+test('mutation control: without source counts the old native-only line still renders', () => {
+	const old = summary({ beatgrid: { total: 2270, done: 16, missing: 2254 } });
+	const [line] = card.analysisLines(old).filter((l) => l.lane === 'beatgrid');
+	assert.equal(line.text, 'BPM and beatgrid: 16 of 2,270 done, the rest running in the background');
+	assert.notEqual(card.analysisLines(silver())[0].text, line.text);
+});
+
+test('each drain state reads as its own phrase', () => {
+	const phrase = (state, waiting_on = null, reason = null) => card.drainPhrase({ state, waiting_on, reason });
+	assert.equal(phrase('running'), 'the rest running in the background');
+	assert.equal(phrase('paused_playing'), 'paused while a deck is playing');
+	assert.equal(phrase('waiting', 'waveform'), 'waiting for deck waveforms to finish first');
+	assert.equal(phrase('stalled', null, 'timeout:plan'), 'stalled (timeout:plan)');
+	assert.equal(phrase('starting'), 'starting');
+	assert.equal(phrase('done'), 'done');
+	assert.equal(phrase('unavailable', null, 'no model'), 'cannot run on this computer (no model)');
+	assert.equal(card.drainPhrase(undefined), 'the rest running in the background');
+});
+
+test('a lane waiting on an earlier lane says which one', () => {
+	const s = silver('running');
+	s.analysis.drain.key = { state: 'waiting', waiting_on: 'waveform', reason: null };
+	const note = card.analysisLines(s).find((l) => l.lane === 'key' && l.tone === 'note');
+	assert.equal(note.text, 'Open DJ key re-analysis: 19 of 2,270, waiting for deck waveforms to finish first');
+});
+
+test('native failures on a lane rekordbox covers are a note, and Retry is still offered', () => {
+	const s = silver();
+	Object.assign(s.analysis.lanes.beatgrid, { failed: 2, missing: 2252, failed_reasons: { 'TrackUnreadable: x': 2 } });
+	const lines = card.analysisLines(s).filter((l) => l.lane === 'beatgrid');
+	assert.deepEqual(lines.map((l) => l.tone), ['ready', 'note']);
+	assert.match(lines[1].text, /, 2 could not be read$/);
+	assert.equal(card.offersRetry(s), true);
+	assert.equal(card.needsAttention(s, null, null), false);
+});
+
+test('a source mix lists every source, largest first as the API ranks it', () => {
+	const s = silver();
+	s.analysis.lanes.beatgrid.usable = silverUsable(2270, { rekordbox: 2100, inferred: 98, mik: 50, open_dj: 22 });
+	assert.equal(
+		card.analysisLines(s)[0].text,
+		'BPM: 2,270 of 2,270 tracks ready (2,100 from rekordbox, 98 inferred from file tags, 50 from Mixed In Key, 22 from Open DJ)'
+	);
+});
+
+test('files not on this Mac get their own lines with the top folders, never a percentage', () => {
+	const s = silver('running', {
+		coverage: {
+			on_disk: 2270,
+			availability: { total: 11165, present: 2270, broken_here: 0, off_machine: 8496, awaiting_volume: 11, streaming: 387, pathless: 1 },
+			absent_folders: [
+				{ folder: '~/Documents/TuneFab Spotify Music Converter', tracks: 2952 },
+				{ folder: '~/Music/Convert', tracks: 2800 },
+				{ folder: '/Users/dev/Music/Music', tracks: 854 },
+				{ folder: '/Users/dev/Documents/Documents - Air', tracks: 665 }
+			],
+			done: { stems: 0, lyrics: 0 },
+			terminal: { stems: 0, lyrics: 0 },
+			failed: { stems: 0, lyrics: 0 },
+			pending: { stems: 0, lyrics: 0 }
+		}
+	});
+	const lines = card.absentLines(s);
+	assert.deepEqual(
+		lines.map((l) => l.text),
+		[
+			"8,496 tracks point at files that aren't on this Mac",
+			'Most are in ~/Documents/TuneFab Spotify Music Converter (2,952), ~/Music/Convert (2,800), /Users/dev/Music/Music (854)',
+			'11 tracks are on a drive that is not plugged in'
+		]
+	);
+	assert.ok(lines.every((l) => l.tone === 'note' && !/%/.test(l.text)));
+	assert.match(lines[1].title, /665: \/Users\/dev\/Documents\/Documents - Air/);
+	assert.deepEqual(card.absentLines(summary()), []);
+});
+
+test('collapsed: paused lanes say paused, and BPM fully covered by rekordbox is not running', () => {
+	assert.deepEqual(card.collapsedLine(silver()), {
+		text: 'Library: 3 lanes paused while a deck is playing',
+		title: 'Paused while a deck is playing: Key, Loudness, Deck waveforms. More shows the counts.'
+	});
+	assert.equal(card.collapsedLine(silver('running')).text, 'Library: 3 lanes still running');
+});

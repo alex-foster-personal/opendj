@@ -41,8 +41,10 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import sqlite3
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 
 from apps.shared import platform_paths, remote_status
 from apps.shared.state import locations as state_locations
@@ -71,6 +73,9 @@ class LibraryPlayability:
     awaiting_volume: int
     streaming: int
     pathless: int
+    #: (folder, rows) for every row whose file is not on this Mac (broken_here
+    #: plus off_machine), largest first (ENRICH-02). ``absent_folder`` names it.
+    absent_folders: tuple[tuple[str, int], ...] = ()
 
     def counts(self) -> dict[str, int]:
         return {
@@ -166,6 +171,21 @@ def _path_candidates(file_path: object, alternates: Sequence[str]) -> list[str]:
     return [*raw, *(p for p in alternates if p not in raw)]
 
 
+def absent_folder(path: str, home: str) -> str:
+    """The folder a missing file is reported under: two levels below a home
+    directory (``~/Music/Convert``, ``/Users/dev/Documents/TuneFab``), the
+    drive for ``/Volumes/<name>``, else the first two levels."""
+    parts = [part for part in PurePosixPath(path).parent.parts if part != "/"]
+    home_parts = [part for part in PurePosixPath(home).parts if part != "/"]
+    if home_parts and parts[: len(home_parts)] == home_parts:
+        return "/".join(["~", *parts[len(home_parts):][:2]])
+    if parts[:1] == ["Users"] and len(parts) > 1:
+        return "/" + "/".join(parts[:4])
+    if parts[:1] == ["Volumes"]:
+        return "/" + "/".join(parts[:2])
+    return "/" + "/".join(parts[:2])
+
+
 def _require_buckets_cover_every_row(scan: LibraryPlayability) -> None:
     bucketed = sum(count for name, count in scan.counts().items() if name != "total")
     if bucketed != scan.total:
@@ -202,6 +222,8 @@ def scan_playability(
     present: list[tuple[str, str]] = []
     broken_here: list[str] = []
     tally = {"off_machine": 0, "awaiting_volume": 0, "streaming": 0, "pathless": 0}
+    folders: Counter[str] = Counter()
+    home = str(Path.home())
     for stable_id, file_path in rows:
         path = resolved.get(stable_id)
         if path is not None:
@@ -209,6 +231,8 @@ def scan_playability(
             continue
         candidates = _path_candidates(file_path, alternates.get(stable_id, []))
         bucket = _unresolved_bucket(stable_id, candidates, claimed, volumes)
+        if bucket in ("broken_here", "off_machine"):
+            folders[absent_folder(next(p for p in candidates if not _is_streaming(p)), home)] += 1
         if bucket == "broken_here":
             broken_here.append(stable_id)
         else:
@@ -222,9 +246,10 @@ def scan_playability(
         awaiting_volume=tally["awaiting_volume"],
         streaming=tally["streaming"],
         pathless=tally["pathless"],
+        absent_folders=tuple(sorted(folders.items(), key=lambda item: (-item[1], item[0]))),
     )
     _require_buckets_cover_every_row(scan)
     return scan
 
 
-__all__ = ["BUCKETS", "LibraryPlayability", "scan_playability"]
+__all__ = ["BUCKETS", "LibraryPlayability", "absent_folder", "scan_playability"]

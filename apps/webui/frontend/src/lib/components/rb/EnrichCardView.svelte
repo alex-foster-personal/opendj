@@ -8,6 +8,7 @@
 	import type { Snippet } from 'svelte';
 	import {
 		type EnrichSummary,
+		absentLines,
 		analysisLines,
 		collapsedLine,
 		lyricsLine,
@@ -50,7 +51,9 @@
 		onnever
 	}: Props = $props();
 
-	const lines = $derived(summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null)] : []);
+	const lines = $derived(
+		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...absentLines(summary)] : []
+	);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 	const collapsed = $derived(!expanded && summary !== null ? collapsedLine(summary) : null);
 </script>
@@ -157,6 +160,7 @@
 		margin: 0;
 		line-height: 16px;
 	}
+	.enrich-line.ready,
 	.enrich-line.working {
 		color: var(--rb-text);
 	}
