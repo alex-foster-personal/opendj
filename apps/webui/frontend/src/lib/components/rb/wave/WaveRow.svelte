@@ -42,14 +42,13 @@
 		foldPresentationSample,
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
-	import { isPresentationClockStalled, positionSampledAtMs } from '$lib/rb/presentation-clock-report';
+	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
+	import { playheadMs } from '$lib/rb/playhead-display.svelte';
+	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import {
 		initPaintScheduleState,
-		initPositionInterpolatorState,
-		paintPositionMs,
 		paintScrollPx,
-		shouldSkipRepaint,
-		type PaintPositionDeck
+		shouldSkipRepaint
 	} from './paint-position';
 	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
 	import {
@@ -244,22 +243,18 @@
 		});
 	}
 
-	// Pin 53ba89ca8ddc (waveform jitter): see `./paint-position.ts` for the
-	// measurement + rationale (tested there, a `.svelte` file cannot be).
-	// `stallState` below folds raw `deck.position_ms`, never this value.
-	// Both halves project from the engine's sample time, so a split row (and
-	// every row) paints synced decks in phase (paint-position.ts module note).
-	const _paintPositionState = initPositionInterpolatorState();
-	const _partnerPaintState = initPositionInterpolatorState();
-
+	// Every playhead element draws from one clock per deck (ANIM-CLOCK-01,
+	// `$lib/rb/playhead-clock.ts`): dead reckoning from the engine's output
+	// timestamp, small drift slewed out, discontinuities snapped. A scrub wins
+	// outright; an untrusted clock paints the raw sample, so a stall stays
+	// visible. `stallState` below folds raw `deck.position_ms`, never this value.
 	function _paintPositionMs(): number {
-		const sampledAt = positionSampledAtMs(deckId, deck.position_ms);
-		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now(), sampledAt);
+		if (scrubPreviewMs !== null) return scrubPreviewMs;
+		return clockUntrusted ? deck.position_ms : playheadMs(deckId, deck);
 	}
 
-	function _partnerPaintMs(id: DeckId, partner: PaintPositionDeck): number {
-		const sampledAt = positionSampledAtMs(id, partner.position_ms);
-		return paintPositionMs(_partnerPaintState, null, partner, isPresentationClockStalled(id), performance.now(), sampledAt);
+	function _partnerPaintMs(id: DeckId, partner: { position_ms: number; playing: boolean }): number {
+		return isPresentationClockStalled(id) ? partner.position_ms : playheadMs(id, partner);
 	}
 
 	const stemScrollPx = $derived(
@@ -311,7 +306,10 @@
 			partnerPaintMs,
 			partnerState?.pitch ?? null
 		] as const;
+		tracePlayhead('wave-clock', deckId, paintPositionMs); // before the sub-pixel skip: the clock itself
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
+		tracePlayhead('wave', deckId, paintPositionMs);
+		if (splitPartner !== null && partnerPaintMs !== null) tracePlayhead('wave-partner', splitPartner.id, partnerPaintMs);
 		const dpr = window.devicePixelRatio;
 		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
 			el.width = cssW * dpr;
@@ -400,9 +398,12 @@
 
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
-		const pulse = syncPlayheadTone === 'drift';
-		const hovered = deckHoverUi.deckId === deckId;
-		if (!(deck.playing || seeking || waveformSeekArmed !== null || partnerMoving || (hovered && (pulse || masterMoving)))) return;
+		// The hover and drift-pulse inputs are read ONLY when nothing else keeps the
+		// loop running. Read unconditionally, a follower's sync tone flipping mid-frame
+		// re-ran this effect, cancelled the frame already queued and dropped one
+		// (ANIM-CLOCK-01: about one frame a second on the follower's strip).
+		const running = deck.playing || seeking || waveformSeekArmed !== null || partnerMoving;
+		if (!running && !(deckHoverUi.deckId === deckId && (syncPlayheadTone === 'drift' || masterMoving))) return;
 		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
 			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);

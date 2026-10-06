@@ -412,7 +412,7 @@ function _startRaf(): void {
 			const p = client.positionMs(d.deck);
 			if (p === null) continue;
 			st.position_ms = p;
-			notePositionSample(d.deck as DeckId, p, performance.now()); // the paint projects from this instant
+			notePositionSample(d.deck as DeckId, st, performance.now()); // every playhead projects from this instant (ANIM-CLOCK-01)
 		}
 	};
 	rafId = requestAnimationFrame(tick);
