@@ -3,7 +3,7 @@
 // function and could not tell a raw payload from a proxied one. -Claude
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { proxy } from 'svelte/internal/client';
+import { derived, get, proxy } from 'svelte/internal/client';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -80,4 +80,15 @@ test('the anlz cache publishes every ready payload marked non-reactive', async (
 	const state = proxy({ cache: { 'b9-track': entry } });
 	assert.equal(state.cache['b9-track'].data, entry.data);
 	assert.equal(state.cache['b9-track'].data.waveform.detail.low.length, BINS);
+});
+
+test('a reader of a marked payload updates when the cache entry is REPLACED (re-analysis, refresh, revalidate)', () => {
+	const state = proxy({ cache: { t: { status: 'ready', data: marker.nonReactive({ points: 1 }) } } });
+	const points = derived(() => state.cache.t.data.points);
+	assert.equal(get(points), 1);
+	state.cache.t = { status: 'ready', data: marker.nonReactive({ points: 2 }) };
+	assert.equal(get(points), 2, 'replacing the entry is how every refresh path publishes, and it must still notify');
+	// The documented trade: an in-place edit is NOT observed. No such edit exists in src/ (B9 audit).
+	state.cache.t.data.points = 3;
+	assert.equal(get(points), 2);
 });
