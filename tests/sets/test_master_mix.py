@@ -309,6 +309,7 @@ def test_a_master_start_pushes_the_attach_and_audio_begins_at_once(master_client
     # build 15 lost 4,100-4,600 ms waiting for the rail's status poll.
     assert closed["start_to_first_frame_ms"] is not None
     assert closed["start_to_first_frame_ms"] < 100, closed
+    assert closed["start_to_tap_attached_ms"] is not None and closed["start_to_tap_attached_ms"] < 100, closed
 
 
 def test_a_master_start_with_no_page_starts_nothing(master_client) -> None:

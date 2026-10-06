@@ -129,6 +129,7 @@ class MasterMixWriter:
         # When the first accepted frame was captured: arrival minus its own
         # duration (the page posts a chunk once it is full), server clock.
         self._first_frame_at: float | None = None
+        self._attached_at: float | None = None
         self._stream: str | None = None
         self._next_seq = 0
         self._segment: _Segment | None = None
@@ -231,12 +232,22 @@ class MasterMixWriter:
             self._segment.close()
             self._segment = None
 
+    def mark_tap_attached(self) -> None:
+        """The start route saw the page connect its tap (SET-12); splits the
+        start gap into the push round trip and the tap's own first audio."""
+        with self._lock:
+            if self._attached_at is None:
+                self._attached_at = self._monotonic()
+
+    def _ms_since_start(self, at: float | None) -> int | None:
+        return None if at is None else round((at - self._started_at) * 1000)
+
     def start_to_first_frame_ms(self) -> int | None:
         """Server-clock ms from the recording's start to its first captured
         frame (SET-12: under about 100 ms once a page is attached on start)."""
         if self._first_frame_at is None:
             return None
-        return round((self._first_frame_at - self._started_at) * 1000)
+        return self._ms_since_start(self._first_frame_at)
 
     def summary(self) -> dict[str, int | None]:
         """What was accepted, for the ``master_mix_closed`` timeline event: the
@@ -247,6 +258,7 @@ class MasterMixWriter:
                 "chunks_accepted": self.chunks_accepted,
                 "streams": self.streams,
                 "start_to_first_frame_ms": self.start_to_first_frame_ms(),
+                "start_to_tap_attached_ms": self._ms_since_start(self._attached_at),
             }
 
     def close(self) -> None:

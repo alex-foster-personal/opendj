@@ -485,6 +485,7 @@ async def api_recorder_start(
         return status
     try:
         await channel.attach(request, status["session_id"])
+        service.mark_master_tap_attached(status["session_id"])
     except MasterTapUnavailable as exc:
         # Nothing is feeding it: stop rather than leave a recording that
         # can only fail after its 10 s attach timeout.

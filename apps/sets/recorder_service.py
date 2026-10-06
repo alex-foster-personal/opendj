@@ -304,6 +304,13 @@ class RecorderService:
             )
         return matches[0].index
 
+    def mark_master_tap_attached(self, session_id: str) -> None:
+        """Record when the page reported its tap connected (SET-12 timing)."""
+        with self._lock:
+            recorder = self._recorder
+            if recorder is not None and recorder.session_id == session_id and recorder._master is not None:
+                recorder._master.mark_tap_attached()
+
     def write_master_pcm(
         self, session_id: str, *, stream: str, seq: int, sample_rate: int, pcm: bytes
     ) -> None:
