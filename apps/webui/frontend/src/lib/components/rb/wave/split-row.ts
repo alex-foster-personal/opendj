@@ -7,14 +7,15 @@
  * Ported from the split-wave mockup (commit 0dbeca081d).
  *
  * Requirements (mini-PRD):
- *   ✔︎ splitPartnerDeck: follower -> master deck; master (or no master
- *     elected) -> next loaded deck after this one, wrapping; nothing else
- *     loaded -> null (row stays one-sided).
+ *   ✔︎ splitPartnerDeck: follower -> master deck; the master itself -> null
+ *     (its row is this deck top and bottom, a plain mirrored row, the maintainer Tue
+ *     6 Oct 2026); no master elected -> next loaded deck after this one,
+ *     wrapping; nothing else loaded -> null (plain mirrored row).
  *     [if] a follower's partner is not the master [then ⛔️]
- *     [if] the master's partner is itself or an empty deck [then ⛔️]
+ *     [if] the master row gets any partner deck on its top half [then ⛔️]
  *     [if] a lone loaded deck gets a partner [then ⛔️]
- *   ✔︎ paintSplitRow: partner half on top (bars grow up to the centerline),
- *     this deck flipped into the bottom half (bars grow down from it).
+ *   ✔︎ paintSplitRow: partner half on top (one-sided bars grow up to the
+ *     centerline), this deck flipped into the bottom half (bars grow down).
  */
 import type { DeckId } from '$lib/rb/deck-id';
 import { drawWaveRow, type WaveRowFrame } from './render';
@@ -32,7 +33,9 @@ export interface SplitPartner {
 
 export function splitPartnerDeck(selfId: DeckId, decks: readonly SplitDeckRef[]): SplitPartner | null {
 	const master = decks.find((d) => d.isMaster && d.loaded) ?? null;
-	if (master !== null && master.id !== selfId) return { id: master.id, label: `MASTER ${master.id}` };
+	// The master row is this deck top AND bottom: a plain mirrored row.
+	if (master !== null && master.id === selfId) return null;
+	else if (master !== null) return { id: master.id, label: `MASTER ${master.id}` };
 	const start = decks.findIndex((d) => d.id === selfId);
 	if (start < 0) throw new Error(`split row: deck ${selfId} not in deck list`);
 	for (let step = 1; step < decks.length; step++) {
@@ -50,7 +53,8 @@ function _paintHalf(target: HTMLCanvasElement, frame: WaveRowFrame, dpr: number)
 	const ctx = target.getContext('2d');
 	if (ctx === null) throw new Error('split row: 2d context unavailable');
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-	drawWaveRow(ctx, frame);
+	// Each half is one-sided so the two decks meet at the centerline.
+	drawWaveRow(ctx, { ...frame, blocksMirrored: false });
 }
 
 /** `top` and `bottom` are frames at heightCss = row height / 2. */
