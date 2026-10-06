@@ -30,6 +30,11 @@
 	 */
 	import { buildWordLineMap, resolveCursor } from '$lib/rb/lyrics/cursor';
 	import type { LyricsCursor } from '$lib/rb/lyrics/cursor';
+	import {
+		deckLyricPageIndex,
+		fitDeckLyricLine,
+		type DeckLyricFit
+	} from '$lib/rb/lyrics/deck-lyric-fit';
 	import type { LyricsPlaybackState, LyricsTrack } from '$lib/rb/lyrics/types';
 
 	let {
@@ -65,8 +70,29 @@
 	/** Countdown quantised to 0.1s so the text node changes 10x/s, not 60x/s. */
 	let countdownTenths: number | null = $state(null);
 
+	/** Share of the current line already played, quantised to 1/16 so a
+	 *  paged long line re-renders a handful of times per line, not per frame. */
+	let lineSixteenths: number = $state(0);
+
 	let rootEl: HTMLDivElement | null = $state(null);
+	let measureEl: HTMLDivElement | null = $state(null);
+	let boxWidthPx = $state(0);
+	let boxHeightPx = $state(0);
 	let hint = 0;
+
+	// The column's real box: the fit below re-runs only when it changes.
+	$effect(() => {
+		const el = rootEl;
+		if (el === null || typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				boxWidthPx = entry.contentRect.width;
+				boxHeightPx = entry.contentRect.height;
+			}
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 
 	function tickAt(t: number | null): void {
 		if (track === null || wordLine === null) return;
@@ -85,6 +111,7 @@
 		lineIndex = cursor.lineIndex;
 		wordIndex = cursor.wordIndex;
 		nextLineIndex = cursor.nextLineIndex;
+		lineSixteenths = Math.floor(cursor.lineProgress * 16);
 		countdownTenths =
 			cursor.nextVocalInMs === null ? null : Math.max(0, Math.round(cursor.nextVocalInMs / 100));
 		sungThrough =
@@ -121,6 +148,75 @@
 			: track.words
 					.slice(currentLine.first_word, currentLine.last_word + 1)
 					.map((w, i) => ({ index: currentLine.first_word + i, text: w.word }))
+	);
+
+	// ------------------------------------------------------------ line fit
+	// LYR-10 (bug B3): the current line wraps, shrinks, takes the preview
+	// rows' height and, only as a last resort, pages - it never loses words.
+	const BASE_FONT_PX = $derived(rows === 1 ? 11.5 : 12.5);
+	const FLOOR_FONT_PX = 9;
+	const PREVIEW_ROW_PX = 12;
+	const isWordLine = $derived(currentLine !== null && currentLine.fidelity === 'word');
+	const approxPrefix = $derived(
+		currentLine !== null && !isWordLine && currentLine.band !== 'unjudged' ? '~ ' : ''
+	);
+	/** The tokens the fit and the pager work on: real word spans in word
+	 *  mode, the whole-line text split on whitespace otherwise. */
+	const fitWords: string[] = $derived(
+		currentLine === null
+			? []
+			: isWordLine
+				? lineWords.map((w) => w.text)
+				: currentLine.text.split(/\s+/).filter((w) => w.length > 0)
+	);
+
+	function measureLyricText(text: string, fontPx: number): number {
+		const el = measureEl;
+		if (el === null) return 0;
+		el.style.fontSize = `${fontPx}px`;
+		el.textContent = approxPrefix + text;
+		if (el.scrollWidth > el.clientWidth + 0.5) return Number.POSITIVE_INFINITY;
+		return el.getBoundingClientRect().height;
+	}
+
+	const lineFit: DeckLyricFit = $derived.by(() => {
+		// Read the box so a resize re-fits; the measurer reads its width.
+		void boxWidthPx;
+		if (measureEl === null || boxWidthPx <= 0) {
+			return { fontPx: BASE_FONT_PX, previews: rows - 1, pageStarts: [0] };
+		}
+		return fitDeckLyricLine(
+			fitWords,
+			{
+				baseFontPx: BASE_FONT_PX,
+				floorFontPx: FLOOR_FONT_PX,
+				stepPx: 0.5,
+				maxPreviews: rows - 1,
+				previewRowPx: PREVIEW_ROW_PX,
+				boxHeightPx
+			},
+			measureLyricText
+		);
+	});
+	const pageIndex = $derived(
+		deckLyricPageIndex(
+			lineFit.pageStarts,
+			isWordLine && currentLine !== null && wordIndex !== null
+				? wordIndex - currentLine.first_word
+				: null,
+			lineSixteenths / 16
+		)
+	);
+	const pageStart = $derived(lineFit.pageStarts[pageIndex] ?? 0);
+	const pageEnd = $derived(lineFit.pageStarts[pageIndex + 1] ?? fitWords.length);
+	const pageWords = $derived(lineWords.slice(pageStart, pageEnd));
+	const pageText = $derived(
+		lineFit.pageStarts.length > 1 ? fitWords.slice(pageStart, pageEnd).join(' ') : (currentLine?.text ?? '')
+	);
+	const pageTip = $derived(
+		lineFit.pageStarts.length > 1
+			? ` Long line shown in ${lineFit.pageStarts.length} parts (${pageIndex + 1} of ${lineFit.pageStarts.length}) so no word is cut.`
+			: ''
 	);
 
 	// ------------------------------------------------------------- titles
@@ -212,58 +308,71 @@
 			<span class="dkl-dim">instrumental verdict</span>
 		</div>
 	{:else}
-		{#if playState === 'preroll' || playState === 'gap'}
-			<div class="dkl-row dkl-current dkl-gap">
-				<span class="dkl-cd-label">VOCAL IN</span>
-				<span class="dkl-cd-value" title={countdownTip}>
-					{countdownTenths === null ? '--' : countdownText(countdownTenths)}
-				</span>
-			</div>
-		{:else if playState === 'outro'}
-			<div class="dkl-row dkl-current dkl-gap">
-				<span class="dkl-cd-label dkl-cd-done" title="the last sung word of this track has ended"
-					>VOCAL DONE</span
-				>
-			</div>
-		{:else if currentLine !== null && currentLine.fidelity === 'word'}
-			{#key lineIndex}
-				<div class="dkl-row dkl-current" title={bandTip}>
-					{#each lineWords as word (word.index)}<span
-							class="dkl-word"
-							class:dkl-sung={word.index <= sungThrough}
-							class:dkl-live={word.index === wordIndex}
-							data-word={word.text}>{word.text}</span
-						>{' '}{/each}
+		<div class="dkl-cur">
+			{#if playState === 'preroll' || playState === 'gap'}
+				<div class="dkl-row dkl-current dkl-gap">
+					<span class="dkl-cd-label">VOCAL IN</span>
+					<span class="dkl-cd-value" title={countdownTip}>
+						{countdownTenths === null ? '--' : countdownText(countdownTenths)}
+					</span>
 				</div>
-			{/key}
-		{:else if currentLine !== null}
-			{#key lineIndex}
-				<div
-					class="dkl-row dkl-current dkl-whole"
-					class:dkl-uncertain={currentLine.band === 'uncertain'}
-					class:dkl-bad={currentLine.band === 'bad'}
-					title={bandTip}
-				>
-					{#if currentLine.band !== 'unjudged'}<span
-							class="dkl-approx"
-							title="approximate timing: this line does not carry trusted per-word onsets"
-							>~</span
-						>{/if}{currentLine.text}
+			{:else if playState === 'outro'}
+				<div class="dkl-row dkl-current dkl-gap">
+					<span class="dkl-cd-label dkl-cd-done" title="the last sung word of this track has ended"
+						>VOCAL DONE</span
+					>
 				</div>
-			{/key}
-		{/if}
+			{:else if currentLine !== null && isWordLine}
+				{#key `${lineIndex}:${pageIndex}`}
+					<div
+						class="dkl-row dkl-current dkl-fit"
+						class:dkl-paged={lineFit.pageStarts.length > 1}
+						style:font-size={`${lineFit.fontPx}px`}
+						data-lyric-pages={lineFit.pageStarts.length}
+						title={bandTip + pageTip}
+					>
+						{#each pageWords as word (word.index)}<span
+								class="dkl-word"
+								class:dkl-sung={word.index <= sungThrough}
+								class:dkl-live={word.index === wordIndex}
+								data-word={word.text}>{word.text}</span
+							>{' '}{/each}
+					</div>
+				{/key}
+			{:else if currentLine !== null}
+				{#key `${lineIndex}:${pageIndex}`}
+					<div
+						class="dkl-row dkl-current dkl-fit dkl-whole"
+						class:dkl-paged={lineFit.pageStarts.length > 1}
+						class:dkl-uncertain={currentLine.band === 'uncertain'}
+						class:dkl-bad={currentLine.band === 'bad'}
+						style:font-size={`${lineFit.fontPx}px`}
+						data-lyric-pages={lineFit.pageStarts.length}
+						title={bandTip + pageTip}
+					>
+						{#if currentLine.band !== 'unjudged'}<span
+								class="dkl-approx"
+								title="approximate timing: this line does not carry trusted per-word onsets"
+								>~</span
+							>{/if}{pageText}
+					</div>
+				{/key}
+			{/if}
+		</div>
 
-		{#if rows >= 2}
+		{#if rows >= 2 && lineFit.previews >= 1}
 			<div class="dkl-row dkl-next" title="the line coming up next">
 				{#if nextLine !== null}<span class="dkl-next-mark">&gt;</span>{nextLine.text}{/if}
 			</div>
 		{/if}
-		{#if rows === 3}
+		{#if rows === 3 && lineFit.previews >= 2}
 			<div class="dkl-row dkl-next dkl-next2" title="the line after next">
 				{#if thirdLine !== null}<span class="dkl-next-mark">&gt;&gt;</span>{thirdLine.text}{/if}
 			</div>
 		{/if}
 	{/if}
+	<!-- Off-screen twin of the current line, used only to measure the fit. -->
+	<div class="dkl-fit dkl-measure" aria-hidden="true" bind:this={measureEl}></div>
 </div>
 
 <style>
@@ -276,7 +385,13 @@
 
 		display: flex;
 		flex-direction: column;
+		justify-content: center;
 		gap: 0;
+		/* Fill the host column (Deck.svelte .deck-lyric-host) so the fit
+		 * measures the real box, not a shrink-wrapped one. */
+		flex: 1 1 auto;
+		align-self: stretch;
+		position: relative;
 		min-width: 0;
 		min-height: 0;
 		overflow: hidden;
@@ -304,6 +419,41 @@
 		height: 14px;
 		line-height: 14px;
 		font-size: 11.5px;
+	}
+	/* LYR-10 (bug B3): the sung line takes the column's free height and
+	 * WRAPS instead of ellipsizing; its size comes from deck-lyric-fit.ts via
+	 * an inline font-size. The preview rows stay pinned at the bottom, so a
+	 * wrapped line never pushes them around. */
+	.dkl-cur {
+		flex: 1 1 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		overflow: hidden;
+	}
+	.dkl-fit,
+	.dkl-compact .dkl-fit {
+		height: auto;
+		line-height: 1.3;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		white-space: normal;
+		overflow-wrap: anywhere;
+		text-overflow: clip;
+		flex: 0 0 auto;
+	}
+	/* Its measuring twin: same type, same width, never painted. A word wider
+	 * than the column must not wrap here, so the fit sees it and shrinks. */
+	.dkl-measure {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		visibility: hidden;
+		pointer-events: none;
+		overflow: hidden;
+		overflow-wrap: normal;
 	}
 	.dkl-compact .dkl-msg {
 		height: 14px;
