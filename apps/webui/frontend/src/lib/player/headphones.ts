@@ -1410,6 +1410,18 @@ type _CueSinkContext = Pick<AudioContext, 'state' | 'resume' | 'suspend'> & {
 };
 
 /**
+ * The id a browser `setSinkId` accepts for a picked output (CUEOUT-27).
+ * `enumerateDevices` lists the system output as `"default"`, but Chrome only
+ * resolves that pseudo-id once the page holds media permission: without it
+ * `setSinkId("default")` rejects with NotFoundError "device default is not
+ * found". The empty string is the spec's id for the user agent's default
+ * output and needs no permission, so `"default"` is sent as `""`.
+ */
+export function browserSinkId(deviceId: string): string {
+	return deviceId === 'default' ? '' : deviceId;
+}
+
+/**
  * CUEOUT-09: move the ONE shared cue context to `deviceId` as a transaction.
  * The context is live, so a half-applied change is audible: on any failure it
  * goes back to the device `holder` recorded. A setSinkId that timed out may
@@ -1424,7 +1436,7 @@ export async function applyCueSinkTransaction(
 ): Promise<void> {
 	const previousId = holder.cueDeviceId;
 	try {
-		await withHeadphoneOperationTimeout('cue setSinkId', ctx.setSinkId(deviceId));
+		await withHeadphoneOperationTimeout('cue setSinkId', ctx.setSinkId(browserSinkId(deviceId)));
 		holder.cueDeviceId = deviceId;
 		if (ctx.state === 'suspended') {
 			await withHeadphoneOperationTimeout('cue resume', ctx.resume());
@@ -1442,7 +1454,7 @@ async function _restoreCueSink(
 ): Promise<void> {
 	try {
 		if (previousId === null) throw new Error('no previous cue device to restore');
-		await withHeadphoneOperationTimeout('cue restore setSinkId', ctx.setSinkId(previousId));
+		await withHeadphoneOperationTimeout('cue restore setSinkId', ctx.setSinkId(browserSinkId(previousId)));
 		holder.cueDeviceId = previousId;
 	} catch (restoreError) {
 		holder.cueDeviceId = null;
@@ -1855,7 +1867,7 @@ async function _applyMasterSink(deviceId: string, context: AudioContext): Promis
 		return;
 	}
 	const ctx = _requireMasterSinkApi(context);
-	await withHeadphoneOperationTimeout('master setSinkId', ctx.setSinkId(deviceId));
+	await withHeadphoneOperationTimeout('master setSinkId', ctx.setSinkId(browserSinkId(deviceId)));
 	_outputContext = context;
 	mixerState.headphones.routes.master = { state: 'selected', selected: true };
 }
