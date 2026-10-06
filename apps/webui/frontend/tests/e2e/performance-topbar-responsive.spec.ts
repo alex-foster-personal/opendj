@@ -17,7 +17,9 @@ const PRIORITY_CONTROLS = [
 	// PR #4923 found it hidden at 1400px).
 	'button[aria-label="2 deck view"]',
 	'button[title^="BeatSyncMax"]',
-	'span.ap-wrap > button[title^="AutoPlay"]',
+	// AutoPlay has no title= since #5535: its one explainer is the AutoPlay menu
+	// card, and the button points at that card's status line.
+	'span.ap-wrap > button[aria-describedby="ap-menu-status"]',
 	'button[aria-label="Jobs drawer"]',
 	'[role="slider"][aria-label="master volume"]'
 ];
@@ -67,7 +69,7 @@ test('responsive TopBar keeps priority controls reachable and reports the two-tr
 		}
 	}
 
-	await page.locator('span.ap-wrap > button[title^="AutoPlay"]').focus();
+	await page.locator('span.ap-wrap > button[aria-describedby="ap-menu-status"]').focus();
 	await expect(page.locator('.ap-menu')).toBeVisible();
 	await expect(page.locator('button.ap-two-track')).toBeDisabled();
 	await expect(page.locator('button.ap-two-track')).toHaveAttribute('title', /Not built yet/);

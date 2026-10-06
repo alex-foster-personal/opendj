@@ -1195,6 +1195,47 @@
 	.rb-topbar.less-view .topbar-slot-stage,
 	.rb-topbar.less-view :global(.cmd-entry) { display: none; }
 
+	/* SHORT WINDOWS (max-height 799px). The compact lyric chip ("WF hidden",
+	   ~58px) shows only at these heights and is a door that never yields, so
+	   every width tier above has to start that much earlier here. Measured
+	   Tue 6 Oct 2026 with a 1px elementFromPoint sweep at 600px high across
+	   [790px, 1920px] (playwright, chromium, performance fixture), after
+	   Settings and the skin toggle were pinned (#5456, ~74px):
+	     - the row overflowed from 790px to 808px (9px at 800px) and clipped
+	       the sign-in pill;
+	     - the command input failed its hit test just above every restore
+	       boundary (1258-1296, 1449-1455, then 1481-1487, 1534-1552,
+	       1741-1746 and 1752-1770 as each earlier band was closed).
+	   Same tiers, same order, same rule (last failing width plus 25px). Below
+	   1023px nothing evictable is left, so SOURCE abbreviates the way BSM, STG
+	   and AP already do; it keeps its aria-label and its menu. Placed after
+	   the base rules so the pair-long/pair-short swap wins. */
+	@media (max-height: 799px) and (max-width: 1795px) {
+		.rb-topbar .topbar-slot-vibe { display: none; }
+		.rb-topbar .pair-long { display: none; }
+		.rb-topbar .pair-short { display: inline; }
+	}
+	@media (max-height: 799px) and (max-width: 1577px) {
+		.rb-topbar .free-badge,
+		.rb-topbar .topbar-slot-utility,
+		.rb-topbar .clock { display: none; }
+	}
+	@media (max-height: 799px) and (max-width: 1512px) {
+		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
+		.rb-topbar .link-btn,
+		.rb-topbar .topbar-slot-pad { display: none; }
+	}
+	@media (max-height: 799px) and (max-width: 1321px) {
+		.rb-topbar :global(.perf-meters-root),
+		.rb-topbar :global(.posture-chip),
+		.rb-topbar :global(.cloudsync-status),
+		.rb-topbar :global([data-testid="refresh-analysis"]) { display: none; }
+	}
+	@media (max-height: 799px) and (max-width: 833px) {
+		.rb-topbar :global(.src-toggle) { font-size: 0; }
+		.rb-topbar :global(.src-toggle)::after { content: 'SRC'; font-size: 9px; }
+	}
+
 	.ap-wrap {
 		position: relative;
 		display: inline-flex;
