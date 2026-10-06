@@ -417,6 +417,9 @@ export type AuthoritativeAnlzGridSink = (
 ) => void | Promise<void>;
 let _authoritativeGridSink: AuthoritativeAnlzGridSink | null = null;
 
+// Re-exported for the installer (audio-engine.svelte.ts), which already imports
+// this module: the quality ratchet caps how many modules one file imports from.
+export { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
 /** Returns the uninstall, for the installer's `reinstallAcrossHotUpdates`: a dev
  * hot update re-runs audio-engine.svelte.ts while this module keeps its state,
  * so without it the re-run hits the once-only guard. Production never calls it. */
