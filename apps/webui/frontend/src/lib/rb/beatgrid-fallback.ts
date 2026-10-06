@@ -154,8 +154,8 @@ export function withFallbackBeatgrid<T extends AnlzData>(
 }
 
 /** Wrap a beatgrid-fallback response in an AnlzData-shaped payload so
- * drawWaveRow / barsToNextCueLabel render it unmodified: real beat ticks
- * plus a bars-to-grid-end countdown. Waveform bands stay empty (no
+ * drawWaveRow renders it unmodified: real beat ticks.
+ * Waveform bands stay empty (no
  * fabricated audio), cues/phrases stay empty (this pipeline proposes
  * neither), and vocals is reported honestly as 'not_analyzed' (this
  * pipeline never touches PVDI).

@@ -13,6 +13,7 @@
 		chipShortLabel,
 		chipState as chipStateOf,
 		chipGlyphs,
+		chipIcon,
 		chipTitle
 	} from '$lib/components/cloudsync/cloudsync-view';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -34,6 +35,7 @@
 	const title = $derived(chipTitle(status, loadError));
 	const ariaLabel = $derived(chipAriaLabel(status, loadError));
 	const glyphs = $derived(chipGlyphs(status));
+	const icon = $derived(chipIcon(status));
 
 	async function load(): Promise<void> {
 		try {
@@ -107,6 +109,7 @@
 		class:update-required={chipState() === 'update_required'}
 		class:ok={chipState() === 'ok'}
 		class:inconclusive={chipState() === 'inconclusive'}
+		class:stalled={chipState() === 'off' && icon === 'cloud-alert'}
 		title={title}
 		aria-label={ariaLabel}
 		aria-haspopup="dialog"
@@ -114,18 +117,52 @@
 		data-testid="cloudsync-status-chip"
 		onclick={togglePopover}
 	>
-		<svg
-			class="chip-icon"
-			width="12"
-			height="12"
-			viewBox="0 0 24 24"
-			fill="currentColor"
-			aria-hidden="true"
-		>
-			<path
-				d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"
-			/>
-		</svg>
+		<!-- CLOUDSYNC-36: never turned on is a neutral slashed cloud; the "!"
+		     is only for turned-on-and-failing (chipIcon owns the table). -->
+		{#if icon === 'cloud-off'}
+			<svg
+				class="chip-icon"
+				width="12"
+				height="12"
+				viewBox="0 0 24 24"
+				fill="currentColor"
+				aria-hidden="true"
+				data-testid="cloudsync-chip-icon"
+				data-icon="cloud-off"
+			>
+				<path
+					d="M19.35 10.04A7.49 7.49 0 0 0 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46A5.47 5.47 0 0 1 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19a3 3 0 0 1 1.44 5.62l1.45 1.45A4.99 4.99 0 0 0 24 15c0-2.64-2.05-4.78-4.65-4.96zM3 5.27l2.75 2.74C2.56 8.15 0 10.77 0 14c0 3.31 2.69 6 6 6h11.73l2 2L21 20.73 4.27 4 3 5.27zM7.73 10l8 8H6a4 4 0 0 1 0-8h1.73z"
+				/>
+			</svg>
+		{:else}
+			<svg
+				class="chip-icon"
+				width="12"
+				height="12"
+				viewBox="0 0 24 24"
+				fill="currentColor"
+				aria-hidden="true"
+				data-testid="cloudsync-chip-icon"
+				data-icon={icon}
+			>
+				<path
+					d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"
+				/>
+			</svg>
+		{/if}
+		{#if icon === 'cloud-alert'}
+			<svg
+				class="chip-alert"
+				width="4"
+				height="10"
+				viewBox="0 0 4 12"
+				aria-hidden="true"
+				data-testid="cloudsync-chip-alert"
+			>
+				<path d="M2 1.5 V7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+				<circle cx="2" cy="10.5" r="1.2" fill="currentColor" />
+			</svg>
+		{/if}
 		{#if glyphs.tick}
 			<!-- LESSV-03 (the maintainer, Tue 6 Oct 2026): sync "can be just cloud-icon +
 			     tick-icon if it's working". The words stay in title and
@@ -213,7 +250,16 @@
 		color: var(--warning, #b8860b);
 	}
 
-	.chip-icon {
+	/* CLOUDSYNC-36: turned on but not running (no heartbeat, invalid config,
+	 * no hub_url) needs action, so it reads amber with the "!", unlike the
+	 * muted never-turned-on cloud. */
+	.chip.stalled {
+		border-color: var(--warning, #b8860b);
+		color: var(--warning, #b8860b);
+	}
+
+	.chip-icon,
+	.chip-alert {
 		flex: none;
 	}
 

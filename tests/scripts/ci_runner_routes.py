@@ -29,6 +29,19 @@ LIGHT_RUNS_ON = (
     f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}}}"
 )
 
+#: The `quality` ratchet job (Tue 6 Oct 2026): the light chain with the opt-in
+#: `CI_RUNS_ON_QUALITY` pool ahead of `CI_RUNS_ON_LINUX`, keeping its mypy cache
+#: acceptance step off cold-cache megamac VMs. Unset, it is the light chain exactly.
+QUALITY_RUNS_ON = (
+    f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_QUALITY || "
+    "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+)
+#: The `quality` route minus its merge-queue disjunct: what an unset
+#: `CI_RUNS_ON_MERGE_QUEUE` resolves to.
+PRE_ROUTE_QUALITY = (
+    "${{ fromJSON(vars.CI_RUNS_ON_QUALITY || vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+)
+
 _REPAIR_PR = (
     "(github.event_name == 'pull_request' && "
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"

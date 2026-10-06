@@ -5,12 +5,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let beatgridFallback;
 let gridFeatures;
-let waveMath;
 
 before(async () => {
 	beatgridFallback = await loadTypeScriptModule('src/lib/rb/beatgrid-fallback.ts');
 	gridFeatures = await loadTypeScriptModule('src/lib/player/grid-features.ts');
-	waveMath = await loadTypeScriptModule('src/lib/components/rb/wave/wave-math.ts');
 });
 
 /** /anlz 200 payload with the grid the caller cares about. Only `beatgrid`
@@ -289,7 +287,7 @@ test('toSyntheticAnlzData carries the real beatgrid through, invents nothing els
 	assert.deepEqual(synth.waveform.preview.low, []);
 });
 
-test('a synthetic payload drives the same bars-to-grid-end countdown as a real one', () => {
+test('a synthetic payload keeps every measured beat, ending at the grid end', () => {
 	const fallback = {
 		stable_id: 'abc123',
 		source: 'apps.analysis',
@@ -314,14 +312,11 @@ test('a synthetic payload drives the same bars-to-grid-end countdown as a real o
 	};
 	const synth = beatgridFallback.toSyntheticAnlzData(fallback);
 
-	// No cues/phrases in the fallback payload, so the countdown target is
-	// the end of the measured grid (wave-math.ts priority tier 3): 7 beats
-	// from t=0 to the last beat at t=3.5 -> 1 full bar, and the 3 leftover
-	// beats are floored away. The label is whole bars as of pin d56d98cd9c53
-	// (Wed 2 Sep 2026); see tests/unit/bars-to-next-cue-label.test.mjs for why.
-	assert.equal(waveMath.barsToNextCueLabel(synth, 0), '1Bars');
-	// Past the end of the grid: nothing left to count down to.
-	assert.equal(waveMath.barsToNextCueLabel(synth, 4000), null);
+	// The gutter's bars countdown that used to read this was removed by
+	// DECKUX-40; the grid itself must still arrive whole and unmodified.
+	assert.equal(synth.beatgrid.beats.length, 8);
+	assert.equal(synth.beatgrid.beats.at(-1).t, 3.5);
+	assert.deepEqual(synth.cues, []);
 });
 
 test('no beats at all (no downbeats measured) never invents a grid', () => {
@@ -336,7 +331,7 @@ test('no beats at all (no downbeats measured) never invents a grid', () => {
 		beatgrid: { beat_count: 0, beats: [] }
 	};
 	const synth = beatgridFallback.toSyntheticAnlzData(fallback);
-	assert.equal(waveMath.barsToNextCueLabel(synth, 0), null);
+	assert.deepEqual(synth.beatgrid.beats, []);
 });
 
 test('sameBeatgrid treats extrapolated mark as part of grid identity', () => {

@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS. A deck-load row that says "1.4 s" without saying what the
  * machine was doing is not a measurement, it is an anecdote. The register
- * (docs/perf/performance-register.md) carries a beatgrid lane measured at
+ * ((private path)) carries a beatgrid lane measured at
  * "load average 554 and roughly 71 MB free RAM" whose whole runtime budget is
  * documented as untested for exactly that reason, and a waveform decode that
  * moved 0.73 s -> 7.53 s in one evening on nothing but the machine's load.
@@ -20,11 +20,12 @@
  * `pressure=unknown` and no numeric fields at all. `load_avg_1m=0` on a box
  * that was never sampled is indistinguishable from a genuinely idle box, and
  * an unmeasured condition that renders as a real reading is the exact defect
- * .claude/rules/verification.md exists to forbid. The same rule applies
+ * (private path) exists to forbid. The same rule applies
  * field by field: the engine may be able to read the load average and not the
  * free page count, and the fields it could not read are ABSENT, never zero.
  */
 
+import { releaseBody } from '$lib/api/release-body';
 import { API_BASE } from '$lib/api/base';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
@@ -272,7 +273,10 @@ async function _pollOnce(): Promise<void> {
 		const response = await fetch(`${API_BASE}${PRESSURE_PATH}`, {
 			headers: { accept: 'application/json' }
 		});
-		if (!response.ok) return;
+		if (!response.ok) {
+			releaseBody(response);
+			return;
+		}
 		const body = (await response.json()) as PressureResponse;
 		const snapshot = pressureSnapshotFrom(body, requestedAtMs);
 		if (snapshot !== null) storeMachinePressure(snapshot);

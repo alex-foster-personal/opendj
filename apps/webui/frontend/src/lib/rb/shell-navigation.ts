@@ -5,6 +5,7 @@
  * Only the installed shell (`OPENDJ_ENGINE_ORIGIN`) consumes
  * `GET /api/v1/shell/navigate/pending`; browser tabs must not auto-navigate.
  */
+import { releaseBody } from '$lib/api/release-body';
 import { goto } from '$app/navigation';
 import { API_BASE } from '$lib/api/base';
 import { detectSurface } from '$lib/rb/usage-heartbeat';
@@ -45,7 +46,10 @@ export function installShellNavigationPoll(): () => void {
 		try {
 			const response = await fetch(`${API_BASE}${PENDING_PATH}`);
 			failingSince = null;
-			if (!response.ok) return;
+			if (!response.ok) {
+				releaseBody(response);
+				return;
+			}
 			const body = (await response.json()) as {
 				pending?: { id?: string; route?: string } | null;
 			};
@@ -75,6 +79,7 @@ export function installShellNavigationPoll(): () => void {
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ id: pending.id })
 			});
+			releaseBody(ack);
 			if (ack.ok) {
 				lastHandledId = pending.id;
 			}

@@ -76,7 +76,8 @@ test('if the components read hard-coded colors instead of the skin tokens then m
 	const dots = readFileSync('src/lib/components/rb/browser/AnalysisDots.svelte', 'utf8');
 	assert.match(dots, /filter:\s*var\(--rb-status-dot-filter\)/);
 	const rail = readFileSync('src/lib/components/rb/browser/IconRail.svelte', 'utf8');
-	for (const name of ['spotify', 'files', 'beatport', 'record']) assert.match(rail, new RegExp(`var\\(--rb-rail-${name}\\)`));
+	// UX-RAIL-01 removed the files and Beatport glyphs; their tokens stay for skins.
+	for (const name of ['spotify', 'record']) assert.match(rail, new RegExp(`var\\(--rb-rail-${name}\\)`));
 	// Icon fills only; the live `.recording` red stays (a state, like errors).
 	assert.doesNotMatch(rail.split('<style')[0], /#35c04f|#3d7dd9|#8e5bd6|#d0342c/i);
 	const knobStyle = readFileSync('src/lib/components/rb/mixer/Knob.svelte', 'utf8').split('<style')[1];

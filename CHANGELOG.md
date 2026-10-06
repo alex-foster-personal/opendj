@@ -2,7 +2,7 @@
 
 All notable changes to music-dj-tools are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Milestone-level detail lives under [`.planning/milestones/`](.planning/milestones/); this file is the user-facing summary.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Milestone-level detail lives under [`(private path)/`]((private path)/); this file is the user-facing summary.
 
 ## [Unreleased]
 
@@ -12,7 +12,7 @@ The first public release of the Open DJ desktop app, named **Open DJ 1.0 alpha**
 `app-v1.0.0-alpha.1`.
 
 App releases use their own `app-v<semver>` tags (ADR "Launch release name 'Open DJ 1.0 alpha'
-and an app tag scheme of its own", `docs/decisions/`). The `1.0.x` entries below this one, and
+and an app tag scheme of its own", `(private path)/`). The `1.0.x` entries below this one, and
 the `v1.0*` tags, are the April 2026 library toolchain, not app releases. The `v1.1.1` tag was
 an internal test build and was never public.
 
@@ -38,13 +38,11 @@ an internal test build and was never public.
 
 ### Known issues
 
-- **Memory use grows during a session.** Open DJ's memory keeps rising while it runs, even with
-  tracks paused: about 27 MB a minute with tracks loaded but paused, and about 85 MB a minute
-  with four decks loaded. Each track loaded with stems takes about 130 MB for every minute of
-  audio, and about 380 MB of that stays in use after you eject it. After 30 minutes of AutoPlay,
-  memory stayed at about 4.9 GB with every deck empty, against about 0.6 GB at launch. Quitting
-  Open DJ releases all of it. Restart the app before a long set, and on a Mac with 8 GB avoid
-  loading stems on all four decks.
+- **Stems use a lot of memory.** Each track loaded with stems takes about 130 MB for every minute
+  of audio. In a 30-minute AutoPlay test of this build on a 16 GB Mac, memory held steady between
+  tracks at about 2.5 to 3 GB, and dropped to about 1.2 GB once every deck was ejected (about
+  0.4 GB at launch). Quitting Open DJ releases all of it. On a Mac with 8 GB, avoid loading stems
+  on all four decks.
 - **Unfinished controls:** a control with no real data source behind it is visible but inert,
   and its tooltip says "not implemented - see PARITY-TODO". This is deliberate: Open DJ never
   shows invented data.
@@ -306,7 +304,7 @@ First release candidate of music-dj-tools v1. Tag target: `v1.0-rc1` on `master`
 
 ### Credits
 
-music-dj-tools is only possible because of the open reverse-engineering and open-source work surveyed in [`docs/prior-art-and-communities.md`](docs/prior-art-and-communities.md). Particular thanks to:
+music-dj-tools is only possible because of the open reverse-engineering and open-source work surveyed in [`(private path)`]((private path)). Particular thanks to:
 
 - pyrekordbox (Dylan Jones) for Rekordbox 6 / 7 master.db access.
 - rekordcrate, crate-digger, dysentery, beat-link, and djl-analysis.deepsymmetry.org (Holzhaus and Deep-Symmetry / James Elliott) for pdb + ANLZ + ProDJ Link format documentation.

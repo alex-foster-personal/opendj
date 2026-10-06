@@ -17,6 +17,7 @@ import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
+import { releaseBody } from '$lib/api/release-body';
 import { RbApiError } from './api-rb-error';
 import { currentAnlzFetchGeneration } from './anlz-fetch-generation';
 import { optionalResources } from './optional-resource-availability';
@@ -28,7 +29,7 @@ import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
-import { stemWorkSignal } from './stem-decode-policy';
+import { beginStemWork } from './stem-decode-policy';
 import type { StemFetchProgress } from './stem-types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
@@ -66,6 +67,9 @@ export type TrackLyrics = {
 
 // ----------------------------------------------------------- _helpers
 
+/** Reads (and so releases) the error body before throwing: every non-OK
+ * branch that calls this leaves no Response body open (PERF-LEAK-01). Never
+ * cancel `r` before calling it, or the error message is lost. */
 async function _throwRbApiError(r: Response): Promise<never> {
 	// Backend contract: errors are explicit JSON {"detail": {code, message}}
 	// (COMPONENT-MAP 2 shared plumbing). ServerErrorMiddleware emits plain
@@ -192,7 +196,7 @@ async function _deleteRequest<T>(path: string, ifMatch?: string): Promise<T> {
 // exactly one of the four states below. The UI states are MANDATORY
 // (bars / analyzed-no-vocals / not-analyzed) - bars are never rendered
 // from anything but real regions. 'demucs' is the SPIKE-B2 local
-// detection fallback (data/state/vocal-cache) merged server-side when
+// detection fallback ((private path)) merged server-side when
 // PVDI is absent; 'not_analyzed' now means NEITHER source exists.
 
 /** One vocal region. For 'rekordbox' intensity is the max PVDI value
@@ -588,6 +592,8 @@ export async function listPlaylistTracksPage(
 	if (!r.ok) await _throwRbApiError(r);
 	const etag = r.headers.get('etag');
 	if (!etag) {
+		// The page body is never read on this path: release it before throwing.
+		releaseBody(r);
 		throw new Error(`playlist ${playlistId}: tracks page response carries no ETag header`);
 	}
 	const page = (await r.json()) as PlaylistTracksPageHydrated;
@@ -1220,9 +1226,14 @@ export async function fetchStemAudioArrayBuffers(
 ): Promise<Partial<Record<StemPartName, ArrayBuffer>>> {
 	const entries = await Promise.all(
 		STEM_LAYOUT_PART_NAMES[layout].map(async (part) => {
-			const response = await fetch(stemAudioUrl(stableId, part), { signal: stemWorkSignal() });
-			if (!response.ok) await _throwRbApiError(response);
-			return [part, await response.arrayBuffer()] as const;
+			const work = beginStemWork();
+			try {
+				const response = await fetch(stemAudioUrl(stableId, part), { signal: work.signal });
+				if (!response.ok) await _throwRbApiError(response);
+				return [part, await response.arrayBuffer()] as const;
+			} finally {
+				work.end();
+			}
 		})
 	);
 	return Object.fromEntries(entries) as Partial<Record<StemPartName, ArrayBuffer>>;

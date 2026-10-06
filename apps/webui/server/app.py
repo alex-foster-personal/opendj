@@ -49,6 +49,7 @@ from .app_wiring import (
 )
 from .backend import StateBackend
 from .cloud_sync import probe_syncthing_status
+from .dev_cloudsync_guard import assert_dev_cloudsync_allowed
 from .frontend_build import frontend_build_dir
 from .request_guard import install_request_guard
 from .routes import ingest as ingest_routes
@@ -68,7 +69,7 @@ def create_app(  # noqa: PLR0913
     hostname: str | None = None,
     lock_status_fn: Callable[[], Any] | None = None,
     syncthing_status_fn: Callable[[], Any] | None = None,
-    state_db_path: str = "data/state/state.db",
+    state_db_path: str = "(private path)",
     version: str = "0.1.0",
     port: int | None = None,
     frontend_port: int | None = None,
@@ -387,7 +388,7 @@ def _build_default_app() -> FastAPI:
     stems = stem_storage()
     ensure_stem_storage(stems)
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
-    # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
+    # Phase 5 wiring: prefer SqliteBackend when ``(private path)`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
     # ``make_backend()`` itself already returns InMemoryBackend when no db
     # file exists; it only raises for a real construction/migration failure,
@@ -402,7 +403,7 @@ def _build_default_app() -> FastAPI:
     # froze to at whatever module happened to import it first.
     #
     # Without this, create_app()'s own default for state_db_path is the
-    # literal "data/state/state.db", resolved relative to CWD rather than
+    # literal "(private path)", resolved relative to CWD rather than
     # MDT_DATA_DIR. That mismatch was silent until debc73644 started binding
     # app.state.analysis_db_path to state_db_path unconditionally: before
     # that commit, the analysis routes' _analysis_db_path() saw no override
@@ -412,6 +413,9 @@ def _build_default_app() -> FastAPI:
     # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
     # this entrypoint against a fixture data dir with an unmapped track (#949).
     from apps.shared.paths import STATE_DB
+    # CLOUDSYNC-35: a cloned data dir syncs as the machine it was cloned from;
+    # refuse before the scheduler is armed, never strip the config afterwards.
+    assert_dev_cloudsync_allowed(Path(str(STATE_DB)).resolve().parent.parent, os.environ)
     app = create_app(
         backend=backend,
         bind_host=bind_host,

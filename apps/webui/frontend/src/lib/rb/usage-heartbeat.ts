@@ -12,6 +12,7 @@
  * reported stale, which is exactly the truth we want on the other side.
  */
 
+import { releaseBody } from '$lib/api/release-body';
 import { API_BASE } from '$lib/api/base';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
@@ -84,7 +85,9 @@ export function startUsageHeartbeat(scheduler: BootScheduler = bootScheduler): (
 				page_visible: document.visibilityState === 'visible',
 				app_version: APP_VERSION
 			})
-		}).catch(() => {
+		})
+			.then(releaseBody)
+			.catch(() => {
 			// An engine that is down is a fact for the other side to observe,
 			// never an error thrown into the application path.
 		});

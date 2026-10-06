@@ -1,6 +1,10 @@
 <script lang="ts">
-	// Far-left browser icon rail (SCREENSHOT-SPEC 5a). Spotify is the only
-	// active source at this stage; all other source glyphs remain inert.
+	// Far-left browser icon rail (SCREENSHOT-SPEC 5a). W17 (UX-RAIL-01):
+	// only entries that do something, or a real planned feature, stay. The
+	// top-left entry returns the active pane to the whole collection; the
+	// rekordbox decorations with no feature behind them (bookmarks, explorer,
+	// iTunes, file browser, Beatport, video, cloud lock and the Collection /
+	// iTunes / Devices text tabs) are gone.
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 
@@ -11,12 +15,13 @@
 		d: string;
 		mode: 'fill' | 'stroke';
 		source?: 'spotify';
-		action?: 'record';
+		action?: 'record' | 'collection';
 	}
 
 	let {
 		source,
 		onspotify,
+		oncollection,
 		recording = false,
 		recordingBusy = false,
 		recordingWaiting = false,
@@ -25,6 +30,8 @@
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
+		/** Top-left home entry: back to the whole collection (All Tracks). */
+		oncollection: (event: MouseEvent) => void;
 		recording?: boolean;
 		recordingBusy?: boolean;
 		/** REC pressed, but audio is not being written yet (mic prompt up). */
@@ -35,9 +42,14 @@
 	} = $props();
 
 	const ICONS: RailIcon[] = [
-		{ plannedId: 'collection-bookmarks', color: 'currentColor', d: 'M4 2h8v12l-4-3.2L4 14z', mode: 'fill' },
-		{ plannedId: 'explorer-grid', color: 'currentColor', d: 'M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z', mode: 'fill' },
-		{ plannedId: 'itunes-library', color: 'currentColor', d: 'M2 3h12v2H2zM4 7h10v2H4zM6 11h8v2H6z', mode: 'fill' },
+		{
+			// House glyph, top-left: the way back to every track (UX-RAIL-01).
+			tip: 'Collection - show every track in the library (All Tracks)',
+			color: 'currentColor',
+			d: 'M2.5 8L8 3l5.5 5M4 7v6.5h3V10h2v3.5h3V7',
+			mode: 'stroke',
+			action: 'collection'
+		},
 		{
 			tip: 'Spotify playlists and acquisition queue',
 			color: 'var(--rb-rail-spotify)',
@@ -45,24 +57,17 @@
 			mode: 'fill',
 			source: 'spotify'
 		},
-		{ plannedId: 'file-browser', color: 'var(--rb-rail-files)', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
-		{ plannedId: 'beatport', color: 'var(--rb-rail-beatport)', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
-		{ plannedId: 'video-output', color: 'currentColor', d: 'M2 3h12v8H2zM6 12h4v2H6z', mode: 'fill' },
 		{
-			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a)
+			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a).
+			// TODO entry: the usb-export routes exist, the UI does not yet.
 			plannedId: 'usb-export',
 			color: 'currentColor',
 			d: 'M5 2h6.5L13 3.5V14H5zM6.2 3.2v2.6M8 3.2v2.6M9.8 3.2v2.6M11.6 3.7v2.1',
 			mode: 'stroke'
 		},
 		{
-			plannedId: 'cloud-lock',
-			color: 'currentColor',
-			d: 'M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7M4 7h8v6H4z',
-			mode: 'stroke'
-		},
-		{
-			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a)
+			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a).
+			// TODO entry: set sessions exist (apps/sets), the in-browser list does not.
 			plannedId: 'play-history',
 			color: 'currentColor',
 			d: 'M6.5 1.5h3M8 1.5v2M8 3.5a5 5 0 1 1 0 10a5 5 0 1 1 0-10M8 8.5V5.5M8 8.5l2 1.5',
@@ -77,13 +82,13 @@
 		}
 	];
 
-	const SECTIONS: string[] = ['Collection', 'iTunes', 'Devices'];
 	const SPOTIFY_ARCS_D = 'M4.6 6.6C6.8 5.9 9.4 6.1 11.4 7.2M5 8.6C6.8 8.1 8.9 8.3 10.5 9.2M5.4 10.5C6.8 10.1 8.4 10.3 9.6 11';
 </script>
 
 <nav class="rail" aria-label="browser sources">
 	{#each ICONS.filter((entry) => entry.action !== 'record' || setRecordingEnabled()) as icon, i (i)}
 		{@const isRecord = icon.action === 'record'}
+		{@const isHome = icon.action === 'collection'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}
 		{@const tip = isRecord
 			? (recordingTip ??
@@ -93,6 +98,7 @@
 				: (icon.tip ?? '')}
 		<button
 			class="rail-btn"
+			data-testid={isHome ? 'rail-collection-home' : undefined}
 			class:rb-inert={isInert}
 			class:recording={isRecord && recording}
 			class:waiting={isRecord && recordingWaiting}
@@ -101,7 +107,7 @@
 			title={tip}
 			aria-label={tip}
 			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : isRecord ? recording : undefined}
-			onclick={icon.source === 'spotify' ? onspotify : isRecord ? onrecord : undefined}
+			onclick={isHome ? oncollection : icon.source === 'spotify' ? onspotify : isRecord ? onrecord : undefined}
 		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
 				{#if icon.mode === 'stroke'}
@@ -116,9 +122,6 @@
 				{/if}
 			</svg>
 		</button>
-	{/each}
-	{#each SECTIONS as label (label)}
-		<span class="rail-label">{label}</span>
 	{/each}
 </nav>
 
@@ -168,18 +171,5 @@
 		50% {
 			box-shadow: inset 2px 0 transparent;
 		}
-	}
-	/* Horizontal section labels below the rail groups (SCREENSHOT-SPEC 5a) -
-	 * NOT rotated; the rail is narrow so the type is tiny like rekordbox's. */
-	.rail-label {
-		width: 100%;
-		font-size: 6px;
-		line-height: 1.2;
-		text-align: center;
-		color: var(--rb-text-dim);
-		margin-top: 10px;
-		letter-spacing: -0.3px;
-		white-space: nowrap;
-		overflow: hidden;
 	}
 </style>

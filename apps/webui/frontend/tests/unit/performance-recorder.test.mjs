@@ -166,7 +166,7 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(iconRail, /action: 'record'/);
 	assert.match(iconRail, /disabled=\{isInert \|\| \(isRecord && recordingBusy\)\}/);
 	assert.match(iconRail, /isRecord \? onrecord : undefined/);
-	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} \/>/);
+	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} \/>/);
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);
 	assert.match(performanceRecorderRail, /async function togglePerformanceRecording\(\): Promise<void>/);
 	assert.match(performanceRecorderRail, /recorder = await getRecorderStatus\(\)/);

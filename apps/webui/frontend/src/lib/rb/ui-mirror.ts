@@ -1,4 +1,5 @@
 /** Push a human-readable projection of the live performance screen to engine. */
+import { releaseBody } from '$lib/api/release-body';
 import { toasts } from '$lib/stores.svelte';
 import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState, outputDeviceLivenessState } from './master-silence-report';
@@ -238,7 +239,9 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 			method: 'DELETE',
 			keepalive: true,
 			headers: { 'x-opendj-client-id': MIRROR_CLIENT_ID }
-		}).catch(() => {});
+		})
+			.then(releaseBody)
+			.catch(() => {});
 	};
 	// Closing a TAB never runs the route's unmount, so without this the lease
 	// outlives the closed leader by up to its 10 s TTL and the next tab waits.

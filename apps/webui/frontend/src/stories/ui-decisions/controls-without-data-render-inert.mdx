@@ -68,10 +68,12 @@ say so in prose in situ rather than rendering a grid of dead controls.
 
 ## Visual example
 
-The browser icon rail is the clearest instance. Spotify is the only wired
-source, so it alone is interactive; every other glyph renders in its correct
-position, dimmed and disabled, with the PARITY-TODO tooltip. Hover any dimmed
-icon in the canvas below to see it.
+The browser icon rail is the clearest instance. The home entry (back to All
+Tracks), Spotify and REC are wired, so they are interactive; the two glyphs
+for planned features (USB export, play history) render dimmed and disabled
+with their planned-control tooltip. Hover a dimmed icon in the canvas below to
+see it. Glyphs with no feature planned behind them were removed rather than
+kept inert (UX-RAIL-01): inert is for a real roadmap item, not decoration.
 
 <Canvas of={IconRailStories.Collection} />
 

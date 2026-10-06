@@ -23,8 +23,8 @@
 	display: flex;
 	height: calc(var(--rb-waverow-h) + var(--rb-waverow-stem-extra, 0px));
 	background: var(--rb-bg);
-	/* Strong channel separator so beat lines can be compared across rows. */
-	border-bottom: 2px solid #3d4652;
+	/* No row divider (DECKUX-40, the maintainer Tue 6 Oct 2026: "Don't need row
+	   dividers"). Decks 1/2 and 3/4 still separate by their row fill. */
 	transition:
 		background 50ms ease-out,
 		box-shadow 50ms ease-out;

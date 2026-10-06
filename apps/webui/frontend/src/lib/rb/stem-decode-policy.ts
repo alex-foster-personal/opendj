@@ -16,9 +16,16 @@ interface StemDecodeBlock {
 }
 
 let _block: StemDecodeBlock | null = null;
-// Aborted the moment a block begins, so stem work already in flight stops
-// instead of finishing (Codex review, PR #4039). A new one per unblocked span.
-let _abort = new AbortController();
+// One controller PER stem download, registered while it runs and aborted the
+// moment a block begins, so stem work already in flight stops instead of
+// finishing (Codex review, PR #4039).
+//
+// Never one shared, page-lifetime controller (P0, Tue 6 Oct 2026, regressed in
+// 935752ef33): WebKit keeps every fetch's following signal, and with it the
+// Response, alive for as long as the source signal lives, so a shared
+// controller retained every stem fetch of the session (heap with empty decks:
+// 2,951 AbortSignal, 733 signalFollow, 2,243 FetchResponse).
+const _inFlight = new Set<AbortController>();
 
 /** Block stem decode until the returned release is called. The release only
  * clears its OWN block, so a stale release cannot unblock a newer holder. */
@@ -29,11 +36,14 @@ export function blockStemDecode(reason: string): () => void {
 	}
 	const block: StemDecodeBlock = { reason };
 	_block = block;
-	_abort.abort(new DOMException(`stem work cancelled: ${reason}`, 'AbortError'));
+	const cancelled = [..._inFlight];
+	_inFlight.clear();
+	for (const controller of cancelled) {
+		controller.abort(new DOMException(`stem work cancelled: ${reason}`, 'AbortError'));
+	}
 	return () => {
 		if (_block !== block) return;
 		_block = null;
-		_abort = new AbortController();
 	};
 }
 
@@ -42,8 +52,20 @@ export function stemDecodeBlockReason(): string | null {
 	return _block === null ? null : _block.reason;
 }
 
-/** The signal every stem download passes to `fetch`: already aborted while
- * stems are blocked, and aborted when a block begins mid-download. */
-export function stemWorkSignal(): AbortSignal {
-	return _abort.signal;
+/** A fresh signal for ONE stem download: already aborted while stems are
+ * blocked, and aborted when a block begins mid-download. The caller MUST call
+ * `end()` in `finally`, which drops the registration so nothing outlives it. */
+export function beginStemWork(): { signal: AbortSignal; end: () => void } {
+	const controller = new AbortController();
+	if (_block !== null) {
+		controller.abort(new DOMException(`stem work cancelled: ${_block.reason}`, 'AbortError'));
+	} else {
+		_inFlight.add(controller);
+	}
+	return { signal: controller.signal, end: () => void _inFlight.delete(controller) };
+}
+
+/** How many stem downloads are registered right now (0 when none is running). */
+export function inFlightStemWorkCount(): number {
+	return _inFlight.size;
 }

@@ -5,6 +5,7 @@
  * GET /api/v1/errors when a deck or audio-health fault is present.
  */
 
+import { releaseBody } from '$lib/api/release-body';
 import { API_BASE } from '$lib/api/base';
 import {
 	anlzCacheEntryCount,
@@ -111,6 +112,7 @@ export function startClientPerformanceSampling(
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(body)
 		})
+			.then(releaseBody)
 			.catch(() => {})
 			.finally(() => {
 				inFlight = false;

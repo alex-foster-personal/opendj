@@ -3352,7 +3352,7 @@
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >
-	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} />
+	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} oncollection={selectCollectionSource} />
 	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel

@@ -1,4 +1,5 @@
 /** Execute agent-declared orders through the same performance dispatcher as UI. */
+import { releaseBody } from '../api/release-body';
 import {
 	dispatchPerformanceCommand,
 	queryPerformanceState,
@@ -263,6 +264,7 @@ export async function pollAgentOrders(
 			continue;
 		}
 		if (response.status === 409) {
+			releaseBody(response);
 			// Expected state, not a failure: the engine dropped this page between
 			// our last accepted publish and this poll (engine restart, or the
 			// mirror was closed under us). Stand down until a publish re-registers
@@ -277,6 +279,7 @@ export async function pollAgentOrders(
 		// silently disables every agent command on this page (play, autoplay,
 		// the watchdog's resume), so only the route's uninstall ends it.
 		if (!response.ok) {
+			releaseBody(response);
 			if (!reportedClaimFailure) {
 				console.error(`agent order poll failed: ${response.status}; retrying every ${CLAIM_RETRY_MS} ms`);
 				reportedClaimFailure = true;
@@ -290,6 +293,9 @@ export async function pollAgentOrders(
 		}
 		let next: ({ id: string } & AgentOrder) | null;
 		try {
+			// Reading the claim body here is what releases it on EVERY path below,
+			// including a held long poll's `null` (PERF-LEAK-01): never branch on
+			// the wait header before this read.
 			next = (await response.json()) as ({ id: string } & AgentOrder) | null;
 		} catch (error) {
 			console.error(`agent order poll: unreadable claim body (${_message(error)}); polling on`);
@@ -315,6 +321,7 @@ export async function pollAgentOrders(
 				await _sleep(IDLE_POLL_MS);
 				continue;
 			}
+			releaseBody(complete);
 			_reportResultAnswer(next.id, complete.status);
 			republish();
 			// Straight back to the long poll: a timer here would cost a hidden

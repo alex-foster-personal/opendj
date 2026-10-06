@@ -1,23 +1,45 @@
 <script lang="ts">
-	// Compact track identity in a waveform gutter. Artwork failures and empty
-	// decks have named slates so either state cannot be mistaken for a blank.
+	// Compact track identity in a waveform gutter (DECKUX-40): artwork the full
+	// row height, then the title over the live key and BPM. Missing or loading
+	// artwork is empty space with a hover reason, never a labelled slate.
 	import { deckArtworkUrl } from '$lib/rb/api-rb';
+	import { playbackBpm } from '$lib/rb/beat-sync-math';
+	import { camelotKeyColor } from '$lib/rb/camelot-color';
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
+	import { gutterTrackTitle } from './track-title-display';
 
 	const { deck }: { deck: DeckState } = $props();
-	const trackName = $derived.by(() => {
-		if (deck.stable_id === null) return 'No track loaded';
+	const fullTitle = $derived.by(() => {
+		if (deck.stable_id === null) throw new Error('WaveTrackSummary mounted for an empty deck');
 		if (deck.title === null) throw new Error(`loaded deck ${deck.stable_id} is missing a title`);
 		return deck.title;
 	});
-	const artworkSrc = $derived(
-		deck.stable_id === null ? null : deckArtworkUrl(deck.stable_id, 's')
-	);
+	const trackName = $derived(gutterTrackTitle(fullTitle));
+	const artworkSrc = $derived(deck.stable_id === null ? null : deckArtworkUrl(deck.stable_id, 's'));
 	let artworkFailed = $state(false);
 	let artworkLoaded = $state(false);
 	let trackNameEl = $state<HTMLSpanElement | null>(null);
 	let trackNameScrubPx = $state(0);
 	let trackNameScrubbing = $state(false);
+
+	// Key and tempo are read at whole-second resolution: position_ms moves
+	// every frame, and a one-second bucket keeps the grid lookup off the
+	// per-frame path (the derived below only re-runs when the bucket changes).
+	const positionBucketSec = $derived(Math.floor(Math.max(0, deck.position_ms) / 1000));
+	const liveBpm = $derived(
+		playbackBpm({
+			beats: deck.anlz?.beatgrid.beats,
+			positionSec: positionBucketSec,
+			tempoRatio: deck.pitch,
+			tagBpm: deck.bpm
+		})
+	);
+	const liveKey = $derived(
+		keyAtPlayheadNow(deck.anlz, positionBucketSec * 1000, deck.key_shift_semitones, deck.key)
+			.display
+	);
+	const keyColor = $derived(camelotKeyColor(liveKey));
 
 	$effect(() => {
 		void artworkSrc;
@@ -50,27 +72,39 @@
 					artworkFailed = true;
 				}}
 			/>
-			<span class:visible={!artworkLoaded} class="wave-art-slate" aria-hidden="true">ART</span>
 		</span>
-	{:else if deck.stable_id === null}
-		<span class="wave-art-slate visible standalone" title="No track loaded">EMPTY</span>
 	{:else}
-		<span class="wave-art-slate visible standalone" title="No artwork found: none in rekordbox, the file, a cover image in its folder, or online">NO ART</span>
+		<span
+			class="wave-art"
+			title="No artwork found: none in rekordbox, the file, a cover image in its folder, or online"
+		></span>
 	{/if}
-	<span
-		bind:this={trackNameEl}
-		class="wave-track-name"
-		class:empty={deck.stable_id === null}
-		class:scrubbing={trackNameScrubbing}
-		style:--track-name-scrub-px={`${trackNameScrubPx}px`}
-		style:animation-duration={`${Math.max(trackNameScrubPx / 30, 0.6)}s`}
-		title={trackName}
-		role="note"
-		onpointerenter={startTrackNameScrub}
-		onpointerleave={stopTrackNameScrub}
-	>
-		<span>{trackName}</span>
-	</span>
+	<div class="wave-text">
+		<span
+			bind:this={trackNameEl}
+			class="wave-track-name"
+			class:scrubbing={trackNameScrubbing}
+			style:--track-name-scrub-px={`${trackNameScrubPx}px`}
+			style:animation-duration={`${Math.max(trackNameScrubPx / 30, 0.6)}s`}
+			title={fullTitle}
+			role="note"
+			onpointerenter={startTrackNameScrub}
+			onpointerleave={stopTrackNameScrub}
+		>
+			<span>{trackName}</span>
+		</span>
+		<span class="wave-meta">
+			{#if liveKey !== null}<span
+					class="key"
+					style:--wave-key-color={keyColor}
+					title="Key now, in Camelot notation, after any key shift">{liveKey}</span
+				>{/if}
+			{#if liveBpm !== null}<span
+					class="bpm"
+					title="Tempo now, in BPM: the beatgrid tempo times the pitch fader">{liveBpm.toFixed(1)}</span
+				>{/if}
+		</span>
+	</div>
 </div>
 
 <style>
@@ -78,19 +112,17 @@
 		min-width: 0;
 		flex: 1;
 		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
+		align-items: stretch;
+		gap: 6px;
 	}
-	.wave-art,
-	.wave-art-slate {
+	/* Full row height, square. No fill or border of its own: loaded artwork
+	   covers it, and missing or loading artwork reads as empty space. */
+	.wave-art {
 		position: relative;
 		display: block;
-		width: 27px;
-		height: 25px;
 		flex: none;
-		background: var(--rb-panel-raised);
-		border: 1px solid var(--rb-border);
-		box-sizing: border-box;
+		height: 100%;
+		aspect-ratio: 1;
 	}
 	.wave-art img {
 		position: absolute;
@@ -103,55 +135,28 @@
 	.wave-art img.loaded {
 		opacity: 1;
 	}
-	.wave-art-slate {
-		display: none;
-		place-items: center;
-		color: var(--rb-text-dim);
-		font-size: 7px;
-		font-weight: 700;
-		letter-spacing: 0.04em;
+	/* Size containment lets the meta line drop out when the short-viewport
+	   compact rows (18-24px) leave room for one line only. */
+	.wave-text {
+		min-width: 0;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 3px;
+		container-type: size;
 	}
-	.wave-art-slate.visible {
-		display: grid;
-	}
-	/* The EMPTY / NO ART placeholders are not content; they are a named slate
-	   saying why there is no artwork. They keep their label contrast and give
-	   up their raised fill (pin e585d3b67f4d). */
-	.wave-art-slate.standalone {
-		background: transparent;
-	}
-	.wave-art .wave-art-slate {
-		position: absolute;
-		inset: 0;
-		width: auto;
-		height: auto;
-	}
-	/* pin e585d3b67f4d: "the title below it is too loud (full white font) and
-	   too wide". It was --rb-text, the same weight the primary UI text carries,
-	   spanning the whole 132px gutter regardless of how short the title is.
-	   Now it is secondary text, and it shrinks to its own content up to a cap
-	   derived from the gutter rather than always filling it - a short title
-	   reads as short. Hover still scrubs a clipped one, so nothing is lost.
-	   It is NOT dimmed below --rb-text-dim: that token was deliberately
-	   lightened to #838990 on Thu 4 Sep 2026 to clear the 4.5:1 AA floor
-	   (pin 5503680a4e0f), and going quieter than "less loud" asks would put
-	   this text back under it. */
+	/* Fades the last 14px instead of cutting a letter in half; hover still
+	   scrubs the full title through the space. */
 	.wave-track-name {
 		display: block;
-		max-width: 100%;
-		width: fit-content;
 		overflow: hidden;
-		color: var(--rb-text-dim);
+		color: var(--rb-text);
 		font-size: var(--rb-fs-label);
 		line-height: 12px;
 		white-space: nowrap;
-	}
-	/* "Empty and no track loaded ... should be more dimmed / less visible."
-	   Same AA floor applies to the text, so the emphasis comes off the shape
-	   instead: the placeholder loses its raised fill and reads as an outline. */
-	.wave-track-name.empty {
-		font-style: italic;
-		letter-spacing: 0.02em;
+		-webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent);
+		mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent);
 	}
 	.wave-track-name > span {
 		display: inline-block;
@@ -171,5 +176,31 @@
 		to {
 			transform: translateX(calc(-1 * var(--track-name-scrub-px)));
 		}
+	}
+	.wave-meta {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+		min-height: 11px;
+		font-size: 9px;
+		line-height: 11px;
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	@container (max-height: 30px) {
+		.wave-meta {
+			display: none;
+		}
+	}
+	.key {
+		color: var(--wave-key-color, var(--rb-text-dim));
+		font-weight: 600;
+	}
+	/* Gothic de-colors chrome; its key reads as plain primary text. */
+	:global(html[data-skin='mono-dev']) .key {
+		color: var(--rb-text);
+	}
+	.bpm {
+		color: var(--rb-text);
 	}
 </style>

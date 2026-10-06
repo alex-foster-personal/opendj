@@ -256,6 +256,41 @@ export function chipGlyphs(status: CloudSyncStatus | null): { cloud: true; tick:
 	return { cloud: true, tick: ok, text: !ok };
 }
 
+/**
+ * The backend's reason when CloudSync was never turned on
+ * (apps/sync_hub/status.py `_effective_config`). Mirrored like
+ * WAITING_FOR_HUB_PREFIX: the backend decides, the UI reads it.
+ */
+export const NOT_CONFIGURED_REASON = 'CloudSync is not configured.';
+
+/**
+ * CLOUDSYNC-36: the chip's icon. `cloud-off` is the neutral "not set up"
+ * cloud with a slash, `cloud-tick` the working sync (LESSV-03), and
+ * `cloud-alert` the ONLY one with a "!": CloudSync was turned on (or a config
+ * was attempted) and it is failing or needs action. Off by choice is not a
+ * fault, so it never shows "!".
+ */
+export type ChipIcon = 'cloud' | 'cloud-off' | 'cloud-tick' | 'cloud-alert';
+
+export function chipIcon(status: CloudSyncStatus | null): ChipIcon {
+	// Still loading, or the daemon did not answer: we do not know whether
+	// CloudSync is set up, so claim neither "off" nor "failing".
+	if (status === null) return 'cloud';
+	const state = chipState(status);
+	if (state === 'ok') return 'cloud-tick';
+	if (state === 'syncing') return 'cloud';
+	if (state === 'off') {
+		// Never turned on: neutral. Configured with no live scheduler, an
+		// invalid config file, or enabled with no hub_url: turned on and not
+		// working, so it needs the "!".
+		const neverTurnedOn =
+			!status.configured && (status.reason === null || status.reason === NOT_CONFIGURED_REASON);
+		return neverTurnedOn ? 'cloud-off' : 'cloud-alert';
+	}
+	// error, update_required, inconclusive
+	return 'cloud-alert';
+}
+
 export function chipShortLabel(status: CloudSyncStatus | null): string {
 	const state = chipState(status);
 	if (state === 'off') return 'off';

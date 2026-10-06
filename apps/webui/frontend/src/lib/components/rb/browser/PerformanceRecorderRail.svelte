@@ -3,15 +3,27 @@
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
 	import { captureFailureMessage, recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
+	import { showWholeCollectionFromChrome } from '$lib/rb/playlist-history-chrome.svelte';
 	import IconRail from './IconRail.svelte';
 
 	let {
 		source,
-		onspotify
+		onspotify,
+		oncollection
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
+		/** Flips the tree back from a non-collection source (Spotify). */
+		oncollection?: () => void;
 	} = $props();
+
+	// UX-RAIL-01: the rail's top-left entry goes back to the whole collection
+	// through the same browser_select_playlist command agents use, so the
+	// button and an agent cannot disagree about what "All Tracks" means.
+	function showWholeCollection(event: MouseEvent): void {
+		if (source !== 'collection') oncollection?.();
+		showWholeCollectionFromChrome(event.timeStamp);
+	}
 
 	let recorder = $state<RecorderStatus>({
 		active: false,
@@ -131,6 +143,7 @@
 <IconRail
 	{source}
 	{onspotify}
+	oncollection={showWholeCollection}
 	recording={rail.recording}
 	recordingBusy={recorderBusy}
 	recordingWaiting={rail.waiting}

@@ -10,7 +10,7 @@ Regression one-liners:
   - if an empty deck exposes a seekable waveform control then broken
   - if waveform seeking loses its accessible slider contract then broken
   - if a loaded deck loses its artwork, readable truncated title, or hover scrub then broken
-  - if an empty or artwork-unavailable deck looks like a silent missing thumbnail then broken
+  - if an empty deck mounts a track summary, or missing artwork has no explaining title, then broken
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_every_wavestack_row_carries_its_deck_identity() -> None:
 
     assert 'class="rb-waverow"' in source
     assert "data-deck={deckId}" in source
-    assert '<WaveGutter {deck} {deckId} {barsLabel} />' in source
+    assert "<WaveGutter {deck} {deckId} />" in source
     assert DECK_NUM_SPAN.search(gutter), (
         f"{WAVE_GUTTER.name} must render the deck id inside a .deck-num span; "
         f"no match in:\n{gutter}"
@@ -95,9 +95,13 @@ def test_waveform_gutter_has_track_artwork_and_hover_scrubbable_title() -> None:
 
 
 def test_waveform_gutter_labels_empty_and_unavailable_artwork_states() -> None:
+    """DECKUX-40: an empty deck shows only its number, which says why in its
+    hover title; the track summary (and its artwork square) is not mounted."""
+    gutter = _source(WAVE_GUTTER)
     source = _source(WAVE_TRACK_SUMMARY)
 
-    assert "No track loaded" in source
+    assert "no track loaded" in gutter
+    assert "{#if loaded}<WaveTrackSummary {deck} />{/if}" in gutter
     assert "No artwork found" in source
     assert "artworkFailed" in source
     assert "loaded deck ${deck.stable_id} is missing a title" in source

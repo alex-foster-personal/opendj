@@ -422,6 +422,7 @@ def _uv(
     allow_fail: bool = False,
     reqs: Path = TOOL_REQS,
     isolated: bool = False,
+    cwd: Path = REPO,
 ) -> tuple[int, str]:
     """Run a pinned Python tool in a throwaway env, never the project venv.
 
@@ -466,7 +467,7 @@ def _uv(
     env = None
     if isolated:
         env = {k: v for k, v in os.environ.items() if k not in IMPORT_PATH_ENV_VARS}
-    return _run(cmd, allow_fail=allow_fail, env=env)
+    return _run(cmd, allow_fail=allow_fail, env=env, cwd=cwd)
 
 
 def _pnpm_bin() -> str:
@@ -964,8 +965,13 @@ def _mypy_metrics(records: list[dict[str, Any]], files_checked: int) -> list[Met
     return metrics
 
 
-def _eval_mypy() -> list[Metric]:
+def _eval_mypy(repo: Path = REPO) -> list[Metric]:
     """Python type debt, measured under a pinned install set.
+
+    `repo` is the tree mypy runs in; its pyproject.toml supplies the scope. The
+    gate always measures REPO. tests/quality/test_mypy_cache.py passes a throwaway
+    copy so it can inject a type error without editing a tracked file in the
+    checkout other workers are reading.
 
     The scope comes from `[tool.mypy] files` in pyproject.toml and the tool
     from ops/quality/mypy-requirements.txt, which holds mypy and nothing else.
@@ -999,6 +1005,7 @@ def _eval_mypy() -> list[Metric]:
             allow_fail=True,
             reqs=MYPY_REQS,
             isolated=True,
+            cwd=repo,
         )
         # 0 = clean, 1 = type errors found. Anything else is mypy declining to
         # run at all (bad config, unreadable source), which has to abort: a
@@ -1017,6 +1024,7 @@ def _eval_mypy() -> list[Metric]:
                 cache_dir,
                 reqs=MYPY_REQS,
                 isolated=True,
+                cwd=repo,
             )
             raise RuntimeError(f"mypy exited {code} on the scored run, then {out[-2000:]}")
 
@@ -1605,7 +1613,7 @@ def _run_in_base(
     """Run `cmd` in the merge-base tree, with pnpm barred from installing through the link.
 
     The one launcher for the base run, so the real-pnpm test in
-    tests/test_quality_gate.py exercises exactly what the gate runs.
+    (private path) exercises exactly what the gate runs.
     """
     return subprocess.run(
         cmd, cwd=base_dir, capture_output=True, text=True, check=False,
@@ -1755,7 +1763,7 @@ def _measure_owners_at_base(
         proc = _run_in_base(cmd, base_dir, base_env)
         if not out_json.exists():
             # Base's own gate can abort before --json (mypy follow-import into
-            # ops/agentic_testing/coach.py is the live case). Overlay this
+            # (private path) is the live case). Overlay this
             # run's gate onto the throwaway worktree and retry so trunk debt
             # can still inherit. The tree being measured stays the merge-base.
             dest = base_dir / "scripts" / "quality_gate.py"
@@ -1968,7 +1976,7 @@ def _write_trend_summary(trend_lines: list[str]) -> None:
             "These plain-ratchet metrics are above their `ops/quality/baseline.json` "
             "allowance on main. This is a REPORT, not a gate: the enforced check is the "
             "per-PR delta vs merge-base (see "
-            "docs/decisions/ADR-NEW-quality-ratchet-new-code-gate.md).\n\n"
+            "(private path)).\n\n"
             f"{body}\n"
         )
 

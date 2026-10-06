@@ -36,8 +36,10 @@ every build, is the NOTICES section of THIRD-PARTY-LICENSES.txt):
               AIFF, WAV, OGG and Opus. Its LICENSE ships in its wheel's
               dist-info, which the packaged app keeps.
 
-Writing tags into audio files is not a product feature. mutagen is not a
-dependency; see the note on mutagen below.
+Audio tag WRITES for the formats this tree implements in-house (ID3v2, FLAC
+Vorbis comments, MP4, Ogg) live in this repository under Apache-2.0. mutagen
+stays an opt-in extra for the remaining writers and is not in the dmg; see
+the optional-components section below.
 
 * requests (Apache-2.0)
     Requests
@@ -61,11 +63,23 @@ Bundled outside the language package managers:
     Attribution: Henry Betts, Fabian Lesniak, James Elliott / Deep Symmetry.
     The EPL-1.0 text ships in THIRD-PARTY-LICENSES.txt.
 
-Tag reading in the source dependency set uses tinytag (MIT). Mutagen
-(GPL-2.0-or-later; https://github.com/quodlibet/mutagen) is not declared
-in the current pyproject.toml or uv.lock, and there is no tags extra.
-For the components actually distributed in a desktop payload, consult
-that payload's generated THIRD-PARTY-LICENSES.txt inventory.
+Optional components that are NOT in the app:
+
+* mutagen  (OPTIONAL extra; not a default runtime dep, not in the dmg)
+    Homepage: https://github.com/quodlibet/mutagen
+    License:  GNU General Public License v2.0 or later (GPL-2.0-or-later)
+    Role:     audio tag writes (ID3 / MP4 / Vorbis). Reads go through tinytag.
+    Install:  pip install 'music-dj-tools[tags]'
+
+mutagen is NOT listed under ``[project].dependencies`` and is NOT bundled in
+the music-dj-tools wheel or the dmg payload. It lives under
+``[project.optional-dependencies].tags`` so a vanilla ``pip install
+music-dj-tools`` stays free of mutagen and the Apache-2.0 wheel is
+distributable as-is. Callers that need tag I/O install
+``music-dj-tools[tags]`` explicitly; that pulls mutagen from PyPI as a
+separate, independently licensed package. Anyone who builds a combined
+binary or derivative work that bundles mutagen together with this project
+must comply with mutagen's GPL terms for that combined work.
 
 The Python dependency set for source installs is declared in
 pyproject.toml and locked in uv.lock; reqs.json and requirements.txt carry
@@ -83,7 +97,7 @@ Beat This! (package and weights), but our readers, writers, and test
 oracles cross-check against their specs and implementations. Gratitude
 to the authors.
 
-See docs/prior-art-and-communities.md for the full annotated list.
+See (private path) for the full annotated list.
 
 Rekordbox master.db (v6 / v7)
 * dylanljones/pyrekordbox (MIT)
@@ -177,7 +191,7 @@ Beat detection model shipped in the desktop app
     installs the ``beat-this`` package. Upstream states the weights are
     MIT; its training audio is under mixed terms that upstream leaves to
     the user to assess. See
-    docs/decisions/ADR-NEW-beat-this-weights-license.md.
+    (private path).
 
 No code from the projects above is copied into this repository. (Beat This!, above, is an exception: its package and weights are bundled. crate-digger, above, is an exception: a Kaitai-generated parser is vendored.) They are
 cited here because their documentation, file-format specs, and issue

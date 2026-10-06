@@ -1,25 +1,8 @@
-# Contributing to Open DJ
+# Contributing to music-dj-tools
 
 Thanks for taking the time to contribute. This doc is the short list of
 rules that keep the project coherent across many human and agent
 contributors. Read it once; the conventions are load-bearing.
-
-## Reporting problems and contributing on GitHub
-
-The public repository, [alex-foster-personal/opendj](https://github.com/alex-foster-personal/opendj),
-is a published copy of the source. Day-to-day development happens in a private repository, and
-releases are published to the public one.
-
-- **Bugs and feature requests:** open an issue on the public repository using one of the forms.
-  Each public issue is copied into the development tracker, and its status is posted back on the
-  public issue.
-- **Questions and ideas:** use Discussions on the public repository.
-- **Security problems:** report them privately through the public repository's Security tab
-  (see [`SECURITY.md`](SECURITY.md)). Never in a public issue.
-- **Pull requests:** welcome on the public repository. Because it is a published copy, a pull
-  request is not merged there directly: a maintainer applies it in the development repository
-  with you credited as co-author, and the change reaches the public repository with the next
-  publish. The pull request is then closed with a link to where it landed.
 
 ## Table of contents
 
@@ -37,7 +20,7 @@ releases are published to the public one.
 ## Project structure
 
 The repo is a flat `apps/` monorepo. High-level map (see
-[`docs/developer-guide.md`](docs/developer-guide.md) for the exhaustive version):
+[`README.md`](README.md) for the exhaustive version):
 
 ```
 apps/
@@ -86,8 +69,8 @@ yours does not include it, install the pnpm version named by `packageManager` in
 `apps/webui/frontend/package.json` some other way.
 
 Rekordbox's key for `master.db` comes from `pyrekordbox` and is cached under `~/.pyrekordbox/`
-on first decrypt. There is no separate key-download step; see the rekordbox library data section of
-[`docs/developer-guide.md`](docs/developer-guide.md).
+on first decrypt. There is no separate key-download step; see the Install section of
+[`README.md`](README.md).
 
 ## Running tests and lint
 
@@ -153,10 +136,8 @@ test/<slug>     # tests only
 
 Before opening the pull request: run the scoped tests for what you touched, keep the diff
 to one logical change, and write the description in plain language (what changed, why, and
-how you checked it). A maintainer then applies it in the development repository once its
-checks pass and review threads are resolved, and closes your public pull request with a link
-to where it landed (see
-[Reporting problems and contributing on GitHub](#reporting-problems-and-contributing-on-github)).
+how you checked it). Maintainers merge once required checks pass and review threads are
+resolved.
 
 ## Conventional commits
 
@@ -181,7 +162,7 @@ Every destructive write path in this repo goes through the six-rail safety
 pattern. If you add or modify a code path that writes to Rekordbox, djay,
 Serato, Traktor, or any operator file on disk, all six rails apply. See
 [`apps/sync/safety.py`](apps/sync/safety.py) for the canonical helpers and
-the safety section of [`docs/developer-guide.md`](docs/developer-guide.md) for the summary.
+the Safety section of [`README.md`](README.md) for the summary.
 
 1. **Typed confirmation.** Operator must type a non-trivial string (not
    just "y"). Use the helpers in `apps/sync/safety.py`.

@@ -6,6 +6,13 @@ import type { APIRequestContext, Page } from '@playwright/test';
  * looks good but the title below it is too loud (full white font) and too
  * wide. Empty and no track loaded for state there is too loud".
  *
+ * DECKUX-40 (the maintainer, Tue 6 Oct 2026, W29) redesigned the gutter and supersedes
+ * the colour half of that pin: the title now sits right of full-height
+ * artwork in the primary text token, over the live key and BPM, and fades at
+ * its edge. The empty-state half went further: an empty deck shows only its
+ * number ("empty state should I think be less messy - just show nothing"),
+ * and missing artwork is empty space rather than a labelled slate.
+ *
  * WHY THIS IS A COMPUTED-STYLE TEST AND NOT A SOURCE-TEXT ONE. The claims here
  * are all "what does the browser actually paint", and CSS has many ways for a
  * later rule to win that reading the stylesheet does not reveal. A blinded
@@ -215,19 +222,16 @@ async function _measureTitlePaint(page: Page): Promise<TitlePaint> {
 	});
 }
 
-test('the waveform track title paints the secondary text token, not the primary one', async ({
-	page,
-	request
-}) => {
+// REQ: DECKUX-40
+test('the waveform track title paints the primary text token', async ({ page, request }) => {
 	await _deckOneLoaded(page, request);
 	const measured = await _measureTitlePaint(page);
 	expect(measured.dim, 'the dim and primary tokens must differ, or this proves nothing').not.toBe(
 		measured.primary
 	);
-	expect(
-		measured.painted,
-		'a title painted in the primary text token reads as loud as a control'
-	).toBe(measured.dim);
+	expect(measured.painted, 'DECKUX-40 paints the title in the primary text token').toBe(
+		measured.primary
+	);
 });
 
 // REQ: A11Y-03
@@ -264,97 +268,50 @@ test('the painted title clears the 4.5:1 AA floor against what is actually behin
 	).toBeGreaterThanOrEqual(AA_CONTRAST_FLOOR);
 });
 
-test('the title box shrinks to its own text instead of filling the gutter', async ({
+// REQ: DECKUX-40
+test('a long title is clipped by its column and fades out at the edge', async ({
 	page,
 	request
 }) => {
 	await _deckOneLoaded(page, request);
-	// A CLONE with one short character, sized by the same scoped rules in the
-	// same parent, is what separates `fit-content` from `100%`. The live node
-	// cannot answer this on its own: every title in a generated fixture is
-	// wider than the 92px gutter, and once `max-width: 100%` caps it the two
-	// declarations produce the SAME used width. Cloning rather than editing the
-	// live node keeps the app's own state untouched - this measures layout, it
-	// does not stage a track with a convenient name.
 	const measured = await page.locator('.wave-track-name').first().evaluate((node) => {
 		const parent = node.parentElement;
 		if (parent === null) throw new Error('the track name must have a container');
 		const style = getComputedStyle(node);
-		const clone = node.cloneNode(true) as HTMLElement;
-		const label = clone.querySelector('span') ?? clone;
-		label.textContent = 'x';
-		clone.style.visibility = 'hidden';
-		parent.appendChild(clone);
-		const shortWidth = clone.getBoundingClientRect().width;
-		clone.remove();
 		return {
 			width: node.getBoundingClientRect().width,
 			containerWidth: parent.getBoundingClientRect().width,
-			shortWidth,
 			overflow: style.overflow,
-			maxWidth: style.maxWidth
+			mask: style.maskImage || style.webkitMaskImage
 		};
 	});
-	expect(
-		measured.containerWidth,
-		'the gutter must have a real width for this comparison to mean anything'
-	).toBeGreaterThan(10);
-	expect(
-		measured.shortWidth,
-		`a one-character title still occupies ${measured.shortWidth.toFixed(1)}px of the ` +
-			`${measured.containerWidth.toFixed(1)}px gutter - the box is filling its container ` +
-			'rather than shrinking to its content'
-	).toBeLessThan(measured.containerWidth / 2);
-	// And the long, real title is still capped by the gutter rather than
-	// spilling out of it, and clipped rather than overflowing - which is what
-	// makes the hover scrub meaningful.
+	expect(measured.containerWidth, 'the text column must have a real width').toBeGreaterThan(10);
 	expect(measured.width).toBeLessThanOrEqual(measured.containerWidth + 1);
-	expect(measured.maxWidth, 'a long title must still be capped by the gutter').toBe('100%');
 	expect(measured.overflow, 'clipping is what makes the hover scrub meaningful').toBe('hidden');
+	expect(measured.mask, 'the clipped edge fades instead of cutting a letter').toContain(
+		'linear-gradient'
+	);
 });
 
-test('the no-track slate gives up the raised fill and the empty title is italic', async ({
-	page
-}) => {
+// REQ: DECKUX-40
+test('an empty deck shows only its number', async ({ page }) => {
 	await _performanceReady(page);
-	const slate = page.locator('.wave-art-slate.standalone').first();
-	await expect(slate).toBeVisible({ timeout: 30_000 });
-	const measured = await slate.evaluate((node) => {
-		const raisedProbe = document.createElement('span');
-		(node.closest('.perf-root') ?? document.body).appendChild(raisedProbe);
-		raisedProbe.style.backgroundColor = 'var(--rb-panel-raised)';
-		const raised = getComputedStyle(raisedProbe).backgroundColor;
-		raisedProbe.remove();
-		const name = document.querySelector('.wave-track-name.empty');
-		return {
-			slateBackground: getComputedStyle(node).backgroundColor,
-			raised,
-			emptyFontStyle: name === null ? null : getComputedStyle(name).fontStyle
-		};
-	});
-	// Transparent, checked as "not the raised fill" AND as alpha 0, so a future
-	// theme whose raised token happens to equal the panel cannot make this
-	// assertion vacuous.
-	expect(measured.slateBackground, 'a standalone slate must not paint the raised chrome fill').not.toBe(
-		measured.raised
-	);
-	expect(measured.slateBackground.replace(/\s/g, '')).toMatch(/^rgba\(\d+,\d+,\d+,0\)$/);
-	expect(measured.emptyFontStyle, 'the empty-state name needs its own quieter treatment').toBe(
-		'italic'
-	);
+	const gutter = page.locator('.rb-waverow .gutter').first();
+	await expect(gutter.locator('.deck-num')).toBeVisible({ timeout: 30_000 });
+	await expect(gutter.locator('.deck-num')).toHaveText('1');
+	await expect(gutter.locator('.wave-track-summary')).toHaveCount(0);
+	await expect(gutter.locator('.wave-art')).toHaveCount(0);
+	expect((await gutter.innerText()).trim(), 'nothing but the deck number is painted').toBe('1');
 });
 
-test('the artwork-failure slate is standalone too, not just the no-track one', async ({
+// REQ: DECKUX-40
+test('missing artwork is empty space with a hover reason, not a labelled slate', async ({
 	page,
 	request
 }) => {
-	// Advertised-absent tracks skip the artwork GET and hit the NO ART slate
-	// directly; this case still covers advertised-present / unknown decks whose
-	// <img> fires onerror when the request is aborted. Aborting the artwork request
-	// is the real mechanism, not a fabricated flag: the deleted unit test
-	// asserted this branch's markup, and without this case a refactor that
-	// drops `standalone` from the {:else} arm alone regains the raised fill
-	// with every test in the repo still green.
+	// Aborting the artwork request is the real failure mechanism, not a
+	// fabricated flag: the <img> fires onerror and the component takes its
+	// missing-artwork arm.
 	await page.route('**/api/v1/tracks/*/artwork*', (route) => route.abort());
 	const stableId = await _anyOnDiskTrack(request);
 	await _performanceReady(page);
@@ -362,22 +319,23 @@ test('the artwork-failure slate is standalone too, not just the no-track one', a
 		await window.musicDjToolsPerformance!.dispatch({ type: 'load', deck: 1, stable_id: sid });
 	}, stableId);
 
-	const slate = page.locator('.wave-art-slate.standalone[title^="Artwork unavailable"]').first();
-	await expect(slate, 'a deck whose artwork request fails must show the NO ART slate').toBeVisible({
+	const art = page.locator('.wave-art[title^="No artwork found"]').first();
+	await expect(art, 'a deck whose artwork request fails must keep an artwork slot').toBeAttached({
 		timeout: 30_000
 	});
-	await expect(slate).toHaveText('NO ART');
-	const measured = await slate.evaluate((node) => {
-		const raisedProbe = document.createElement('span');
-		(node.closest('.perf-root') ?? document.body).appendChild(raisedProbe);
-		raisedProbe.style.backgroundColor = 'var(--rb-panel-raised)';
-		const raised = getComputedStyle(raisedProbe).backgroundColor;
-		raisedProbe.remove();
-		return { slateBackground: getComputedStyle(node).backgroundColor, raised };
-	});
-	expect(
-		measured.slateBackground,
-		'the artwork-failure slate must not paint the raised chrome fill either'
-	).not.toBe(measured.raised);
-	expect(measured.slateBackground.replace(/\s/g, '')).toMatch(/^rgba\(\d+,\d+,\d+,0\)$/);
+	await expect(art).toHaveText('');
+	const background = await art.evaluate((node) => getComputedStyle(node).backgroundColor);
+	expect(background.replace(/\s/g, ''), 'missing artwork paints no fill').toMatch(
+		/^rgba\(\d+,\d+,\d+,0\)$/
+	);
+});
+
+// REQ: DECKUX-40
+test('the waveform rows draw no divider between them', async ({ page }) => {
+	await _performanceReady(page);
+	const row = page.locator('.rb-waverow').first();
+	await expect(row).toBeVisible({ timeout: 30_000 });
+	const borderBottom = await row.evaluate((node) => getComputedStyle(node).borderBottomWidth);
+	expect(borderBottom).toBe('0px');
+	await expect(page.locator('.rb-waverow .bars'), 'the bars countdown is gone').toHaveCount(0);
 });

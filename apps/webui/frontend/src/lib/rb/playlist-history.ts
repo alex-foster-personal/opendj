@@ -33,6 +33,19 @@ export interface PlaylistHistory {
 	entries: PlaylistHistoryEntry[];
 }
 
+/**
+ * What the undo button will do (LIBUX-51), for its title and the head of its
+ * hover card: names the edit the next undo reverses, which is the entry just
+ * below the cursor. With nothing to undo it says so. If the server reports an undo but the window lacks its entry, the
+ * title falls back to the generic wording instead of naming the wrong edit.
+ */
+export function undoButtonTitle(entries: readonly PlaylistHistoryEntry[], cursor: number, canUndo: boolean): string {
+	if (!canUndo) return 'Nothing to undo';
+	const top = cursor > 0 ? entries[cursor - 1] : undefined;
+	if (top === undefined) return 'Undo playlist edit (Ctrl/Cmd+Z)';
+	return `Undo: ${top.label} (Ctrl/Cmd+Z)`;
+}
+
 export interface PlaylistHistoryApplyResult {
 	command_id: string;
 	op: string;

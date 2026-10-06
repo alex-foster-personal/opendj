@@ -3,6 +3,7 @@
  * Main thread, fire-and-forget POST - never blocks command dispatch.
  */
 
+import { releaseBody } from '$lib/api/release-body';
 import { API_BASE } from '$lib/api';
 import type { DeckId } from '$lib/rb/deck-id';
 import {
@@ -91,6 +92,7 @@ function _postSnapshot(reason: RescueSnapshotReason, now: number): void {
 		body: serialized
 	})
 		.then((response) => {
+			releaseBody(response);
 			if (response.ok) {
 				_lastSuccessfulSerialized = serialized;
 				if (reason === 'periodic') _lastPeriodicPostAt = now;

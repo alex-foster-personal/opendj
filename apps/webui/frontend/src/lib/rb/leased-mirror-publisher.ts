@@ -25,6 +25,7 @@
  *   as a console error that no catch can take back. Take control skips the
  *   read: its takeover header is the operator's decision.
  */
+import { releaseBody } from '../api/release-body';
 import type { TabLeadership } from './tab-leadership';
 
 export const MIRROR_PATH = '/api/v1/state/ui-mirror';
@@ -144,6 +145,7 @@ export function createLeasedMirrorPublisher(deps: {
 		void fetch(LEASE_PATH)
 			.then(async (response) => {
 				if (!response.ok) {
+					releaseBody(response);
 					console.error(`ui-mirror lease read failed: ${response.status}`);
 					return;
 				}
@@ -166,6 +168,7 @@ export function createLeasedMirrorPublisher(deps: {
 		void fetch(LEASE_PATH)
 			.then(async (response) => {
 				if (!response.ok) {
+					releaseBody(response);
 					console.error(`ui-mirror lease read failed: ${response.status}`);
 					return;
 				}
@@ -216,10 +219,15 @@ export function createLeasedMirrorPublisher(deps: {
 		void fetch(MIRROR_PATH, { method: 'PUT', headers, body: JSON.stringify(deps.build()) })
 			.then(async (response) => {
 				if (response.status !== 409) {
+					// The accepted PUT's body is never read: release it, or WebKit
+					// keeps every 1 Hz Response (and its mirror-sized Request) alive.
+					releaseBody(response);
 					setRegistered(response.ok && deps.leadership.isLeader());
 					if (registered) deps.leadership.noteLeaseAccepted();
 					return;
 				}
+				// A 409's body IS read here (the refusal reason), which releases it;
+				// fetch-body-release.test.mjs pins that every refusal leaves none open.
 				const refusal = (await response.json()) as { reason?: string; holder?: unknown };
 				if (refusal.reason === 'lease_held' && typeof refusal.holder === 'string') {
 					setRegistered(false);

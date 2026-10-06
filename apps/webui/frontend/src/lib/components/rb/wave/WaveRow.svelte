@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Build unit: wavestack - ONE deck row (COMPONENT-MAP 1.2, SCREENSHOT-SPEC 2).
 	// Canvas window scrolls under a fixed center playhead; left gutter shows
-	// deck identity, artwork, and a readable track title. Empty deck is named,
-	// so its reserved artwork slot cannot read as a missing image.
+	// deck identity, artwork, the track title and its live key and BPM
+	// (WaveGutter, DECKUX-40). An empty deck shows only its number.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
 	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
@@ -50,7 +50,7 @@
 		paintScrollPx,
 		shouldSkipRepaint
 	} from './paint-position';
-	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
+	import { followerSyncPlayheadTone } from './wave-math';
 	import {
 		drawPlayhead,
 		drawWaveRow,
@@ -137,10 +137,6 @@
 	);
 	const paintAnlz = $derived(paintAnlzForRow(anlzData, beatgridFallback));
 
-	// Bars until next cue; null (hidden) without a beatgrid or upcoming cue.
-	const barsLabel = $derived(
-		paintAnlz !== null ? barsToNextCueLabel(paintAnlz, deck.position_ms) : null
-	);
 
 	// Scrub-target snapping (pin a705aebfbeae) reads this deck's own beatgrid,
 	// not the master's - each waveform snaps to its own track's downbeats.
@@ -383,7 +379,7 @@
 	// this loop will happily repaint a pixel-identical frame at 60Hz forever and
 	// call it healthy - which is exactly what it did for twenty minutes on
 	// Wed 2 Sep 2026. Nothing here can fix a frozen clock; what it can do is stop
-	// lying about it. See .planning/hardening-ledger/items/
+	// lying about it. See (private path)/
 	// waveform-freezes-on-stale-output-timestamp.md.
 	let stallState = $state.raw<PresentationStallState | undefined>(undefined);
 	let playheadFrozen = $state(false);
@@ -583,7 +579,7 @@
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
 	}}
 >
-	<WaveGutter {deck} {deckId} {barsLabel} />
+	<WaveGutter {deck} {deckId} />
 	<div class="wave-col">
 		<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
 			{#if finished}

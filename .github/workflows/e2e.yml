@@ -2,7 +2,7 @@ name: E2E
 
 # Makes the third clause of the per-PR merge gate real.
 #
-# .planning/FANOUT-CONVENTIONS.md has always stated the gate as "svelte-check 0
+# (private path) has always stated the gate as "svelte-check 0
 # errors, scoped pytest green, e2e smoke if user-visible". The first two are
 # enforced by ci.yml. The third never was: before this file there was no
 # Playwright job and no e2e step in any of the eight workflows, so every
@@ -36,7 +36,7 @@ on:
     # A push run needs no aggregator to exist, so push keeps its trigger-level
     # filter. GitHub reads trigger filters only from this file, so this is a
     # literal copy of E2E_PATHS_IGNORE in scripts/ci_pr_scope.py, pinned equal
-    # to it by tests/scripts/test_ci_required_gate_wiring.py.
+    # to it by (private path).
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -72,7 +72,7 @@ on:
 # cancelling instead of making the cancellation conditional, and therefore does
 # not depend on the mechanism that was in dispute.
 #
-# MAIN PUSHES ARE TIP-ONLY (TEST-CUT, Fri 2 Oct 2026, specs/ci-test-cut.md). Every
+# MAIN PUSHES ARE TIP-ONLY (TEST-CUT, Fri 2 Oct 2026, (private path)). Every
 # push to main is a tree a Trunk queue draft already ran this gate on (the draft is
 # the merge result; `e2e verdict` is a required status of the draft), so a per-SHA
 # push run tested each merge a second time on the same four `e2e` runners the
@@ -190,7 +190,7 @@ jobs:
         with:
           persist-credentials: false
           # 0, not 2: every persistent-runner checkout fetches full history
-          # (docs/decisions/ADR-NEW-uniform-checkout-depth-on-persistent-runners.md),
+          # ((private path)),
           # which is a superset of the depth-2 this job used to need to diff
           # the pull_request test-merge commit against its first (base) parent.
           fetch-depth: 0
@@ -234,7 +234,7 @@ jobs:
     # That access is now sudo rather than root: agentbox's runners were moved
     # off root on Thu 3 Sep 2026 because the pytest lane's permission tests
     # cannot be arranged as a user who bypasses permissions (see "Self-hosted
-    # runner provisioning" in docs/ci-actions-cost-review-2026-08-16.md).
+    # runner provisioning" in (private path)).
     # --with-deps below stays unconditional because it is safe either way:
     # Playwright runs its apt step directly when uid 0 and through `sudo`
     # otherwise, and the runner user has NOPASSWD sudo.
@@ -882,7 +882,7 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 5323 8696 8697 -- \
             pnpm exec playwright test --config tests/e2e/playwright.preflight-gate.config.ts --output test-results/preflight-gate
 
-      # The onboarding gauntlet (SETUP-21..23, specs/onboarding-gauntlet.md):
+      # The onboarding gauntlet (SETUP-21..23, (private path)):
       # every test boots its own brand-new PACKAGED engine on an OS-assigned
       # port against the production artifact, so it pins no port and needs no
       # host lock. Known open bugs are test.fail, so a fix flips the
@@ -1341,6 +1341,20 @@ jobs:
             --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-playlist-switch-bench" \
             tests/perf/test_library_playlist_switch_bench.py
 
+      - name: Extended - top bar responsive widths (PERF-UI-06), performance config
+        working-directory: apps/webui/frontend
+        # Issue #5590: performance-topbar-responsive.spec.ts ran in no CI job, which is
+        # how two #5456-class top-bar regressions shipped (the crushed command input at
+        # 1161-1232 px and 1416-1423 px, fixed in #5564). Nightly and not gated until the
+        # day after v1, when it moves to the required `gate` job. Same ports, lock and
+        # config as the headphone probe step in `gate`: the performance config collects
+        # only the spec named here.
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" performance-headphone-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5273 8686 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-topbar-responsive.spec.ts --output test-results/performance-topbar-responsive
+
       - name: Extended - hot-cue mapping gate, real backend + fixture library
         working-directory: apps/webui/frontend
         # Guards the user-facing safety property from #736/#804 that an empty
@@ -1413,7 +1427,7 @@ jobs:
     # a queue reads `skipped` is undocumented. If the gate is ever skipped on
     # ordinary PR heads by design (PR #4175's queue-draft-only gate), that
     # condition belongs in the scope decision, not in the gate's own `if`:
-    # tests/scripts/test_ci_required_gate_wiring.py pins the gate's `if` to the
+    # (private path) pins the gate's `if` to the
     # scope output alone, so the verdict can never read a designed skip as red
     # or an undesigned one as green. `extended` is nightly-only and not gated.
     needs:
@@ -1475,7 +1489,7 @@ jobs:
         with:
           persist-credentials: false
           # 0: every persistent-runner checkout fetches full history
-          # (docs/decisions/ADR-NEW-uniform-checkout-depth-on-persistent-runners.md).
+          # ((private path)).
           fetch-depth: 0
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false

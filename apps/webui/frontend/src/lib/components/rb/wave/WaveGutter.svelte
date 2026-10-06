@@ -1,59 +1,57 @@
 <script lang="ts">
 	// Stable waveform-row chrome. Kept separate from canvas interaction so the
 	// identity column can grow without making the hot render component a god file.
+	// DECKUX-40 (the maintainer, Tue 6 Oct 2026): a large deck number in the brand face,
+	// then the track summary. An empty deck shows only its number, and there is
+	// no bars countdown ("not clear to me what we'd use it for").
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import WaveTrackSummary from './WaveTrackSummary.svelte';
 
 	const {
 		deck,
-		deckId,
-		barsLabel
+		deckId
 	}: {
 		deck: DeckState;
 		deckId: DeckState['deck_id'];
-		barsLabel: string | null;
 	} = $props();
 
-	const deckNumTitle = `Waveform row for deck ${deckId}`;
-	const barsTitle =
-		'Whole bars until the next memory cue, hot cue, phrase, or end of the beatgrid';
+	const loaded = $derived(deck.stable_id !== null);
+	const deckNumTitle = $derived(
+		loaded ? `Waveform row for deck ${deckId}` : `Waveform row for deck ${deckId}: no track loaded`
+	);
 </script>
 
 <div class="gutter">
-	<div class="deck-indicators">
-		<span class="deck-num" title={deckNumTitle}>{deckId}</span>
-		{#if barsLabel !== null}<span class="bars" title={barsTitle}>{barsLabel}</span>{/if}
-	</div>
-	<WaveTrackSummary {deck} />
+	<span class="deck-num" class:empty={!loaded} title={deckNumTitle}>{deckId}</span>
+	{#if loaded}<WaveTrackSummary {deck} />{/if}
 </div>
 
 <style>
 	.gutter {
-		width: 132px;
+		width: 160px;
 		flex: none;
 		display: flex;
 		align-items: stretch;
-		gap: 4px;
-		padding: 2px 4px 2px 6px;
+		gap: 6px;
+		padding: 0 6px 0 4px;
 		border-right: 1px solid var(--rb-border);
-	}
-	.deck-indicators {
-		width: 25px;
-		flex: none;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		gap: 1px;
+		box-sizing: border-box;
 	}
 	.deck-num {
+		width: 24px;
+		flex: none;
+		align-self: center;
+		text-align: center;
 		color: var(--rb-text);
-		font-size: var(--rb-fs-deck-title);
-		font-weight: 600;
-		line-height: 1.1;
+		font-family: var(--rb-font-brand);
+		font-weight: 800;
+		font-stretch: 150%;
+		font-size: calc(var(--rb-waverow-h) * 0.5);
+		line-height: 1;
 	}
-	.bars {
-		color: var(--rb-text-dim);
-		font-size: var(--rb-fs-label);
-		white-space: nowrap;
+	/* "Empty state should be less messy - just show nothing": the number stays
+	   so the row is still identifiable, at the border token's weight. */
+	.deck-num.empty {
+		color: var(--rb-border);
 	}
 </style>

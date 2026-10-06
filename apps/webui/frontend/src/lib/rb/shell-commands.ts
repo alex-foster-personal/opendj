@@ -5,6 +5,7 @@
  * `GET /api/v1/commands/next?consumer=shell`; browser tabs must not install
  * updates.
  */
+import { releaseBody } from '$lib/api/release-body';
 import { API_BASE } from '$lib/api/base';
 import { applyUpdate, type ApplyOutcome } from '$lib/rb/update-channel';
 import { detectSurface } from '$lib/rb/usage-heartbeat';
@@ -88,18 +89,23 @@ export function installShellCommandPoll(deps: ShellCommandDeps = defaultDeps()):
 				// unhandledrejection (Safari `Load failed`).
 				return;
 			}
-			if (!response.ok) return;
+			if (!response.ok) {
+				releaseBody(response);
+				return;
+			}
 			const body = (await response.json()) as ShellNextBody | null;
 			if (body == null || typeof body.id !== 'string' || body.kind !== 'shell') {
 				return;
 			}
 			const result = await dispatchShellCommand(body, deps);
 			try {
-				await fetch(`${API_BASE}/api/v1/commands/${body.id}/result`, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(result)
-				});
+				releaseBody(
+					await fetch(`${API_BASE}/api/v1/commands/${body.id}/result`, {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify(result)
+					})
+				);
 			} catch {
 				return;
 			}

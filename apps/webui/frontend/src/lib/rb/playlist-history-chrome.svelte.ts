@@ -1,4 +1,5 @@
-/** Shared playlist undo/redo + history list for library toolbar chrome. */
+/** Shared playlist undo/redo + history list for library toolbar chrome, and the
+ * other library-chrome commands that go through the agent command path. */
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import {
 	fetchPlaylistHistory,
@@ -56,4 +57,10 @@ export function undoPlaylistFromChrome(): void {
 
 export function redoPlaylistFromChrome(): void {
 	void runPerformanceCommandFromUi({ type: 'playlist_redo' });
+}
+
+/** UX-RAIL-01: the icon rail's top-left entry. The same `browser_select_playlist`
+ * command agents use, so the button and an agent agree on what "All Tracks" is. */
+export function showWholeCollectionFromChrome(pressT0Ms?: number): void {
+	void runPerformanceCommandFromUi({ type: 'browser_select_playlist', playlist_id: 'all' }, pressT0Ms);
 }

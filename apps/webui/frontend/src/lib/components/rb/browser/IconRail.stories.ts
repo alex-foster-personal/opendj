@@ -7,11 +7,13 @@ import IconRail from './IconRail.svelte';
  * Reference story for the inert-control rule - see the "Controls without a
  * data source render inert" decision doc.
  *
- * The rail is the clearest example in the codebase: Spotify is the only
- * source wired to real data, so it alone is clickable. Every other glyph is
- * `disabled`, carries `.rb-inert`, and its title comes from
- * `plannedTitle(id)` (name + what it will do + Not built yet). Hover any
- * dimmed icon to see it.
+ * The rail is the clearest example in the codebase: the top-left home entry
+ * (back to All Tracks) and Spotify are wired to real data, so they are
+ * clickable. The two planned glyphs (USB export, play history) are
+ * `disabled`, carry `.rb-inert`, and take their title from
+ * `plannedTitle(id)` (name + what it will do + Not built yet). Hover a
+ * dimmed icon to see it. Glyphs with no planned feature were removed
+ * (UX-RAIL-01).
  */
 const meta = {
 	title: 'Components/Browser/IconRail',
@@ -20,10 +22,10 @@ const meta = {
 	argTypes: {
 		source: { control: 'inline-radio', options: ['collection', 'spotify'] }
 	},
-	// Required prop. `fn` reports the click in the Actions panel rather than
+	// Required props. `fn` reports the click in the Actions panel rather than
 	// faking a Spotify response - the rail only raises the event, the parent
 	// owns the real fetch.
-	args: { onspotify: fn() }
+	args: { onspotify: fn(), oncollection: fn() }
 } satisfies Meta<typeof IconRail>;
 
 export default meta;

@@ -47,7 +47,9 @@ const BRAND_SURFACES = [
 	['lib/components/rb/MidiPanel.svelte', '.drawer-title'],
 	['lib/components/rb/FeedbackPanel.svelte', '.fb-panel-title'],
 	['lib/components/rb/IngestDropModal.svelte', '.m-title'],
-	['lib/components/rb/PlaylistFolderDupModal.svelte', '.m-title']
+	['lib/components/rb/PlaylistFolderDupModal.svelte', '.m-title'],
+	// DECKUX-40 (the maintainer, Tue 6 Oct 2026): "deck number being large and obvious ... in opendj font".
+	['lib/components/rb/wave/WaveGutter.svelte', '.deck-num']
 ];
 
 test('OSSPUB-07 if the alpha badge has a border, fill or fixed colour, or is not lowercase italic, then broken', () => {

@@ -56,7 +56,12 @@ from pathlib import Path
 
 import yaml
 
-from tests.scripts.ci_runner_routes import LIGHT_RUNS_ON, SHARD_RUNS_ON, SHARD_TAIL
+from tests.scripts.ci_runner_routes import (
+    LIGHT_RUNS_ON,
+    QUALITY_RUNS_ON,
+    SHARD_RUNS_ON,
+    SHARD_TAIL,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
@@ -74,7 +79,7 @@ SHARD_JOB = "test"
 #: Tue 29 Sep 2026 (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool): a
 #: guarded CI_RUNS_ON_MERGE_QUEUE disjunct follows the trunk clause. The composed
 #: string lives in tests/scripts/ci_runner_routes.py, evaluated by
-#: tests/scripts/test_ci_merge_queue_runner_pool.py.
+#: (private path).
 EXPECTED_RUNS_ON = SHARD_RUNS_ON
 MAIN_FIX_DISJUNCT = (
     "(github.event_name == 'pull_request' && "
@@ -92,6 +97,12 @@ UNCHANGED_LINUX_JOBS = ["contracts", "frontend-build", "frontend", "quality"]
 # Tue 29 Sep 2026: they carry the Trunk-draft merge-queue route in front of the
 # light pool, and still never the main-fix reserve.
 UNCHANGED_RUNS_ON = LIGHT_RUNS_ON
+# Tue 6 Oct 2026: `quality` deliberately prefers CI_RUNS_ON_QUALITY ahead of the
+# light pool (cold mypy cache on megamac VMs), evaluated by
+# tests/scripts/test_ci_quality_runner_pool.py. Still never the main-fix reserve.
+EXPECTED_LINUX_RUNS_ON = {job: UNCHANGED_RUNS_ON for job in UNCHANGED_LINUX_JOBS} | {
+    "quality": QUALITY_RUNS_ON
+}
 
 
 def _jobs() -> dict:
@@ -161,4 +172,4 @@ def test_no_other_ci_runs_on_linux_job_changed() -> None:
     assert seen == UNCHANGED_LINUX_JOBS, f"expected jobs missing from ci.yml: {jobs.keys()}"
     for job_id in seen:
         raw = _raw_runs_on(job_id)
-        assert raw == UNCHANGED_RUNS_ON, f"job {job_id!r} runs-on changed unexpectedly: {raw}"
+        assert raw == EXPECTED_LINUX_RUNS_ON[job_id], f"job {job_id!r} runs-on changed unexpectedly: {raw}"

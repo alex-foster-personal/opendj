@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -28,12 +29,42 @@ def _mypy_error_total(metrics: list[qg.Metric]) -> int:
     )
 
 
-def _run_eval_mypy() -> list[qg.Metric]:
+def _run_eval_mypy(repo: Path = REPO_ROOT) -> list[qg.Metric]:
     try:
-        return qg._eval_mypy()
+        return qg._eval_mypy(repo)
     except RuntimeError as exc:
         pytest.skip(f"UNAVAILABLE: real mypy could not run: {exc}")
     raise AssertionError("unreachable")
+
+
+# tarfile's extraction filters arrived in 3.11.4; requires-python admits 3.11.0, and the archive
+# is our own HEAD, so older interpreters extract without one
+_EXTRACT_FILTER: dict[str, str] = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+
+
+def _tracked_tree_copy(dest: Path) -> Path:
+    """The committed tree at HEAD, extracted under ``dest``: a probe edit lands here, never
+    in the checkout that other xdist workers and the quality gate are reading. Streamed, so
+    the whole tar is never held in memory."""
+    dest.mkdir(parents=True)
+    probe = dest / ".symlink-probe"
+    try:
+        os.symlink(dest, probe)
+    except OSError as exc:
+        pytest.skip(f"UNAVAILABLE: the committed tree tracks symlinks this host cannot create: {exc}")
+    probe.unlink()
+    git = shutil.which("git")
+    assert git is not None, "git is not on PATH"
+    with subprocess.Popen(
+        [git, "-C", str(REPO_ROOT), "archive", "--format=tar", "HEAD"],
+        stdout=subprocess.PIPE,
+    ) as proc:
+        assert proc.stdout is not None
+        with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
+            tar.extractall(dest, **_EXTRACT_FILTER)
+        returncode = proc.wait()
+    assert returncode == 0, f"git archive exited {returncode}"
+    return dest
 
 
 def _copy_source(destination: Path) -> None:
@@ -107,11 +138,12 @@ def test_stale_cache_key_is_purged_fail_closed(tmp_path: Path) -> None:
 
 @pytest.mark.slow
 def test_warm_cache_still_finds_a_new_error(tmp_path: Path) -> None:
-    repo = tmp_path / "source"
-    _copy_source(repo)
     cache_dir = tmp_path / "cache"
     previous_cache = os.environ.get("MDT_MYPY_CACHE_DIR")
     os.environ["MDT_MYPY_CACHE_DIR"] = str(cache_dir)
+    real_file = REPO_ROOT / "scripts" / "mypy_cache.py"
+    real_bytes = real_file.read_bytes()
+    repo = _tracked_tree_copy(tmp_path / "tree")
     target = repo / "scripts" / "mypy_cache.py"
     shared_target = REPO_ROOT / "scripts" / "mypy_cache.py"
     shared_hash = hashlib.sha256(shared_target.read_bytes()).digest()
@@ -134,3 +166,4 @@ def test_warm_cache_still_finds_a_new_error(tmp_path: Path) -> None:
     assert restored == cold
     assert hashlib.sha256(shared_target.read_bytes()).digest() == shared_hash
     assert target.read_text(encoding="utf-8") == original
+    assert real_file.read_bytes() == real_bytes

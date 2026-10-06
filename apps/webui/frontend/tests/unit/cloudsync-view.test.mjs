@@ -11,6 +11,7 @@
  * - if the config form sends enabled=true with no hub URL then broken
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -173,6 +174,73 @@ test('the chip lights only with a fresh heartbeat, and keeps inconclusive distin
 		view.chipState(status({ ...live, last_result: { status: 'inconclusive', message: '' } })),
 		'inconclusive'
 	);
+});
+
+// requirement: CLOUDSYNC-36
+// [if] CloudSync was never turned on [then] the chip shows a neutral slashed
+// cloud with no "!" [else stop]; [if] it was turned on and is failing or needs
+// action [then] it shows the "!" [else stop]. Every row of the PR's state ->
+// icon table is one case here, so the table and the code cannot drift.
+test('chip icon: off by choice is a neutral cloud-off, the "!" is only for turned-on-and-failing', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const cases = [
+		['loading (no status yet)', null, 'cloud'],
+		['never turned on', status(), 'cloud-off'],
+		['never turned on, no reason sent', status({ reason: null }), 'cloud-off'],
+		[
+			'config file invalid',
+			status({ reason: 'CloudSync config is invalid: bad json' }),
+			'cloud-alert'
+		],
+		['enabled with no hub_url', status({ reason: 'CloudSync is enabled but no hub_url is set.' }), 'cloud-alert'],
+		[
+			'configured, scheduler not running',
+			status({
+				configured: true,
+				reason: 'CloudSync is configured but its scheduler is not running (no fresh heartbeat).'
+			}),
+			'cloud-alert'
+		],
+		['syncing', status({ ...live, reason: null }), 'cloud'],
+		['waiting for hub', status({ ...live, reason: `${view.WAITING_FOR_HUB_PREFIX}: unreachable` }), 'cloud'],
+		['ok', status({ ...live, reason: null, last_result: { status: 'ok', message: '' } }), 'cloud-tick'],
+		[
+			'inconclusive',
+			status({ ...live, reason: null, last_result: { status: 'inconclusive', message: '' } }),
+			'cloud-alert'
+		],
+		['error', status({ ...live, reason: null, last_result: { status: 'error', message: 'x' } }), 'cloud-alert'],
+		[
+			'update required',
+			status({
+				...live,
+				reason: null,
+				last_result: { status: 'error', message: 'x' },
+				update_required: { local_wire_version: 1, peer_wire_version: 2, action: 'Update' }
+			}),
+			'cloud-alert'
+		]
+	];
+	for (const [label, input, icon] of cases) {
+		assert.equal(view.chipIcon(input), icon, label);
+	}
+	// The never-turned-on reason is the backend's own string
+	// (apps/sync_hub/status.py), the same one status() carries.
+	assert.equal(view.NOT_CONFIGURED_REASON, status().reason);
+	// The tick and the icon agree: only ok shows the tick.
+	for (const [label, input] of cases) {
+		assert.equal(view.chipGlyphs(input).tick, view.chipIcon(input) === 'cloud-tick', label);
+	}
+});
+
+test('the chip renders the slashed cloud for cloud-off and the "!" only for cloud-alert', () => {
+	const chip = readFileSync(
+		new URL('../../src/lib/components/CloudSyncStatusChip.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(chip, /\{#if icon === 'cloud-off'\}[\s\S]*?data-icon="cloud-off"[\s\S]*?\{:else\}/);
+	assert.match(chip, /\{#if icon === 'cloud-alert'\}\s*<svg\s+class="chip-alert"/);
+	assert.equal((chip.match(/class="chip-alert"/g) ?? []).length, 1, 'one "!" glyph, behind cloud-alert only');
 });
 
 test('chipFullLabel matches the full status strings', () => {

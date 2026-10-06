@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { COLUMN_VIEW_PATH, REDO_PATH, TREE_LIST_PATH, UNDO_PATH } from '$lib/ui/icon-glyphs';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
+	import { undoButtonTitle } from '$lib/rb/playlist-history';
 	import {
 		playlistHistoryChrome,
 		redoPlaylistFromChrome,
@@ -45,6 +46,10 @@
 	function closeHistory(): void {
 		historyOpen = false;
 	}
+
+	const undoTitle: string = $derived(
+		undoButtonTitle(playlistHistoryChrome.entries, playlistHistoryChrome.cursor, playlistHistoryChrome.canUndo)
+	);
 
 	const treeToggleTitle: string = $derived(
 		showPlaylistTools
@@ -96,13 +101,15 @@
 			class="icon-btn"
 			data-testid="playlist-undo"
 			aria-label="Undo playlist edit"
-			title="Undo playlist edit (Ctrl/Cmd+Z). Hover for recent edits."
+			title={undoTitle}
 			data-custom-tip=""
 			disabled={!playlistHistoryChrome.canUndo}
 			bind:this={historyAnchor}
 			onclick={() => undoPlaylistFromChrome()}
 			onmouseenter={openHistory}
 			onfocus={openHistory}
+			onmouseleave={closeHistory}
+			onblur={closeHistory}
 		>
 			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
 				<path d={UNDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -122,33 +129,29 @@
 			</svg>
 		</button>
 	</div>
+	<!-- LIBUX-51: inside .source-toolbar (position: relative) so top: 100% anchors
+	     the popover under the undo button; as a sibling it resolved against a page
+	     ancestor and opened at the bottom edge of the window (found by the v1 ship
+	     day thread, #5674). It is a read-only tooltip: it closes when the pointer or
+	     focus leaves the undo button and takes no pointer events, so it never
+	     covers a playlist row it overlaps. -->
+	{#if historyOpen && historyAnchor !== null}
+		<div class="history-popover" style:z-index="5" role="tooltip">
+			<p class="history-hint" data-testid="playlist-undo-next">{undoTitle}. Recent edits at the undo cursor:</p>
+			<ol class="history-list" data-testid="playlist-history-list">
+				{#each playlistHistoryChrome.entries as entry, index (entry.command_id)}
+					<li
+						class="history-item"
+						class:pending={index >= playlistHistoryChrome.cursor}
+						aria-current={index === playlistHistoryChrome.cursor - 1 ? 'step' : undefined}
+					>
+						{entry.label}
+					</li>
+				{/each}
+			</ol>
+		</div>
+	{/if}
 </div>
-
-{#if historyOpen && historyAnchor !== null}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="history-popover"
-		style:z-index="5"
-		role="tooltip"
-		onmouseleave={closeHistory}
-		onblur={closeHistory}
-	>
-		<p class="history-hint">
-			Undo playlist edit (Ctrl/Cmd+Z). Recent edits at the undo cursor:
-		</p>
-		<ol class="history-list" data-testid="playlist-history-list">
-			{#each playlistHistoryChrome.entries as entry, index (entry.command_id)}
-				<li
-					class="history-item"
-					class:pending={index >= playlistHistoryChrome.cursor}
-					aria-current={index === playlistHistoryChrome.cursor - 1 ? 'step' : undefined}
-				>
-					{entry.label}
-				</li>
-			{/each}
-		</ol>
-	</div>
-{/if}
 
 <style>
 	.source-toolbar {
@@ -218,6 +221,7 @@
 	}
 	.history-popover {
 		position: absolute;
+		pointer-events: none;
 		top: 100%;
 		right: 4px;
 		margin-top: 2px;

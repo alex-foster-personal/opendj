@@ -10,7 +10,7 @@
   "concurrency": 3,
   "batch": true,
   "batchingMinSize": 4,
-  "batchingMaxWaitTimeMinutes": 20,
+  "batchingMaxWaitTimeMinutes": 1,
   "bisectionConcurrency": 6,
   "optimizationMode": "bisection_skip_redundant_tests",
   "canOptimisticallyMerge": true,

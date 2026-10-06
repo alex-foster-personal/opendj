@@ -130,10 +130,11 @@ test('sync chip state mapping: ok is cloud + tick in white, off/syncing/error ke
 		}
 	}
 	assert.deepEqual(view.chipGlyphs(null), { cloud: true, tick: false, text: true }, 'loading reads as off');
-	// The component renders exactly what chipGlyphs says: the cloud
-	// unconditionally, the tick only under glyphs.tick, the labels otherwise,
+	// The component renders exactly what chipGlyphs says: a cloud
+	// unconditionally (CLOUDSYNC-36 picks which cloud, and the "!" block
+	// closes just before the tick), the tick only under glyphs.tick, the labels otherwise,
 	// and only the ok class is white (the shell foreground, never the accent).
-	assert.match(chip, /<\/svg>\s*\{#if glyphs\.tick\}[\s\S]*?class="chip-tick"[\s\S]*?\{:else\}\s*<span class="chip-label-full">\{fullLabel\}<\/span>\s*<span class="chip-label-short">\{shortLabel\}<\/span>\s*\{\/if\}/);
+	assert.match(chip, /<\/svg>\s*\{\/if\}\s*\{#if glyphs\.tick\}[\s\S]*?class="chip-tick"[\s\S]*?\{:else\}\s*<span class="chip-label-full">\{fullLabel\}<\/span>\s*<span class="chip-label-short">\{shortLabel\}<\/span>\s*\{\/if\}/);
 	assert.match(chip, /class="chip-icon"/);
 	assert.match(chip, /class:ok=\{chipState\(\) === 'ok'\}/);
 	assert.match(chip, /class:error=\{chipState\(\) === 'error'\}/);
