@@ -109,9 +109,6 @@
 	 * 80% of the 30px EQ dial. MORE only - pin 246b0f5's LESS mode uses the
 	 * smaller LESS_TRIM_SIZE below. */
 	const TRIM_SIZE = 24;
-	/** MIXUX-03 (the maintainer, Mon 5 Oct 2026, revised twice that day): FILTER slot at 120% of the 30px EQ dial.
-	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
-	const FILTER_SLOT_SIZE = 36;
 
 	// ------------------------------------------------------- level calibration (#1475)
 
@@ -191,7 +188,6 @@
 	 * same shrunk dial size as TRIM and the EQs. */
 	const LESS_TRIM_SIZE = 18;
 	const LESS_EQ_SIZE = 18;
-	const LESS_FILTER_SIZE = 18;
 	/** Knob's own default dial size (see Knob.svelte's `size = 30`), spelled out
 	 * explicitly here rather than omitted: `exactOptionalPropertyTypes` treats an
 	 * explicit `size={undefined}` as distinct from the prop being absent, so
@@ -199,7 +195,11 @@
 	const EQ_SIZE = 30;
 	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
 	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
-	const filterSize = $derived(less ? LESS_FILTER_SIZE : FILTER_SLOT_SIZE);
+	/** MIXUX-11 (the maintainer, Tue 6 Oct 2026: "let's make the filter/color knob the
+	 * same size as trim"): FILTER is TRIM's size in both views, which supersedes
+	 * MIXUX-03's 120% FILTER. channel-strip-less-floor.test.mjs reads this line
+	 * to size FILTER in the MORE and LESS floors. */
+	const filterSize = $derived(trimSize);
 
 	const assignment = $derived(
 		stemEqMode && deck.stems.status === 'ready'

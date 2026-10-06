@@ -266,9 +266,9 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 
 	const lessTrimSize = Number(firstMatch(stripSrc, /const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/, 'LESS_TRIM_SIZE')[1]);
 	const lessEqSize = Number(firstMatch(stripSrc, /const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/, 'LESS_EQ_SIZE')[1]);
-	const lessFilterSize = Number(
-		firstMatch(stripSrc, /const LESS_FILTER_SIZE = (\d+(?:\.\d+)?);/, 'LESS_FILTER_SIZE')[1]
-	);
+	// MIXUX-11: FILTER is TRIM's size in both views.
+	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
+	const lessFilterSize = lessTrimSize;
 
 	function lessMarginPx(selector, label) {
 		const rule = firstMatch(
@@ -364,10 +364,11 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 
 	const trimSizeMatch = firstMatch(stripSrc, /const TRIM_SIZE = (\d+(?:\.\d+)?);/, 'TRIM_SIZE');
 	const eqSizeMatch = firstMatch(stripSrc, /const EQ_SIZE = (\d+(?:\.\d+)?);/, 'EQ_SIZE');
-	const filterSizeMatch = firstMatch(stripSrc, /const FILTER_SLOT_SIZE = (\d+(?:\.\d+)?);/, 'FILTER_SLOT_SIZE');
+	// MIXUX-11: FILTER is TRIM's size in both views.
+	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
 	const trimSize = Number(trimSizeMatch[1]);
 	const eqSize = Number(eqSizeMatch[1]);
-	const filterSize = Number(filterSizeMatch[1]);
+	const filterSize = trimSize;
 
 	// The base (non-`.strip.less`) rules are MORE's numbers - `.strip.less`
 	// only ever overrides them for LESS.
@@ -416,8 +417,7 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 
 	const moreFloorPx = readDeckAreaFloorPx(pageSrc, 'MORE');
 
-	// Unlike LESS, MORE's real requirement is not a whole number
-	// (FILTER_SLOT_SIZE = 35.1px), so the floor is a rounded-up whole px and
+	// Unlike LESS, MORE's floor is a rounded-up whole px with headroom, so
 	// this only asserts coverage (>=), not an exact documented-comment match.
 	assert.ok(
 		moreFloorPx >= requiredMixerPx,

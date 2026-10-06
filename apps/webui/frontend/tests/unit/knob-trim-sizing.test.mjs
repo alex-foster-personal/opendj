@@ -6,7 +6,6 @@ import { compile } from 'svelte/compiler';
 
 const EQ_DEFAULT_SIZE = 30;
 const EXPECTED_TRIM_SIZE = 24;
-const EXPECTED_FILTER_SIZE = 36;
 
 // Pin 8cabf5b1df1e:
 // [if] a knob is resized [then] its dial and pointer target resize but its caption remains legible 8px text [else ⛔️]
@@ -105,28 +104,20 @@ test('MIXUX-03 ChannelStrip TRIM is 20% smaller than EQ dials in MORE mode', asy
 	assert.ok(Number(lessEqSizeMatch[1]) < 30, 'LESS_EQ_SIZE must actually be smaller than the 30px EQ default');
 });
 
-test('MIXUX-03 ChannelStrip FILTER slot is 20% larger than EQ dials and wired live', async () => {
+// requirement: MIXUX-11
+// [if] the FILTER dial renders at any size other than TRIM's, in MORE or LESS [then] fail, [else stop]
+test('MIXUX-11 ChannelStrip FILTER is the same size as TRIM in both views and wired live', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
-	const constMatch = src.match(/const FILTER_SLOT_SIZE = (\d+(?:\.\d+)?);/);
-	assert.ok(constMatch, 'FILTER slot needs a named size rather than a magic number');
-	assert.equal(Number(constMatch[1]), EXPECTED_FILTER_SIZE);
-	assert.equal(EXPECTED_FILTER_SIZE, EQ_DEFAULT_SIZE * 1.2);
-
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 	const filterKnob = src.match(knobTag('FILTER'));
 	assert.ok(filterKnob, 'FILTER Knob element not found');
 	assert.match(filterKnob[0], /size=\{filterSize\}/);
 	assert.match(
 		src,
-		/const filterSize = \$derived\(less \? LESS_FILTER_SIZE : FILTER_SLOT_SIZE\);/,
-		'filterSize must resolve to FILTER_SLOT_SIZE in MORE and the shrunk size in LESS'
+		/const filterSize = \$derived\(trimSize\);/,
+		'if filterSize is not trimSize then FILTER and TRIM render at different sizes in MORE or LESS - broken'
 	);
-	const lessFilterMatch = src.match(/const LESS_FILTER_SIZE = (\d+(?:\.\d+)?);/);
-	assert.ok(lessFilterMatch, 'LESS needs its own named FILTER size');
-	assert.ok(
-		Number(lessFilterMatch[1]) < EXPECTED_FILTER_SIZE,
-		`the LESS FILTER dial must be smaller than MORE's ${EXPECTED_FILTER_SIZE}px`
-	);
+	assert.doesNotMatch(src, /FILTER_SLOT_SIZE|LESS_FILTER_SIZE/, 'no separate FILTER size may come back');
 	assert.match(filterKnob[0], /value=\{filter\}/, 'FILTER must read the strip\'s filter prop');
 	assert.match(filterKnob[0], /onchange=\{onfilter\}/, 'FILTER must emit changes');
 	assert.doesNotMatch(filterKnob[0], /\binert\b/, 'FILTER must not be an inert stub');
