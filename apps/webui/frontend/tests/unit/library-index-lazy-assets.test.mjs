@@ -7,6 +7,7 @@
 //   - if any sort, filter or search orders index rows differently from full rows then broken
 //   - if a held-back caller is not released when the index lands, or by its timeout, then broken
 //   - if enrich summary, lyrics-cached-ids or tree prefetch bypass the boot scheduler then broken
+//   - if a row-assets answer does not fill stems, vocals and cover on the asked row then broken
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -151,4 +152,50 @@ test('the slow boot side requests go through the boot scheduler', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /artworkReleased &&\s*artworkAvailable === true/);
 	assert.match(table, /holdArtworkUntilIndex\(8_000,/);
+});
+
+test('a row-assets answer fills stems, vocals and cover for the asked rows only', async () => {
+	const fillModule = await loadTypeScriptModule('src/lib/rb/row-assets-fill.ts', {
+		viteApiBase: 'https://rows.example.test'
+	});
+	const originalFetch = globalThis.fetch;
+	const asked = [];
+	globalThis.fetch = async (input) => {
+		const request = input instanceof Request ? input : new Request(input);
+		asked.push({ url: request.url, body: await request.json() });
+		return Response.json({
+			assets: {
+				t1: {
+					preview_b64: STRIP,
+					preview_max: 5,
+					vocals: { status: 'no_vocals', fps: 10, regions: [] },
+					artwork_available: true,
+					artwork_status: 'ok',
+					stems: { status: 'invalid', error: 'bad bundle' }
+				}
+			},
+			pending: []
+		});
+	};
+	try {
+		const row = (id) => ({
+			stable_id: id,
+			vocals: { status: 'not_analyzed' },
+			artwork_available: null,
+			artwork_status: 'unresolved',
+			stems: null
+		});
+		const rows = [row('t1'), row('t2')];
+		const out = await fillModule.fetchAndApplyRowAssets(['t1'], rows);
+		assert.equal(asked.length, 1);
+		assert.equal(asked[0].url, 'https://rows.example.test/api/v1/library/row-assets');
+		assert.deepEqual(asked[0].body, { ids: ['t1'] });
+		assert.deepEqual(rows[0].stems, { status: 'invalid', error: 'bad bundle' });
+		assert.equal(rows[0].vocals.status, 'no_vocals');
+		assert.equal(rows[0].artwork_available, true);
+		assert.deepEqual(rows[1], row('t2'), 'a row not asked for is untouched');
+		assert.deepEqual(out, { strips: { t1: { preview_b64: STRIP, preview_max: 5 } }, pending: [] });
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });
