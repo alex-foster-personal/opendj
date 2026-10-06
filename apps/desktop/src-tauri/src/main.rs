@@ -619,6 +619,12 @@ fn main() {
             WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title(title)
                 .inner_size(width, height)
+                // AGENT-19: this webview IS the audio engine and the agent-order
+                // executor, so it must keep running minimized or occluded.
+                // WKWebView's default inactive policy suspends a hidden view's
+                // tasks (macOS 14+, our floor), which would stall agent orders
+                // and the UI mirror exactly like a hidden Chrome tab did.
+                .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
                 .initialization_script(script)
                 .on_page_load(|_window, payload| {
                     let url = payload.url().to_string();

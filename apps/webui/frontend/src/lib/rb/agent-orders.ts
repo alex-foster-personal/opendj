@@ -9,6 +9,24 @@ import { durationProgress, resolveDuration, type Duration } from './agent-durati
 type ClockDeck = 1 | 2 | 3 | 4;
 
 const NEXT_ORDER_PATH = '/api/v1/commands/next';
+/**
+ * AGENT-19: how long the engine holds each claim request open. The claim is a
+ * LONG POLL, not a timer: a hidden tab's timers are throttled (Chrome aligns
+ * them to 1 s, and a timer chain to one wake-up per minute after five hidden
+ * minutes) but a network response is delivered at once, so the next order
+ * reaches a backgrounded leader as soon as it is posted. Must stay at or
+ * under the engine's `ORDER_WAIT_MAX_MS` (30 s, `routes/commands.py`).
+ */
+export const ORDER_LONG_POLL_MS = 20_000;
+/** The engine echoes the hold it honoured here; absent means it did not hold. */
+export const ORDER_WAIT_HEADER = 'x-opendj-order-wait-ms';
+export const NEXT_ORDER_URL = `${NEXT_ORDER_PATH}?wait_ms=${ORDER_LONG_POLL_MS}`;
+/**
+ * The timer FALLBACK, used only when the long poll cannot run: the engine is
+ * unreachable, has not registered this page yet, or answered without holding.
+ * Expected latency on that path is 50 ms in a visible tab, about 1 s in a
+ * hidden one, and up to 60 s per hop after five hidden minutes.
+ */
 const IDLE_POLL_MS = 50;
 
 export interface AgentOrder {
@@ -149,6 +167,9 @@ export async function executeAgentOrder(order: AgentOrder): Promise<{ steps: Age
 export interface PerformancePageRegistration {
 	/** True only while the engine has accepted a mirror publish from this page. */
 	isRegistered: () => boolean;
+	/** AGENT-19: settles when the page is next registered, so the poll starts at
+	 * once instead of after a timer a hidden tab would throttle. */
+	whenRegistered: () => Promise<void>;
 	/** The engine answered 409: it no longer has this page on record. */
 	forget: () => void;
 }
@@ -170,14 +191,17 @@ export async function pollAgentOrders(
 	republish: () => void,
 	isRunning: () => boolean
 ): Promise<void> {
+	let reportedUnheld = false;
 	while (isRunning()) {
 		if (!page.isRegistered()) {
-			await _sleep(IDLE_POLL_MS);
+			// Registration wakes the loop at once; the timer only re-checks
+			// isRunning() and is the documented fallback.
+			await Promise.race([page.whenRegistered(), _sleep(IDLE_POLL_MS)]);
 			continue;
 		}
 		let response: Response;
 		try {
-			response = await fetch(NEXT_ORDER_PATH);
+			response = await fetch(NEXT_ORDER_URL);
 		} catch {
 			// Unreachable engine (Safari TypeError `Load failed`) must not
 			// kill the loop or become an unhandledrejection.
@@ -219,6 +243,24 @@ export async function pollAgentOrders(
 			}
 			if (!complete.ok) throw new Error(`agent order result failed: ${complete.status}`);
 			republish();
+			// Straight back to the long poll: a timer here would cost a hidden
+			// tab up to a minute before it could even ask for the next order.
+			continue;
+		}
+		if (response.headers.get(ORDER_WAIT_HEADER) === String(ORDER_LONG_POLL_MS)) {
+			// The engine held the request for the window and nothing came: ask
+			// again at once, which is what keeps the next order timer-free.
+			reportedUnheld = false;
+			continue;
+		}
+		if (!reportedUnheld) {
+			// An engine that predates AGENT-19 ignores wait_ms. Loud, once per
+			// transition, because a hidden tab now pays the throttled timer.
+			console.error(
+				`agent orders: the engine did not hold ${NEXT_ORDER_URL}; falling back to a ` +
+					`${IDLE_POLL_MS} ms timer poll, which a hidden tab throttles to 1 s or 60 s`
+			);
+			reportedUnheld = true;
 		}
 		await _sleep(IDLE_POLL_MS);
 	}

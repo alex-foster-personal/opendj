@@ -33,7 +33,7 @@ const orders = await loadTypeScriptModule('src/lib/rb/agent-orders.ts');
 const { createTabLeadership, confirmedLeadership, whileLeader } = leadershipModule;
 const { installDemotionSilencer } = await loadTypeScriptModule('src/lib/rb/leader-only-writers.ts');
 const { createLeasedMirrorPublisher, decideFollowerClaim, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
-const NEXT = '/api/v1/commands/next';
+const NEXT = orders.NEXT_ORDER_URL;
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 async function flush() {
