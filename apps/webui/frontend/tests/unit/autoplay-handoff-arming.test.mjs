@@ -122,6 +122,31 @@ describe('[PLAY-20] runAutoPlayHandoff re-checks the arming between steps', () =
 	});
 });
 
+
+describe('[PLAY-20] abandon cleanup only touches what this handoff loaded (Sol P1)', () => {
+	it('nextId already on the follower, off during beat sync: the deck keeps it', async () => {
+		const fake = fakeSteps({ occupied: 'next-1', disarmAfter: 'beatSync' });
+		assert.equal(await handoff.runAutoPlayHandoff('next-1', fake.steps), 'abandoned-disarmed');
+		assert.deepEqual(fake.log, ['beatSync'], 'no load and, above all, no unload of a track it never loaded');
+		assert.equal(fake.onDeck(), 'next-1');
+	});
+
+	it('off before the unload of an older track: that track stays on the deck', async () => {
+		const fake = fakeSteps({ occupied: 'old-1' });
+		fake.steps.stillArmed = () => false;
+		assert.equal(await handoff.runAutoPlayHandoff('next-1', fake.steps), 'abandoned-disarmed');
+		assert.deepEqual(fake.log, []);
+		assert.equal(fake.onDeck(), 'old-1');
+	});
+
+	it('older track unloaded on purpose, then off during the load: only the loaded track is undone', async () => {
+		const fake = fakeSteps({ occupied: 'old-1', disarmAfter: 'load' });
+		assert.equal(await handoff.runAutoPlayHandoff('next-1', fake.steps), 'abandoned-disarmed');
+		assert.deepEqual(fake.log, ['unload', 'load', 'unload']);
+		assert.equal(fake.onDeck(), null);
+	});
+});
+
 // ----- live: the real controller, switched off through the agent order bus ----
 
 const POLL_SETTLE_MS = 900;
@@ -168,7 +193,12 @@ async function withArmedSet(run) {
 	const requests = [];
 	globalThis.fetch = async (input) => {
 		requests.push(String(typeof input === 'string' || input instanceof URL ? input : input.url));
-		return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+		// Sol P1: never a fake success. Every request fails loud (503) and is recorded, so
+		// the off test proves no handoff request was MADE, not that one quietly succeeded.
+		return new Response(JSON.stringify({ detail: 'unit runtime: no engine behind fetch' }), {
+			status: 503,
+			headers: { 'content-type': 'application/json' }
+		});
 	};
 	const realInfo = console.info;
 	const infos = [];
@@ -271,4 +301,20 @@ test('[PLAY-20] SHAPE GUARD: the controller wires stillArmed to the arming _tick
 		/await _handoff\(source, follower, nextId, generation\);/,
 		'_tick must pass the generation it armed under, not a fresh read'
 	);
+});
+
+test('[PLAY-20] SHAPE GUARD: an abandoned handoff gives back its arming claim', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+		'utf8'
+	);
+	const start = source.indexOf("if (outcome === 'abandoned-disarmed') {");
+	assert.notEqual(start, -1, 'the abandon branch could not be located: this guard asserts nothing');
+	const branch = source.slice(start, source.indexOf('return;', start));
+	for (const reset of ['_triggeredFor = null;', '_claimedIds.delete(nextId);', '_playedIds.delete(nextId);']) {
+		assert.ok(
+			branch.includes(reset),
+			`if an abandoned handoff keeps ${reset.split(/[ .]/)[0]} then a quick re-enable on the same track goes silent - broken`
+		);
+	}
 });

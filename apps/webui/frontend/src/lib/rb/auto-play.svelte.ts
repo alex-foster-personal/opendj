@@ -243,6 +243,11 @@ async function _handoff(
 		console.info(
 			`[autoplay] handoff abandoned: AutoPlay was switched off mid-handoff (deck ${follower}, ${nextId.slice(0, 12)})`
 		);
+		// Nothing was handed off, so roll back what _tick claimed for it: a quick
+		// re-enable on the same source must be able to hand off again.
+		_triggeredFor = null;
+		_claimedIds.delete(nextId);
+		_playedIds.delete(nextId);
 		return;
 	}
 	// pickSourceDeck only ever arms off the master, so AutoPlay must move

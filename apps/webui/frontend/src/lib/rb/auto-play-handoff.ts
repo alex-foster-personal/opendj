@@ -40,11 +40,18 @@ export interface AutoPlayHandoffSteps {
 /**
  * Load + start the follower. Throws AutoPlayHandoffError('load') when nothing
  * landed on the deck and ('commit') once something did, as before.
+ *
+ * Abandon cleanup unloads ONLY a track this handoff loaded itself (Sol P1 on
+ * #5646): if `nextId` was already on the follower, it belongs to whoever put it
+ * there, and an off must leave it alone. A track that was on the follower before
+ * the handoff is unloaded on purpose BEFORE the load; an off before that unload
+ * leaves it untouched.
  */
 export async function runAutoPlayHandoff(
 	nextId: string,
 	steps: AutoPlayHandoffSteps
 ): Promise<AutoPlayHandoffOutcome> {
+	let loadedHere = false;
 	try {
 		if (!steps.stillArmed()) return 'abandoned-disarmed';
 		const occupied = steps.followerStableId();
@@ -54,21 +61,20 @@ export async function runAutoPlayHandoff(
 		}
 		if (steps.followerStableId() !== nextId) {
 			await steps.load();
+			loadedHere = true;
 		}
 	} catch (error: unknown) {
 		throw new AutoPlayHandoffError('load', error);
 	}
 	// ---- commit point: nextId is on the follower deck from here down ----
+	const abandon = async (): Promise<AutoPlayHandoffOutcome> => {
+		if (loadedHere) await steps.unload();
+		return 'abandoned-disarmed';
+	};
 	try {
-		if (!steps.stillArmed()) {
-			await steps.unload();
-			return 'abandoned-disarmed';
-		}
+		if (!steps.stillArmed()) return await abandon();
 		const syncSkip = await steps.beatSync();
-		if (!steps.stillArmed()) {
-			await steps.unload();
-			return 'abandoned-disarmed';
-		}
+		if (!steps.stillArmed()) return await abandon();
 		if (syncSkip !== null) steps.notifySyncSkip(syncSkip);
 		await steps.play();
 		steps.onPlayDispatched();
