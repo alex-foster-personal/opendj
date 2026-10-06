@@ -136,7 +136,7 @@ def read_song_index(conn_factory: Callable[[], sqlite3.Connection], present: Seq
             batch = ids[start : start + CFG.ID_BIND_BATCH]
             marks = ",".join("?" * len(batch))
             for sid, title, artists_json, duration_ms in conn.execute(
-                f"SELECT stable_id, title, artists_json, duration_ms FROM tracks WHERE stable_id IN ({marks})", batch
+                f"SELECT stable_id, title, artists_json, duration_ms FROM tracks WHERE stable_id IN ({marks}) AND deleted_at IS NULL", batch
             ):
                 meta[str(sid)] = (title, _artists(artists_json), duration_ms)
     finally:
