@@ -237,6 +237,17 @@ class TracksPage(BaseModel):
     next_cursor: str | None = None
 
 
+class TrackIndexOut(BaseModel):
+    """GET /tracks/index: every listing row in one response (LIBM-171).
+
+    Rows carry no ``provenance`` (its default, an empty map); the library
+    ``revision`` was read before the rows.
+    """
+
+    revision: str
+    items: list[TrackListItemOut]
+
+
 class TrackPatch(BaseModel):
     rating: int | None = None
     tags_add: list[str] | None = None

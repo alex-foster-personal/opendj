@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import os
 import sqlite3
 import stat
@@ -38,6 +40,7 @@ from ..models import (
     LyricsUnavailableOut,
     QualityRungOut,
     TrackListItemOut,
+    TrackIndexOut,
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
@@ -343,17 +346,34 @@ def list_tracks(
         show_deleted=show_deleted,
     )
     page = backend.list_tracks(flt)
-    jobs_store = getattr(request.app.state, "jobs_store", None)
+    items = _listing_items(request, page.items, available)
+    # The page is validated ONCE, as a whole, and returned already rendered
+    # (LIBM-137). Before, each row was built as a TrackOut, dumped, rebuilt as a
+    # TrackListItemOut, and then FastAPI validated and encoded the whole page a
+    # third time: 290 ms of a 590 ms page of 500 rows. ``response_model`` on the
+    # decorator still documents the shape; a returned Response is sent as is.
+    page_out = TracksPage.model_validate({"items": items, "next_cursor": page.next_cursor})
+    return Response(
+        content=page_out.model_dump_json(by_alias=True), media_type="application/json"
+    )
+
+
+def _listing_items(
+    request: Request, tracks: list[Track], available: AvailableFilter
+) -> list[TrackListItemOut]:
+    """One listing row per track, in order: the shared body of /tracks and /tracks/index."""
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)
     rows = rb_vendor.build_track_rows(
-        page.items, jobs_store=jobs_store, data_dir=get_library_data_dir(request)
+        tracks,
+        jobs_store=getattr(request.app.state, "jobs_store", None),
+        data_dir=get_library_data_dir(request),
     )
-    stable_ids = [t.stable_id for t in page.items]
+    stable_ids = [t.stable_id for t in tracks]
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
-    items: list[dict[str, Any]] = []
-    for track, row in zip(page.items, rows, strict=False):
+    items: list[TrackListItemOut] = []
+    for track, row in zip(tracks, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
             continue
         base = _track_to_out(
@@ -400,15 +420,55 @@ def list_tracks(
                 genre_guess=row.get("genre_guess"),
             )
         )
-    # The page is validated ONCE, as a whole, and returned already rendered
-    # (LIBM-137). Before, each row was built as a TrackOut, dumped, rebuilt as a
-    # TrackListItemOut, and then FastAPI validated and encoded the whole page a
-    # third time: 290 ms of a 590 ms page of 500 rows. ``response_model`` on the
-    # decorator still documents the shape; a returned Response is sent as is.
-    page_out = TracksPage.model_validate({"items": items, "next_cursor": page.next_cursor})
-    return Response(
-        content=page_out.model_dump_json(by_alias=True), media_type="application/json"
-    )
+    return items
+
+
+#: Tracks read per backend call while the index is assembled (the backend's own cap).
+INDEX_READ_PAGE = 1000
+#: Fields the index leaves out: the per-field provenance map is about 780 bytes
+#: of a 2.6 KB row and no list reads it. GET /tracks/{sid} still serves it.
+INDEX_OMITTED_FIELDS = frozenset({"provenance"})
+
+
+# Declared BEFORE /{stable_id} so "index" is not swallowed as an id.
+@router.get("/index", response_model=TrackIndexOut, operation_id="get_track_index")
+def get_track_index(
+    request: Request,
+    accept_encoding: str | None = Header(None),
+    if_none_match: str | None = Header(None),
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> Response:
+    """Every library row in ONE response: the browser's local library index (LIBM-171).
+
+    The same rows, in the same order, as walking ``GET /tracks`` to the end, minus
+    ``provenance``. The browser holds this once and resolves All Tracks from it,
+    the way rekordbox, Serato and Traktor hold their library in memory, instead of
+    re-walking ~23 pages on every switch. ``revision`` is the library revision read
+    BEFORE the rows, so a change made while they were read shows as a newer
+    revision on the next ``GET /tracks/revision``. The ETag is a hash of the body:
+    ``If-None-Match`` with it answers 304, gzip when the client accepts it.
+    """
+    revision = backend.library_revision()
+    items: list[TrackListItemOut] = []
+    cursor: str | None = None
+    while True:
+        page = backend.list_tracks(TrackFilter(cursor=cursor, limit=INDEX_READ_PAGE))
+        items.extend(_listing_items(request, page.items, "all"))
+        if page.next_cursor is None:
+            break
+        cursor = page.next_cursor
+    out = TrackIndexOut.model_validate({"revision": revision, "items": items})
+    body = out.model_dump_json(
+        by_alias=True, exclude={"items": {"__all__": set(INDEX_OMITTED_FIELDS)}}
+    ).encode()
+    etag = f'"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
+    if if_none_match == etag:
+        return Response(status_code=304, headers=headers)
+    if accept_encoding is not None and "gzip" in accept_encoding:
+        body = gzip.compress(body, compresslevel=1)
+        headers["Content-Encoding"] = "gzip"
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 # Declared BEFORE /{stable_id} so "quality-ladder" is not swallowed as an id.
