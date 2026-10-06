@@ -540,6 +540,15 @@ export function positionWithinGridSpan(beats: readonly AnlzBeat[], positionSec: 
 	return positionSec >= before && positionSec <= after;
 }
 
+/** The beat interval at the grid edge `positionSec` lies beyond (the last
+ * spacing past the end, the first before the start), or null when it lies
+ * within the grid's span (`positionWithinGridSpan`). */
+function _offGridEdgeIntervalSec(beats: readonly AnlzBeat[], positionSec: number): number | null {
+	if (positionWithinGridSpan(beats, positionSec)) return null;
+	const n = beats.length;
+	return positionSec > beats[n - 1].t ? beats[n - 1].t - beats[n - 2].t : beats[1].t - beats[0].t;
+}
+
 /** Return the exact t of the nearest beat. Equidistant ties choose earlier. */
 export function quantizeToNearestBeat(
 	beats: readonly AnlzBeat[],
@@ -699,6 +708,13 @@ export function planHotCueTrigger(
  * jumping master off phase. It snaps as above (as for a paused deck) when
  * the anchor or the target is off the grid's interior: a track edge is a
  * defined stop, not a phase to keep.
+ *
+ * An anchor more than one beat OUTSIDE the grid (SEEK-GRID-02, #5601: a grid
+ * that ends at 36 s on a 180 s track) moves `deltaBeats` times the EDGE beat
+ * interval (the last spacing past the end, the first before the start) from
+ * the anchor itself: the grid extended at its edge tempo. A jump that lands
+ * back within the grid's span snaps to the nearest real beat there; one that
+ * would go below 0 lands at 0.
  */
 export function beatJumpTargetMs(
 	beats: readonly AnlzBeat[],
@@ -710,6 +726,12 @@ export function beatJumpTargetMs(
 	_assertFiniteNonNegative('positionMs', positionMs);
 	if (!Number.isInteger(deltaBeats) || deltaBeats === 0) {
 		throw new RangeError(`deltaBeats must be a non-zero integer, got ${deltaBeats}`);
+	}
+	const edgeSec = _offGridEdgeIntervalSec(beats, positionMs / 1000);
+	if (edgeSec !== null) {
+		const targetSec = Math.max(0, positionMs / 1000 + deltaBeats * edgeSec);
+		const landed = positionWithinGridSpan(beats, targetSec) ? beats[_nearestBeatIndex(beats, targetSec)].t : targetSec;
+		return landed * 1000;
 	}
 	const from = keepPhase ? gridBeatPosition(beats, positionMs / 1000) : null;
 	if (from !== null && from + deltaBeats >= 0 && from + deltaBeats <= beats.length - 1) {
@@ -762,6 +784,14 @@ export function beatJumpTargetWithinDurationMs(
 	_assertFiniteNonNegative('targetMs', targetMs);
 	_assertFiniteNonNegative('durationMs', durationMs);
 	if (targetMs <= durationMs) return targetMs;
+	// An off-grid jump (SEEK-GRID-02) past the audio steps back whole edge
+	// intervals, staying on the extended grid, rather than falling back onto
+	// the last real beat (which on a short grid is far earlier in the track).
+	const edgeSec = _offGridEdgeIntervalSec(beats, targetMs / 1000);
+	if (edgeSec !== null && targetMs / 1000 > beats[beats.length - 1].t) {
+		const stepsBack = Math.ceil((targetMs - durationMs) / (edgeSec * 1000));
+		return Math.max(0, targetMs - stepsBack * edgeSec * 1000);
+	}
 	for (let index = beats.length - 1; index >= 0; index--) {
 		if (beats[index].t * 1000 <= durationMs) return beats[index].t * 1000;
 	}
@@ -791,14 +821,18 @@ export function beatJumpMovesTransportWithinDuration(
 	durationMs: number
 ): boolean {
 	try {
-		const anchorIndex = _nearestBeatIndex(beats, positionMs / 1000);
-		const anchorMs = beatJumpTargetWithinDurationMs(beats, beats[anchorIndex].t * 1000, durationMs);
+		// Off the grid the jump anchors on the playhead itself (SEEK-GRID-02).
+		const anchorRawMs = _offGridEdgeIntervalSec(beats, positionMs / 1000) !== null
+			? positionMs
+			: beats[_nearestBeatIndex(beats, positionMs / 1000)].t * 1000;
+		const anchorMs = beatJumpTargetWithinDurationMs(beats, anchorRawMs, durationMs);
 		const targetMs = beatJumpTargetWithinDurationMs(
 			beats,
 			beatJumpTargetMs(beats, positionMs, deltaBeats),
 			durationMs
 		);
-		return targetMs !== anchorMs;
+		// A microsecond floor: off-grid steps are float sums of edge intervals.
+		return Math.abs(targetMs - anchorMs) > 1e-3;
 	} catch {
 		return false;
 	}
