@@ -48,3 +48,15 @@ test('tickFaderGhostIdle shows guidance after 2s idle without pointermove', () =
 	ghost.tickFaderGhostIdle(idleSince + 2001);
 	assert.equal(ghost.guidanceVisible(2), true);
 });
+
+// [if] a diverged ghost stays idle past the threshold [then] guidance is written ONCE, not every frame
+test('tickFaderGhostIdle writes guidance once, not on every animation frame', () => {
+	ghost.clearGhost(3);
+	ghost.openGhost(3, 0.1, 0.9);
+	const idleSince = ghost.faderGhostByDeck[3].idleSince;
+	ghost.tickFaderGhostIdle(idleSince + 2001);
+	const written = ghost.faderGhostByDeck[3];
+	assert.equal(written.showGuidance, true);
+	for (let frame = 1; frame <= 10; frame++) ghost.tickFaderGhostIdle(idleSince + 2001 + frame * 16);
+	assert.equal(ghost.faderGhostByDeck[3], written, 'each frame replaced the deck state: every ghost reader re-ran at 60 Hz');
+});

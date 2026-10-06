@@ -196,7 +196,9 @@ export function tickFaderGhostIdle(now: number): void {
 	for (const deck of DECK_IDS) {
 		const state = _deck(deck);
 		if (!state.diverged || state.ghostValue === null) continue;
-		if (shouldShowGuidanceAfterIdle(state.idleSince, now)) {
+		// Once only: this runs every animation frame, and a write here replaces the
+		// deck's $state object, re-running every ghost reader at 60 Hz.
+		if (!state.showGuidance && shouldShowGuidanceAfterIdle(state.idleSince, now)) {
 			_setDeck(deck, { ...state, showGuidance: true });
 		}
 	}
