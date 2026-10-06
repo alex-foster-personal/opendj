@@ -419,6 +419,28 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({ status: 200, json: { signed_in: false, user: null } })
 	);
 	await page.route('**/api/v1/build-info', (route) => route.fulfill({ status: 404, json: {} }));
+	// IconRail reads the build's feature flags (sets.recording, SET-12 v1
+	// fallback, recording-flag.ts) to decide whether the REC control shows.
+	// Declared ON, so the rail renders exactly as before the kill switch.
+	await page.route('**/api/v1/flags', (route) =>
+		route.fulfill({
+			json: {
+				build_profile: 'full',
+				file_present: false,
+				sandboxed: false,
+				path: '',
+				flags: [
+					{
+						flag_id: 'sets.recording',
+						enabled: true,
+						default: true,
+						overridden: false,
+						refusal: null
+					}
+				]
+			}
+		})
+	);
 	await page.route('**/api/v1/feedback/todos', (route) => route.fulfill({ json: { todos: [] } }));
 	await page.route('**/api/v1/feedback/comments', (route) => route.fulfill({ json: { comments: [] } }));
 	await page.route('**/api/v1/feedback/general', (route) => route.fulfill({ status: 404, json: {} }));
