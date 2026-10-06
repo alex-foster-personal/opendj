@@ -45,20 +45,25 @@ export type SettingControl =
 	// One path per line; saved via overlay Apply (async existence check on server).
 	| { kind: 'path_lines'; v2Notice: string };
 
+/** Kinds of live preview a settings row can carry (rendered by SettingsOverlay). */
+export type SettingPreview = 'waveform';
+
 export interface SettingDef {
 	id: string;
 	label: string;
 	group: SettingGroupId;
 	keywords: readonly string[];
-	/** Short RHS hover tooltip. */
+	/** Short summary, indexed by settings search. Not rendered as a hover tooltip: cards show `detail` instead (Mon 5 Oct 2026). */
 	title: string;
-	/** Longer explanation shown on focus/hover. */
+	/** Longer explanation, always visible under the row (no hover-to-expand). */
 	detail: string;
 	/** false = grayed inert todo (PARITY-TODO). Hidden unless the
 	 * "Show developer pages" pref (show_dev_ui) is on. */
 	implemented: boolean;
 	/** true = a developer-only row, shown only while show_dev_ui is on. */
 	devOnly?: boolean;
+	/** A live thumbnail rendered under the control; every option value must paint one. */
+	preview?: SettingPreview;
 	control: SettingControl;
 }
 

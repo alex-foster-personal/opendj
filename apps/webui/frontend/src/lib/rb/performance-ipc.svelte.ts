@@ -61,6 +61,7 @@ import {
 	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
+	reinstallAcrossHotUpdates,
 	setAnalysisSource,
 	type AnalysisSource,
 	type AnalysisSourceFeature
@@ -116,6 +117,7 @@ import {
 	type DeckId
 } from '$lib/rb/deck-slots';
 import {
+	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
 	setWaveformDesign,
@@ -124,8 +126,13 @@ import {
 	setWaveSplitMaster,
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
-import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
-import { parseSkinSettings, type SkinSettings } from '$lib/rb/ui-skin';
+import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
+import {
+	effectiveWaveformDesign,
+	effectiveWavePalette,
+	parseSkinSettings,
+	type SkinSettings
+} from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -242,7 +249,7 @@ export type PerformanceCommand =
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
-	| { type: 'set_waveform_design'; design: WaveformDesign }
+	| { type: 'set_waveform_design'; design: WaveformDesignPref }
 	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
@@ -313,6 +320,8 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'show_stems'; enabled: boolean }
+	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. */
+	| { type: 'autoplay'; enabled: boolean }
 	| { type: 'feedback_mark'; vote: 'bad' | 'good' | 'great' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
@@ -509,9 +518,15 @@ export interface PerformanceState {
 	};
 	ui: {
 		show_stems: boolean;
-		waveform_design: WaveformDesign;
+		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
+		auto_play_enabled: boolean;
+		/** Stored pref; 'auto' follows the skin. */
+		waveform_design: WaveformDesignPref;
+		/** What the waveforms actually paint (auto resolved through the skin). */
+		waveform_design_effective: WaveformDesign;
 		ui_skin: SkinSettings['ui_skin'];
 		wave_palette: SkinSettings['wave_palette'];
+		wave_palette_effective: ReturnType<typeof effectiveWavePalette>;
 		wave_split_master: SkinSettings['wave_split_master'];
 	};
 }
@@ -954,7 +969,11 @@ installScopedSyncRunner((_deck, run) => {
 // mutation instead of replacing grids underneath them
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
-installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// A dev hot update re-runs this module while analysis-source keeps its
+// runner; reinstallAcrossHotUpdates releases the old one first (no-op in prod).
+reinstallAcrossHotUpdates(import.meta.hot, 'analysisSourceRefreshRunner', () =>
+	installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work))
+);
 // An automatic master handoff (unload, pause, natural end) re-joins the
 // followers under the same wide claim, queued behind the command that moved the
 // master, so later deck commands wait for it rather than racing it.
@@ -1357,13 +1376,17 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
+	if (type === 'autoplay') {
+		_exactKeys(record, ['type', 'enabled']);
+		return { type, enabled: _boolean('enabled', record.enabled) };
+	}
 	if (type === 'set_skin') {
 		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
 		return { type, ...parseSkinSettings(record) };
 	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
-		const design = parseWaveformDesign(record.design);
+		const design = parseWaveformDesignPref(record.design);
 		if (design === undefined) throw new TypeError('design is required');
 		return { type, design };
 	}
@@ -2001,9 +2024,12 @@ export function queryPerformanceState(): PerformanceState {
 		feedback_marks: performanceFeedbackSummary(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
+			auto_play_enabled: uiPrefs.auto_play_enabled,
 			waveform_design: uiPrefs.waveform_design,
+			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
 			wave_palette: uiPrefs.wave_palette,
+			wave_palette_effective: effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin),
 			wave_split_master: uiPrefs.wave_split_master
 		}
 	};
@@ -2101,6 +2127,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
+		command.type === 'autoplay' ||
 		command.type === 'set_waveform_design' ||
 		command.type === 'set_skin' ||
 		// View state only: no engine write to serialize, so queueing these
@@ -2428,6 +2455,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
+	} else if (command.type === 'autoplay') {
+		setAutoPlayEnabled(command.enabled);
 	} else if (command.type === 'set_waveform_design') {
 		setWaveformDesign(command.design);
 	} else if (command.type === 'set_skin') {

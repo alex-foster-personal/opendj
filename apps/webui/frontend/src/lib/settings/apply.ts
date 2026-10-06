@@ -2,9 +2,9 @@
  * Allowlisted setting mutators. Used by the overlay controls and AI apply.
  * Unknown keys throw (fail-loud).
  */
-import { parseWaveformDesign } from '$lib/rb/waveform-design';
+import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
-import { parseWavePalette } from '$lib/rb/wave-palette';
+import { parseWavePalettePref } from '$lib/rb/wave-palette';
 import { parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
@@ -363,17 +363,17 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setShowStems(_asBool(value, key));
 			return;
 		case 'waveform_design': {
-			const design = parseWaveformDesign(value);
+			const design = parseWaveformDesignPref(value);
 			if (design === undefined) {
-				throw new Error(`waveform_design must be tri-band|mono|line|blocks, got ${String(value)}`);
+				throw new Error(`waveform_design must be auto|tri-band|mono|line|blocks, got ${String(value)}`);
 			}
 			setWaveformDesign(design);
 			return;
 		}
 		case 'wave_palette': {
-			const choice = parseWavePalette(value);
+			const choice = parseWavePalettePref(value);
 			if (choice === undefined) {
-				throw new Error(`wave_palette must be rekordbox|legacy|mono, got ${String(value)}`);
+				throw new Error(`wave_palette must be auto|rekordbox|legacy|mono, got ${String(value)}`);
 			}
 			setWavePalette(choice);
 			return;

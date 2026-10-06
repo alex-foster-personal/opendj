@@ -77,16 +77,17 @@ test('if light is not a parseable skin then set_skin and the ui_skin setting can
 test('if cycleUiSkin does not persist ui_skin and apply data-skin then the choice is lost on reload', async () => {
 	const store = installBrowser();
 	const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
-	assert.equal(prefs.uiPrefs.ui_skin, 'default');
-	assert.equal(prefs.cycleUiSkin(), 'mono-dev');
-	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'mono-dev');
-	assert.equal(globalThis.document.documentElement.dataset.skin, 'mono-dev');
+	// CHROME-14: a first run boots Gothic; the cycle order itself is unchanged.
+	assert.equal(prefs.uiPrefs.ui_skin, 'mono-dev');
 	assert.equal(prefs.cycleUiSkin(), 'light');
 	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'light');
 	assert.equal(globalThis.document.documentElement.dataset.skin, 'light');
 	assert.equal(prefs.cycleUiSkin(), 'default');
 	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'default');
 	assert.equal('skin' in globalThis.document.documentElement.dataset, false);
+	assert.equal(prefs.cycleUiSkin(), 'mono-dev');
+	assert.equal(JSON.parse(store.get(STORAGE_KEY)).ui_skin, 'mono-dev');
+	assert.equal(globalThis.document.documentElement.dataset.skin, 'mono-dev');
 });
 
 test('if a stored light skin is not restored on boot then persistence only works within one session', async () => {

@@ -249,14 +249,16 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		id: 'waveform_design',
 		label: 'Waveform design',
 		group: 'performance',
-		keywords: ['waveform', 'design', 'tri-band', 'mono', 'line', 'wavestack', 'strip'],
+		keywords: ['waveform', 'design', 'auto', 'skin', 'tri-band', 'mono', 'line', 'blocks', 'wavestack', 'strip'],
 		title: 'Deck and library waveform paint style',
 		detail:
-			'Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. The preview below updates when you change the selection.',
+			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws single-color bars. The preview shows the effective design for the current skin.',
 		implemented: true,
+		preview: 'waveform',
 		control: {
 			kind: 'enum',
 			options: [
+				{ value: 'auto', label: 'Auto (follows skin)' },
 				{ value: 'tri-band', label: 'Tri-band bars' },
 				{ value: 'mono', label: 'Mono envelope' },
 				{ value: 'line', label: 'Line outline' },

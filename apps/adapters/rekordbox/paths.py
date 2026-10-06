@@ -507,35 +507,65 @@ def _error_code(exc: HTTPException) -> str | None:
     return exc.detail.get("code") if isinstance(exc.detail, dict) else None
 
 
-def _local_only_pick(
+@dataclasses.dataclass(frozen=True)
+class _LocalCopy:
+    """What this machine's own disk offers once believed state found nothing."""
+
+    pick: track_locations.PickedAudio | None
+    rekordbox_refusal: HTTPException | None
+
+
+def _local_copy_pick(
     state: sqlite3.Connection,
     stable_id: str,
     share_policy: track_locations.PickPolicy | None,
-    reason: str | None,
-) -> track_locations.PickedAudio:
-    """CLOUDSYNC-33: what a local-only machine plays when believed state has no copy.
+) -> _LocalCopy:
+    """Issue #3934: the deck plays any copy the listing counts as available.
 
-    Believed state walks every local location row, so this runs only when none
-    of them materialises; rekordbox's own FolderPath (which the listing counts
-    as this track's file) can still be on disk. The picker ranks every
-    location plus that FolderPath under the same policy the share cap uses.
-    When none plays, a rekordbox file that is here but unplayable says why;
-    otherwise the deck says plainly it is not here.
+    Believed state reads only the first local location row and
+    ``tracks.file_path``, so rekordbox's own FolderPath (the path the tree's
+    ``available_count`` and the row wire count first) or a working alternate
+    can still be on disk. The candidates are
+    :func:`track_locations.playable_candidate_paths`, the SAME list the
+    listing probes, ranked by the share-cap picker. A rekordbox file that is
+    here but unplayable comes back as its refusal so a local-only deck can
+    say why (CLOUDSYNC-33).
     """
     rekordbox_copy = _rekordbox_copy(stable_id)
-    pick = track_locations.pick_playable(
-        state,
-        stable_id,
-        policy=share_policy,
-        folder_path=str(rekordbox_copy) if isinstance(rekordbox_copy, Path) else None,
+    primary = str(rekordbox_copy) if isinstance(rekordbox_copy, Path) else None
+    candidates = track_locations.playable_candidate_paths(state, {stable_id: primary})
+    pick = track_locations.pick_playable_from_candidates(
+        state, stable_id, candidates[stable_id], policy=share_policy
     )
-    if pick is None:
-        if isinstance(rekordbox_copy, HTTPException):
-            raise rekordbox_copy
-        raise not_found("AUDIO_NOT_ON_THIS_MACHINE", reason or hydration.NOT_ON_THIS_MACHINE)
-    if pick.source == "folder_path":
-        return dataclasses.replace(pick, source="rekordbox-folder-path")
-    return pick
+    if pick is not None and pick.source == "primary":
+        pick = dataclasses.replace(pick, source="rekordbox-folder-path")
+    return _LocalCopy(
+        pick=pick,
+        rekordbox_refusal=rekordbox_copy if isinstance(rekordbox_copy, HTTPException) else None,
+    )
+
+
+def _unavailable_refusal(
+    stable_id: str,
+    source: hydration.PlaybackSource,
+    local_copy: _LocalCopy | None,
+) -> HTTPException:
+    """Why a track with no playable copy here will not load.
+
+    A local-only machine (no CloudSync policy) says why rekordbox's file will
+    not play, else plainly that it is not here (CLOUDSYNC-33); a configured
+    machine names the cloud asset as unavailable.
+    """
+    if source.policy_source == "unconfigured":
+        if local_copy is not None and local_copy.rekordbox_refusal is not None:
+            return local_copy.rekordbox_refusal
+        return not_found(
+            "AUDIO_NOT_ON_THIS_MACHINE", source.reason or hydration.NOT_ON_THIS_MACHINE
+        )
+    return not_found(
+        "CLOUD_ASSET_UNAVAILABLE",
+        source.reason or f"audio for track {stable_id} is unavailable on this machine",
+    )
 
 
 def resolve_playable_audio(
@@ -592,9 +622,12 @@ def resolve_playable_audio(
             if share_policy is not None and source.origin == "local"
             else None
         )
-        local_only = (
-            _local_only_pick(state, stable_id, share_policy, source.reason)
-            if source.origin == "unavailable" and source.policy_source == "unconfigured"
+        # Issue #3934: believed state never tries rekordbox's FolderPath,
+        # which the tree and rows count first, so a copy that is on disk here
+        # wins over "unavailable" and over hydrating a remote object.
+        local_copy = (
+            _local_copy_pick(state, stable_id, share_policy)
+            if source.origin in ("unavailable", "presigned")
             else None
         )
     finally:
@@ -620,14 +653,11 @@ def resolve_playable_audio(
             else "believed-state-cache",
         )
 
+    if local_copy is not None and local_copy.pick is not None:
+        return local_copy.pick
+
     if source.origin == "unavailable":
-        if local_only is not None:
-            return local_only
-        raise not_found(
-            "CLOUD_ASSET_UNAVAILABLE",
-            source.reason
-            or f"audio for track {stable_id} is unavailable on this machine",
-        )
+        raise _unavailable_refusal(stable_id, source, local_copy)
 
     if source.origin == "presigned":
         try:

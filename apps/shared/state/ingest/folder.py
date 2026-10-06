@@ -55,6 +55,7 @@ from apps.shared.state.ingest.path_collisions import (
     assert_no_path_collisions,
 )
 from apps.shared.state.writer import StateWriter
+from apps.shared.stem_outputs import is_stem_output
 
 ADAPTER_ID: str = "folder"
 
@@ -83,6 +84,9 @@ class FolderIngestReport:
     tracks_with_tag_key: int = 0
     #: Allowlisted files that failed the playable-audio probe. Never imported.
     files_rejected_unplayable: int = 0
+    #: Stem-separation outputs (LIBM-170), e.g. ``vocals/Song - vocals.mp3``.
+    #: Never imported: they carry the song's title and play as an acapella.
+    files_skipped_stem_output: int = 0
     tracks_inserted: int = 0
     tracks_updated: int = 0
     tracks_unchanged: int = 0
@@ -295,6 +299,9 @@ def _identify(
     entry: audio_files.AudioFile, report: FolderIngestReport
 ) -> tuple[str, str, int | None, audio_files.AudioMetadata | None] | None:
     """Read the tags and mint the id, or count the file as skipped."""
+    if is_stem_output(entry.path):
+        report.files_skipped_stem_output += 1
+        return None
     try:
         audio_playable.probe_playable_audio(entry.path)
     except UnplayableAudioError:
@@ -410,6 +417,7 @@ def _print_summary(report: FolderIngestReport) -> None:
     print(f"  tracks with tag bpm: {report.tracks_with_tag_bpm}")
     print(f"  tracks with tag key: {report.tracks_with_tag_key}")
     print(f"  files rejected (unplayable): {report.files_rejected_unplayable}")
+    print(f"  skipped: stem separation outputs: {report.files_skipped_stem_output}")
     print(f"  tracks inserted:    {report.tracks_inserted}")
     print(f"  tracks unchanged:   {report.tracks_unchanged}")
     print(f"  tracks skipped:     {report.tracks_skipped}")

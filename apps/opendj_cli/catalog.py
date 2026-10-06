@@ -58,9 +58,9 @@ QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
 ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
-WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("tri-band", "mono", "line", "blocks")
+WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
 UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light")
-WAVE_PALETTE_VALUES: tuple[str, ...] = ("rekordbox", "legacy", "mono")
+WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono")
 WAVE_SPLIT_MASTER_VALUES: tuple[str, ...] = ("auto", "on", "off")
 
 # The command types AGENT-03 will ramp. An ordering that carries a target must
@@ -297,14 +297,18 @@ _VERBS: tuple[Verb, ...] = (
     )),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
+    Verb("autoplay", "autoplay", (_ENABLED,),
+         observes=(Observe(("autoplay_enabled",), "enabled"),),
+         note="AGENT-20: the AutoPlay switch; the mirror's autoplay_armed says if it will hand off."),
     Verb("set_waveform_design", "set_waveform_design", (
-        arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "tri-band|mono|line|blocks"),
+        arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "auto|tri-band|mono|line|blocks"),
     )),
     Verb("set_skin", "set_skin", (
         arg("ui_skin", "enum", enum_value(UI_SKIN_VALUES), "default|mono-dev|light"),
-        arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "rekordbox|legacy|mono"),
+        arg("wave_palette", "enum", enum_value(WAVE_PALETTE_VALUES), "auto|rekordbox|legacy|mono"),
         arg("wave_split_master", "enum", enum_value(WAVE_SPLIT_MASTER_VALUES), "auto|on|off"),
-    ), note="Skin preview: chrome skin, waveform palette and split master waveform in one call."),
+    ), note="Skin preview: chrome skin, waveform palette and split master waveform in one call. "
+            "wave_split_master is opt-in: auto = off on every skin (mirrored rows), on = split."),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
     # RESCUE-01 HTTP parity (not command-bus verbs):
