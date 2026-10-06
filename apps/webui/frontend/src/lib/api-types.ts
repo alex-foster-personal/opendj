@@ -5816,6 +5816,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Index
+         * @description Every library row in ONE response: the browser's local library index (LIBM-171).
+         *
+         *     The same rows, in the same order, as walking ``GET /tracks`` to the end, minus
+         *     ``provenance``. The browser holds this once and resolves All Tracks from it,
+         *     the way rekordbox, Serato and Traktor hold their library in memory, instead of
+         *     re-walking ~23 pages on every switch. ``revision`` is the library revision read
+         *     BEFORE the rows, so a change made while they were read shows as a newer
+         *     revision on the next ``GET /tracks/revision``. The ETag is a hash of the body:
+         *     ``If-None-Match`` with it answers 304, gzip when the client accepts it.
+         */
+        get: operations["get_track_index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/lyrics-cached-ids": {
         parameters: {
             query?: never;
@@ -15692,6 +15720,19 @@ export interface components {
             options?: string[] | null;
             /** Title */
             title?: string;
+        };
+        /**
+         * TrackIndexOut
+         * @description GET /tracks/index: every listing row in one response (LIBM-171).
+         *
+         *     Rows carry no ``provenance`` (its default, an empty map); the library
+         *     ``revision`` was read before the rows.
+         */
+        TrackIndexOut: {
+            /** Items */
+            items: components["schemas"]["TrackListItemOut"][];
+            /** Revision */
+            revision: string;
         };
         /** TrackLibraryRevisionOut */
         TrackLibraryRevisionOut: {
@@ -27481,6 +27522,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedTrackOut"][];
+                };
+            };
+        };
+    };
+    get_track_index: {
+        parameters: {
+            query?: never;
+            header?: {
+                "accept-encoding"?: string | null;
+                "if-none-match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackIndexOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

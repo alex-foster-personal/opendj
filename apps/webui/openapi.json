@@ -23015,6 +23015,28 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackIndexOut": {
+        "description": "GET /tracks/index: every listing row in one response (LIBM-171).\n\nRows carry no ``provenance`` (its default, an empty map); the library\n``revision`` was read before the rows.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrackListItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "items"
+        ],
+        "title": "TrackIndexOut",
+        "type": "object"
+      },
       "TrackLibraryRevisionOut": {
         "properties": {
           "revision": {
@@ -41646,6 +41668,72 @@
           }
         },
         "summary": "List Deleted Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/index": {
+      "get": {
+        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\n``provenance``. The browser holds this once and resolves All Tracks from it,\nthe way rekordbox, Serato and Traktor hold their library in memory, instead of\nre-walking ~23 pages on every switch. ``revision`` is the library revision read\nBEFORE the rows, so a change made while they were read shows as a newer\nrevision on the next ``GET /tracks/revision``. The ETag is a hash of the body:\n``If-None-Match`` with it answers 304, gzip when the client accepts it.",
+        "operationId": "get_track_index",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "accept-encoding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Encoding"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-none-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackIndexOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Index",
         "tags": [
           "tracks"
         ]
