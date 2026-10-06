@@ -25,6 +25,8 @@ export interface PerformanceSessionDeckSnapshot {
 	beat_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
 	key_sync_enabled: boolean;
+	/** RESCUE-07: playing when captured. Absent in older snapshots (read as false). */
+	playing?: boolean;
 }
 
 export interface PerformanceSessionMixerChannelSnapshot {
@@ -53,6 +55,8 @@ export interface PerformanceSessionSnapshot {
 	version: 1;
 	captured_at_ms: number;
 	playlist_id: string | null;
+	/** RESCUE-07: master when captured. Absent in older snapshots. */
+	master_deck?: DeckId | null;
 	decks: Record<DeckId, PerformanceSessionDeckSnapshot>;
 	mixer: {
 		crossfader: number;
@@ -69,6 +73,7 @@ export interface PerformanceSessionSnapshot {
 export interface PerformanceSessionSnapshotInput {
 	captured_at_ms: number;
 	playlist_id: string | null;
+	master_deck: DeckId | null;
 	decks: Record<
 		DeckId,
 		{
@@ -80,6 +85,7 @@ export interface PerformanceSessionSnapshotInput {
 			beat_sync_enabled: boolean;
 			master_tempo_enabled: boolean;
 			key_sync_enabled: boolean;
+			playing: boolean;
 		}
 	>;
 	mixer: {
@@ -121,6 +127,7 @@ function _parseDeckSnapshot(raw: unknown): PerformanceSessionDeckSnapshot | null
 	] as const) {
 		if (typeof deck[key] !== 'boolean') return null;
 	}
+	if (deck.playing !== undefined && typeof deck.playing !== 'boolean') return null;
 	return {
 		stable_id,
 		position_ms: Math.round(position_ms),
@@ -129,7 +136,8 @@ function _parseDeckSnapshot(raw: unknown): PerformanceSessionDeckSnapshot | null
 		quantize_enabled: deck.quantize_enabled as boolean,
 		beat_sync_enabled: deck.beat_sync_enabled as boolean,
 		master_tempo_enabled: deck.master_tempo_enabled as boolean,
-		key_sync_enabled: deck.key_sync_enabled as boolean
+		key_sync_enabled: deck.key_sync_enabled as boolean,
+		playing: deck.playing === true
 	};
 }
 
@@ -207,6 +215,7 @@ export function serializePerformanceSession(input: PerformanceSessionSnapshotInp
 		version: SNAPSHOT_VERSION,
 		captured_at_ms: input.captured_at_ms,
 		playlist_id: input.playlist_id,
+		master_deck: input.master_deck,
 		decks: {} as Record<DeckId, PerformanceSessionDeckSnapshot>,
 		mixer: {
 			crossfader: input.mixer.crossfader,
@@ -229,7 +238,8 @@ export function serializePerformanceSession(input: PerformanceSessionSnapshotInp
 			quantize_enabled: deck.quantize_enabled,
 			beat_sync_enabled: deck.beat_sync_enabled,
 			master_tempo_enabled: deck.master_tempo_enabled,
-			key_sync_enabled: deck.key_sync_enabled
+			key_sync_enabled: deck.key_sync_enabled,
+			playing: deck.playing
 		};
 		payload.mixer.channels[deckId] = { ...input.mixer.channels[deckId] };
 		payload.stems[deckId] = {
@@ -258,6 +268,14 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 	if (typeof blob.captured_at_ms !== 'number' || !Number.isFinite(blob.captured_at_ms)) return null;
 	if (blob.playlist_id !== null && typeof blob.playlist_id !== 'string') return null;
 	if (blob.decks === null || typeof blob.decks !== 'object') return null;
+	const masterDeckRaw = blob.master_deck;
+	if (
+		masterDeckRaw !== undefined &&
+		masterDeckRaw !== null &&
+		!(DECK_IDS as readonly unknown[]).includes(masterDeckRaw)
+	) {
+		return null;
+	}
 	if (blob.mixer === null || typeof blob.mixer !== 'object') return null;
 	if (blob.stems === null || typeof blob.stems !== 'object') return null;
 
@@ -325,6 +343,7 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 		version: SNAPSHOT_VERSION,
 		captured_at_ms: blob.captured_at_ms,
 		playlist_id: blob.playlist_id as string | null,
+		master_deck: (masterDeckRaw ?? null) as DeckId | null,
 		decks,
 		mixer: {
 			crossfader: mixerRaw.crossfader,

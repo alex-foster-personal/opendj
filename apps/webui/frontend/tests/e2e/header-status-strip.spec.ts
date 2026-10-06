@@ -5,6 +5,9 @@ import { spendBootLanding } from './support/boot-landing';
 // Each test here opens `/` cold and reads the APP-SHELL header, which the
 // PERFMODE-11 landing redirect replaces with the performance top bar mid-load;
 // support/boot-landing.ts has the full account.
+/** Since #5366 the track readout carries the playable count beside it. */
+const STRIP_TEXT = /\d+ tracks \(\d+ playable\) · \d+ playlists · lock: .+ · bind: .+/;
+
 test.beforeEach(async ({ page }) => {
 	await spendBootLanding(page);
 });
@@ -15,14 +18,14 @@ test('at 1280px the header status strip separates every readout with middle dots
 
 	const strip = page.getByTestId('header-status-strip');
 	await expect(strip).toBeVisible();
-	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · bind: .+/);
+	await expect(strip).toHaveText(STRIP_TEXT);
 	await expect(strip).not.toHaveText(/playlistslock/i);
 
 	const tracks = strip.locator('.readout-numeric').nth(0);
 	const playlists = strip.locator('.readout-numeric').nth(1);
 	// The hover title is a sentence saying what the number counts (V1 polish,
 	// PR #4923), and it leads with the same number the readout shows.
-	await expect(tracks).toHaveAttribute('title', /^\d+ tracks: .+state\.db/);
+	await expect(tracks).toHaveAttribute('title', /^\d+ tracks: .+state\.db.* \d+ playable: /);
 	await expect(playlists).toHaveAttribute('title', /^\d+ playlists: .+state\.db/);
 
 	const tracksText = await tracks.innerText();
@@ -31,6 +34,10 @@ test('at 1280px the header status strip separates every readout with middle dots
 	const playlistsTitle = await playlists.getAttribute('title');
 	expect(tracksText.match(/^(\d+)/)?.[1]).toBe(tracksTitle?.match(/^(\d+)/)?.[1]);
 	expect(playlistsText.match(/^(\d+)/)?.[1]).toBe(playlistsTitle?.match(/^(\d+)/)?.[1]);
+	// The playable count in the readout is the one the hover title explains.
+	const readoutPlayable = tracksText.match(/\((\d+) playable\)/)?.[1];
+	expect(readoutPlayable, `no playable count in the readout: ${tracksText}`).toMatch(/^\d+$/);
+	expect(readoutPlayable).toBe(tracksTitle?.match(/ (\d+) playable: /)?.[1]);
 });
 
 test('at narrow width the status strip never concatenates readouts', async ({ page }) => {
@@ -39,7 +46,7 @@ test('at narrow width the status strip never concatenates readouts', async ({ pa
 
 	const strip = page.getByTestId('header-status-strip');
 	await expect(strip).toBeVisible();
-	await expect(strip).toHaveText(/\d+ tracks · \d+ playlists · lock: .+ · bind: .+/);
+	await expect(strip).toHaveText(STRIP_TEXT);
 
 	const noRunOn = await strip.evaluate((el) => {
 		const text = (el as HTMLElement).innerText.replace(/\s+/g, ' ');

@@ -32,6 +32,8 @@ import {
 	shouldSkipPerformanceSessionRestore
 } from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
+import { planReloadResumeOffer } from '$lib/rb/reload-resume';
+import { offerReloadResume } from '$lib/rb/reload-resume.svelte';
 
 /** AC allows <=30s; 10s is the ship value for crash insurance between refreshes. */
 export const SESSION_SNAPSHOT_THROTTLE_MS = 10_000;
@@ -53,10 +55,18 @@ export interface PerformanceSessionRestoreOptions {
 	setInterval?: typeof globalThis.setInterval;
 	clearInterval?: typeof globalThis.clearInterval;
 	skipDeckRestore?: boolean;
+	/** AGENT-18: this tab's first restore was cut short by losing leadership;
+	 * load only the URL's decks that are still empty (`_resumeUrlDecks`). */
+	resumeInterruptedRestore?: boolean;
+	/** Called once the deck restore ran to its end without being disposed. */
+	onDeckRestoreSettled?: () => void;
 	/** The route command session this restore belongs to; the snapshot
 	 * writer stops when it ends. Defaults to the live performance IPC. */
 	commandSession?: () => number | null;
 	operatorMaster?: () => number | null;
+	/** RESCUE-07: whether AutoPlay is on, for the reload-resume log line and banner.
+	 * The page passes uiPrefs; unset (tests, other mounts) reads as off. */
+	autoPlayEnabled?: () => boolean;
 }
 
 function _snapshotInputFromState(
@@ -79,7 +89,8 @@ function _snapshotInputFromState(
 			quantize_enabled: deck.quantize_enabled,
 			beat_sync_enabled: deck.beat_sync_enabled,
 			master_tempo_enabled: deck.master_tempo_enabled,
-			key_sync_enabled: deck.key_sync_enabled
+			key_sync_enabled: deck.key_sync_enabled,
+			playing: deck.playing
 		};
 		const channel = state.mixer.channels[deckId];
 		channels[deckId] = {
@@ -107,6 +118,7 @@ function _snapshotInputFromState(
 	return {
 		captured_at_ms,
 		playlist_id,
+		master_deck: state.master_deck,
 		decks,
 		mixer: {
 			crossfader: state.mixer.crossfader,
@@ -224,6 +236,8 @@ export function createSessionSnapshotWriter(opts: {
 	};
 }
 
+const RESTORE_DISPOSED = 'performance session restore was disposed';
+
 async function _restoreDeck(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
@@ -241,6 +255,9 @@ async function _restoreDeck(
 		if (snapshot === null) return;
 		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot, query);
 	} catch (exc) {
+		// AGENT-18: a restore disposed by losing the lease stops here, quietly, rather
+		// than toasting one error per remaining deck; the next promotion resumes it.
+		if (exc instanceof Error && exc.message === RESTORE_DISPOSED) throw exc;
 		const message = exc instanceof Error ? exc.message : String(exc);
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
 	}
@@ -288,14 +305,35 @@ export function shouldRestoreSessionMaster(snapshot: PerformanceSessionSnapshot)
 	return snapshot.mixer.master > 0 || snapshot.mixer.master_set_by_operator === true;
 }
 
+/** RESCUE-07: decks already holding a track when a restore starts. */
+export function liveDecksAtRestore(
+	decks: Record<DeckId, { stable_id: string | null }>
+): DeckId[] {
+	return DECK_IDS.filter((deckId) => decks[deckId]?.stable_id != null);
+}
+
 async function _restoreSession(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
 	snapshot: PerformanceSessionSnapshot | null,
 	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
-	skipDeckRestore: boolean
+	skipDeckRestore: boolean,
+	now: () => number = () => Date.now(),
+	autoPlayEnabled: () => boolean
 ): Promise<void> {
 	if (skipDeckRestore) return;
+	// RESCUE-07: restore only into an empty engine. When the route remounts
+	// over a running one (a dev hot reload, or a double mount) the live decks
+	// are newer than the snapshot, and replaying it loaded onto a playing deck
+	// ("load: deck 2 must be fully stopped before replacement", silver preview
+	// Mon 5 Oct 2026 19:19:45Z and 20:06:11Z) and yanked live tempo settings.
+	const liveDecks = liveDecksAtRestore(query().decks);
+	if (liveDecks.length > 0) {
+		console.info(
+			`[session-restore] skipped: deck(s) ${liveDecks.join(',')} already loaded, so this is a remount over a live engine`
+		);
+		return;
+	}
 	if (snapshot !== null) {
 		await dispatch({ type: 'crossfader', value: snapshot.mixer.crossfader });
 		if (shouldRestoreSessionMaster(snapshot)) {
@@ -313,6 +351,34 @@ async function _restoreSession(
 				? snapshotDeck.position_ms
 				: 0;
 		await _restoreDeck(dispatch, query, deckId, stable_id, position_ms, snapshot);
+	}
+	// RESCUE-07: decks that were playing come back stopped (a reload is not a
+	// Gig rescue, and the browser will not start audio before a click), so say
+	// so and offer the click, rather than landing silently stopped.
+	offerReloadResume(
+		planReloadResumeOffer({ snapshot, decks: query().decks, now_ms: now() }),
+		autoPlayEnabled()
+	);
+}
+
+/**
+ * AGENT-18: finish a restore that losing leadership cut short. Mon 5 Oct 2026
+ * (silver preview): a tab opened with d1..d4 loaded d1 and d2, lost the lease,
+ * and every later deck failed "restore was disposed". On "Take control" the
+ * re-promoted tab skipped deck restore, so its snapshot writer published the
+ * engine as it stood and the URL lost d3 and d4 for good. The URL is still this
+ * tab's own intent (the writer never ran), so only its ids are used, never the
+ * shared snapshot (another tab may have written it), and only into empty decks.
+ */
+async function _resumeUrlDecks(
+	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
+	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>
+): Promise<void> {
+	for (const deckId of DECK_IDS) {
+		const stable_id = urlDeckIds[deckId] ?? null;
+		if (stable_id === null || query().decks[deckId].stable_id !== null) continue;
+		await _restoreDeck(dispatch, query, deckId, stable_id, 0, null);
 	}
 }
 
@@ -361,15 +427,20 @@ export function installPerformanceSessionRestore(
 	const skipDeckRestore = (opts.skipDeckRestore ?? false) || skipFromLibrary;
 	let disposed = false;
 	const assertActive = (): void => {
-		if (disposed) throw new Error('performance session restore was disposed');
+		if (disposed) throw new Error(RESTORE_DISPOSED);
 	};
 
-	void _restoreSession(
-		(command) => { assertActive(); return dispatch(command); },
-		() => { assertActive(); return query(); },
-		snapshot, urlDeckIds, skipDeckRestore
-	).finally(() => {
+	const guardedDispatch: typeof dispatch = (command) => { assertActive(); return dispatch(command); };
+	const guardedQuery: typeof query = () => { assertActive(); return query(); };
+	const restore = opts.resumeInterruptedRestore === true && !skipFromLibrary
+		? _resumeUrlDecks(guardedDispatch, guardedQuery, urlDeckIds)
+		: _restoreSession(
+			guardedDispatch, guardedQuery, snapshot, urlDeckIds, skipDeckRestore,
+			nowFn, opts.autoPlayEnabled ?? (() => false)
+		);
+	void restore.finally(() => {
 		if (disposed) return;
+		opts.onDeckRestoreSettled?.();
 		writer = createSessionSnapshotWriter({
 			now: nowFn,
 			storage,
@@ -385,6 +456,12 @@ export function installPerformanceSessionRestore(
 		});
 		writer.flush(true);
 		activeSessionWriter = writer;
+	}).catch((error: unknown) => {
+		// AGENT-18: losing the lease disposes a restore mid-flight. That is expected
+		// (the next promotion resumes it), not an unhandled rejection. Anything else
+		// still surfaces.
+		if (disposed && error instanceof Error && error.message === RESTORE_DISPOSED) return;
+		throw error;
 	});
 
 	return () => {

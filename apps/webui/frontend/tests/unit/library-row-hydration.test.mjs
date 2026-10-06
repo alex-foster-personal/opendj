@@ -59,6 +59,8 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 		'one refetch per deck load, only when a vendor mapping lands mid-flight (PARITY-09)'
 	],
 	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row'],
+	['routes/mockups/blocks-variance/+page.svelte', 'dev mockup route: one track per page view'],
+	['routes/mockups/lyric-rows/+page.svelte', 'dev mockup route: at most two tracks per page view'],
 	[
 		'lib/components/rb/deck/strip-anlz-prefetch.ts',
 		"StripWaveform's untracked warm-up; itself an entry point, so its callers are listed too"

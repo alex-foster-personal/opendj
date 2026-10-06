@@ -27,7 +27,17 @@ from .backend import StateBackend
 from .shell_output_health import data_dir_from_state_db
 
 
-def get_backend(request: Request) -> StateBackend:
+async def get_backend(request: Request) -> StateBackend:
+    # `async def`, not `def` (HEALTH-POOL-01): FastAPI resolves a *sync*
+    # dependency callable through the exact same shared
+    # anyio.to_thread.current_default_thread_limiter() pool as a sync route
+    # handler. This dependency is trivial attribute access -- it does zero
+    # I/O -- but as a plain `def` it still had to wait for a free token on
+    # that shared pool before it could even run, which defeated
+    # routes.health.health()'s own fix (making the route handler itself
+    # async is not enough if its dependency chain is still sync). Marking
+    # it async makes FastAPI call it directly on the event loop, with no
+    # threadpool dispatch at all.
     backend: StateBackend | None = getattr(request.app.state, "backend", None)
     if backend is None:  # pragma: no cover - app always seeds one
         raise HTTPException(status_code=500, detail="state backend is not configured")
@@ -57,7 +67,7 @@ def get_library_data_dir(request: Request) -> Path:
     return data_dir_from_state_db(Path(getattr(request.app.state, "state_db_path", "data/state/state.db")))
 
 
-def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:  # noqa: B008  # FastAPI DI
+async def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:  # noqa: B008  # FastAPI DI
     return backend
 
 

@@ -126,6 +126,8 @@
 	}
 	.dot.on {
 		background: var(--dot);
+		/* Skin hook: mono-dev grays the status grid (theme.css). */
+		filter: var(--rb-status-dot-filter);
 	}
 	/* Could not be judged: hollow, so it reads as neither ok (off) nor a flag (filled). */
 	.dot.on.unknown {

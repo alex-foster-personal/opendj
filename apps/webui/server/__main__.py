@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
+from apps.shared.uvicorn_shutdown import GRACEFUL_SHUTDOWN_S
 from apps.webui.port_config import (
     BACKEND_ENV,
     FRONTEND_ENV,
@@ -144,6 +145,11 @@ def main(argv: list[str] | None = None) -> int:
         host=args.host, port=resolved_port,
         reload=args.reload and not args.prod,
         factory=True,
+        # Bounded for the same reason apps.engine_core.__main__ bounds it: a
+        # dev client's keep-alive connections (vite's proxy held 29 of them
+        # during the Mon 5 Oct 2026 hot-reload hang) must not make SIGTERM
+        # wait forever for "Waiting for connections to close".
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
     )
     return 0
 

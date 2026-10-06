@@ -54,11 +54,35 @@ test('reconcile summary uses the generated endpoint and rejects impossible count
 		orphan_broken: 0,
 		playlists: []
 	});
-	assert.equal(requestedUrls.at(-1), `${API_BASE}/api/v1/reconcile/summary`);
+	assert.equal(requestedUrls.at(-1), `${API_BASE}/api/v1/reconcile/summary?cached=true`);
 
 	globalThis.fetch = async () =>
 		Response.json({ total_tracks: 2, total_broken: 3, orphan_broken: 0, playlists: [] });
 	await assert.rejects(api.getReconcileSummary(), /invalid total_tracks or total_broken counts/);
+});
+
+test('HEALTH-15: a summary with no scan yet is warming, never zero counts', async () => {
+	// [if] the engine answers computed_at null [then] ReconcileSummaryWarming, [else stop].
+	const warming = {
+		total_tracks: null,
+		total_broken: null,
+		orphan_broken: null,
+		playlists: [],
+		availability: null,
+		computed_at: null,
+		age_s: null,
+		refreshing: true,
+		refresh_error: null
+	};
+	globalThis.fetch = async () => Response.json(warming);
+	await assert.rejects(api.getReconcileSummary(), (error) => error instanceof api.ReconcileSummaryWarming);
+	// Mutation control: a finished scan with counts is a summary, not "still warming".
+	globalThis.fetch = async () =>
+		Response.json({ ...warming, total_tracks: 4, total_broken: 1, orphan_broken: 0, computed_at: 1.5, age_s: 2 });
+	assert.equal((await api.getReconcileSummary()).total_broken, 1);
+	// A server error is a failure, not warming.
+	globalThis.fetch = async () => Response.json({ detail: { code: 'BOOM', message: 'x' } }, { status: 500 });
+	await assert.rejects(api.getReconcileSummary(), (error) => !(error instanceof api.ReconcileSummaryWarming));
 });
 
 test('stem artifact probe validates the exact real Demucs contract', async () => {

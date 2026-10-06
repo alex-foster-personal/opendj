@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from apps.shared.state import db as state_db
 from apps.sync_hub import protocol
-from apps.sync_hub.engine_identity import _follow_remap, remap_track_children
+from apps.sync_hub.engine_identity import _follow_remap, losers_with_children, remap_track_children
 from apps.sync_hub.sync_set import identity_duplicate_remap
 
 REMAP_TABLE: str = "sync_identity_remap"
@@ -313,9 +313,19 @@ def prepare_spoke_identity(conn: sqlite3.Connection) -> int:
     #3251): a 900+ row backlog never holds one write transaction across the
     whole remap, so a mid-backlog lock conflict costs one batch's work, not
     the round, and WAL checkpoints get a chance to run between batches.
+
+    Only pairs whose loser still owns a child row are remapped (STATE-19):
+    for any other loser :func:`remap_track_children` is a no-op, yet running
+    it still took the writer lock. A settled library kept every pair in the
+    remap, so each CloudSync round re-ran all of them (938 pairs, 9,380
+    statements, five ``BEGIN IMMEDIATE`` batches on silver's data) and held
+    the lock long enough under load to 503 the app's reads at boot. With
+    nothing to move the round now takes the writer lock zero times.
     Returns how many loser PKs were remapped.
     """
-    remap = list(effective_identity_remap(conn).items())
+    pairs = effective_identity_remap(conn)
+    movable = losers_with_children(conn, pairs)
+    remap = [(loser, survivor) for loser, survivor in pairs.items() if loser in movable]
     batch_count = -(-len(remap) // IDENTITY_REMAP_BATCH_ROWS) if remap else 0
     for index in range(batch_count):
         start = index * IDENTITY_REMAP_BATCH_ROWS

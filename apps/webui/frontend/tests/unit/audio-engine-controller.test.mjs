@@ -866,6 +866,55 @@ test('paused seek produces one frozen UI and runtime clock position', () => {
 	assert.throws(() => audio.pausedSeekClock(4001, 4000), /duration/i);
 });
 
+test('session restore clamps a saved position that lands exactly at the end, instead of throwing', () => {
+	// The live repro (silver preview, Mon 5 Oct 2026): a deck that played to
+	// completion persists an integer position_ms rounded UP from the raw
+	// decoded-buffer duration, so the saved value reads 1ms past it.
+	// "cueJump: ms must be within 0..248059, got 248059" - restore must not
+	// throw for this; it must land the deck stopped at the end.
+	const rawDurationMs = 248058.6;
+	const savedPositionMs = 248059; // Math.round(rawDurationMs)
+	assert.equal(
+		audio.clampSeekTargetMs(savedPositionMs, rawDurationMs, 'cueJump'),
+		rawDurationMs,
+		'a position within the rounding margin must clamp to the raw duration, not throw'
+	);
+
+	// Exactly at the raw duration: always allowed, clamp is a no-op.
+	assert.equal(audio.clampSeekTargetMs(rawDurationMs, rawDurationMs, 'cueJump'), rawDurationMs);
+
+	// MUTATION CONTROL: a position genuinely past the end (not just a rounding
+	// hair) must still throw. Without the upper bound, any garbage position
+	// would silently seek to the end instead of failing fast.
+	assert.throws(
+		() => audio.clampSeekTargetMs(rawDurationMs + 5000, rawDurationMs, 'cueJump'),
+		/cueJump: ms must be within/
+	);
+
+	// Negative and non-finite positions are still rejected outright.
+	assert.throws(() => audio.clampSeekTargetMs(-1, rawDurationMs, 'cueJump'), /cueJump: ms must be within/);
+	assert.throws(() => audio.clampSeekTargetMs(Number.NaN, rawDurationMs, 'cueJump'), /cueJump: ms must be within/);
+});
+
+test('a paused position that lands exactly at the end of a raw-float duration clamps, instead of throwing', () => {
+	// Same shape as cueJump's end-of-track repro, for the pause side of the
+	// contract: a deck that played to completion and was then paused there
+	// (or restored into a paused state) persists an integer position rounded
+	// UP from the raw decoded-buffer duration.
+	const rawDurationMs = 248058.6;
+	const savedPositionMs = 248059; // Math.round(rawDurationMs)
+	assert.deepEqual(audio.pausedSeekClock(savedPositionMs, rawDurationMs), {
+		position_ms: rawDurationMs,
+		start_offset_sec: rawDurationMs / 1000
+	});
+
+	// MUTATION CONTROL: a position genuinely past the end still throws, and
+	// still with pausedSeekClock's own "duration" wording, not the shared
+	// helper's "ms must be within" wording - clampSeekTargetMs's error is
+	// caught and re-thrown, not left to leak through.
+	assert.throws(() => audio.pausedSeekClock(rawDurationMs + 5000, rawDurationMs), /duration/i);
+});
+
 test('decoded audio duration is the canonical waveform and transport duration', () => {
 	assert.equal(audio.decodedTransportDurationMs(123.4567), 123456.7);
 	assert.throws(() => audio.decodedTransportDurationMs(0), /positive/i);
