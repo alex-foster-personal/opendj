@@ -4,6 +4,8 @@
 // [if] a cue sink change to "default" succeeds [then] the holder still records "default", the id the UI lists
 // [if] a failed cue change restores a previous "default" [then] the restore also sends ""
 // [if] the master sink is applied through the browser [then] its setSinkId goes through the same mapping
+// [if] the browser's default entry shares a groupId with a listed device [then] that device is its physical_id, so MAIN and CUE on the pair run as split cue, not two outputs
+// [if] the default entry has no groupId match [then] it stays its own output
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -73,4 +75,34 @@ test('the browser master sink goes through the same mapping', () => {
 		'if the master path calls setSinkId with the raw id then picking the default MAIN fails without mic permission - broken');
 	assert.doesNotMatch(source, /\.setSinkId\((deviceId|previousId)\)/,
 		'every browser setSinkId call maps the id first');
+});
+
+/** Chrome with permission: the `default` alias carries the groupId of the device it follows. */
+const CHROME_LISTING = [
+	{ kind: 'audiooutput', deviceId: 'default', label: 'Default - MacBook Pro Speakers', groupId: 'g-speakers' },
+	{ kind: 'audiooutput', deviceId: 'spk-1', label: 'MacBook Pro Speakers', groupId: 'g-speakers' },
+	{ kind: 'audiooutput', deviceId: 'usb-1', label: 'USB Interface', groupId: 'g-usb' }
+];
+
+test('the default alias names the device it follows as its physical output', async () => {
+	const access = await loadTypeScriptModule('src/lib/player/io-device-access.ts');
+	const outputs = access.listIoDevices(CHROME_LISTING).outputs;
+	assert.equal(outputs.find((output) => output.id === 'default').physical_id, 'spk-1');
+	assert.equal(outputs.find((output) => output.id === 'spk-1').physical_id, undefined);
+	const noGroup = access.listIoDevices(CHROME_LISTING.map(({ groupId, ...device }) => device)).outputs;
+	assert.equal(noGroup.find((output) => output.id === 'default').physical_id, undefined,
+		'without a groupId match the alias stays its own output');
+});
+
+test('CUE on the default alias of the MAIN device runs split cue, not two outputs on one speaker', async () => {
+	const access = await loadTypeScriptModule('src/lib/player/io-device-access.ts');
+	const headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
+	const outputs = access.listIoDevices(CHROME_LISTING).outputs;
+	const cueOnAlias = headphones.dualSinkAssignment({ outputs, selectedCueId: 'default', selectedMasterId: 'spk-1', currentRoomId: null });
+	assert.equal(cueOnAlias.splitSameDevice, true,
+		'if "default" and the speakers read as two outputs then the cue mix plays in the room - broken');
+	const mainOnAlias = headphones.dualSinkAssignment({ outputs, selectedCueId: 'spk-1', selectedMasterId: 'default', currentRoomId: null });
+	assert.equal(mainOnAlias.splitSameDevice, true);
+	const distinct = headphones.dualSinkAssignment({ outputs, selectedCueId: 'usb-1', selectedMasterId: 'default', currentRoomId: null });
+	assert.notEqual(distinct.splitSameDevice, true, 'a genuinely different device keeps two outputs');
 });

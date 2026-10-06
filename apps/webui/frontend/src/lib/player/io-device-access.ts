@@ -35,7 +35,7 @@ export const SYSTEM_DEFAULT_OUTPUT_LABEL = 'System default output';
  * a rejection by type, never by matching message text. */
 export const IO_OPERATION_TIMEOUT_ERROR_NAME = 'HeadphoneOperationTimeoutError';
 
-type EnumeratedDevice = Pick<MediaDeviceInfo, 'kind' | 'deviceId' | 'label'>;
+type EnumeratedDevice = Pick<MediaDeviceInfo, 'kind' | 'deviceId' | 'label'> & Partial<Pick<MediaDeviceInfo, 'groupId'>>;
 
 export interface IoDeviceListing {
 	outputs: HeadphoneOutputDevice[];
@@ -139,6 +139,35 @@ function _listKind(
 }
 
 /**
+ * CUEOUT-27: the browser's `default` output is an alias of a real device the
+ * same listing also names. The page sends `default` to `setSinkId` as `""`,
+ * which follows that device, so MAIN on it and CUE on `default` (or the other
+ * way round) are ONE physical output and must not run as two outputs. Chrome
+ * gives the alias the groupId of the device it points at; name that device as
+ * the alias's `physical_id` so `sameOutputDevice` sees the collision. With no
+ * groupId match the alias stays its own id, as before.
+ */
+function _withDefaultPhysicalId(
+	devices: readonly EnumeratedDevice[],
+	listed: HeadphoneOutputDevice[]
+): HeadphoneOutputDevice[] {
+	const outputs = devices.filter((device) => device.kind === 'audiooutput');
+	const groupId = outputs.find((device) => device.deviceId === SYSTEM_DEFAULT_OUTPUT_ID)?.groupId ?? '';
+	if (groupId === '') return listed;
+	const target = outputs.find(
+		(device) =>
+			device.deviceId !== SYSTEM_DEFAULT_OUTPUT_ID &&
+			device.deviceId !== 'communications' &&
+			device.groupId === groupId &&
+			listed.some((entry) => entry.id === device.deviceId)
+	);
+	if (target === undefined) return listed;
+	return listed.map((entry) =>
+		entry.id === SYSTEM_DEFAULT_OUTPUT_ID ? { ...entry, physical_id: target.deviceId } : entry
+	);
+}
+
+/**
  * Turn a raw enumeration into the lists the panel draws.
  *
  * The output list ALWAYS carries the system default: the browser's own
@@ -151,7 +180,7 @@ export function listIoDevices(devices: readonly EnumeratedDevice[]): IoDeviceLis
 	const outputs = _listKind(devices, 'audiooutput', 'Output device');
 	const inputs = _listKind(devices, 'audioinput', 'Input device');
 	const withDefault = outputs.listed.some((output) => output.id === SYSTEM_DEFAULT_OUTPUT_ID)
-		? outputs.listed
+		? _withDefaultPhysicalId(devices, outputs.listed)
 		: [_systemDefaultOutput(), ...outputs.listed];
 	return {
 		outputs: withDefault,
