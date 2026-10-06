@@ -36,3 +36,13 @@ export async function untilSelectionLands(
 		release?.();
 	}
 }
+
+/** A pane's fill as agents see it. A painted pane keeps `load_progress` set
+ * until its fill finishes, so first rows alone never read as complete. */
+export function paneLoadState(pane: {
+	loading: boolean;
+	load_progress: unknown;
+	rows: readonly unknown[];
+}): { complete: boolean; rows_loaded: number } {
+	return { complete: !pane.loading && pane.load_progress === null, rows_loaded: pane.rows.length };
+}

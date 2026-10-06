@@ -552,6 +552,9 @@ export interface PerformanceBrowserPaneSnapshot {
 	search: string | null;
 	sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
 	selected_row: string | null;
+	/** The active pane's fill: `complete` false while rows are still arriving,
+	 * so an agent never reads a partial list as the whole one. Null: no pane. */
+	load: { complete: boolean; rows_loaded: number } | null;
 }
 
 /** BrowserPanel owns playlist loading, while this module owns the public
@@ -628,7 +631,8 @@ export function registerPerformanceBrowserAdapter(adapter: PerformanceBrowserAda
 const _EMPTY_BROWSER_PANE_SNAPSHOT: PerformanceBrowserPaneSnapshot = {
 	search: null,
 	sort: null,
-	selected_row: null
+	selected_row: null,
+	load: null
 };
 
 function _readBrowserPaneSnapshot(): PerformanceBrowserPaneSnapshot {
@@ -640,7 +644,8 @@ function _readBrowserPaneSnapshot(): PerformanceBrowserPaneSnapshot {
 			snapshot.sort === null
 				? null
 				: { key: snapshot.sort.key, direction: snapshot.sort.direction },
-		selected_row: snapshot.selected_row
+		selected_row: snapshot.selected_row,
+		load: snapshot.load === null ? null : { ...snapshot.load }
 	};
 }
 

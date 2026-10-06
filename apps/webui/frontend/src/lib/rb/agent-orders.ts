@@ -37,6 +37,8 @@ export interface AgentOrder {
 interface AgentStepResult {
 	status: 'succeeded' | 'failed' | 'skipped';
 	error?: string;
+	/** browser_select_playlist answers at first rows; `complete` false means more are coming. */
+	result?: { complete: boolean; rows_loaded: number };
 }
 
 /**
@@ -93,7 +95,12 @@ async function _one(command: unknown): Promise<AgentStepResult> {
 		else if (order.type === 'record_master_tap_cancel') {
 			// The start gave up on the tap: tear it down, never stream (SET-12).
 			(await import('$lib/sets/master-mix-capture')).cancelMasterMixCapture(String(order.session_id));
-		} else await dispatchPerformanceCommand(_command(command));
+		} else {
+			const after = await dispatchPerformanceCommand(_command(command));
+			if (order.type === 'browser_select_playlist' && after.browser.load !== null) {
+				return { status: 'succeeded', result: { ...after.browser.load } };
+			}
+		}
 		return { status: 'succeeded' };
 	} catch (error) {
 		return { status: 'failed', error: _message(error) };

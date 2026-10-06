@@ -1378,7 +1378,8 @@ test('queryPerformanceState publishes browser pane search, sort, and selected ro
 		readSnapshot: () => ({
 			search: 'house',
 			sort: { key: 'title', direction: 'asc' },
-			selected_row: 'track-99'
+			selected_row: 'track-99',
+			load: { complete: false, rows_loaded: 7 }
 		})
 	});
 	try {
@@ -1386,6 +1387,7 @@ test('queryPerformanceState publishes browser pane search, sort, and selected ro
 		assert.equal(live.search, 'house');
 		assert.deepEqual(live.sort, { key: 'title', direction: 'asc' });
 		assert.equal(live.selected_row, 'track-99');
+		assert.deepEqual(live.load, { complete: false, rows_loaded: 7 });
 		assert.doesNotThrow(() => structuredClone(live));
 	} finally {
 		unregister();
@@ -1396,7 +1398,8 @@ test('queryPerformanceState publishes browser pane search, sort, and selected ro
 		readSnapshot: () => ({
 			search: null,
 			sort: { key: 'bpm', direction: 'desc' },
-			selected_row: null
+			selected_row: null,
+			load: null
 		})
 	});
 	try {
@@ -1414,6 +1417,29 @@ test('queryPerformanceState publishes browser pane search, sort, and selected ro
 	assert.equal(after.selected_row, null);
 });
 
+test('a slow playlist load answers complete:false, then the queried state flips to complete', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const pane = { complete: false, rows_loaded: 0 };
+	const unregister = ipc.registerPerformanceBrowserAdapter({
+		// Answers at first rows, as BrowserPanel does; the fill keeps going.
+		selectPlaylist: async () => {
+			pane.rows_loaded = 500;
+		},
+		readSnapshot: () => ({ search: null, sort: null, selected_row: null, load: { ...pane } })
+	});
+	try {
+		const answered = await ipc.dispatchPerformanceCommand({ type: 'browser_select_playlist', playlist_id: 'all' });
+		assert.deepEqual(answered.browser.load, { complete: false, rows_loaded: 500 }, 'a partial list says so');
+		Object.assign(pane, { complete: true, rows_loaded: 9000 });
+		assert.deepEqual(ipc.queryPerformanceState().browser.load, { complete: true, rows_loaded: 9000 });
+	} finally {
+		unregister();
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('master mute and browser playlist selection are bus commands with queryable state', async () => {
 	const seen = [];
 	globalThis.window = {};
@@ -1422,7 +1448,7 @@ test('master mute and browser playlist selection are bus commands with queryable
 		selectPlaylist: async (playlistId) => {
 			seen.push(playlistId);
 		},
-		readSnapshot: () => ({ search: null, sort: null, selected_row: null })
+		readSnapshot: () => ({ search: null, sort: null, selected_row: null, load: null })
 	});
 	try {
 		const before = ipc.queryPerformanceState().history.length;

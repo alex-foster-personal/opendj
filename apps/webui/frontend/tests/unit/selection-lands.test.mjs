@@ -69,3 +69,19 @@ test('the order path waits on the landing, not on the fill', () => {
 	assert.match(body, /if \(!pane\.loading\) landed\(\)/, 'landing is the pane leaving its loading state');
 	assert.match(panel, /selectPlaylist: _selectPlaylistForOrder/, 'the agent adapter uses the order path');
 });
+
+const { paneLoadState } = await loadTypeScriptModule('src/lib/components/rb/browser/selection-lands.ts');
+
+test('a painted pane that is still filling reads complete:false; a finished fill reads complete', () => {
+	assert.deepEqual(paneLoadState({ loading: true, load_progress: null, rows: [] }), { complete: false, rows_loaded: 0 });
+	// First rows on screen, the rest of the library still arriving.
+	assert.deepEqual(paneLoadState({ loading: false, load_progress: { loaded: 500, total: 9000 }, rows: new Array(500) }), { complete: false, rows_loaded: 500 });
+	assert.deepEqual(paneLoadState({ loading: false, load_progress: null, rows: new Array(9000) }), { complete: true, rows_loaded: 9000 });
+});
+
+test('the order result and the mirror both carry the pane load state', () => {
+	const read = (path) => readFileSync(new URL(`../../src/lib/${path}`, import.meta.url), 'utf8');
+	assert.match(read('rb/agent-orders.ts'), /order\.type === 'browser_select_playlist' && after\.browser\.load !== null\) \{\s*return \{ status: 'succeeded', result: \{ \.\.\.after\.browser\.load \} \}/);
+	assert.match(read('rb/ui-mirror.ts'), /load: state\.browser\.load/);
+	assert.match(read('components/rb/BrowserPanel.svelte'), /load: paneLoadState\(p\)/);
+});

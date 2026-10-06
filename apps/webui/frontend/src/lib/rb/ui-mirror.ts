@@ -131,7 +131,9 @@ export function buildUiMirror(): Record<string, unknown> {
 			search: state.browser.search,
 			sort: state.browser.sort,
 			selected_row: state.browser.selected_row,
-			visible_rows_count: _visibleRowsCount()
+			visible_rows_count: _visibleRowsCount(),
+			// Observe `browser.load.complete` to wait for a whole list.
+			load: state.browser.load
 		},
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),

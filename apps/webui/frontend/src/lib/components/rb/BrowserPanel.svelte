@@ -107,6 +107,7 @@
 		libraryEditShortcut,
 		loadTrackClipboard,
 		loadBrowserConfirmDialog,
+		paneLoadState,
 		untilSelectionLands
 	} from './browser/browser-panel-support';
 	import type {
@@ -955,7 +956,8 @@
 						p.sort_key === null
 							? null
 							: { key: p.sort_key, direction: p.sort_dir === 1 ? 'asc' : 'desc' },
-					selected_row: p.selected_id
+					selected_row: p.selected_id,
+					load: paneLoadState(p)
 				};
 			}
 		});
