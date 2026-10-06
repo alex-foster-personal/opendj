@@ -449,7 +449,7 @@ def test_identity_maps_google_claims() -> None:
             "id_token": _jwt_with_claims(
                 {
                     "sub": "1234567890",
-                    "email": "maintainer",
+                    "email": "tamsin-quell",
                     "name": "Tamsin Quell",
                     "picture": "https://lh3.googleusercontent.com/a/pic",
                 }
@@ -457,7 +457,7 @@ def test_identity_maps_google_claims() -> None:
         }
     )
     assert identity.google_sub == "1234567890"
-    assert identity.email == "maintainer"
+    assert identity.email == "tamsin-quell"
     assert identity.avatar_url == "https://lh3.googleusercontent.com/a/pic"
     assert identity.refresh_token == "rt"
 
