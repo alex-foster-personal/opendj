@@ -111,5 +111,8 @@ def test_neither_source_keeps_the_honest_dash(
 def test_build_track_rows_routes_every_row_through_the_fallback() -> None:
     source = Path(track_rows.__file__).read_text(encoding="utf-8")
     body = source.split("def build_track_rows(", 1)[1].split("\ndef ", 1)[0]
-    assert "row_preview_strip(" in body
-    assert "local_preview_strip(" not in body, "the precedence lives in one helper"
+    # LIBM-172: build_track_rows reads each row's disk assets in _row_disk_assets.
+    helper = source.split("def _row_disk_assets(", 1)[1].split("\ndef ", 1)[0]
+    assert "_row_disk_assets(" in body
+    assert "row_preview_strip(" in helper
+    assert "local_preview_strip(" not in body + helper, "the precedence lives in one helper"
