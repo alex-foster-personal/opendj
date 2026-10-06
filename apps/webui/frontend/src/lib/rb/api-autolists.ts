@@ -1,7 +1,7 @@
 /**
  * Typed client for autolists routes (issue #2066).
  */
-import { RbApiError } from './api-rb';
+import { RbApiError } from './api-rb-error';
 import type { SmartlistTrackRow } from './api-smartlists';
 import type { AutolistSelection } from '$lib/smartlists/autolist-rule';
 import { ApiError, api, unwrap } from '../api/client';

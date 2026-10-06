@@ -14,7 +14,7 @@
  */
 
 import { libraryAudioLoadRefusal } from '$lib/components/rb/browser/browser-row-wire';
-import type { FileAvailabilityStatus } from './api-rb';
+import type { FileAvailabilityStatus } from './file-availability';
 
 export interface DraggableRow {
 	file_exists: boolean | null;

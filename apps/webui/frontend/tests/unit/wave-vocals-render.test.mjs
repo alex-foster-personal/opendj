@@ -44,7 +44,8 @@ const PALETTE = {
 	cueLoop: '#e8a13a',
 	cueMemory: '#ff3b30',
 	cueOutline: '#c8cdd2',
-	phrase: '#888888'
+	phrase: '#888888',
+	vocal: '#4fb2ff'
 };
 
 /** A recording 2D context: every fillRect kept with the style in force. */
@@ -109,7 +110,7 @@ function paint(vocals, positionMs = POSITION_MS) {
 		pitch: 1,
 		loop: null
 	});
-	return calls.filter((c) => c.fillStyle === render.VOCAL_BLUE);
+	return calls.filter((c) => c.fillStyle === PALETTE.vocal);
 }
 
 // ------------------------------------------------ the four-state paint gate

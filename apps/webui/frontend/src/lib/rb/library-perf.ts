@@ -29,12 +29,14 @@
  *   library-load-all-tracks     - one completed All Tracks cursor walk
  *   library-load-playlist       - one completed playlist hydrate
  *   library-playlist-tree-ready - playlist tree first paint after boot
+ *   library-playlist-tree-ready-anomaly - a tree-ready sample was out of
+ *                                range (epoch-mismatch or just slow)
  *   library-switch-first-rows   - click to first tbody row on switch
  *   library-search-collection   - one completed whole-collection FTS query
  *   library-prefetch-anlz       - sampled row-select /anlz warm
  *   library-prefetch-audio      - sampled row-select audio ArrayBuffer warm
  */
-import { recordPerfTiming } from '$lib/rb/perf-event-log';
+import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import { completeLibraryUsable } from '$lib/client-telemetry';
 
 // ------------------------------------------------------- filter debounce
@@ -49,20 +51,59 @@ import { completeLibraryUsable } from '$lib/client-telemetry';
  */
 export const LOCAL_FILTER_DEBOUNCE_MS = 80;
 
-/** A clock mismatch produces an epoch-sized value instead of a duration. */
+/**
+ * Above this, a tree-ready value is worth flagging as unusually slow (a cold
+ * boot, a backgrounded tab) but is still a real elapsed time - it must still
+ * be recorded.
+ */
 export const PLAYLIST_TREE_READY_MAX_MS = 60_000;
 
-/** Read and validate the navigation-relative playlist tree-ready duration. */
-export function measurePlaylistTreeReadyMs(nowMs: number = performance.now()): number {
-	if (!Number.isFinite(nowMs) || nowMs <= 0) {
-		throw new Error(`playlist tree ready duration must be positive, got ${nowMs}`);
+/**
+ * Above this, `nowMs` cannot be a navigation-relative duration at all: no
+ * real boot runs for 11+ days. This is what an epoch timestamp (ms since
+ * 1970, ~1.7e12) or another absolute-clock value looks like when it lands
+ * where a `performance.now()`-relative duration was expected. Comfortably
+ * below a real epoch value and comfortably above any plausible slow boot, so
+ * neither side can cross it by accident.
+ */
+export const PLAYLIST_TREE_READY_EPOCH_MIN_MS = 1_000_000_000;
+
+export type PlaylistTreeReadyAnomaly = 'epoch-mismatch' | 'slow';
+
+export interface PlaylistTreeReadySample {
+	/** Milliseconds to record, or null when the raw value could not be trusted at all. */
+	readonly ms: number | null;
+	readonly anomaly: PlaylistTreeReadyAnomaly | null;
+}
+
+/**
+ * Read and classify the navigation-relative playlist tree-ready duration.
+ *
+ * NEVER THROWS. This runs on BrowserPanel's boot-critical path
+ * (`_init`'s catch block rethrows after the toast, so a throw here becomes
+ * the browser panel's whole init failing as an unhandled rejection and deck 1
+ * never loading - #5469, "browser init failed: ... got 68271.9"). Fail-fast
+ * applies to the MEASUREMENT, not the app: an out-of-range value is an
+ * UNKNOWN sample, not a reason to abort boot.
+ *
+ * A clock mismatch (an epoch-sized value, >= {@link
+ * PLAYLIST_TREE_READY_EPOCH_MIN_MS}) is unusable and comes back with
+ * `ms: null` so the caller skips recording it. A slow-but-real duration
+ * (>= {@link PLAYLIST_TREE_READY_MAX_MS} but below the epoch floor - a cold
+ * boot in a backgrounded tab is exactly this shape) is still a genuine
+ * measurement and is returned with `ms` set and `anomaly: 'slow'`, so the
+ * ring keeps the number instead of losing the sample.
+ */
+export function measurePlaylistTreeReadyMs(
+	nowMs: number = performance.now()
+): PlaylistTreeReadySample {
+	if (!Number.isFinite(nowMs) || nowMs <= 0 || nowMs >= PLAYLIST_TREE_READY_EPOCH_MIN_MS) {
+		return { ms: null, anomaly: 'epoch-mismatch' };
 	}
 	if (nowMs >= PLAYLIST_TREE_READY_MAX_MS) {
-		throw new Error(
-			`playlist tree ready duration must be below 60 seconds, got ${nowMs}`
-		);
+		return { ms: Math.round(nowMs), anomaly: 'slow' };
 	}
-	return Math.round(nowMs);
+	return { ms: Math.round(nowMs), anomaly: null };
 }
 
 /** What one coalesced keystroke burst resolved to. */
@@ -184,10 +225,26 @@ export function recordLibraryLoadTiming(
 	completeLibraryUsable({ source });
 }
 
-/** Playlist tree ready after boot prefetch (PERF-UI-05). */
-export function recordPlaylistTreeReadyMs(ms: number): void {
+/**
+ * Playlist tree ready after boot prefetch (PERF-UI-05).
+ *
+ * Takes the classified sample from {@link measurePlaylistTreeReadyMs} rather
+ * than a raw number, so this is where an anomaly is logged and an unusable
+ * (epoch-mismatch) sample is skipped - never thrown, since this sits on
+ * BrowserPanel's boot-critical path.
+ */
+export function recordPlaylistTreeReadyMs(sample: PlaylistTreeReadySample): void {
+	if (sample.anomaly !== null) {
+		recordPerfEvent(
+			'library-playlist-tree-ready-anomaly',
+			`raw tree-ready value ${sample.ms ?? 'n/a'} ms flagged as ${sample.anomaly}`,
+			null,
+			'warn'
+		);
+	}
+	if (sample.ms === null) return;
 	recordPerfTiming('library-playlist-tree-ready', {
-		ready_ms: Math.round(ms)
+		ready_ms: sample.ms
 	});
 }
 

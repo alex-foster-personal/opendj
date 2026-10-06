@@ -101,7 +101,7 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs } from '$lib/rb/engine-clock-reports';
 import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
@@ -293,6 +293,7 @@ import {
 import {
 	_positionForSegment,
 	pausedSeekClock,
+	clampSeekTargetMs,
 	commonSyncScheduleTimes,
 	deckReachedEnd,
 	decodedTransportDurationMs,
@@ -393,7 +394,7 @@ export {
 	scheduleOffsetStages,
 	supersedingScheduleTime
 };
-export { pausedSeekClock };
+export { pausedSeekClock, clampSeekTargetMs };
 export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock };
 // The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
 // its device boundary and its algebra. Deliberately NOT re-exported here: no
@@ -469,7 +470,9 @@ let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
-let _masterMode: MasterMode = 'auto';
+// $state so a narrow `queryMasterMode()` derived updates on lock/unlock
+// without riding every transport tick (PERF-GRID-03).
+let _masterMode: MasterMode = $state('auto');
 let _masterReason: MasterReason = null;
 /**
  * #1475 M enforcement: a static gain ceiling, not a limiter. `_ceilingDbfs` is
@@ -1852,6 +1855,7 @@ function _publishPresentedTransport(
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
 	st.audible = observation.audible;
+	notePositionSample(deck, st, presentedSampleAtMs(observation, outputTimestamp)); // every playhead projects from this instant (ANIM-CLOCK-01)
 	st.transport_pending = observation.transport_pending || _reanchorRampPending(rt);
 	const presentedKeyShift = presentedKeyShiftSemitonesAt(
 		rt.presentation,
@@ -3181,6 +3185,12 @@ class RbAudioEngine implements AudioEngine {
 		};
 		if (startAtContextSec !== undefined) {
 			await schedulePlainTransport(startAtContextSec);
+			// RESCUE-07: the shared-instant start (Gig rescue resume) must still
+			// claim a master, or the page plays with none and AutoPlay, which
+			// only arms off the playing master, never queues the next track.
+			if (_masterMode === 'auto' && _masterDeck === null) {
+				_electPlayingMaster({ reason: 'play-claim' });
+			}
 			return;
 		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
@@ -3249,9 +3259,7 @@ class RbAudioEngine implements AudioEngine {
 	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
-		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
-			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
-		}
+		ms = clampSeekTargetMs(ms, durMs, 'cueJump');
 		const seekBeats = _quantizeGrid(st);
 		const { targetMs, exitLoop } = quantizedSeekDecisionMs(seekBeats, ms, _quantizeGridBeats(st), skipGridQuantize, st.loop);
 		if (targetMs > durMs) {
@@ -4191,9 +4199,13 @@ class RbAudioEngine implements AudioEngine {
 
 	/** RESCUE-02: batch resume with one shared schedule instant for every deck. */
 	async rescueResumeTogether(
-		plans: ReadonlyArray<{ deck: DeckId; positionSec: number }>
+		plans: ReadonlyArray<{ deck: DeckId; positionSec: number }>,
+		masterDeck: DeckId
 	): Promise<void> {
 		if (plans.length === 0) return;
+		if (!plans.some((plan) => plan.deck === masterDeck)) {
+			throw new RangeError(`rescueResumeTogether: master deck ${masterDeck} is not being resumed`);
+		}
 		const ctx = await _resumeContext();
 		let sharedWhen = ctx.currentTime;
 		for (const plan of plans) {
@@ -4203,6 +4215,10 @@ class RbAudioEngine implements AudioEngine {
 		await Promise.all(
 			plans.map((plan) => _scheduleDeck(plan.deck, sharedWhen, plan.positionSec, true))
 		);
+		// RESCUE-06: the shared schedule skips play's play-claim election, so a
+		// rescued page otherwise plays with no master and AutoPlay (which only
+		// arms off the playing master) never queues the next track.
+		_assignMaster(masterDeck, 'play-claim');
 	}
 
 	/** RESCUE-02 Undo: stop every rescued deck at one shared schedule instant. */

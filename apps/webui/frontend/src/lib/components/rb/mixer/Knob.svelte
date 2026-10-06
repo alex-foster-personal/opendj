@@ -301,18 +301,18 @@
 	}
 	.takeover-armed .ring { stroke: #f2b84b; }
 	.knob.warn-orange .cap {
-		stroke: color-mix(in srgb, var(--rb-orange) 70%, #101318);
-		fill: color-mix(in srgb, var(--rb-orange) 18%, #23272f);
+		stroke: color-mix(in srgb, var(--rb-knob-warn) 70%, #101318);
+		fill: color-mix(in srgb, var(--rb-knob-warn) 18%, #23272f);
 	}
 	.knob.warn-orange .indicator:not(.white):not(.rainbow) {
-		stroke: var(--rb-orange);
+		stroke: var(--rb-knob-warn);
 	}
 	.knob.warn-red .cap {
-		stroke: color-mix(in srgb, var(--rb-red) 75%, #101318);
-		fill: color-mix(in srgb, var(--rb-red) 22%, #23272f);
+		stroke: color-mix(in srgb, var(--rb-knob-alarm) 75%, #101318);
+		fill: color-mix(in srgb, var(--rb-knob-alarm) 22%, #23272f);
 	}
 	.knob.warn-red .indicator:not(.white):not(.rainbow) {
-		stroke: var(--rb-red);
+		stroke: var(--rb-knob-alarm);
 	}
 	.knob:focus-visible {
 		filter: drop-shadow(0 0 3px var(--rb-accent-glow));
@@ -330,7 +330,7 @@
 		stroke-width: 1.5;
 	}
 	.knob.knob-linked .ring {
-		stroke: var(--rb-orange);
+		stroke: var(--rb-knob-warn);
 		stroke-dasharray: 3 2;
 	}
 	.ring {
