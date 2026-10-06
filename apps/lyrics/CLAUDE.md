@@ -78,6 +78,11 @@ follow-ons beyond what is already on main. The live Mac DB migration is issue
   milliseconds at the cache boundary. It carries NO word timestamps by
   design, and is not to be widened: word timings are a separate artifact
   (operational-plan D13.2).
+- `asr_hallucination.py` - LYRICS-12: drops Whisper hallucination lines
+  ("Thank you.", subtitle credits) from ASR line lyrics and classifies a
+  transcript with fewer than two real lines as no-lyrics. Applied when the
+  ASR fetch caches and when `GET /tracks/{id}/lyrics` serves; cache files
+  are filtered on read, never rewritten.
 - `service.py` - the shared fetch/cache path (LRCLIB, the sole permitted
   free keyless source) used by the CLI and API readers. PR-3 also ships
   ``sources/lrclib.py`` for the batch candidate rail; both clients are

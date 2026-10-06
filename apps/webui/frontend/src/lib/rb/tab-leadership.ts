@@ -55,6 +55,10 @@ export interface TabLeadership {
 	subscribe(listener: (snapshot: TabLeadershipSnapshot) => void): () => void;
 	/** True only when this tab holds the local lock AND no other browser holds the lease. */
 	isLeader(): boolean;
+	/** Leader AND the engine accepted its mirror PUT: the gate for restore and shared writers. */
+	isConfirmedLeader(): boolean;
+	/** The engine accepted a mirror PUT from this tab while it led. */
+	noteLeaseAccepted(): void;
 	/** True when this tab holds the local lock (it may still be lease-blocked). */
 	holdsLocalLock(): boolean;
 	/** The operator pressed "Take control": steal the lock and the lease. */
@@ -88,6 +92,10 @@ export function createTabLeadership(deps: {
 	let hasLock = locks === null;
 	let decided = locks === null;
 	let leaseHolder: string | null = null;
+	// True once the engine has ACCEPTED a mirror PUT from this tab as leader. A tab
+	// that merely holds the local lock may still be refused by another browser's lease,
+	// so nothing that restores decks or writes shared state may run before this.
+	let leaseConfirmed = false;
 	let takeoverPending = false;
 	let disposed = false;
 	let releaseHeld: (() => void) | null = null;
@@ -101,11 +109,14 @@ export function createTabLeadership(deps: {
 		return { role: 'leader', reason: null, leaseHolder: null };
 	};
 
-	let last = JSON.stringify(snapshot());
+	const isLeader = (): boolean => decided && hasLock && leaseHolder === null;
+	const isConfirmedLeader = (): boolean => isLeader() && leaseConfirmed;
+	let last = JSON.stringify([snapshot(), false]);
 	const emit = (): void => {
 		if (disposed) return;
+		if (!isLeader()) leaseConfirmed = false;
 		const next = snapshot();
-		const key = JSON.stringify(next);
+		const key = JSON.stringify([next, isConfirmedLeader()]);
 		if (key === last) return;
 		last = key;
 		deps.onChange?.(next);
@@ -196,7 +207,13 @@ export function createTabLeadership(deps: {
 				listeners.delete(listener);
 			};
 		},
-		isLeader: () => decided && hasLock && leaseHolder === null,
+		isLeader,
+		isConfirmedLeader,
+		noteLeaseAccepted() {
+			if (!isLeader() || leaseConfirmed) return;
+			leaseConfirmed = true;
+			emit();
+		},
 		holdsLocalLock: () => decided && hasLock,
 		takeControl() {
 			claim({ takeover: true });
@@ -258,4 +275,11 @@ export function whileLeader(
 		unsubscribe();
 		stop();
 	};
+}
+
+/** The confirmed-leader view of a leadership, in the shape `whileLeader` takes. */
+export function confirmedLeadership(
+	leadership: Pick<TabLeadership, 'isConfirmedLeader' | 'subscribe'>
+): Pick<TabLeadership, 'isLeader' | 'subscribe'> {
+	return { isLeader: () => leadership.isConfirmedLeader(), subscribe: (listener) => leadership.subscribe(listener) };
 }
