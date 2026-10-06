@@ -3,8 +3,9 @@
 [if] the page streams its master mix [then] REC writes it as a WAV set, [else stop].
 
 Mutation controls (run by hand on the Air for this change, each went red):
-dropping the seq check in MasterMixWriter.append, dropping the header rewrite in
-_Segment.append, and defaulting RecorderStartRequest.source to "master".
+dropping the seq check in MasterMixWriter.append; dropping the header rewrite in
+_Segment.append; writing one chunk twice in MasterMixWriter.append (caught by the
+exact frame-count tests); defaulting RecorderStartRequest.source to "master".
 """
 from __future__ import annotations
 
@@ -139,6 +140,52 @@ def test_capture_state_tracks_the_page_feeding_it(tmp_path: Path) -> None:
     assert never_fed.current_state() == "failed"
     assert "open /performance page" in (never_fed.error or "")
 
+
+
+def _wav_frames_total(directory: Path) -> int:
+    return sum(_wav(p)[2] for p in sorted(directory.glob("audio_*.wav")))
+
+
+# Irregular sizes on purpose: a pad, a dropped tail or a repeated chunk cannot
+# hide inside whole-second arithmetic.
+_CHUNK_FRAMES = [24_000, 24_000, 17_311, 24_000, 3, 24_000, 9_999, 24_000]
+
+
+def test_wav_frames_equal_frames_sent_exactly_across_rolls_and_streams(tmp_path: Path) -> None:
+    """[if] chunks roll segments and change stream [then] WAV frames == frames sent, [else stop]."""
+    writer = _writer(tmp_path, segment_seconds=1)
+    sent = 0
+    for seq, frames in enumerate(_CHUNK_FRAMES):
+        writer.append(stream="a", seq=seq, sample_rate=RATE, pcm=_tone(frames))
+        sent += frames
+    for seq, frames in enumerate([480, 7]):
+        writer.append(stream="b", seq=seq, sample_rate=RATE, pcm=_tone(frames))
+        sent += frames
+    writer.close()
+    assert len(list(tmp_path.glob("audio_*.wav"))) >= 4, "the roll and the stream change must both open segments"
+    assert writer.summary() == {"frames_accepted": sent, "chunks_accepted": 10, "streams": 2}
+    assert _wav_frames_total(tmp_path) == sent
+
+
+def test_stop_closes_with_every_sent_frame_and_nothing_after(master_client, monkeypatch) -> None:
+    """[if] REC stops mid-stream [then] disk holds exactly the frames sent, [else stop]."""
+    client, service = master_client
+    monkeypatch.setattr(master_mix, "SEGMENT_SECONDS", 1)
+    client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    sent = 0
+    for seq, frames in enumerate(_CHUNK_FRAMES):
+        assert _pcm(client, seq, _tone(frames)).status_code == 204
+        sent += frames
+    client.post(f"/api/sets/recorder/{SESSION}/stop")
+    late = _pcm(client, len(_CHUNK_FRAMES), _tone(480))
+    assert late.status_code == 409
+    session_dir = service.sets_root / SESSION
+    events = [json.loads(line) for line in (session_dir / "timeline.jsonl").read_text().splitlines()]
+    [closed] = [e["value"] for e in events if e["action"] == "master_mix_closed"]
+    assert closed == {"frames_accepted": sent, "chunks_accepted": len(_CHUNK_FRAMES), "streams": 1}
+    assert _wav_frames_total(session_dir) == sent
+    manifest = json.loads((session_dir / "manifest.json").read_text())
+    assert len(manifest["mp3_segments"]) >= 3, "SEGMENT_SECONDS=1 must have rolled"
 
 @pytest.fixture
 def master_client(tmp_path: Path):

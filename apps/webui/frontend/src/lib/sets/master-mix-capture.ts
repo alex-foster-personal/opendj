@@ -28,9 +28,20 @@ const PROCESSOR_NAME = 'mdt-master-capture';
 const FLUSH_TIMEOUT_MS = 2000;
 const RETAP_CHECK_MS = 1000;
 
+/** What one tap sent, for checking the WAV against it exactly (SET-12):
+ *  the daemon's `master_mix_closed` timeline event must accept the same
+ *  frames, and the WAV segments must hold them, with nothing padded or
+ *  repeated. Also left on `globalThis.__mdtMasterMix` for agents. */
+export interface MasterMixStats {
+	frames_sent: number;
+	chunks_sent: number;
+	tap_started_ms: number;
+	tap_stopped_ms: number | null;
+}
+
 export interface MasterMixCapture {
 	/** Flush the last partial chunk, wait for every POST, detach. */
-	stop(): Promise<void>;
+	stop(): Promise<MasterMixStats>;
 }
 
 export function chunkFramesFor(sampleRate: number): number {
@@ -79,6 +90,8 @@ export async function startMasterMixCapture(
 	if (unavailable !== null) throw new Error(unavailable);
 
 	const queue: Chunk[] = [];
+	const stats: MasterMixStats = { frames_sent: 0, chunks_sent: 0, tap_started_ms: 0, tap_stopped_ms: null };
+	(globalThis as { __mdtMasterMix?: MasterMixStats }).__mdtMasterMix = stats;
 	let tap: Tap | null = null;
 	let sending: Promise<void> | null = null;
 	let failed: string | null = null;
@@ -126,6 +139,8 @@ export async function startMasterMixCapture(
 				return;
 			}
 			queue.shift();
+			stats.frames_sent += chunk.frames;
+			stats.chunks_sent += 1;
 			// Back to its worklet's pool, so steady state allocates nothing.
 			chunk.port.postMessage({ reuse: chunk.pcm }, [chunk.pcm]);
 		}
@@ -201,6 +216,7 @@ export async function startMasterMixCapture(
 
 	try {
 		await attach(true);
+		stats.tap_started_ms = Date.now();
 	} catch (error) {
 		clearInterval(watch);
 		detach();
@@ -208,7 +224,7 @@ export async function startMasterMixCapture(
 	}
 
 	return {
-		async stop(): Promise<void> {
+		async stop(): Promise<MasterMixStats> {
 			clearInterval(watch);
 			const last = tap;
 			if (last !== null && failed === null) {
@@ -226,7 +242,9 @@ export async function startMasterMixCapture(
 			}
 			while (sending !== null) await sending;
 			stopped = true;
+			stats.tap_stopped_ms = Date.now();
 			detach();
+			return { ...stats };
 		}
 	};
 }

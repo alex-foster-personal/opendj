@@ -317,6 +317,9 @@ class Recorder:
             self._heartbeat_thread.join(timeout=2.0)
         if self._master is not None:
             self._master.close()
+            # SET-12: what the page sent and was accepted, so the WAV frames
+            # on disk can be checked against it exactly (no pad, no dupes).
+            self._emit_simple("master_mix_closed", self._master.summary())
         if self._capture is not None and stop_capture_fn is not None:
             try:
                 stop_capture_fn(self._capture)

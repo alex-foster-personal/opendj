@@ -105,12 +105,13 @@ class MasterMixWriter:
         self,
         session_dir: Path,
         *,
-        segment_seconds: int = SEGMENT_SECONDS,
+        segment_seconds: int | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         utc_now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.session_dir = Path(session_dir)
-        self.segment_seconds = segment_seconds
+        # Read at construction, not def time, so a test can shorten the roll.
+        self.segment_seconds = SEGMENT_SECONDS if segment_seconds is None else segment_seconds
         self._monotonic = monotonic
         self._utc_now = utc_now
         self._lock = threading.Lock()
@@ -120,7 +121,11 @@ class MasterMixWriter:
         self._next_seq = 0
         self._segment: _Segment | None = None
         self._closed = False
-        self.chunks_written = 0
+        # What the page SENT and this writer accepted, counted from the request
+        # bodies, independently of what reached disk: the two must match exactly.
+        self.chunks_accepted = 0
+        self.frames_accepted = 0
+        self.streams = 0
 
     # -- capture-handle surface (what Recorder.capture_state reads) --------
 
@@ -173,6 +178,7 @@ class MasterMixWriter:
                         f"stream {stream!r} must start at seq 0, not {seq}"
                     )
                 self._stream = stream
+                self.streams += 1
                 self._next_seq = 0
                 self._close_segment()
             if seq != self._next_seq:
@@ -191,7 +197,8 @@ class MasterMixWriter:
             segment.append(pcm)
             self._next_seq += 1
             self._last_chunk_at = self._monotonic()
-            self.chunks_written += 1
+            self.chunks_accepted += 1
+            self.frames_accepted += len(pcm) // FRAME_BYTES
 
     def _open_segment(self, sample_rate: int) -> _Segment:
         """A new ``audio_<UTC start>.wav``; a taken second moves to the next one."""
@@ -209,6 +216,16 @@ class MasterMixWriter:
         if self._segment is not None:
             self._segment.close()
             self._segment = None
+
+    def summary(self) -> dict[str, int]:
+        """What was accepted, for the ``master_mix_closed`` timeline event: the
+        frame total must equal the WAV frames on disk across every segment."""
+        with self._lock:
+            return {
+                "frames_accepted": self.frames_accepted,
+                "chunks_accepted": self.chunks_accepted,
+                "streams": self.streams,
+            }
 
     def close(self) -> None:
         """Close the open segment; later chunks are refused."""

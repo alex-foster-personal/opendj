@@ -252,7 +252,13 @@ test('chunks post in order, as raw PCM, to the session with stream, seq and rate
 	worklet.port.emit(chunk(24000));
 	worklet.port.emit(chunk(24000));
 	await settle();
-	await handle.stop();
+	const stats = await handle.stop();
+	// Exactly what was posted: the daemon checks the WAV against this count.
+	assert.equal(stats.frames_sent, 48000);
+	assert.equal(stats.chunks_sent, 2);
+	assert.equal(stats.frames_sent * 4, posts.reduce((n, p) => n + p.bytes, 0));
+	assert.ok(stats.tap_started_ms > 0 && stats.tap_stopped_ms >= stats.tap_started_ms);
+	assert.equal(globalThis.__mdtMasterMix.frames_sent, 48000);
 	const urls = posts.map((p) => new URL(p.url));
 	assert.deepEqual(
 		urls.map((u) => [u.origin + u.pathname, u.searchParams.get('seq'), u.searchParams.get('sample_rate')]),
