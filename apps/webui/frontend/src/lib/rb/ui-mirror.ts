@@ -3,6 +3,7 @@ import { toasts } from '$lib/stores.svelte';
 import { audioContextState } from './audio-engine.svelte';
 import { masterSilenceState, outputDeviceLivenessState } from './master-silence-report';
 import { readAutoPlayStall } from './autoplay-stall.svelte';
+import { readAutoPlayMirrorStatus } from './auto-play.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import type { TabLeadership } from './tab-leadership';
@@ -22,6 +23,9 @@ import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-m
 /** CUEOUT-18: one id per page load, so the engine can keep two open tabs'
  * headphone reports apart. Not the Web Crypto UUID call: that needs a
  * secure context, and the id only has to differ between tabs on one machine. */
+/** AGENT-20: matches UI_MIRROR_SCHEMA in apps/webui/server/routes/state.py. */
+export const UI_MIRROR_SCHEMA = 2;
+
 const MIRROR_CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 /** `buildUiMirror` runs inside `window.setInterval`, so an uncaught throw
@@ -76,9 +80,14 @@ export function buildUiMirror(): Record<string, unknown> {
 	// Both gate `audible`, and both get their own toast id, so a device-level
 	// outage never collapses into "the mixer is quiet" in the UI mirror.
 	const deviceLiveness = outputDeviceLivenessState();
+	const autoPlay = readAutoPlayMirrorStatus();
 	return {
 		client_open: true,
 		client_id: MIRROR_CLIENT_ID,
+		// AGENT-20: the document version. From 2 the engine refuses a publish
+		// missing the autoplay_* fields; an unversioned (older) page is still
+		// accepted during the release, with a logged warning and no default.
+		mirror_schema: UI_MIRROR_SCHEMA,
 		// AGENT-18: the engine hands the lease away from a hidden, silent tab.
 		tab: { visible: document.visibilityState === 'visible' },
 		published_at: new Date().toISOString(),
@@ -153,6 +162,12 @@ export function buildUiMirror(): Record<string, unknown> {
 		// set reads why AutoPlay stopped from the same object a person reads
 		// off the screen, rather than having to catch a five-second toast.
 		autoplay_stall: readAutoPlayStall(),
+		// AGENT-20: whether AutoPlay is on, and whether it would hand off right
+		// now (with the reason when it would not). The server requires these
+		// three from any publisher declaring mirror_schema 2.
+		autoplay_enabled: autoPlay.autoplay_enabled,
+		autoplay_armed: autoPlay.autoplay_armed,
+		autoplay_disarm_reason: autoPlay.autoplay_disarm_reason,
 		open_overlays: [...document.querySelectorAll('[role="dialog"], .overlay, .modal')].map((element, index) =>
 			controlPreferredName(element, index)
 		),

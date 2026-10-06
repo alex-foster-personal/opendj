@@ -14,10 +14,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from apps.webui.server.headphone_reports import client_id_of, headphone_reports
 
@@ -31,6 +32,48 @@ _LOG = logging.getLogger(__name__)
 LEASE_HEADER = "x-opendj-lease"
 LEASE_TAKEOVER_HEADER = "x-opendj-lease-takeover"
 LEASE_TTL_S = 10.0
+
+# AGENT-20: the mirror document version that carries AutoPlay's own state.
+# Matches UI_MIRROR_SCHEMA in apps/webui/frontend/src/lib/rb/ui-mirror.ts.
+UI_MIRROR_SCHEMA = 2
+AUTOPLAY_KEYS = ("autoplay_enabled", "autoplay_armed", "autoplay_disarm_reason")
+
+# AutoPlayDisarmReason in autoplay-status.ts: its own four plus every
+# AutoPlayStallReason in autoplay-stall.ts. tests/webui/test_ui_mirror_autoplay.py
+# re-reads both TypeScript unions, so the two sides cannot drift silently.
+AutoPlayDisarmReason = Literal[
+    "disabled",
+    "not-installed",
+    "no-deck-playing",
+    "no-playing-master",
+    "missing-audio",
+    "no-next-in-order",
+    "no-compatible-track",
+    "candidates-failed-to-load",
+    "handoff-attempts-exhausted",
+    "handoff-incomplete",
+    "master-handover-refused",
+]
+
+
+class UiMirrorAutoPlay(BaseModel):
+    """AGENT-20: the three AutoPlay fields a schema-2 mirror must carry."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    autoplay_enabled: bool
+    autoplay_armed: bool
+    autoplay_disarm_reason: AutoPlayDisarmReason | None
+
+    @model_validator(mode="after")
+    def _one_story(self) -> UiMirrorAutoPlay:
+        if self.autoplay_armed != (self.autoplay_disarm_reason is None):
+            raise ValueError("autoplay_disarm_reason must be null exactly when autoplay_armed")
+        if self.autoplay_armed and not self.autoplay_enabled:
+            raise ValueError("autoplay_armed requires autoplay_enabled")
+        if not self.autoplay_enabled and self.autoplay_disarm_reason != "disabled":
+            raise ValueError("a disabled AutoPlay must say autoplay_disarm_reason 'disabled'")
+        return self
 
 
 @dataclass(frozen=True)
@@ -141,6 +184,44 @@ def _handover_reason(request: Request, lease: MirrorLease, body: dict[str, Any])
     return None
 
 
+def _autoplay_refusal(request: Request, body: dict[str, Any]) -> JSONResponse | None:
+    """AGENT-20: 422 for a schema-2 mirror whose AutoPlay fields are missing or inconsistent.
+
+    A page from before AGENT-20 sends neither ``mirror_schema`` nor any
+    ``autoplay_*`` field. It is still accepted for this release (an open tab
+    that has not reloaded yet must not lose its mirror, and with it every
+    agent command), but the engine logs it once per client and stores no
+    default: an agent reading that mirror sees the fields absent, never false.
+    """
+    has_schema = "mirror_schema" in body
+    if not has_schema and not any(key in body for key in AUTOPLAY_KEYS):
+        client = str(body.get("client_id"))
+        warned: set[str] = getattr(request.app.state, "ui_mirror_legacy_warned", set())
+        if client not in warned:
+            warned.add(client)
+            request.app.state.ui_mirror_legacy_warned = warned
+            _LOG.warning(
+                "ui-mirror PUT without mirror_schema from client_id=%s: a page from before "
+                "AGENT-20, autoplay_* fields absent until it reloads",
+                client,
+            )
+        return None
+    schema = body.get("mirror_schema")
+    if has_schema and not (type(schema) is int and schema == UI_MIRROR_SCHEMA):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": f"mirror_schema must be {UI_MIRROR_SCHEMA}, got {schema!r}"},
+        )
+    try:
+        UiMirrorAutoPlay.model_validate({key: body[key] for key in AUTOPLAY_KEYS if key in body})
+    except ValidationError as error:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": error.errors(include_url=False, include_context=False)},
+        )
+    return None
+
+
 def _received_at() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
@@ -172,6 +253,9 @@ async def publish_ui_mirror(
     ),
 ) -> dict[str, bool] | JSONResponse:
     """Replace the page's current screen document with strict JSON input."""
+    refusal = _autoplay_refusal(request, body)
+    if refusal is not None:
+        return refusal
     # AGENT-18: a snapshot older than the live one is a stale or out-of-order
     # write (a dead page's queued PUT, a slow fetch overtaken by a newer one).
     # It never replaces fresher state. Once the stored one is older than the

@@ -157,6 +157,37 @@ def _order(body: dict[str, Any]) -> dict[str, Any]:
     return {"kind": kind, "payload": payload}
 
 
+def _order_commands(body: dict[str, Any]) -> list[Any]:
+    """Every command object a well-formed order carries (ramp's inner one included)."""
+    commands: list[Any] = []
+    if isinstance(body.get("single"), dict):
+        commands.append(body["single"])
+    for kind in ("sequence", "parallel"):
+        if isinstance(body.get(kind), list):
+            commands.extend(body[kind])
+    ramp = body.get("ramp")
+    if isinstance(ramp, dict) and isinstance(ramp.get("command"), dict):
+        commands.append(ramp["command"])
+    return commands
+
+
+def _check_autoplay_commands(body: dict[str, Any]) -> None:
+    """AGENT-20: ``{"type": "autoplay", "enabled": <bool>}`` and nothing else.
+
+    The page validates it again before dispatch; checking here too means a
+    malformed switch is a 422 at once, not a failed step after a page round trip.
+    """
+    for command in _order_commands(body):
+        if not isinstance(command, dict) or command.get("type") != "autoplay":
+            continue
+        if set(command) != {"type", "enabled"}:
+            raise ValueError(
+                f"autoplay takes exactly type and enabled, got {sorted(command)}"
+            )
+        if not isinstance(command["enabled"], bool):
+            raise TypeError(f"autoplay enabled must be boolean, got {command['enabled']!r}")
+
+
 def _persistable_master_mute(command: Any) -> bool | None:
     """The muted value of a master_mute that may reach disk, else None."""
     if not isinstance(command, dict) or command.get("type") != "master_mute":
@@ -207,6 +238,7 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
         return JSONResponse(status_code=409, content={"client_open": False})
     try:
         order = _order(body)
+        _check_autoplay_commands(body)
         muted_to_persist = _master_mute_from_order(body)
     except (ValueError, TypeError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
