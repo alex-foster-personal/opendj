@@ -784,21 +784,49 @@ describe('auto-play Beat Sync handoff policy', () => {
 	it('enables Beat Sync only when source wants sync and phase-lock ok', () => {
 		const { decideAutoPlayBeatSync } = mod;
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: true }),
+			decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: true, beat_sync_max: false }),
 			'enable'
 		);
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: false }),
+			decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: false, beat_sync_max: false }),
 			'disable'
 		);
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: false, phase_lock_ok: true }),
+			decideAutoPlayBeatSync({ source_beat_sync_enabled: false, phase_lock_ok: true, beat_sync_max: false }),
 			'disable'
 		);
 		assert.equal(
-			decideAutoPlayBeatSync({ source_beat_sync_enabled: false, phase_lock_ok: false }),
+			decideAutoPlayBeatSync({ source_beat_sync_enabled: false, phase_lock_ok: false, beat_sync_max: false }),
 			'disable'
 		);
+	});
+
+	// PLAY-23 (the maintainer: "Beatsync turns off despite BeatSyncMax being on during Autoplay.")
+	it('[PLAY-23] with Beat Sync Max on, AutoPlay never decides to turn the follower sync off', () => {
+		const { decideAutoPlayBeatSync } = mod;
+		for (const source_beat_sync_enabled of [true, false]) {
+			for (const phase_lock_ok of [true, false]) {
+				const decision = decideAutoPlayBeatSync({ source_beat_sync_enabled, phase_lock_ok, beat_sync_max: true });
+				assert.notEqual(decision, 'disable', `source sync ${source_beat_sync_enabled}, lock ${phase_lock_ok}`);
+				assert.equal(decision, phase_lock_ok ? 'enable' : 'keep');
+			}
+		}
+		assert.throws(
+			() => decideAutoPlayBeatSync({ source_beat_sync_enabled: true, phase_lock_ok: true }),
+			/beat_sync_max must be boolean/
+		);
+	});
+
+	it('[PLAY-23] SHAPE GUARD: the handoff passes the live Beat Sync Max pref into the decision', async () => {
+		const { readFile } = await import('node:fs/promises');
+		const src = await readFile('src/lib/rb/auto-play-phase-lock.ts', 'utf8');
+		assert.match(src, /const beatSyncMax = uiPrefs\.beat_sync_max;/);
+		assert.match(
+			src,
+			/decideAutoPlayBeatSync\(\{[^}]*beat_sync_max: beatSyncMax[^}]*\}\)/,
+			'if the handoff decides sync without Beat Sync Max then Max turns off mid-AutoPlay again - broken'
+		);
+		assert.match(src, /source\.beat_sync_enabled \|\| beatSyncMax/, 'with Max on the lock is probed even when the source is not synced');
 	});
 
 	// The error this toast formats is DERIVED from the real planner, never

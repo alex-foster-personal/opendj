@@ -95,12 +95,14 @@ export async function applyAutoPlayBeatSyncDecision(
 	source: AutoPlayDeckSnap,
 	follower: DeckId
 ): Promise<string | null> {
-	const probe = source.beat_sync_enabled
+	const beatSyncMax = uiPrefs.beat_sync_max;
+	const probe = source.beat_sync_enabled || beatSyncMax
 		? phaseLockOk(source.id, follower)
 		: { ok: false as const, error: 'source Beat Sync off' };
 	const decision = decideAutoPlayBeatSync({
 		source_beat_sync_enabled: source.beat_sync_enabled,
-		phase_lock_ok: probe.ok
+		phase_lock_ok: probe.ok,
+		beat_sync_max: beatSyncMax
 	});
 	const currentlyOn = deckStates[follower].beat_sync_enabled;
 	if (decision === 'enable' && !currentlyOn) {
