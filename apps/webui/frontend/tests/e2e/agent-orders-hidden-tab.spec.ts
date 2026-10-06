@@ -8,66 +8,167 @@
  * not throttled.
  *
  * NOTHING HERE FAKES VISIBILITY. Per reload-countdown-browser.spec.ts the
- * repository forbids monkeypatching `document.visibilityState`, and headless or
- * Xvfb Chromium never reports hidden. So this runs headed on macOS only, where
- * minimizing the real window makes the OS hide it, and Chrome's own intensive
- * wake-up throttling is engaged after 10 s instead of 5 min by a Chrome feature
- * parameter (the throttle itself is the browser's, unmodified). Elsewhere the
- * capability is unavailable and the spec says so with a skip, never a pass.
+ * repository forbids monkeypatching `document.visibilityState`, and a page that
+ * Playwright drives never goes hidden: it launches Chromium with
+ * --disable-backgrounding-occluded-windows and friends and emulates focus on
+ * every page it attaches to, connectOverCDP included (measured Tue 6 Oct 2026
+ * on demon-llama: minimized, still 'visible', timers still 50 ms). So this spec
+ * starts Playwright's own Chromium binary as a plain browser and speaks raw CDP
+ * to it. On macOS, minimizing that real window makes the OS hide the page;
+ * Chrome's intensive wake-up throttling is engaged after 10 s instead of 5 min
+ * by a Chrome feature parameter (the throttle is the browser's, unmodified).
+ * Measured the same day: hidden, 1 s timer alignment, then no timer for 15 s.
+ * Off macOS there is no window to hide and the spec says so with a skip.
  *
  * [if] an order posted to the hidden leader takes 2 s or more [then ⛔] agents
  *   cannot drive a backgrounded app.
- * [if] the mutation control (claim stripped of wait_ms, so the old timer poll
- *   runs) does NOT exceed 2 s [then ⛔] this harness is not measuring throttling,
- *   and the first test proves nothing.
+ * [if] the mutation control (claim stripped of wait_ms at the network layer, so
+ *   the pre-AGENT-19 timer poll runs) does NOT exceed 2 s [then ⛔] this harness
+ *   is not measuring throttling, and the first test proves nothing.
  */
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { chromium, expect, test, type APIRequestContext } from '@playwright/test';
 
 const BOUND_MS = 2_000;
 const ORDERS = 5;
 const INTENSIVE_GRACE_S = 10;
-
-test.skip(
-	process.platform !== 'darwin',
-	'AGENT-19 needs a real OS window to hide; headless and Xvfb Chromium stay visible'
-);
-test.use({
-	headless: false,
-	launchOptions: {
-		args: [`--enable-features=IntensiveWakeUpThrottling:grace_period_seconds/${INTENSIVE_GRACE_S}`]
-	}
-});
-
 /** A harmless order the fixture page can always run: channel 1 fader to 0.5. */
 const ORDER = { single: { type: 'fader', deck: 1, value: 0.5 } };
 
-async function openLeader(page: Page): Promise<void> {
-	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
+test.skip(process.platform !== 'darwin', 'AGENT-19 needs a real OS window to hide; only macOS has one here');
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** One raw CDP page session over the browser's DevTools WebSocket. */
+class RawPage {
+	private nextId = 0;
+	private readonly pending = new Map<number, (message: Record<string, unknown>) => void>();
+	private readonly listeners = new Map<string, (params: Record<string, unknown>) => void>();
+
+	private constructor(private readonly socket: WebSocket) {
+		socket.onmessage = (event) => {
+			const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+			if (typeof message.id === 'number') {
+				this.pending.get(message.id)?.(message);
+				this.pending.delete(message.id);
+			} else if (typeof message.method === 'string') {
+				this.listeners.get(message.method)?.(message.params as Record<string, unknown>);
+			}
+		};
+	}
+
+	static async open(url: string): Promise<RawPage> {
+		const socket = new WebSocket(url);
+		await new Promise<void>((resolve, reject) => {
+			socket.onopen = () => resolve();
+			socket.onerror = () => reject(new Error(`CDP socket ${url} failed to open`));
+		});
+		return new RawPage(socket);
+	}
+
+	async send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+		this.nextId += 1;
+		const id = this.nextId;
+		const reply = await new Promise<Record<string, unknown>>((resolve) => {
+			this.pending.set(id, resolve);
+			this.socket.send(JSON.stringify({ id, method, params }));
+		});
+		if (reply.error !== undefined) throw new Error(`${method}: ${JSON.stringify(reply.error)}`);
+		return reply.result as Record<string, unknown>;
+	}
+
+	on(method: string, listener: (params: Record<string, unknown>) => void): void {
+		this.listeners.set(method, listener);
+	}
+
+	async evaluate<T>(expression: string): Promise<T> {
+		const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+		return (result.result as { value: T }).value;
+	}
+
+	close(): void {
+		this.socket.close();
+	}
+}
+
+interface HiddenLeader {
+	page: RawPage;
+	browser: ChildProcess;
+	profile: string;
+}
+
+async function launchPlainChromium(): Promise<{ browser: ChildProcess; profile: string; port: number }> {
+	const profile = mkdtempSync(join(tmpdir(), 'agent19-'));
+	const browser = spawn(
+		chromium.executablePath(),
+		[
+			'--remote-debugging-port=0',
+			`--user-data-dir=${profile}`,
+			'--no-first-run',
+			'--no-default-browser-check',
+			'--autoplay-policy=no-user-gesture-required',
+			`--enable-features=IntensiveWakeUpThrottling:grace_period_seconds/${INTENSIVE_GRACE_S}`,
+			'about:blank'
+		],
+		{ stdio: 'ignore' }
+	);
+	for (let i = 0; i < 150; i += 1) {
+		try {
+			const [port] = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n');
+			if (port) return { browser, profile, port: Number(port) };
+		} catch {
+			// Not written yet.
+		}
+		await sleep(100);
+	}
+	browser.kill();
+	throw new Error('Chromium never wrote DevToolsActivePort');
+}
+
+async function openHiddenLeader(baseURL: string, request: APIRequestContext): Promise<HiddenLeader> {
+	const { browser, profile, port } = await launchPlainChromium();
+	const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as Array<{
+		type: string;
+		webSocketDebuggerUrl: string;
+	}>;
+	const target = targets.find((candidate) => candidate.type === 'page');
+	if (target === undefined) throw new Error('no page target in the plain Chromium');
+	const page = await RawPage.open(target.webSocketDebuggerUrl);
+	await page.send('Page.navigate', { url: `${baseURL}/performance` });
 	await expect
-		.poll(() => page.evaluate(() => window.musicDjToolsPerformance?.version ?? null), { timeout: 60_000 })
+		.poll(() => page.evaluate<number | null>('window.musicDjToolsPerformance?.version ?? null'), {
+			timeout: 90_000
+		})
 		.toBe(1);
 	await expect
 		.poll(
-			() =>
-				page.evaluate(async () => {
-					const response = await fetch('/api/v1/state/ui-mirror/lease');
-					return response.ok ? ((await response.json()) as { held: boolean }).held : false;
-				}),
+			async () => ((await (await request.get('/api/v1/state/ui-mirror/lease')).json()) as { held: boolean }).held,
 			{ timeout: 30_000, message: 'the page must hold the mirror lease (it is the leader)' }
 		)
 		.toBe(true);
+	return { page, browser, profile };
 }
 
-/** Minimize the real window; returns false when the OS never hides the page. */
-async function hide(page: Page): Promise<boolean> {
-	const cdp = await page.context().newCDPSession(page);
-	const { windowId } = await cdp.send('Browser.getWindowForTarget');
-	await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
-	for (let i = 0; i < 50; i += 1) {
-		if ((await page.evaluate(() => document.visibilityState)) === 'hidden') return true;
-		await new Promise((resolve) => setTimeout(resolve, 100));
-	}
-	return false;
+async function hide(leader: HiddenLeader): Promise<void> {
+	const { windowId } = (await leader.page.send('Browser.getWindowForTarget')) as { windowId: number };
+	await leader.page.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
+	await expect
+		.poll(() => leader.page.evaluate<string>('document.visibilityState'), { timeout: 10_000 })
+		.toBe('hidden');
+	// Sit hidden past Chrome's intensive-throttling grace period.
+	await sleep((INTENSIVE_GRACE_S + 3) * 1000);
+	expect(await leader.page.evaluate<string>('document.visibilityState')).toBe('hidden');
+}
+
+function close(leader: HiddenLeader | null): void {
+	if (leader === null) return;
+	leader.page.close();
+	leader.browser.kill();
+	rmSync(leader.profile, { recursive: true, force: true });
 }
 
 async function timedOrder(request: APIRequestContext, timeoutMs: number): Promise<number> {
@@ -80,46 +181,51 @@ async function timedOrder(request: APIRequestContext, timeoutMs: number): Promis
 	return elapsed;
 }
 
-async function hiddenLeader(page: Page): Promise<void> {
-	await openLeader(page);
-	test.skip(!(await hide(page)), 'the OS did not hide the minimized window: capability unavailable');
-	// Let the page sit hidden past Chrome's intensive-throttling grace period.
-	await new Promise((resolve) => setTimeout(resolve, (INTENSIVE_GRACE_S + 3) * 1000));
-	expect(await page.evaluate(() => document.visibilityState)).toBe('hidden');
-}
-
-test('a hidden leader executes each agent order in under 2 s', async ({ page, request }) => {
-	test.setTimeout(180_000);
-	await hiddenLeader(page);
-	const latencies: number[] = [];
-	for (let i = 0; i < ORDERS; i += 1) {
-		latencies.push(await timedOrder(request, 30_000));
-		// Space the orders so each one meets an idle, held claim.
-		await new Promise((resolve) => setTimeout(resolve, 1_500));
+test('a hidden leader executes each agent order in under 2 s', async ({ request, baseURL }) => {
+	test.setTimeout(240_000);
+	let leader: HiddenLeader | null = null;
+	try {
+		leader = await openHiddenLeader(String(baseURL), request);
+		await hide(leader);
+		const latencies: number[] = [];
+		for (let i = 0; i < ORDERS; i += 1) {
+			latencies.push(await timedOrder(request, 30_000));
+			await sleep(1_500);
+		}
+		console.log(`AGENT-19 hidden-tab order latency ms: ${JSON.stringify(latencies)}`);
+		expect(Math.max(...latencies), `latencies ${JSON.stringify(latencies)}`).toBeLessThan(BOUND_MS);
+	} finally {
+		close(leader);
 	}
-	console.log(`AGENT-19 hidden-tab order latency ms: ${JSON.stringify(latencies)}`);
-	expect(Math.max(...latencies), `latencies ${JSON.stringify(latencies)}`).toBeLessThan(BOUND_MS);
 });
 
 test('mutation control: without the long poll the hidden leader misses the bound', async ({
-	page,
-	request
+	request,
+	baseURL
 }) => {
-	test.setTimeout(300_000);
-	// Strip wait_ms at the network layer: the engine answers at once without the
-	// hold header, so the page falls back to its 50 ms timer poll, which is
-	// exactly the pre-AGENT-19 loop. Nothing in the page is modified.
-	await page.route('**/api/v1/commands/next*', (route) => {
-		const url = new URL(route.request().url());
-		url.searchParams.delete('wait_ms');
-		return route.continue({ url: url.toString() });
-	});
-	await hiddenLeader(page);
-	const latencies: number[] = [];
-	for (let i = 0; i < 3; i += 1) {
-		latencies.push(await timedOrder(request, 75_000));
-		if (latencies[i] >= BOUND_MS) break;
+	test.setTimeout(360_000);
+	let leader: HiddenLeader | null = null;
+	try {
+		leader = await openHiddenLeader(String(baseURL), request);
+		// Strip wait_ms at the network layer: the engine answers at once without
+		// the hold header, so the page falls back to its 50 ms timer poll, which
+		// is the pre-AGENT-19 loop. Nothing in the page is modified.
+		const page = leader.page;
+		page.on('Fetch.requestPaused', (params) => {
+			const url = new URL(String((params.request as { url: string }).url));
+			url.searchParams.delete('wait_ms');
+			void page.send('Fetch.continueRequest', { requestId: params.requestId, url: url.toString() });
+		});
+		await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/v1/commands/next*' }] });
+		await hide(leader);
+		const latencies: number[] = [];
+		for (let i = 0; i < 3; i += 1) {
+			latencies.push(await timedOrder(request, 90_000));
+			if (latencies[i] >= BOUND_MS) break;
+		}
+		console.log(`AGENT-19 mutation-control latency ms: ${JSON.stringify(latencies)}`);
+		expect(Math.max(...latencies), `latencies ${JSON.stringify(latencies)}`).toBeGreaterThanOrEqual(BOUND_MS);
+	} finally {
+		close(leader);
 	}
-	console.log(`AGENT-19 mutation-control latency ms: ${JSON.stringify(latencies)}`);
-	expect(Math.max(...latencies), `latencies ${JSON.stringify(latencies)}`).toBeGreaterThanOrEqual(BOUND_MS);
 });
