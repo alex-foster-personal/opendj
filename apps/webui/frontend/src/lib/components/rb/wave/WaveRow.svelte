@@ -74,7 +74,7 @@
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 	import { waveRowVocalsTitle } from './vocals-title';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { waveSplitActive } from '$lib/rb/ui-skin';
+	import { effectiveWaveformDesign, waveSplitActive } from '$lib/rb/ui-skin';
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
 	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
@@ -151,8 +151,9 @@
 	const masterAnlz = $derived(masterAnlzForDeck(masterState, getAnlzEntry));
 	const masterBeats = $derived(masterAnlz?.beatgrid.beats ?? null);
 
-	// Split main waveform (wave_split_master): partner deck on the top half.
-	const splitOn = $derived(waveSplitActive(uiPrefs.wave_split_master, uiPrefs.ui_skin));
+	// Split main waveform (wave_split_master, opt-in): partner deck on the
+	// top half; the master row has no partner, so it paints plain mirrored.
+	const splitOn = $derived(waveSplitActive(uiPrefs.wave_split_master));
 	const splitPartner = $derived(
 		splitOn
 			? splitPartnerDeck(
@@ -328,7 +329,7 @@
 		}
 		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
-			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: uiPrefs.waveform_design };
+			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin) };
 			paintSplitRow(
 				el,
 				ctx,
@@ -370,7 +371,7 @@
 			loop: deck.loop,
 			playheadTone: syncPlayheadTone,
 			playheadTimeMs: performance.now(),
-			waveformDesign: uiPrefs.waveform_design,
+			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			masterDownbeatOverlay,
 			ghostSeekMs: ghost.ghostSeekMs,
 			ghostSeekVisible: ghost.ghostSeekVisible
@@ -444,7 +445,7 @@
 		void partnerState?.pitch;
 		void partnerAnlz;
 		void splitPartner;
-		void uiPrefs.waveform_design;
+		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		void cssW;
 		void cssH;
 		void palette;

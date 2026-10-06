@@ -25,14 +25,15 @@ import {
 } from './playlist-tree-view-prefs';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
 import {
-	parseWaveformDesign,
-	WAVEFORM_DESIGN_DEFAULT,
-	type WaveformDesign
+	parseWaveformDesignPref,
+	WAVEFORM_DESIGN_PREF_DEFAULT,
+	type WaveformDesignPref
 } from '$lib/rb/waveform-design';
 import {
-	parseWavePalette,
-	WAVE_PALETTE_DEFAULT,
-	type WavePaletteChoice
+	parseWavePalettePref,
+	WAVE_PALETTE_PREF_DEFAULT,
+	type WavePaletteChoice,
+	type WavePalettePref
 } from '$lib/rb/wave-palette';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
@@ -98,10 +99,12 @@ import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 import {
 	applyUiSkinDom,
+	effectiveWavePalette,
 	nextUiSkin,
 	parseUiSkin,
 	parseWaveSplitMaster,
 	UI_SKIN_DEFAULT,
+	UI_SKIN_PRE_GOTHIC_DEFAULT,
 	WAVE_SPLIT_MASTER_DEFAULT,
 	type UiSkin,
 	type WaveSplitMaster
@@ -231,16 +234,20 @@ export interface RbUiPrefs
 	compatible_filter: CompatibleFilterPrefs;
 	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
 	library_watcher_folders: string[];
-	/** DECKUX-20: tri-band, mono envelope, or line outline for waveforms. */
-	waveform_design: WaveformDesign;
+	/** DECKUX-20: tri-band, mono envelope, line outline or blocks, or 'auto'
+	 * (default) to follow the skin (ui-skin.ts SKIN_WAVE_LOOK). */
+	waveform_design: WaveformDesignPref;
 	/** Issue #4219: waveform band colors. 'rekordbox' (default) is CDJ 3Band:
 	 * dark blue low, amber mid, white high; 'legacy' is the pre-#4219 orange
-	 * low, blue mid, near-white high. Applied as html[data-wave-palette]. */
-	wave_palette: WavePaletteChoice;
+	 * low, blue mid, near-white high. 'auto' (default) follows the skin. The
+	 * EFFECTIVE palette is applied as html[data-wave-palette]. */
+	wave_palette: WavePalettePref;
 	/** Chrome skin layered over the theme, applied as html[data-skin]. */
 	ui_skin: UiSkin;
 	/** Split main waveform (master on top); 'auto' follows the skin. */
 	wave_split_master: WaveSplitMaster;
+	/** One-time defaults migrations already applied to this blob (PREFS_DEFAULTS_MIGRATION). */
+	defaults_migration: number;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -279,6 +286,19 @@ export interface RbUiPrefs
 	horizontal_wheel_knob: HorizontalWheelKnob;
 }
 
+/** Version of the one-time defaults migration (Mon 5 Oct 2026): Gothic becomes
+ * the default skin and both waveform prefs become 'auto' (follow the skin).
+ * Every write persists the whole blob, so a stored value that equals an old
+ * default cannot be told apart from an explicit pick of it. A blob below this
+ * version therefore migrates exactly the OLD DEFAULT values (or absent keys)
+ * once; anything else was an explicit choice and is kept. The blob then
+ * carries this version, so a later explicit pick of an old default sticks. */
+export const PREFS_DEFAULTS_MIGRATION = 1;
+
+/** Pre-migration defaults, matched exactly (see PREFS_DEFAULTS_MIGRATION). */
+const _PRE_GOTHIC_WAVEFORM_DESIGN: WaveformDesignPref = 'tri-band';
+const _PRE_GOTHIC_WAVE_PALETTE: WavePalettePref = 'rekordbox';
+
 const DEFAULTS: RbUiPrefs = {
 	playlist_tree_width: PLAYLIST_TREE_WIDTH_DEFAULT,
 	hide_broken_links: false,
@@ -302,10 +322,11 @@ const DEFAULTS: RbUiPrefs = {
 	show_stems: false,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
 	library_watcher_folders: [],
-	waveform_design: WAVEFORM_DESIGN_DEFAULT,
-	wave_palette: WAVE_PALETTE_DEFAULT,
+	waveform_design: WAVEFORM_DESIGN_PREF_DEFAULT,
+	wave_palette: WAVE_PALETTE_PREF_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
 	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
+	defaults_migration: PREFS_DEFAULTS_MIGRATION,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -351,6 +372,42 @@ function _applyWavePaletteDom(choice: WavePaletteChoice): void {
 	if (typeof document === 'undefined') return;
 	if (choice === 'rekordbox') delete document.documentElement.dataset.wavePalette;
 	else if (choice === 'legacy' || choice === 'mono') document.documentElement.dataset.wavePalette = choice;
+}
+
+/** True when _load migrated a stored blob, so boot persists the new version. */
+let _bootMigrated = false;
+
+type SkinLookPrefs = Pick<RbUiPrefs, 'ui_skin' | 'waveform_design' | 'wave_palette' | 'defaults_migration'>;
+
+/** Apply PREFS_DEFAULTS_MIGRATION to a stored blob's skin-look fields. */
+function _migrateSkinDefaults(
+	skin: UiSkin | undefined,
+	design: WaveformDesignPref | undefined,
+	palette: WavePalettePref | undefined,
+	version: unknown
+): SkinLookPrefs {
+	if (version !== undefined && (typeof version !== 'number' || !Number.isInteger(version) || version < 0)) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (defaults_migration must be a non-negative integer) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (version !== undefined && version >= PREFS_DEFAULTS_MIGRATION) {
+		return {
+			ui_skin: skin ?? DEFAULTS.ui_skin,
+			waveform_design: design ?? DEFAULTS.waveform_design,
+			wave_palette: palette ?? DEFAULTS.wave_palette,
+			defaults_migration: version
+		};
+	}
+	_bootMigrated = true;
+	return {
+		ui_skin: skin === undefined || skin === UI_SKIN_PRE_GOTHIC_DEFAULT ? DEFAULTS.ui_skin : skin,
+		waveform_design:
+			design === undefined || design === _PRE_GOTHIC_WAVEFORM_DESIGN ? DEFAULTS.waveform_design : design,
+		wave_palette: palette === undefined || palette === _PRE_GOTHIC_WAVE_PALETTE ? DEFAULTS.wave_palette : palette,
+		defaults_migration: PREFS_DEFAULTS_MIGRATION
+	};
 }
 
 function _load(): RbUiPrefs {
@@ -507,9 +564,12 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
-	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
-	const wavePalette = parseWavePalette(parsed.wave_palette);
-	const uiSkin = parseUiSkin(parsed.ui_skin);
+	const skinLook = _migrateSkinDefaults(
+		parseUiSkin(parsed.ui_skin),
+		parseWaveformDesignPref(parsed.waveform_design),
+		parseWavePalettePref(parsed.wave_palette),
+		parsed.defaults_migration
+	);
 	const waveSplitMaster = parseWaveSplitMaster(parsed.wave_split_master);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
@@ -589,9 +649,7 @@ function _load(): RbUiPrefs {
 		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
-		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
-		wave_palette: wavePalette ?? DEFAULTS.wave_palette,
-		ui_skin: uiSkin ?? DEFAULTS.ui_skin,
+		...skinLook,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
@@ -641,8 +699,9 @@ const _syncDiskPrefs = syncDiskPrefs;
 export const uiPrefs = $state<RbUiPrefs>(_load());
 
 _applyThemeDom(uiPrefs.theme);
-_applyWavePaletteDom(uiPrefs.wave_palette);
+_applyWavePaletteDom(effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
 applyUiSkinDom(uiPrefs.ui_skin);
+if (_bootMigrated) _persist();
 
 export function setHideBrokenLinks(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
@@ -766,18 +825,22 @@ export function setShowStems(next: boolean): void {
 	void _syncDiskPrefs({ show_stems: next });
 }
 
-export function setWaveformDesign(next: WaveformDesign): void {
-	parseWaveformDesign(next);
+/** 'auto' follows the active skin; a concrete design overrides it. */
+export function setWaveformDesign(next: WaveformDesignPref): void {
+	if (parseWaveformDesignPref(next) === undefined) {
+		throw new Error('waveform_design must be auto|tri-band|mono|line|blocks, got undefined');
+	}
 	uiPrefs.waveform_design = next;
 	_persist();
 }
 
-export function setWavePalette(next: WavePaletteChoice): void {
-	if (parseWavePalette(next) === undefined) {
-		throw new Error('wave_palette must be rekordbox|legacy|mono, got undefined');
+/** 'auto' follows the active skin; a concrete palette overrides it. */
+export function setWavePalette(next: WavePalettePref): void {
+	if (parseWavePalettePref(next) === undefined) {
+		throw new Error('wave_palette must be auto|rekordbox|legacy|mono, got undefined');
 	}
 	uiPrefs.wave_palette = next;
-	_applyWavePaletteDom(next);
+	_applyWavePaletteDom(effectiveWavePalette(next, uiPrefs.ui_skin));
 	_persist();
 }
 
@@ -912,6 +975,8 @@ export function setUiSkin(next: UiSkin): void {
 	if (parseUiSkin(next) === undefined) throw new Error('ui_skin must be set, got undefined');
 	uiPrefs.ui_skin = next;
 	applyUiSkinDom(next);
+	// An 'auto' palette follows the skin, so the CSS-var painters repaint too.
+	_applyWavePaletteDom(effectiveWavePalette(uiPrefs.wave_palette, next));
 	_persist();
 }
 
@@ -931,8 +996,9 @@ export function setWaveSplitMaster(next: WaveSplitMaster): void {
 
 // ------------------------------------------------- ?skin= URL override
 
-/** Shareable skin link: `?skin=mono-dev` applies and persists the skin plus
- * its matching waveform look in any browser; `?skin=default` reverts. An
+/** Shareable skin link: `?skin=mono-dev` applies and persists the skin and
+ * sets both waveform prefs to 'auto', so the link shows the skin's declared
+ * waveform look (SKIN_WAVE_LOOK) in any browser. An
  * unknown value throws via parseUiSkin rather than silently ignoring it. */
 function _applySkinFromUrl(): void {
 	// SSR has no window; unit-test window stubs have no location. Neither has a URL to read.
@@ -941,10 +1007,8 @@ function _applySkinFromUrl(): void {
 	if (raw === null) return;
 	const skin = parseUiSkin(raw) as UiSkin;
 	setUiSkin(skin);
-	if (skin === 'mono-dev') {
-		setWavePalette('mono');
-		setWaveformDesign('blocks');
-	}
+	setWavePalette('auto');
+	setWaveformDesign('auto');
 }
 
 _applySkinFromUrl();

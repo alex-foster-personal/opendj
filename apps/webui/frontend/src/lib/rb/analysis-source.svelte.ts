@@ -468,11 +468,25 @@ export type AnalysisSourceRefreshRunner = <T>(work: () => Promise<T>) => Promise
 
 let _refreshRunner: AnalysisSourceRefreshRunner | null = null;
 
-export function installAnalysisSourceRefreshRunner(runner: AnalysisSourceRefreshRunner): void {
+// Re-exported for the installer (performance-ipc.svelte.ts), which already imports
+// this module: the quality ratchet caps how many modules one file imports from.
+export { reinstallAcrossHotUpdates } from '$lib/rb/hmr-reinstall';
+/** Install-once: a second install while one is held is a wiring bug and
+ * throws. Returns the uninstall, which the installer hands to
+ * `reinstallAcrossHotUpdates` so a dev hot update of the INSTALLING module
+ * (whose re-run would otherwise hit this guard against its own previous
+ * instance) releases the slot first. Production never calls it. */
+export function installAnalysisSourceRefreshRunner(runner: AnalysisSourceRefreshRunner): () => void {
 	if (_refreshRunner !== null) {
 		throw new Error('an analysis source refresh runner is already installed');
 	}
 	_refreshRunner = runner;
+	return () => {
+		if (_refreshRunner !== runner) {
+			throw new Error('analysis source refresh runner ownership changed');
+		}
+		_refreshRunner = null;
+	};
 }
 
 /** Throws rather than falling back to an unserialized refresh: a missing

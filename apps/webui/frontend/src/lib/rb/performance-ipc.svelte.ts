@@ -61,6 +61,7 @@ import {
 	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
+	reinstallAcrossHotUpdates,
 	setAnalysisSource,
 	type AnalysisSource,
 	type AnalysisSourceFeature
@@ -123,8 +124,13 @@ import {
 	setWaveSplitMaster,
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
-import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
-import { parseSkinSettings, type SkinSettings } from '$lib/rb/ui-skin';
+import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
+import {
+	effectiveWaveformDesign,
+	effectiveWavePalette,
+	parseSkinSettings,
+	type SkinSettings
+} from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -241,7 +247,7 @@ export type PerformanceCommand =
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
-	| { type: 'set_waveform_design'; design: WaveformDesign }
+	| { type: 'set_waveform_design'; design: WaveformDesignPref }
 	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
@@ -512,9 +518,13 @@ export interface PerformanceState {
 		show_stems: boolean;
 		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
 		auto_play_enabled: boolean;
-		waveform_design: WaveformDesign;
+		/** Stored pref; 'auto' follows the skin. */
+		waveform_design: WaveformDesignPref;
+		/** What the waveforms actually paint (auto resolved through the skin). */
+		waveform_design_effective: WaveformDesign;
 		ui_skin: SkinSettings['ui_skin'];
 		wave_palette: SkinSettings['wave_palette'];
+		wave_palette_effective: ReturnType<typeof effectiveWavePalette>;
 		wave_split_master: SkinSettings['wave_split_master'];
 	};
 }
@@ -948,7 +958,11 @@ installScopedSyncRunner((_deck, run) => {
 // mutation instead of replacing grids underneath them
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
-installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+// A dev hot update re-runs this module while analysis-source keeps its
+// runner; reinstallAcrossHotUpdates releases the old one first (no-op in prod).
+reinstallAcrossHotUpdates(import.meta.hot, 'analysisSourceRefreshRunner', () =>
+	installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work))
+);
 // An automatic master handoff (unload, pause, natural end) re-joins the
 // followers under the same wide claim, queued behind the command that moved the
 // master, so later deck commands wait for it rather than racing it.
@@ -1361,7 +1375,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
-		const design = parseWaveformDesign(record.design);
+		const design = parseWaveformDesignPref(record.design);
 		if (design === undefined) throw new TypeError('design is required');
 		return { type, design };
 	}
@@ -2001,8 +2015,10 @@ export function queryPerformanceState(): PerformanceState {
 			show_stems: uiPrefs.show_stems,
 			auto_play_enabled: uiPrefs.auto_play_enabled,
 			waveform_design: uiPrefs.waveform_design,
+			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
 			wave_palette: uiPrefs.wave_palette,
+			wave_palette_effective: effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin),
 			wave_split_master: uiPrefs.wave_split_master
 		}
 	};

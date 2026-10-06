@@ -294,14 +294,24 @@ def local_paths(paths: Iterable[str | None]) -> list[str]:
     return [path for path in paths if path and not is_streaming_path(path)]
 
 
-def _location_paths(stable_ids: Sequence[str]) -> dict[str, list[str]]:
+def _alternate_paths(
+    folder_by_sid: Mapping[str, str | None], stable_ids: Sequence[str]
+) -> dict[str, list[str]]:
+    """Every path but the primary from the ONE playable-candidate list the
+    deck-load audio route also picks from (issue #3934)."""
     if not stable_ids or not config.STATE_DB.exists():
         return {}
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
-        return track_locations.list_location_paths(state, list(stable_ids))
+        candidates = track_locations.playable_candidate_paths(
+            state, {sid: folder_by_sid.get(sid) for sid in stable_ids}
+        )
     finally:
         state.close()
+    return {
+        sid: [c.path for c in paths if c.source != "primary"]
+        for sid, paths in candidates.items()
+    }
 
 
 def classify_availability(
@@ -407,7 +417,7 @@ def classify_rows(
     awaiting = _awaiting_volume(folder_by_sid)
     primary = _primary_results(folder_by_sid, probed, awaiting)
     unresolved = [sid for sid, result in primary.items() if not _is_present(result)]
-    alternates = _location_paths(unresolved)
+    alternates = _alternate_paths(folder_by_sid, unresolved)
     trusted = [
         path
         for sid, paths in alternates.items()

@@ -4,7 +4,7 @@
  * legacy override blocks on.
  *
  * Regression lines:
- * - if a first-run or pre-#4219 blob does not default to 'rekordbox' then
+ * - if a first-run or pre-#4219 blob does not default to 'auto' (CHROME-15) then
  *   the CDJ-parity default never ships
  * - if a stored 'legacy' does not survive reload, or does not set
  *   data-wave-palette, then the alternative resets itself every boot
@@ -44,17 +44,17 @@ afterEach(() => {
 	delete globalThis.document;
 });
 
-test('first run defaults to rekordbox 3Band and sets no legacy attribute', async () => {
+test("first run stores Auto, which paints the Gothic skin's mono palette (CHROME-15)", async () => {
 	const { root } = _fakeEnv();
 	const { uiPrefs } = await _loadPrefs();
-	assert.equal(uiPrefs.wave_palette, 'rekordbox');
-	assert.equal(root.dataset.wavePalette, undefined);
+	assert.equal(uiPrefs.wave_palette, 'auto');
+	assert.equal(root.dataset.wavePalette, 'mono');
 	assert.equal(root.dataset.theme, 'dark', 'control: the theme attribute IS applied by the same boot path');
 });
 
-test('a pre-#4219 blob without the key loads the rekordbox default', async () => {
+test('a pre-#4219 blob without the key loads the Auto default (CHROME-15 migration)', async () => {
 	_fakeEnv(JSON.stringify({ hide_broken_links: false, theme: 'dark' }));
-	assert.equal((await _loadPrefs()).uiPrefs.wave_palette, 'rekordbox');
+	assert.equal((await _loadPrefs()).uiPrefs.wave_palette, 'auto');
 });
 
 test("a stored 'legacy' survives reload and sets data-wave-palette on <html>", async () => {
@@ -78,7 +78,7 @@ test('setWavePalette persists to localStorage and toggles the attribute both way
 
 test('a junk stored wave_palette throws rather than silently resetting', async () => {
 	_fakeEnv(JSON.stringify({ hide_broken_links: false, wave_palette: 'rainbow' }));
-	await assert.rejects(() => _loadPrefs(), /wave_palette must be rekordbox\|legacy/);
+	await assert.rejects(() => _loadPrefs(), /wave_palette must be auto\|rekordbox\|legacy/);
 });
 
 test('the setting is an implemented enum in the catalog and is applyable', async () => {
@@ -91,7 +91,7 @@ test('the setting is an implemented enum in the catalog and is applyable', async
 	assert.equal(def.implemented, true);
 	assert.deepEqual(
 		def.control.options.map((o) => o.value),
-		['rekordbox', 'legacy', 'mono']
+		['auto', 'rekordbox', 'legacy', 'mono']
 	);
 	const apply = await loadTypeScriptModule('src/lib/settings/apply.ts', { viteApiBase: API_BASE });
 	assert.ok(apply.ALLOWED_SETTING_KEYS.includes('wave_palette'));
