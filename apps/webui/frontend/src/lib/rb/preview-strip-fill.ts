@@ -20,7 +20,7 @@
  */
 
 import type { RowAssetTarget } from './row-assets-fill';
-import { bootListingWalkInFlight, whenBootListingWalkSettled } from './library-boot-hydration';
+import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
 export const STRIP_FILL_DEBOUNCE_MS = 150;
 export const STRIP_FILL_MAX_IDS = 200;
@@ -209,12 +209,22 @@ export async function fetchRowAssetsLazily(
 }
 
 /**
- * Cover images wait for the boot library index, or `maxMs`, so ~30 artwork reads do
- * not compete with it on the single-worker engine (LIBM-172). Returns whether they
- * may load now; otherwise calls `release` once, when they may. Never strands them.
+ * Cover images wait in the boot scheduler's deferred queue, the one hold every
+ * non-critical boot read uses (LIBM-166, LIBM-172), so ~30 artwork reads do not
+ * compete with the boot library index on the single-worker engine. Returns whether
+ * they may load now; otherwise calls `release` once, when the queue drains. The
+ * queue's own ceiling means it never strands them.
  */
-export function holdArtworkUntilIndex(maxMs: number, release: () => void): boolean {
-  if (!bootListingWalkInFlight()) return true;
-  void whenBootListingWalkSettled(maxMs).then(release);
-  return false;
+export function holdArtworkForBoot(
+  release: () => void,
+  scheduler: Pick<BootScheduler, 'defer'> = bootScheduler,
+): boolean {
+  let returned = false;
+  let ranAtOnce = false;
+  scheduler.defer('track-table:artwork', () => {
+    if (returned) release();
+    else ranAtOnce = true;
+  });
+  returned = true;
+  return ranAtOnce;
 }

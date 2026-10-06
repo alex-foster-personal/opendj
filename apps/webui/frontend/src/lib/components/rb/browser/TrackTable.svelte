@@ -89,7 +89,7 @@
 	import PreviewStrip from './PreviewStrip.svelte';
 	import {
 		fetchRowAssetsLazily,
-		holdArtworkUntilIndex,
+		holdArtworkForBoot,
 		PreviewStripFiller,
 		stripLessIdsNear
 	} from '$lib/rb/preview-strip-fill';
@@ -1279,9 +1279,9 @@
 		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
 	}
 
-	// LIBM-172: cover images wait for the boot library index (or 8 s), so ~30
-	// artwork reads do not compete with it on the single-worker engine.
-	let artworkReleased = $state(holdArtworkUntilIndex(8_000, () => (artworkReleased = true)));
+	// LIBM-172: cover images wait in the boot scheduler's deferred queue, behind
+	// the boot library index, so ~30 artwork reads do not compete with it.
+	let artworkReleased = $state(holdArtworkForBoot(() => (artworkReleased = true)));
 
 	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
 		return (

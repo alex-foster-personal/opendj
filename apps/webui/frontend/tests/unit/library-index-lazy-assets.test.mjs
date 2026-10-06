@@ -1,11 +1,11 @@
 // LIBM-172: library index rows carry no preview strip, vocal regions or cover
 // verdict; TrackTable asks /library/row-assets for the rows in view only, and the
-// boot defers its slow side requests until the index has landed.
+// boot defers its slow side requests in the boot scheduler queue until the index has landed.
 //
 // Regression one-liners:
 //   - if the asset window asks for rows outside view plus margin then broken (mutation control)
 //   - if any sort, filter or search orders index rows differently from full rows then broken
-//   - if a held-back caller is not released when the index lands, or by its timeout, then broken
+//   - if cover images skip the boot scheduler queue, or are not released when it drains, then broken
 //   - if enrich summary, lyrics-cached-ids or tree prefetch bypass the boot scheduler then broken
 //   - if a row-assets answer does not fill stems, vocals and cover on the asked row then broken
 import assert from 'node:assert/strict';
@@ -20,12 +20,10 @@ const read = (p) => readFileSync(fileURLToPath(new URL(`../../${p}`, import.meta
 let fill;
 let wire;
 let contract;
-let boot;
 before(async () => {
 	fill = await loadTypeScriptModule('src/lib/rb/preview-strip-fill.ts');
 	wire = await loadTypeScriptModule('src/lib/components/rb/browser/browser-row-wire.ts');
 	contract = await loadTypeScriptModule('src/lib/components/rb/browser/pane-contract.svelte.ts');
-	boot = await loadTypeScriptModule('src/lib/rb/library-boot-hydration.ts');
 });
 
 test('the asset window asks only for rows in view plus margin', () => {
@@ -112,31 +110,20 @@ test('no sort, filter or search reads the deferred fields', () => {
 	assert.equal(ids(index.filter(contract.rowHasVocalLyrics)), ids(full.filter(contract.rowHasVocalLyrics)));
 });
 
-test('a held-back caller is released when the index lands, or by its timeout', async () => {
-	boot.resetLibraryBootHydrationForTests();
-	await boot.whenBootListingWalkSettled(10); // no walk: resolves at once
-	boot.setFetchBootTracksPageForTests(() => new Promise(() => {}));
-	boot.setFetchBootPlaylistsForTests(async () => []);
-	boot.setPrefsHydratorForTests(async () => {});
-	boot.startLibraryBootHydration(true);
-	assert.equal(boot.bootListingWalkInFlight(), true);
-	let released = false;
-	const waiting = boot.whenBootListingWalkSettled(60_000).then(() => (released = true));
-	await new Promise((resolve) => setImmediate(resolve));
-	assert.equal(released, false, 'held while the index is in flight');
-	boot.bootListingWalkSettled();
-	await waiting;
-	assert.equal(released, true, 'released when the index lands');
+test('cover images wait in the boot scheduler queue and are released when it drains', () => {
+	const queue = [];
+	const held = { defer: (label, task) => queue.push({ label, task }) };
+	let released = 0;
+	assert.equal(fill.holdArtworkForBoot(() => (released += 1), held), false, 'held while the queue is closed');
+	assert.deepEqual(queue.map((q) => q.label), ['track-table:artwork']);
+	assert.equal(released, 0);
+	queue[0].task();
+	assert.equal(released, 1, 'released once when the queue drains');
 
-	boot.resetLibraryBootHydrationForTests();
-	boot.setFetchBootTracksPageForTests(() => new Promise(() => {}));
-	boot.setFetchBootPlaylistsForTests(async () => []);
-	boot.setPrefsHydratorForTests(async () => {});
-	boot.startLibraryBootHydration(true);
-	const started = Date.now();
-	await boot.whenBootListingWalkSettled(50);
-	assert.ok(Date.now() - started >= 45, 'never lost: the timeout releases a walk that never ends');
-	boot.resetLibraryBootHydrationForTests();
+	const open = { defer: (_label, task) => task() };
+	let late = 0;
+	assert.equal(fill.holdArtworkForBoot(() => (late += 1), open), true, 'loads at once after boot');
+	assert.equal(late, 0, 'and does not also call release');
 });
 
 test('the slow boot side requests go through the boot scheduler', () => {
@@ -151,7 +138,7 @@ test('the slow boot side requests go through the boot scheduler', () => {
 	);
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /artworkReleased &&\s*artworkAvailable === true/);
-	assert.match(table, /holdArtworkUntilIndex\(8_000,/);
+	assert.match(table, /holdArtworkForBoot\(\(\) => \(artworkReleased = true\)\)/);
 });
 
 test('a row-assets answer fills stems, vocals and cover for the asked rows only', async () => {

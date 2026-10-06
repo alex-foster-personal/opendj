@@ -188,19 +188,6 @@ export function bootListingWalkInFlight(): boolean {
 export function bootListingWalkSettled(): void {
 	settleBootListingWalk?.();
 	settleBootListingWalk = null;
-	for (const wake of walkWaiters.splice(0)) wake();
-}
-
-const walkWaiters: Array<() => void> = [];
-
-/** Resolves when the boot listing walk (the library index) has settled, or after
- * `maxMs`, so a caller holding work behind it never loses it (LIBM-172). */
-export function whenBootListingWalkSettled(maxMs: number): Promise<void> {
-	if (settleBootListingWalk === null) return Promise.resolve();
-	return new Promise((resolve) => {
-		walkWaiters.push(resolve);
-		setTimeout(resolve, maxMs);
-	});
 }
 
 async function _bootTracksPage(cursor: string | undefined): Promise<TracksPageHydrated> {
