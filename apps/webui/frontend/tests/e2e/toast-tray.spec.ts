@@ -189,20 +189,49 @@ test('the x dismisses that toast and leaves the others', async ({ page }) => {
 });
 
 // REQ: UX-TOAST-01
+//
+// Driven on the PAGE's clock, not the wall clock. This test used to hover a
+// 1200 ms toast and then sleep for real. On a loaded runner the push, the
+// visibility poll and hover's actionability checks together could outlast
+// 1200 ms, so the countdown won the race before the pointer arrived (chromium,
+// line 199 "element(s) not found" in E2E runs 37408931260, 37427620229,
+// 37429224691 and 37463180497; line 204, after the leave, in 37448927611).
+//
+// Paused fake time removes the race without weakening the property: no
+// dismissal timer can fire until the test advances the clock, and the clock
+// only moves past the delay AFTER the pointer is over the toast. Every
+// expectation is made while time stands still, so a retrying assertion can
+// neither be rescued nor sunk by time passing during its own polling.
+//
+// - if the hover hold is removed, the advance past the delay fires the timer
+//   and the "still there" assertion fails -> broken.
+// - if leaving fires only the remainder instead of a full delay, the toast is
+//   gone half a delay after the leave -> broken.
+// - if leaving never re-arms the timer, it survives a full delay -> broken.
 test('a pointer over a toast holds it past its dismissal delay', async ({ page }) => {
-	const id = await raise(page, 'hover holds me', 'info', 1200);
+	const dismissMs = 1200;
+	await page.clock.install();
+	await page.clock.pauseAt(Date.now() + 60_000);
+
+	const id = await raise(page, 'hover holds me', 'info', dismissMs);
 	const toast = page.locator(`[data-toast-id="${id}"]`);
 	await expect(toast).toBeVisible();
 
+	// Spend part of the delay first, so the hold has to stop a countdown that
+	// is already running rather than one that never started.
+	await page.clock.runFor(dismissMs / 2);
+	await expect(toast).toHaveCount(1);
 	await toast.hover();
-	await page.waitForTimeout(2500); // well past the 1200ms it would have died at
+	await page.clock.runFor(dismissMs * 2); // well past where it would have died
+	await expect(toast).toHaveCount(1);
 	await expect(toast).toBeVisible();
 
-	// And leaving restarts a full delay rather than firing the remainder.
+	// Leaving restarts a FULL delay rather than firing the remainder.
 	await page.mouse.move(0, 0);
-	await page.waitForTimeout(600);
-	await expect(toast).toBeVisible();
-	await expect(toast).toHaveCount(0, { timeout: 4000 });
+	await page.clock.runFor(dismissMs / 2 + 100);
+	await expect(toast).toHaveCount(1);
+	await page.clock.runFor(dismissMs / 2);
+	await expect(toast).toHaveCount(0);
 });
 
 test('an untouched toast still fades, so the hold is doing the work', async ({ page }) => {
