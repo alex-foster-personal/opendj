@@ -97,6 +97,16 @@ test('control: genuinely different devices keep two outputs and never split', ()
 
 test('the auto-pick never chooses the jack-muted speakers, a virtual device or a display', () => {
 	assert.equal(headphones.preferredMasterOutputDeviceId(SILVER_JACK, HP), null);
+	// The mute alone excludes the speakers, not only their shared jack: with no
+	// cue, or a cue on a different device, the muted speakers are still no room.
+	assert.equal(headphones.preferredMasterOutputDeviceId(SILVER_JACK, null), null);
+	const usbPhones = [
+		...SILVER_JACK,
+		...sink.nativeOutputsAsHeadphoneOutputs([
+			{ uid: 'usb-phones', name: 'USB Headphones', channels: 2, transport: 'usb', is_default: false, muted_by_jack: false, physical_uid: 'usb-phones' }
+		])
+	];
+	assert.notEqual(headphones.preferredMasterOutputDeviceId(usbPhones, 'native:usb-phones'), SPEAKERS);
 	// Control: a Chrome listing has no shell fields, so its speaker guess is unchanged.
 	const chrome = [
 		{ id: 'hp', label: 'External Headphones' },
