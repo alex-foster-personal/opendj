@@ -80,6 +80,8 @@ export interface LeasedMirrorPublisher {
 	publish(): void;
 	/** True only while the engine has accepted this tab's latest mirror PUT. */
 	isRegistered(): boolean;
+	/** AGENT-19: settles when `isRegistered()` next becomes true (at once if it is). */
+	whenRegistered(): Promise<void>;
 	/** The engine answered 409 to an order poll: it no longer has this page on record. */
 	forget(): void;
 	/** A user gesture landed in this tab: recheck the lease on the next tick. */
@@ -100,6 +102,15 @@ export function createLeasedMirrorPublisher(deps: {
 }): LeasedMirrorPublisher {
 	const now = deps.now ?? Date.now;
 	let registered = false;
+	/** AGENT-19: wakes the order poll the moment a PUT is accepted, so a hidden
+	 * tab never waits out a throttled timer before it starts claiming orders. */
+	let registration: { promise: Promise<void>; resolve: () => void } | null = null;
+	const setRegistered = (value: boolean): void => {
+		registered = value;
+		if (!registered || !deps.leadership.isLeader() || registration === null) return;
+		registration.resolve();
+		registration = null;
+	};
 	let leaseCheckInFlight = false;
 	let lastLeaseCheckAtMs = Number.NEGATIVE_INFINITY;
 	let lastGestureAtMs: number | null = null;
@@ -200,18 +211,24 @@ export function createLeasedMirrorPublisher(deps: {
 		if (takeover) headers[LEASE_TAKEOVER_HEADER] = '1';
 		void fetch(MIRROR_PATH, { method: 'PUT', headers, body: JSON.stringify(deps.build()) })
 			.then(async (response) => {
-				registered = response.ok && deps.leadership.isLeader();
-				if (registered) deps.leadership.noteLeaseAccepted();
-				if (response.status !== 409) return;
+				if (response.status !== 409) {
+					setRegistered(response.ok && deps.leadership.isLeader());
+					if (registered) deps.leadership.noteLeaseAccepted();
+					return;
+				}
 				const refusal = (await response.json()) as { reason?: string; holder?: unknown };
 				if (refusal.reason === 'lease_held' && typeof refusal.holder === 'string') {
+					setRegistered(false);
 					leaseCleared = false;
 					deps.leadership.noteLeaseConflict(refusal.holder);
 				} else if (refusal.reason === 'stale_snapshot') {
 					// Our own slow PUT overtaken by a newer one: the engine kept the
-					// newer snapshot, which is the point. Nothing to demote.
+					// newer snapshot, which is the point. Nothing to demote, and the
+					// page is still on record, so registration is unchanged (AGENT-19:
+					// clearing it parked the order poll on a throttled timer).
 					console.info('ui-mirror: an out-of-order publish was dropped by the engine');
 				} else {
+					setRegistered(false);
 					// Not the lease: a real defect, logged rather than absorbed.
 					console.error(`ui-mirror publish refused: ${JSON.stringify(refusal)}`);
 				}
@@ -228,6 +245,17 @@ export function createLeasedMirrorPublisher(deps: {
 	return {
 		publish,
 		isRegistered: () => registered && deps.leadership.isLeader(),
+		whenRegistered: () => {
+			if (registered && deps.leadership.isLeader()) return Promise.resolve();
+			if (registration === null) {
+				let resolve: () => void = () => {};
+				const promise = new Promise<void>((done) => {
+					resolve = done;
+				});
+				registration = { promise, resolve };
+			}
+			return registration.promise;
+		},
 		forget: () => {
 			registered = false;
 		},

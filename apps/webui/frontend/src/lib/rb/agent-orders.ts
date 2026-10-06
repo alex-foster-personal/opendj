@@ -167,6 +167,9 @@ export async function executeAgentOrder(order: AgentOrder): Promise<{ steps: Age
 export interface PerformancePageRegistration {
 	/** True only while the engine has accepted a mirror publish from this page. */
 	isRegistered: () => boolean;
+	/** AGENT-19: settles when the page is next registered, so the poll starts at
+	 * once instead of after a timer a hidden tab would throttle. */
+	whenRegistered: () => Promise<void>;
 	/** The engine answered 409: it no longer has this page on record. */
 	forget: () => void;
 }
@@ -191,7 +194,9 @@ export async function pollAgentOrders(
 	let reportedUnheld = false;
 	while (isRunning()) {
 		if (!page.isRegistered()) {
-			await _sleep(IDLE_POLL_MS);
+			// Registration wakes the loop at once; the timer only re-checks
+			// isRunning() and is the documented fallback.
+			await Promise.race([page.whenRegistered(), _sleep(IDLE_POLL_MS)]);
 			continue;
 		}
 		let response: Response;

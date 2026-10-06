@@ -49,13 +49,18 @@ let infos;
 /** A page registration whose flag the test drives, exactly as ui-mirror does. */
 function registration(initial) {
 	let registered = initial;
+	let waiters = [];
 	return {
 		isRegistered: () => registered,
+		whenRegistered: () =>
+			registered ? Promise.resolve() : new Promise((resolve) => waiters.push(resolve)),
 		forget: () => {
 			registered = false;
 		},
 		reregister: () => {
 			registered = true;
+			for (const resolve of waiters) resolve();
+			waiters = [];
 		}
 	};
 }
@@ -284,4 +289,29 @@ test('an engine that ignores wait_ms is reported once and falls back to the time
 		'one error per transition, not one per poll'
 	);
 	assert.ok(armed.includes(50), 'the fallback is the documented 50 ms timer poll');
+});
+
+test('with every timer frozen, as in a hidden tab, registration still starts the poll at once', async () => {
+	const page = registration(false);
+	const realSetTimeout = globalThis.setTimeout;
+	// A hidden tab after five minutes: a timer may not fire for a minute. Model
+	// the worst case, a timer that never fires, so only non-timer wake-ups count.
+	globalThis.setTimeout = () => 0;
+	let running = true;
+	let loop;
+	try {
+		loop = orders.pollAgentOrders(page, () => {}, () => running);
+		await hops(5);
+		assert.deepEqual(calls, [], 'still unregistered: no claim');
+		page.reregister();
+		await hops(20);
+		assert.ok(calls.length >= 2, `registration alone must start held claims, saw ${calls.length}`);
+		assert.ok(calls.every((url) => url === NEXT));
+	} finally {
+		running = false;
+		globalThis.setTimeout = realSetTimeout;
+	}
+	page.forget();
+	page.reregister();
+	await loop;
 });
