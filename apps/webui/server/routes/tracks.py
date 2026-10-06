@@ -463,6 +463,10 @@ def get_track_index(
     ).encode()
     etag = f'"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
     headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
+    # PERF-DRAIN-02: the launch's index is out, so the ahead drain's boot grace may end.
+    drain = getattr(request.app.state, "ahead_analysis", None)
+    if drain is not None:
+        drain.index_served()
     if if_none_match == etag:
         return Response(status_code=304, headers=headers)
     if accept_encoding is not None and "gzip" in accept_encoding:

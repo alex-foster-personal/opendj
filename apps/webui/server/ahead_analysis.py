@@ -39,6 +39,13 @@ Requirements (mini-PRD):
     [if] a track was bumped [then] it is selected before older work
   ✔︎ never competes with playback
     [if] a deck is playing [then] the tick runs nothing
+  ✔︎ never competes with the launch (PERF-DRAIN-02)
+    [if] the engine booted under 120 s ago and no index was served [then] no tick runs
+    [if] 120 s have passed [then] the drain ticks, whether or not any index was served
+    [if] the first /tracks/index is served [then] the grace ends at once
+  ✔︎ lane children run in background QoS on macOS (PERF-DRAIN-01)
+    [if] the host is darwin [then] the queue child starts under taskpolicy -b
+    [if] taskpolicy is missing on darwin [then] the lane fails with a named error
   ✔︎ cheap lanes before expensive ones
     [if] loudness/waveform are missing anywhere [then] beatgrid/key wait
   ✔︎ a host-level failure is named once
@@ -72,7 +79,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apps.shared.process_priority import lowered_priority
+from apps.shared.process_priority import background_argv, lowered_priority
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server import enrich_sources
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
@@ -104,6 +111,12 @@ PHASE_BUDGETS_S: dict[str, float] = {
     "plan": 180.0,
     "coverage": 300.0,
 }
+#: Boot grace: no tick and no coverage snapshot for this long after the engine
+#: builds the drain, so the first library index at launch never competes with
+#: it. The first ``/tracks/index`` served ends it early; nothing extends it,
+#: because a headless engine may never serve the index.
+STARTUP_GRACE_S: float = 120.0
+STARTUP_GRACE_STATE: str = "paused_startup"
 #: How old the served coverage snapshot may get before the loop recomputes it.
 COVERAGE_REFRESH_S: float = 60.0
 NICENESS: int = 19
@@ -282,9 +295,12 @@ class AheadDrain:
         *,
         clock: Callable[[], float] = time.time,
         phase_budgets_s: Mapping[str, float] = PHASE_BUDGETS_S,
+        startup_grace_s: float = 0.0,
     ) -> None:
         self._src = sources
         self._clock = clock
+        self._grace_ends_at = clock() + startup_grace_s
+        self._grace_over = startup_grace_s <= 0
         self._status = AheadStatus()
         self._strip_failed: dict[str, str] = {}
         self._tags_failed: dict[str, str] = {}
@@ -313,6 +329,17 @@ class AheadDrain:
     def wake(self) -> None:
         self._wake.set()
 
+    def index_served(self) -> None:
+        """The first library index went out: end the boot grace now (never extends it)."""
+        if not self._grace_over:
+            self._grace_over = True
+            self._wake.set()
+
+    def in_startup_grace(self) -> bool:
+        if not self._grace_over and self._clock() >= self._grace_ends_at:
+            self._grace_over = True
+        return not self._grace_over
+
     def status(self) -> AheadStatus:
         return self._status
 
@@ -340,6 +367,8 @@ class AheadDrain:
             self._status.phase_timeouts = dict(self._phases.timeouts)
 
     def _tick_phases(self) -> str:
+        if self.in_startup_grace():
+            return STARTUP_GRACE_STATE
         if self._phases.run("playing", self._src.playing_fn):
             return "paused_playing"
         with self._bump_lock:
@@ -586,10 +615,11 @@ class AheadDrain:
                 interval = IDLE_INTERVAL_S
                 continue
             finally:
-                self._refresh_coverage_if_stale()
+                if not self.in_startup_grace():  # the snapshot is the heavy part; it waits too
+                    self._refresh_coverage_if_stale()
             if outcome.startswith("ran:"):
                 interval = ACTIVE_INTERVAL_S
-            elif outcome == "paused_playing" or outcome.startswith(("timeout:", "waiting:")):
+            elif outcome in ("paused_playing", STARTUP_GRACE_STATE) or outcome.startswith(("timeout:", "waiting:")):
                 interval = PAUSED_INTERVAL_S
             else:
                 interval = IDLE_INTERVAL_S
@@ -599,7 +629,7 @@ class AheadDrain:
 # engine wiring: real sources
 #-----------------------------------------------------------------------------
 def _queue_cli(args: list[str], db: str) -> tuple[int, str, str]:
-    argv = [sys.executable, "-m", "apps.analysis.queue_cli", "--db", db, "--json", *args]
+    argv = background_argv([sys.executable, "-m", "apps.analysis.queue_cli", "--db", db, "--json", *args])
     proc = subprocess.run(
         argv, capture_output=True, text=True, timeout=QUEUE_TIMEOUT_S, check=False,
         **lowered_priority(NICENESS),
@@ -735,12 +765,15 @@ def build_for_app(app: Any) -> AheadDrain:
             refresh_tags_fn=refresh_tags,
             declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
             library_values_fn=lambda field: library_value_sources(ingest_routes.open_ro, field),
-        )
+        ),
+        startup_grace_s=STARTUP_GRACE_S,
     )
 
 
 __all__ = [
     "AHEAD_ENV",
+    "STARTUP_GRACE_S",
+    "STARTUP_GRACE_STATE",
     "LANE_ORDER",
     "AheadDrain",
     "AheadSources",

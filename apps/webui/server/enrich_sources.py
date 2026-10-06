@@ -71,7 +71,7 @@ def _lane_state(state: str, counts: Mapping[str, Any], ahead: str | None) -> dic
         return {"state": "paused_playing", "waiting_on": None, "reason": None}
     if state == "blocked" or state.startswith(("timeout:", "waiting:")):
         return {"state": "stalled", "waiting_on": None, "reason": state}
-    if state == "idle":
+    if state in ("idle", "paused_startup"):
         return {"state": "starting", "waiting_on": None, "reason": None}
     if ahead is not None:
         return {"state": "waiting", "waiting_on": ahead, "reason": None}
