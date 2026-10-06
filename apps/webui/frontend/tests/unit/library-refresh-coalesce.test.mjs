@@ -211,25 +211,32 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 
 	// Every background trigger goes through request(), never straight to the
 	// refresh: a direct call is the mid-set stall this gate exists to stop.
-	assert.match(source, /subscribeKind\('tracks', \(\) => _libraryRefreshGate\.request\(\)\)/);
+	assert.match(source, /subscribeKind\('tracks', \(\) => _requestLibraryRefresh\(\)\)/);
 	assert.match(
 		source,
-		/subscribeKind\('playlists', \(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
+		/subscribeKind\('playlists', \(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_requestLibraryRefresh\(\);\s*\}\)/,
 		'a playlist rename from the write API or undo stack must update tree names even if the full library refetch is in flight, deferred, or throws'
 	);
 	assert.match(
 		source,
-		/subscribeResync\(\(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
+		/subscribeResync\(\(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_requestLibraryRefresh\(\);\s*\}\)/,
 		'a missed playlist invalidation on reconnect must refresh tree names, not only pane rows'
 	);
-	assert.match(source, /subscribeKind\('smartlists', \(\) => _libraryRefreshGate\.request\(\)\)/);
+	assert.match(source, /subscribeKind\('smartlists', \(\) => _requestLibraryRefresh\(\)\)/);
 	assert.match(source, /onselectsmartlist=\{selectSmartlist\}/);
 	assert.match(source, /async function _fetchSmartlistRows/);
 	assert.match(source, /p\.kind === 'smartlist'/);
-	const requestCallSites = source
-		.split('\n')
-		.filter((line) => line.includes('_libraryRefreshGate.request()'))
-		.filter((line) => !/^\s*(\/\/|\*)/.test(line));
+	// LIBM-171: the triggers reach the gate through _requestLibraryRefresh, which
+	// marks the held library index and playlists stale first, then requests once.
+	assert.match(
+		source,
+		/function _requestLibraryRefresh\(\): void \{\s*invalidateLibraryIndex\(\);\s*clearPlaylistRowCache\(\);\s*_libraryRefreshGate\.request\(\);\s*\}/
+	);
+	const codeLines = source.split('\n').filter((line) => !/^\s*(\/\/|\*)/.test(line));
+	assert.equal(codeLines.filter((line) => line.includes('_libraryRefreshGate.request()')).length, 1);
+	const requestCallSites = codeLines
+		.filter((line) => line.includes('_requestLibraryRefresh()'))
+		.filter((line) => !line.includes('function _requestLibraryRefresh'));
 	assert.equal(
 		requestCallSites.length,
 		5,
