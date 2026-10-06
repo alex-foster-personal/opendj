@@ -741,8 +741,20 @@ export type TrackIndexDeferredField =
 	| 'preview_max'
 	| 'vocals'
 	| 'artwork_available'
-	| 'artwork_status';
-export type TrackIndexItemWire = Omit<TrackListItemWire, TrackIndexDeferredField | 'provenance'>;
+	| 'artwork_status'
+	| 'stems';
+/** Fields no library view reads off an index row; `GET /tracks/{sid}` serves them. */
+type TrackIndexOmittedField =
+	| 'provenance'
+	| 'tags'
+	| 'last_played_at'
+	| 'tempo_pref'
+	| 'created_at'
+	| 'updated_at'
+	| 'lyrics_available'
+	| 'auto_cues_available'
+	| 'stems_available';
+export type TrackIndexItemWire = Omit<TrackListItemWire, TrackIndexDeferredField | TrackIndexOmittedField>;
 
 export interface TrackIndexWire {
 	revision: string;

@@ -36,9 +36,14 @@ NOW = "2026-10-06T00:00:00Z"
 #: Warm index of TRACKS mapped rows, in a child engine. Measured on demon-llama,
 #: Tue 6 Oct 2026: 348 ms cold, 359 ms warm, 3.1 MB. A ratchet: lower it, never raise it.
 INDEX_WARM_BUDGET_MS = 1_500
-#: Row fields the index never sends (LIBM-172): provenance, and the per-row disk reads
-#: that POST /library/row-assets serves for rows in view.
-DEFERRED = frozenset({"provenance", "preview_b64", "preview_max", "vocals", "artwork_available", "artwork_status"})
+#: Row fields the index never sends (LIBM-172): the per-row disk reads that POST
+#: /library/row-assets serves for rows in view, and the fields no library view reads
+#: off an index row (GET /tracks/{sid} serves them).
+DEFERRED = frozenset({
+    "preview_b64", "preview_max", "vocals", "artwork_available", "artwork_status", "stems",
+    "provenance", "tags", "last_played_at", "tempo_pref", "created_at", "updated_at",
+    "lyrics_available", "auto_cues_available", "stems_available",
+})
 
 
 def _sid(i: int) -> str:

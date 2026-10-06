@@ -241,11 +241,16 @@ class TracksPage(BaseModel):
 class TrackIndexItemOut(TrackListItemOut):
     """One library index row: a listing row without its per-row disk reads (LIBM-172).
 
-    The preview strip, vocal regions and cover verdict are read off disk per
-    row, which was 7.8 s of a cold 9,713-row index. They are never sent here
-    (excluded and absent from the schema); the browser asks
-    ``POST /library/row-assets`` for the rows in view. ``provenance`` is left
-    out too: ``GET /tracks/{sid}`` serves it.
+    The preview strip, vocal regions, cover verdict and stem bundle summary are
+    read off disk per row, which was 7.8 s of a cold 9,713-row index (stems
+    another 1.2 s). They are never sent here (excluded and absent from the
+    schema); the browser asks ``POST /library/row-assets`` for the rows in view.
+
+    Also left out, because no library view reads them off an index row:
+    ``provenance``, ``tags``, ``last_played_at``, ``tempo_pref``, ``created_at``,
+    ``updated_at`` and the three optional-resource flags (``GET /tracks/{sid}``
+    serves all of them). ``lyrics_available`` alone cost 2.9 s of a cold index,
+    classifying every lyric file for ASR hallucinations.
     """
 
     provenance: SkipJsonSchema[dict[str, ProvenanceOut]] = Field(default={}, exclude=True)
@@ -254,6 +259,15 @@ class TrackIndexItemOut(TrackListItemOut):
     vocals: SkipJsonSchema[dict[str, Any]] = Field(default_factory=dict, exclude=True)
     artwork_available: SkipJsonSchema[bool | None] = Field(default=None, exclude=True)
     artwork_status: SkipJsonSchema[str] = Field(default="unresolved", exclude=True)
+    stems: SkipJsonSchema[dict[str, Any] | None] = Field(default=None, exclude=True)
+    tags: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
+    last_played_at: SkipJsonSchema[str | None] = Field(default=None, exclude=True)
+    tempo_pref: SkipJsonSchema[TempoPrefOut | None] = Field(default=None, exclude=True)
+    created_at: SkipJsonSchema[str] = Field(default="", exclude=True)
+    updated_at: SkipJsonSchema[str] = Field(default="", exclude=True)
+    lyrics_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
+    auto_cues_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
+    stems_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
 
 
 class TrackIndexOut(BaseModel):
@@ -274,6 +288,7 @@ class RowAssetOut(BaseModel):
     vocals: dict[str, Any]
     artwork_available: bool | None
     artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+    stems: dict[str, Any]
 
 
 class RowAssetsOut(BaseModel):

@@ -324,8 +324,9 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 
 /** What a library index row says before `POST /library/row-assets` answers for
  * it (LIBM-172): no strip yet, no vocal regions yet, cover not yet checked. No
- * sort, filter or search reads these fields (library-index-lazy-assets test). */
-export const INDEX_ROW_DEFERRED = {
+ * sort, filter or search reads these fields (library-index-lazy-assets test).
+ * Stems are not here: the row carries null ("stems not loaded for this row"). */
+const INDEX_ROW_DEFERRED = {
 	preview_b64: null,
 	preview_max: null,
 	vocals: { status: 'not_analyzed' },
@@ -333,8 +334,22 @@ export const INDEX_ROW_DEFERRED = {
 	artwork_status: 'unresolved'
 } as const satisfies Pick<TrackListItemWire, 'preview_b64' | 'preview_max' | 'vocals' | 'artwork_available' | 'artwork_status'>;
 
+/** The index row's left-out fields that rowFromListWire requires but never copies. */
+const INDEX_ROW_UNREAD = {
+	provenance: {},
+	tags: [],
+	created_at: '',
+	updated_at: '',
+	lyrics_available: false,
+	auto_cues_available: false,
+	stems_available: false,
+	stems: { status: 'none' }
+} as const;
+
 /** A library index row, or a full listing row (the boot first page), as a BrowserRow. */
 export function rowFromIndexWire(item: TrackIndexItemWire | TrackListItemWire, order: number): BrowserRow {
 	if ('artwork_status' in item) return rowFromListWire(item, order);
-	return rowFromListWire({ ...item, ...INDEX_ROW_DEFERRED, provenance: {} }, order);
+	const row = rowFromListWire({ ...item, ...INDEX_ROW_DEFERRED, ...INDEX_ROW_UNREAD }, order);
+	row.stems = null;
+	return row;
 }

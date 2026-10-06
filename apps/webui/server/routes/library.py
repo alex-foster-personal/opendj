@@ -132,9 +132,9 @@ def post_row_assets(
 ) -> RowAssetsOut:
     """The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).
 
-    Preview strip, vocal regions and cover verdict, read exactly as a ``GET /tracks``
-    row reads them. The browser asks for the rows in view only, so a 9,713-row index
-    never pays these reads up front. An id that is not a library track is absent.
+    Preview strip, vocal regions, cover verdict and stem bundle summary, read exactly as a
+    ``GET /tracks`` row reads them. The browser asks for the rows in view only, so a 9,713-row
+    index never pays these reads up front. An id that is not a library track is absent.
     Strip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.
     """
     found = backend.get_tracks_bulk(body.ids)
@@ -153,6 +153,7 @@ def post_row_assets(
                 vocals=r["vocals"],
                 artwork_available=r["artwork_available"],
                 artwork_status=r["artwork_status"],
+                stems=r["stems"],
             )
             for r in rows
         },

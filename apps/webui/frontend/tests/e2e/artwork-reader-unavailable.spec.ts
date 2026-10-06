@@ -488,8 +488,8 @@ test('null artwork availability identifies an unavailable reader without request
 		})
 	);
 	// preview-strip-fill.ts (NATIVE-21, LIBM-172) asks /library/row-assets for
-	// the strip, vocals and cover verdict of strip-less rows in view. Answered
-	// "nothing on disk yet" with the same cover verdict as the row below
+	// the strip, vocals, cover verdict and stems of strip-less rows in view. Answered
+	// "nothing on disk yet" with the same cover verdict as the listed row
 	// (artwork_available null: the reader is unavailable), so no row gains a
 	// waveform, the cover stays unresolved and no id is pending a retry.
 	await page.route('**/api/v1/library/row-assets', (route) => {
@@ -499,7 +499,8 @@ test('null artwork availability identifies an unavailable reader without request
 			preview_max: null,
 			vocals: { status: 'not_analyzed' },
 			artwork_available: null,
-			artwork_status: 'no_image_path'
+			artwork_status: 'no_image_path',
+			stems: { status: 'none' }
 		};
 		return route.fulfill({ json: { assets: Object.fromEntries(ids.map((id) => [id, none])), pending: [] } });
 	});

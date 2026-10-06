@@ -81,14 +81,17 @@ function listWire(i) {
 }
 
 test('no sort, filter or search reads the deferred fields', () => {
-	const DEFERRED = ['preview_b64', 'preview_max', 'vocals', 'artwork_available', 'artwork_status'];
+	const DEFERRED = ['preview_b64', 'preview_max', 'vocals', 'artwork_available', 'artwork_status', 'stems'];
 	const full = Array.from({ length: 40 }, (_, i) => wire.rowFromListWire(listWire(i), i + 1));
 	const index = Array.from({ length: 40 }, (_, i) => {
 		const item = listWire(i);
 		for (const k of DEFERRED) delete item[k];
 		return wire.rowFromIndexWire(item, i + 1);
 	});
-	assert.ok(index.every((r) => r.strip === null && r.artwork_available === null), 'index rows really lack them');
+	assert.ok(
+		index.every((r) => r.strip === null && r.artwork_available === null && r.stems === null),
+		'index rows really lack them'
+	);
 	const ids = (rows) => rows.map((r) => r.stable_id).join(',');
 	const keys = ['order', 'plays', 'title', 'artist', 'key', 'bpm', 'rating', 'comments', 'time', 'energy', 'genre', 'lyrics', 'grid', 'autoplay'];
 	for (const key of keys) {

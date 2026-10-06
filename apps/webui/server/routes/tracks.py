@@ -364,8 +364,8 @@ def _listing_items(
 ) -> list[TrackListItemOut]:
     """One listing row per track, in order: the shared body of /tracks and /tracks/index.
 
-    ``for_index`` builds :class:`TrackIndexItemOut` rows and skips the per-row disk
-    reads those rows do not carry (LIBM-172).
+    ``for_index`` builds :class:`TrackIndexItemOut` rows and skips the per-row reads
+    those rows do not carry (LIBM-172), including the three optional-resource flags.
     """
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)
@@ -377,8 +377,11 @@ def _listing_items(
     )
     item_model = TrackIndexItemOut if for_index else TrackListItemOut
     stable_ids = [t.stable_id for t in tracks]
-    lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
-    auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
+    no_flags = dict.fromkeys(stable_ids, False)
+    lyrics_by_sid = no_flags if for_index else _lyrics_available_bulk(data_dir, stable_ids)
+    auto_cues_by_sid = (
+        no_flags if for_index else _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
+    )
     items: list[TrackListItemOut] = []
     for track, row in zip(tracks, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
@@ -388,7 +391,7 @@ def _listing_items(
             has_rb_mapping=row["has_rb_mapping"],
             lyrics_available=lyrics_by_sid[track.stable_id],
             auto_cues_available=auto_cues_by_sid[track.stable_id],
-            stems_available=_stems_available(track.stable_id, row["stems"], request),
+            stems_available=False if for_index else _stems_available(track.stable_id, row["stems"], request),
             artwork_available=row["artwork_available"],
         ).model_dump()
         # TrackOut already carries play_count (default 0). The listing value is

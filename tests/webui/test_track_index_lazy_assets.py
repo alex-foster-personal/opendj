@@ -6,12 +6,12 @@ Measured on the Air, Tue 6 Oct 2026, on a 9,713-row copy: a cold index spent 7.8
 of 8.5 s reading each mapped row's preview strip, vocal regions and cover off the
 rekordbox share. The index now sends none of those; the browser asks for the rows
 in view. Fixture: tests.webui.test_track_index's 2,300 mapped rows, with real ANLZ
-and artwork files written for the first ASSET_ROWS rows.
+and artwork files and a lyrics-cache entry written for the first ASSET_ROWS rows.
 
 Regression one-liners:
-  - if a cold index opens a file per asset-backed row then broken
+  - if a cold index opens a file per asset-backed row, or per lyrics-cache entry, then broken
   - if a cold /tracks page over the same rows does NOT open them then the fixture is broken
-  - if row-assets answers different strip, vocals or cover than /tracks then broken
+  - if row-assets answers different strip, vocals, cover or stems than /tracks then broken
   - if row-assets answers for an id that is not a library track then broken
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ pytestmark = [pytest.mark.requirement("LIBM-172")]
 
 ASSET_ROWS = 300
 ASKED = [_sid(i) for i in range(12)]
-ASSET_FIELDS = ("preview_b64", "preview_max", "vocals", "artwork_available", "artwork_status")
+ASSET_FIELDS = ("preview_b64", "preview_max", "vocals", "artwork_available", "artwork_status", "stems")
 
 
 @pytest.fixture(scope="module")
@@ -38,6 +38,10 @@ def probe(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     share = share_root_under(home)
     for i in range(ASSET_ROWS):
         _write_assets(share, i)
+        # A lyrics-cache entry per row: the index must not open it (lyrics_available).
+        lyric = data_dir / "state" / "lyrics-cache" / f"{_sid(i)}.json"
+        lyric.parent.mkdir(parents=True, exist_ok=True)
+        lyric.write_text("{}", encoding="utf-8")
     steps: list[dict[str, Any]] = [
         {"op": "get", "name": "index_cold", "url": "/api/v1/tracks/index"},
         {"op": "post", "name": "assets", "url": "/api/v1/library/row-assets",
