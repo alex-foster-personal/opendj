@@ -53,7 +53,11 @@ function _bundle(entry, { stdin = false, keepSvelteImports = false } = {}) {
 		// inlining that package here exposes runtime names such as `$window` to
 		// the application rune compiler, which correctly rejects them. Link the
 		// real runtime only in the second bundle, after rune compilation.
-		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://rune-harness.example.test') },
+		define: {
+			'import.meta.env.VITE_API_BASE': JSON.stringify('https://rune-harness.example.test'),
+			// A production build: DEV-only hooks (e2e helpers) are absent, as shipped.
+			'import.meta.env.DEV': 'false'
+		},
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'browser',

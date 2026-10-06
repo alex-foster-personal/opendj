@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { loadRuneModule } from './load-rune-module.mjs';
+import { installTimerProbe, loadRuneModule } from './load-rune-module.mjs';
 
 const ENTRY = [
 	"export { installTrackifyBrowserIpc } from '$lib/rb/trackify-ipc.svelte';",
@@ -18,9 +18,11 @@ const ENTRY = [
 
 // REQ: PLAY-18
 test('toggle_autoplay(false) needs byUser; without it AutoPlay stays on and one WARN names the IPC', async () => {
+	const probe = installTimerProbe();
 	const hadWindow = 'window' in globalThis;
-	globalThis.window ??= {};
 	const mod = await loadRuneModule(ENTRY);
+	// The IPC installs on window; set it after load so prefs read the probe's localStorage.
+	globalThis.window ??= {};
 	const uninstall = mod.installTrackifyBrowserIpc();
 	const realWarn = console.warn;
 	const warned = [];
@@ -39,5 +41,6 @@ test('toggle_autoplay(false) needs byUser; without it AutoPlay stays on and one 
 		console.warn = realWarn;
 		uninstall?.();
 		if (!hadWindow) delete globalThis.window;
+		probe.restore();
 	}
 });
