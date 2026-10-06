@@ -17,3 +17,4 @@ export * as instrumentation from '$lib/rb/audio-context-instrumentation';
 export * as stretch from '$lib/rb/stretch-adapter';
 // Bug #58: the engine tags a recovery-caused stop here so AutoPlay stays armed.
 export * as recoveryStop from '$lib/rb/engine-recovery-stop';
+export * as prefs from '$lib/rb/prefs.svelte';
