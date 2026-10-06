@@ -1,8 +1,6 @@
 """CAT-05: /health must not queue behind the shared sync threadpool.
 
-[if] every token of the shared default AnyIO threadpool is held by slow sync
-routes [then] GET /api/v1/health still answers within its own short budget,
-[else stop].
+[if] the shared default threadpool is saturated [then] /health still answers, [else stop].
 """
 from __future__ import annotations
 
