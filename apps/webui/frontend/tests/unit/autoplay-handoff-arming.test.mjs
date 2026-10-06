@@ -1,5 +1,5 @@
 /**
- * PLAY-19: AutoPlay switched off never loads or plays a track afterwards.
+ * PLAY-20: AutoPlay switched off never loads or plays a track afterwards.
  *
  * Tue 6 Oct 2026, build 16 on silver: AutoPlay was switched off by the agent
  * order `opendj autoplay false` at about 14:10:35Z and the mirror read
@@ -64,7 +64,7 @@ function fakeSteps({ occupied = null, disarmAfter = null } = {}) {
 	};
 }
 
-describe('[PLAY-19] runAutoPlayHandoff re-checks the arming between steps', () => {
+describe('[PLAY-20] runAutoPlayHandoff re-checks the arming between steps', () => {
 	it('armed throughout: unload, load, beat sync, play, in that order', async () => {
 		const fake = fakeSteps({ occupied: 'old-1' });
 		const outcome = await handoff.runAutoPlayHandoff('next-1', fake.steps);
@@ -209,7 +209,7 @@ async function withArmedSet(run) {
 	}
 }
 
-test('[PLAY-19] RUNNING it: off through the order bus, then the window is crossed: no handoff', async () => {
+test('[PLAY-20] RUNNING it: off through the order bus, then the window is crossed: no handoff', async () => {
 	await withArmedSet(async (mod, handoffTouched) => {
 		assert.equal(handoffTouched(), false, 'outside the window nothing is handed off yet');
 		const off = await mod.executeAgentOrder({
@@ -227,7 +227,7 @@ test('[PLAY-19] RUNNING it: off through the order bus, then the window is crosse
 	});
 });
 
-test('[PLAY-19] mutation control: left on, the same window crossing does hand off', async () => {
+test('[PLAY-20] mutation control: left on, the same window crossing does hand off', async () => {
 	await withArmedSet(async (mod, handoffTouched) => {
 		assert.equal(handoffTouched(), false);
 		mod.deckStates[1].position_ms = 290_000;
