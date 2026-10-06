@@ -230,3 +230,33 @@ test('every control type has a usable step, and the coarse/fine ordering holds',
 		'the pitch fader needs finer resolution than a dial'
 	);
 });
+
+// -------------------------------------------------------- MIXUX-13 nudge
+
+test('nudge receives the raw signed step, even when the control is pinned at an end', () => {
+	// A multi-selected dial pinned at 1 must still pass the step on, or the
+	// rest of its selection freezes (Sol P1 on #5701).
+	const node = new EventTarget();
+	const deltas = [];
+	const sets = [];
+	wheelAdjust(node, {
+		step: 0.028,
+		get: () => 1,
+		set: (next) => sets.push(next),
+		nudge: (delta) => deltas.push(delta)
+	});
+	const up = wheelEvent(-100);
+	node.dispatchEvent(up);
+	node.dispatchEvent(wheelEvent(100));
+	assert.equal(deltas.length, 2);
+	assert.ok(deltas[0] > 0, `wheel up at the top end reached nudge as ${deltas[0]}, not a positive step`);
+	assert.ok(deltas[1] < 0);
+	assert.equal(sets.length, 0, 'set() must not also run when nudge is given');
+	assert.ok(up.defaultPrevented, 'the page scrolled underneath a nudged control');
+});
+
+test('without nudge, set() still gets the clamped value as before', () => {
+	const c = control({ value: 1 });
+	c.turn(-100);
+	assert.deepEqual(c.sets, [1]);
+});

@@ -444,6 +444,13 @@ export interface WheelAdjustParams {
 	set: (value: number) => void;
 	/** Inert controls opt out and let the page scroll normally. */
 	disabled?: boolean;
+	/**
+	 * Optional: receives the signed, scaled step INSTEAD of set(). For a
+	 * control that moves others with it (a multi-selected dial, MIXUX-13), a
+	 * delta derived from the clamped value is 0 at either end, which would
+	 * freeze the rest of the group.
+	 */
+	nudge?: (delta: number) => void;
 }
 
 function _clamp01(value: number): number {
@@ -493,6 +500,10 @@ export function wheelAdjust(node: Element, params: WheelAdjustParams) {
 		event.preventDefault();
 		event.stopPropagation();
 		const step = scaledWheelStep(current.step, detectWheelInputKind(event));
+		if (current.nudge !== undefined) {
+			current.nudge(direction * step);
+			return;
+		}
 		const next = _clamp01(current.get() + direction * step);
 		current.set(next);
 	}

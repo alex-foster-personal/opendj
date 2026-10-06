@@ -703,3 +703,28 @@ test('knob ids are unique across the whole mixer', () => {
 
 	assert.equal(new Set(ids).size, ids.length, 'two mixer dials resolve to the same registry id');
 });
+
+test('a selected dial pinned at 1 still moves the rest of the selection on its own scroll', () => {
+	const a = addDial('1:low', 1);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.nudgeKnobOrSelection(a, 0.028);
+	assert.equal(valueOf(a), 1);
+	assert.ok(near(valueOf(b), 0.528), 'the pinned dial froze the rest of the selection');
+});
+
+test('the Knob hands the raw wheel step to the selection, not a delta from the clamped value', () => {
+	const source = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+	assert.match(source, /nudge: \(delta\) => nudgeKnobOrSelection\(knobId, delta\)/,
+		'if the wheel derives its delta from the clamped value then a dial at 0 or 1 freezes the selection');
+});
+
+test('control: with no selection, a dial own wheel step moves only that dial, clamped as before', () => {
+	const a = addDial('1:low', 1);
+	const b = addDial('2:low', 0.5);
+	knobs.nudgeKnobOrSelection(a, 0.028);
+	knobs.nudgeKnobOrSelection(b, -0.028);
+	assert.equal(valueOf(a), 1, 'a single dial at the top end left the 0..1 domain');
+	assert.ok(near(valueOf(b), 0.472), 'a single unselected dial no longer moves by exactly one step');
+});

@@ -259,8 +259,10 @@
 		step: KNOB_CFG.scrollStep,
 		get: () => value,
 		// Through the registry, so a linked partner moves with it, and a 2+
-		// selection moves together (MIXUX-13).
-		set: (next) => nudgeKnobOrSelection(knobId, next - value),
+		// selection moves together (MIXUX-13). The raw step, not a delta from
+		// the clamped value, so a dial pinned at 0 or 1 still moves the rest.
+		set: (next) => setKnobAbsolute(knobId, next),
+		nudge: (delta) => nudgeKnobOrSelection(knobId, delta),
 		disabled: !live
 	}}
 	title={inert
