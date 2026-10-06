@@ -42200,7 +42200,7 @@
     },
     "/api/v1/tracks/index": {
       "get": {
-        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\n``provenance`` and the per-row disk reads (preview strip, vocals, cover verdict:\nLIBM-172), which the browser asks ``POST /library/row-assets`` for, rows in view\nonly. The browser holds this once and resolves All Tracks from it, the way\nrekordbox, Serato and Traktor hold their library in memory. ``revision`` is the\nlibrary revision read BEFORE the rows, so a change made while they were read\nshows as a newer revision on the next ``GET /tracks/revision``. The ETag is a\nhash of the body: ``If-None-Match`` with it answers 304, gzip when accepted.",
+        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\nthe fields no library view reads off an index row and the per-row disk reads\n(preview strip, vocals, cover verdict, stems: LIBM-172), which the browser asks\n``POST /library/row-assets`` for, rows in view only. The browser holds this once\nand resolves All Tracks from it, the way rekordbox, Serato and Traktor hold their\nlibrary in memory. ``revision`` is the library revision read BEFORE the rows, so a\nchange made while they were read shows as a newer revision on the next\n``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it\nanswers 304, gzip when accepted.",
         "operationId": "get_track_index",
         "parameters": [
           {

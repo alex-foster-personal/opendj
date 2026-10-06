@@ -5861,13 +5861,14 @@ export interface paths {
          * @description Every library row in ONE response: the browser's local library index (LIBM-171).
          *
          *     The same rows, in the same order, as walking ``GET /tracks`` to the end, minus
-         *     ``provenance`` and the per-row disk reads (preview strip, vocals, cover verdict:
-         *     LIBM-172), which the browser asks ``POST /library/row-assets`` for, rows in view
-         *     only. The browser holds this once and resolves All Tracks from it, the way
-         *     rekordbox, Serato and Traktor hold their library in memory. ``revision`` is the
-         *     library revision read BEFORE the rows, so a change made while they were read
-         *     shows as a newer revision on the next ``GET /tracks/revision``. The ETag is a
-         *     hash of the body: ``If-None-Match`` with it answers 304, gzip when accepted.
+         *     the fields no library view reads off an index row and the per-row disk reads
+         *     (preview strip, vocals, cover verdict, stems: LIBM-172), which the browser asks
+         *     ``POST /library/row-assets`` for, rows in view only. The browser holds this once
+         *     and resolves All Tracks from it, the way rekordbox, Serato and Traktor hold their
+         *     library in memory. ``revision`` is the library revision read BEFORE the rows, so a
+         *     change made while they were read shows as a newer revision on the next
+         *     ``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it
+         *     answers 304, gzip when accepted.
          */
         get: operations["get_track_index"];
         put?: never;
