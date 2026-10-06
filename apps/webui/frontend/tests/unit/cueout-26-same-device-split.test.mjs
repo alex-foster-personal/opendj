@@ -20,20 +20,22 @@ let headphones;
 let collision;
 let sink;
 
+let SILVER_JACK;
+
 before(async () => {
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 	collision = await loadTypeScriptModule('src/lib/player/main-cue-collision.ts');
 	sink = await loadTypeScriptModule('src/lib/player/cue-native-sink.ts');
+	SILVER_JACK = silverJack();
 });
 
 const HP = 'native:BuiltInHeadphoneOutputDevice';
 const SPEAKERS = 'native:BuiltInSpeakerDevice';
 const LG = 'native:lg';
-const BLACKHOLE = 'native:blackhole';
 
 /** silver, Tue 6 Oct 2026 (build 10), as the Mac shell lists it: wired
  * headphones in the MacBook's own jack mute the speakers. */
-const SILVER_JACK = sink.nativeOutputsAsHeadphoneOutputs([
+const silverJack = () => sink.nativeOutputsAsHeadphoneOutputs([
 	{ uid: 'BuiltInSpeakerDevice', name: 'MacBook Pro Speakers', channels: 2, transport: 'builtin', is_default: false, muted_by_jack: true, physical_uid: 'BuiltInHeadphoneOutputDevice' },
 	{ uid: 'BuiltInHeadphoneOutputDevice', name: 'External Headphones', channels: 2, transport: 'builtin', is_default: true, muted_by_jack: false, physical_uid: 'BuiltInHeadphoneOutputDevice' },
 	{ uid: 'lg', name: 'LG ULTRAWIDE', channels: 2, transport: 'display', is_default: false, muted_by_jack: false, physical_uid: 'lg' },
