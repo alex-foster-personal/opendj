@@ -26,7 +26,9 @@ from typing import TypedDict
 #: v2 adds the ``cache_fingerprint``/``last_pending`` checkpoint columns an
 #: idle poll needs to skip a rescan safely (issue #1343 round-2 review).
 #: v3 rebuilds documents without Whisper hallucination lines (LYRICS-12).
-LYRICS_INDEX_SCHEMA = 3
+#: v4 re-runs that filter with multilingual boilerplate and the foreign-script
+#: repeat rule (LYRICS-13), so already-indexed hallucinations are dropped.
+LYRICS_INDEX_SCHEMA = 4
 
 INDEX_FILENAME = "lyrics-index.db"
 
