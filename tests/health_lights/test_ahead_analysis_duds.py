@@ -57,8 +57,10 @@ def _settle(drain: aa.AheadDrain, ticks: int = 12) -> None:
 
 
 def test_a_dud_is_decoded_once_and_never_closes_the_lane(tmp_path: Path) -> None:
-    """[if] two files fail TrackUnreadable [then] each lane decodes them once, lane open, [else stop]."""
+    """[if] the last two files fail TrackUnreadable [then] decoded once, lane open, [else stop]."""
     world = DudWorld(tmp_path)
+    for lane, _backend in aa.LANE_ORDER:  # build 16's shape: everything else is done
+        world.done[lane].update({"ok1", "ok2"})
     drain = world.drain()
     _settle(drain)
     first = world.dud_runs()
