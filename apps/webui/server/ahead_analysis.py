@@ -81,6 +81,8 @@ from typing import Any
 
 from apps.shared.process_priority import background_argv, lowered_priority
 from apps.webui.server import enrich_songs, enrich_sources
+from apps.webui.server.ahead_analysis_duds import FILENAME as DUDS_FILENAME
+from apps.webui.server.ahead_analysis_duds import DudLedger, is_dud
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
 from apps.webui.server.ahead_analysis_siblings import with_path_siblings
@@ -292,6 +294,8 @@ class AheadSources:
     #: present stable_id -> file path; with it a row whose file a sibling row already
     #: covers counts as done for that lane (#5578). None keeps per-row selection.
     paths_fn: Callable[[], Mapping[str, str]] | None = None
+    #: Where undecodable files are recorded (AHEAD-DUD-01); None keeps them in memory.
+    duds_path: Path | None = None
 
 
 class AheadDrain:
@@ -311,6 +315,7 @@ class AheadDrain:
         self._strip_failed: dict[str, str] = {}
         self._tags_failed: dict[str, str] = {}
         self._lane_failed: dict[str, dict[str, str]] = {lane: {} for lane, _b in LANE_ORDER}
+        self._duds = DudLedger(sources.duds_path)
         self._bumped: list[str] = []
         self._bump_lock = threading.Lock()
         self._tick_lock = threading.Lock()
@@ -426,7 +431,12 @@ class AheadDrain:
         # done_fn is one query per lane: read it ONCE, never once per track
         # (silver, Mon 5 Oct 2026: 2270 x 4 queries a tick took over 11 min).
         missing: dict[str, list[str]] = {}
+        paths = self._paths()
         for lane, backend in LANE_ORDER:
+            current, changed = self._duds.sync(lane, paths)
+            self._lane_failed[lane].update(current)
+            for sid in changed:
+                self._lane_failed[lane].pop(sid, None)
             if lane in self._status.unavailable:
                 continue
             done = self._lane_done(lane, backend)
@@ -487,6 +497,7 @@ class AheadDrain:
         errors = self._src.run_lane_fn(lane, backend, chunk)
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
+        chunk, errors = self._set_aside_duds(lane, chunk, errors)
         reason = _shared_reason(chunk, errors)
         if reason is not None and not _is_known_host_cause(reason):
             # One reason for the whole chunk is ambiguous: a host fault, or ONE
@@ -495,7 +506,7 @@ class AheadDrain:
             # closed for 3 days on one record's contract breach). Each track
             # alone decides it; only a reason every track reproduces alone
             # names the host.
-            errors = self._run_singly(lane, backend, chunk)
+            chunk, errors = self._set_aside_duds(lane, chunk, self._run_singly(lane, backend, chunk))
             reason = _shared_reason(chunk, errors)
         if reason is not None:
             if self._status.unavailable.get(lane) != reason:
@@ -503,6 +514,19 @@ class AheadDrain:
             self._status.unavailable[lane] = reason
             return
         self._lane_failed[lane].update(errors)
+
+    def _paths(self) -> Mapping[str, str]:
+        return {} if self._src.paths_fn is None else self._src.paths_fn()
+
+    def _set_aside_duds(
+        self, lane: str, chunk: list[str], errors: dict[str, str]
+    ) -> tuple[list[str], dict[str, str]]:
+        """Record undecodable files once (AHEAD-DUD-01); the rest decide the lane."""
+        duds = {sid: why for sid, why in errors.items() if is_dud(why) and not _is_known_host_cause(why)}
+        if duds:
+            self._duds.record(lane, duds, self._paths())
+            self._lane_failed[lane].update(duds)
+        return [sid for sid in chunk if sid not in duds], {k: v for k, v in errors.items() if k not in duds}
 
     def _run_singly(self, lane: str, backend: str, chunk: list[str]) -> dict[str, str]:
         errors: dict[str, str] = {}
@@ -519,6 +543,7 @@ class AheadDrain:
         self._tags_failed.clear()
         for failures in self._lane_failed.values():
             failures.clear()
+        self._duds.clear()
         if self._status.unavailable:
             log.warning("ahead analysis: re-arming unavailable lanes %s", sorted(self._status.unavailable))
         self._status.unavailable.clear()
@@ -789,6 +814,7 @@ def build_for_app(app: Any) -> AheadDrain:
                 ingest_routes.open_ro, [(sid, cache["paths"][sid]) for sid in ids if sid in cache["paths"]]
             ),
             paths_fn=lambda: dict(cache["paths"]),
+            duds_path=Path(db).parent / DUDS_FILENAME,
         ),
         startup_grace_s=STARTUP_GRACE_S,
     )
