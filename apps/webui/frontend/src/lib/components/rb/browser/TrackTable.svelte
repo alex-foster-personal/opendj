@@ -1581,9 +1581,6 @@
 						<th
 							class="h-icon h-autoplay"
 							style={`width:${colWidths.autoplay}px`}
-							title={autoPlayQueue.active
-								? `AutoPlay queue - ${autoPlayQueue.entries.length} planned handoff${autoPlayQueue.entries.length === 1 ? '' : 's'}`
-								: 'AutoPlay queue - starts when AutoPlay is enabled'}
 							data-autoplay-queue-active={autoPlayQueue.active}
 						>
 							<AutoPlayExplainer queue={autoPlayQueue.entries}>

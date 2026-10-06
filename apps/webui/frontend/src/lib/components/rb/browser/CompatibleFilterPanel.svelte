@@ -41,6 +41,11 @@
 	onmouseenter={onEnter}
 	onmouseleave={onLeave}
 >
+	<p class="compat-filter-about">
+		Show only tracks compatible with the reference deck (master, else playing, else any loaded with
+		key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window.
+		Shortcut: Tab
+	</p>
 	<p class="compat-filter-heading">Camelot steps</p>
 	<div class="compat-filter-row">
 		<button type="button" onclick={() => _setCamelot(0)}>same key</button>
@@ -82,6 +87,12 @@
 		background: var(--rb-panel-bg, #1a1a1a);
 		border: 1px solid var(--rb-border, #444);
 		border-radius: 6px;
+	}
+	.compat-filter-about {
+		margin: 0 0 0.35rem;
+		max-width: 22rem;
+		font-size: 0.7rem;
+		line-height: 1.3;
 	}
 	.compat-filter-heading {
 		margin: 0.25rem 0 0.15rem;

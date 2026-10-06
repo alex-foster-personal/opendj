@@ -75,12 +75,10 @@ const KNOWN_EXCEPTIONS = new Map([
 	['lib/components/rb/browser/LyricColumn.svelte#lyr-dash', 'e2e lyrics-words asserts the cell title'],
 	['lib/components/rb/browser/LyricColumn.svelte#lyr-glyph', 'e2e lyrics-words asserts the cell title'],
 	['lib/components/rb/browser/LyricColumn.svelte#lyr-pct', 'e2e lyrics-words asserts the cell title'],
-	['lib/components/rb/BrowserPanel.svelte#next-only', 'BrowserPanel owned by another worker'],
 	[
 		'lib/components/rb/browser/LibrarySourceTabs.svelte#icon-btn',
 		'CHROME-01 (ui-chrome-no-emoji) requires title= on the undo icon; its text is also in the history card'
 	],
-	['lib/components/rb/browser/TrackTable.svelte#h-icon', 'TrackTable owned by another worker'],
 	['lib/components/rb/browser/TrackTable.svelte#tr', 'TrackTable owned by another worker']
 ]);
 

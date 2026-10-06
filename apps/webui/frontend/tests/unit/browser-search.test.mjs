@@ -104,9 +104,15 @@ test('the compatible filter is always reachable in the header, never gated on se
 		'Search all playlists stays in the search-focused options row'
 	);
 	assert.match(source, /class="hide-broken"[\s\S]*?class="next-only"[\s\S]*?<span>compatible<\/span>/);
+	// One explainer per control (#5535): the description lives in the hover
+	// card, not in a title= on the label that would draw a second box.
+	assert.doesNotMatch(source, /class="next-only"\s+title=/);
+	const panel = await import('node:fs/promises').then(({ readFile }) =>
+		readFile(new URL('../../src/lib/components/rb/browser/CompatibleFilterPanel.svelte', import.meta.url), 'utf8')
+	);
 	assert.match(
-		source,
-		/title="Show only tracks compatible with the reference deck \(master, else playing, else any loaded with key and BPM\): Camelot key family/
+		panel.replace(/\s+/g, ' '),
+		/Show only tracks compatible with the reference deck \(master, else playing, else any loaded with key and BPM\): Camelot key family/
 	);
 });
 

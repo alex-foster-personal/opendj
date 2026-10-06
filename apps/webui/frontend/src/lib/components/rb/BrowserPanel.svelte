@@ -3511,10 +3511,7 @@
 					preference (prefs.svelte.ts validates that exact key). Only the
 					user-facing label changes, to the one the maintainer asked for.
 				-->
-				<label
-					class="next-only"
-					title="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window. Hover compatible for range buttons. Shortcut: Tab"
-				>
+				<label class="next-only">
 					<CompatibleFilterPopover>
 						<input
 							type="checkbox"
