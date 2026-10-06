@@ -30,7 +30,7 @@ const leadershipModule = await loadTypeScriptModule('src/lib/rb/tab-leadership.t
 const publisherModule = await loadTypeScriptModule('src/lib/rb/leased-mirror-publisher.ts');
 const orders = await loadTypeScriptModule('src/lib/rb/agent-orders.ts');
 const { createTabLeadership } = leadershipModule;
-const { createLeasedMirrorPublisher, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
+const { createLeasedMirrorPublisher, decideFollowerClaim, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
 const NEXT = '/api/v1/commands/next';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -191,7 +191,7 @@ let clockMs;
 
 /** The lease rules of apps/webui/server/routes/state.py, in memory. */
 function fakeEngine() {
-	const state = { lease: null, mirror: null, requests: [] };
+	const state = { lease: null, mirror: null, requests: [], rules: { audible: true } };
 	const live = () => (state.lease !== null && state.lease.expires > clockMs ? state.lease : null);
 	const json = (status, body) =>
 		new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -202,7 +202,13 @@ function fakeEngine() {
 		if (url === MIRROR_PATH && method === 'PUT') {
 			const id = headers['x-opendj-lease'];
 			const current = live();
-			if (current !== null && current.holder !== id && headers['x-opendj-lease-takeover'] !== '1') {
+			const claimant = JSON.parse(init.body);
+			const holderDoc = current !== null && state.mirror?.client_id === current.holder ? state.mirror : null;
+			const handover =
+				holderDoc !== null &&
+				((state.rules.audible && claimant.playing === true && holderDoc.playing !== true) ||
+					(holderDoc.visible === false && holderDoc.playing !== true && claimant.visible !== false));
+			if (current !== null && current.holder !== id && headers['x-opendj-lease-takeover'] !== '1' && !handover) {
 				return json(409, { accepted: false, reason: 'lease_held', held: true, holder: current.holder });
 			}
 			state.lease = { holder: id, expires: clockMs + TTL_MS };
@@ -219,7 +225,13 @@ function fakeEngine() {
 		}
 		if (url === LEASE_PATH) {
 			const current = live();
-			return json(200, { held: current !== null, holder: current?.holder ?? null });
+			const doc = current !== null && state.mirror?.client_id === current.holder ? state.mirror : null;
+			return json(200, {
+				held: current !== null,
+				holder: current?.holder ?? null,
+				holder_playing: doc === null ? null : doc.playing === true,
+				holder_yieldable: doc === null ? null : doc.visible === false && doc.playing !== true
+			});
 		}
 		if (url === NEXT) return json(200, null);
 		throw new Error(`unexpected request ${method} ${url}`);
@@ -239,7 +251,8 @@ afterEach(() => {
 });
 
 /** One /performance page, wired the way installUiMirror wires it: promotion publishes at once. */
-function page(locks, clientId) {
+function page(locks, clientId, initial = {}) {
+	const tabState = { playing: false, visible: true, ...initial };
 	const snapshots = [];
 	let mirror = null;
 	const leadership = createTabLeadership({
@@ -252,10 +265,12 @@ function page(locks, clientId) {
 	mirror = createLeasedMirrorPublisher({
 		leadership,
 		clientId,
-		build: () => ({ client_open: true, client_id: clientId }),
+		build: () => ({ client_open: true, client_id: clientId, playing: tabState.playing, visible: tabState.visible }),
+		isPlaying: () => tabState.playing,
+		isVisible: () => tabState.visible,
 		now: () => clockMs
 	});
-	return { leadership, snapshots, mirror, clientId, role: () => leadership.snapshot().role };
+	return { leadership, snapshots, mirror, clientId, tabState, role: () => leadership.snapshot().role };
 }
 
 const puts = (id) => engine.requests.filter((r) => r.method === 'PUT' && r.lease === id).length;
@@ -274,7 +289,7 @@ test('same browser: only the leader PUTs; closing it promotes the follower', asy
 	}
 	assert.equal(puts('tab-a'), 6, 'one PUT on promotion, then one per tick');
 	assert.equal(puts('tab-b'), 0, 'a follower is silent toward the engine');
-	assert.equal(engine.requests.filter((r) => r.url === LEASE_PATH).length, 0, 'and does not even read the lease');
+	assert.equal(b.role(), 'follower', 'an idle visible follower with no gesture never claims');
 	assert.equal(b.mirror.isRegistered(), false);
 	// Close A the way installUiMirror's teardown does.
 	await engine.fetch(MIRROR_PATH, { method: 'DELETE', headers: { 'x-opendj-client-id': 'tab-a' } });
@@ -369,4 +384,117 @@ test('a follower never polls the order bus; a registered leader does', async () 
 	assert.ok(engine.requests.filter((r) => r.url === NEXT).length > 0, 'control: the leader does poll');
 	a.leadership.dispose();
 	b.leadership.dispose();
+});
+
+// ------------------------------------------- the right tab leads (CORE) ---
+
+/** Advance the clock one second at a time, ticking every page like setInterval. */
+async function run(seconds, ...pages) {
+	for (let i = 0; i < seconds; i += 1) {
+		clockMs += 1000;
+		for (const p of pages) p.mirror.publish();
+		await flush();
+	}
+}
+
+test('decideFollowerClaim: the claim rules, each with its control', () => {
+	const base = { selfId: 'me', holdsLocalLock: false, visible: true, playing: false, gestureAgeMs: null };
+	const idleHolder = { held: true, holder: 'x', holder_playing: false, holder_yieldable: false };
+	const playingHolder = { held: true, holder: 'x', holder_playing: true, holder_yieldable: false };
+	const hiddenIdle = { held: true, holder: 'x', holder_playing: false, holder_yieldable: true };
+	const free = { held: false, holder: null };
+	const claim = (lease, extra = {}) => decideFollowerClaim({ ...base, lease, ...extra });
+	assert.deepEqual(claim(idleHolder), { claim: false }, 'idle, visible, no gesture: viewer');
+	assert.equal(claim(idleHolder, { playing: true }).why, 'audible');
+	assert.deepEqual(claim(playingHolder, { playing: true }), { claim: false }, 'both playing: holder keeps it');
+	assert.equal(claim(hiddenIdle).why, 'holder-hidden-idle');
+	assert.deepEqual(claim(hiddenIdle, { visible: false }), { claim: false }, 'a hidden claimant never displaces');
+	assert.deepEqual(claim(idleHolder, { gestureAgeMs: 500 }), { claim: true, takeover: true, why: 'gesture' });
+	assert.deepEqual(claim(idleHolder, { gestureAgeMs: 10_001 }), { claim: false }, 'an old gesture is not a claim');
+	assert.deepEqual(claim(playingHolder, { gestureAgeMs: 500 }), { claim: false }, 'a click never stops the set');
+	assert.deepEqual(claim(free), { claim: false }, 'a lockless sibling never races the lock holder at open');
+	assert.equal(claim(free, { holdsLocalLock: true }).why, 'free');
+	assert.deepEqual(claim({ held: true, holder: 'me' }), { claim: false }, 'our stale lease is not a reason to steal back');
+});
+
+test('two browsers: a playing follower takes over from an idle leader within one lease period', async () => {
+	const idle = page(fakeLocks(), 'idle-chrome');
+	await flush();
+	const playing = page(fakeLocks(), 'agent-pane');
+	await flush();
+	assert.equal(engine.lease.holder, 'idle-chrome', 'precondition: the idle tab got there first');
+	assert.equal(playing.role(), 'follower', 'precondition: refused while it was idle');
+	playing.tabState.playing = true;
+	const startedAt = clockMs;
+	let tookMs = null;
+	for (let i = 0; i < 10 && tookMs === null; i += 1) {
+		await run(1, idle, playing);
+		if (engine.lease.holder === 'agent-pane') tookMs = clockMs - startedAt;
+	}
+	assert.ok(tookMs !== null && tookMs <= TTL_MS, `took ${tookMs} ms`);
+	await run(2, idle, playing);
+	assert.equal(playing.role(), 'leader');
+	assert.equal(idle.role(), 'follower');
+	assert.equal(engine.mirror.client_id, 'agent-pane', 'the mirror now reports the playing tab');
+});
+
+test('mutation control: with the audible rule off in the engine, the idle tab keeps the lease', async () => {
+	engine.rules.audible = false;
+	const idle = page(fakeLocks(), 'idle-chrome');
+	await flush();
+	const playing = page(fakeLocks(), 'agent-pane', { playing: true });
+	await flush();
+	await run(12, idle, playing);
+	assert.equal(engine.lease.holder, 'idle-chrome');
+});
+
+test('same browser: a playing follower takes the lock from an idle leader', async () => {
+	const locks = fakeLocks();
+	const idle = page(locks, 'tab-a');
+	await flush();
+	const playing = page(locks, 'tab-b', { playing: true });
+	await flush();
+	await run(4, idle, playing);
+	assert.equal(playing.role(), 'leader');
+	assert.equal(idle.role(), 'follower');
+	assert.equal(engine.lease.holder, 'tab-b');
+});
+
+test('a hidden idle leader yields to a visible tab in another browser', async () => {
+	const hidden = page(fakeLocks(), 'backgrounded', { visible: false });
+	await flush();
+	const visible = page(fakeLocks(), 'front');
+	await flush();
+	await run(4, hidden, visible);
+	assert.equal(engine.lease.holder, 'front');
+	assert.equal(visible.role(), 'leader');
+});
+
+test('a gesture takes control from an idle holder, never from a playing one', async () => {
+	const holder = page(fakeLocks(), 'holder');
+	await flush();
+	const touched = page(fakeLocks(), 'touched');
+	await flush();
+	await run(3, holder, touched);
+	assert.equal(touched.role(), 'follower', 'precondition');
+	holder.tabState.playing = true;
+	touched.mirror.noteGesture();
+	await run(3, holder, touched);
+	assert.equal(engine.lease.holder, 'holder', 'the set keeps playing where it is');
+	holder.tabState.playing = false;
+	touched.mirror.noteGesture();
+	await run(3, holder, touched);
+	assert.equal(engine.lease.holder, 'touched');
+	assert.equal(engine.requests.filter((r) => r.takeover === '1').length, 1);
+});
+
+test('a hidden, silent follower makes no request at all', async () => {
+	const leader = page(fakeLocks(), 'leader');
+	await flush();
+	const quiet = page(fakeLocks(), 'quiet', { visible: false });
+	await flush();
+	const before = engine.requests.length;
+	await run(6, quiet);
+	assert.equal(engine.requests.length - before, 0);
+	assert.ok(leader);
 });

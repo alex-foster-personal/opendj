@@ -322,11 +322,11 @@ test('the default post hits POST /api/v1/tracks/{id}/plays with the wire body', 
 	});
 });
 
-test('/performance installs the play counter and tears it down', () => {
+test('/performance installs the play counter (leader tab only, AGENT-18) and tears it down', () => {
 	const page = readFileSync(
 		fileURLToPath(new URL('../../src/routes/performance/+page.svelte', import.meta.url)),
 		'utf8'
 	);
-	assert.match(page, /const uninstallPlayCounter = installPlayCounter\(\);/);
-	assert.match(page, /uninstallPlayCounter\(\);/);
+	assert.match(page, /installLeaderOnlyEventWriters\(\{[\s\S]*?installPlayCounter: \(\) => installPlayCounter\(\)/);
+	assert.match(page, /uninstallLeaderEventWriters\(\);/);
 });
