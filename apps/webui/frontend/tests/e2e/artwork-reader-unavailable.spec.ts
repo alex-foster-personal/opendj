@@ -400,6 +400,12 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route(/\/api\/v1\/tracks(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: { items: [TRACK], next_cursor: null } })
 	);
+	// LIBM-171 (#5549): All Tracks is now resolved from the library index, one
+	// GET /tracks/index after the boot first page. Same single row, so the pane
+	// still renders TRACK with artwork_available null and nothing may ask for art.
+	await page.route('**/api/v1/tracks/index', (route) =>
+		route.fulfill({ json: { revision: 'e2e-artwork-reader-unavailable', items: [TRACK] } })
+	);
 	// Wave rows gate per-track lyrics reads on this index (#1869, LYRICS-06).
 	await page.route('**/api/v1/tracks/lyrics-cached-ids', (route) =>
 		route.fulfill({ json: { stable_ids: [] } })
