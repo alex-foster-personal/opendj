@@ -86,7 +86,6 @@ from .routes import cloudsync_ops as cloudsync_ops_routes
 from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
-from .sets_master_tap import OrderBusMasterTap
 from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
@@ -161,6 +160,7 @@ from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
+from .sets_master_tap import OrderBusMasterTap
 from .share_gate import ShareConfig, share_gate_middleware
 from .stem_cache_enforcer import StemCacheEnforcer
 from .usage_telemetry import UsageStore

@@ -27451,6 +27451,7 @@
     },
     "/api/sets/recorder/start": {
       "post": {
+        "description": "Start REC. A ``master`` start pushes the attach to the open page and\nanswers only once its tap is connected, so the WAV begins within one\norder round trip of this request (SET-12); with no page to ask, nothing\nstarts and the answer is 503 with the reason.",
         "operationId": "api_recorder_start_api_sets_recorder_start_post",
         "requestBody": {
           "content": {
@@ -27492,7 +27493,7 @@
     },
     "/api/sets/recorder/{session_id}/master-pcm": {
       "post": {
-        "description": "One chunk of the page's master mix for a ``source: master`` recording (SET-12).\n\nThe body is interleaved little-endian int16 stereo frames. 409 when no\nowned master recording has this id, or the chunk would leave a hole\n(a lost or out-of-order chunk); the page stops its tap and says so.",
+        "description": "One chunk of the page's master mix for a ``source: master`` recording (SET-12).\n\nThe body is interleaved little-endian int16 stereo frames. 204 written;\n200 ``{\"dropped\": \"recording_stopped\"}`` when its recording was cleanly\nstopped while the chunk was in flight (the page ends quietly); 409 when no\nowned master recording has this id, or the chunk would leave a hole\n(a lost or out-of-order chunk); the page stops its tap and says so.",
         "operationId": "api_recorder_master_pcm_api_sets_recorder__session_id__master_pcm_post",
         "parameters": [
           {
@@ -27549,6 +27550,9 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "dropped: the recording was cleanly stopped while this chunk was in flight"
+          },
           "204": {
             "description": "Successful Response"
           },

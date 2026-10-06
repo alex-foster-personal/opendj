@@ -139,7 +139,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Api Recorder Start */
+        /**
+         * Api Recorder Start
+         * @description Start REC. A ``master`` start pushes the attach to the open page and
+         *     answers only once its tap is connected, so the WAV begins within one
+         *     order round trip of this request (SET-12); with no page to ask, nothing
+         *     starts and the answer is 503 with the reason.
+         */
         post: operations["api_recorder_start_api_sets_recorder_start_post"];
         delete?: never;
         options?: never;
@@ -160,7 +166,9 @@ export interface paths {
          * Api Recorder Master Pcm
          * @description One chunk of the page's master mix for a ``source: master`` recording (SET-12).
          *
-         *     The body is interleaved little-endian int16 stereo frames. 409 when no
+         *     The body is interleaved little-endian int16 stereo frames. 204 written;
+         *     200 ``{"dropped": "recording_stopped"}`` when its recording was cleanly
+         *     stopped while the chunk was in flight (the page ends quietly); 409 when no
          *     owned master recording has this id, or the chunk would leave a hole
          *     (a lost or out-of-order chunk); the page stops its tap and says so.
          */
@@ -17432,6 +17440,13 @@ export interface operations {
             };
         };
         responses: {
+            /** @description dropped: the recording was cleanly stopped while this chunk was in flight */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Successful Response */
             204: {
                 headers: {
