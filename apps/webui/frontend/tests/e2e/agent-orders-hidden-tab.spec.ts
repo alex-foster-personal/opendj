@@ -171,6 +171,16 @@ function close(leader: HiddenLeader | null): void {
 	rmSync(leader.profile, { recursive: true, force: true });
 }
 
+/** Latency of one order the page completed, or null when it did not answer in `timeoutMs`. */
+async function timedOrderOrTimeout(request: APIRequestContext, timeoutMs: number): Promise<number | null> {
+	try {
+		return await timedOrder(request, timeoutMs);
+	} catch (error) {
+		if (error instanceof Error && error.name === 'TimeoutError') return null;
+		throw error;
+	}
+}
+
 async function timedOrder(request: APIRequestContext, timeoutMs: number): Promise<number> {
 	const started = Date.now();
 	const response = await request.post('/api/v1/commands', { data: ORDER, timeout: timeoutMs });
@@ -218,13 +228,18 @@ test('mutation control: without the long poll the hidden leader misses the bound
 		});
 		await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/v1/commands/next*' }] });
 		await hide(leader);
-		const latencies: number[] = [];
+		// An order still unanswered at the timeout has missed the bound too; the
+		// pre-AGENT-19 loop waits up to a minute per throttled hop. A post can land
+		// just before an aligned wake-up (about 2 s in 60), so up to three are tried.
+		const latencies: Array<number | null> = [];
 		for (let i = 0; i < 3; i += 1) {
-			latencies.push(await timedOrder(request, 90_000));
-			if (latencies[i] >= BOUND_MS) break;
+			const latency = await timedOrderOrTimeout(request, 20_000);
+			latencies.push(latency);
+			if (latency === null || latency >= BOUND_MS) break;
 		}
-		console.log(`AGENT-19 mutation-control latency ms: ${JSON.stringify(latencies)}`);
-		expect(Math.max(...latencies), `latencies ${JSON.stringify(latencies)}`).toBeGreaterThanOrEqual(BOUND_MS);
+		console.log(`AGENT-19 mutation-control latency ms (null = no answer in 20 s): ${JSON.stringify(latencies)}`);
+		const last = latencies[latencies.length - 1];
+		expect(last === null || last >= BOUND_MS, `latencies ${JSON.stringify(latencies)}`).toBe(true);
 	} finally {
 		close(leader);
 	}
