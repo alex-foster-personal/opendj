@@ -6,9 +6,9 @@
 	 * wheel nudges. Inert knobs render identically but
 	 * ignore input and carry the standard tooltip.
 	 *
-	 * All input routes through $lib/rb/knob-control (H5): shift+click selects
-	 * a dial so the global scroll wheel keeps nudging it wherever the pointer
-	 * goes, alt+click links two dials so one turn moves them inversely with the
+	 * All input routes through $lib/rb/knob-control (H5, MIXUX-13): shift+click
+	 * toggles a dial in an ordered selection set that the global scroll wheel,
+	 * arrow keys and a two-axis drag move together, alt+click links two dials so one turn moves them inversely with the
 	 * rising side over-boosted by KNOB_CFG.linkStagger - which is what stops the
 	 * bass dipping through a crossover. Sensitivity lives in KNOB_CFG, not here,
 	 * so horizontal drag stays the fine-adjust axis.
@@ -19,17 +19,22 @@
 	import {
 		KNOB_CFG,
 		altClickKnob,
+		applySelectionDrag,
+		beginSelectionDrag,
 		isKnobLinked,
 		isKnobSelected,
 		linkedPartnerId,
+		nudgeKnobOrSelection,
 		pointerTravelIsDrag,
 		readKnobValue,
 		registerKnob,
 		setKnobAbsolute,
+		singleDragDelta,
 		setKnobFromDrag,
 		setKnobHovered,
 		shiftClickKnob,
-		unregisterKnob
+		unregisterKnob,
+		type SelectionDragStart
 	} from '$lib/rb/knob-control.svelte';
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
@@ -102,6 +107,8 @@
 	let dragPartnerId: string | null = null;
 	let dragStartPartnerValue: number | null = null;
 	let dragging = false;
+	/** Non-null while a drag on a selected dial moves the whole 2+ selection. */
+	let selectionDrag: SelectionDragStart | null = null;
 	let pointerMoved = false;
 	const singleClickGuard = createDeferredClickGuard();
 
@@ -162,6 +169,7 @@
 		dragStartValue = value;
 		// Baselines are captured ONCE so the link stagger cannot accumulate
 		// across pointermove frames.
+		selectionDrag = beginSelectionDrag(knobId);
 		dragPartnerId = linkedPartnerId(knobId);
 		dragStartPartnerValue = dragPartnerId === null ? null : readKnobValue(dragPartnerId);
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -177,9 +185,15 @@
 			pointerMoved = true;
 		}
 		const dy = dragStartY - e.clientY; // up = clockwise = increase
-		const dx = e.clientX - dragStartX; // right = increase, far less sensitive
-		const target =
-			dragStartValue + dy / KNOB_CFG.dragVerticalPx + dx / KNOB_CFG.dragHorizontalPx;
+		const dx = e.clientX - dragStartX; // right = increase
+		if (selectionDrag !== null) {
+			// MIXUX-13 two-axis drag: vertical moves the first-selected dial's
+			// deck, horizontal moves the other selected dials.
+			applySelectionDrag(selectionDrag, dx, dy);
+			return;
+		}
+		// One dial: horizontal is the fine-adjust axis.
+		const target = dragStartValue + singleDragDelta(dx, dy);
 		setKnobFromDrag(knobId, dragStartValue, target, dragPartnerId, dragStartPartnerValue);
 	}
 
@@ -187,6 +201,7 @@
 		if (!dragging) return;
 		const wasDrag = pointerMoved;
 		dragging = false;
+		selectionDrag = null;
 		dragPartnerId = null;
 		dragStartPartnerValue = null;
 		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -204,10 +219,10 @@
 		if (!live) return;
 		if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
 			e.preventDefault();
-			setKnobAbsolute(knobId, value + KNOB_CFG.keyStep);
+			nudgeKnobOrSelection(knobId, KNOB_CFG.keyStep);
 		} else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
 			e.preventDefault();
-			setKnobAbsolute(knobId, value - KNOB_CFG.keyStep);
+			nudgeKnobOrSelection(knobId, -KNOB_CFG.keyStep);
 		}
 	}
 </script>
@@ -243,13 +258,14 @@
 	use:wheelAdjust={{
 		step: KNOB_CFG.scrollStep,
 		get: () => value,
-		// Through the registry, so a linked partner moves with it.
-		set: (next) => setKnobAbsolute(knobId, next),
+		// Through the registry, so a linked partner moves with it, and a 2+
+		// selection moves together (MIXUX-13).
+		set: (next) => nudgeKnobOrSelection(knobId, next - value),
 		disabled: !live
 	}}
 	title={inert
 		? `${label}: ${plannedTitle('mixer-knob')}`
-		: `${label}${selected ? ' - selected: the scroll wheel nudges this dial from anywhere' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
+		: `${label}${selected ? ' - selected: the scroll wheel nudges every selected dial from anywhere; Esc clears' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
 >
 	<svg
 		width={size}

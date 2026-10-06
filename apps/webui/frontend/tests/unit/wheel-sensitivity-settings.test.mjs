@@ -380,7 +380,7 @@ describe('a configured factor reaches both wheel seams', () => {
 				dial = next;
 			}
 		});
-		knobs.knobUi.selectedId = '1:low';
+		knobs.knobUi.selectedIds = ['1:low'];
 
 		const handler = globalThis.__listeners.get('wheel');
 		assert.equal(typeof handler, 'function', 'knob-control never bound its page-level wheel');

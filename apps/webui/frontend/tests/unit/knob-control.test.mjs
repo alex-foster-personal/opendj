@@ -76,7 +76,7 @@ before(async () => {
 
 beforeEach(() => {
 	knobs.clearKnobLink();
-	knobs.knobUi.selectedId = null;
+	knobs.knobUi.selectedIds = [];
 	knobs.knobUi.hoveredId = null;
 	// _registry is module-level state, not reset by the clears above - without
 	// this, a dial id reused across test cases (every case below reuses
@@ -231,12 +231,13 @@ test('an absolute set derives its delta, so the partner tracks it', () => {
 	assert.ok(valueOf(b) < 0.5, 'setKnobAbsolute bypassed the link - the partner never moved');
 });
 
-test('unregistering half a pair clears the link rather than leaving a dangling partner', () => {
+test('unregistering half a pair clears the link rather than leaving a dangling partner', async () => {
 	const a = addDial('1:low', 0.5);
 	const b = addDial('2:low', 0.5);
 	knobs.altClickKnob(a);
 	knobs.altClickKnob(b);
 	knobs.unregisterKnob(b);
+	await Promise.resolve();
 
 	assert.equal(knobs.linkedPartnerId(a), null, 'a is still linked to a dial that no longer exists');
 	knobs.nudgeKnob(a, 0.1);
@@ -374,9 +375,227 @@ test('shift-clicking the selected dial deselects it', () => {
 	const a = addDial('1:low', 0.5);
 	knobs.shiftClickKnob(a);
 	knobs.shiftClickKnob(a);
-	assert.equal(knobs.knobUi.selectedId, null);
+	assert.deepEqual(knobs.knobUi.selectedIds, []);
 	wheelHandler(wheelEvent(-100));
 	assert.equal(valueOf(a), 0.5, 'a deselected dial still answers the global wheel');
+});
+
+// ============================================ MIXUX-13: multi-select + two-axis drag
+//
+//   the maintainer, Tue 6 Oct 2026: "we had a feature where we could select multiple
+//   knobs with shift held. on any click&drag then or scroll etc (as per usual
+//   knob adjustments) it then adjusts both / all knobs up and down together
+//   [...] up and right is both / all knobs up, up and left is one up, one down
+//   [...] The white line showing a selected knob is great."
+//
+// Regression lines:
+// - if shift+click stays a single selection then "all knobs together" is gone
+// - if the selection loses its ORDER then the two-axis drag drives the wrong deck
+// - if common mode does not clamp each dial then one pinned dial drags the rest
+//   out of range or stops them
+// - if horizontal drag drives the first-selected deck too then up+left cannot
+//   split the decks
+// - if one selected dial loses horizontal fine adjust then the existing single
+//   knob feel regresses
+// - if Esc or an empty click does not clear then a stale selection keeps
+//   eating the global wheel
+
+/** A DOM-ish target whose closest() answers from a fixed set of matching selectors. */
+function fakeTarget(matches) {
+	return { closest: (sel) => (matches.some((m) => sel.split(',').map((x) => x.trim()).includes(m)) ? {} : null) };
+}
+
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+test('toggleKnobSelection keeps selection order and toggles membership', () => {
+	let sel = [];
+	sel = knobs.toggleKnobSelection(sel, '1:low');
+	sel = knobs.toggleKnobSelection(sel, '2:low');
+	sel = knobs.toggleKnobSelection(sel, '1:high');
+	assert.deepEqual(sel, ['1:low', '2:low', '1:high']);
+	sel = knobs.toggleKnobSelection(sel, '2:low');
+	assert.deepEqual(sel, ['1:low', '1:high'], 'removing the middle dial reordered the rest');
+});
+
+test('shift+click builds an ordered N-dial set, every member reads as selected', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	const c = addDial('1:high', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.shiftClickKnob(c);
+	assert.deepEqual([...knobs.selectedKnobIds()], [a, b, c]);
+	for (const id of [a, b, c]) assert.ok(knobs.isKnobSelected(id), `${id} lost its selected ring`);
+	knobs.shiftClickKnob(b);
+	assert.ok(!knobs.isKnobSelected(b), 'shift+click on a selected dial must take it out of the set');
+	assert.deepEqual([...knobs.selectedKnobIds()], [a, c]);
+});
+
+test('common mode moves every dial by the same delta, each clamped to 0..1', () => {
+	const out = knobs.commonModeTargets({ '1:low': 0.5, '2:low': 0.95, '3:low': 0.02 }, 0.1);
+	assert.ok(near(out['1:low'], 0.6));
+	assert.equal(out['2:low'], 1, 'a dial past the top must pin at 1');
+	assert.ok(near(out['3:low'], 0.12), 'a dial near the bottom must still move by the full delta');
+	const down = knobs.commonModeTargets({ '1:low': 0.05, '2:low': 0.5 }, -0.1);
+	assert.equal(down['1:low'], 0, 'a dial past the bottom must pin at 0');
+	assert.ok(near(down['2:low'], 0.4), 'one pinned dial stopped the others moving');
+});
+
+test('the global wheel moves every selected dial together, and nothing else', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.3);
+	addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	wheelHandler(wheelEvent(-100, new FakeHTMLElement('DIV')));
+	const step = knobs.KNOB_CFG.scrollStep;
+	assert.ok(near(valueOf(a), 0.5 + step), 'the first selected dial did not move');
+	assert.ok(near(valueOf(b), 0.3 + step), 'the second selected dial did not move with the first');
+	assert.equal(valueOf('3:low'), 0.5, 'an unselected dial moved');
+});
+
+test('scroll or arrow on a selected dial moves the whole selection; on an unselected dial only it', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	const c = addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.nudgeKnobOrSelection(b, -0.1);
+	assert.ok(near(valueOf(a), 0.4) && near(valueOf(b), 0.4), 'the selection did not move in common mode');
+	knobs.nudgeKnobOrSelection(c, 0.1);
+	assert.ok(near(valueOf(c), 0.6));
+	assert.ok(near(valueOf(a), 0.4), 'turning an unselected dial dragged the selection along');
+});
+
+test('two-axis drag: up+right is all up, up+left is the first up and the others down', () => {
+	const sel = ['1:low', '2:low'];
+	const base = { '1:low': 0.5, '2:low': 0.5 };
+	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
+	const upRight = knobs.twoAxisDragTargets(sel, base, px, px);
+	assert.ok(near(upRight['1:low'], 0.6) && near(upRight['2:low'], 0.6), `up+right ${JSON.stringify(upRight)}`);
+	const upLeft = knobs.twoAxisDragTargets(sel, base, -px, px);
+	assert.ok(near(upLeft['1:low'], 0.6), 'up+left must still raise the first-selected deck');
+	assert.ok(near(upLeft['2:low'], 0.4), 'up+left must lower the other deck');
+	const upOnly = knobs.twoAxisDragTargets(sel, base, 0, px);
+	assert.ok(near(upOnly['2:low'], 0.5), 'pure vertical moved the second deck - the axes are not independent');
+	const rightOnly = knobs.twoAxisDragTargets(sel, base, px, 0);
+	assert.ok(near(rightOnly['1:low'], 0.5), 'pure horizontal moved the first-selected deck');
+	assert.ok(near(rightOnly['2:low'], 0.6), 'right must be up for the other deck');
+});
+
+test('two-axis drag: vertical drives every selected dial on the first-selected deck', () => {
+	const sel = ['1:low', '2:low', '1:high'];
+	const base = { '1:low': 0.5, '2:low': 0.5, '1:high': 0.2 };
+	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
+	const out = knobs.twoAxisDragTargets(sel, base, 0, px);
+	assert.ok(near(out['1:high'], 0.3), 'a second dial on the lead deck did not follow the vertical axis');
+	assert.ok(near(out['2:low'], 0.5));
+	// Order decides the lead deck, not the id.
+	const flipped = knobs.twoAxisDragTargets(['2:low', '1:low'], base, 0, px);
+	assert.ok(near(flipped['2:low'], 0.6) && near(flipped['1:low'], 0.5), 'the lead deck is not the first-selected one');
+});
+
+test('two-axis drag clamps, and one selected dial keeps horizontal fine adjust', () => {
+	const big = knobs.KNOB_CFG.dragVerticalPx * 2;
+	const out = knobs.twoAxisDragTargets(['1:low', '2:low'], { '1:low': 0.9, '2:low': 0.1 }, -big, big);
+	assert.equal(out['1:low'], 1);
+	assert.equal(out['2:low'], 0);
+	assert.equal(knobs.twoAxisDragTargets(['1:low'], { '1:low': 0.5 }, 50, 0), null,
+		'a single selected dial must not enter two-axis mode');
+	const fine = knobs.singleDragDelta(100, 0);
+	const coarse = knobs.singleDragDelta(0, 100);
+	assert.ok(fine > 0 && fine * 3 <= coarse, `horizontal ${fine} is not fine adjust next to vertical ${coarse}`);
+});
+
+test('a selection drag starts only on a selected dial of a 2+ set and never accumulates', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	const c = addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	assert.equal(knobs.beginSelectionDrag(a), null, 'one selected dial must keep the single-dial drag');
+	knobs.shiftClickKnob(b);
+	assert.equal(knobs.beginSelectionDrag(c), null, 'dragging an unselected dial must not move the selection');
+	const start = knobs.beginSelectionDrag(b);
+	assert.ok(start !== null);
+	const px = knobs.KNOB_CFG.dragVerticalPx;
+	for (const f of [0.02, 0.05, 0.08, 0.1]) knobs.applySelectionDrag(start, f * px, f * px);
+	assert.ok(near(valueOf(a), 0.6) && near(valueOf(b), 0.6), `slow drag ended at ${valueOf(a)}, ${valueOf(b)}`);
+	assert.equal(valueOf(c), 0.5);
+});
+
+test('Esc clears the selection', () => {
+	const a = addDial('1:low', 0.5);
+	knobs.shiftClickKnob(a);
+	globalThis.__listeners.get('keydown')({ key: 'Enter' });
+	assert.ok(knobs.isKnobSelected(a), 'a non-Esc key cleared the selection');
+	globalThis.__listeners.get('keydown')({ key: 'Escape' });
+	assert.deepEqual([...knobs.selectedKnobIds()], []);
+	const event = wheelEvent(-100);
+	wheelHandler(event);
+	assert.ok(!event.wasPrevented(), 'a cleared selection still eats the page wheel');
+});
+
+test('a click on empty space clears; a click on a knob or a control does not', () => {
+	const a = addDial('1:low', 0.5);
+	knobs.shiftClickKnob(a);
+	const down = globalThis.__listeners.get('pointerdown');
+	down({ button: 0, target: fakeTarget(['[data-knob-id]']) });
+	assert.ok(knobs.isKnobSelected(a), 'clicking a knob cleared the selection');
+	down({ button: 0, target: fakeTarget(['button']) });
+	assert.ok(knobs.isKnobSelected(a), 'clicking a button is not a click on empty space');
+	down({ button: 2, target: fakeTarget([]) });
+	assert.ok(knobs.isKnobSelected(a), 'a right click cleared the selection');
+	down({ button: 0, target: fakeTarget([]) });
+	assert.ok(!knobs.isKnobSelected(a), 'a click on empty space left the selection');
+	assert.equal(knobs.isEmptySpaceTarget(null), false);
+});
+
+test('unmounting a selected dial drops it from the set', async () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.unregisterKnob(a);
+	await Promise.resolve();
+	assert.deepEqual([...knobs.selectedKnobIds()], [b]);
+});
+
+test('a dial re-registering its own id (value-change re-run) keeps its selection and link', async () => {
+	// Found live: Knob.svelte's register effect re-runs while a dial turns, a
+	// synchronous unregister+register of the same id. Clearing on that
+	// unregister wiped the selection on the first frame of every drag.
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	const c = addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.altClickKnob(b);
+	knobs.altClickKnob(c);
+	knobs.unregisterKnob(b);
+	addDial(b, 0.5);
+	await Promise.resolve();
+	assert.deepEqual([...knobs.selectedKnobIds()], [a, b], 'a re-render dropped the dial from the selection');
+	assert.equal(knobs.linkedPartnerId(b), c, 'a re-render dropped the Alt link');
+});
+
+test('agent parity: window.__mdtKnobSelection drives the same selection and moves', () => {
+	const bridge = globalThis.window.__mdtKnobSelection;
+	assert.ok(bridge, 'the agent bridge is not installed');
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	bridge.set([a, b]);
+	assert.deepEqual(bridge.get(), [a, b]);
+	assert.ok(knobs.isKnobSelected(b), 'the bridge and the UI hold two selections');
+	bridge.nudge(0.1);
+	assert.ok(near(bridge.value(a), 0.6) && near(bridge.value(b), 0.6), 'bridge nudge is not common mode');
+	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
+	bridge.drag(-px, px);
+	assert.ok(near(valueOf(a), 0.7) && near(valueOf(b), 0.5), `bridge up+left drag gave ${valueOf(a)}, ${valueOf(b)}`);
+	assert.throws(() => bridge.set(['9:nope']), /no mounted knob/);
+	assert.deepEqual(bridge.get(), [a, b], 'a refused set changed the selection');
+	assert.throws(() => bridge.nudge(Number.NaN), RangeError);
+	bridge.clear();
+	assert.deepEqual(bridge.get(), []);
 });
 
 // ============================================ sensitivity
@@ -403,6 +622,9 @@ test('the Knob component routes its input through knob-control', () => {
 	for (const [fn, why] of [
 		['registerKnob', 'the dial is not in the registry, so the global wheel cannot find it'],
 		['shiftClickKnob', 'shift+click no longer selects a dial'],
+		['beginSelectionDrag', 'a drag on a selected dial no longer moves the whole selection'],
+		['applySelectionDrag', 'the two-axis drag is not wired'],
+		['nudgeKnobOrSelection', 'scroll or arrow keys on a selected dial move only that dial'],
 		['altClickKnob', 'alt+click no longer links a pair'],
 		['setKnobFromDrag', 'a drag bypasses the link maths, so the partner never moves'],
 		['setKnobAbsolute', 'the wheel or keyboard bypasses the link maths'],
@@ -411,7 +633,7 @@ test('the Knob component routes its input through knob-control', () => {
 		assert.ok(source.includes(`${fn}(`), `Knob.svelte does not call ${fn}: ${why}`);
 	}
 	assert.ok(
-		source.includes('KNOB_CFG.dragVerticalPx') && source.includes('KNOB_CFG.dragHorizontalPx'),
+		source.includes('singleDragDelta('),
 		'Knob.svelte kept a local drag range instead of the central sensitivity config'
 	);
 	assert.ok(
