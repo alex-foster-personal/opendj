@@ -115,6 +115,7 @@ import {
 	type DeckId
 } from '$lib/rb/deck-slots';
 import {
+	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
 	setWaveformDesign,
@@ -317,6 +318,8 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'show_stems'; enabled: boolean }
+	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. */
+	| { type: 'autoplay'; enabled: boolean }
 	| { type: 'feedback_mark'; vote: 'bad' | 'good' | 'great' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
@@ -513,6 +516,8 @@ export interface PerformanceState {
 	};
 	ui: {
 		show_stems: boolean;
+		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
+		auto_play_enabled: boolean;
 		/** Stored pref; 'auto' follows the skin. */
 		waveform_design: WaveformDesignPref;
 		/** What the waveforms actually paint (auto resolved through the skin). */
@@ -1360,6 +1365,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
+	if (type === 'autoplay') {
+		_exactKeys(record, ['type', 'enabled']);
+		return { type, enabled: _boolean('enabled', record.enabled) };
+	}
 	if (type === 'set_skin') {
 		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
 		return { type, ...parseSkinSettings(record) };
@@ -2004,6 +2013,7 @@ export function queryPerformanceState(): PerformanceState {
 		feedback_marks: performanceFeedbackSummary(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
+			auto_play_enabled: uiPrefs.auto_play_enabled,
 			waveform_design: uiPrefs.waveform_design,
 			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
@@ -2106,6 +2116,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
+		command.type === 'autoplay' ||
 		command.type === 'set_waveform_design' ||
 		command.type === 'set_skin' ||
 		// View state only: no engine write to serialize, so queueing these
@@ -2433,6 +2444,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
+	} else if (command.type === 'autoplay') {
+		setAutoPlayEnabled(command.enabled);
 	} else if (command.type === 'set_waveform_design') {
 		setWaveformDesign(command.design);
 	} else if (command.type === 'set_skin') {
