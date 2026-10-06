@@ -106,7 +106,8 @@
 		CompatibleFilterPopover,
 		libraryEditShortcut,
 		loadTrackClipboard,
-		loadBrowserConfirmDialog
+		loadBrowserConfirmDialog,
+		untilSelectionLands
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -944,7 +945,7 @@
 			})
 		});
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
-			selectPlaylist: _selectPlaylistFromCommand,
+			selectPlaylist: _selectPlaylistForOrder,
 			readSnapshot: () => {
 				const p = panes[activePane];
 				const trimmedSearch = p.search.trim();
@@ -1485,7 +1486,23 @@
 		if (node === null) throw new Error(`browser_select_playlist: unknown playlist ${playlistId}`);
 		if (panes[activePane].playlist_id === node.playlist_id) return;
 		_pushNav();
-		await _loadPane(panes[activePane], node);
+		const pane = panes[activePane];
+		// Answer when the selection lands (first rows or its error), not when a
+		// whole-library fill finishes: agents timed out on a visible switch.
+		await untilSelectionLands(_loadPane(pane, node), (landed) =>
+			$effect.root(() => {
+				$effect(() => {
+					if (!pane.loading) landed();
+				});
+			})
+		);
+	}
+
+	/** The order path: a pane that landed on its error fails the order. */
+	async function _selectPlaylistForOrder(playlistId: string): Promise<void> {
+		await _selectPlaylistFromCommand(playlistId);
+		const error = panes[activePane].error;
+		if (error !== null) throw new Error(`browser_select_playlist: ${error}`);
 	}
 
 	function _openPlaylistInNewTab(node: PlaylistNode): void {

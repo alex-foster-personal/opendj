@@ -105,3 +105,5 @@ export {
 	invalidatePlaylistFirstPage,
 	invalidateAllPlaylistFirstPages
 } from '$lib/rb/library-playlist-page-prefetch';
+// The order answers when a playlist selection lands, not when its fill ends.
+export { untilSelectionLands } from './selection-lands';
