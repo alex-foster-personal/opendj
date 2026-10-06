@@ -65,7 +65,16 @@
 		if (stopping || tapSession === id || !status.owned || status.capture_source !== 'master' || id === null) return;
 		tapSession = id;
 		import('$lib/sets/master-mix-capture')
-			.then((m) => m.ensureMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')))
+			.then((m) =>
+				m.ensureMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')).catch((error: unknown) => {
+					// The daemon withdrew the start and said why in its 503: not a new failure.
+					if (error instanceof m.MasterMixCancelled) {
+						console.info(`master mix: ${error.message}`);
+						return;
+					}
+					throw error;
+				})
+			)
 			.catch(async (error: unknown) => {
 				pushToast(`REC failed: the master mix could not be recorded: ${String(error)}`, 'error');
 				tapSession = null;

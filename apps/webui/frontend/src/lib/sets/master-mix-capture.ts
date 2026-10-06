@@ -245,7 +245,8 @@ export async function startMasterMixCapture(
 			node.disconnect(worklet);
 			worklet.disconnect();
 			sink.disconnect();
-			throw new Error('the recording was cancelled before the master tap connected');
+			if (signal?.aborted) throw new MasterMixCancelled(sessionId);
+			throw new Error('the master tap ended before it connected');
 		}
 		tap = next;
 	}
@@ -266,7 +267,7 @@ export async function startMasterMixCapture(
 	}
 
 	try {
-		if (signal?.aborted) throw new Error('the recording was cancelled before the master tap connected');
+		if (signal?.aborted) throw new MasterMixCancelled(sessionId);
 		signal?.addEventListener('abort', () => end(), { once: true });
 		await attach(true);
 		watchForRebuilds();
@@ -303,6 +304,15 @@ export async function startMasterMixCapture(
 	};
 }
 
+/** The daemon withdrew this recording's start (SET-12): its 503 already told
+ *  whoever started it, so a tap that ends this way is not a new failure. */
+export class MasterMixCancelled extends Error {
+	constructor(sessionId: string) {
+		super(`recording ${sessionId} was cancelled by the recorder before its master tap connected`);
+		this.name = 'MasterMixCancelled';
+	}
+}
+
 // ------------------------------------------------------- one tap per page ---
 
 type Running = {
@@ -327,7 +337,7 @@ export function ensureMasterMixCapture(
 	notify?: (why: string) => void
 ): Promise<MasterMixCapture> {
 	if (cancelled.includes(sessionId)) {
-		return Promise.reject(new Error(`recording ${sessionId} was cancelled by the recorder`));
+		return Promise.reject(new MasterMixCancelled(sessionId));
 	}
 	if (current?.sessionId === sessionId) {
 		if (notify) current.notify = notify;

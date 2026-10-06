@@ -457,13 +457,14 @@ test('a start the recorder cancelled while the tap was attaching never posts a c
 		const late = capture.ensureMasterMixCapture('C1');
 		capture.cancelMasterMixCapture('C1');
 		slow.open();
-		await assert.rejects(late, /cancelled before the master tap connected/);
+		// A typed cancel, which the REC rail keeps quiet: the 503 already said why.
+		await assert.rejects(late, (error) => error instanceof capture.MasterMixCancelled);
 		for (const worklet of graph.worklets) worklet.port.emit(chunk(100));
 		await settle();
 		assert.deepEqual(posted, [], 'zero chunks posted after the cancel');
 		assert.equal(graph.worklets.every((w) => w.port.onmessage === null), true, 'no live worklet');
 		// A tap order for it that arrives even later never starts at all.
-		await assert.rejects(capture.ensureMasterMixCapture('C1'), /was cancelled by the recorder/);
+		await assert.rejects(capture.ensureMasterMixCapture('C1'), (error) => error instanceof capture.MasterMixCancelled);
 	} finally {
 		globalThis.fetch = realFetch;
 	}
@@ -512,4 +513,12 @@ test('a dropped answer is terminal even with chunks queued behind it: zero retri
 	for (let i = 0; i < 5; i += 1) await settle();
 	assert.deepEqual(posted, ['0'], 'the queued chunks are dropped, never posted');
 	assert.equal(ended.length, 1, 'the tap ends once, quietly');
+});
+
+test('the REC rail stays quiet when the daemon cancels the tap, and still toasts a real failure', () => {
+	const rail = readFrontendSource('src/lib/components/rb/browser/PerformanceRecorderRail.svelte');
+	const quiet = rail.indexOf('error instanceof m.MasterMixCancelled');
+	const toast = rail.indexOf('REC failed: the master mix could not be recorded');
+	assert.ok(quiet > 0 && toast > quiet, 'the cancel is filtered before the failure toast');
+	assert.match(rail.slice(quiet, toast), /return;\s*}\s*throw error;/, 'anything that is not a cancel still reaches the toast');
 });
