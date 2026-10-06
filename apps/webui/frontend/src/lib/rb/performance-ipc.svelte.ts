@@ -460,6 +460,7 @@ export interface PerformanceState {
 		search: string | null;
 		sort: { key: SortKey; direction: 'asc' | 'desc' } | null;
 		selected_row: string | null;
+		load: PerformanceBrowserPaneSnapshot['load'];
 	};
 	midi_takeover: { mode: MidiTakeoverMode };
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
