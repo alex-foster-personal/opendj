@@ -78,8 +78,14 @@ class RawPage {
 	async send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
 		this.nextId += 1;
 		const id = this.nextId;
-		const reply = await new Promise<Record<string, unknown>>((resolve) => {
-			this.pending.set(id, resolve);
+		// Bounded, so a CDP call that never answers fails by name instead of
+		// silently eating the whole test timeout.
+		const reply = await new Promise<Record<string, unknown>>((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error(`CDP ${method} gave no reply in 30 s`)), 30_000);
+			this.pending.set(id, (message) => {
+				clearTimeout(timer);
+				resolve(message);
+			});
 			this.socket.send(JSON.stringify({ id, method, params }));
 		});
 		if (reply.error !== undefined) throw new Error(`${method}: ${JSON.stringify(reply.error)}`);
@@ -182,7 +188,6 @@ async function hide(leader: HiddenLeader): Promise<void> {
 	// demon-llama), so it is asked twice before the capability is called absent.
 	let hidden = false;
 	for (let attempt = 0; attempt < 2 && !hidden; attempt += 1) {
-		await leader.page.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
 		await leader.page.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
 		for (let i = 0; i < 100 && !hidden; i += 1) {
 			hidden = (await leader.page.evaluate<string>('document.visibilityState')) === 'hidden';
