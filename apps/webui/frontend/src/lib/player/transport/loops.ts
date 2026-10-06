@@ -349,6 +349,19 @@ export function loopExitOnSeekMs(
 	return loop !== null && loop.engaged && (targetMs < loop.in_ms || targetMs >= loop.out_ms);
 }
 
+/** True when `positionSec` lies within one beat interval of the grid: from a
+ * beat before the first beat to a beat after the last, each edge measured by
+ * its own outermost interval. A grid of fewer than two beats has no interval,
+ * so it keeps the old behaviour (always snaps). */
+export function seekTargetWithinGridSpan(beats: readonly AnlzBeat[], positionSec: number): boolean {
+	if (beats.length < 2) return true;
+	const first = beats[0].t;
+	const last = beats[beats.length - 1].t;
+	const before = first - (beats[1].t - first);
+	const after = last + (last - beats[beats.length - 2].t);
+	return positionSec >= before && positionSec <= after;
+}
+
 /** `quantizedSeek`'s whole target-and-exit decision in one call, so the
  * production seek path and a direct test call are the same code (pin
  * 334a50710ef0 defect A). `beats` is null exactly when `quantizedSeek` has
@@ -356,7 +369,13 @@ export function loopExitOnSeekMs(
  * through unchanged. `skipGridQuantize` is the beat-jump loop-shift escape:
  * true bypasses the deck's own coarser 1/4/8-beat re-snap entirely, so an
  * already loop-safe exact beat can never be pushed back onto the loop's
- * exclusive out boundary and disengage it underneath the jump. */
+ * exclusive out boundary and disengage it underneath the jump.
+ *
+ * A target more than one beat outside the grid's span is NOT snapped (#5601):
+ * there is no beat there to quantize to. Snapping it to the nearest beat put a
+ * 156 s seek on the last beat of a grid that stopped at 36 s while the audio
+ * ran to 180 s, every retry. `phaseKeepingLandingSec` already treats off-grid
+ * targets the same way. */
 export function quantizedSeekDecisionMs(
 	beats: readonly AnlzBeat[] | null,
 	ms: number,
@@ -364,8 +383,8 @@ export function quantizedSeekDecisionMs(
 	skipGridQuantize: boolean,
 	loop: { in_ms: number; out_ms: number; engaged: boolean } | null
 ): { targetMs: number; exitLoop: boolean } {
-	const targetMs =
-		beats !== null && !skipGridQuantize ? quantizeToNearestGridBeat(beats, ms / 1000, gridBeats) * 1000 : ms;
+	const snap = beats !== null && !skipGridQuantize && seekTargetWithinGridSpan(beats, ms / 1000);
+	const targetMs = snap ? quantizeToNearestGridBeat(beats, ms / 1000, gridBeats) * 1000 : ms;
 	return { targetMs, exitLoop: loopExitOnSeekMs(targetMs, loop) };
 }
 
