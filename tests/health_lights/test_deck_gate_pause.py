@@ -79,7 +79,7 @@ def test_loaded_and_stopped_decks_do_not_hold_the_gate() -> None:
 
 def test_an_id_that_blinks_out_of_one_snapshot_is_not_a_new_load() -> None:
     """[if] a deck id drops out of one snapshot and returns [then] no hold, [else stop]."""
-    gate, clock, box = _loaded_gate()
+    gate, _, box = _loaded_gate()
     loaded = box["mirror"]
     box["mirror"] = _mirror((None, False), (None, False), ("c", False), ("d", False))
     assert gate() is False
