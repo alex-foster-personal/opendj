@@ -18117,10 +18117,11 @@
         "type": "object"
       },
       "RecorderRememberedInput": {
-        "description": "The input REC last started on: a named input, or none (tracklist only).",
+        "description": "The source REC last started on: the master mix, a named input, or none\n(tracklist only).",
         "properties": {
           "kind": {
             "enum": [
+              "master",
               "device",
               "none"
             ],
@@ -18166,13 +18167,8 @@
         "type": "object"
       },
       "RecorderStartRequest": {
-        "description": "Explicit real-capture configuration for the REC button.\n\nExactly one audio input: ``device_name`` (what the REC picker sends,\nresolved to an index at start), or a raw ``ffmpeg_device_idx``; or\n``capture_audio: false`` for a tracklist-only recording (SET-10).",
+        "description": "Explicit capture configuration for the REC button (SET-10, SET-12).\n\n``source`` is required, never defaulted: ``master`` records the app's own\nmaster bus (streamed in by the page, see ``/master-pcm``); ``loopback``\nand ``external`` record exactly one input, ``device_name`` (what the REC\npicker sends, resolved to an index at start) or a raw\n``ffmpeg_device_idx``; ``none`` records the tracklist only.",
         "properties": {
-          "capture_audio": {
-            "default": true,
-            "title": "Capture Audio",
-            "type": "boolean"
-          },
           "device_name": {
             "anyOf": [
               {
@@ -18210,6 +18206,17 @@
             ],
             "title": "Session Id"
           },
+          "source": {
+            "description": "master: Open DJ's own master mix (post master fader, never the cue); loopback: a loopback input such as BlackHole; external: another input, e.g. an audio interface carrying a hardware mixer; none: tracklist only.",
+            "enum": [
+              "master",
+              "loopback",
+              "external",
+              "none"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "sources": {
             "items": {
               "enum": [
@@ -18223,6 +18230,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "source"
+        ],
         "title": "RecorderStartRequest",
         "type": "object"
       },
@@ -18258,6 +18268,24 @@
             "description": "Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).",
             "title": "Capture Error"
           },
+          "capture_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "master",
+                  "loopback",
+                  "external",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the owned recording records (master, loopback, external, none); null when idle or owned by another process. A master recording is fed by the /performance page, which attaches its master tap when it reads this (SET-12).",
+            "title": "Capture Source"
+          },
           "owned": {
             "title": "Owned",
             "type": "boolean"
@@ -18272,6 +18300,18 @@
               }
             ],
             "title": "Pid"
+          },
+          "recordings_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The directory every session folder is written under.",
+            "title": "Recordings Dir"
           },
           "recoverable": {
             "title": "Recoverable",
@@ -27366,6 +27406,85 @@
           }
         },
         "summary": "Api Recorder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/master-pcm": {
+      "post": {
+        "description": "One chunk of the page's master mix for a ``source: master`` recording (SET-12).\n\nThe body is interleaved little-endian int16 stereo frames. 409 when no\nowned master recording has this id, or the chunk would leave a hole\n(a lost or out-of-order chunk); the page stops its tap and says so.",
+        "operationId": "api_recorder_master_pcm_api_sets_recorder__session_id__master_pcm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Stream",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sample_rate",
+            "required": true,
+            "schema": {
+              "maximum": 192000,
+              "minimum": 8000,
+              "title": "Sample Rate",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Master Pcm",
         "tags": [
           "sets"
         ]

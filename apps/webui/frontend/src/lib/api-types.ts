@@ -147,6 +147,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/recorder/{session_id}/master-pcm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Api Recorder Master Pcm
+         * @description One chunk of the page's master mix for a ``source: master`` recording (SET-12).
+         *
+         *     The body is interleaved little-endian int16 stereo frames. 409 when no
+         *     owned master recording has this id, or the chunk would leave a hole
+         *     (a lost or out-of-order chunk); the page stops its tap and says so.
+         */
+        post: operations["api_recorder_master_pcm_api_sets_recorder__session_id__master_pcm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/recorder/{session_id}/recover": {
         parameters: {
             query?: never;
@@ -13804,14 +13828,15 @@ export interface components {
         };
         /**
          * RecorderRememberedInput
-         * @description The input REC last started on: a named input, or none (tracklist only).
+         * @description The source REC last started on: the master mix, a named input, or none
+         *     (tracklist only).
          */
         RecorderRememberedInput: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "device" | "none";
+            kind: "master" | "device" | "none";
             /** Name */
             name?: string | null;
         };
@@ -13824,24 +13849,27 @@ export interface components {
         };
         /**
          * RecorderStartRequest
-         * @description Explicit real-capture configuration for the REC button.
+         * @description Explicit capture configuration for the REC button (SET-10, SET-12).
          *
-         *     Exactly one audio input: ``device_name`` (what the REC picker sends,
-         *     resolved to an index at start), or a raw ``ffmpeg_device_idx``; or
-         *     ``capture_audio: false`` for a tracklist-only recording (SET-10).
+         *     ``source`` is required, never defaulted: ``master`` records the app's own
+         *     master bus (streamed in by the page, see ``/master-pcm``); ``loopback``
+         *     and ``external`` record exactly one input, ``device_name`` (what the REC
+         *     picker sends, resolved to an index at start) or a raw
+         *     ``ffmpeg_device_idx``; ``none`` records the tracklist only.
          */
         RecorderStartRequest: {
-            /**
-             * Capture Audio
-             * @default true
-             */
-            capture_audio: boolean;
             /** Device Name */
             device_name?: string | null;
             /** Ffmpeg Device Idx */
             ffmpeg_device_idx?: number | null;
             /** Session Id */
             session_id?: string | null;
+            /**
+             * Source
+             * @description master: Open DJ's own master mix (post master fader, never the cue); loopback: a loopback input such as BlackHole; external: another input, e.g. an audio interface carrying a hardware mixer; none: tracklist only.
+             * @enum {string}
+             */
+            source: "master" | "loopback" | "external" | "none";
             /** Sources */
             sources?: ("djay_monitor" | "rb_history" | "opendj_decks")[];
         };
@@ -13860,10 +13888,20 @@ export interface components {
              * @description Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).
              */
             capture_error?: string | null;
+            /**
+             * Capture Source
+             * @description What the owned recording records (master, loopback, external, none); null when idle or owned by another process. A master recording is fed by the /performance page, which attaches its master tap when it reads this (SET-12).
+             */
+            capture_source?: ("master" | "loopback" | "external" | "none") | null;
             /** Owned */
             owned: boolean;
             /** Pid */
             pid: number | null;
+            /**
+             * Recordings Dir
+             * @description The directory every session folder is written under.
+             */
+            recordings_dir?: string | null;
             /** Recoverable */
             recoverable: boolean;
             /** Session Id */
@@ -17301,6 +17339,43 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RecorderStatus"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_recorder_master_pcm_api_sets_recorder__session_id__master_pcm_post: {
+        parameters: {
+            query: {
+                stream: string;
+                seq: number;
+                sample_rate: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
