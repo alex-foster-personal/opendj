@@ -118,6 +118,8 @@ let _unplayableIds = new Set<string>();
  * failures and is told its own candidates failed to load (r3974580407).
  */
 let _attemptsFor: { source: string; failed_ids: string[] } = { source: '', failed_ids: [] };
+/** Consecutive handoffs whose follower would not clear (Sol P1, #5648). */
+let _followerUnloadFailures = 0;
 /** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
 let _waitingFollowerFor: string | null = null;
 /** Empty-feed toast epoch during playlist hydration, without consuming the source arm. */
@@ -205,6 +207,7 @@ function _syncPlayedSet(): void {
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', failed_ids: [] };
+		_followerUnloadFailures = 0;
 		_playedFeedEpoch = epoch;
 		if (_exhaustedFeedEpoch !== null) {
 			_triggeredFor = null;
@@ -525,6 +528,7 @@ async function _tick(): Promise<void> {
 	try {
 		await _handoff(source, follower, nextId, generation);
 		_attemptsFor = { source: '', failed_ids: [] };
+		_followerUnloadFailures = 0;
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		// NOTHING from a dead arming may report or mutate (Codex r3974734066,
@@ -553,6 +557,24 @@ async function _tick(): Promise<void> {
 				'error'
 			);
 			noteAutoPlayHandoffStall('handoff-incomplete', source.stable_id, message, _armedAt(generation));
+			return;
+		}
+		if (phase === 'follower-unload') {
+			// Sol P1 (#5648): the follower would not clear. The candidate itself is
+			// fine, so it is NOT quarantined and stays pickable; only the deck is.
+			_claimedIds.delete(nextId);
+			_playedIds.delete(nextId);
+			_followerUnloadFailures += 1;
+			if (_followerUnloadFailures < MAX_HANDOFF_ATTEMPTS) {
+				_triggeredFor = null;
+				pushToast(`auto-play: could not clear deck ${follower} for the next track: ${message}`, 'info');
+			} else {
+				pushToast(
+					`auto-play stopped: deck ${follower} would not clear after ${MAX_HANDOFF_ATTEMPTS} tries: ${message}`,
+					'error'
+				);
+				noteAutoPlayHandoffStall('handoff-attempts-exhausted', source.stable_id, message, _armedAt(generation), []);
+			}
 			return;
 		}
 		// Row 16: nothing landed on the deck; quarantine and try another pick.
@@ -659,6 +681,7 @@ export function installAutoPlay(): () => void {
 		_playedIds = new Set();
 		_unplayableIds = new Set();
 		_attemptsFor = { source: '', failed_ids: [] };
+		_followerUnloadFailures = 0;
 		_playedFeedEpoch = -1;
 		_clearChartedOrder();
 		clearAutoPlayQueue();

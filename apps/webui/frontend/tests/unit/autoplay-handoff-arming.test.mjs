@@ -178,6 +178,36 @@ describe('[PLAY-20] abandon cleanup checks the deck and never blames the candida
 	});
 });
 
+
+describe('[PLAY-22] a follower that will not clear is not the candidate\'s fault (Sol P1, #5648)', () => {
+	it('a failed unload of the follower\'s old track throws phase follower-unload, and nothing is loaded', async () => {
+		const fake = fakeSteps({ occupied: 'old-1' });
+		fake.steps.unload = async () => {
+			fake.log.push('unload');
+			throw new Error('engine busy');
+		};
+		await assert.rejects(handoff.runAutoPlayHandoff('next-1', fake.steps), (error) => {
+			assert.equal(error.phase, 'follower-unload');
+			return true;
+		});
+		assert.deepEqual(fake.log, ['unload']);
+	});
+
+	it('SHAPE GUARD: the controller handles follower-unload before, and without, the quarantine', () => {
+		const source = readFileSync(
+			fileURLToPath(new URL('../../src/lib/rb/auto-play.svelte.ts', import.meta.url)),
+			'utf8'
+		);
+		const start = source.indexOf("if (phase === 'follower-unload') {");
+		const quarantine = source.indexOf('_unplayableIds.add(nextId);');
+		assert.notEqual(start, -1, 'if a follower-unload failure has no branch of its own then the candidate is quarantined - broken');
+		assert.ok(start < quarantine, 'the follower-unload branch must run before the quarantine');
+		const branch = source.slice(start, source.indexOf('\t\t\treturn;\n\t\t}', start));
+		assert.doesNotMatch(branch, /_unplayableIds/, 'a deck that will not clear must not quarantine the candidate');
+		assert.match(branch, /_claimedIds\.delete\(nextId\)/, 'the candidate must stay pickable');
+	});
+});
+
 // ----- live: the real controller, switched off through the agent order bus ----
 
 const POLL_SETTLE_MS = 900;

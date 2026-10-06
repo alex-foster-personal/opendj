@@ -987,6 +987,8 @@ describe('auto-play handoff commit point (scenarios 16, 17)', () => {
 		// Scenario 17: beat_sync/play/master rejected AFTER the track landed.
 		// Re-arming here is what loaded "contact" and then "acid rain".
 		assert.equal(handoffFailureIsRetryable('commit'), false);
+		// PLAY-22: the follower's old track would not clear; the candidate is not to blame.
+		assert.equal(handoffFailureIsRetryable('follower-unload'), true);
 	});
 
 	it('throws on an unknown phase rather than guessing a default', () => {

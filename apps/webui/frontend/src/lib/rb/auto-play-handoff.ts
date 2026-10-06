@@ -58,7 +58,11 @@ export async function runAutoPlayHandoff(
 		if (!steps.stillArmed()) return 'abandoned-disarmed';
 		const occupied = steps.followerStableId();
 		if (occupied !== null && occupied !== nextId) {
-			await steps.unload();
+			try {
+				await steps.unload();
+			} catch (error: unknown) {
+				throw new AutoPlayHandoffError('follower-unload', error);
+			}
 			if (!steps.stillArmed()) return 'abandoned-disarmed';
 		}
 		if (steps.followerStableId() !== nextId) {
@@ -66,6 +70,7 @@ export async function runAutoPlayHandoff(
 			loadedHere = true;
 		}
 	} catch (error: unknown) {
+		if (error instanceof AutoPlayHandoffError) throw error;
 		throw new AutoPlayHandoffError('load', error);
 	}
 	// ---- commit point: nextId is on the follower deck from here down ----
