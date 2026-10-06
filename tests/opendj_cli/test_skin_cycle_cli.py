@@ -33,3 +33,19 @@ def test_set_skin_rejects_an_unknown_skin() -> None:
     """[if] set_skin neon parses [then] the enum is not enforced, [else stop]."""
     with pytest.raises(InvocationError):
         parse_invocation(["set_skin", "neon", "rekordbox", "auto"])
+
+
+@pytest.mark.requirement("CHROME-15")
+def test_set_waveform_design_accepts_auto() -> None:
+    """[if] set_waveform_design auto is rejected [then] an agent cannot restore follow-the-skin, [else stop]."""
+    assert parse_invocation(["set_waveform_design", "auto"]).command == {
+        "type": "set_waveform_design", "design": "auto",
+    }
+
+
+@pytest.mark.requirement("CHROME-15")
+def test_set_skin_accepts_an_auto_palette() -> None:
+    """[if] set_skin mono-dev auto auto is rejected [then] the CLI cannot reach the default look, [else stop]."""
+    assert parse_invocation(["set_skin", "mono-dev", "auto", "auto"]).command == {
+        "type": "set_skin", "ui_skin": "mono-dev", "wave_palette": "auto", "wave_split_master": "auto",
+    }

@@ -74,7 +74,7 @@
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 	import { waveRowVocalsTitle } from './vocals-title';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { waveSplitActive } from '$lib/rb/ui-skin';
+	import { effectiveWaveformDesign, waveSplitActive } from '$lib/rb/ui-skin';
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
 	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
@@ -329,7 +329,7 @@
 		}
 		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
-			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: uiPrefs.waveform_design };
+			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin) };
 			paintSplitRow(
 				el,
 				ctx,
@@ -371,7 +371,7 @@
 			loop: deck.loop,
 			playheadTone: syncPlayheadTone,
 			playheadTimeMs: performance.now(),
-			waveformDesign: uiPrefs.waveform_design,
+			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			masterDownbeatOverlay,
 			ghostSeekMs: ghost.ghostSeekMs,
 			ghostSeekVisible: ghost.ghostSeekVisible
@@ -445,7 +445,7 @@
 		void partnerState?.pitch;
 		void partnerAnlz;
 		void splitPartner;
-		void uiPrefs.waveform_design;
+		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		void cssW;
 		void cssH;
 		void palette;

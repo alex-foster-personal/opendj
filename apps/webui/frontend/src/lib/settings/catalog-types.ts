@@ -45,6 +45,9 @@ export type SettingControl =
 	// One path per line; saved via overlay Apply (async existence check on server).
 	| { kind: 'path_lines'; v2Notice: string };
 
+/** Kinds of live preview a settings row can carry (rendered by SettingsOverlay). */
+export type SettingPreview = 'waveform';
+
 export interface SettingDef {
 	id: string;
 	label: string;
@@ -59,6 +62,8 @@ export interface SettingDef {
 	implemented: boolean;
 	/** true = a developer-only row, shown only while show_dev_ui is on. */
 	devOnly?: boolean;
+	/** A live thumbnail rendered under the control; every option value must paint one. */
+	preview?: SettingPreview;
 	control: SettingControl;
 }
 

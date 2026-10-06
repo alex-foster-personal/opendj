@@ -75,7 +75,12 @@ export async function loadSvelteSsrModule(entrySource, { alias = {} } = {}) {
 		absWorkingDir: FRONTEND_ROOT,
 		alias: { $lib: LIB_ROOT, ...alias },
 		bundle: true,
-		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://ssr-harness.example.test') },
+		// DEV: prefs.svelte.ts gates its dev-only contrast diagnostic on it at
+		// import time; the harness renders as a production build would.
+		define: {
+			'import.meta.env.VITE_API_BASE': JSON.stringify('https://ssr-harness.example.test'),
+			'import.meta.env.DEV': 'false'
+		},
 		format: 'esm',
 		// A side-effect stylesheet import has no meaning in an SSR string;
 		// without this a component that imports one cannot be rendered at all.
