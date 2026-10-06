@@ -180,6 +180,7 @@ import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
 
 import { stubPlaylistsRoute } from './support/rekordbox-gate-playlist-routes';
+import { stubUiMirrorRoutes } from './support/ui-mirror-routes';
 
 /** Real margin past the scheduler's own quiet-period + idle-frame ceiling,
  * so the deferred burst has unquestionably landed before the final asserts
@@ -326,7 +327,7 @@ test('null artwork availability identifies an unavailable reader without request
 		})
 	);
 	await page.route('**/api/v1/stems/tiers', (route) => route.fulfill({ json: [] }));
-	await page.route('**/api/v1/state/ui-mirror', (route) => route.fulfill({ json: {} }));
+	await stubUiMirrorRoutes(page);
 	await page.route('**/api/v1/feedback/performance-marks', (route) =>
 		route.fulfill({ json: { count: 0, last_mark: null } })
 	);

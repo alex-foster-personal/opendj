@@ -2837,7 +2837,7 @@
 		justify-content: center;
 	}
 	/* The header glyph has a viewBox and no intrinsic size, so without an
-	 * explicit box it stretches to fill the centred flex label. */
+	 * explicit box it stretches to fill its flex label. */
 	.plays-icon {
 		flex: 0 0 auto;
 		width: 10px;

@@ -1,4 +1,4 @@
-"""LIBM-169: a folder ingest never imports a stem separation output as a track.
+"""LIBM-170: a folder ingest never imports a stem separation output as a track.
 
 - [if] a walked root holds a vocals stem next to its song [then] only the song becomes a row and the stem is counted, [else stop].
 - [if] a released track is titled Instrumental [then] it is still imported, [else stop].
@@ -18,7 +18,7 @@ from apps.shared.state.events import FakeEventBus
 from apps.shared.state.ingest import folder
 from apps.shared.state.writer import StateWriter
 
-pytestmark = pytest.mark.requirement("LIBM-169")
+pytestmark = pytest.mark.requirement("LIBM-170")
 
 
 def _write_wav(path: Path, sample: int) -> Path:

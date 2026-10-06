@@ -84,7 +84,7 @@ class FolderIngestReport:
     tracks_with_tag_key: int = 0
     #: Allowlisted files that failed the playable-audio probe. Never imported.
     files_rejected_unplayable: int = 0
-    #: Stem-separation outputs (LIBM-169), e.g. ``vocals/Song - vocals.mp3``.
+    #: Stem-separation outputs (LIBM-170), e.g. ``vocals/Song - vocals.mp3``.
     #: Never imported: they carry the song's title and play as an acapella.
     files_skipped_stem_output: int = 0
     tracks_inserted: int = 0
