@@ -1,5 +1,7 @@
 """The drains pause while a deck PLAYS, not while a deck is loaded (DRAIN-PAUSE-01).
 
+[if] decks are loaded and stopped [then] the drains run, and pause only while a deck plays, [else stop].
+
 Build 16's verify saw the drain report ``paused_playing`` with decks loaded and
 stopped, resuming only after an unload. A DJ almost always has decks loaded, so
 that is background analysis that never runs. Both directions are pinned here:
