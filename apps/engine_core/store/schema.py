@@ -92,7 +92,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 12
+SCHEMA_VERSION: int = 13
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1339,8 +1339,15 @@ _V12: list[str] = [
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v11 never re-runs an earlier rung."""
 
+_V13: list[str] = [
+    "DROP INDEX IF EXISTS idx_path_availability_checked",
+]
+"""12 -> 13: drop the never-read checked_at index on path_availability
+(legacy ladder v24, STATE-21). ALL_DDL runs flattened, so _V7 creating it and
+this rung dropping it leave a fresh database without it too."""
+
 MIGRATIONS: list[list[str]] = [
-    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12,
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12, _V13,
 ]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
