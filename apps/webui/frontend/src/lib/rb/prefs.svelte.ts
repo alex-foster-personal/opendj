@@ -110,6 +110,7 @@ import {
 	type WaveSplitMaster
 } from './ui-skin';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
+import { announceBeatSyncMaxChange } from './beat-sync-max-enable';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 // The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
 // TopBar reads both from this one module (quality ratchet: max fan-out).
@@ -746,8 +747,14 @@ export function setLibraryDensity(next: LibraryDensity): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
 }
 
+/** DECKUX-37: turning Max ON also turns Beat Sync ON for loaded decks (through
+ * the deck SYNC command); turning it OFF leaves every deck as it is. */
 export function setBeatSyncMax(next: boolean): void {
+	const previous = uiPrefs.beat_sync_max;
 	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'beat_sync_max', next);
+	announceBeatSyncMaxChange(previous, next).catch((error: unknown) => {
+		console.error('[beat-sync-max] enabling Beat Sync on loaded decks failed', error);
+	});
 }
 
 /** Local-only: the engine holds no preview voice, so this never leaves the page. */

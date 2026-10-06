@@ -149,9 +149,9 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Beat Sync Max',
 		group: 'performance',
 		keywords: ['beatsync', 'bar', 'phase', 'seek', 'sync', 'master'],
-		title: 'BAR downbeat lock on every relocate, held over playback',
+		title: 'Turn Beat Sync on for every loaded deck, BAR downbeat lock held',
 		detail:
-			'When on, synced playing decks keep PQTZ n=1 aligned, including after the lock, until Beat Sync Max or Beat Sync is turned off. When off, followers sync on seek using their own BEAT/BAR mode; the master free-seeks.',
+			'Turning it on turns Beat Sync on for every deck with a track loaded, and for each deck as a track loads; synced playing decks then keep PQTZ n=1 aligned on every relocate and over playback. A deck SYNC press still turns that deck off until its next load. Turning it off changes no deck; followers then sync on seek using their own BEAT/BAR mode and the master free-seeks.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

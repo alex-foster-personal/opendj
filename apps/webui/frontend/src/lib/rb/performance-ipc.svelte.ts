@@ -162,6 +162,7 @@ import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
+import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler } from '$lib/rb/beat-sync-max-enable';
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
 export {
 	installRescueRingWriterHooks,
@@ -3235,11 +3236,19 @@ async function _dispatchUnknown(
 		}
 	};
 
-	return _commandScheduler.run(scopes, run).finally(() => {
+	const settled = _commandScheduler.run(scopes, run).finally(() => {
 		if (!started && _commandSessionIsCurrent(commandGeneration)) {
 			performanceCommandStatus.queued -= 1;
 			if (deck !== null) performanceCommandStatus.deck_pending[deck] -= 1;
 		}
+	});
+	if (command.type !== 'load') return settled;
+	// DECKUX-37: a load under Beat Sync Max queues that deck's own beat_sync
+	// command AFTER the load releases its scope (inside it, it would deadlock).
+	const loadedDeck = command.deck;
+	return settled.then(async () => {
+		await enableBeatSyncAfterLoad(loadedDeck);
+		return queryPerformanceState();
 	});
 }
 
@@ -3381,7 +3390,14 @@ export function installPerformanceBrowserIpc(): () => void {
 	for (const host of hosts) {
 		host.musicDjToolsPerformance = ipc;
 	}
+	const uninstallBeatSyncMaxEnabler = installBeatSyncMaxEnabler({
+		readDecks: () => Object.fromEntries(DECK_IDS.map((id) => [id, getDeckState(id)])) as Record<DeckId, DeckState>,
+		readBeatSyncMax: () => uiPrefs.beat_sync_max,
+		// The deck SYNC button's own path (DECKUX-37 rule 4).
+		dispatch: (command) => runPerformanceCommandFromUi(command)
+	});
 	return () => {
+		uninstallBeatSyncMaxEnabler();
 		for (const host of hosts) {
 			if (host.musicDjToolsPerformance !== ipc) {
 				throw new Error('performance IPC ownership changed before cleanup');

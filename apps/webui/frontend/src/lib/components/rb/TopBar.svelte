@@ -577,8 +577,8 @@
 		class:on={uiPrefs.beat_sync_max}
 		aria-pressed={uiPrefs.beat_sync_max}
 		title={uiPrefs.beat_sync_max
-			? 'BeatSyncMax ON - downbeats stay aligned; every seek (incl. master) keeps BAR phase lock'
-			: 'BeatSyncMax OFF - followers sync on seek using their own BEAT/BAR mode; master free-seeks'}
+			? 'BeatSyncMax ON - Beat Sync is on for every loaded deck and each new load; downbeats stay BAR-locked on every seek. A deck SYNC press still turns that deck off until its next load'
+			: 'BeatSyncMax OFF - turning it on turns Beat Sync on for every loaded deck. Turning it off leaves each deck synced or not, as it is'}
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax
