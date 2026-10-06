@@ -56,7 +56,6 @@
 	let aiPending = $state(false);
 	let aiError = $state<string | null>(null);
 	let aiSeq = 0;
-	let focusedId = $state<string | null>(null);
 	let applyBusy = $state(false);
 	let applyMsg = $state<string | null>(null);
 	let applyOk = $state<boolean | null>(null);
@@ -199,7 +198,6 @@
 
 	function onRowKeydown(def: SettingDef, index: number, e: KeyboardEvent): void {
 		setSettingsSelectedIndex(index);
-		focusedId = def.id;
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 			e.preventDefault();
 			const next = moveSelection(
@@ -482,7 +480,6 @@
 							{#each filtered.all as def, i (def.id)}
 								{@const isAi = aiIdSet.has(def.id) && !filtered.keyword.some((k) => k.id === def.id)}
 								{@const isSel = i === settingsOverlay.selectedIndex}
-								{@const showDetail = focusedId === def.id || isSel}
 								<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 								<li
 									class="so-row"
@@ -494,13 +491,10 @@
 									aria-selected={isSel}
 									aria-disabled={!def.implemented}
 									tabindex="0"
-									title={def.title}
 									onmouseenter={() => {
-										focusedId = def.id;
 										setSettingsSelectedIndex(i);
 									}}
 									onfocus={() => {
-										focusedId = def.id;
 										setSettingsSelectedIndex(i);
 									}}
 									onkeydown={(e) => onRowKeydown(def, i, e)}
@@ -515,9 +509,10 @@
 											{#if !def.implemented}
 												<span class="so-inert" title={INERT}>todo</span>
 											{:else if def.control.kind === 'boolean'}
-												<label class="so-toggle" title={def.title}>
+												<label class="so-toggle">
 													<input
 														type="checkbox"
+														aria-label={def.label}
 														checked={boolValue(def)}
 														onchange={() =>
 															applySettingChange(def.id, !boolValue(def))}
@@ -526,7 +521,7 @@
 												</label>
 											{:else if def.control.kind === 'enum'}
 												<select
-													title={def.title}
+													aria-label={def.label}
 													value={enumValue(def)}
 													onchange={(e) =>
 														applySettingChange(
@@ -545,7 +540,7 @@
 													{/await}
 												{/if}
 											{:else if def.control.kind === 'multi_bool'}
-												<div class="so-multi" title={def.title}>
+												<div class="so-multi" role="group" aria-label={def.label}>
 													{#each def.control.keys as key (key.id)}
 														<label class="so-chip" title={key.title}>
 															<input
@@ -564,13 +559,13 @@
 											{:else if def.control.kind === 'link'}
 												<a
 													href={def.control.href}
-													title={def.title}
+													aria-label={`Open ${def.label}`}
 													onclick={() => closeSettings()}
 												>
 													Open
 												</a>
 											{:else if def.control.kind === 'number'}
-												<div class="so-number" title={def.title}>
+												<div class="so-number">
 													<input
 														type="range"
 														aria-label={def.label}
@@ -580,7 +575,7 @@
 														value={numberValue(def)}
 														oninput={(e) => onNumberInput(def, e)}
 													/>
-													<span class="so-number-out">
+													<span class="so-number-out" title={`Current value of ${def.label}`}>
 														{formatNumber(numberValue(def))}{def.control.unit}
 													</span>
 													<button
@@ -601,9 +596,7 @@
 											{/if}
 										</div>
 									</div>
-									{#if showDetail}
-										<p class="so-detail">{def.detail}</p>
-									{/if}
+									<p class="so-detail">{def.detail}</p>
 								</li>
 							{/each}
 						</ul>
