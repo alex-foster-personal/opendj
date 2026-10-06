@@ -35,6 +35,7 @@ import {
 import type { AnlzData } from '$lib/rb/anlz-types';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import { isUsbTrackId } from '$lib/rb/track-source';
+import { nonReactive } from '$lib/rb/non-reactive';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
 	type AnalysisSourceRefreshDeck,
@@ -373,6 +374,10 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 		!(alreadyScoped && !hasAnlzBeatgrid(data))
 			? _authoritativeGridSink(stable_id, data, hasAnlzBeatgrid(data), alreadyScoped)
 			: undefined;
+	// B9: stored by reference, never deep-proxied. Read through `_cache` the
+	// payload grew a signal per waveform bin and beat (~100k per track, beyond
+	// the LRU's byte estimate). Entries are only ever replaced, never edited.
+	nonReactive(data);
 	if (!isRetryableAnlzData(data)) {
 		_cache[stable_id] = { status: 'ready', data, touched: nextAnlzTouch() };
 		applyAnlzCaps();
