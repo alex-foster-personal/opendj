@@ -409,6 +409,7 @@
 <header
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
+	class:less-view={uiPrefs.deck_layout === 'less'}
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
 >	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
@@ -1178,6 +1179,21 @@
 		   the same 25px margin the other tiers use. */
 		.rb-topbar .topbar-slot-pairing { display: none; }
 	}
+	/* LESSV-02 (the maintainer, Tue 6 Oct 2026): the LESS view hides the less important
+	   feature buttons - every unfinished (inert, planned) control, Stage and
+	   the voice command entry. Hidden, not removed: each stays mounted and
+	   MORE shows it again, and the command entry's own route
+	   (POST /api/v1/voice/probe) and the stage overlay are untouched, so agent
+	   parity holds (performance-less-view-tidy.spec.ts drives them while
+	   hidden). This only REMOVES width from the row, so it cannot crush the
+	   width tiers above; the 2-deck toggle is a real control and stays. */
+	.rb-topbar.less-view .icon-cluster > :global(.explainer:has(.rb-inert)),
+	.rb-topbar.less-view .link-btn,
+	.rb-topbar.less-view .topbar-slot-pad,
+	.rb-topbar.less-view .topbar-slot-utility,
+	.rb-topbar.less-view .free-badge,
+	.rb-topbar.less-view .topbar-slot-stage,
+	.rb-topbar.less-view :global(.cmd-entry) { display: none; }
 
 	.ap-wrap {
 		position: relative;

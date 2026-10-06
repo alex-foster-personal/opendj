@@ -124,8 +124,32 @@
 				d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"
 			/>
 		</svg>
-		<span class="chip-label-full">{fullLabel}</span>
-		<span class="chip-label-short">{shortLabel}</span>
+		{#if chipState() === 'ok'}
+			<!-- LESSV-03 (the maintainer, Tue 6 Oct 2026): sync "can be just cloud-icon +
+			     tick-icon if it's working". The words stay in title and
+			     aria-label; every other state keeps its text, because those
+			     are the ones that need reading. -->
+			<svg
+				class="chip-tick"
+				width="10"
+				height="10"
+				viewBox="0 0 12 12"
+				aria-hidden="true"
+				data-testid="cloudsync-chip-tick"
+			>
+				<path
+					d="M2 6.4 L4.8 9 L10 3"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.8"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			</svg>
+		{:else}
+			<span class="chip-label-full">{fullLabel}</span>
+			<span class="chip-label-short">{shortLabel}</span>
+		{/if}
 	</button>
 	{#if popoverOpen}
 		<CloudSyncQuickActions
@@ -160,9 +184,16 @@
 		cursor: pointer;
 	}
 
+	/* LESSV-03: sync on reads WHITE, not the orange accent (the maintainer, Tue 6 Oct
+	 * 2026). --fg is the shell's own foreground, so it is white on the dark
+	 * shells and still readable on the light one. */
 	.chip.ok {
-		border-color: var(--accent-dim);
-		color: var(--accent);
+		border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+		color: var(--fg);
+	}
+
+	.chip-tick {
+		flex: none;
 	}
 
 	.chip.error {

@@ -420,16 +420,29 @@
 	 * The fader spans both dial rows on purpose: it is the one control that
 	 * should absorb spare height (`.fader-slot` is `flex: 1 1 auto` in MORE
 	 * for exactly that reason), so in LESS it comes out TALLER than the
-	 * 67px it used to get, not shorter. */
+	 * 67px it used to get, not shorter.
+	 *
+	 * LESSV-01 (the maintainer, Tue 6 Oct 2026): "The deck heights should be the same as
+	 * for MORE. Only the central mixer needs re-arranging to keep it all
+	 * fitting vertically." The deck-area row in LESS is now one MORE deck tall
+	 * (249px floor, see +page.svelte), which the old four-row grid (173px of
+	 * strip) could not fit beside the toggle and the headphone/crossfader
+	 * rows. So TRIM, CUE and FILTER moved into a column RIGHT of the HI/MID/LOW
+	 * stack (TRIM level with HI, FILTER level with LOW, the order they read in
+	 * MORE), and the STEM chips moved under everything as one full-width row
+	 * (wrapping to a second line when a bundle carries all five stems), with
+	 * their STEM mode label top right, beside the channel number. The dial
+	 * block is now the only tall thing, and nothing is unmounted. */
 	.strip.less {
 		display: grid;
 		grid-template-columns: max-content max-content max-content;
-		grid-template-rows: auto auto auto 1fr;
+		grid-template-rows: auto auto auto 1fr auto;
 		grid-template-areas:
-			'head head head'
-			'cue trim stemlabel'
-			'fader eq stem'
-			'fader filter stem';
+			'head head stemlabel'
+			'fader eq trim'
+			'fader eq cue'
+			'fader eq filter'
+			'stem stem stem';
 		justify-content: center;
 		align-items: start;
 		justify-items: center;
@@ -437,6 +450,12 @@
 	}
 	.strip.less .strip-head {
 		grid-area: head;
+	}
+	/* LESSV-02: the R|M calibration buttons are hidden in LESS, not removed.
+	 * They stay mounted (and stay in MORE), so the prefs they drive and
+	 * every other path to them are untouched. */
+	.strip.less .cal-controls {
+		display: none;
 	}
 	.strip.less .eq-stack {
 		grid-area: eq;
@@ -446,7 +465,15 @@
 	}
 	.strip.less .stem-slot {
 		grid-area: stem;
-		align-self: stretch;
+		justify-self: stretch;
+		align-self: center;
+		min-width: 0;
+	}
+	.strip.less .stem-slot :global(.stems) {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 2px;
 	}
 	.strip.secondary {
 		background: color-mix(in srgb, var(--rb-panel-raised, #1a1e25) 55%, transparent);
@@ -615,7 +642,8 @@
 	}
 	.strip.less .stem-label {
 		grid-area: stemlabel;
-		margin-top: 4px;
+		align-self: center;
+		margin-top: 0px;
 	}
 	.stem-slot {
 		flex: 0 0 auto;

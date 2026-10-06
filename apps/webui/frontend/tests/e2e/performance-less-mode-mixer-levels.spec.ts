@@ -22,14 +22,14 @@ import { expect, test } from '@playwright/test';
 // unclipped, always-visible half of LESS mode.
 const STANDARD_VIEWPORT = { width: 1280, height: 800 };
 // Short enough that `.perf-root.deck-layout-less`'s
-// `minmax(278px, min(404px, calc(100vh - ...)))` resolves its CALC BELOW the
+// `minmax(249px, calc((min(500px, calc(100vh - ...)) + 1px) / 2))` (LESSV-01) resolves its CALC BELOW the
 // floor, so the floor is what sizes the row. At STANDARD_VIEWPORT the cap
 // governs instead, which is why every existing assertion here has only ever
 // measured a mixer with slack. Blinded review, Thu 10 Sep 2026.
 const SHORT_VIEWPORT = { width: 1280, height: 560 };
 /** `.perf-root.deck-layout-less`'s deck-area floor, derived in
  *  channel-strip-less-floor.test.mjs and written into +page.svelte. */
-const LESS_DECK_AREA_FLOOR_PX = 278;
+const LESS_DECK_AREA_FLOOR_PX = 249;
 
 async function enterLessMode(
 	page: import('@playwright/test').Page,
@@ -197,33 +197,47 @@ test('performance LESS mode: FILTER is visible, with the fader left of the EQs a
 				const el = node.querySelector(selector);
 				if (el === null) return null;
 				const r = el.getBoundingClientRect();
-				return { left: r.left, right: r.right };
+				return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 			};
-			return { fader: pick('.fader-slot'), eq: pick('.eq-stack'), stem: pick('.stem-slot') };
+			return {
+				fader: pick('.fader-slot'),
+				eq: pick('.eq-stack'),
+				filter: pick('.filter-slot'),
+				stem: pick('.stem-slot')
+			};
 		});
 		expect(boxes.fader, `channel ${deck} fader slot must be present`).not.toBeNull();
 		expect(boxes.eq, `channel ${deck} EQ stack must be present`).not.toBeNull();
+		expect(boxes.filter, `channel ${deck} FILTER slot must be present`).not.toBeNull();
 		expect(boxes.stem, `channel ${deck} STEM slot must be present`).not.toBeNull();
 		expect(
 			boxes.fader!.right,
 			`channel ${deck} fader (right edge ${boxes.fader!.right}) must sit entirely LEFT of the ` +
 				`EQ stack (left edge ${boxes.eq!.left}), not stacked above it`
 		).toBeLessThanOrEqual(boxes.eq!.left);
+		// LESSV-01: FILTER (with TRIM and CUE) sits in the column RIGHT of the
+		// EQ stack, and the STEM chips moved to one row UNDER the dial block.
 		expect(
-			boxes.stem!.left,
-			`channel ${deck} STEM controls (left edge ${boxes.stem!.left}) must sit entirely RIGHT ` +
-				`of the EQ stack (right edge ${boxes.eq!.right})`
+			boxes.filter!.left,
+			`channel ${deck} FILTER (left edge ${boxes.filter!.left}) must sit RIGHT of the EQ ` +
+				`stack (right edge ${boxes.eq!.right})`
 		).toBeGreaterThanOrEqual(boxes.eq!.right);
+		expect(
+			boxes.stem!.top,
+			`channel ${deck} STEM controls (top ${boxes.stem!.top}) must sit BELOW the EQ stack ` +
+				`(bottom ${boxes.eq!.bottom})`
+		).toBeGreaterThanOrEqual(boxes.eq!.bottom);
 	}
 });
 
-// The floor is an EXACT-FIT number (strip 171 == the four LESS grid rows' sum,
-// deck area 278 == toggle 17 + strip 173 + lower 76 + chrome 12), so it has
-// zero slack by construction and a 1px Chromium rounding or font-metric
-// difference breaks it - which is precisely how #1578 bit. Every other test in
-// this file runs at STANDARD_VIEWPORT, where `min(404px, calc(...))` governs
-// and the mixer carries ~128px of slack, so none of them has ever rendered the
-// floor at all. This one does. Blinded review, Thu 10 Sep 2026.
+// The floor is the tightest box the mixer ever gets. Since LESSV-01 it is one
+// MORE deck tall (249px, with the mixer needing toggle 17 + strip 121 + lower
+// 76 + chrome 12 = 226px of it), and at STANDARD_VIEWPORT the row sits right
+// on that floor too, so the other tests here now render it as well. This one
+// keeps the SHORT_VIEWPORT precondition so a later change that lifts the row
+// off the floor fails loudly instead of re-testing slack. The 1px Chromium
+// rounding or font-metric drift that #1578 bit on is still what it guards.
+// Blinded review, Thu 10 Sep 2026.
 //
 // It asserts against the STRIP's own box, not the mixer's, and that choice is
 // the whole test. Measured at this viewport with the shipped sizes: mixer
@@ -323,29 +337,34 @@ test('performance LESS mode: at the deck-area FLOOR no strip control spills out 
 		for (const [name, cell] of Object.entries(cells)) {
 			expect(cell, `channel ${deck} ${name} must be present at the floor`).not.toBeNull();
 		}
-		// Row 2, left to right: cue | trim | stemlabel. This is the row whose
-		// placement nothing rendered used to check, and the one where two
-		// dropped `grid-area`s would swap TRIM and CUE.
-		expect(
-			cells.cue!.right,
-			`channel ${deck} CUE (right ${cells.cue!.right}) must sit LEFT of TRIM ` +
-				`(left ${cells.trim!.left}) - a swap here means a lost grid-area`
-		).toBeLessThanOrEqual(cells.trim!.left);
-		expect(
-			cells.stemLabel!.left,
-			`channel ${deck} STEM label (left ${cells.stemLabel!.left}) must sit RIGHT of TRIM ` +
-				`(right ${cells.trim!.right})`
-		).toBeGreaterThanOrEqual(cells.trim!.right);
-		// Rows 3 and 4: fader | eq | stem, then fader | filter | stem.
+		// LESSV-01 grid: fader | eq | (trim, cue, filter), then one STEM row.
+		// The right column is read top to bottom, which is the order a lost
+		// `grid-area` would scramble (DOM order is trim, eq, filter, cue).
 		expect(cells.fader!.right).toBeLessThanOrEqual(cells.eq!.left);
-		expect(cells.stem!.left).toBeGreaterThanOrEqual(cells.eq!.right);
-		expect(
-			cells.filter!.top,
-			`channel ${deck} FILTER (top ${cells.filter!.top}) belongs in the row BELOW the EQ ` +
-				`stack (bottom ${cells.eq!.bottom})`
-		).toBeGreaterThanOrEqual(cells.eq!.bottom);
-		expect(cells.fader!.right).toBeLessThanOrEqual(cells.filter!.left);
-		expect(cells.stem!.left).toBeGreaterThanOrEqual(cells.filter!.right);
+		for (const [name, cell] of [
+			['TRIM', cells.trim!],
+			['CUE', cells.cue!],
+			['FILTER', cells.filter!]
+		] as const) {
+			expect(
+				cell.left,
+				`channel ${deck} ${name} (left ${cell.left}) must sit RIGHT of the EQ stack ` +
+					`(right ${cells.eq!.right}) - anything else means a lost grid-area`
+			).toBeGreaterThanOrEqual(cells.eq!.right);
+		}
+		expect(cells.trim!.bottom).toBeLessThanOrEqual(cells.cue!.top);
+		expect(cells.cue!.bottom).toBeLessThanOrEqual(cells.filter!.top);
+		for (const [name, cell] of [
+			['STEM label', cells.stemLabel!],
+			['STEM chips', cells.stem!]
+		] as const) {
+			expect(
+				cell.top,
+				`channel ${deck} ${name} (top ${cell.top}) belongs in the row BELOW the dial block ` +
+					`(EQ bottom ${cells.eq!.bottom}, fader bottom ${cells.fader!.bottom})`
+			).toBeGreaterThanOrEqual(Math.max(cells.eq!.bottom, cells.fader!.bottom));
+		}
+		expect(cells.stemLabel!.right).toBeLessThanOrEqual(cells.stem!.left);
 	}
 
 	// Second line of defence, cheap: the headphone/crossfader row the strips

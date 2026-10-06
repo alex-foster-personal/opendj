@@ -1,11 +1,10 @@
 <script lang="ts">
-	// Account button plus the explainer around the sign-in bauble, split out
+	// The explainer around the sign-in bauble, split out
 	// of TopBar so the topbar's import fan-out stays within the quality
 	// ratchet. TopBar still renders the bauble itself as the children.
 	import type { Snippet } from 'svelte';
 	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
 	import { auth } from '$lib/auth.svelte';
-	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 
 	// `signedIn` is relayed to the parent as a bindable so TopBar can derive
 	// its own showClock (CHROME-06) without importing `auth` itself, which
@@ -31,17 +30,10 @@
 	];
 </script>
 
-{#if auth.user}
-	<button
-		type="button"
-		class="account-btn"
-		aria-label="Open account panel"
-		title="Open account panel"
-		onclick={() => openAccountOverlay()}
-	>
-		Account
-	</button>
-{/if}
+<!-- ACCT-01 / LESSV-04 (the maintainer, Tue 6 Oct 2026): the account button lives ONLY
+     inside the login dropdown (UserBauble's menu, "Account"), in both views.
+     The standalone pill that used to sit here duplicated it. The overlay and
+     its route are unchanged; only this second door is gone. -->
 <!-- No bullets while the menu is open: the explainer has nothing rich to show, so it stays hidden. -->
 <ControlExplainer
 	title={auth.user ? 'Signed-in features' : 'Sign in required'}
@@ -54,19 +46,6 @@
 </ControlExplainer>
 
 <style>
-	.account-btn {
-		background: transparent;
-		border: 1px solid var(--rb-border);
-		border-radius: 999px;
-		color: var(--rb-text-dim);
-		font-size: 10px;
-		padding: 2px 8px;
-		cursor: pointer;
-	}
-	.account-btn:hover {
-		color: var(--rb-text);
-		border-color: var(--rb-text-dim);
-	}
 	.login-cluster.signed-in {
 		color: var(--rb-green);
 	}

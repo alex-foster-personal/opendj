@@ -54,12 +54,19 @@ test('signed-in login cluster uses green styling for the gated-feature list', ()
 	assert.match(cluster, /\.login-cluster\.signed-in[\s\S]*var\(--rb-green\)/);
 });
 
-test('signed-in account button precedes login cluster', () => {
-	// TopBar passes the bauble into TopBarAccountCluster, which renders the
-	// account button ahead of it.
-	const accountAt = cluster.indexOf('class="account-btn"');
-	const baubleSlotAt = cluster.indexOf('{@render children()}');
-	assert.ok(accountAt >= 0 && accountAt < baubleSlotAt);
+// requirement: LESSV-04
+// [if] the top bar renders an account button outside the login dropdown [then] fail, [else stop]
+test('the account button lives only inside the login dropdown', () => {
+	const bauble = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/UserBauble.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.equal(cluster.includes('class="account-btn"'), false, 'no standalone Account pill beside the bauble');
+	assert.equal(cluster.includes('openAccountOverlay'), false, 'the cluster opens no account panel itself');
+	assert.equal(topbar.includes('openAccountOverlay'), false, 'TopBar opens no account panel itself');
+	// The one door that remains: the bauble menu's Account item.
+	assert.match(bauble, /role="menuitem"[\s\S]*?onclick=\{onOpenAccount\}[\s\S]*?Account/);
+	assert.match(bauble, /function onOpenAccount\(\): void \{[\s\S]*?openAccountOverlay\(\);/);
 	const clusterAt = topbar.indexOf('<TopBarAccountCluster ');
 	const baubleAt = topbar.indexOf('<UserBauble');
 	const clusterEndAt = topbar.indexOf('</TopBarAccountCluster>');
