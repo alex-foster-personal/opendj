@@ -236,6 +236,8 @@ export function createSessionSnapshotWriter(opts: {
 	};
 }
 
+const RESTORE_DISPOSED = 'performance session restore was disposed';
+
 async function _restoreDeck(
 	dispatch: typeof dispatchPerformanceCommand,
 	query: typeof queryPerformanceState,
@@ -253,6 +255,9 @@ async function _restoreDeck(
 		if (snapshot === null) return;
 		await restoreDeckConfigFromSnapshot(dispatch, deckId, snapshot, query);
 	} catch (exc) {
+		// AGENT-18: a restore disposed by losing the lease stops here, quietly, rather
+		// than toasting one error per remaining deck; the next promotion resumes it.
+		if (exc instanceof Error && exc.message === RESTORE_DISPOSED) throw exc;
 		const message = exc instanceof Error ? exc.message : String(exc);
 		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
 	}
@@ -422,7 +427,7 @@ export function installPerformanceSessionRestore(
 	const skipDeckRestore = (opts.skipDeckRestore ?? false) || skipFromLibrary;
 	let disposed = false;
 	const assertActive = (): void => {
-		if (disposed) throw new Error('performance session restore was disposed');
+		if (disposed) throw new Error(RESTORE_DISPOSED);
 	};
 
 	const guardedDispatch: typeof dispatch = (command) => { assertActive(); return dispatch(command); };
@@ -451,6 +456,12 @@ export function installPerformanceSessionRestore(
 		});
 		writer.flush(true);
 		activeSessionWriter = writer;
+	}).catch((error: unknown) => {
+		// AGENT-18: losing the lease disposes a restore mid-flight. That is expected
+		// (the next promotion resumes it), not an unhandled rejection. Anything else
+		// still surfaces.
+		if (disposed && error instanceof Error && error.message === RESTORE_DISPOSED) return;
+		throw error;
 	});
 
 	return () => {

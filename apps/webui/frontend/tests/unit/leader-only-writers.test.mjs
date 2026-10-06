@@ -21,7 +21,7 @@ import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const { whileLeader } = await loadTypeScriptModule('src/lib/rb/tab-leadership.ts');
-const { installLeaderOnlyEventWriters, installLeaderOnlyRestore } = await loadTypeScriptModule(
+const { installDemotionSilencer, installLeaderOnlyEventWriters, installLeaderOnlyRestore, silenceDemotedTab } = await loadTypeScriptModule(
 	'src/lib/rb/leader-only-writers.ts'
 );
 
@@ -151,7 +151,7 @@ test('a follower promoted later restores then, and losing leadership stops every
 	assert.equal(r.live.size, 0, `still live after demotion: ${[...r.live]}`);
 });
 
-test('re-promotion restarts the writers but never restores decks again', async () => {
+test('re-promotion resumes from the rescue ring but never re-applies the session decks', async () => {
 	const leadership = fakeLeadership(true);
 	const r = recorder();
 	installBoth(leadership, r.deps);
@@ -159,7 +159,7 @@ test('re-promotion restarts the writers but never restores decks again', async (
 	leadership.set(false);
 	leadership.set(true);
 	await flush();
-	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 1);
+	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 2, 'Take control continues the set from the rescue ring');
 	assert.deepEqual(
 		r.log.filter((line) => line.startsWith('session restore')),
 		['session restore skipDeckRestore=false', 'session restore skipDeckRestore=true']
@@ -190,7 +190,8 @@ test('a restore cut short by demotion is resumed on re-promotion, then never aga
 			'session restore skipDeckRestore=true'
 		]
 	);
-	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 1);
+	// Bug #31: every promotion resumes from the rescue ring (the demoted tab was silenced).
+	assert.equal(r.log.filter((line) => line === 'rescue restore').length, 3);
 });
 
 test('mutation control: without the settled signal every re-promotion would resume', async () => {
@@ -270,4 +271,115 @@ test('/performance routes every writer through the leader gate', async () => {
 	}
 	assert.match(page, /installUiMirror\(tabLeadership\.leadership\)/);
 	assert.match(page, /tabLeadership\.dispose\(\);/);
+});
+
+// ------------------------------------------------- bug #31: go silent ---
+
+/** A fake audio graph: per deck a main source and stem sources, each running or not. */
+function fakeGraph(playingDecks) {
+	const nodes = [];
+	for (const deck of [1, 2, 3, 4]) {
+		const playing = playingDecks.includes(deck);
+		nodes.push({ deck, kind: 'deck', running: playing });
+		for (const stem of ['vocals', 'drums']) nodes.push({ deck, kind: `stem-${stem}`, running: playing });
+	}
+	nodes.push({ deck: null, kind: 'preview-cue', running: true });
+	let autoplayArmed = true;
+	return {
+		running: () => nodes.filter((node) => node.running).map((node) => `${node.kind}@${node.deck}`),
+		autoplayArmed: () => autoplayArmed,
+		effects: {
+			// engine.pause stops a deck and every stem riding it.
+			pauseDeck: async (deck) => {
+				for (const node of nodes) if (node.deck === deck) node.running = false;
+			},
+			stopPreviewCue: () => {
+				for (const node of nodes) if (node.kind === 'preview-cue') node.running = false;
+			},
+			cancelAutoPlayNext: () => {
+				autoplayArmed = false;
+			},
+			reportError: (deck, error) => {
+				throw new Error(`deck ${deck}: ${error}`);
+			}
+		}
+	};
+}
+
+test('bug #31: after demotion no audio node in the demoted tab is running', async () => {
+	const leadership = fakeLeadership(true);
+	const graph = fakeGraph([3, 1]);
+	installDemotionSilencer({ leadership, silence: () => silenceDemotedTab(graph.effects) });
+	assert.ok(graph.running().length > 0, 'precondition: the leader is playing');
+	leadership.set(false);
+	await flush();
+	assert.deepEqual(graph.running(), []);
+	assert.equal(graph.autoplayArmed(), false, 'AutoPlay cannot start a deck behind the new leader');
+});
+
+test('mutation control: demotion without the silencer leaves the set playing', async () => {
+	const leadership = fakeLeadership(true);
+	const graph = fakeGraph([3]);
+	leadership.set(false);
+	await flush();
+	assert.ok(graph.running().includes('deck@3'));
+	assert.ok(graph.running().includes('stem-vocals@3'));
+});
+
+test('mutation control: a silence that pauses only playing-flagged decks misses an armed one', async () => {
+	// A quantized launch armed on a paused deck reads playing=false; pausing every
+	// deck is what clears it. Pausing only decks 1..3 leaves deck 4 running here.
+	const graph = fakeGraph([4]);
+	const partial = { ...graph.effects, pauseDeck: async (deck) => (deck === 4 ? undefined : graph.effects.pauseDeck(deck)) };
+	silenceDemotedTab(partial);
+	await flush();
+	assert.deepEqual(graph.running(), ['deck@4', 'stem-vocals@4', 'stem-drums@4']);
+});
+
+test('the silencer runs after every leader-only writer has stopped', async () => {
+	const leadership = fakeLeadership(true);
+	const r = recorder();
+	const order = [];
+	// Installed FIRST, as /performance does, so its listener runs before the gates'.
+	installDemotionSilencer({ leadership, silence: () => order.push('silence') });
+	installBoth(leadership, {
+		...r.deps,
+		installRescueRingWriter: () => () => order.push('rescue writer stopped'),
+		installPlayCounter: () => () => order.push('play counter stopped')
+	});
+	await flush();
+	leadership.set(false);
+	await flush();
+	assert.equal(order.at(-1), 'silence', JSON.stringify(order));
+	assert.ok(order.includes('rescue writer stopped') && order.includes('play counter stopped'));
+});
+
+test('the silencer fires only on losing leadership, never at install or as a follower', async () => {
+	const leadership = fakeLeadership(false);
+	let silences = 0;
+	const dispose = installDemotionSilencer({ leadership, silence: () => (silences += 1) });
+	leadership.set(false);
+	await flush();
+	assert.equal(silences, 0, 'a follower that stays a follower is not silenced again');
+	leadership.set(true);
+	await flush();
+	assert.equal(silences, 0, 'promotion is not demotion');
+	leadership.set(false);
+	await flush();
+	assert.equal(silences, 1);
+	leadership.set(true);
+	leadership.set(false);
+	dispose();
+	await flush();
+	assert.equal(silences, 1, 'after unmount the route teardown owns stopping, not the silencer');
+});
+
+test('a demotion that is reversed in the same tick does not silence', async () => {
+	const leadership = fakeLeadership(true);
+	let silences = 0;
+	installDemotionSilencer({ leadership, silence: () => (silences += 1) });
+	leadership.set(false);
+	leadership.set(true);
+	await flush();
+	assert.equal(silences, 0);
 });

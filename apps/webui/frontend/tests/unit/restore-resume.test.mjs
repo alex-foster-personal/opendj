@@ -14,10 +14,11 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let session;
+let stores;
 let deeplink;
 
 before(async () => {
-	({ session } = await loadTypeScriptModule('tests/unit/fixtures/performance-session-restore-entry.ts'));
+	({ session, stores } = await loadTypeScriptModule('tests/unit/fixtures/performance-session-restore-entry.ts'));
 	deeplink = await loadTypeScriptModule('src/lib/rb/performance-deeplink.ts');
 });
 
@@ -119,4 +120,47 @@ test('the settled callback fires after a resume that ran to its end', async () =
 	let settled = 0;
 	await run({}, { resumeInterruptedRestore: true, onDeckRestoreSettled: () => (settled += 1) });
 	assert.equal(settled, 1);
+});
+
+for (const resumeInterruptedRestore of [true, false]) test(`bug #31: a restore disposed by losing the lease mid-flight is quiet (resume=${resumeInterruptedRestore})`, async () => {
+	stores.toasts.length = 0;
+	const unhandled = [];
+	const onUnhandled = (reason) => unhandled.push(String(reason));
+	process.on('unhandledRejection', onUnhandled);
+	globalThis.window = {};
+	const state = engine({});
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	const location = { pathname: '/performance', search: SEARCH, href: `http://127.0.0.1/performance${SEARCH}` };
+	try {
+		const dispose = session.installPerformanceSessionRestore({
+			location,
+			storage: { getItem: () => null, setItem: () => {} },
+			replaceState: () => {},
+			dispatch: async (command) => {
+				await gate;
+				if (command.type === 'load') state.decks[command.deck].stable_id = command.stable_id;
+				return state;
+			},
+			query: () => state,
+			document: { hidden: false, addEventListener: () => {}, removeEventListener: () => {} },
+			window: { addEventListener: () => {}, removeEventListener: () => {} },
+			setInterval: () => 1,
+			clearInterval: () => {},
+			commandSession: () => 1,
+			operatorMaster: () => null,
+			resumeInterruptedRestore
+		});
+		for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+		dispose(); // the lease is lost while deck 1 is still loading
+		release();
+		for (let i = 0; i < 30; i += 1) await new Promise((resolve) => setImmediate(resolve));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	} finally {
+		delete globalThis.window;
+		process.off('unhandledRejection', onUnhandled);
+	}
+	assert.deepEqual(unhandled, []);
+	const restoreToasts = stores.toasts.filter((toast) => String(toast.message).startsWith('session restore deck'));
+	assert.deepEqual(restoreToasts.map((toast) => toast.message), [], 'and no error toast per remaining deck');
 });
