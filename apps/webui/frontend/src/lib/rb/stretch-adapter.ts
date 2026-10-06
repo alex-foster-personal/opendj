@@ -383,22 +383,65 @@ export class StretchDeckProcessor {
 		this.#node.disconnect();
 	}
 
-	/** Permanently retire this one-shot processor: disconnect first for
-	 * synchronous silence, then let the patched worklet transfer retained PCM
-	 * back and mark itself finished so WebKit can collect it. Bypasses the
-	 * poisoned command gate so a failed processor can still release memory. */
+	/** Permanently retire this one-shot processor (MEM-6A).
+	 *
+	 * The node leaves the audible path SYNCHRONOUSLY: every output is
+	 * disconnected before this method first yields. It is then re-attached to
+	 * the context's one shared muted sink, so the render thread keeps pulling
+	 * it while the patched worklet transfers retained PCM back and marks itself
+	 * finished. WebKit only drops a node's processor (and with it the
+	 * processor's WASM instance and state) when `process()` returns false on a
+	 * render quantum, and a node that is no longer pulled never gets one: its
+	 * AudioWorkletNode stays alive until the context closes
+	 * (`AudioWorkletNode::virtualHasPendingActivity` is `!context().isClosed()`).
+	 * Disconnecting BEFORE the dispose command, as this did until now, is
+	 * exactly the order that left every retired processor resident.
+	 *
+	 * Bounded: the node is pulled for at most {@link STRETCH_RETIRE_PULL_MAX_MS}
+	 * and is then disconnected whatever happened, with one warning line when
+	 * the release was not confirmed. Bypasses the poisoned command gate so a
+	 * failed processor can still release memory. */
 	async dispose(): Promise<void> {
 		if (this.#disposed) return;
 		this.#disposed = true;
 		this.#node.disconnect();
+		// A closed context renders nothing and frees its nodes with it; asking
+		// it for a sink would only throw.
+		const sink = this.#context.state === 'closed' ? null : stretchRetirementSink(this.#context);
+		if (sink !== null) this.#node.connect(sink);
 		this.#node.removeEventListener('processorerror', this.#processorErrorListener);
+		const acknowledged = withStretchCommandTimeout(
+			this.#node.dispose(),
+			'processor disposal',
+			this.#commandTimeoutMs
+		);
 		try {
-			await withStretchCommandTimeout(
-				this.#node.dispose(),
-				'processor disposal',
-				this.#commandTimeoutMs
-			);
+			if (sink !== null) {
+				const deadlineMs = performance.now() + STRETCH_RETIRE_PULL_MAX_MS;
+				const released = acknowledged.then(() =>
+					awaitRenderQuanta(this.#context, STRETCH_RETIRE_RENDER_QUANTA, deadlineMs)
+				);
+				// The ack's own rejection is reported by `await acknowledged` below.
+				released.catch(() => {});
+				const confirmed = await Promise.race([
+					released.then(
+						(rendered) => rendered,
+						() => false
+					),
+					new Promise<false>((resolve) =>
+						setTimeout(() => resolve(false), Math.max(0, deadlineMs - performance.now()))
+					)
+				]);
+				if (!confirmed) {
+					console.warn(
+						`[stretch] retired processor release not confirmed within ${STRETCH_RETIRE_PULL_MAX_MS}ms (context ${this.#context.state}); disconnected anyway`
+					);
+				}
+				this.#node.disconnect();
+			}
+			await acknowledged;
 		} finally {
+			this.#node.disconnect();
 			this.#node.port.onmessage = null;
 			this.#node.port.close();
 			this.#loadedDurationSec = 0;
@@ -469,6 +512,44 @@ export class StretchDeckProcessor {
 	async #command<T>(command: () => Promise<T>, operation: string): Promise<T> {
 		return this.#gate.run(operation, command, this.#commandTimeoutMs);
 	}
+}
+
+/** Longest a retired node may stay pulled by the muted sink (MEM-6A). */
+export const STRETCH_RETIRE_PULL_MAX_MS = 750;
+/** Render quanta to let pass after the dispose ack, so `process()` runs and returns false. */
+export const STRETCH_RETIRE_RENDER_QUANTA = 3;
+const RENDER_QUANTUM_FRAMES = 128;
+
+type RetirementContext = Pick<BaseAudioContext, 'createGain' | 'destination'>;
+const _retirementSinks = new WeakMap<RetirementContext, GainNode>();
+
+/** The context's ONE muted sink (gain 0 into the destination) that keeps
+ * retired stretch nodes pulled until their processors finish. Created on
+ * first use and owned by the context: it goes when the context does. */
+export function stretchRetirementSink(context: RetirementContext): GainNode {
+	let sink = _retirementSinks.get(context);
+	if (sink === undefined) {
+		sink = context.createGain();
+		sink.gain.value = 0;
+		sink.connect(context.destination);
+		_retirementSinks.set(context, sink);
+	}
+	return sink;
+}
+
+/** True once `quanta` render quanta have passed on a running context; false
+ * when the context is not running (nothing can render) or the deadline hits. */
+export async function awaitRenderQuanta(
+	context: Pick<BaseAudioContext, 'currentTime' | 'sampleRate' | 'state'>,
+	quanta: number,
+	deadlineMs: number
+): Promise<boolean> {
+	const target = context.currentTime + (quanta * RENDER_QUANTUM_FRAMES) / context.sampleRate;
+	while (context.currentTime < target) {
+		if (context.state !== 'running' || performance.now() >= deadlineMs) return false;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	return true;
 }
 
 let _channelMoveVerdict: boolean | null = null;

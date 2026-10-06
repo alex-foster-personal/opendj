@@ -205,7 +205,7 @@ function fakeStretchNode({ disposeImpl } = {}) {
 
 test('terminal processor failure prevents later worklet invocation', async () => {
 	const fake = fakeStretchNode();
-	const processor = new adapter.StretchDeckProcessor({ sampleRate: 48_000 }, fake.node, {
+	const processor = new adapter.StretchDeckProcessor(fakeAudioContext(), fake.node, {
 		onProcessorError() {}
 	});
 	fake.processorError();
@@ -218,7 +218,7 @@ test('terminal processor failure prevents later worklet invocation', async () =>
 
 test('command timeout is terminal and prevents a second worklet invocation', async () => {
 	const fake = fakeStretchNode();
-	const processor = new adapter.StretchDeckProcessor({ sampleRate: 48_000 }, fake.node, {
+	const processor = new adapter.StretchDeckProcessor(fakeAudioContext(), fake.node, {
 		commandTimeoutMs: 5,
 		onProcessorError() {}
 	});
@@ -234,7 +234,7 @@ test('command timeout is terminal and prevents a second worklet invocation', asy
 
 test('dispose disconnects synchronously, retires the worklet through a real command, and releases the port', async () => {
 	const fake = fakeStretchNode();
-	const processor = new adapter.StretchDeckProcessor({ sampleRate: 48_000 }, fake.node, {
+	const processor = new adapter.StretchDeckProcessor(fakeAudioContext(), fake.node, {
 		onProcessorError() {}
 	});
 
@@ -261,7 +261,7 @@ test('dispose disconnects synchronously, retires the worklet through a real comm
 
 test('dispose still releases the port when the worklet dispose command times out', async () => {
 	const fake = fakeStretchNode({ disposeImpl: () => new Promise(() => {}) });
-	const processor = new adapter.StretchDeckProcessor({ sampleRate: 48_000 }, fake.node, {
+	const processor = new adapter.StretchDeckProcessor(fakeAudioContext(), fake.node, {
 		commandTimeoutMs: 5,
 		onProcessorError() {}
 	});
@@ -292,3 +292,19 @@ test('create awaits ensureStretchWorkletReady before the handshake factory call'
 	assert.ok(!readSource('src/lib/rb/stretch-worklet-ready.ts').includes('processor creation timed out'));
 	assert.ok(createBody.includes("recordWorkletAck('processor creation'"));
 });
+
+/** A running AudioContext stand-in with what StretchDeckProcessor.dispose() needs. */
+function fakeAudioContext() {
+	const startedAt = performance.now();
+	return {
+		state: "running",
+		sampleRate: 48_000,
+		destination: { inputs: new Set() },
+		get currentTime() {
+			return (performance.now() - startedAt) / 1000;
+		},
+		createGain() {
+			return { gain: { value: 1 }, inputs: new Set(), connect() {} };
+		}
+	};
+}
