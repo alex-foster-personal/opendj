@@ -3133,17 +3133,22 @@ export function dispatchCallerFromStack(stack: string | undefined): string {
 
 /**
  * Q1-DEFAULT-ON (the maintainer, B4): Quantize is on unless a USER turned it off. An
- * off without `by_user: true` is rewritten to on before it can reach either
- * engine, and the WARN names the caller. Every command path reaches this:
+ * app-internal off without `by_user: true` is not applied (the deck keeps its
+ * state) before it can reach either
+ * engine, and the WARN names the caller. Agent commands never get here with
+ * one: the order bus refuses them (422, agent-orders.ts). Paths:
  * `_dispatchUnknown` (UI, IPC bridge, agent order bus, session and rescue
  * restore) and `_dispatchWithinPreset`.
  */
 function _quantizeDefaultOn(command: PerformanceCommand, caller: string): PerformanceCommand {
 	if (command.type !== 'quantize' || command.enabled || command.by_user === true) return command;
+	// Not applied: the deck keeps what it has, on by default or a user's own
+	// off for this track (an app-internal off must not turn a user off on).
+	const keep = getDeckState(command.deck).quantize_enabled;
 	console.warn(
-		`[quantize] CH${command.deck}: Quantize off without user provenance reverted to on (Q1-DEFAULT-ON); caller: ${caller}`
+		`[quantize] CH${command.deck}: Quantize off without user provenance not applied, Quantize stays ${keep ? 'on' : 'off'} (Q1-DEFAULT-ON); caller: ${caller}`
 	);
-	return { type: 'quantize', deck: command.deck, enabled: true };
+	return { type: 'quantize', deck: command.deck, enabled: keep };
 }
 
 /**

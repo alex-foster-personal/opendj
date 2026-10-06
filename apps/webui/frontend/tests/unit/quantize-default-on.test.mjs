@@ -141,7 +141,7 @@ test('a programmatic off through the IPC bridge reverts at once and the WARN nam
 	assert.equal(quantizeOn(2), true, 'if an off without by_user lands then broken');
 	const [line, ...rest] = quantizeWarnings();
 	assert.deepEqual(rest, [], 'one revert, one WARN');
-	assert.match(line, /CH2: Quantize off without user provenance reverted to on/);
+	assert.match(line, /CH2: Quantize off without user provenance not applied, Quantize stays on/);
 	assert.match(line, /caller: window\.musicDjToolsPerformance\.dispatch \(IPC bridge\)/);
 });
 
@@ -205,4 +205,12 @@ test('dispatchCallerFromStack skips the dispatcher frames', () => {
 	].join('\n');
 	assert.equal(m.ipc.dispatchCallerFromStack(stack), 'at toggleQuantize (Deck.svelte:4:1)');
 	assert.equal(m.ipc.dispatchCallerFromStack(undefined), 'unknown caller');
+});
+
+test('an app-internal off after a user off leaves the user off alone (never flips it on)', async () => {
+	await dispatchViaBridge({ type: 'load', deck: 1, stable_id: SID_A });
+	await userToggle(1, false);
+	await dispatchViaBridge({ type: 'quantize', deck: 1, enabled: false });
+	assert.equal(quantizeOn(1), false, 'if an internal off re-enables a user off then broken');
+	assert.match(quantizeWarnings().join('\n'), /CH1: .*Quantize stays off/);
 });
