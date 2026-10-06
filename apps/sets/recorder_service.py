@@ -34,6 +34,9 @@ REMEMBERED_INPUT_FILENAME = "recorder-input.json"
 RecordSource = Literal["master", "loopback", "external", "none"]
 RECORD_SOURCES: tuple[RecordSource, ...] = ("master", "loopback", "external", "none")
 _DEVICE_SOURCES: frozenset[str] = frozenset({"loopback", "external"})
+#: Late chunks one stopped recording may get before the server says so at
+#: INFO (SET-12): the normal case is ONE (the chunk in flight at the stop).
+LATE_CHUNK_CANARY = 2
 
 _log = logging.getLogger(__name__)
 
@@ -76,6 +79,9 @@ class RecorderService:
         # Recordings this daemon stopped cleanly, newest last, so a chunk the
         # page had in flight at the stop is told apart from a lost one (SET-12).
         self._cleanly_stopped: list[str] = []
+        # Late chunks dropped per cleanly stopped recording: one is the normal
+        # in-flight chunk; more is a page tap still streaming (the canary).
+        self._late_chunks: dict[str, int] = {}
 
     def _idle_status(self) -> dict[str, Any]:
         return {
@@ -311,6 +317,19 @@ class RecorderService:
             if recorder is not None and recorder.session_id == session_id and recorder._master is not None:
                 recorder._master.mark_tap_attached()
 
+    def _count_late_chunk(self, session_id: str) -> None:
+        """Count a chunk dropped for a stopped recording; log at INFO once the
+        count passes :data:`LATE_CHUNK_CANARY`, and again each time it doubles,
+        so a page tap that keeps streaming into a stopped set is visible."""
+        count = self._late_chunks.get(session_id, 0) + 1
+        self._late_chunks[session_id] = count
+        if count == LATE_CHUNK_CANARY + 1 or (count > LATE_CHUNK_CANARY + 1 and (count & (count - 1)) == 0):
+            _log.info(
+                "master mix: %d late chunks for stopped recording %s; a page tap is still streaming",
+                count,
+                session_id,
+            )
+
     def write_master_pcm(
         self, session_id: str, *, stream: str, seq: int, sample_rate: int, pcm: bytes
     ) -> None:
@@ -328,6 +347,7 @@ class RecorderService:
             if (recorder is None or recorder.session_id != session_id) and (
                 session_id in self._cleanly_stopped
             ):
+                self._count_late_chunk(session_id)
                 raise MasterMixRecordingStopped(f"recording {session_id} was stopped")
             if recorder is None or recorder.session_id != session_id:
                 active = "nothing" if recorder is None else f"session {recorder.session_id}"
@@ -382,6 +402,7 @@ class RecorderService:
             record_mod.stop(self._recorder)
             if self._source == "master":
                 self._cleanly_stopped = [*self._cleanly_stopped[-7:], self._recorder.session_id]
+                self._late_chunks = {k: v for k, v in self._late_chunks.items() if k in self._cleanly_stopped}
             self._recorder = None
             self._source = None
         return self._idle_status()
@@ -441,6 +462,7 @@ def _pid_is_running(pid: int) -> bool:
 
 
 __all__ = [
+    "LATE_CHUNK_CANARY",
     "RECORD_SOURCES",
     "RecordSource",
     "RecorderConflict",

@@ -85,7 +85,8 @@ export async function startMasterMixCapture(
 	sessionId: string,
 	onfailure: (reason: string) => void,
 	post: typeof fetch = fetch,
-	onended: () => void = () => {}
+	onended: () => void = () => {},
+	signal?: AbortSignal
 ): Promise<MasterMixCapture> {
 	const unavailable = masterMixUnavailableReason();
 	if (unavailable !== null) throw new Error(unavailable);
@@ -98,6 +99,10 @@ export async function startMasterMixCapture(
 	let failed: string | null = null;
 	let stopped = false;
 	let retapping = false;
+	// Started only once the first tap is connected: a watch that ran during
+	// a slow first attach (tap still null) started a SECOND tap, whose orphaned
+	// worklet kept feeding a stopped recording (SET-12, reproduced live).
+	let watch: ReturnType<typeof setInterval> | undefined;
 
 	function detach(): void {
 		if (tap === null) return;
@@ -220,6 +225,13 @@ export async function startMasterMixCapture(
 		worklet.port.onmessage = (event: MessageEvent<{ pcm?: ArrayBuffer; frames?: number }>) => {
 			const { pcm, frames } = event.data;
 			if (!(pcm instanceof ArrayBuffer) || typeof frames !== 'number') return;
+			if (stopped || failed !== null || tap !== next) {
+				// A tap that is no longer this capture's live one never posts.
+				worklet.port.onmessage = null;
+				node.disconnect(worklet);
+				worklet.disconnect();
+				return;
+			}
 			queue.push({ pcm, frames, stream: next.stream, seq: next.seq++, sampleRate: next.sampleRate, port: worklet.port });
 			if (queue.length > MAX_QUEUED_CHUNKS) {
 				fail(`the recorder fell ${queue.length * CHUNK_SECONDS} s behind the master mix`);
@@ -227,24 +239,37 @@ export async function startMasterMixCapture(
 			}
 			kick();
 		};
+		if (stopped || failed !== null || signal?.aborted) {
+			// Cancelled (or ended) while the module loaded: never go live.
+			worklet.port.onmessage = null;
+			node.disconnect(worklet);
+			worklet.disconnect();
+			sink.disconnect();
+			throw new Error('the recording was cancelled before the master tap connected');
+		}
 		tap = next;
 	}
 
 	// The graph is rebuilt on an output-device change or a context failure;
 	// follow the master bus to its new context.
-	const watch = setInterval(() => {
-		if (failed !== null || stopped || retapping) return;
-		const current = masterMixTapPoint(false);
-		if (current === null || current.node === tap?.node) return;
-		retapping = true;
-		detach();
-		attach(false)
-			.catch((error: unknown) => fail(`the master mix tap could not follow the rebuilt audio graph: ${String(error)}`))
-			.finally(() => (retapping = false));
-	}, RETAP_CHECK_MS);
+	function watchForRebuilds(): void {
+		watch = setInterval(() => {
+			if (failed !== null || stopped || retapping || tap === null) return;
+			const current = masterMixTapPoint(false);
+			if (current === null || current.node === tap?.node) return;
+			retapping = true;
+			detach();
+			attach(false)
+				.catch((error: unknown) => fail(`the master mix tap could not follow the rebuilt audio graph: ${String(error)}`))
+				.finally(() => (retapping = false));
+		}, RETAP_CHECK_MS);
+	}
 
 	try {
+		if (signal?.aborted) throw new Error('the recording was cancelled before the master tap connected');
+		signal?.addEventListener('abort', () => end(), { once: true });
 		await attach(true);
+		watchForRebuilds();
 		stats.tap_started_ms = Date.now();
 	} catch (error) {
 		clearInterval(watch);
@@ -280,7 +305,17 @@ export async function startMasterMixCapture(
 
 // ------------------------------------------------------- one tap per page ---
 
-let current: { sessionId: string; capture: Promise<MasterMixCapture>; notify: (why: string) => void } | null = null;
+type Running = {
+	sessionId: string;
+	capture: Promise<MasterMixCapture>;
+	notify: (why: string) => void;
+	abort: AbortController;
+};
+
+let current: Running | null = null;
+/** Recordings the daemon cancelled (its start timed out): a tap order that
+ *  arrives late for one of these never starts. Bounded, newest last. */
+const cancelled: string[] = [];
 
 /** The page's one master tap for `sessionId`: started on first ask, the same
  *  tap on every later ask (the start route's pushed order and the REC rail
@@ -291,19 +326,28 @@ export function ensureMasterMixCapture(
 	sessionId: string,
 	notify?: (why: string) => void
 ): Promise<MasterMixCapture> {
+	if (cancelled.includes(sessionId)) {
+		return Promise.reject(new Error(`recording ${sessionId} was cancelled by the recorder`));
+	}
 	if (current?.sessionId === sessionId) {
 		if (notify) current.notify = notify;
 		return current.capture;
 	}
 	if (current !== null) void stopMasterMixCapture();
-	const entry = { sessionId, notify: notify ?? ((why: string) => console.error(`master mix: ${why}`)) };
+	const abort = new AbortController();
+	const entry = {
+		sessionId,
+		abort,
+		notify: notify ?? ((why: string) => console.error(`master mix: ${why}`))
+	};
 	const capture = startMasterMixCapture(
 		sessionId,
 		(why) => entry.notify(why),
 		fetch,
 		() => {
 			if (current?.capture === capture) current = null;
-		}
+		},
+		abort.signal
 	);
 	current = { ...entry, capture };
 	capture.catch(() => {
@@ -319,4 +363,15 @@ export async function stopMasterMixCapture(): Promise<MasterMixStats | null> {
 	if (running === null) return null;
 	const capture = await running.capture.catch(() => null);
 	return capture === null ? null : capture.stop();
+}
+
+/** The daemon cancelled `sessionId` (its start gave up on the tap): tear the
+ *  tap down at once, even mid-attach, with no flush and no further POST, and
+ *  refuse a tap order for it that arrives later (SET-12). */
+export function cancelMasterMixCapture(sessionId: string): void {
+	cancelled.push(sessionId);
+	if (cancelled.length > 16) cancelled.shift();
+	if (current?.sessionId !== sessionId) return;
+	current.abort.abort();
+	current = null;
 }

@@ -73,7 +73,10 @@ async function _one(command: unknown): Promise<AgentStepResult> {
 	try {
 		const order = _command(command) as unknown as Record<string, unknown>;
 		if (order.type === 'record_master_tap') await _recordMasterTap(order);
-		else await dispatchPerformanceCommand(_command(command));
+		else if (order.type === 'record_master_tap_cancel') {
+			// The start gave up on the tap: tear it down, never stream (SET-12).
+			(await import('$lib/sets/master-mix-capture')).cancelMasterMixCapture(String(order.session_id));
+		} else await dispatchPerformanceCommand(_command(command));
 		return { status: 'succeeded' };
 	} catch (error) {
 		return { status: 'failed', error: _message(error) };

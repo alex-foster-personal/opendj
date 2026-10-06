@@ -190,7 +190,7 @@ class FakePort {
 	}
 }
 
-function fakeGraph() {
+function fakeGraph({ addModule = async () => {} } = {}) {
 	const worklets = [];
 	const connections = [];
 	const node = {
@@ -201,7 +201,7 @@ function fakeGraph() {
 		state: 'running',
 		sampleRate: 48000,
 		destination: { name: 'destination' },
-		audioWorklet: { addModule: async () => {} },
+		audioWorklet: { addModule },
 		resume: async () => {},
 		createGain: () => ({ gain: { value: 1 }, connect: (to) => to, disconnect: () => {} })
 	};
@@ -404,4 +404,90 @@ test('a dropped answer during a stop ends the tap with no second post', async ()
 	await stopping;
 	for (let i = 0; i < 5; i += 1) await settle();
 	assert.deepEqual(posted, ['0'], 'the dropped answer ends the tap; nothing is sent again');
+});
+
+// ------------------------------------------------------------------------
+// SET-12 root cause, reproduced: a start that timed out (503) left a tap that
+// attached LATE and re-posted chunk 5 twenty-one times into the stopped
+// recording. Two defects stacked: the graph-rebuild watch ran while the FIRST
+// attach was still loading its module (tap still null), so it started a
+// second tap whose orphaned worklet kept feeding the queue; and the old end()
+// returned early once stopped, leaving that queue for the pump to re-kick.
+// ------------------------------------------------------------------------
+
+function gate() {
+	let open;
+	const promise = new Promise((resolve) => (open = resolve));
+	return { promise, open };
+}
+
+test('a slow first attach starts ONE tap, never a second (the orphan that re-posted 21x)', async () => {
+	const slow = gate();
+	const graph = fakeGraph({ addModule: () => slow.promise });
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const posted = [];
+	const post = async (url) => {
+		posted.push(new URL(url).searchParams.get('seq'));
+		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), { status: 200 });
+	};
+	const starting = capture.startMasterMixCapture('S', assert.fail, post);
+	// Longer than the 1 s rebuild watch: the old code started a second tap here.
+	await new Promise((resolve) => setTimeout(resolve, 1300));
+	slow.open();
+	await starting;
+	await new Promise((resolve) => setTimeout(resolve, 1300));
+	assert.equal(graph.worklets.length, 1, 'one capture, one worklet');
+	// The recording was stopped: the first chunk is dropped, and that answer is
+	// TERMINAL. Every later chunk the worklet emits is never posted.
+	for (const worklet of graph.worklets) worklet.port.emit(chunk(100));
+	await settle();
+	for (const worklet of graph.worklets) for (let i = 0; i < 5; i += 1) worklet.port.emit(chunk(100));
+	for (let i = 0; i < 5; i += 1) await settle();
+	assert.deepEqual(posted, ['0'], 'zero retries after recording_stopped');
+});
+
+test('a start the recorder cancelled while the tap was attaching never posts a chunk', async () => {
+	const slow = gate();
+	const graph = fakeGraph({ addModule: () => slow.promise });
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const realFetch = globalThis.fetch;
+	const posted = [];
+	globalThis.fetch = async (url) => (posted.push(String(url)), new Response(null, { status: 204 }));
+	try {
+		const late = capture.ensureMasterMixCapture('C1');
+		capture.cancelMasterMixCapture('C1');
+		slow.open();
+		await assert.rejects(late, /cancelled before the master tap connected/);
+		for (const worklet of graph.worklets) worklet.port.emit(chunk(100));
+		await settle();
+		assert.deepEqual(posted, [], 'zero chunks posted after the cancel');
+		assert.equal(graph.worklets.every((w) => w.port.onmessage === null), true, 'no live worklet');
+		// A tap order for it that arrives even later never starts at all.
+		await assert.rejects(capture.ensureMasterMixCapture('C1'), /was cancelled by the recorder/);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('a cancel that lands after the tap connected tears it down with zero further posts', async () => {
+	const graph = fakeGraph();
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const realFetch = globalThis.fetch;
+	const posted = [];
+	globalThis.fetch = async (url) => (posted.push(String(url)), new Response(null, { status: 204 }));
+	try {
+		await capture.ensureMasterMixCapture('C2');
+		capture.cancelMasterMixCapture('C2');
+		for (const worklet of graph.worklets) worklet.port.emit(chunk(100));
+		await settle();
+		assert.deepEqual(posted, []);
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('the order executor runs the pushed cancel', () => {
+	const orders = readFrontendSource('src/lib/rb/agent-orders.ts');
+	assert.match(orders, /order\.type === 'record_master_tap_cancel'/);
+	assert.match(orders, /cancelMasterMixCapture\(String\(order\.session_id\)\)/);
 });
