@@ -104,6 +104,9 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 }) => {
 	// 1920 wide so no width tier (TopBar.svelte) evicts anything in MORE.
 	await page.setViewportSize({ width: 1920, height: 1080 });
+	// The first-run enrichment card floats over the library's bottom right and
+	// would take the click meant for the pencil menu.
+	await page.addInitScript(() => sessionStorage.setItem('odj.enrich-card.hidden', '1'));
 	await page.goto('/performance?muted=1');
 	await page.waitForSelector('.rb-mixer');
 	await page.getByTestId('playlist-row').filter({ hasText: 'E2E Fixture Set' }).click();

@@ -11,7 +11,7 @@
  * playlist, and the routes behind it keep answering while it is hidden.
  *
  * Regression lines:
- * - if the library header is taller than one line at 1280x800 on an editable playlist then broken
+ * - if any library header control sits on a second line at 1280x800 on an editable playlist then broken
  * - if Find & Replace, Bulk Edit or MyTags show before the pencil is clicked, or not after, then broken
  * - if a menu item does not open its own editor, or the selection items work with nothing selected, then broken
  * - if the add-track search is visible, or unmounted, on an editable playlist then broken
@@ -28,6 +28,8 @@ function manifest(): Manifest {
 }
 
 async function openFixturePlaylist(page: Page): Promise<void> {
+	// The first-run enrichment card floats over the bottom right of the library.
+	await page.addInitScript(() => sessionStorage.setItem('odj.enrich-card.hidden', '1'));
 	await page.goto('/performance?muted=1');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	await page.getByTestId('playlist-row').filter({ hasText: 'E2E Fixture Set' }).click();
@@ -39,8 +41,15 @@ test('the edit actions sit behind one pencil and the header stays one line', asy
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await openFixturePlaylist(page);
 
-	const headerHeight = await page.locator('.pane-header').evaluate((el) => el.getBoundingClientRect().height);
-	expect(headerHeight, 'the library header wrapped onto a second line').toBeLessThanOrEqual(26);
+	// One line: every visible header control overlaps the same horizontal band. A
+	// pixel cap would depend on the platform's font metrics; a second row would not.
+	const rows = await page.locator('.pane-header').evaluate((header) => {
+		const boxes = [...header.querySelectorAll('button, input, label, select')]
+			.map((el) => el.getBoundingClientRect())
+			.filter((r) => r.width > 0 && r.height > 0);
+		return { lowestTop: Math.max(...boxes.map((r) => r.top)), highestBottom: Math.min(...boxes.map((r) => r.bottom)) };
+	});
+	expect(rows.lowestTop, 'the library header wrapped onto a second line').toBeLessThan(rows.highestBottom);
 
 	const pencil = page.getByTestId('library-edit-menu');
 	const items = ['Find & Replace', 'Bulk Edit', 'MyTags'].map((name) =>
