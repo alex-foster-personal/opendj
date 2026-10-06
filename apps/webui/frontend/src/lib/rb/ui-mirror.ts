@@ -5,6 +5,8 @@ import { masterSilenceState, outputDeviceLivenessState } from './master-silence-
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
+import type { TabLeadership } from './tab-leadership';
+import { createLeasedMirrorPublisher, MIRROR_PATH } from './leased-mirror-publisher';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { outputTopologyMirror } from '$lib/rb/audio-output-status.svelte';
@@ -16,8 +18,6 @@ import {
 } from './mirror-publish-stall';
 import { countVisibleTrackRows } from './track-row-visibility';
 import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-mirror-controls';
-
-const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
 /** CUEOUT-18: one id per page load, so the engine can keep two open tabs'
  * headphone reports apart. Not the Web Crypto UUID call: that needs a
@@ -79,6 +79,8 @@ export function buildUiMirror(): Record<string, unknown> {
 	return {
 		client_open: true,
 		client_id: MIRROR_CLIENT_ID,
+		// AGENT-18: the engine hands the lease away from a hidden, silent tab.
+		tab: { visible: document.visibilityState === 'visible' },
 		published_at: new Date().toISOString(),
 		// The elected master, and so the deck a Duration times against when
 		// no clock is named. Without it an agent cannot resolve its own
@@ -158,65 +160,79 @@ export function buildUiMirror(): Record<string, unknown> {
 	};
 }
 
-export function installUiMirror(): () => void {
+function _anyDeckPlaying(): boolean {
+	return Object.values(queryPerformanceState().decks).some((deck) => deck.playing);
+}
+
+export function installUiMirror(leadership: TabLeadership): () => void {
 	// The engine only knows a performance page is open once it has ACCEPTED a
 	// mirror publish, and every /api/v1/commands route answers 409 until then.
-	// This flag is that precondition, read by the order poll: without it the
-	// poll races its own first publish, loses, and the browser logs the 409 as a
-	// console error that no catch block can take back.
-	let registered = false;
+	// `mirror.isRegistered()` is that precondition, read by the order poll:
+	// without it the poll races its own first publish, loses, and the browser
+	// logs the 409 as a console error that no catch block can take back.
+	//
+	// AGENT-18: only the LEADER tab publishes or claims orders. A follower is
+	// silent toward the engine, so it can neither overwrite the playing tab's
+	// state nor execute an order the operator's tab should run.
 	let lastPublishAtMs: number | null = null;
-	const publish = (): void => {
-		const nowMs = Date.now();
-		if (
-			lastPublishAtMs !== null &&
-			classifyMirrorPublishGap(nowMs - lastPublishAtMs) === 'stall'
-		) {
-			recordPerfEvent(
-				'mirror-stall',
-				mirrorStallMessage(nowMs - lastPublishAtMs),
-				null,
-				'error'
-			);
-		}
-		lastPublishAtMs = nowMs;
-		void fetch(MIRROR_PATH, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(buildUiMirror())
-		})
-			.then((response) => {
-				registered = response.ok;
-			})
-			.catch(() => {
-				// Engine down / WebKit `Load failed`: do not become an
-				// unhandledrejection (Sentry OPEN-DJ-FE-F). Forget registration
-				// until a later PUT is accepted.
-				registered = false;
-			});
-	};
-	publish();
-	const interval = window.setInterval(publish, 1000);
-	const uninstallOrderPoll = installAgentOrderPoll(
-		{
-			isRegistered: () => registered,
-			forget: () => {
-				registered = false;
+	const mirror = createLeasedMirrorPublisher({
+		leadership,
+		clientId: MIRROR_CLIENT_ID,
+		build: buildUiMirror,
+		isPlaying: _anyDeckPlaying,
+		isVisible: () => document.visibilityState === 'visible',
+		beforePublish: (nowMs) => {
+			if (
+				lastPublishAtMs !== null &&
+				classifyMirrorPublishGap(nowMs - lastPublishAtMs) === 'stall'
+			) {
+				recordPerfEvent(
+					'mirror-stall',
+					mirrorStallMessage(nowMs - lastPublishAtMs),
+					null,
+					'error'
+				);
 			}
-		},
-		publish
-	);
-	return () => {
-		// Order matters: drop the registration and stop the poll BEFORE the mirror
-		// is deleted, so teardown never leaves a poll asking about a page the
-		// engine has just been told is gone.
-		registered = false;
-		uninstallOrderPoll();
-		window.clearInterval(interval);
+			lastPublishAtMs = nowMs;
+		}
+	});
+	let lastRole = leadership.snapshot().role;
+	const unsubscribeLeadership = leadership.subscribe((snapshot) => {
+		// Publish at once on BECOMING leader only; a confirmation notice is not a new role.
+		if (snapshot.role === 'leader' && lastRole !== 'leader') mirror.publish();
+		lastRole = snapshot.role;
+	});
+	mirror.publish();
+	const interval = window.setInterval(mirror.publish, 1000);
+	// The operator's latest touch makes this the operator's tab (see the claim rules).
+	const noteGesture = (): void => mirror.noteGesture();
+	window.addEventListener('pointerdown', noteGesture, { capture: true, passive: true });
+	window.addEventListener('keydown', noteGesture, { capture: true, passive: true });
+	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish);
+	// A follower never published, so it has nothing to close; deleting would
+	// blank the leader's live mirror under it.
+	const closeMirrorIfLeader = (): void => {
+		if (!leadership.isLeader()) return;
 		void fetch(MIRROR_PATH, {
 			method: 'DELETE',
 			keepalive: true,
 			headers: { 'x-opendj-client-id': MIRROR_CLIENT_ID }
 		}).catch(() => {});
+	};
+	// Closing a TAB never runs the route's unmount, so without this the lease
+	// outlives the closed leader by up to its 10 s TTL and the next tab waits.
+	window.addEventListener('pagehide', closeMirrorIfLeader);
+	return () => {
+		// Order matters: drop the registration and stop the poll BEFORE the mirror
+		// is deleted, so teardown never leaves a poll asking about a page the
+		// engine has just been told is gone.
+		window.removeEventListener('pagehide', closeMirrorIfLeader);
+		window.removeEventListener('pointerdown', noteGesture, { capture: true });
+		window.removeEventListener('keydown', noteGesture, { capture: true });
+		mirror.forget();
+		uninstallOrderPoll();
+		window.clearInterval(interval);
+		closeMirrorIfLeader();
+		unsubscribeLeadership();
 	};
 }

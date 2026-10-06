@@ -25,7 +25,8 @@ from typing import TypedDict
 #: Bump to force a full rebuild of an on-disk index whose shape changed.
 #: v2 adds the ``cache_fingerprint``/``last_pending`` checkpoint columns an
 #: idle poll needs to skip a rescan safely (issue #1343 round-2 review).
-LYRICS_INDEX_SCHEMA = 2
+#: v3 rebuilds documents without Whisper hallucination lines (LYRICS-12).
+LYRICS_INDEX_SCHEMA = 3
 
 INDEX_FILENAME = "lyrics-index.db"
 

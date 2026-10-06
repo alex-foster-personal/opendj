@@ -2,7 +2,7 @@
 	// Real precomputed Demucs controls. Click toggles mute; Shift+click toggles
 	// solo. Both paths dispatch through the typed browser-agent command surface.
 	import type { DeckState } from '$lib/rb/deck-state-types';
-	import { STEM_COLORS } from '$lib/rb/stem-colors';
+	import { stemCssColor } from '$lib/rb/stem-colors';
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import type { StemControl } from '$lib/rb/stem-types';
 
@@ -25,12 +25,12 @@
 		onLoad?: () => Promise<void>;
 	} = $props();
 
-	const STEMS: readonly { id: StemControl; label: string; color: string }[] = [
-		{ id: 'vocal', label: 'VOCAL', color: STEM_COLORS.vocal },
-		{ id: 'instrumental', label: 'INST', color: STEM_COLORS.instrumental },
-		{ id: 'drums', label: 'DRUMS', color: STEM_COLORS.drums },
-		{ id: 'bass', label: 'BASS', color: STEM_COLORS.bass },
-		{ id: 'other', label: 'HARM', color: STEM_COLORS.other }
+	const STEMS: readonly { id: StemControl; label: string }[] = [
+		{ id: 'vocal', label: 'VOCAL' },
+		{ id: 'instrumental', label: 'INST' },
+		{ id: 'drums', label: 'DRUMS' },
+		{ id: 'bass', label: 'BASS' },
+		{ id: 'other', label: 'HARM' }
 	];
 	const visibleStems = $derived(STEMS.filter((stem) =>
 		(stem.id !== 'bass' && stem.id !== 'other') || deck.stems.available_controls.includes(stem.id)));
@@ -85,7 +85,7 @@
 			data-performance-control={`stem-${stem.id}`}
 			data-muted={deck.stems.controls[stem.id].muted}
 			data-solo={deck.stems.controls[stem.id].solo}
-			style={`--chip-color:${stem.color}`}
+			style={`--chip-color:${stemCssColor(stem.id)}`}
 			onclick={async (event) => await toggle(event, stem.id)}
 		>
 			{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}

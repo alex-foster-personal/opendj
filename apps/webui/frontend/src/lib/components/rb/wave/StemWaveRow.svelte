@@ -76,7 +76,7 @@
 			pitch: deck.pitch,
 			width: canvasWidth,
 			height: cssH,
-			color: stemWaveRowColor(stem)
+			color: stemWaveRowColor(stem, getComputedStyle(canvasEl).getPropertyValue(`--rb-stem-${stem}`))
 		});
 	});
 </script>

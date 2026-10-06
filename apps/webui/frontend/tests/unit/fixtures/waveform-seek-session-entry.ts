@@ -16,5 +16,8 @@ export {
 } from '$lib/rb/performance-ipc.svelte';
 export {
 	installPerformanceQuantizedLaunchDriverForTest,
+	queryMasterMode,
+	queryQuantizedLaunchArmed,
+	queryWaveformSeekArmed,
 	resetQuantizedLaunchArmedForTest
 } from '$lib/rb/performance-ipc.svelte';

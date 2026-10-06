@@ -108,7 +108,14 @@ def require_lane(lane: str) -> str:
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
-    """Queue tables, ``position`` column, and the two standing batches."""
+    """Queue tables, ``position`` column, and the two standing batches.
+
+    Writes only what is missing (STATE-18). Every ``GET /api/v1/library-jobs``
+    and the 1 Hz library-jobs tick call this, and an ``INSERT OR IGNORE`` of a
+    batch that already exists still takes the state.db writer lock, so a busy
+    writer turned a read into 503 ``STATE_STORE_BUSY``. The ``IF NOT EXISTS``
+    DDL above it takes no lock when the schema is already there.
+    """
     queue_store.ensure_queue_tables(conn)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(analysis_queue_item)")}
     if "position" not in cols:
@@ -116,9 +123,18 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
             "ALTER TABLE analysis_queue_item "
             "ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
         )
+    placeholders = ",".join("?" for _ in USER_BATCH_IDS)
+    present = {
+        str(row[0])
+        for row in conn.execute(
+            f"SELECT batch_id FROM analysis_queue_batch WHERE batch_id IN ({placeholders})",
+            tuple(USER_BATCH_IDS.values()),
+        )
+    }
+    missing = {lane: bid for lane, bid in USER_BATCH_IDS.items() if bid not in present}
     now = _now_iso()
     model = '{"source":"user-lane","backend":"user","producer_version":"1"}'
-    for lane, batch_id in USER_BATCH_IDS.items():
+    for lane, batch_id in missing.items():
         conn.execute(
             """
             INSERT OR IGNORE INTO analysis_queue_batch

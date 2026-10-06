@@ -440,9 +440,55 @@ function _bestFollowerAnchor(
 
 // --------------------------------------------------------------- public API
 
+/**
+ * Verdict memo for `validateBeatGrid`, keyed by grid identity (PERF-GRID-01).
+ *
+ * Grids are never edited in place: an analysis refresh or a beatgrid edit
+ * replaces the whole array, so identity plus length is the grid's version.
+ * Without this, every per-frame caller (deck snapshot BPM, BeatJump's
+ * enabled state, the wave row's grid checks) re-walked ~1,000 beats, and
+ * through a Svelte $state proxy each field read is a tracked signal read.
+ * Measured on demon-llama, two synced decks: 56% of main-thread time.
+ * Failures are memoized too, so a bad grid throws the same error every call
+ * without re-walking it.
+ */
+interface _GridVerdict {
+	length: number;
+	error: Error | null;
+}
+let _gridVerdicts = new WeakMap<readonly AnlzBeat[], _GridVerdict>();
+let _gridWalks = 0;
+
+/** Test seam: full grid walks since the last reset (memo misses). */
+export function beatGridValidationWalksForTest(): number {
+	return _gridWalks;
+}
+
+/** Test seam: forget every memoized verdict and zero the walk counter. */
+export function resetBeatGridValidationMemoForTest(): void {
+	_gridVerdicts = new WeakMap();
+	_gridWalks = 0;
+}
+
 /** Validate the complete runtime shape required by PQTZ beat math. */
 export function validateBeatGrid(beats: readonly AnlzBeat[]): void {
 	if (!Array.isArray(beats)) throw new TypeError('beat grid must be an array');
+	const memo = _gridVerdicts.get(beats);
+	if (memo !== undefined && memo.length === beats.length) {
+		if (memo.error !== null) throw memo.error;
+		return;
+	}
+	_gridWalks++;
+	try {
+		_walkBeatGrid(beats);
+	} catch (error) {
+		_gridVerdicts.set(beats, { length: beats.length, error: error as Error });
+		throw error;
+	}
+	_gridVerdicts.set(beats, { length: beats.length, error: null });
+}
+
+function _walkBeatGrid(beats: readonly AnlzBeat[]): void {
 	if (beats.length < 2) {
 		throw new RangeError(`beat grid must contain at least 2 beats, got ${beats.length}`);
 	}

@@ -73,6 +73,11 @@ export type { WavePalette } from './cues';
  * Shared by the wavestack rows, deck strip and browser preview strips. */
 export const VOCAL_BLUE = '#4fb2ff';
 
+/** Mid and high bands paint at this alpha over the opaque low band, so the
+ * stacked tri-band reads through itself. Shared with the jog-wheel radial
+ * painter (jog-radial-render.ts) so the two cannot drift apart. */
+export const WAVE_UPPER_BAND_ALPHA = 0.9;
+
 /** Height of the vocal bar layer in CSS px ('2px-ish' per requirement). */
 export const VOCAL_BAR_PX = 2;
 
@@ -110,6 +115,36 @@ export const WAVE_WINDOW_S = 24;
 const HIGH_BAND_SCALE = 0.6;
 const MID_BAND_SCALE = 0.85;
 
+/** 'blocks' design geometry: BLOCK_BAR_PX-wide bars on a BLOCK_PITCH_PX
+ * pitch, i.e. a 1px gap, ONE-SIDED: bars grow up from the bottom baseline.
+ * Rendering style only, heights are the real data. */
+export const BLOCK_BAR_PX = 2;
+export const BLOCK_PITCH_PX = 3;
+
+/** How a block's height is derived from its band data (skin preview):
+ *  - max:      per-block max of all bands, gamma-lifted (the original).
+ *  - kick:     LOW band dominant, mid/high minor, gamma > 1 (expands peaks).
+ *  - contrast: stretched between the rolling min/max over ~1 beat, scaled
+ *              by that window's max so quiet sections stay quiet.
+ *  - onset:    rise above the rolling mean over ~1/4 beat, plus a floor.
+ *  - blend:    mix(max, contrast, BLEND_CONTRAST): a small step from max
+ *              that still separates neighboring beats. */
+export type BlocksVariant = 'max' | 'kick' | 'contrast' | 'onset' | 'blend';
+
+export const BLOCKS_CFG = {
+	VARIANT_DEFAULT: 'blend' as BlocksVariant,
+	/** 0.25: whole-track neighbor variance 2.56x max on Strobe (contrast alone was 12x). */
+	BLEND_CONTRAST: 0.25,
+	KICK_LOW_WEIGHT: 0.8,
+	KICK_GAMMA: 1.6,
+	CONTRAST_WINDOW_BEATS: 1,
+	ONSET_WINDOW_BEATS: 0.25,
+	ONSET_FLOOR: 0.2,
+	/** contrast/onset need a beat period; with no beat grid they paint as
+	 * 'kick' (stated here, not hidden in the painter). */
+	NO_GRID_VARIANT: 'kick' as BlocksVariant
+} as const;
+
 /** Perceptual amplitude shaping (rendering only, the band DATA is never
  * modified). Raw PWV6/PWV7 bytes sit mostly in the 0.3-0.7 range after
  * /127 scaling, which painted linearly reads as a thin ribbon in a 40px
@@ -135,7 +170,24 @@ const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
 interface WaveBandImage {
 	canvas: HTMLCanvasElement;
 	key: string;
+	/** px per track-second the image was built at; draw scales from this. */
+	pxPerS: number;
 }
+
+/**
+ * Band image reuse across tempo (PERF-GRID-02). The image is laid out in
+ * TRACK time, so deck pitch only changes the horizontal scale it is drawn
+ * at. The Beat Sync phase lock nudges a follower's pitch every few hundred
+ * ms; keying the image on the live px-per-second rebuilt the whole-track
+ * image on every nudge. Now an image is reused, scaled at draw, while the
+ * live scale stays within PITCH_TOLERANCE of the scale it was built at. A
+ * real tempo move (a fader throw, a new master) still rebuilds, so the
+ * resampling never exceeds 3%. Width, height, design and palette still
+ * select their own image.
+ */
+export const BAND_CACHE_CFG = {
+	PITCH_TOLERANCE: 0.03
+} as const;
 
 /**
  * Band geometry is the expensive part of a scrolling waveform. It changes only
@@ -160,7 +212,7 @@ function _p99(values: number[]): number {
 	return Math.min(1, Math.max(NORM_FLOOR, p99));
 }
 
-function _normsFor(waveform: AnlzWaveform): BandNorms {
+export function bandNormsFor(waveform: AnlzWaveform): BandNorms {
 	const cached = _normCache.get(waveform);
 	if (cached !== undefined) return cached;
 	const bands = waveform.detail;
@@ -199,6 +251,8 @@ export interface WaveRowFrame {
 	playheadTimeMs?: number;
 	/** DECKUX-20: user-selected paint style; default tri-band. */
 	waveformDesign?: WaveformDesign;
+	/** 'blocks' height model; default BLOCKS_CFG.VARIANT_DEFAULT. */
+	blocksVariant?: BlocksVariant;
 	/** DECKUX-21: master downbeat overlay while BeatSyncMax is on. */
 	masterDownbeatOverlay?: MasterDownbeatOverlay | null;
 	/** Pending deferred seek ghost playhead (ms). */
@@ -227,7 +281,11 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 
 	const design = frame.waveformDesign ?? 'tri-band';
 	if (frame.anlz !== null && durS > 0) {
-		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design);
+		const blocks: BlocksSpec = {
+			variant: frame.blocksVariant ?? BLOCKS_CFG.VARIANT_DEFAULT,
+			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats)
+		};
+		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design, blocks);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
 	// and pitch, so a loaded row with no (or failed) local analysis still shows
@@ -247,7 +305,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		}
 		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		drawPointCueMarkers(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
-		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
+		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w, frame.palette.vocal);
 	}
 	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
 	if (frame.ghostSeekMs !== undefined && frame.ghostSeekMs !== null && frame.ghostSeekVisible === true) {
@@ -327,22 +385,40 @@ function _drawCachedBands(
 	w: number,
 	h: number,
 	palette: WavePalette,
-	design: WaveformDesign
+	design: WaveformDesign,
+	blocks: BlocksSpec
 ): void {
 	// Node painter tests intentionally provide only Path2D. Browser production
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
 	if (typeof document === 'undefined') {
-		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
+		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 		return;
 	}
-	const key = `${design}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
+	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
 	let image = _bandImages.get(waveform);
-	if (image === undefined || image.key !== key) {
-		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design), key };
+	if (image === undefined || image.key !== key || !bandImageScaleReusable(image.pxPerS, pxPerS)) {
+		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key, pxPerS };
 		_bandImages.set(waveform, image);
 	}
-	ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
+	if (image.pxPerS === pxPerS) {
+		ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
+		return;
+	}
+	// Scaled blit of only the visible track span, clipped to the image.
+	const scale = pxPerS / image.pxPerS;
+	const tStart = Math.max(0, tLeft);
+	const tEnd = Math.min(durS, tLeft + w / pxPerS);
+	if (!(tEnd > tStart)) return;
+	const sx = tStart * image.pxPerS;
+	const sw = Math.min(image.canvas.width, tEnd * image.pxPerS) - sx;
+	if (!(sw > 0)) return;
+	ctx.drawImage(image.canvas, sx, 0, sw, image.canvas.height, (tStart - tLeft) * pxPerS, 0, sw * scale, image.canvas.height);
+}
+
+/** True when an image built at `builtPxPerS` may be drawn at `livePxPerS`. */
+export function bandImageScaleReusable(builtPxPerS: number, livePxPerS: number): boolean {
+	return Math.abs(livePxPerS / builtPxPerS - 1) <= BAND_CACHE_CFG.PITCH_TOLERANCE;
 }
 
 function _buildBandImage(
@@ -351,7 +427,8 @@ function _buildBandImage(
 	durS: number,
 	h: number,
 	palette: WavePalette,
-	design: WaveformDesign
+	design: WaveformDesign,
+	blocks: BlocksSpec
 ): HTMLCanvasElement {
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
@@ -362,7 +439,7 @@ function _buildBandImage(
 	canvas.height = h;
 	const ctx = canvas.getContext('2d');
 	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
-	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
+	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 	return canvas;
 }
 
@@ -375,7 +452,8 @@ function _drawBands(
 	w: number,
 	h: number,
 	palette: WavePalette,
-	design: WaveformDesign
+	design: WaveformDesign,
+	blocks: BlocksSpec = { variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null }
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
@@ -384,10 +462,18 @@ function _drawBands(
 	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
 	const mono = design === 'mono' || waveform.kind === 'mono';
 	const line = design === 'line';
-	const norms = _normsFor(waveform);
+	const norms = bandNormsFor(waveform);
 	// Mono payloads mix all three arrays into one height, so normalize by
 	// the loudest band's p99 rather than any single band's.
 	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
+
+	if (design === 'blocks') {
+		const blocksPerBeat =
+			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
+		const heights = blockHeights(bands, w, norms, blocks.variant, blocksPerBeat);
+		paintStackedBlocks(ctx, heights, mono ? null : blockBandShares(bands, w, norms), h, h - MARKER_BAND_PX - 1, palette);
+		return;
+	}
 
 	const lowPath = new Path2D();
 	const midPath = new Path2D();
@@ -454,12 +540,187 @@ function _drawBands(
 	}
 	ctx.fillStyle = palette.low;
 	ctx.fill(lowPath);
-	ctx.globalAlpha = 0.9;
+	ctx.globalAlpha = WAVE_UPPER_BAND_ALPHA;
 	ctx.fillStyle = palette.mid;
 	ctx.fill(midPath);
 	ctx.fillStyle = palette.high;
 	ctx.fill(highPath);
 	ctx.globalAlpha = 1;
+}
+
+interface BlocksSpec {
+	variant: BlocksVariant;
+	beatPeriodS: number | null;
+}
+
+/** Median beat period of the grid in seconds; null without a usable grid. */
+export function beatPeriodS(beats: readonly AnlzBeat[] | undefined): number | null {
+	if (beats === undefined || beats.length < 2) return null;
+	// Called once per painted frame per deck; the grid is replaced, never
+	// edited in place, so identity plus length is its version (PERF-GRID-01).
+	const memo = _beatPeriodMemo.get(beats);
+	if (memo !== undefined && memo.length === beats.length) return memo.period;
+	const period = _medianBeatPeriodS(beats);
+	_beatPeriodMemo.set(beats, { length: beats.length, period });
+	return period;
+}
+
+const _beatPeriodMemo = new WeakMap<readonly AnlzBeat[], { length: number; period: number | null }>();
+
+function _medianBeatPeriodS(beats: readonly AnlzBeat[]): number | null {
+	const gaps: number[] = [];
+	for (let i = 1; i < beats.length; i++) {
+		const gap = beats[i].t - beats[i - 1].t;
+		if (gap > 0) gaps.push(gap);
+	}
+	if (gaps.length === 0) return null;
+	gaps.sort((a, b) => a - b);
+	return gaps[Math.floor(gaps.length / 2)];
+}
+
+function _rollingWindow(values: Float32Array, i: number, half: number): [number, number] {
+	return [Math.max(0, i - half), Math.min(values.length - 1, i + half)];
+}
+
+/** Per-block heights 0..1 for the 'blocks' design over a widthPx surface.
+ * Pure (exported for tests): band DATA is read, never modified. */
+export function blockHeights(
+	bands: AnlzWaveform['detail'],
+	widthPx: number,
+	norms: { low: number; mid: number; high: number },
+	variant: BlocksVariant,
+	blocksPerBeat: number | null
+): Float32Array {
+	const n = bands.length;
+	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
+	const low = new Float32Array(count);
+	const rest = new Float32Array(count);
+	const all = new Float32Array(count);
+	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
+	for (let b = 0; b < count; b++) {
+		const x = b * BLOCK_PITCH_PX;
+		const p0 = Math.max(0, Math.floor((x / widthPx) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		const lo = _bucketMax(bands.low, p0, p1);
+		const mi = _bucketMax(bands.mid, p0, p1);
+		const hi = _bucketMax(bands.high, p0, p1);
+		low[b] = Math.min(1, lo / norms.low);
+		rest[b] = Math.min(1, Math.max(mi / norms.mid, hi / norms.high));
+		all[b] = Math.min(1, Math.max(lo, mi, hi) / monoNorm);
+	}
+	const out = new Float32Array(count);
+	const effective =
+		blocksPerBeat === null && (variant === 'contrast' || variant === 'onset' || variant === 'blend')
+			? BLOCKS_CFG.NO_GRID_VARIANT
+			: variant;
+	if (effective === 'max') {
+		for (let b = 0; b < count; b++) out[b] = all[b] > 0 ? Math.pow(all[b], AMP_GAMMA) : 0;
+	} else if (effective === 'blend') {
+		const lifted = blockHeights(bands, widthPx, norms, 'max', blocksPerBeat);
+		const stretched = blockHeights(bands, widthPx, norms, 'contrast', blocksPerBeat);
+		const k = BLOCKS_CFG.BLEND_CONTRAST;
+		for (let b = 0; b < count; b++) out[b] = (1 - k) * lifted[b] + k * stretched[b];
+	} else if (effective === 'kick') {
+		const w = BLOCKS_CFG.KICK_LOW_WEIGHT;
+		for (let b = 0; b < count; b++) {
+			out[b] = Math.pow(w * low[b] + (1 - w) * rest[b], BLOCKS_CFG.KICK_GAMMA);
+		}
+	} else if (effective === 'contrast') {
+		const half = Math.max(1, Math.round(((blocksPerBeat as number) * BLOCKS_CFG.CONTRAST_WINDOW_BEATS) / 2));
+		for (let b = 0; b < count; b++) {
+			const [a, z] = _rollingWindow(all, b, half);
+			let lo = 1;
+			let hi = 0;
+			for (let i = a; i <= z; i++) {
+				if (all[i] < lo) lo = all[i];
+				if (all[i] > hi) hi = all[i];
+			}
+			out[b] = hi - lo > 1e-6 ? ((all[b] - lo) / (hi - lo)) * hi : 0;
+		}
+	} else if (effective === 'onset') {
+		const half = Math.max(1, Math.round(((blocksPerBeat as number) * BLOCKS_CFG.ONSET_WINDOW_BEATS) / 2));
+		const rise = new Float32Array(count);
+		let peak = 0;
+		for (let b = 0; b < count; b++) {
+			const [a, z] = _rollingWindow(all, b, half);
+			let sum = 0;
+			for (let i = a; i <= z; i++) sum += all[i];
+			rise[b] = Math.max(0, all[b] - sum / (z - a + 1));
+			if (rise[b] > peak) peak = rise[b];
+		}
+		const f = BLOCKS_CFG.ONSET_FLOOR;
+		for (let b = 0; b < count; b++) {
+			const r = peak > 0 ? rise[b] / peak : 0;
+			out[b] = Math.min(1, (1 - f) * r + f * all[b]);
+		}
+	}
+	return out;
+}
+
+/** Per-block share of each band relative to the block's loudest band (0..1),
+ * so a stacked block keeps its total height and shows the band mix. */
+export function blockBandShares(
+	bands: AnlzWaveform['detail'],
+	widthPx: number,
+	norms: { low: number; mid: number; high: number }
+): { low: Float32Array; mid: Float32Array; high: Float32Array } {
+	const n = bands.length;
+	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
+	const out = { low: new Float32Array(count), mid: new Float32Array(count), high: new Float32Array(count) };
+	for (let b = 0; b < count; b++) {
+		const x = b * BLOCK_PITCH_PX;
+		const p0 = Math.max(0, Math.floor((x / widthPx) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		const lo = Math.min(1, _bucketMax(bands.low, p0, p1) / norms.low);
+		const mi = Math.min(1, _bucketMax(bands.mid, p0, p1) / norms.mid);
+		const hi = Math.min(1, _bucketMax(bands.high, p0, p1) / norms.high);
+		const top = Math.max(lo, mi, hi);
+		if (top <= 0) continue;
+		out.low[b] = lo / top;
+		out.mid[b] = mi / top;
+		out.high[b] = hi / top;
+	}
+	return out;
+}
+
+/** Paint one-sided blocks. shares null = single mono color; else stacked
+ * like tri-band: low (darkest) at the block height, mid and high in front at
+ * their share of it (scaled like the tri-band core). */
+export function paintStackedBlocks(
+	ctx: CanvasRenderingContext2D,
+	heights: Float32Array,
+	shares: { low: Float32Array; mid: Float32Array; high: Float32Array } | null,
+	baselineY: number,
+	maxBarH: number,
+	palette: Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>
+): void {
+	const layers: [string, Float32Array | null, number][] =
+		shares === null
+			? [[palette.mono, null, 1]]
+			: [
+					[palette.low, shares.low, 1],
+					[palette.mid, shares.mid, MID_BAND_SCALE],
+					[palette.high, shares.high, HIGH_BAND_SCALE]
+				];
+	for (const [color, share, scale] of layers) {
+		const path = new Path2D();
+		for (let b = 0; b < heights.length; b++) {
+			const frac = share === null ? 1 : share[b] * scale;
+			const barH = Math.round(heights[b] * frac * maxBarH);
+			if (barH > 0) path.rect(b * BLOCK_PITCH_PX, baselineY - barH, BLOCK_BAR_PX, barH);
+		}
+		ctx.fillStyle = color;
+		ctx.fill(path);
+	}
+}
+
+/** Mean squared difference between adjacent block heights: the 'can I see
+ * individual beats' signal the variants are compared on. */
+export function adjacentBlockVariance(heights: Float32Array): number {
+	if (heights.length < 2) return 0;
+	let sum = 0;
+	for (let i = 1; i < heights.length; i++) sum += (heights[i] - heights[i - 1]) ** 2;
+	return sum / (heights.length - 1);
 }
 
 function _drawTempoChanges(
@@ -538,7 +799,8 @@ function _drawVocals(
 	anlz: AnlzData,
 	tLeft: number,
 	pxPerS: number,
-	w: number
+	w: number,
+	vocalColor: string
 ): void {
 	// Four mandatory states (SPIKE-B1/B2): 'rekordbox' and 'demucs' draw
 	// bars identically (demucs intensity is confidence on the same 1..4
@@ -547,7 +809,7 @@ function _drawVocals(
 	// contract breach must never render as 'no vocals'.
 	const vocals = vocalsOf(anlz);
 	if (vocals.status !== 'rekordbox' && vocals.status !== 'demucs') return;
-	ctx.fillStyle = VOCAL_BLUE;
+	ctx.fillStyle = vocalColor;
 	for (const region of vocals.regions) {
 		const x0 = Math.max(0, (region.start_s - tLeft) * pxPerS);
 		const x1 = Math.min(w, (region.end_s - tLeft) * pxPerS);
@@ -569,3 +831,6 @@ export function resolvePaintPalette(deckId: number, palette: WavePalette): WaveP
 		? palette
 		: { ...palette, bg: palette.secondaryBg };
 }
+
+/** Test seam: the uncached band painter (no DOM canvas needed). */
+export const __test_drawBands = _drawBands;

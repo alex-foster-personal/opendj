@@ -169,7 +169,16 @@ export interface ContrastViolation {
  * divider line. Named explicitly so "this token has no pairing" reads as a
  * decision `PAIRINGS` coverage checks can rely on, not a gap nobody noticed.
  */
-export const DECORATIVE_TOKENS: readonly string[] = ["rb-border"];
+export const DECORATIVE_TOKENS: readonly string[] = [
+  "rb-border",
+  // Icon-rail source tints (skin hooks, theme.css): the glyph shape and its
+  // tooltip carry the meaning; the tint is identity decoration a skin may
+  // gray out, so it is not a state indicator 1.4.11 reaches.
+  "rb-rail-spotify",
+  "rb-rail-files",
+  "rb-rail-beatport",
+  "rb-rail-record",
+];
 
 export const PAIRINGS: ContrastPairing[] = [
   { fg: "rb-text", bg: "rb-bg", level: "body", label: "primary text on window background" },
@@ -231,6 +240,8 @@ export const PAIRINGS: ContrastPairing[] = [
   { fg: "rb-wave-mid", bg: "rb-bg", level: "non-text", label: "waveform mids band" },
   { fg: "rb-wave-high", bg: "rb-bg", level: "non-text", label: "waveform highs band" },
   { fg: "rb-wave-mono", bg: "rb-bg", level: "non-text", label: "waveform mono/line design" },
+  { fg: "rb-wave-vocal", bg: "rb-bg", level: "non-text", label: "vocal-presence bars" },
+  { fg: "rb-wave-vocal", bg: "rb-waverow-secondary", level: "non-text", label: "vocal-presence bars on deck 3/4 row" },
   {
     fg: "rb-wave-low",
     bg: "rb-waverow-secondary",
