@@ -446,7 +446,7 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	// this test - it exists to catch a future change that shrinks LESS's
 	// library benefit back toward nothing. The achievable gain today is
 	// `(moreWavestackRows - lessWavestackRows) * waverowPx + (moreDeckFloor -
-	// lessDeckFloor)` = (4 - 2) * 43 + (497 - 401) = 182px (all four terms
+	// lessDeckFloor)` = (4 - 2) * 43 + (497 - 249) = 334px since LESSV-01 (all four terms
 	// read from source above, not hand-typed; round 3 restored MORE's floor
 	// to the original 497px - see +page.svelte's LIBUX-01 comment - while
 	// keeping LESS's floor at 401px - issue #1578's fix, one px above the
@@ -466,14 +466,17 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 
 	// (a) Freeing space to the library is pointless if LESS's own ceiling
 	// reservation (the "how much am I leaving for the library" term inside
-	// its minmax/min calc) is not itself enough to cover the library's real
+	// its minmax calc) is not itself enough to cover the library's real
 	// 5-row floor - assert that holds for LESS specifically, not just MORE
-	// (test 2 above already covers MORE).
+	// (test 2 above already covers MORE). LESSV-01 (Tue 6 Oct 2026): LESS's
+	// row is HALF of MORE's own expression, `(min(500px, calc(... 4 rows ...
+	// - Npx)) + 1px) / 2`, so its reservation is MORE's N plus the deck
+	// height LESS no longer spends, never less.
 	const { requiredLibraryPx, bottomBarPx } = computeRequiredLibraryPx();
 	const lessCeilingReserveMatch = firstMatch(
 		lessBlock,
-		/100vh - var\(--rb-topbar-h\) -\s*2 \* \(var\(--rb-waverow-h\) \+ var\(--rb-stemwave-stack-extra, 0px\)\) -\s*(\d+)px/,
-		"LESS mode's deck-area ceiling reservation"
+		/100vh - var\(--rb-topbar-h\) -\s*4 \* \(var\(--rb-waverow-h\) \+ var\(--rb-stemwave-stack-extra, 0px\)\) -\s*(\d+)px\s*\)\s*\)\s*\+ 1px\s*\)\s*\/ 2/,
+		"LESS mode's deck-area ceiling reservation (half of MORE's expression)"
 	);
 	const lessCeilingReservePx = Number(lessCeilingReserveMatch[1]);
 
