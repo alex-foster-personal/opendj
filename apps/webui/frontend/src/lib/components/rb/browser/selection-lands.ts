@@ -15,7 +15,7 @@ export async function untilSelectionLands(
 	load: Promise<void>,
 	onLanded: (landed: () => void) => () => void
 ): Promise<void> {
-	let stop: (() => void) | null = null;
+	const watch: { stop: (() => void) | null } = { stop: null };
 	let landedAlready = false;
 	try {
 		await Promise.race([
@@ -27,12 +27,12 @@ export async function untilSelectionLands(
 				});
 				// Released exactly once: here if it landed during subscribe, else below.
 				if (landedAlready) unsubscribe();
-				else stop = unsubscribe;
+				else watch.stop = unsubscribe;
 			})
 		]);
 	} finally {
-		const release: (() => void) | null = stop;
-		stop = null;
+		const release = watch.stop;
+		watch.stop = null;
 		release?.();
 	}
 }
