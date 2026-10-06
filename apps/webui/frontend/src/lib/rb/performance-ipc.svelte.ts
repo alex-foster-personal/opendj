@@ -3176,16 +3176,19 @@ function _executeAs(command: PerformanceCommand, pressT0Ms: number | undefined, 
 
 /**
  * PLAY-18 (CORE, Tue 6 Oct 2026): only a USER turns AutoPlay off, the same
- * provenance rule as Quantize. Refused rather than rewritten, so an agent that
- * meant to stop AutoPlay learns at once that it must relay a person's ask.
+ * rule as Quantize. An agent COMMAND without `by_user` is refused at the order
+ * bus (422, agent-orders.ts); an app-internal off reaching here (the IPC
+ * bridge) is not applied, AutoPlay keeps its state, and the WARN names the caller.
  */
-function _refuseNonUserAutoPlayOff(command: PerformanceCommand, caller: string): void {
-	if (command.type !== 'autoplay' || command.enabled || command.by_user === true) return;
-	console.warn(`[autoplay] AutoPlay off without user provenance refused (PLAY-18); caller: ${caller}`);
-	throw new Error(
-		'autoplay off refused: only a user turns AutoPlay off (PLAY-18); send by_user: true when relaying a person\'s ask'
+function _autoPlayOffNeedsUser(command: PerformanceCommand, caller: string): PerformanceCommand {
+	if (command.type !== 'autoplay' || command.enabled || command.by_user === true) return command;
+	const keep = uiPrefs.auto_play_enabled;
+	console.warn(
+		`[autoplay] AutoPlay off without user provenance not applied, AutoPlay stays ${keep ? 'on' : 'off'} (PLAY-18); caller: ${caller}`
 	);
+	return { type: 'autoplay', enabled: keep };
 }
+
 
 /**
  * Q1-DEFAULT-ON: every load starts with Quantize on. A user's off holds for
@@ -3213,13 +3216,7 @@ async function _dispatchUnknown(
 		_persistCommandError(null, error);
 		throw error;
 	}
-	command = _quantizeDefaultOn(command, caller);
-	try {
-		_refuseNonUserAutoPlayOff(command, caller);
-	} catch (error) {
-		_persistCommandError(null, error, command);
-		throw error;
-	}
+	command = _autoPlayOffNeedsUser(_quantizeDefaultOn(command, caller), caller);
 	const deck = _commandDeck(command);
 	if (command.type === 'load') {
 		onDeckLoadStart(command.deck);

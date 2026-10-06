@@ -35,7 +35,7 @@ test('Trackify loads a track without any stem request, and its deck reads stems 
 		if (ipc.e2e_prime_feed === undefined || ipc.e2e_force_load === undefined) {
 			throw new Error('Trackify e2e hooks are unavailable');
 		}
-		ipc.toggle_autoplay(false);
+		ipc.toggle_autoplay(false, true);
 		ipc.e2e_prime_feed([
 			{ stable_id: sid, key: '8A', bpm: 124, file_exists: true, title: 'Good', artist: 'E2E' }
 		]);

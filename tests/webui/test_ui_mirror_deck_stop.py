@@ -2,13 +2,16 @@
 
 Soak round 4 (Tue 6 Oct 2026) found a stop with zero log evidence. The page
 records each stop's cause and publishes the latest as ``decks[n].last_stop``;
-the engine logs each new one at WARNING, where the engine log keeps it.
+the engine logs each new one: INFO for an expected cause, WARNING for unattributed,
+engine and reload.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -62,19 +65,19 @@ def _stop_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
 
 @pytest.mark.requirement("PLAY-18")
 def test_a_new_last_stop_is_logged_once_with_its_cause(caplog: pytest.LogCaptureFixture) -> None:
-    """[if] a deck's last_stop changes [then] one WARNING names deck and cause, [else stop]."""
-    caplog.set_level(logging.WARNING, logger=state_routes.__name__)
+    """[if] a deck's last_stop changes [then] one INFO line names deck and cause, [else stop]."""
+    caplog.set_level(logging.INFO, logger=state_routes.__name__)
     _publish(_doc(None), _doc(_stop(1)), _doc(_stop(1)))
     lines = _stop_lines(caplog)
     assert len(lines) == 1, lines
     assert lines[0].startswith("deck-stop deck=1 cause=user-ui user_pause=True seq=1 missed=0 position_ms=61000")
-    assert all(r.levelno == logging.WARNING for r in caplog.records if r.getMessage().startswith("deck-stop "))
+    assert [r.levelno for r in caplog.records if r.getMessage().startswith("deck-stop ")] == [logging.INFO]
 
 
 @pytest.mark.requirement("PLAY-18")
 def test_stops_overwritten_between_publishes_are_counted_as_missed(caplog: pytest.LogCaptureFixture) -> None:
     """[if] seq jumps from 1 to 4 [then] the line says missed=2, [else stop]."""
-    caplog.set_level(logging.WARNING, logger=state_routes.__name__)
+    caplog.set_level(logging.INFO, logger=state_routes.__name__)
     _publish(_doc(_stop(1)), _doc(_stop(4, cause="end-of-track")))
     lines = _stop_lines(caplog)
     assert len(lines) == 2, lines
@@ -84,6 +87,39 @@ def test_stops_overwritten_between_publishes_are_counted_as_missed(caplog: pytes
 @pytest.mark.requirement("PLAY-18")
 def test_a_mirror_with_no_stops_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
     """[if] no deck has a last_stop [then] no deck-stop line is written, [else stop]."""
-    caplog.set_level(logging.WARNING, logger=state_routes.__name__)
+    caplog.set_level(logging.INFO, logger=state_routes.__name__)
     _publish(_doc(None), _doc(None))
     assert _stop_lines(caplog) == []
+
+
+@pytest.mark.requirement("PLAY-18")
+@pytest.mark.parametrize(
+    ("cause", "level"),
+    [
+        ("user-ui", logging.INFO),
+        ("end-of-track", logging.INFO),
+        ("autoplay-handoff", logging.INFO),
+        ("agent-command", logging.INFO),
+        ("unattributed", logging.WARNING),
+        ("engine", logging.WARNING),
+        ("reload", logging.WARNING),
+    ],
+)
+def test_expected_stops_are_info_and_unexplained_ones_warn(
+    caplog: pytest.LogCaptureFixture, cause: str, level: int
+) -> None:
+    """[if] a stop's cause is expected [then] INFO, else WARNING, [else stop]."""
+    caplog.set_level(logging.INFO, logger=state_routes.__name__)
+    _publish(_doc(_stop(1, cause=cause)))
+    assert [r.levelno for r in caplog.records if r.getMessage().startswith("deck-stop ")] == [level]
+
+
+@pytest.mark.requirement("PLAY-18")
+def test_the_server_vocabulary_matches_the_pages() -> None:
+    """[if] deck-stop-log.ts and state.py list different causes [then] fail, [else stop]."""
+
+    source = (
+        Path(__file__).resolve().parents[2] / "apps/webui/frontend/src/lib/rb/deck-stop-log.ts"
+    ).read_text(encoding="utf-8")
+    block = source.split("export const DECK_STOP_CAUSES = [", 1)[1].split("]", 1)[0]
+    assert tuple(re.findall(r"'([a-z-]+)'", block)) == state_routes.DECK_STOP_CAUSES

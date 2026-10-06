@@ -135,8 +135,19 @@ test('RUNNING it: the autoplay command switches AutoPlay and the next mirror rea
 		// PLAY-18: an off without user provenance is refused and changes nothing.
 		const unowned = await live.executeAgentOrder({ kind: 'single', payload: { type: 'autoplay', enabled: false } });
 		assert.equal(unowned.steps[0].status, 'failed', 'if an agent can switch AutoPlay off with no user ask then broken');
-		assert.match(unowned.steps[0].error, /only a user turns AutoPlay off/);
+		assert.match(unowned.steps[0].error, /only a user turns AutoPlay off; send by_user: true when a person asked for this/);
 		assert.equal(live.uiPrefs.auto_play_enabled, true);
+		// The IPC bridge is app-internal: not applied, AutoPlay stays on, one WARN.
+		const realWarn = console.warn;
+		const warned = [];
+		console.warn = (...args) => warned.push(args.join(' '));
+		try {
+			await globalThis.window.musicDjToolsPerformance.dispatch({ type: 'autoplay', enabled: false });
+		} finally {
+			console.warn = realWarn;
+		}
+		assert.equal(live.uiPrefs.auto_play_enabled, true, 'if the bridge can switch AutoPlay off with no user then broken');
+		assert.match(warned.join('\n'), /AutoPlay off without user provenance not applied, AutoPlay stays on .*caller: window\.musicDjToolsPerformance/);
 
 		const off = await live.executeAgentOrder({
 			kind: 'single',

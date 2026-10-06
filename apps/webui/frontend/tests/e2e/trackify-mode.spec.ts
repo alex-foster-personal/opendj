@@ -123,7 +123,7 @@ test('failed load skips to the next track with a dismissible toast within 2 s', 
 			if (ipc?.e2e_prime_feed === undefined || ipc.e2e_force_load === undefined) {
 				throw new Error('Trackify e2e hooks are unavailable');
 			}
-			ipc.toggle_autoplay(false);
+			ipc.toggle_autoplay(false, true);
 			const perf = window.musicDjToolsPerformance;
 			if (perf !== undefined && perf.query().decks[1].stable_id !== null) {
 				await perf.dispatch({ type: 'unload', deck: 1 });

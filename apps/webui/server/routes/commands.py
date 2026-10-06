@@ -269,20 +269,12 @@ def _check_autoplay_commands(body: dict[str, Any]) -> None:
             )
         if not isinstance(command["enabled"], bool):
             raise TypeError(f"autoplay enabled must be boolean, got {command['enabled']!r}")
-        # PLAY-18: an off needs user provenance; the page refuses it too, but a
-        # 422 here costs no page round trip.
-        if "by_user" in command and not isinstance(command["by_user"], bool):
-            raise TypeError(f"autoplay by_user must be boolean, got {command['by_user']!r}")
-        if command["enabled"] is False and command.get("by_user") is not True:
-            raise ValueError(
-                "autoplay off refused: only a user turns AutoPlay off (PLAY-18); "
-                "send by_user: true when relaying a person's ask"
-            )
+        # PLAY-18: the off-needs-a-user rule is USER_ONLY_OFF's, shared with Quantize.
 
 
-#: DECKUX-39: command types whose OFF only a person may ask for, and the name
-#: the refusal uses. The page enforces the same rule (agent-orders.ts).
-USER_ONLY_OFF = {"quantize": "Quantize"}
+#: DECKUX-39 / PLAY-18: command types whose OFF only a person may ask for, and
+#: the name the refusal uses. The page enforces the same rule (agent-orders.ts).
+USER_ONLY_OFF = {"quantize": "Quantize", "autoplay": "AutoPlay"}
 
 
 def user_only_off_refusal(command_type: str) -> str:

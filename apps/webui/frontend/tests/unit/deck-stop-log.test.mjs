@@ -170,6 +170,7 @@ test('a UI pause logs one line with cause user-ui and last_stop.user_pause true'
 	const lines = stopLines();
 	assert.equal(lines.length, 1, 'if one stop logs zero or two lines then broken');
 	assert.equal(lines[0].deck, 1);
+	assert.equal(lines[0].severity, 'info', 'an expected stop logs at info, never warn');
 	assert.match(lines[0].message, /^cause=user-ui seq=1 position_ms=\d+ stable_id=d{40}$/);
 	const stop = m.stopLog.readLastDeckStop(1);
 	assert.equal(stop.cause, 'user-ui');
@@ -223,4 +224,13 @@ test('tearing the engine down mid-play logs cause reload', async () => {
 	await loadAndPlay();
 	await m.audio.engine.dispose();
 	assert.equal(m.stopLog.readLastDeckStop(1).cause, 'reload');
+	assert.equal(stopLines().at(-1).severity, 'warn', 'a stop nobody asked for warns');
+});
+
+test('the cause vocabulary is stable: exported list, and only unattributed/engine/reload warn', () => {
+	assert.deepEqual([...m.stopLog.DECK_STOP_CAUSES], [
+		'user-ui', 'agent-command', 'autoplay-handoff', 'app-command', 'end-of-track', 'engine', 'reload', 'unattributed'
+	]);
+	const warns = m.stopLog.DECK_STOP_CAUSES.filter((cause) => m.stopLog.deckStopSeverity(cause) === 'warn');
+	assert.deepEqual(warns, ['engine', 'reload', 'unattributed']);
 });

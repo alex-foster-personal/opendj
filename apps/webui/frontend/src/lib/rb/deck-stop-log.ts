@@ -23,9 +23,33 @@ import type { PauseOrigin } from '$lib/rb/unexpected-pause';
 /** deck-slots' DeckId, spelled as the literal perf-event-log already uses. */
 type DeckId = 1 | 2 | 3 | 4;
 
-export type CommandSource = 'user-ui' | 'agent-command' | 'autoplay-handoff' | 'app-command' | 'engine';
+/**
+ * The stable stop-cause vocabulary (PLAY-18). Other lanes (the AutoPlay
+ * handoff safety net) import these names; add to the end, never rename.
+ * Mirrored by DECK_STOP_CAUSES in apps/webui/server/routes/state.py.
+ */
+export const DECK_STOP_CAUSES = [
+	'user-ui',
+	'agent-command',
+	'autoplay-handoff',
+	'app-command',
+	'end-of-track',
+	'engine',
+	'reload',
+	'unattributed'
+] as const;
 
-export type DeckStopCause = CommandSource | 'end-of-track' | 'reload' | 'unattributed';
+export type DeckStopCause = (typeof DECK_STOP_CAUSES)[number];
+
+/** Who a command came from; a subset of the causes. */
+export type CommandSource = Extract<DeckStopCause, 'user-ui' | 'agent-command' | 'autoplay-handoff' | 'app-command' | 'engine'>;
+
+/** Expected stops log at info; only a stop nobody asked for warns. */
+export const DECK_STOP_WARN_CAUSES: ReadonlySet<DeckStopCause> = new Set(['unattributed', 'engine', 'reload']);
+
+export function deckStopSeverity(cause: DeckStopCause): 'info' | 'warn' {
+	return DECK_STOP_WARN_CAUSES.has(cause) ? 'warn' : 'info';
+}
 
 export interface DeckStop {
 	/** Per-deck count of stops this page has seen; a gap means a missed record. */
@@ -103,7 +127,7 @@ export function recordDeckStop(input: {
 		'deck-stop',
 		`cause=${stop.cause} seq=${stop.seq} position_ms=${stop.position_ms} stable_id=${stop.stable_id ?? 'none'}`,
 		input.deck,
-		'info'
+		deckStopSeverity(stop.cause)
 	);
 	return stop;
 }

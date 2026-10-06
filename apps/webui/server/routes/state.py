@@ -244,14 +244,23 @@ def _last_stop(document: dict[str, Any] | None, deck_id: str) -> dict[str, Any] 
     stop = deck.get("last_stop") if isinstance(deck, dict) else None
     return stop if isinstance(stop, dict) else None
 
+#: PLAY-18: the page's stop-cause vocabulary (DECK_STOP_CAUSES in deck-stop-log.ts).
+#: Expected stops log at INFO; only a stop nobody asked for is a WARNING.
+DECK_STOP_CAUSES = (
+    "user-ui", "agent-command", "autoplay-handoff", "app-command",
+    "end-of-track", "engine", "reload", "unattributed",
+)
+DECK_STOP_WARN_CAUSES = frozenset({"unattributed", "engine", "reload"})
+
 
 def _log_new_deck_stops(previous: dict[str, Any] | None, body: dict[str, Any]) -> None:
     """PLAY-18: one engine log line per deck stop the page reports.
 
     The page records every stop with its cause (deck-stop-log.ts) and publishes
-    the latest as the deck's ``last_stop``. WARNING because the engine log keeps
-    WARNING and up, and an unattributed stop is exactly what a soak has to find
-    afterwards. ``missed`` counts stops overwritten between two publishes.
+    the latest as the deck's ``last_stop``. Expected causes log at INFO; an
+    unattributed, engine or reload stop is a WARNING, the floor the engine log keeps,
+    because that is what a soak has to find afterwards. ``missed`` counts stops
+    overwritten between two publishes.
     """
     decks = body.get("decks")
     if not isinstance(decks, dict):
@@ -263,7 +272,8 @@ def _log_new_deck_stops(previous: dict[str, Any] | None, body: dict[str, Any]) -
             continue
         seq, prior_seq = stop.get("seq"), (prior or {}).get("seq")
         missed = seq - prior_seq - 1 if isinstance(seq, int) and isinstance(prior_seq, int) and seq > prior_seq else 0
-        _LOG.warning(
+        _LOG.log(
+            logging.WARNING if stop.get("cause") in DECK_STOP_WARN_CAUSES else logging.INFO,
             "deck-stop deck=%s cause=%s user_pause=%s seq=%s missed=%s position_ms=%s stable_id=%s at=%s client=%s",
             deck_id,
             stop.get("cause"),

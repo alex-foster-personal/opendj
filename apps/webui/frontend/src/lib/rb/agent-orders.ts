@@ -39,9 +39,26 @@ interface AgentStepResult {
 	error?: string;
 }
 
+/**
+ * DECKUX-39: the command types whose OFF only a person may ask for. An agent
+ * order is a COMMAND, so an off without `by_user: true` is refused (the engine
+ * already answered 422 for it; this is the page's half), never reverted.
+ * App-internal paths (restores, the IPC bridge) revert with a WARN instead.
+ * Mirrors USER_ONLY_OFF in apps/webui/server/routes/commands.py.
+ */
+export const USER_ONLY_OFF: Readonly<Record<string, string>> = { quantize: 'Quantize', autoplay: 'AutoPlay' };
+
+export function userOnlyOffRefusal(commandType: string): string {
+	return `${commandType} off refused: only a user turns ${USER_ONLY_OFF[commandType]} off; send by_user: true when a person asked for this`;
+}
+
 function _command(value: unknown): PerformanceCommand {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
 		throw new TypeError('agent order command must be an object');
+	}
+	const record = value as Record<string, unknown>;
+	if (typeof record.type === 'string' && record.type in USER_ONLY_OFF && record.enabled === false && record.by_user !== true) {
+		throw new Error(userOnlyOffRefusal(record.type));
 	}
 	return value as PerformanceCommand;
 }
