@@ -226,8 +226,7 @@
 		type DeckSlotState
 	} from '$lib/rb/deck-slots';
 	import TrackEditModals from './TrackEditModals.svelte';
-	import AddTrackSearch from './browser/AddTrackSearch.svelte';
-	import LibraryEditMenu from './browser/LibraryEditMenu.svelte';
+	import LibraryHeaderTools from './browser/LibraryHeaderTools.svelte';
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
@@ -3413,9 +3412,14 @@
 				>
 					MASTER <span class="caret">▾</span>
 				</button>
-				<!-- LIBUX-49: at the toolbar's left end, clear of the search box (which grows
+				<!-- LIBUX-49: the pencil sits at the toolbar's left end, clear of the search box (which grows
 					 leftwards) and of the feedback dock over the bottom-right corner. -->
-				<LibraryEditMenu hasSelection={pane.selected_ids.length > 0} onpick={(action) => void openEditModal(action)} />
+				<LibraryHeaderTools
+					hasSelection={pane.selected_ids.length > 0}
+					editable={editablePane}
+					onpick={(action) => void openEditModal(action)}
+					onadd={addTrack}
+				/>
 				<button
 					class="icon-btn"
 					class:active={uiPrefs.library_density === 'compact'}
@@ -3538,11 +3542,6 @@
 					/>
 					<span>available offline</span>
 				</label>
-				{#if editablePane}
-					<!-- LIBUX-49 (B8): hidden for now, never removed. Agents add tracks through
-						 PUT /playlists/:id/tracks; performance-library-toolbar.spec.ts drives it. -->
-					<span class="add-track-parked" data-testid="add-track-parked"><AddTrackSearch onadd={addTrack} /></span>
-				{/if}
 				<button
 					type="button"
 					class="rb-lit-button nav-back"
@@ -3950,10 +3949,6 @@
 		gap: 4px;
 		flex: 1 1 auto;
 		min-width: 0;
-	}
-	/* LIBUX-49 (B8): the add-track search is parked, mounted and hidden. */
-	.add-track-parked {
-		display: none;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
