@@ -25,6 +25,8 @@
  *   drops the words it was judging
  * - if evictAllExcept drops a kept id then a loaded deck loses its lyrics
  *   mid-set
+ * - if the settled-entry cap goes then a long AutoPlay set holds every track's
+ *   words forever (B9: one more entry per load, no eviction)
  * - if cacheStats stops counting words then the RAM readout cannot answer
  *   "how much is this holding"
  */
@@ -50,7 +52,7 @@ after(() => {
  * constants - every call below still lands on the real production function. */
 async function freshCache() {
 	const mod = await loadTypeScriptModule(MODULE, { viteApiBase: API_BASE });
-	return { ...mod.lyricsCache, HOVER_DEBOUNCE_MS: mod.HOVER_DEBOUNCE_MS };
+	return { ...mod.lyricsCache, HOVER_DEBOUNCE_MS: mod.HOVER_DEBOUNCE_MS, MAX_SETTLED: mod.LYRICS_CACHE_MAX_SETTLED };
 }
 
 function verdict(stableId, overrides = {}) {
@@ -280,4 +282,32 @@ test('the hover path is debounced and cancellable', async () => {
 
 	assert.equal(calls, 0, 'a cancelled hover must never reach the network');
 	assert.equal(cache.entry('t-hover'), null);
+});
+
+test('B9: settled entries are capped, least recently loaded first', async () => {
+	const cache = await freshCache();
+	globalThis.fetch = async (request) => jsonResponse(karaokeTrack(new URL(request.url).pathname.split('/')[4], 4));
+	const cap = cache.MAX_SETTLED;
+	assert.equal(cap, 16);
+	for (let i = 0; i < cap + 4; i++) await cache.load(`cap-${i}`);
+	assert.equal(cache.stats().entries, cap, 'a long set must not hold every track it ever loaded');
+	for (let i = 0; i < 4; i++) assert.equal(cache.entry(`cap-${i}`), null, `cap-${i} is the oldest and goes first`);
+	for (let i = 4; i < cap + 4; i++) assert.equal(cache.entry(`cap-${i}`).state, 'loaded');
+});
+
+test('B9: loading a cached track again keeps it, so a deck in use is not evicted', async () => {
+	const cache = await freshCache();
+	let calls = 0;
+	globalThis.fetch = async (request) => {
+		calls += 1;
+		return jsonResponse(karaokeTrack(new URL(request.url).pathname.split('/')[4], 4));
+	};
+	const cap = cache.MAX_SETTLED;
+	for (let i = 0; i < cap; i++) await cache.load(`deck-${i}`);
+	await cache.load('deck-0'); // the deck re-asks for its track: a cache hit, no fetch
+	assert.equal(calls, cap);
+	await cache.load('newcomer');
+	assert.equal(cache.entry('deck-0').state, 'loaded', 'the recently re-loaded track survives');
+	assert.equal(cache.entry('deck-1'), null, 'the least recently loaded one goes instead');
+	assert.equal(cache.stats().entries, cap);
 });
