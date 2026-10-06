@@ -231,3 +231,13 @@ export function toLyricsFrame(
 		}
 	};
 }
+
+/** The line at `index`, or null: NEVER undefined. A cursor index survives a
+ *  track switch for a frame, so it can point past the new track's lines
+ *  (silver preview, Tue 6 Oct 2026 09:19:25Z: "Cannot read properties of
+ *  undefined (reading 'fidelity')" in DeckLyricLine right after a load). */
+export function lineAtOrNull(track: LyricsTrack | null, index: number | null): LyricsLine | null {
+	if (track === null || index === null) return null;
+	if (!Number.isInteger(index) || index < 0 || index >= track.lines.length) return null;
+	return track.lines[index];
+}

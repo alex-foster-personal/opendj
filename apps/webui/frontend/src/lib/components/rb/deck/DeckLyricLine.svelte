@@ -28,7 +28,7 @@
 	 * bad = whole-line amber (never animate confidently over words the
 	 * witness distrusts), unjudged = whole-line neutral.
 	 */
-	import { buildWordLineMap, resolveCursor } from '$lib/rb/lyrics/cursor';
+	import { buildWordLineMap, lineAtOrNull, resolveCursor } from '$lib/rb/lyrics/cursor';
 	import type { LyricsCursor } from '$lib/rb/lyrics/cursor';
 	import {
 		deckLyricPageIndex,
@@ -129,18 +129,23 @@
 		tickAt(positionSource());
 	});
 
-	const currentLine = $derived(
-		track !== null && lineIndex !== null ? track.lines[lineIndex] : null
-	);
-	const nextLine = $derived(
-		track !== null && nextLineIndex !== null ? track.lines[nextLineIndex] : null
-	);
-	const thirdLineIndex = $derived(
-		nextLineIndex === null ? null : nextLineIndex + 1 < (track?.lines.length ?? 0) ? nextLineIndex + 1 : null
-	);
-	const thirdLine = $derived(
-		track !== null && thirdLineIndex !== null ? track.lines[thirdLineIndex] : null
-	);
+	// A track switch keeps the OLD cursor for a frame, so every index below
+	// may point past the new track's lines. lineAtOrNull answers null, never
+	// undefined, and the reset clears the stale cursor before the next render.
+	$effect.pre(() => {
+		void track;
+		lineIndex = null;
+		wordIndex = null;
+		nextLineIndex = null;
+		sungThrough = -1;
+		lineSixteenths = 0;
+		playState = 'preroll';
+		hint = 0;
+	});
+
+	const currentLine = $derived(lineAtOrNull(track, lineIndex));
+	const nextLine = $derived(lineAtOrNull(track, nextLineIndex));
+	const thirdLine = $derived(lineAtOrNull(track, nextLineIndex === null ? null : nextLineIndex + 1));
 	/** Words of the current line, rebuilt only on a line change. */
 	const lineWords = $derived(
 		track === null || currentLine === null
