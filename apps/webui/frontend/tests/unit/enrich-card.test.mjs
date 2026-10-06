@@ -251,7 +251,11 @@ test('collapsed: paused lanes say paused, and BPM fully covered by rekordbox is 
 
 /* ENRICH-03: songs, duds, the red rule and lyrics-style stems (the maintainer, Tue 6 Oct 2026). */
 
-const songCounts = (over = {}) => ({ total: 1212, done: 1212, missing: 0, failed: 0, declined: 0, duds: 0, failed_reasons: {}, red: false, ...over });
+const songCounts = (over = {}) => ({
+	total: 1212, done: 1212, missing: 0, failed: 0, declined: 0, duds: 0, failed_reasons: {}, red: false,
+	allowable: (over.missing ?? 0) + (over.failed ?? 0) === 0,
+	...over
+});
 const SONGS = { songs: 1212, files: 1998, rows: 2268, key: 'title + artists + length to the second; two rows for one file always count once', red_fail_share: 0.05 };
 
 function songSummary(laneOver = {}, extra = {}) {
@@ -274,7 +278,7 @@ test('lines count songs and the hover names songs in files and the key', () => {
 });
 
 test('control: the red flag, not a failure count, makes a lane red (4.9% ready, 5.0% red as the API reports)', () => {
-	const under = songSummary({ loudness: { done: 1153, failed: 59, red: false } });
+	const under = songSummary({ loudness: { done: 1153, failed: 59, red: false, allowable: true } });
 	const at = songSummary({ loudness: { done: 1151, failed: 61, red: true } });
 	const lineOf = (s) => card.analysisLines(s).find((l) => l.lane === 'loudness');
 	assert.equal(lineOf(under).tone, 'ready');
@@ -328,4 +332,14 @@ test('lyrics count songs when the coverage carries them, and are red only on the
 	const line = card.lyricsLine(s);
 	assert.equal(line.text, 'Lyrics: 700 found, 300 with none available, 200 still to look up, 12 failed');
 	assert.equal(line.tone, 'working');
+});
+
+test('green when failures plus pending are allowable, and the text still names what is left', () => {
+	const s = songSummary({ waveform: { done: 1160, missing: 50, failed: 2, allowable: true } });
+	s.analysis.drain = { waveform: { state: 'paused_playing', waiting_on: null, reason: null } };
+	const line = card.analysisLines(s).find((l) => l.lane === 'waveform');
+	assert.equal(line.tone, 'ready');
+	assert.equal(line.text, 'Deck waveforms: 1,160 of 1,212 songs done, paused while a deck is playing, 2 failed');
+	const neutral = songSummary({ waveform: { done: 1150, missing: 60, failed: 2, allowable: false } });
+	assert.equal(card.analysisLines(neutral).find((l) => l.lane === 'waveform').tone, 'working');
 });

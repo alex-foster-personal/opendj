@@ -138,3 +138,17 @@ def test_coverage_and_summary_count_one_file_once(library: Library) -> None:
     summary = library.client.get("/api/v1/enrich/summary").json()
     assert summary["coverage"]["songs"] == songs, "if the card's songs differ from the coverage API's then broken"
     assert (summary["stems"]["separated"], summary["stems"]["not_yet"]) == (0, 1)
+
+
+@pytest.mark.parametrize(
+    ("failed", "pending", "allowable", "red"),
+    [(0, 49, True, False), (0, 50, False, False), (49, 2, False, False), (50, 0, False, True)],
+    ids=["4.9pct-pending-green", "5.0pct-pending-neutral", "4.9pct-failed-plus-0.2pct-pending-neutral", "5.0pct-failed-red"],
+)
+def test_failures_plus_pending_decide_green(failed: int, pending: int, allowable: bool, red: bool) -> None:
+    """[if] failures plus pending stay under 5 % [then] allowable; red needs failures alone, [else stop]."""
+    ids = [f"s{i}" for i in range(1000)]
+    done = set(ids[failed + pending:])
+    out = es.lane_songs(_flat(1000), ids, done, {}, dict.fromkeys(ids[:failed], REAL))
+    assert (out["failed"], out["missing"]) == (failed, pending)
+    assert (out["allowable"], out["red"]) == (allowable, red)

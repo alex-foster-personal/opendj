@@ -49,6 +49,8 @@ export type SongCounts = {
 	failed_reasons: Record<string, number>;
 	/** Real failures at or above the backend's red share. */
 	red: boolean;
+	/** Real failures plus still-to-analyse are under the red share: the ready tone. */
+	allowable: boolean;
 };
 
 export type LaneCounts = {
@@ -182,7 +184,8 @@ function view(c: LaneCounts): { noun: string; counts: SongCounts } {
 			declined: c.declined ?? 0,
 			duds: 0,
 			failed_reasons: c.failed_reasons ?? {},
-			red: c.failed > 0
+			red: c.failed > 0,
+			allowable: c.missing === 0 && c.failed === 0
 		}
 	};
 }
@@ -264,10 +267,11 @@ function laneLine(lane: string, label: string, c: LaneCounts, title: string | nu
 		};
 	}
 	const progress = `${label}: ${n(counts.done)} of ${n(counts.total)} ${noun} done`;
-	if (counts.missing > 0) {
-		return { lane, tone: 'working', text: `${progress}, ${drainPhrase(drain)}${allowedFailures(counts.failed)}`, title };
-	}
-	return { lane, tone: 'ready', text: `${progress}${allowedFailures(counts.failed)}`, title: reasonsTitle(counts.failed_reasons) ?? title };
+	const remaining = counts.missing > 0 ? `, ${drainPhrase(drain)}` : '';
+	// Failures plus still-to-analyse under the backend's red share is allowable: green, and the
+	// text still names what is left, so green never hides undone work.
+	const tone = counts.allowable ? 'ready' : 'working';
+	return { lane, tone, text: `${progress}${remaining}${allowedFailures(counts.failed)}`, title: reasonsTitle(counts.failed_reasons) ?? title };
 }
 
 /** The analysis lane lines, in the drain's order. */

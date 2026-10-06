@@ -25,9 +25,10 @@ Requirements (mini-PRD):
     [if] two rows share title, artists and whole-second duration [then] they are one song
   ✔︎ duds are not failures
     [if] every failure of a song is a dud reason [then] it counts in duds, never failed
-  ✔︎ red only at the threshold
+  ✔︎ red only at the threshold, green when failures plus pending are under it
     [if] real failures are 4.9 % of a lane's songs [then] red is false
     [if] they are 5.0 % [then] red is true
+    [if] failures plus still-to-analyse are 4.9 % [then] allowable; at 5.0 % [then] not allowable
 """
 from __future__ import annotations
 
@@ -201,7 +202,13 @@ def lane_songs(
             failed_reasons[real[0]] = failed_reasons.get(real[0], 0) + 1
         else:
             out["duds"] += 1
-    return {**out, "failed_reasons": failed_reasons, "red": is_red(out["failed"], out["total"])}
+    return {
+        **out,
+        "failed_reasons": failed_reasons,
+        "red": is_red(out["failed"], out["total"]),
+        # CORE, Tue 6 Oct 2026: real failures PLUS still-to-analyse under the share is allowable.
+        "allowable": not is_red(out["failed"] + out["missing"], out["total"]),
+    }
 
 
 def usable_songs(
