@@ -54,16 +54,15 @@ export function skinCycleTitle(skin: UiSkin): string {
 	return `Skin: ${UI_SKIN_LABELS[skin]}. Click for ${UI_SKIN_LABELS[nextUiSkin(skin)]}`;
 }
 
-/** Split main waveform: top half = the MASTER deck (or, on the master, the
- * next loaded deck), bottom half = this deck. 'auto' = on for skins that
- * declare it (mono-dev), off otherwise. */
+/** Split main waveform: top half = the MASTER deck, bottom half = this deck;
+ * the master's own row stays a plain mirrored row. OPT-IN: 'auto' = OFF on
+ * every skin (the maintainer, Tue 6 Oct 2026: standard mirrored rows on top, split is
+ * meant for a future decks-only view); 'on' = split; 'off' = mirrored. */
 export type WaveSplitMaster = 'auto' | 'on' | 'off';
 
 export const WAVE_SPLIT_MASTER_CHOICES: readonly WaveSplitMaster[] = ['auto', 'on', 'off'];
 
 export const WAVE_SPLIT_MASTER_DEFAULT: WaveSplitMaster = 'auto';
-
-const _SKINS_WITH_SPLIT: ReadonlySet<UiSkin> = new Set<UiSkin>(['mono-dev']);
 
 export function parseWaveSplitMaster(raw: unknown): WaveSplitMaster | undefined {
 	if (raw === undefined) return undefined;
@@ -73,10 +72,10 @@ export function parseWaveSplitMaster(raw: unknown): WaveSplitMaster | undefined 
 	return raw as WaveSplitMaster;
 }
 
-export function waveSplitActive(pref: WaveSplitMaster, skin: UiSkin): boolean {
+export function waveSplitActive(pref: WaveSplitMaster): boolean {
 	if (pref === 'on') return true;
 	else if (pref === 'off') return false;
-	else if (pref === 'auto') return _SKINS_WITH_SPLIT.has(skin);
+	else if (pref === 'auto') return false;
 	throw new Error(`wave_split_master: unhandled ${String(pref)}`);
 }
 
