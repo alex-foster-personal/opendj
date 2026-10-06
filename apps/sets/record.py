@@ -33,6 +33,7 @@ from .capture import (
     start_capture,
 )
 from .manifest import AudioSegment, Manifest, write_manifest
+from .master_mix import MasterMixWriter
 from .state import Event, SetsState
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,9 @@ class RecorderConfig:
     capture_input_name: str | None = None
     # The backend REC resolved at start; None lets start_capture pick (SET-11).
     capture_backend: CaptureBackend | None = None
+    # SET-12: record the page's own master bus, streamed over HTTP, instead
+    # of an input device. No capture process runs.
+    master_mix: bool = False
     # When True we skip the ffmpeg subprocess entirely (test mode).
     capture_disabled: bool = False
     djay_db_path: Path | None = None
@@ -169,6 +173,7 @@ class Recorder:
     session_started_at: datetime
     _sources: dict[str, Any] = field(default_factory=dict)
     _capture: CaptureHandle | None = None
+    _master: MasterMixWriter | None = None
     _poll_threads: list[threading.Thread] = field(default_factory=list)
     _heartbeat_thread: threading.Thread | None = None
     _stop_event: threading.Event = field(default_factory=threading.Event)
@@ -212,6 +217,10 @@ class Recorder:
         """Spawn ffmpeg unless the config disables capture."""
         if self.config.capture_disabled:
             return
+        if self.config.master_mix:
+            # SET-12: the page streams the master bus in; nothing to spawn.
+            self._master = MasterMixWriter(self.session_dir)
+            return
         if self.config.ffmpeg_device_idx is None:
             logger.warning(
                 "capture enabled but no ffmpeg_device_idx; skipping ffmpeg"
@@ -227,12 +236,16 @@ class Recorder:
 
     def capture_state(self) -> str:
         """``none`` without audio capture, else the capture's own state."""
+        if self._master is not None:
+            return self._master.current_state()
         if self._capture is None:
             return "none"
         return self._capture.current_state()
 
     def capture_error(self) -> str | None:
         """Why the capture failed, as the engine said it, when it failed and said."""
+        if self._master is not None:
+            return self._master.error
         if self._capture is None or self._capture.current_state() != "failed":
             return None
         return self._capture.state.error
@@ -302,6 +315,8 @@ class Recorder:
             t.join(timeout=2.0)
         if self._heartbeat_thread is not None:
             self._heartbeat_thread.join(timeout=2.0)
+        if self._master is not None:
+            self._master.close()
         if self._capture is not None and stop_capture_fn is not None:
             try:
                 stop_capture_fn(self._capture)

@@ -554,6 +554,13 @@ export function peekMasterMeterReading(): MeterReading {
 /** CUEOUT-14: the live room delay line, null until the graph exists. Read by
  * loopback checks that want to prove the LAST node before the destination is
  * the delay; nothing else may write its delayTime (player/headphones.ts owns it). */
+/** SET-12: the bus the set recorder taps (post master fader, never the cue),
+ * building the graph first when `build`; null while there is none. */
+export function masterMixTapPoint(build: boolean): { context: AudioContext; node: GainNode } | null {
+	if (build) _ensureGraph();
+	return _ctx && _masterGain && { context: _ctx, node: _masterGain };
+}
+
 export function masterDelayNode(): DelayNode | null {
 	return _masterDelay;
 }

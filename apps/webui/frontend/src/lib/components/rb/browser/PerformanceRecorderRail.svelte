@@ -27,6 +27,9 @@
 	// /performance bundle budget (charged to other-lazy instead). Non-null
 	// means the picker is open.
 	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
+	// SET-12: this page's master-mix tap while it feeds a `source: master`
+	// recording. Lazy for the same reason as the picker.
+	let master: Promise<{ stop(): Promise<void> } | null> | null = null;
 
 	onMount(() => {
 		void refreshRecorderStatus();
@@ -49,9 +52,37 @@
 		failureShown = failure !== null;
 	});
 
+	// SET-12: a master recording (started here, by an agent, or before a
+	// reload) is fed by this page; attach the tap whenever one is live
+	// without it. A tap that cannot start stops the recording and says why.
+	function syncMasterTap(status: RecorderStatus): void {
+		const id = status.session_id;
+		if (master !== null || !status.owned || status.capture_source !== 'master' || id === null) return;
+		master = import('$lib/sets/master-mix-capture')
+			.then((m) => m.startMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')))
+			.catch(async (error: unknown) => {
+				pushToast(`REC failed: the master mix could not be recorded: ${String(error)}`, 'error');
+				recorder = await stopPerformanceRecorder(status).catch(() => recorder);
+				master = null;
+				return null;
+			});
+	}
+
+	async function stopMasterTap(): Promise<void> {
+		const tap = await master;
+		master = null;
+		await tap?.stop();
+	}
+
+	function setRecorder(status: RecorderStatus): void {
+		recorder = status;
+		if (status.active) syncMasterTap(status);
+		else void stopMasterTap();
+	}
+
 	async function refreshRecorderStatus(): Promise<void> {
 		try {
-			recorder = await getRecorderStatus();
+			setRecorder(await getRecorderStatus());
 		} catch (error) {
 			pushToast(`REC status failed: ${String(error)}`, 'error');
 		}
@@ -62,7 +93,8 @@
 		try {
 			recorder = await getRecorderStatus();
 			if (recorder.active) {
-				recorder = await stopPerformanceRecorder(recorder);
+				await stopMasterTap();
+				setRecorder(await stopPerformanceRecorder(recorder));
 				pushToast('Recording stopped and session finalized.', 'info');
 				return;
 			}
@@ -89,7 +121,7 @@
 
 {#if RecordInputPicker !== null}
 	<RecordInputPicker
-		onstarted={(status) => ((recorder = status), (RecordInputPicker = null))}
+		onstarted={(status) => (setRecorder(status), (RecordInputPicker = null))}
 		oncancel={() => (RecordInputPicker = null)}
 		notify={pushToast}
 	/>

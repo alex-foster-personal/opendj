@@ -37,37 +37,53 @@ after(() => {
 	globalThis.fetch = originalFetch;
 });
 
-test('performance REC starts the recorder on the picked input BY NAME with the Open DJ source enabled', async () => {
+test('performance REC starts the recorder on the picked input BY NAME with an explicit source', async () => {
 	requests.length = 0;
-	await choice.startPerformanceRecorder({ kind: 'device', name: 'BlackHole 2ch' });
+	await choice.startPerformanceRecorder({ kind: 'device', name: 'BlackHole 2ch' }, 'loopback');
+	await choice.startPerformanceRecorder({ kind: 'device', name: 'Scarlett 2i2' }, 'midi');
 
-	assert.deepEqual(requests, [
-		{
-			url: `${API_BASE}/api/sets/recorder/start`,
-			method: 'POST',
-			body: JSON.stringify({
-				session_id: null,
-				device_name: 'BlackHole 2ch',
-				capture_audio: true,
-				sources: ['djay_monitor', 'opendj_decks']
-			})
-		}
-	]);
+	assert.deepEqual(
+		requests.map((r) => [r.url, r.method, JSON.parse(r.body)]),
+		[
+			[
+				`${API_BASE}/api/sets/recorder/start`,
+				'POST',
+				{
+					session_id: null,
+					sources: ['djay_monitor', 'opendj_decks'],
+					source: 'loopback',
+					device_name: 'BlackHole 2ch'
+				}
+			],
+			[
+				`${API_BASE}/api/sets/recorder/start`,
+				'POST',
+				{
+					session_id: null,
+					sources: ['djay_monitor', 'opendj_decks'],
+					source: 'external',
+					device_name: 'Scarlett 2i2'
+				}
+			]
+		]
+	);
 });
 
-test('performance REC tracklist-only start says so explicitly instead of omitting the input', async () => {
+test('performance REC master-mix and tracklist-only starts name their source, never an input', async () => {
 	requests.length = 0;
-	await choice.startPerformanceRecorder({ kind: 'none' });
+	await choice.startPerformanceRecorder({ kind: 'master' }, 'machine');
+	await choice.startPerformanceRecorder({ kind: 'none' }, 'midi');
 
-	assert.equal(requests.length, 1);
-	assert.deepEqual(JSON.parse(requests[0].body), {
-		session_id: null,
-		capture_audio: false,
-		sources: ['djay_monitor', 'opendj_decks']
-	});
+	assert.deepEqual(
+		requests.map((r) => JSON.parse(r.body)),
+		[
+			{ session_id: null, sources: ['djay_monitor', 'opendj_decks'], source: 'master' },
+			{ session_id: null, sources: ['djay_monitor', 'opendj_decks'], source: 'none' }
+		]
+	);
 });
 
-test('the picked input is read back from the daemon, not browser storage that forgets per port', async () => {
+test('the picked source is read back from the daemon, not browser storage that forgets per port', async () => {
 	requests.length = 0;
 	rememberedBody = JSON.stringify({ remembered: null });
 	assert.equal(await choice.getRememberedInput(), null);
@@ -75,31 +91,74 @@ test('the picked input is read back from the daemon, not browser storage that fo
 	assert.deepEqual(await choice.getRememberedInput(), { kind: 'device', name: 'Loopback Audio' });
 	rememberedBody = JSON.stringify({ remembered: { kind: 'none', name: null } });
 	assert.deepEqual(await choice.getRememberedInput(), { kind: 'none' });
+	rememberedBody = JSON.stringify({ remembered: { kind: 'master', name: null } });
+	assert.deepEqual(await choice.getRememberedInput(), { kind: 'master' });
 	assert.deepEqual(
 		requests.map((r) => [r.method, r.url]),
-		Array(3).fill(['GET', `${API_BASE}/api/sets/recorder/remembered-input`])
+		Array(4).fill(['GET', `${API_BASE}/api/sets/recorder/remembered-input`])
 	);
 	assert.equal('rememberInput' in choice, false);
 });
 
-test('the picker opens on the remembered input while connected, else the loopback default, never a mic', () => {
-	const devices = {
-		devices: [
-			{ index: 0, name: 'MacBook Pro Microphone', loopback: false },
-			{ index: 2, name: 'BlackHole 2ch', loopback: true }
-		],
-		default_name: 'BlackHole 2ch'
-	};
+const DEVICES = {
+	devices: [
+		{ index: 0, name: 'MacBook Pro Microphone', loopback: false },
+		{ index: 1, name: 'Scarlett 2i2', loopback: false },
+		{ index: 2, name: 'BlackHole 2ch', loopback: true }
+	],
+	default_name: 'BlackHole 2ch'
+};
+
+test('the toggle is MACHINE | LOOPBACK | MIDI and each view lists only its inputs', () => {
+	assert.deepEqual(
+		choice.RECORD_MODES.map((m) => [m.mode, m.label]),
+		[
+			['machine', 'MACHINE'],
+			['loopback', 'LOOPBACK'],
+			['midi', 'MIDI']
+		]
+	);
+	assert.deepEqual(choice.devicesForMode(DEVICES, 'machine'), []);
+	assert.deepEqual(choice.devicesForMode(DEVICES, 'loopback').map((d) => d.name), ['BlackHole 2ch']);
+	assert.deepEqual(choice.devicesForMode(DEVICES, 'midi').map((d) => d.name), [
+		'MacBook Pro Microphone',
+		'Scarlett 2i2'
+	]);
+	assert.deepEqual(choice.devicesForMode(null, 'loopback'), []);
+	assert.match(choice.INSTALL_LOOPBACK_URL, /^https:\/\//);
+});
+
+test('the picker opens on MACHINE by default, the remembered choice while it can be made, never a mic', () => {
 	const mic = { kind: 'device', name: 'MacBook Pro Microphone' };
-	assert.deepEqual(choice.initialInputChoice(mic, devices), mic);
-	assert.deepEqual(choice.initialInputChoice({ kind: 'device', name: 'Unplugged' }, devices), {
-		kind: 'device',
-		name: 'BlackHole 2ch'
+	const sel = choice.initialRecordSelection;
+	// Default: the master mix, needing no driver (SET-12).
+	assert.deepEqual(sel(null, DEVICES, true), { mode: 'machine', choice: { kind: 'master' } });
+	assert.deepEqual(sel(null, null, true), { mode: 'machine', choice: { kind: 'master' } });
+	assert.deepEqual(sel({ kind: 'master' }, DEVICES, true), { mode: 'machine', choice: { kind: 'master' } });
+	// Remembered inputs open in their own view.
+	assert.deepEqual(sel(mic, DEVICES, true), { mode: 'midi', choice: mic });
+	assert.deepEqual(sel({ kind: 'device', name: 'BlackHole 2ch' }, DEVICES, true), {
+		mode: 'loopback',
+		choice: { kind: 'device', name: 'BlackHole 2ch' }
 	});
-	assert.deepEqual(choice.initialInputChoice(null, devices), { kind: 'device', name: 'BlackHole 2ch' });
-	assert.equal(choice.initialInputChoice(null, { devices: devices.devices.slice(0, 1), default_name: null }), null);
-	assert.deepEqual(choice.initialInputChoice({ kind: 'none' }, null), { kind: 'none' });
-	assert.equal(choice.initialInputChoice(mic, null), null);
+	assert.deepEqual(sel({ kind: 'none' }, null, true), { mode: 'midi', choice: { kind: 'none' } });
+	assert.deepEqual(sel({ kind: 'device', name: 'Unplugged' }, DEVICES, true), {
+		mode: 'machine',
+		choice: { kind: 'master' }
+	});
+	// Rust engine: no master tap, so the loopback default, and never a mic.
+	assert.deepEqual(sel({ kind: 'master' }, DEVICES, false), {
+		mode: 'loopback',
+		choice: { kind: 'device', name: 'BlackHole 2ch' }
+	});
+	assert.deepEqual(sel(null, { devices: DEVICES.devices.slice(0, 2), default_name: null }, false), {
+		mode: 'loopback',
+		choice: null
+	});
+	assert.equal(choice.defaultChoiceForMode('midi', DEVICES, true), null);
+	assert.equal(choice.defaultChoiceForMode('machine', DEVICES, false), null);
+	assert.match(choice.masterMixUnavailableReason(true), /Rust engine/);
+	assert.equal(choice.masterMixUnavailableReason(false), null);
 });
 
 test('the live performance rail opens the in-app input picker instead of window.prompt', () => {
@@ -111,15 +170,15 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);
 	assert.match(performanceRecorderRail, /async function togglePerformanceRecording\(\): Promise<void>/);
 	assert.match(performanceRecorderRail, /recorder = await getRecorderStatus\(\)/);
-	assert.match(recordInputPicker, /const status = await startPerformanceRecorder\(choice\)/);
-	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => \(\(recorder = status\), \(RecordInputPicker = null\)\)\}/);
+	assert.match(recordInputPicker, /const status = await startPerformanceRecorder\(choice, mode\)/);
+	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => \(setRecorder\(status\), \(RecordInputPicker = null\)\)\}/);
 	assert.match(recordInputPicker, /getRememberedInput\(\)/);
 	assert.doesNotMatch(recordInputPicker, /localStorage/);
 	assert.match(recordInputPicker, /if \(remembered\.status === 'rejected'\) rememberError = reason\(remembered\.reason\)/);
 	assert.match(recordInputPicker, /data-testid="record-input-remember-error"/);
 	assert.match(performanceRecorderRail, /<RecordInputPicker/);
 	assert.match(performanceRecorderRail, /import\('.\/RecordInputPicker.svelte'\)/);
-	assert.match(performanceRecorderRail, /recorder = await stopPerformanceRecorder\(recorder\)/);
+	assert.match(performanceRecorderRail, /await stopMasterTap\(\);\s*setRecorder\(await stopPerformanceRecorder\(recorder\)\)/);
 	assert.match(performanceRecorderRail, /onrecord=\{\(\) => void togglePerformanceRecording\(\)\}/);
 	assert.match(recordInputPicker, /listRecorderDevices\(\)/);
 	assert.match(recordInputPicker, /Tracklist only \(no audio\)/);
@@ -149,6 +208,8 @@ test('REC lights only once audio is written, not while the macOS microphone prom
 	assert.equal(recorder.recordRailState({ ...base, capture: 'none' }).poll, null);
 	assert.equal(recorder.recordRailState({ ...base, capture: 'unknown' }).poll, null);
 	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).recording, false);
+	// SET-12: idle REC still re-reads, so an agent-started master recording gets its tap.
+	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).poll, recorder.IDLE_POLL_MS);
 });
 
 test('the rail lights REC from the capture state and polls while it is waiting', () => {

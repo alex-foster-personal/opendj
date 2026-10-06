@@ -14,6 +14,8 @@ Endpoints::
         body {"class": "..."}                       -> appends to labels.jsonl
     GET    /api/sets/{session_id}/audio/{segment}   -> MP3 stream (localhost-only
                                                        when share_state='private')
+    POST   /api/sets/recorder/{id}/master-pcm      -> one int16 chunk of the page's
+                                                       master mix (SET-12)
     GET    /api/sets/{session_id}/soundcloud-export -> metadata-only tracklist
     POST   /api/sets/{session_id}/soundcloud-export
         body {"acknowledge_rights": true}           -> paste-ready comment after ack
@@ -29,10 +31,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
+from starlette.concurrency import run_in_threadpool
 
 from . import paths as sets_paths
 from .audio import (
@@ -43,7 +46,14 @@ from .audio import (
 from .capture import CaptureUnavailable, default_input_device
 from .classify import CLASS_LIST, read_transitions
 from .label import append_label
-from .recorder_service import RecorderConflict, RecorderService, RememberedInputUnreadable
+from .master_mix import MasterMixChunkRefused
+from .recorder_service import (
+    RecorderConflict,
+    RecorderRequestInvalid,
+    RecorderService,
+    RecordSource,
+    RememberedInputUnreadable,
+)
 from .sessions import Session, get_session, list_sessions, summary_to_dict
 from .share import (
     SetShareConfig,
@@ -139,29 +149,39 @@ def _default_sources() -> list[SourceName]:
 
 
 class RecorderStartRequest(BaseModel):
-    """Explicit real-capture configuration for the REC button.
+    """Explicit capture configuration for the REC button (SET-10, SET-12).
 
-    Exactly one audio input: ``device_name`` (what the REC picker sends,
-    resolved to an index at start), or a raw ``ffmpeg_device_idx``; or
-    ``capture_audio: false`` for a tracklist-only recording (SET-10).
+    ``source`` is required, never defaulted: ``master`` records the app's own
+    master bus (streamed in by the page, see ``/master-pcm``); ``loopback``
+    and ``external`` record exactly one input, ``device_name`` (what the REC
+    picker sends, resolved to an index at start) or a raw
+    ``ffmpeg_device_idx``; ``none`` records the tracklist only.
     """
 
     session_id: str | None = Field(
         default=None,
         pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?$",
     )
+    source: RecordSource = Field(
+        description=(
+            "master: Open DJ's own master mix (post master fader, never the cue); "
+            "loopback: a loopback input such as BlackHole; external: another input, "
+            "e.g. an audio interface carrying a hardware mixer; none: tracklist only."
+        )
+    )
     ffmpeg_device_idx: int | None = Field(default=None, ge=0)
     device_name: str | None = Field(default=None, min_length=1, max_length=256)
-    capture_audio: bool = True
     sources: list[SourceName] = Field(default_factory=_default_sources)
 
     @model_validator(mode="after")
-    def _one_audio_input(self) -> RecorderStartRequest:
+    def _input_matches_source(self) -> RecorderStartRequest:
         named = (self.ffmpeg_device_idx is not None) + (self.device_name is not None)
-        if self.capture_audio and named != 1:
-            raise ValueError("name exactly one of ffmpeg_device_idx or device_name")
-        if not self.capture_audio and named != 0:
-            raise ValueError("capture_audio false records no audio, so names no input")
+        if self.source in ("loopback", "external") and named != 1:
+            raise ValueError(
+                f"source {self.source} names exactly one of ffmpeg_device_idx or device_name"
+            )
+        if self.source in ("master", "none") and named != 0:
+            raise ValueError(f"source {self.source} records no input, so names none")
         return self
 
 
@@ -179,9 +199,10 @@ class RecorderDevicesResponse(BaseModel):
 
 
 class RecorderRememberedInput(BaseModel):
-    """The input REC last started on: a named input, or none (tracklist only)."""
+    """The source REC last started on: the master mix, a named input, or none
+    (tracklist only)."""
 
-    kind: Literal["device", "none"]
+    kind: Literal["master", "device", "none"]
     name: str | None = None
 
 
@@ -213,6 +234,18 @@ class RecorderStatus(BaseModel):
             "access turned off at the macOS prompt), when capture is failed and the "
             "engine said why; null otherwise (SET-11)."
         ),
+    )
+    capture_source: RecordSource | None = Field(
+        default=None,
+        description=(
+            "What the owned recording records (master, loopback, external, none); null "
+            "when idle or owned by another process. A master recording is fed by the "
+            "/performance page, which attaches its master tap when it reads this (SET-12)."
+        ),
+    )
+    recordings_dir: str | None = Field(
+        default=None,
+        description="The directory every session folder is written under.",
     )
 
 
@@ -421,15 +454,58 @@ def api_recorder_start(
     try:
         return _recorder_service(request).start(
             session_id=body.session_id,
+            source=body.source,
             ffmpeg_device_idx=body.ffmpeg_device_idx,
             device_name=body.device_name,
-            capture_audio=body.capture_audio,
             sources=tuple(body.sources),
         )
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RecorderRequestInvalid as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except CaptureUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/recorder/{session_id}/master-pcm",
+    status_code=204,
+    response_class=Response,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+        }
+    },
+)
+async def api_recorder_master_pcm(
+    request: Request,
+    session_id: str,
+    stream: str = Query(min_length=1, max_length=64),
+    seq: int = Query(ge=0),
+    sample_rate: int = Query(ge=8_000, le=192_000),
+) -> Response:
+    """One chunk of the page's master mix for a ``source: master`` recording (SET-12).
+
+    The body is interleaved little-endian int16 stereo frames. 409 when no
+    owned master recording has this id, or the chunk would leave a hole
+    (a lost or out-of-order chunk); the page stops its tap and says so.
+    """
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
+    pcm = await request.body()
+    try:
+        await run_in_threadpool(
+            service.write_master_pcm,
+            session_id,
+            stream=stream,
+            seq=seq,
+            sample_rate=sample_rate,
+            pcm=pcm,
+        )
+    except (RecorderConflict, MasterMixChunkRefused) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @router.post("/recorder/{session_id}/stop", response_model=RecorderStatus)

@@ -37,7 +37,7 @@ def recorder_client(tmp_path: Path):
 def test_recorder_start_stop_settles_real_timeline(recorder_client):
     client, service = recorder_client
     session_id = "2026-07-22T22-00-00"
-    body = {"session_id": session_id, "ffmpeg_device_idx": 0, "sources": []}
+    body = {"session_id": session_id, "source": "external", "ffmpeg_device_idx": 0, "sources": []}
 
     started = client.post("/api/sets/recorder/start", json=body)
     duplicate = client.post("/api/sets/recorder/start", json=body)
@@ -55,6 +55,8 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
         "recoverable": False,
         "capture": "none",
         "capture_error": None,
+        "capture_source": None,
+        "recordings_dir": str(service.sets_root),
     }
     session_dir = service.sets_root / session_id
     assert not (session_dir / "recorder.pid").exists()
@@ -122,7 +124,7 @@ def test_stop_rejects_session_other_than_owned_recorder(recorder_client):
     session_id = "2026-07-22T22-10-00"
     client.post(
         "/api/sets/recorder/start",
-        json={"session_id": session_id, "ffmpeg_device_idx": 0, "sources": []},
+        json={"session_id": session_id, "source": "external", "ffmpeg_device_idx": 0, "sources": []},
     )
 
     response = client.post("/api/sets/recorder/2026-07-22T22-11-00/stop")
@@ -145,7 +147,7 @@ def test_router_shutdown_settles_owned_recorder(tmp_path: Path):
     with TestClient(app) as client:
         response = client.post(
             "/api/sets/recorder/start",
-            json={"session_id": session_id, "ffmpeg_device_idx": 0, "sources": []},
+            json={"session_id": session_id, "source": "external", "ffmpeg_device_idx": 0, "sources": []},
         )
         assert response.status_code == 201
 

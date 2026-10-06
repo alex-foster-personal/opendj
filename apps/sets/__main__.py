@@ -2,7 +2,8 @@
 
 Plan 12-01 surface: ``start``, ``stop``, ``resume``, ``status``,
 ``list``, ``prune``. Plans 12-02/12-03 extend this with ``classify``,
-``label``, ``train``, ``replay``.
+``label``, ``train``, ``replay``. ``rec`` drives the running app's REC over
+HTTP, master mix included (SET-12).
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from .classify import classify_session
 from .classify import model as classify_model
 from .label import label_session
 from .paths import SessionPathError
+from .rec_cli import add_parser as add_rec_parser
 from .replay import replay as replay_cmd
 from .soundcloud_export import (
     LICENSING_REMINDER,
@@ -231,6 +233,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="write only the comment text to PATH (requires --acknowledge-rights)",
     )
     sp_sc.set_defaults(func=_dispatch_soundcloud_export)
+
+    add_rec_parser(sub)
 
     return p
 

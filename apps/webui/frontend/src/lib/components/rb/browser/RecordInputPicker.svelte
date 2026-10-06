@@ -1,18 +1,29 @@
 <script lang="ts">
-	// SET-10: the REC button's input picker. Inputs are listed BY NAME from the
-	// daemon (ffmpeg AVFoundation), and the choice is sent by name so it still
-	// means the same input after something else is plugged in. "Tracklist only"
-	// is always offered, so REC still records the set when no input can be
-	// listed (no ffmpeg on this Mac) or none is wanted.
+	// SET-10 / SET-12: the REC button's source picker, a MACHINE | LOOPBACK |
+	// MIDI toggle with one view each. MACHINE (the default) records Open DJ's
+	// own master mix, which needs no driver, as every other DJ app does.
+	// LOOPBACK lists loopback inputs (BlackHole) and links an installer. MIDI is
+	// a hardware mixer or controller whose mix comes back through an audio
+	// interface input, so it lists every other input. Inputs are listed BY NAME
+	// from the daemon and sent by name, so a choice still means the same input
+	// after something else is plugged in. "Tracklist only" is always reachable.
 	import { onMount } from 'svelte';
 	import type { RecorderDevices, RecorderStatus } from '../../../../routes/sets/sets-api';
+	import { getRecorderStatus } from '../../../../routes/sets/sets-api';
 	import {
+		INSTALL_LOOPBACK_URL,
+		RECORD_MODES,
+		defaultChoiceForMode,
+		devicesForMode,
 		getRememberedInput,
-		initialInputChoice,
+		initialRecordSelection,
 		listRecorderDevices,
+		masterMixUnavailableReason,
 		startPerformanceRecorder,
-		type RecordInputChoice
+		type RecordInputChoice,
+		type RecordMode
 	} from '$lib/sets/record-input-choice';
+	import { nativeShellKind, openExternal } from '$lib/shell/native-shell';
 
 	let {
 		onstarted,
@@ -26,46 +37,70 @@
 		notify: (message: string, level: 'info' | 'error') => void;
 	} = $props();
 
-	let busy = $state(false);
-
 	const NONE_VALUE = '\u0000none';
+	const MASTER_VALUE = '\u0000master';
+	const masterUnavailable = masterMixUnavailableReason();
 
+	let busy = $state(false);
 	let devices = $state<RecorderDevices | null>(null);
+	let recordingsDir = $state<string | null>(null);
 	let loading = $state(true);
 	let listError = $state<string | null>(null);
 	let rememberError = $state<string | null>(null);
+	let mode = $state<RecordMode>('machine');
 	let selected = $state<string | null>(null);
 	let startButton = $state<HTMLButtonElement | null>(null);
 
-	const hasLoopback = $derived(devices?.devices.some((d) => d.loopback) ?? false);
+	const listed = $derived(devicesForMode(devices, mode));
 
 	function toValue(choice: RecordInputChoice | null): string | null {
 		if (choice === null) return null;
-		return choice.kind === 'none' ? NONE_VALUE : choice.name;
+		if (choice.kind === 'device') return choice.name;
+		return choice.kind === 'none' ? NONE_VALUE : MASTER_VALUE;
+	}
+
+	function toChoice(value: string): RecordInputChoice {
+		if (value === NONE_VALUE) return { kind: 'none' };
+		return value === MASTER_VALUE ? { kind: 'master' } : { kind: 'device', name: value };
 	}
 
 	function reason(error: unknown): string {
 		return error instanceof Error ? error.message : String(error);
 	}
 
-	function toChoice(value: string): RecordInputChoice {
-		return value === NONE_VALUE ? { kind: 'none' } : { kind: 'device', name: value };
+	function switchMode(next: RecordMode): void {
+		if (next === mode) return;
+		mode = next;
+		selected = toValue(defaultChoiceForMode(next, devices, masterUnavailable === null));
+	}
+
+	async function installLoopback(): Promise<void> {
+		try {
+			if (nativeShellKind() !== null) await openExternal(INSTALL_LOOPBACK_URL);
+			else window.open(INSTALL_LOOPBACK_URL, '_blank', 'noopener');
+		} catch (error) {
+			notify(`Could not open ${INSTALL_LOOPBACK_URL}: ${reason(error)}`, 'error');
+		}
 	}
 
 	onMount(() => {
 		void (async () => {
-			// Either failure is shown: an unreadable remembered input must not
-			// look like "nothing remembered yet" (SET-10).
-			const [listed, remembered] = await Promise.allSettled([
+			// Each failure is shown: an unreadable remembered input must not look
+			// like "nothing remembered yet" (SET-10), and MACHINE needs no listing.
+			const [inputs, remembered, status] = await Promise.allSettled([
 				listRecorderDevices(),
-				getRememberedInput()
+				getRememberedInput(),
+				getRecorderStatus()
 			]);
-			if (listed.status === 'fulfilled') devices = listed.value;
-			else listError = reason(listed.reason);
+			if (inputs.status === 'fulfilled') devices = inputs.value;
+			else listError = reason(inputs.reason);
 			if (remembered.status === 'rejected') rememberError = reason(remembered.reason);
+			if (status.status === 'fulfilled') recordingsDir = status.value.recordings_dir ?? null;
 			loading = false;
 			const last = remembered.status === 'fulfilled' ? remembered.value : null;
-			selected = toValue(initialInputChoice(last, devices));
+			const initial = initialRecordSelection(last, devices, masterUnavailable === null);
+			mode = initial.mode;
+			selected = toValue(initial.choice);
 			queueMicrotask(() => startButton?.focus());
 		})();
 	});
@@ -75,8 +110,13 @@
 		const choice = toChoice(selected);
 		busy = true;
 		try {
-			const status = await startPerformanceRecorder(choice);
-			const from = choice.kind === 'device' ? `from ${choice.name}` : 'tracklist only';
+			const status = await startPerformanceRecorder(choice, mode);
+			const from =
+				choice.kind === 'device'
+					? `from ${choice.name}`
+					: choice.kind === 'master'
+						? 'master mix'
+						: 'tracklist only';
 			notify(`Recording ${status.session_id} (${from})`, 'info');
 			onstarted(status);
 		} catch (error) {
@@ -114,39 +154,86 @@
 		}}
 	>
 		<h2 id="rec-picker-title">Record set from</h2>
+		<div class="rec-modes" role="tablist" aria-label="Recording source">
+			{#each RECORD_MODES as entry (entry.mode)}
+				<button
+					type="button"
+					role="tab"
+					class:active={mode === entry.mode}
+					aria-selected={mode === entry.mode}
+					title={entry.title}
+					data-testid={`record-mode-${entry.mode}`}
+					onclick={() => switchMode(entry.mode)}>{entry.label}</button
+				>
+			{/each}
+		</div>
 		{#if loading}
 			<p class="rec-note">Finding audio inputs...</p>
 		{:else}
-			{#if listError !== null}
-				<p class="rec-error" data-testid="record-input-error">
-					Audio inputs could not be listed: {listError}
-				</p>
-			{/if}
 			{#if rememberError !== null}
 				<p class="rec-error" data-testid="record-input-remember-error">
-					The last input used could not be read, so none is preselected: {rememberError}
+					The last source used could not be read, so none is preselected: {rememberError}
 				</p>
 			{/if}
-			<div class="rec-options" role="radiogroup" aria-label="Audio input">
-				{#each devices?.devices ?? [] as device (device.index)}
+			{#if mode === 'machine'}
+				<div class="rec-machine" data-testid="record-mode-machine-view">
+					{#if masterUnavailable !== null}
+						<p class="rec-error" data-testid="record-master-unavailable">{masterUnavailable}</p>
+					{:else}
+						<label class="rec-option">
+							<input type="radio" name="rec-input" value={MASTER_VALUE} bind:group={selected} />
+							<span class="rec-name">Master mix (internal)</span>
+						</label>
+						<dl class="rec-facts">
+							<dt>Captures</dt>
+							<dd>What the audience hears: the master output after the master fader. Never the headphone cue.</dd>
+							<dt>Format</dt>
+							<dd>WAV, 16-bit stereo, at the engine's sample rate, in 5-minute segments</dd>
+							<dt>Saved to</dt>
+							<dd class="rec-path">{recordingsDir ?? 'the recordings folder'}/&lt;set&gt;/</dd>
+						</dl>
+						<p class="rec-note">No driver or loopback needed. Keep this page open while recording.</p>
+					{/if}
+				</div>
+			{:else}
+				{#if listError !== null}
+					<p class="rec-error" data-testid="record-input-error">
+						Audio inputs could not be listed: {listError}
+					</p>
+				{/if}
+				{#if mode === 'loopback'}
+					{#if devices !== null && listed.length === 0}
+						<p class="rec-note" data-testid="record-no-loopback">
+							No loopback input is installed on this Mac. You do not need one: MACHINE records the
+							master mix directly.
+						</p>
+					{/if}
+					<button
+						type="button"
+						class="rec-install"
+						data-testid="record-install-loopback"
+						onclick={() => void installLoopback()}>Install loopback</button
+					>
+				{:else}
+					<p class="rec-note">
+						Hardware mixer or controller: pick the audio interface input its mix comes back on.
+					</p>
+				{/if}
+				<div class="rec-options" role="radiogroup" aria-label="Audio input">
+					{#each listed as device (device.index)}
+						<label class="rec-option">
+							<input type="radio" name="rec-input" value={device.name} bind:group={selected} />
+							<span class="rec-name">{device.name}</span>
+							{#if device.loopback}
+								<span class="rec-tag" title="A virtual input that carries computer audio back in">loopback</span>
+							{/if}
+						</label>
+					{/each}
 					<label class="rec-option">
-						<input type="radio" name="rec-input" value={device.name} bind:group={selected} />
-						<span class="rec-name">{device.name}</span>
-						{#if device.loopback}
-							<span class="rec-tag" title="A virtual input that carries computer audio back in, so it records what the decks play">loopback</span>
-						{/if}
+						<input type="radio" name="rec-input" value={NONE_VALUE} bind:group={selected} />
+						<span class="rec-name">Tracklist only (no audio)</span>
 					</label>
-				{/each}
-				<label class="rec-option">
-					<input type="radio" name="rec-input" value={NONE_VALUE} bind:group={selected} />
-					<span class="rec-name">Tracklist only (no audio)</span>
-				</label>
-			</div>
-			{#if devices !== null && !hasLoopback}
-				<p class="rec-note">
-					No loopback input found. To record exactly what the decks play, install a loopback
-					input such as BlackHole and send Open DJ's output through it; a microphone records the room.
-				</p>
+				</div>
 			{/if}
 		{/if}
 		<div class="rec-actions">
@@ -156,7 +243,7 @@
 				class="rec-start"
 				bind:this={startButton}
 				disabled={loading || busy || selected === null}
-				title={selected === null ? 'Pick an input first' : 'Start recording'}
+				title={selected === null ? 'Pick a source first' : 'Start recording'}
 			>
 				Start recording
 			</button>
@@ -175,7 +262,7 @@
 		background: rgb(0 0 0 / 45%);
 	}
 	.rec-picker {
-		width: min(380px, calc(100vw - 32px));
+		width: min(400px, calc(100vw - 32px));
 		max-height: calc(100vh - 32px);
 		overflow: auto;
 		padding: 14px 16px;
@@ -190,6 +277,31 @@
 		margin: 0 0 10px;
 		font-size: 13px;
 		font-weight: 600;
+	}
+	.rec-modes {
+		display: flex;
+		margin-bottom: 10px;
+		border: 1px solid var(--rb-border, #444);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+	.rec-modes button {
+		flex: 1;
+		padding: 5px 0;
+		border: 0;
+		background: var(--rb-panel, #1a1a1a);
+		color: var(--rb-text-dim, #aaa);
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		cursor: pointer;
+	}
+	.rec-modes button + button {
+		border-left: 1px solid var(--rb-border, #444);
+	}
+	.rec-modes button.active {
+		background: #8e2620;
+		color: #fff;
 	}
 	.rec-options {
 		display: flex;
@@ -219,6 +331,32 @@
 		background: #1f3a24;
 		color: #8fd49a;
 		font-size: 10px;
+	}
+	.rec-facts {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 4px 10px;
+		margin: 8px 6px 0;
+	}
+	.rec-facts dt {
+		color: var(--rb-text-dim, #aaa);
+	}
+	.rec-facts dd {
+		margin: 0;
+	}
+	.rec-path {
+		overflow-wrap: anywhere;
+		font-family: ui-monospace, monospace;
+		font-size: 11px;
+	}
+	.rec-install {
+		margin: 8px 0;
+		padding: 4px 12px;
+		border-radius: 4px;
+		border: 1px solid var(--rb-border, #444);
+		background: var(--rb-panel, #1a1a1a);
+		color: inherit;
+		cursor: pointer;
 	}
 	.rec-note {
 		margin: 8px 0 0;

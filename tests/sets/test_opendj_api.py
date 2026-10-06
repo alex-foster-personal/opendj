@@ -88,6 +88,7 @@ def _start(client: TestClient, sources: list[str]) -> None:
         "/api/sets/recorder/start",
         json={
             "session_id": SESSION_ID,
+            "source": "external",
             "ffmpeg_device_idx": 0,
             "sources": sources,
         },

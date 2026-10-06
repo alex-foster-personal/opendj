@@ -12,11 +12,12 @@ import os
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from . import capture as capture_mod
 from . import paths as sets_paths
 from . import record as record_mod
+from .master_mix import MASTER_MIX_DEVICE_LABEL
 from .state import SetsState
 
 #: Manifest/DB capture_device for a session started without audio (SET-10).
@@ -25,6 +26,14 @@ NO_AUDIO_DEVICE_LABEL = "none (tracklist only)"
 #: browser storage: the desktop shell serves the UI from a loopback port the OS
 #: assigns per launch, and web storage is scoped to that port (SET-10).
 REMEMBERED_INPUT_FILENAME = "recorder-input.json"
+
+#: What a recording records (SET-12): ``master`` the app's own master bus,
+#: streamed in by the page; ``loopback`` a loopback input (BlackHole);
+#: ``external`` any other input (an audio interface carrying a hardware
+#: mixer's output back in); ``none`` the tracklist only.
+RecordSource = Literal["master", "loopback", "external", "none"]
+RECORD_SOURCES: tuple[RecordSource, ...] = ("master", "loopback", "external", "none")
+_DEVICE_SOURCES: frozenset[str] = frozenset({"loopback", "external"})
 
 _log = logging.getLogger(__name__)
 
@@ -35,6 +44,10 @@ class RecorderConflict(RuntimeError):
 
 class RememberedInputUnreadable(RuntimeError):
     """Raised when the remembered REC input file exists but is not usable."""
+
+
+class RecorderRequestInvalid(ValueError):
+    """A start that names its source and its input inconsistently (SET-12)."""
 
 
 class RecorderService:
@@ -59,54 +72,74 @@ class RecorderService:
         self.remembered_input_path = self.sets_root / REMEMBERED_INPUT_FILENAME
         self._lock = threading.Lock()
         self._recorder: record_mod.Recorder | None = None
+        self._source: RecordSource | None = None
+
+    def _idle_status(self) -> dict[str, Any]:
+        return {
+            "active": False,
+            "session_id": None,
+            "pid": None,
+            "owned": False,
+            "recoverable": False,
+            "capture": "none",
+            "capture_source": None,
+            "recordings_dir": str(self.sets_root),
+        }
+
+    def _owned_status(self, recorder: record_mod.Recorder) -> dict[str, Any]:
+        return {
+            "active": True,
+            "session_id": recorder.session_id,
+            "pid": os.getpid(),
+            "owned": True,
+            "recoverable": False,
+            "capture": recorder.capture_state(),
+            "capture_error": recorder.capture_error(),
+            "capture_source": self._source,
+            "recordings_dir": str(self.sets_root),
+        }
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             if self._recorder is not None:
-                return {
-                    "active": True,
-                    "session_id": self._recorder.session_id,
-                    "pid": os.getpid(),
-                    "owned": True,
-                    "recoverable": False,
-                    "capture": self._recorder.capture_state(),
-                    "capture_error": self._recorder.capture_error(),
-                }
+                return self._owned_status(self._recorder)
             external = record_mod.status(
                 sets_root=self.sets_root,
                 state=SetsState(db_path=self.db_path),
             )
+        if not external["active"]:
+            return self._idle_status()
         return {
-            "active": bool(external["active"]),
+            "active": True,
             "session_id": external.get("session_id"),
             "pid": external.get("pid"),
             "owned": False,
-            "recoverable": bool(
-                external["active"] and not _pid_is_running(int(external["pid"]))
-            ),
+            "recoverable": not _pid_is_running(int(external["pid"])),
             # Another process owns that recording; its capture is not visible here.
-            "capture": "unknown" if external["active"] else "none",
+            "capture": "unknown",
+            "capture_source": None,
+            "recordings_dir": str(self.sets_root),
         }
 
     def start(
         self,
         *,
         session_id: str | None,
+        source: RecordSource,
         ffmpeg_device_idx: int | None = None,
         device_name: str | None = None,
-        capture_audio: bool = True,
         sources: tuple[str, ...],
     ) -> dict[str, Any]:
-        """Start a recording on one audio input, or on none.
+        """Start a recording of ``source``: the master mix, one input, or none.
 
-        ``device_name`` is resolved to ffmpeg's index HERE, at start: the
+        ``device_name`` is resolved to the backend's index HERE, at start: the
         index of a named input moves whenever another input is plugged in,
         so a remembered index records whatever now sits at it.
         """
         # Resolved BEFORE the lock: listing spawns ffmpeg (up to 10 s), and
         # status() shares the lock. A missing input or ffmpeg starts nothing.
         device_idx, device_label, backend = self._resolve_input(
-            ffmpeg_device_idx, device_name, capture_audio=capture_audio
+            source, ffmpeg_device_idx, device_name
         )
         with self._lock:
             if self._recorder is not None:
@@ -128,13 +161,17 @@ class RecorderService:
                 session_id,
                 root=self.sets_root,
             )
+            master = source == "master"
             config = record_mod.RecorderConfig(
                 sources=sources,
                 capture_device_name=device_label,
                 ffmpeg_device_idx=device_idx,
                 capture_input_name=device_name,
                 capture_backend=backend,
-                capture_disabled=not (self.capture_enabled and capture_audio),
+                master_mix=master,
+                # The master mix needs no capture process, so a daemon run
+                # without device capture (tests, CI) still records it.
+                capture_disabled=source == "none" or not (self.capture_enabled or master),
             )
             recorder: record_mod.Recorder | None = None
             try:
@@ -156,39 +193,38 @@ class RecorderService:
                     )
                 raise
             self._recorder = recorder
-            if device_name is not None or not capture_audio:
-                self._remember_input(device_name if capture_audio else None)
-            return {
-                "active": True,
-                "session_id": recorder.session_id,
-                "pid": os.getpid(),
-                "owned": True,
-                "recoverable": False,
-                "capture": recorder.capture_state(),
-                "capture_error": recorder.capture_error(),
-            }
+            self._source = source
+            if source in ("master", "none"):
+                self._remember_input({"kind": source})
+            elif device_name is not None:
+                self._remember_input({"kind": "device", "name": device_name})
+            return self._owned_status(recorder)
 
     def _resolve_input(
         self,
+        source: RecordSource,
         ffmpeg_device_idx: int | None,
         device_name: str | None,
-        *,
-        capture_audio: bool,
     ) -> tuple[int | None, str, capture_mod.CaptureBackend | None]:
-        """(ffmpeg index or None, manifest label, the backend that will record
-        it) for one input, or for none."""
-        if capture_audio == (ffmpeg_device_idx is None and device_name is None):
-            raise ValueError(
-                "name exactly one audio input (ffmpeg_device_idx or device_name), "
-                "or set capture_audio false for a tracklist-only recording"
+        """(backend index or None, manifest label, the backend that will record
+        it) for ``source``."""
+        named = (ffmpeg_device_idx is not None) + (device_name is not None)
+        if source not in RECORD_SOURCES:
+            raise RecorderRequestInvalid(f"source {source!r} is not one of {RECORD_SOURCES}")
+        if source in _DEVICE_SOURCES and named != 1:
+            raise RecorderRequestInvalid(
+                f"source {source!r} records one input: name exactly one of "
+                "ffmpeg_device_idx or device_name"
             )
-        if ffmpeg_device_idx is not None and device_name is not None:
-            raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
-        if not capture_audio:
+        if source not in _DEVICE_SOURCES and named != 0:
+            raise RecorderRequestInvalid(f"source {source!r} records no input, so names none")
+        if source == "none":
             return None, NO_AUDIO_DEVICE_LABEL, None
+        if source == "master":
+            return None, MASTER_MIX_DEVICE_LABEL, None
         backend = capture_mod.capture_backend(environ=self.environ) if self.capture_enabled else None
         if device_name is not None:
-            return self._index_of(device_name), device_name, backend
+            return self._index_of(device_name, source), device_name, backend
         if backend is not None and backend.kind != "ffmpeg":
             # An ffmpeg index numbers AVFoundation's inputs; odj-audio lists
             # them in its own order, so the same number can be the room mic.
@@ -196,14 +232,17 @@ class RecorderService:
                 f"ffmpeg_device_idx {ffmpeg_device_idx} numbers ffmpeg's inputs, but REC records "
                 f"through {backend.kind} here; start it by device_name instead"
             )
+        # A raw index is the scripts' escape hatch and is not listed, so its
+        # loopback-or-not is taken as stated.
         return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}", backend
 
     def remembered_input(self) -> dict[str, str] | None:
-        """The input REC last started on by name, or none; None before any start.
+        """The source REC last started on, or none; None before any start.
 
-        Raises :class:`RememberedInputUnreadable` when the file exists but
-        cannot be read or parsed, so a broken store is never shown as
-        "nothing remembered yet".
+        ``{"kind": "master"}``, ``{"kind": "none"}``, or ``{"kind": "device",
+        "name": ...}``. Raises :class:`RememberedInputUnreadable` when the
+        file exists but cannot be read or parsed, so a broken store is never
+        shown as "nothing remembered yet".
         """
         try:
             parsed: Any = json.loads(self.remembered_input_path.read_text(encoding="utf-8"))
@@ -213,8 +252,8 @@ class RecorderService:
             raise RememberedInputUnreadable(
                 f"{self.remembered_input_path} could not be read: {exc}"
             ) from exc
-        if parsed == {"kind": "none"}:
-            return {"kind": "none"}
+        if parsed in ({"kind": "none"}, {"kind": "master"}):
+            return dict(parsed)
         if (
             isinstance(parsed, dict)
             and parsed.keys() == {"kind", "name"}
@@ -227,14 +266,13 @@ class RecorderService:
             f"{self.remembered_input_path} does not hold an input choice: {parsed!r}"
         )
 
-    def _remember_input(self, device_name: str | None) -> None:
-        """Record the started input.
+    def _remember_input(self, choice: dict[str, str]) -> None:
+        """Record the started source.
 
         Runs after the recording is live, so a failed write must not fail the
         start; it is logged as an error, and the stale choice it leaves is
         still a valid one the picker re-checks against connected inputs.
         """
-        choice = {"kind": "none"} if device_name is None else {"kind": "device", "name": device_name}
         tmp = self.remembered_input_path.with_suffix(".json.tmp")
         try:
             self.remembered_input_path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,20 +281,47 @@ class RecorderService:
         except OSError as exc:
             _log.error("could not remember the REC input in %s: %s", self.remembered_input_path, exc)
 
-    def _index_of(self, device_name: str) -> int:
+    def _index_of(self, device_name: str, source: RecordSource) -> int:
         devices = self.list_devices()
-        matches = [device.index for device in devices if device.name == device_name]
+        matches = [device for device in devices if device.name == device_name]
         if len(matches) > 1:
             raise capture_mod.CaptureUnavailable(
                 f"{len(matches)} audio inputs are named {device_name!r}; rename one in "
                 "Audio MIDI Setup so REC can tell them apart"
             )
-        if matches:
-            return matches[0]
-        connected = ", ".join(repr(device.name) for device in devices) or "none"
-        raise capture_mod.CaptureUnavailable(
-            f"audio input {device_name!r} is not connected (connected inputs: {connected})"
-        )
+        if not matches:
+            connected = ", ".join(repr(device.name) for device in devices) or "none"
+            raise capture_mod.CaptureUnavailable(
+                f"audio input {device_name!r} is not connected (connected inputs: {connected})"
+            )
+        if matches[0].loopback != (source == "loopback"):
+            kind = "a loopback" if matches[0].loopback else "not a loopback"
+            raise RecorderRequestInvalid(
+                f"audio input {device_name!r} is {kind} input, so it cannot be source {source!r}"
+            )
+        return matches[0].index
+
+    def write_master_pcm(
+        self, session_id: str, *, stream: str, seq: int, sample_rate: int, pcm: bytes
+    ) -> None:
+        """Append one master-mix chunk to the live recording (SET-12).
+
+        Raises :class:`RecorderConflict` when no owned master-mix recording
+        with that id is live, and :class:`MasterMixChunkRefused` for a chunk
+        that would leave a hole or is malformed. The file write happens
+        outside the service lock so status reads never wait on the disk.
+        """
+        with self._lock:
+            recorder = self._recorder
+            if recorder is None or recorder.session_id != session_id:
+                active = "nothing" if recorder is None else f"session {recorder.session_id}"
+                raise RecorderConflict(f"{active} is recording here, not {session_id}")
+            writer = recorder._master
+            if writer is None:
+                raise RecorderConflict(
+                    f"session {session_id} records {self._source!r}, not the master mix"
+                )
+        writer.append(stream=stream, seq=seq, sample_rate=sample_rate, pcm=pcm)
 
     def active_source(self, name: str) -> Any:
         """Return the named source attached to the owned recorder.
@@ -300,14 +365,8 @@ class RecorderService:
                 )
             record_mod.stop(self._recorder)
             self._recorder = None
-        return {
-            "active": False,
-            "session_id": None,
-            "pid": None,
-            "owned": False,
-            "recoverable": False,
-            "capture": "none",
-        }
+            self._source = None
+        return self._idle_status()
 
     def recover_stale(self, session_id: str, expected_pid: int) -> dict[str, Any]:
         """Finalize a crashed recorder only after proving its PID is not live."""
@@ -331,14 +390,7 @@ class RecorderService:
                 sets_root=self.sets_root,
                 state=SetsState(db_path=self.db_path),
             )
-        return {
-            "active": False,
-            "session_id": None,
-            "pid": None,
-            "owned": False,
-            "recoverable": False,
-            "capture": "none",
-        }
+        return self._idle_status()
 
     def stop_owned_on_shutdown(self) -> None:
         """Settle any live HTTP-owned recorder before the daemon exits."""
@@ -347,6 +399,7 @@ class RecorderService:
                 return
             record_mod.stop(self._recorder)
             self._recorder = None
+            self._source = None
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -369,4 +422,11 @@ def _pid_is_running(pid: int) -> bool:
     return True
 
 
-__all__ = ["RecorderConflict", "RecorderService", "RememberedInputUnreadable"]
+__all__ = [
+    "RECORD_SOURCES",
+    "RecordSource",
+    "RecorderConflict",
+    "RecorderRequestInvalid",
+    "RecorderService",
+    "RememberedInputUnreadable",
+]

@@ -19,9 +19,14 @@ export interface RecordRailState {
 	poll: number | null;
 }
 
+/** How often an idle REC re-reads the recorder (SET-12). */
+export const IDLE_POLL_MS = 5000;
+
 export function recordRailState(status: RecorderStatus): RecordRailState {
 	if (!status.active) {
-		return { recording: false, waiting: false, tip: null, poll: null };
+		// SET-12: a recording an agent starts over HTTP (`python -m apps.sets rec
+		// start`) is seen within this, so a master recording gets its tap.
+		return { recording: false, waiting: false, tip: null, poll: IDLE_POLL_MS };
 	}
 	switch (status.capture) {
 		case 'waiting_permission':

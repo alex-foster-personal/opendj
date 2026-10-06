@@ -333,7 +333,7 @@ def test_rec_by_ffmpeg_index_is_refused_when_odj_audio_records(tmp_path: Path, c
     app.state.sets_recorder_service = service
     app.include_router(router)
     with TestClient(app) as client:
-        response = client.post("/api/sets/recorder/start", json={"session_id": None, "ffmpeg_device_idx": 1})
+        response = client.post("/api/sets/recorder/start", json={"session_id": None, "source": "external", "ffmpeg_device_idx": 1})
         assert response.status_code == 503, response.text
         assert "start it by device_name" in response.json()["detail"]
         assert client.get("/api/sets/recorder").json()["active"] is False

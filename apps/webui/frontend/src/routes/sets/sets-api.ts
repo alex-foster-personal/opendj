@@ -17,14 +17,17 @@ export type RecorderSourceName = NonNullable<
 
 export type RecorderDevices = components['schemas']['RecorderDevicesResponse'];
 
-/** One audio input by raw ffmpeg index or by name with `capture_audio: true`,
- *  or `capture_audio: false` and no input for a tracklist-only set (SET-10);
- *  the daemon 422s anything else. */
+/** What REC records (SET-12), required on every start, never defaulted:
+ *  `master` the app's own master mix, `loopback` / `external` one input by
+ *  name (or raw ffmpeg index), `none` the tracklist only (SET-10). The daemon
+ *  422s an input with master/none, or none with loopback/external. */
+export type RecordSource = components['schemas']['RecorderStartRequest']['source'];
+
 export interface RecorderStartInput {
 	session_id: string | null;
+	source: RecordSource;
 	ffmpeg_device_idx?: number;
 	device_name?: string;
-	capture_audio: boolean;
 	sources: RecorderSourceName[];
 }
 

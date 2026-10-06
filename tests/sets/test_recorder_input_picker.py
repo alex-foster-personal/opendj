@@ -207,7 +207,7 @@ def test_start_by_name_records_that_input_and_names_it_in_the_manifest(picker_cl
     session_id = "2026-10-02T21-00-00"
     started = client.post(
         "/api/sets/recorder/start",
-        json={"session_id": session_id, "device_name": "BlackHole 2ch", "sources": []},
+        json={"session_id": session_id, "source": "loopback", "device_name": "BlackHole 2ch", "sources": []},
     )
     assert started.status_code == 201
     assert service._recorder.config.ffmpeg_device_idx == 3
@@ -220,7 +220,7 @@ def test_start_by_a_disconnected_name_is_503_and_records_nothing(picker_client):
     client, service = picker_client
     response = client.post(
         "/api/sets/recorder/start",
-        json={"device_name": "Scarlett 2i2", "sources": []},
+        json={"source": "external", "device_name": "Scarlett 2i2", "sources": []},
     )
     assert response.status_code == 503
     assert "'Scarlett 2i2' is not connected" in response.json()["detail"]
@@ -235,7 +235,7 @@ def test_tracklist_only_start_records_no_audio(picker_client):
     session_id = "2026-10-02T21-10-00"
     started = client.post(
         "/api/sets/recorder/start",
-        json={"session_id": session_id, "capture_audio": False, "sources": []},
+        json={"session_id": session_id, "source": "none", "sources": []},
     )
     assert started.status_code == 201
     assert service._recorder.config.capture_disabled is True
@@ -251,7 +251,7 @@ def test_the_started_input_is_remembered_by_the_daemon_across_restarts(picker_cl
     first = "2026-10-02T22-00-00"
     client.post(
         "/api/sets/recorder/start",
-        json={"session_id": first, "device_name": "BlackHole 2ch", "sources": []},
+        json={"session_id": first, "source": "loopback", "device_name": "BlackHole 2ch", "sources": []},
     )
     client.post(f"/api/sets/recorder/{first}/stop")
     assert client.get("/api/sets/recorder/remembered-input").json() == {
@@ -265,7 +265,7 @@ def test_the_started_input_is_remembered_by_the_daemon_across_restarts(picker_cl
     second = "2026-10-02T22-10-00"
     client.post(
         "/api/sets/recorder/start",
-        json={"session_id": second, "capture_audio": False, "sources": []},
+        json={"session_id": second, "source": "none", "sources": []},
     )
     client.post(f"/api/sets/recorder/{second}/stop")
     assert client.get("/api/sets/recorder/remembered-input").json() == {
@@ -279,11 +279,11 @@ def test_a_refused_start_leaves_the_remembered_input_alone(picker_client):
     session_id = "2026-10-02T22-20-00"
     client.post(
         "/api/sets/recorder/start",
-        json={"session_id": session_id, "device_name": "BlackHole 2ch", "sources": []},
+        json={"session_id": session_id, "source": "loopback", "device_name": "BlackHole 2ch", "sources": []},
     )
     client.post(f"/api/sets/recorder/{session_id}/stop")
     refused = client.post(
-        "/api/sets/recorder/start", json={"device_name": "Scarlett 2i2", "sources": []}
+        "/api/sets/recorder/start", json={"source": "external", "device_name": "Scarlett 2i2", "sources": []}
     )
     assert refused.status_code == 503
     assert service.remembered_input() == {"kind": "device", "name": "BlackHole 2ch"}
@@ -295,13 +295,13 @@ def test_a_start_by_index_does_not_overwrite_the_remembered_name(picker_client):
     by_name = "2026-10-02T22-30-00"
     client.post(
         "/api/sets/recorder/start",
-        json={"session_id": by_name, "device_name": "BlackHole 2ch", "sources": []},
+        json={"session_id": by_name, "source": "loopback", "device_name": "BlackHole 2ch", "sources": []},
     )
     client.post(f"/api/sets/recorder/{by_name}/stop")
     by_index = "2026-10-02T22-40-00"
     started = client.post(
         "/api/sets/recorder/start",
-        json={"session_id": by_index, "ffmpeg_device_idx": 0, "sources": []},
+        json={"session_id": by_index, "source": "external", "ffmpeg_device_idx": 0, "sources": []},
     )
     assert started.status_code == 201
     client.post(f"/api/sets/recorder/{by_index}/stop")
@@ -325,13 +325,16 @@ def test_a_malformed_remembered_input_is_an_error_not_nothing(picker_client, con
 @pytest.mark.parametrize(
     "body",
     [
-        {"sources": []},
-        {"ffmpeg_device_idx": 0, "device_name": "BlackHole 2ch", "sources": []},
-        {"capture_audio": False, "device_name": "BlackHole 2ch", "sources": []},
+        {"source": "loopback", "sources": []},
+        {"ffmpeg_device_idx": 0, "source": "loopback", "device_name": "BlackHole 2ch", "sources": []},
+        {"source": "none", "device_name": "BlackHole 2ch", "sources": []},
+        {"source": "master", "device_name": "BlackHole 2ch", "sources": []},
+        {"device_name": "BlackHole 2ch", "sources": []},
+        {"capture_audio": True, "device_name": "BlackHole 2ch", "sources": []},
     ],
 )
 def test_start_requires_exactly_one_input_or_an_explicit_no_audio(picker_client, body):
-    """[if] a start names zero or two inputs [then] 422, never a silent default."""
+    """[if] a start omits its source or mismatches its input [then] 422, never a default."""
     client, _ = picker_client
     assert client.post("/api/sets/recorder/start", json=body).status_code == 422
 
@@ -347,7 +350,7 @@ def test_start_by_a_name_two_inputs_share_is_refused(tmp_path: Path):
     app.include_router(router)
     with TestClient(app) as client:
         response = client.post(
-            "/api/sets/recorder/start", json={"device_name": "USB Audio", "sources": []}
+            "/api/sets/recorder/start", json={"source": "external", "device_name": "USB Audio", "sources": []}
         )
     assert response.status_code == 503
     assert "2 audio inputs are named 'USB Audio'" in response.json()["detail"]
