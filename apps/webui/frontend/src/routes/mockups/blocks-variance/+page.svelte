@@ -10,7 +10,9 @@
 	import { fetchAnlz, fetchTrackBypassingHttpCache } from '$lib/rb/api-rb';
 	import {
 		adjacentBlockVariance,
+		bandNormsFor,
 		bandPeaksFor,
+		blocksCurveFor,
 		beatPeriodS,
 		blockHeights,
 		BLOCK_PITCH_PX,
@@ -54,7 +56,8 @@
 		const pxPerS = WIDTH / WAVE_WINDOW_S;
 		const period = beatPeriodS(anlz.beatgrid?.beats);
 		const bpb = period === null ? null : (period * pxPerS) / BLOCK_PITCH_PX;
-		const norms = bandPeaksFor(anlz.waveform);
+		const curve = blocksCurveFor(anlz);
+		const norms = curve === 'true-peak' ? bandPeaksFor(anlz.waveform) : bandNormsFor(anlz.waveform);
 		VARIANTS.forEach((variant, i) => {
 			const el = canvases[i];
 			el.width = WIDTH * dpr;
@@ -81,7 +84,7 @@
 			drawWaveRow(ctx, { ...frame, positionMs: tS * 1000 + 16 }); // warm: cache hit
 			const warm = performance.now() - t1;
 			paintMs[variant] = `cold ${cold.toFixed(1)}ms / warm ${warm.toFixed(2)}ms`;
-			const visible = blockHeights(anlz.waveform.detail, Math.ceil((durationMs / 1000) * pxPerS), norms, variant, bpb);
+			const visible = blockHeights(anlz.waveform.detail, Math.ceil((durationMs / 1000) * pxPerS), norms, variant, bpb, curve);
 			scores[variant] = adjacentBlockVariance(visible).toFixed(4);
 		});
 	});

@@ -124,14 +124,20 @@ export const BLOCK_BAR_PX = 2;
 export const BLOCK_PITCH_PX = 3;
 
 /** How a block's height is derived from its band data (skin preview).
- * Every variant reads band values normalized to the track's TRUE per-band
- * peak (bandPeaksFor), so no input exceeds full scale and nothing is clamped
- * (the maintainer, Tue 6 Oct 2026, bug B5: the old p99 divisor pushed every block
- * whose bucket max beat the per-point p99 past 1.0, and the clamp painted
- * those as solid full-height runs). The default is 'max': peak-normalized,
- * then the same v^AMP_GAMMA display curve the tri-band rows use, which maps
- * 0..1 onto 0..1 and reaches 1.0 only at the track's own peak.
- *  - max:      per-block max of all bands, gamma-lifted (the default).
+ * Two curves, chosen by the waveform's ORIGIN (blocksCurveFor), never by its
+ * data (the maintainer, Tue 6 Oct 2026, bug B5; CORE option (b) for v1):
+ *  - 'true-peak' (rekordbox-analysed waveforms): band values over the
+ *    track's TRUE per-band peak (bandPeaksFor), so no input exceeds full
+ *    scale and nothing is clamped; default and no-grid variant 'max', the
+ *    same v^AMP_GAMMA display curve the tri-band rows use. The old p99
+ *    divisor pushed every block whose bucket max beat the per-point p99 past
+ *    1.0, and the clamp painted those as solid full-height runs.
+ *  - 'legacy-p99' (waveforms Open DJ decoded itself): the pre-B5 curve,
+ *    unchanged: p99 divisor, inputs clamped at 1, 'blend', no-grid 'kick'.
+ *    Their low band is clipped AT THE SOURCE (16-bit decode of a filter that
+ *    overshoots full scale), so no display curve can fix it; this one hides
+ *    it least badly until the decoder gains headroom.
+ *  - max:      per-block max of all bands, gamma-lifted.
  *  - kick:     LOW band dominant, mid/high minor, gamma > 1 (expands peaks).
  *  - contrast: stretched between the rolling min/max over ~1 beat, scaled
  *              by that window's max so quiet sections stay quiet.
@@ -140,10 +146,24 @@ export const BLOCK_PITCH_PX = 3;
  *              that still separates neighboring beats. */
 export type BlocksVariant = 'max' | 'kick' | 'contrast' | 'onset' | 'blend';
 
+/** Height curve for 'blocks'; see BlocksVariant. */
+export type BlocksCurve = 'true-peak' | 'legacy-p99';
+
+/** The waveform's origin as the /anlz contract states it: `local_waveform` is
+ * present ONLY on a track Open DJ decoded itself and absent on a
+ * rekordbox-mapped one (anlz-types.ts AnlzLocalWaveform). An explicit flag,
+ * never inferred from the band data. */
+export function blocksCurveFor(anlz: Pick<AnlzData, 'local_waveform'>): BlocksCurve {
+	return anlz.local_waveform === undefined ? 'true-peak' : 'legacy-p99';
+}
+
 export const BLOCKS_CFG = {
-	/** 'max', no contrast expansion (B5). 'blend' and the rest stay for the
-	 * /mockups/blocks-variance comparison only. */
+	/** 'true-peak' default: 'max', no contrast expansion (B5). 'blend' and the
+	 * rest stay for /mockups/blocks-variance and the legacy curve. */
 	VARIANT_DEFAULT: 'max' as BlocksVariant,
+	/** 'legacy-p99' default and no-grid variant: the pre-B5 values. */
+	LEGACY_VARIANT_DEFAULT: 'blend' as BlocksVariant,
+	LEGACY_NO_GRID_VARIANT: 'kick' as BlocksVariant,
 	/** 0.25: whole-track neighbor variance 2.56x max on Strobe (contrast alone was 12x). */
 	BLEND_CONTRAST: 0.25,
 	KICK_LOW_WEIGHT: 0.8,
@@ -318,8 +338,10 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 
 	const design = frame.waveformDesign ?? 'tri-band';
 	if (frame.anlz !== null && durS > 0) {
+		const curve = blocksCurveFor(frame.anlz);
 		const blocks: BlocksSpec = {
-			variant: frame.blocksVariant ?? BLOCKS_CFG.VARIANT_DEFAULT,
+			curve,
+			variant: frame.blocksVariant ?? _defaultVariant(curve),
 			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats),
 			mirrored: frame.blocksMirrored ?? true
 		};
@@ -433,7 +455,7 @@ function _drawCachedBands(
 		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 		return;
 	}
-	const key = `${design}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
+	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
 	let image = _bandImages.get(waveform);
 	if (image === undefined || image.key !== key || !bandImageScaleReusable(image.pxPerS, pxPerS)) {
 		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key, pxPerS };
@@ -491,7 +513,7 @@ function _drawBands(
 	h: number,
 	palette: WavePalette,
 	design: WaveformDesign,
-	blocks: BlocksSpec = { variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true }
+	blocks: BlocksSpec = { curve: 'true-peak', variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true }
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
@@ -506,13 +528,13 @@ function _drawBands(
 	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
 
 	if (design === 'blocks') {
-		// True peaks, not p99 (B5): a block is a bucket MAX of several detail
-		// points, so a p99 divisor puts most of a loud section past full scale.
-		const peaks = bandPeaksFor(waveform);
+		// True peaks, not p99 (B5), for rekordbox waveforms: a block is a bucket
+		// MAX of several points, so p99 puts loud sections past full scale.
+		const divisors = _blocksDivisors(blocks.curve, waveform, norms);
 		const blocksPerBeat =
 			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
-		const heights = blockHeights(bands, w, peaks, blocks.variant, blocksPerBeat);
-		const shares = mono ? null : blockBandShares(bands, w, peaks);
+		const heights = blockHeights(bands, w, divisors, blocks.variant, blocksPerBeat, blocks.curve);
+		const shares = mono ? null : blockBandShares(bands, w, divisors);
 		if (blocks.mirrored) paintStackedBlocks(ctx, heights, shares, centerY, halfH, palette, true);
 		else paintStackedBlocks(ctx, heights, shares, h, h - MARKER_BAND_PX - 1, palette, false);
 		return;
@@ -591,7 +613,23 @@ function _drawBands(
 	ctx.globalAlpha = 1;
 }
 
+function _blocksDivisors(curve: BlocksCurve, waveform: AnlzWaveform, norms: BandNorms): BandNorms {
+	if (curve === 'true-peak') return bandPeaksFor(waveform);
+	else if (curve === 'legacy-p99') return norms;
+	const _exhaustive: never = curve;
+	throw new Error(`Unhandled blocks curve: ${String(_exhaustive)}`);
+}
+
+function _defaultVariant(curve: BlocksCurve): BlocksVariant {
+	if (curve === 'true-peak') return BLOCKS_CFG.VARIANT_DEFAULT;
+	else if (curve === 'legacy-p99') return BLOCKS_CFG.LEGACY_VARIANT_DEFAULT;
+	const _exhaustive: never = curve;
+	throw new Error(`Unhandled blocks curve: ${String(_exhaustive)}`);
+}
+
 interface BlocksSpec {
+	/** From the waveform's origin (blocksCurveFor), never from its data. */
+	curve: BlocksCurve;
 	variant: BlocksVariant;
 	beatPeriodS: number | null;
 	/** true = bars mirrored about the centerline; false = one-sided. */
@@ -628,17 +666,22 @@ function _rollingWindow(values: Float32Array, i: number, half: number): [number,
 }
 
 /** Per-block heights 0..1 for the 'blocks' design over a widthPx surface.
- * `norms` must be the per-band TRUE peaks (bandPeaksFor): heights are not
- * clamped, so a smaller divisor shows up as a height above 1 instead of a
- * silent full-height plateau. Pure (exported for tests): band DATA is read,
- * never modified. */
+ * curve 'true-peak': `norms` must be the per-band TRUE peaks (bandPeaksFor);
+ * heights are not clamped, so a smaller divisor shows up as a height above 1
+ * instead of a silent full-height plateau. curve 'legacy-p99': `norms` are the
+ * p99 norms (bandNormsFor), clamped at 1 as before B5. Pure (exported for
+ * tests): band DATA is read, never modified. */
 export function blockHeights(
 	bands: AnlzWaveform['detail'],
 	widthPx: number,
 	norms: { low: number; mid: number; high: number },
 	variant: BlocksVariant,
-	blocksPerBeat: number | null
+	blocksPerBeat: number | null,
+	curve: BlocksCurve = 'true-peak'
 ): Float32Array {
+	// legacy-p99 clamps its >1 inputs exactly as the pre-B5 painter did;
+	// true-peak inputs never exceed 1, so it leaves them alone.
+	const clamp = curve === 'legacy-p99' ? (v: number) => Math.min(1, v) : (v: number) => v;
 	const n = bands.length;
 	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
 	const low = new Float32Array(count);
@@ -652,20 +695,20 @@ export function blockHeights(
 		const lo = _bucketMax(bands.low, p0, p1);
 		const mi = _bucketMax(bands.mid, p0, p1);
 		const hi = _bucketMax(bands.high, p0, p1);
-		low[b] = lo / norms.low;
-		rest[b] = Math.max(mi / norms.mid, hi / norms.high);
-		all[b] = Math.max(lo, mi, hi) / monoNorm;
+		low[b] = clamp(lo / norms.low);
+		rest[b] = clamp(Math.max(mi / norms.mid, hi / norms.high));
+		all[b] = clamp(Math.max(lo, mi, hi) / monoNorm);
 	}
 	const out = new Float32Array(count);
 	const effective =
 		blocksPerBeat === null && (variant === 'contrast' || variant === 'onset' || variant === 'blend')
-			? BLOCKS_CFG.NO_GRID_VARIANT
+			? (curve === 'true-peak' ? BLOCKS_CFG.NO_GRID_VARIANT : BLOCKS_CFG.LEGACY_NO_GRID_VARIANT)
 			: variant;
 	if (effective === 'max') {
 		for (let b = 0; b < count; b++) out[b] = all[b] > 0 ? Math.pow(all[b], AMP_GAMMA) : 0;
 	} else if (effective === 'blend') {
-		const lifted = blockHeights(bands, widthPx, norms, 'max', blocksPerBeat);
-		const stretched = blockHeights(bands, widthPx, norms, 'contrast', blocksPerBeat);
+		const lifted = blockHeights(bands, widthPx, norms, 'max', blocksPerBeat, curve);
+		const stretched = blockHeights(bands, widthPx, norms, 'contrast', blocksPerBeat, curve);
 		const k = BLOCKS_CFG.BLEND_CONTRAST;
 		for (let b = 0; b < count; b++) out[b] = (1 - k) * lifted[b] + k * stretched[b];
 	} else if (effective === 'kick') {
