@@ -36,7 +36,9 @@ def test_get_returns_the_device_list_and_why_it_is_short() -> None:
             got = await client.get("/api/v1/performance/headphones")
         assert got.status_code == 200
         body = got.json()
-        assert body["outputs"] == headphones["outputs"]
+        # CUEOUT-26 shell fields serialize as null for a browser listing.
+        shell_fields = {"physical_id": None, "muted_by_jack": None, "transport": None}
+        assert body["outputs"] == [{**output, **shell_fields} for output in headphones["outputs"]]
         assert body["device_access"] == headphones["device_access"]
 
     asyncio.run(run())

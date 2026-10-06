@@ -48,7 +48,7 @@ class HeadphoneOutputDeviceOut(BaseModel):
     label: str
     # CUEOUT-26, Mac shell only: the output that actually sounds for this one
     # (the occupied headphone jack for the muted MacBook speakers), whether the
-    # jack has muted it, and its CoreAudio transport. Absent in a browser listing.
+    # jack has muted it, and its CoreAudio transport. Null in a browser listing.
     physical_id: str | None = None
     muted_by_jack: bool | None = None
     transport: str | None = None
