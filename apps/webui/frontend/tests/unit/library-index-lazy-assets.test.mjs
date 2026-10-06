@@ -147,5 +147,5 @@ test('the slow boot side requests go through the boot scheduler', () => {
 	);
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /artworkReleased &&\s*artworkAvailable === true/);
-	assert.match(table, /whenBootListingWalkSettled\(8_000\)/);
+	assert.match(table, /holdArtworkUntilIndex\(8_000,/);
 });

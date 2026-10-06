@@ -87,8 +87,12 @@
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
-	import { PreviewStripFiller, stripLessIdsNear } from '$lib/rb/preview-strip-fill';
-	import { bootListingWalkInFlight, whenBootListingWalkSettled } from '$lib/rb/library-boot-hydration';
+	import {
+		fetchRowAssetsLazily,
+		holdArtworkUntilIndex,
+		PreviewStripFiller,
+		stripLessIdsNear
+	} from '$lib/rb/preview-strip-fill';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
@@ -1128,7 +1132,7 @@
 		// LIBM-172: one batch settles strip, vocals and cover verdict; lazy so it
 		// stays off the /performance chunk.
 		fetchBatch: async (ids) =>
-			(await import('$lib/rb/row-assets-fill')).fetchAndApplyRowAssets(ids, untrack(() => rows)),
+			fetchRowAssetsLazily(ids, untrack(() => rows)),
 		onStrip: (id, wire) => {
 			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
 		},
@@ -1277,9 +1281,7 @@
 
 	// LIBM-172: cover images wait for the boot library index (or 8 s), so ~30
 	// artwork reads do not compete with it on the single-worker engine.
-	const artworkHeldAtMount = bootListingWalkInFlight();
-	let artworkReleased = $state(!artworkHeldAtMount);
-	if (artworkHeldAtMount) void whenBootListingWalkSettled(8_000).then(() => (artworkReleased = true));
+	let artworkReleased = $state(holdArtworkUntilIndex(8_000, () => (artworkReleased = true)));
 
 	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
 		return (

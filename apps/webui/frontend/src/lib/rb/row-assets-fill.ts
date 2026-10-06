@@ -9,29 +9,45 @@
  * vocals and cover verdict into the matching rows and hands the strips back to the
  * filler, which owns retries for `pending` ids.
  *
- * Loaded with a dynamic import on the first batch, so none of it rides the
- * /performance route's eager bundle.
+ * Loaded with a dynamic import on the first batch (preview-strip-fill's
+ * `fetchRowAssetsLazily`), so none of it rides the /performance route's eager bundle.
  */
 
-import { api, unwrap } from '$lib/api/client';
+import { API_BASE } from '$lib/api';
 import { parseVocals, type Vocals } from './api-rb';
-import type { PreviewStripBatch } from './preview-strip-fill';
 
-/** The row fields a row-assets answer settles. */
-export interface RowAssetTarget {
+interface RowAssetWire {
+	preview_b64: string | null;
+	preview_max: number | null;
+	vocals: unknown;
+	artwork_available: boolean | null;
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+}
+
+/** The row fields an answer settles (preview-strip-fill's RowAssetTarget). */
+interface Target {
 	stable_id: string;
 	vocals: Vocals;
 	artwork_available: boolean | null;
-	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+	artwork_status: RowAssetWire['artwork_status'];
 }
 
 /** Ask for `ids`, settle every row among `rows` that has one of them, and return
  * the strips in the filler's shape (null: nothing on disk, or not a track). */
 export async function fetchAndApplyRowAssets(
 	ids: string[],
-	rows: readonly RowAssetTarget[]
-): Promise<PreviewStripBatch> {
-	const answer = await unwrap(api.POST('/api/v1/library/row-assets', { body: { ids } }));
+	rows: readonly Target[]
+): Promise<{ strips: Record<string, { preview_b64: string; preview_max: number } | null>; pending: string[] }> {
+	const response = await fetch(`${API_BASE}/api/v1/library/row-assets`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ ids })
+	});
+	if (!response.ok) throw new Error(`POST /library/row-assets failed with ${response.status}`);
+	const answer = (await response.json()) as { assets: Record<string, RowAssetWire>; pending: string[] };
+	if (typeof answer.assets !== 'object' || answer.assets === null || !Array.isArray(answer.pending)) {
+		throw new Error('POST /library/row-assets answered without assets or pending');
+	}
 	const wanted = new Set(ids);
 	for (const row of rows) {
 		if (!wanted.has(row.stable_id)) continue;
@@ -41,7 +57,7 @@ export async function fetchAndApplyRowAssets(
 		row.artwork_available = asset.artwork_available;
 		row.artwork_status = asset.artwork_status;
 	}
-	const strips: PreviewStripBatch['strips'] = {};
+	const strips: Record<string, { preview_b64: string; preview_max: number } | null> = {};
 	for (const id of ids) {
 		const asset = answer.assets[id];
 		strips[id] =

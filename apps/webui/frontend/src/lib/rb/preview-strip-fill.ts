@@ -19,6 +19,9 @@
  *     [if] an id scrolls away [then] it is no longer asked
  */
 
+import type { Vocals } from './api-rb';
+import { bootListingWalkInFlight, whenBootListingWalkSettled } from './library-boot-hydration';
+
 export const STRIP_FILL_DEBOUNCE_MS = 150;
 export const STRIP_FILL_MAX_IDS = 200;
 export const STRIP_FILL_FIRST_RETRY_MS = 2000;
@@ -194,4 +197,32 @@ export function stripLessIdsNear(
     .slice(Math.max(0, startIndex - margin), endIndex + margin)
     .filter((r) => r.strip === null && !hasStrip(r.stable_id))
     .map((r) => r.stable_id);
+}
+
+/** The row fields a `POST /library/row-assets` answer settles (LIBM-172). */
+export interface RowAssetTarget {
+  stable_id: string;
+  vocals: Vocals;
+  artwork_available: boolean | null;
+  artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
+}
+
+/** The filler's batch for library rows (LIBM-172): `POST /library/row-assets`, with the
+ * module that applies it loaded on first use so it stays off the eager route bundle. */
+export async function fetchRowAssetsLazily(
+  ids: string[],
+  rows: readonly RowAssetTarget[],
+): Promise<PreviewStripBatch> {
+  return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows);
+}
+
+/**
+ * Cover images wait for the boot library index, or `maxMs`, so ~30 artwork reads do
+ * not compete with it on the single-worker engine (LIBM-172). Returns whether they
+ * may load now; otherwise calls `release` once, when they may. Never strands them.
+ */
+export function holdArtworkUntilIndex(maxMs: number, release: () => void): boolean {
+  if (!bootListingWalkInFlight()) return true;
+  void whenBootListingWalkSettled(maxMs).then(release);
+  return false;
 }
