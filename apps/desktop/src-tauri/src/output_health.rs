@@ -844,7 +844,7 @@ pub(crate) mod platform {
             Err(err) => (false, Some(err)),
         };
         let reason = if default_muted_by_jack {
-            MUTED_BY_JACK_REASON.to_string()
+            super::MUTED_BY_JACK_REASON.to_string()
         } else if let Some(err) = listing_error.as_ref() {
             format!("output listing failed, so a jack-muted speaker cannot be ruled out: {err}")
         } else if delivering {
@@ -854,7 +854,7 @@ pub(crate) mod platform {
         } else {
             "Default output device is not delivering audio (IO cycles did not advance during probe tone)".into()
         };
-        let verdict = match (listing_error.is_some(), health_verdict(delivering, default_muted_by_jack)) {
+        let verdict = match (listing_error.is_some(), super::health_verdict(delivering, default_muted_by_jack)) {
             (true, "ok") => "unknown",
             (_, verdict) => verdict,
         };
