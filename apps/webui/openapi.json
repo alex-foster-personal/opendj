@@ -19074,6 +19074,93 @@
         "title": "RevokeOut",
         "type": "object"
       },
+      "RowAssetOut": {
+        "description": "The per-row disk reads a library index row leaves out (LIBM-172).",
+        "properties": {
+          "artwork_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Available"
+          },
+          "artwork_status": {
+            "enum": [
+              "ok",
+              "no_image_path",
+              "unresolved",
+              "file_missing"
+            ],
+            "title": "Artwork Status",
+            "type": "string"
+          },
+          "preview_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview B64"
+          },
+          "preview_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Max"
+          },
+          "vocals": {
+            "additionalProperties": true,
+            "title": "Vocals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "preview_b64",
+          "preview_max",
+          "vocals",
+          "artwork_available",
+          "artwork_status"
+        ],
+        "title": "RowAssetOut",
+        "type": "object"
+      },
+      "RowAssetsOut": {
+        "description": "``assets`` holds every asked id that is a library track; ``pending`` lists\nstrip-less ids the ahead-analysis drain was bumped for (ask again later).",
+        "properties": {
+          "assets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RowAssetOut"
+            },
+            "title": "Assets",
+            "type": "object"
+          },
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets",
+          "pending"
+        ],
+        "title": "RowAssetsOut",
+        "type": "object"
+      },
       "RowModel": {
         "description": "One offered row. ``members`` is set only on a ``playlists`` row.",
         "properties": {
@@ -23072,12 +23159,401 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackIndexItemOut": {
+        "description": "One library index row: a listing row without its per-row disk reads (LIBM-172).\n\nThe preview strip, vocal regions and cover verdict are read off disk per\nrow, which was 7.8 s of a cold 9,713-row index. They are never sent here\n(excluded and absent from the schema); the browser asks\n``POST /library/row-assets`` for the rows in view. ``provenance`` is left\nout too: ``GET /tracks/{sid}`` serves it.",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "auto_cues_available": {
+            "title": "Auto Cues Available",
+            "type": "boolean"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "bpm_confidence_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence Error"
+          },
+          "bpm_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Method"
+          },
+          "bpm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Source"
+          },
+          "cloud_transfer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudTransferOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "energy_reason": {
+            "title": "Energy Reason",
+            "type": "string"
+          },
+          "energy_source": {
+            "anyOf": [
+              {
+                "const": "mik",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Source"
+          },
+          "file_availability": {
+            "enum": [
+              "present",
+              "absent",
+              "AVAILABILITY_PENDING",
+              "streaming",
+              "awaiting_volume"
+            ],
+            "title": "File Availability",
+            "type": "string"
+          },
+          "file_exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Exists"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "genre_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Reason"
+          },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "has_rb_mapping": {
+            "title": "Has Rb Mapping",
+            "type": "boolean"
+          },
+          "has_remote_copy": {
+            "title": "Has Remote Copy",
+            "type": "boolean"
+          },
+          "is_radio_edit": {
+            "default": false,
+            "title": "Is Radio Edit",
+            "type": "boolean"
+          },
+          "is_remix": {
+            "default": false,
+            "title": "Is Remix",
+            "type": "boolean"
+          },
+          "is_remote": {
+            "default": false,
+            "title": "Is Remote",
+            "type": "boolean"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played At"
+          },
+          "lyrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LyricsRowSummaryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lyrics_available": {
+            "title": "Lyrics Available",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "play_count": {
+            "default": 0,
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityOut"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "stems": {
+            "additionalProperties": true,
+            "title": "Stems",
+            "type": "object"
+          },
+          "stems_available": {
+            "title": "Stems Available",
+            "type": "boolean"
+          },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "tempo_pref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TempoPrefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "created_at",
+          "updated_at",
+          "has_rb_mapping",
+          "lyrics_available",
+          "auto_cues_available",
+          "stems_available",
+          "file_availability",
+          "file_exists",
+          "is_streaming",
+          "has_remote_copy",
+          "quality",
+          "stems",
+          "energy",
+          "energy_source",
+          "energy_reason"
+        ],
+        "title": "TrackIndexItemOut",
+        "type": "object"
+      },
       "TrackIndexOut": {
-        "description": "GET /tracks/index: every listing row in one response (LIBM-171).\n\nRows carry no ``provenance`` (its default, an empty map); the library\n``revision`` was read before the rows.",
+        "description": "GET /tracks/index: every library row in one response (LIBM-171, LIBM-172).\n\nThe library ``revision`` was read before the rows.",
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/TrackListItemOut"
+              "$ref": "#/components/schemas/TrackIndexItemOut"
             },
             "title": "Items",
             "type": "array"
@@ -33927,6 +34403,48 @@
         ]
       }
     },
+    "/api/v1/library/row-assets": {
+      "post": {
+        "description": "The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).\n\nPreview strip, vocal regions and cover verdict, read exactly as a ``GET /tracks``\nrow reads them. The browser asks for the rows in view only, so a 9,713-row index\nnever pays these reads up front. An id that is not a library track is absent.\nStrip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.",
+        "operationId": "post_row_assets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewStripsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowAssetsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Row Assets",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/library/share-root/reanchor": {
       "post": {
         "description": "Trust the rekordbox share root as it is now, and forget what was read under it.\n\nThe engine remembers which directory the share root was when it first\nread it, and refuses to read below a root that has since become a\ndifferent one (LIBM-137): a volume mounted again at the same path, a\ndirectory swapped in by rename, a symlinked share root pointed somewhere\nelse. Nothing re-trusts it on its own, because each of those is also what\nan attack looks like. This call is how the root's owner says the new\ndirectory is intended; it records that directory's identity and empties\nthe listing's row memory.\n\n``exists`` is false, and nothing changes, when the share root is not there.\nThe call is refused with 409, and ``detail`` says why, when a directory\nABOVE the share root is a symlink: only the share root itself may be one.\nIt is 501 on a platform with no anchored walk (Windows), where the share\nroot is never anchored and so there is nothing to re-trust.",
@@ -41736,7 +42254,7 @@
     },
     "/api/v1/tracks/index": {
       "get": {
-        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\n``provenance``. The browser holds this once and resolves All Tracks from it,\nthe way rekordbox, Serato and Traktor hold their library in memory, instead of\nre-walking ~23 pages on every switch. ``revision`` is the library revision read\nBEFORE the rows, so a change made while they were read shows as a newer\nrevision on the next ``GET /tracks/revision``. The ETag is a hash of the body:\n``If-None-Match`` with it answers 304, gzip when the client accepts it.",
+        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\n``provenance`` and the per-row disk reads (preview strip, vocals, cover verdict:\nLIBM-172), which the browser asks ``POST /library/row-assets`` for, rows in view\nonly. The browser holds this once and resolves All Tracks from it, the way\nrekordbox, Serato and Traktor hold their library in memory. ``revision`` is the\nlibrary revision read BEFORE the rows, so a change made while they were read\nshows as a newer revision on the next ``GET /tracks/revision``. The ETag is a\nhash of the body: ``If-None-Match`` with it answers 304, gzip when accepted.",
         "operationId": "get_track_index",
         "parameters": [
           {

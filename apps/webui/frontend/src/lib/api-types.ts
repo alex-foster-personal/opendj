@@ -2898,6 +2898,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/row-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Row Assets
+         * @description The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).
+         *
+         *     Preview strip, vocal regions and cover verdict, read exactly as a ``GET /tracks``
+         *     row reads them. The browser asks for the rows in view only, so a 9,713-row index
+         *     never pays these reads up front. An id that is not a library track is absent.
+         *     Strip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.
+         */
+        post: operations["post_row_assets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/share-root/reanchor": {
         parameters: {
             query?: never;
@@ -5836,12 +5861,13 @@ export interface paths {
          * @description Every library row in ONE response: the browser's local library index (LIBM-171).
          *
          *     The same rows, in the same order, as walking ``GET /tracks`` to the end, minus
-         *     ``provenance``. The browser holds this once and resolves All Tracks from it,
-         *     the way rekordbox, Serato and Traktor hold their library in memory, instead of
-         *     re-walking ~23 pages on every switch. ``revision`` is the library revision read
-         *     BEFORE the rows, so a change made while they were read shows as a newer
-         *     revision on the next ``GET /tracks/revision``. The ETag is a hash of the body:
-         *     ``If-None-Match`` with it answers 304, gzip when the client accepts it.
+         *     ``provenance`` and the per-row disk reads (preview strip, vocals, cover verdict:
+         *     LIBM-172), which the browser asks ``POST /library/row-assets`` for, rows in view
+         *     only. The browser holds this once and resolves All Tracks from it, the way
+         *     rekordbox, Serato and Traktor hold their library in memory. ``revision`` is the
+         *     library revision read BEFORE the rows, so a change made while they were read
+         *     shows as a newer revision on the next ``GET /tracks/revision``. The ETag is a
+         *     hash of the body: ``If-None-Match`` with it answers 304, gzip when accepted.
          */
         get: operations["get_track_index"];
         put?: never;
@@ -14212,6 +14238,40 @@ export interface components {
             revoked_at: string;
         };
         /**
+         * RowAssetOut
+         * @description The per-row disk reads a library index row leaves out (LIBM-172).
+         */
+        RowAssetOut: {
+            /** Artwork Available */
+            artwork_available: boolean | null;
+            /**
+             * Artwork Status
+             * @enum {string}
+             */
+            artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
+            /** Preview B64 */
+            preview_b64: string | null;
+            /** Preview Max */
+            preview_max: number | null;
+            /** Vocals */
+            vocals: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * RowAssetsOut
+         * @description ``assets`` holds every asked id that is a library track; ``pending`` lists
+         *     strip-less ids the ahead-analysis drain was bumped for (ask again later).
+         */
+        RowAssetsOut: {
+            /** Assets */
+            assets: {
+                [key: string]: components["schemas"]["RowAssetOut"];
+            };
+            /** Pending */
+            pending: string[];
+        };
+        /**
          * RowModel
          * @description One offered row. ``members`` is set only on a ``playlists`` row.
          */
@@ -15751,15 +15811,126 @@ export interface components {
             title?: string;
         };
         /**
-         * TrackIndexOut
-         * @description GET /tracks/index: every listing row in one response (LIBM-171).
+         * TrackIndexItemOut
+         * @description One library index row: a listing row without its per-row disk reads (LIBM-172).
          *
-         *     Rows carry no ``provenance`` (its default, an empty map); the library
-         *     ``revision`` was read before the rows.
+         *     The preview strip, vocal regions and cover verdict are read off disk per
+         *     row, which was 7.8 s of a cold 9,713-row index. They are never sent here
+         *     (excluded and absent from the schema); the browser asks
+         *     ``POST /library/row-assets`` for the rows in view. ``provenance`` is left
+         *     out too: ``GET /tracks/{sid}`` serves it.
+         */
+        TrackIndexItemOut: {
+            /** Album */
+            album?: string | null;
+            /** Artist */
+            artist?: string | null;
+            /** Auto Cues Available */
+            auto_cues_available: boolean;
+            /** Bpm */
+            bpm?: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
+            cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
+            /** Created At */
+            created_at: string;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Energy */
+            energy: number | null;
+            /** Energy Reason */
+            energy_reason: string;
+            /** Energy Source */
+            energy_source: "mik" | null;
+            /**
+             * File Availability
+             * @enum {string}
+             */
+            file_availability: "present" | "absent" | "AVAILABILITY_PENDING" | "streaming" | "awaiting_volume";
+            /** File Exists */
+            file_exists: boolean | null;
+            /** File Path */
+            file_path?: string | null;
+            /** Genre */
+            genre?: string | null;
+            genre_guess?: components["schemas"]["GenreGuessOut"] | null;
+            /** Genre Reason */
+            genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
+            /** Has Rb Mapping */
+            has_rb_mapping: boolean;
+            /** Has Remote Copy */
+            has_remote_copy: boolean;
+            /**
+             * Is Radio Edit
+             * @default false
+             */
+            is_radio_edit: boolean;
+            /**
+             * Is Remix
+             * @default false
+             */
+            is_remix: boolean;
+            /**
+             * Is Remote
+             * @default false
+             */
+            is_remote: boolean;
+            /** Is Streaming */
+            is_streaming: boolean;
+            /** Key */
+            key?: string | null;
+            /** Last Played At */
+            last_played_at?: string | null;
+            lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
+            /** Lyrics Available */
+            lyrics_available: boolean;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Play Count
+             * @default 0
+             */
+            play_count: number;
+            quality: components["schemas"]["QualityOut"];
+            /** Rating */
+            rating?: number | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Stems */
+            stems: {
+                [key: string]: unknown;
+            };
+            /** Stems Available */
+            stems_available: boolean;
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
+            /** Title */
+            title?: string | null;
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * TrackIndexOut
+         * @description GET /tracks/index: every library row in one response (LIBM-171, LIBM-172).
+         *
+         *     The library ``revision`` was read before the rows.
          */
         TrackIndexOut: {
             /** Items */
-            items: components["schemas"]["TrackListItemOut"][];
+            items: components["schemas"]["TrackIndexItemOut"][];
             /** Revision */
             revision: string;
         };
@@ -22368,6 +22539,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LibraryReadinessOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_row_assets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewStripsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RowAssetsOut"];
                 };
             };
             /** @description Validation Error */
