@@ -193,7 +193,8 @@ test('S1 control: a non-tempo command on the same deck is never skipped', async 
 });
 
 test('S1 source pin: the dispatcher gates _execute on the coalescer', () => {
-	assert.match(DISPATCHER, /if \(_tempoCoalescer\.runs\(deck, tempoTicket\)\) \{\s*await _execute\(command, pressT0Ms\);/);
+	// PLAY-18 routes the queued body through _executeAs (it records the command source).
+	assert.match(DISPATCHER, /if \(_tempoCoalescer\.runs\(deck, tempoTicket\)\) \{\s*await _executeAs\(command, pressT0Ms, source\);/);
 });
 
 test('S1 source pin: the ticket is taken on the queued path, after the unqueued branches', () => {
