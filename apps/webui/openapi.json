@@ -30838,6 +30838,20 @@
               "title": "Consumer",
               "type": "string"
             }
+          },
+          {
+            "description": "AGENT-19 long poll, performance consumer only: hold the request up to this many ms until an order arrives. 0 answers at once (the AGENT-03 contract). The honoured hold is echoed in the x-opendj-order-wait-ms header.",
+            "in": "query",
+            "name": "wait_ms",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "AGENT-19 long poll, performance consumer only: hold the request up to this many ms until an order arrives. 0 answers at once (the AGENT-03 contract). The honoured hold is echoed in the x-opendj-order-wait-ms header.",
+              "maximum": 30000,
+              "minimum": 0,
+              "title": "Wait Ms",
+              "type": "integer"
+            }
           }
         ],
         "responses": {

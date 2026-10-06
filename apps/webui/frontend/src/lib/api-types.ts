@@ -20097,6 +20097,8 @@ export interface operations {
             query?: {
                 /** @description performance: AGENT-03 orders for the open /performance page; shell: desktop-shell commands such as apply-update */
                 consumer?: string;
+                /** @description AGENT-19 long poll, performance consumer only: hold the request up to this many ms until an order arrives. 0 answers at once (the AGENT-03 contract). The honoured hold is echoed in the x-opendj-order-wait-ms header. */
+                wait_ms?: number;
             };
             header?: never;
             path?: never;
