@@ -1,7 +1,7 @@
 """AGENT-19: the order claim is a long poll, so a hidden leader tab gets orders at once.
 
-Mon 5 Oct 2026 soak: with the preview tab hidden, the page's 50 ms timer poll was
-throttled by the browser and one agent `play` took about 11 minutes. A held network
+A hidden tab throttles timers (Chrome: 1 s, a timer chain once a minute after five
+hidden minutes), so the page's 50 ms claim poll paid that per order. A held network
 request is not throttled, so the engine now holds `GET /commands/next?wait_ms=N`
 and answers the moment an order is submitted.
 """

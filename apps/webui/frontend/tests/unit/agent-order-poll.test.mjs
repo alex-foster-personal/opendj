@@ -24,7 +24,7 @@
  * [if] the uninstall does not stop the loop [then ⛔] it outlives /performance
  *   and polls an engine the route has already told the page is gone.
  *
- * AGENT-19 (Mon 5 Oct 2026 soak: a hidden leader took ~11 min to run one play):
+ * AGENT-19 (a hidden tab throttles timers to 1 s, a timer chain to once a minute):
  * [if] the claim is not a long poll, or the loop arms a timer between a held
  *   answer or an executed order and the next claim [then ⛔] a hidden tab, whose
  *   timers the browser throttles to 1 s or 60 s, sits on posted orders.

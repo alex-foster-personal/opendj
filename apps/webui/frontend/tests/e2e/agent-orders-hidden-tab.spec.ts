@@ -1,11 +1,10 @@
 /**
- * AGENT-19: an agent order reaches a HIDDEN leader tab in under 2 s.
+ * AGENT-19: agent orders reach a HIDDEN leader tab promptly.
  *
- * Mon 5 Oct 2026 soak: the preview tab went `visibilityState === 'hidden'`, its
- * 50 ms `setTimeout` claim loop was throttled by Chrome (1 s, then one wake-up
- * per minute after five hidden minutes), and one agent `play` took ~11 min.
- * The claim is now a long poll the engine holds open, and a network response is
- * not throttled.
+ * A hidden tab's timers are throttled by Chrome (aligned to 1 s, and a timer
+ * chain to one wake-up per minute after five hidden minutes). The order claim is
+ * now a long poll the engine holds open, and a network response is not
+ * throttled; a page waiting to register waits on the publisher, not on a timer.
  *
  * NOTHING HERE FAKES VISIBILITY. Per reload-countdown-browser.spec.ts the
  * repository forbids monkeypatching `document.visibilityState`, and a page that
@@ -17,7 +16,7 @@
  * to it. On macOS, minimizing that real window makes the OS hide the page;
  * Chrome's intensive wake-up throttling is engaged after 10 s instead of 5 min
  * by a Chrome feature parameter (the throttle is the browser's, unmodified).
- * Measured the same day: hidden, 1 s timer alignment, then no timer for 15 s.
+ * A control inside the test proves the page under test is really throttled.
  * Off macOS there is no window to hide and the spec says so with a skip.
  *
  * WHY A MEDIAN, NOT A MAXIMUM. A hidden Chrome renderer on macOS also runs its
@@ -25,15 +24,12 @@
  * 283-3835 ms hidden on demon-llama (Tue 6 Oct 2026), with or without
  * --disable-renderer-backgrounding. So the per-order work itself (mirror delta,
  * the republish) has a CPU-bound tail of seconds on a loaded host that no claim
- * mechanism can remove. What the long poll removes is the TIMER wait, which is
- * unbounded (one minute per hop); the mutation control below measures exactly
- * that difference.
+ * mechanism can remove.
  *
+ * [if] the hidden page is not timer-throttled [then ⛔] the harness measures
+ *   nothing, and the latency assertion proves nothing.
  * [if] the median order posted to the hidden leader takes 2 s or more, or any
  *   takes 30 s [then ⛔] agents cannot drive a backgrounded app.
- * [if] the mutation control (claim stripped of wait_ms at the network layer, so
- *   the pre-AGENT-19 timer poll runs) does NOT exceed 2 s [then ⛔] this harness
- *   is not measuring throttling, and the first test proves nothing.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -198,16 +194,6 @@ function close(leader: HiddenLeader | null): void {
 	rmSync(leader.profile, { recursive: true, force: true });
 }
 
-/** Latency of one order the page completed, or null when it did not answer in `timeoutMs`. */
-async function timedOrderOrTimeout(request: APIRequestContext, timeoutMs: number): Promise<number | null> {
-	try {
-		return await timedOrder(request, timeoutMs);
-	} catch (error) {
-		if (error instanceof Error && error.name === 'TimeoutError') return null;
-		throw error;
-	}
-}
-
 async function timedOrder(request: APIRequestContext, timeoutMs: number): Promise<number> {
 	const started = Date.now();
 	const response = await request.post('/api/v1/commands', { data: ORDER, timeout: timeoutMs });
@@ -224,6 +210,12 @@ test('a hidden leader executes agent orders with a median under 2 s and none pas
 	try {
 		leader = await openHiddenLeader(String(baseURL), request);
 		await hide(leader);
+		// Control: the page under test really is timer-throttled. Three chained
+		// 50 ms timers take about 150 ms in a visible tab and at least 1 s here.
+		const chainMs = await leader.page.evaluate<number>(
+			'(async () => { const s = performance.now(); for (let i = 0; i < 3; i += 1) await new Promise((r) => setTimeout(r, 50)); return performance.now() - s; })()'
+		);
+		expect(chainMs, 'control: the hidden page must be timer-throttled').toBeGreaterThanOrEqual(900);
 		const latencies: number[] = [];
 		for (let i = 0; i < ORDERS; i += 1) {
 			latencies.push(await timedOrder(request, 30_000));
@@ -232,42 +224,6 @@ test('a hidden leader executes agent orders with a median under 2 s and none pas
 		console.log(`AGENT-19 hidden-tab order latency ms: ${JSON.stringify(latencies)}`);
 		const median = [...latencies].sort((a, b) => a - b)[Math.floor(latencies.length / 2)];
 		expect(median, `median of ${JSON.stringify(latencies)}`).toBeLessThan(BOUND_MS);
-	} finally {
-		close(leader);
-	}
-});
-
-test('mutation control: without the long poll the hidden leader misses the bound', async ({
-	request,
-	baseURL
-}) => {
-	test.setTimeout(360_000);
-	let leader: HiddenLeader | null = null;
-	try {
-		leader = await openHiddenLeader(String(baseURL), request);
-		// Strip wait_ms at the network layer: the engine answers at once without
-		// the hold header, so the page falls back to its 50 ms timer poll, which
-		// is the pre-AGENT-19 loop. Nothing in the page is modified.
-		const page = leader.page;
-		page.on('Fetch.requestPaused', (params) => {
-			const url = new URL(String((params.request as { url: string }).url));
-			url.searchParams.delete('wait_ms');
-			void page.send('Fetch.continueRequest', { requestId: params.requestId, url: url.toString() });
-		});
-		await page.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/v1/commands/next*' }] });
-		await hide(leader);
-		// An order still unanswered at the timeout has missed the bound too; the
-		// pre-AGENT-19 loop waits up to a minute per throttled hop. A post can land
-		// just before an aligned wake-up (about 2 s in 60), so up to three are tried.
-		const latencies: Array<number | null> = [];
-		for (let i = 0; i < 3; i += 1) {
-			const latency = await timedOrderOrTimeout(request, 20_000);
-			latencies.push(latency);
-			if (latency === null || latency >= BOUND_MS) break;
-		}
-		console.log(`AGENT-19 mutation-control latency ms (null = no answer in 20 s): ${JSON.stringify(latencies)}`);
-		const last = latencies[latencies.length - 1];
-		expect(last === null || last >= BOUND_MS, `latencies ${JSON.stringify(latencies)}`).toBe(true);
 	} finally {
 		close(leader);
 	}

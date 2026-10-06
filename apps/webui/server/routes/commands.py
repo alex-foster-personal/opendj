@@ -6,11 +6,10 @@ executes the order through its normal typed IPC dispatcher.
 
 AGENT-19: ``GET /commands/next?wait_ms=N`` is a LONG POLL. The leader page's
 claim loop used to re-ask every 50 ms on a ``setTimeout``, and a hidden tab's
-timers are throttled by the browser (Chrome: 1 s, then one wake-up per MINUTE
-after five hidden minutes), so an order posted to a backgrounded app waited up
-to a minute per hop (Mon 5 Oct 2026 soak: one play took ~11 min). A network
-response is not throttled, so the engine now holds the claim request open and
-answers the moment an order is submitted. Every held answer carries
+timers are throttled by the browser (Chrome aligns them to 1 s, and a timer
+chain to one wake-up per MINUTE after five hidden minutes). A network response
+is not throttled, so the engine now holds the claim request open and answers
+the moment an order is submitted. Every held answer carries
 ``x-opendj-order-wait-ms`` so the page can tell a held answer from an older
 engine that ignored the parameter.
 """

@@ -11,10 +11,10 @@ type ClockDeck = 1 | 2 | 3 | 4;
 const NEXT_ORDER_PATH = '/api/v1/commands/next';
 /**
  * AGENT-19: how long the engine holds each claim request open. The claim is a
- * LONG POLL, not a timer: a hidden tab's timers are throttled (Chrome 1 s, then
- * one wake-up per minute after five hidden minutes; Mon 5 Oct 2026 soak, one
- * play took ~11 min) but a network response is delivered at once, so the next
- * order reaches a backgrounded leader as soon as it is posted. Must stay at or
+ * LONG POLL, not a timer: a hidden tab's timers are throttled (Chrome aligns
+ * them to 1 s, and a timer chain to one wake-up per minute after five hidden
+ * minutes) but a network response is delivered at once, so the next order
+ * reaches a backgrounded leader as soon as it is posted. Must stay at or
  * under the engine's `ORDER_WAIT_MAX_MS` (30 s, `routes/commands.py`).
  */
 export const ORDER_LONG_POLL_MS = 20_000;
