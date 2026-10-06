@@ -351,3 +351,47 @@ test('a normal release cancels the hard backstop, so it never fires on a healthy
 	assert.equal(backstopClock.backstopCleared(), true, 'the backstop timer is cleared on release');
 	assert.deepEqual(backstopClock.warnings, []);
 });
+
+// Diagnostics: the release reason is stamped once (boot-scheduler:released).
+function recordReleases(host) {
+	const reasons = [];
+	host.markReleased = (reason) => reasons.push(reason);
+	return reasons;
+}
+
+test('a normal release is stamped settle, once', () => {
+	const reasons = recordReleases(clock.host);
+	const marked = mod.createBootScheduler(clock.host);
+	const settle = marked.listingWalkStarted();
+	marked.defer('a', () => ran.push('a'));
+	releaseNormally(clock);
+	settle();
+	clock.tickTimers();
+	marked.defer('b', () => ran.push('b'));
+	assert.deepEqual(ran, ['a', 'b']);
+	assert.deepEqual(reasons, ['settle']);
+});
+
+test('the polled yield ceiling is stamped ceiling', () => {
+	const reasons = recordReleases(clock.host);
+	const marked = mod.createBootScheduler(clock.host);
+	marked.listingWalkStarted();
+	marked.defer('a', () => ran.push('a'));
+	releaseNormally(clock);
+	const polls = Math.ceil(mod.DECK_LOAD_YIELD_MAX_MS / mod.DECK_LOAD_YIELD_POLL_MS);
+	for (let i = 0; i < polls + 1 && ran.length === 0; i += 1) clock.tickTimers();
+	assert.deepEqual(ran, ['a']);
+	assert.deepEqual(reasons, ['ceiling']);
+});
+
+test('the hard backstop is stamped ceiling', () => {
+	const backstopClock = makeBackstopHost();
+	const reasons = recordReleases(backstopClock.host);
+	const marked = mod.createBootScheduler(backstopClock.host);
+	marked.listingWalkStarted();
+	marked.defer('a', () => ran.push('a'));
+	backstopClock.tickTimers();
+	backstopClock.fireBackstop();
+	assert.deepEqual(ran, ['a']);
+	assert.deepEqual(reasons, ['ceiling']);
+});

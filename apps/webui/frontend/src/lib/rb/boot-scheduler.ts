@@ -118,7 +118,17 @@ export interface BootHost {
 	/** Records that the boot window opened (a performance mark in the browser),
 	 * so a test can measure deferred work from boot start, not from navigation. */
 	markArmed?: () => void;
+	/** Records why the deferred queue was released (a performance mark in the
+	 * browser). Diagnostics: 'ceiling' means a hold never settled. */
+	markReleased?: (reason: BootReleaseReason) => void;
 }
+
+/** 'settle': every hold settled (the normal path). 'ceiling': the yield
+ * ceiling or the hard backstop released it with work still held. */
+export type BootReleaseReason = 'settle' | 'ceiling';
+
+/** The performance mark the browser host records when the queue is released. */
+export const BOOT_RELEASED_MARK = 'boot-scheduler:released';
 
 /** The performance mark the browser host records when the boot window opens. */
 export const BOOT_ARMED_MARK = 'boot-scheduler:armed';
@@ -197,10 +207,11 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 		backstop = null;
 	}
 
-	function _release(): void {
+	function _release(reason: BootReleaseReason): void {
 		released = true;
 		_cancelTimer();
 		_cancelBackstop();
+		host.markReleased?.(reason);
 		// Arrival order. A task that defers more work sees `released` already
 		// true and goes straight through, so the loop cannot spin.
 		while (queue.length > 0) _run(queue.shift() as QueuedTask);
@@ -216,14 +227,14 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 				`${holds} hold(s) never settled (a deck load or the boot listing walk): ` +
 				queue.map((entry) => entry.label).join(', ')
 		);
-		_release();
+		_release('ceiling');
 	}
 
 	function _releaseOnceDecksAreFree(): void {
 		timer = null;
 		if (released) return;
 		if (holds === 0) {
-			_release();
+			_release('settle');
 			return;
 		}
 		if (yieldedMs >= DECK_LOAD_YIELD_MAX_MS) {
@@ -248,7 +259,7 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 		backstop = null;
 		if (released) return;
 		if (holds === 0 && queue.length === 0) {
-			_release();
+			_release('settle');
 			return;
 		}
 		// Reached only when the polled path above was itself starved: an idle
@@ -309,6 +320,9 @@ function _browserHost(): BootHost {
 			if (globalThis.performance?.getEntriesByName(BOOT_ARMED_MARK).length === 0) {
 				globalThis.performance.mark(BOOT_ARMED_MARK);
 			}
+		},
+		markReleased: (reason) => {
+			globalThis.performance?.mark(BOOT_RELEASED_MARK, { detail: { reason } });
 		},
 		whenIdle:
 			requestIdle === null
