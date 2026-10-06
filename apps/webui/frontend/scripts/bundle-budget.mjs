@@ -355,7 +355,12 @@ const BUDGETS = [
   // RAISED Mon 5 Oct 2026 (+2,229 B, PR #5474 RESCUE-07 reload-resume banner, CORE
   // decision Mon 5 Oct 23:25Z): CI measured 263,349 against 263,168 (+181); the raise is
   // that overage plus 2 KiB headroom. v1 launch, re-tighten post-v1.
-  { name: 'performance', limit: 265397, measured: 263349, note: '/performance and children' },
+  // RAISED Tue 6 Oct 2026 (+1 KiB, PR #5533 ENRICH-02, V1 budget rule of up to 4 KiB per
+  // V1 PR): the enrich card names where BPM and key come from, the drain's real state and
+  // the folders of files not on this Mac. The card is first paint on /performance. CI
+  // measured 265,423 against 265,397 (+26). Payback, not yet measured: load the expanded
+  // card body only when More is pressed.
+  { name: 'performance', limit: 266421, measured: 265423, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
