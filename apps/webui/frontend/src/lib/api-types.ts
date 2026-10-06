@@ -2911,9 +2911,9 @@ export interface paths {
          * Post Row Assets
          * @description The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).
          *
-         *     Preview strip, vocal regions and cover verdict, read exactly as a ``GET /tracks``
-         *     row reads them. The browser asks for the rows in view only, so a 9,713-row index
-         *     never pays these reads up front. An id that is not a library track is absent.
+         *     Preview strip, vocal regions, cover verdict and stem bundle summary, read exactly as a
+         *     ``GET /tracks`` row reads them. The browser asks for the rows in view only, so a 9,713-row
+         *     index never pays these reads up front. An id that is not a library track is absent.
          *     Strip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.
          */
         post: operations["post_row_assets"];
@@ -14253,6 +14253,10 @@ export interface components {
             preview_b64: string | null;
             /** Preview Max */
             preview_max: number | null;
+            /** Stems */
+            stems: {
+                [key: string]: unknown;
+            };
             /** Vocals */
             vocals: {
                 [key: string]: unknown;
@@ -15814,19 +15818,22 @@ export interface components {
          * TrackIndexItemOut
          * @description One library index row: a listing row without its per-row disk reads (LIBM-172).
          *
-         *     The preview strip, vocal regions and cover verdict are read off disk per
-         *     row, which was 7.8 s of a cold 9,713-row index. They are never sent here
-         *     (excluded and absent from the schema); the browser asks
-         *     ``POST /library/row-assets`` for the rows in view. ``provenance`` is left
-         *     out too: ``GET /tracks/{sid}`` serves it.
+         *     The preview strip, vocal regions, cover verdict and stem bundle summary are
+         *     read off disk per row, which was 7.8 s of a cold 9,713-row index (stems
+         *     another 1.2 s). They are never sent here (excluded and absent from the
+         *     schema); the browser asks ``POST /library/row-assets`` for the rows in view.
+         *
+         *     Also left out, because no library view reads them off an index row:
+         *     ``provenance``, ``tags``, ``last_played_at``, ``tempo_pref``, ``created_at``,
+         *     ``updated_at`` and the three optional-resource flags (``GET /tracks/{sid}``
+         *     serves all of them). ``lyrics_available`` alone cost 2.9 s of a cold index,
+         *     classifying every lyric file for ASR hallucinations.
          */
         TrackIndexItemOut: {
             /** Album */
             album?: string | null;
             /** Artist */
             artist?: string | null;
-            /** Auto Cues Available */
-            auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
             /** Bpm Confidence */
@@ -15838,8 +15845,6 @@ export interface components {
             /** Bpm Source */
             bpm_source?: string | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
-            /** Created At */
-            created_at: string;
             /** Duration Ms */
             duration_ms?: number | null;
             /** Energy */
@@ -15886,11 +15891,7 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key?: string | null;
-            /** Last Played At */
-            last_played_at?: string | null;
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
-            /** Lyrics Available */
-            lyrics_available: boolean;
             /** Notes */
             notes?: string | null;
             /**
@@ -15903,24 +15904,10 @@ export interface components {
             rating?: number | null;
             /** Stable Id */
             stable_id: string;
-            /** Stems */
-            stems: {
-                [key: string]: unknown;
-            };
-            /** Stems Available */
-            stems_available: boolean;
             /** Streaming Provider */
             streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
-            /**
-             * Tags
-             * @default []
-             */
-            tags: string[];
-            tempo_pref?: components["schemas"]["TempoPrefOut"] | null;
             /** Title */
             title?: string | null;
-            /** Updated At */
-            updated_at: string;
         };
         /**
          * TrackIndexOut

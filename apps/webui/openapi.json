@@ -19120,6 +19120,11 @@
             ],
             "title": "Preview Max"
           },
+          "stems": {
+            "additionalProperties": true,
+            "title": "Stems",
+            "type": "object"
+          },
           "vocals": {
             "additionalProperties": true,
             "title": "Vocals",
@@ -19131,7 +19136,8 @@
           "preview_max",
           "vocals",
           "artwork_available",
-          "artwork_status"
+          "artwork_status",
+          "stems"
         ],
         "title": "RowAssetOut",
         "type": "object"
@@ -23160,7 +23166,7 @@
         "type": "object"
       },
       "TrackIndexItemOut": {
-        "description": "One library index row: a listing row without its per-row disk reads (LIBM-172).\n\nThe preview strip, vocal regions and cover verdict are read off disk per\nrow, which was 7.8 s of a cold 9,713-row index. They are never sent here\n(excluded and absent from the schema); the browser asks\n``POST /library/row-assets`` for the rows in view. ``provenance`` is left\nout too: ``GET /tracks/{sid}`` serves it.",
+        "description": "One library index row: a listing row without its per-row disk reads (LIBM-172).\n\nThe preview strip, vocal regions, cover verdict and stem bundle summary are\nread off disk per row, which was 7.8 s of a cold 9,713-row index (stems\nanother 1.2 s). They are never sent here (excluded and absent from the\nschema); the browser asks ``POST /library/row-assets`` for the rows in view.\n\nAlso left out, because no library view reads them off an index row:\n``provenance``, ``tags``, ``last_played_at``, ``tempo_pref``, ``created_at``,\n``updated_at`` and the three optional-resource flags (``GET /tracks/{sid}``\nserves all of them). ``lyrics_available`` alone cost 2.9 s of a cold index,\nclassifying every lyric file for ASR hallucinations.",
         "properties": {
           "album": {
             "anyOf": [
@@ -23183,10 +23189,6 @@
               }
             ],
             "title": "Artist"
-          },
-          "auto_cues_available": {
-            "title": "Auto Cues Available",
-            "type": "boolean"
           },
           "bpm": {
             "anyOf": [
@@ -23252,10 +23254,6 @@
                 "type": "null"
               }
             ]
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
           },
           "duration_ms": {
             "anyOf": [
@@ -23408,17 +23406,6 @@
             ],
             "title": "Key"
           },
-          "last_played_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Played At"
-          },
           "lyrics": {
             "anyOf": [
               {
@@ -23428,10 +23415,6 @@
                 "type": "null"
               }
             ]
-          },
-          "lyrics_available": {
-            "title": "Lyrics Available",
-            "type": "boolean"
           },
           "notes": {
             "anyOf": [
@@ -23467,15 +23450,6 @@
             "title": "Stable Id",
             "type": "string"
           },
-          "stems": {
-            "additionalProperties": true,
-            "title": "Stems",
-            "type": "object"
-          },
-          "stems_available": {
-            "title": "Stems Available",
-            "type": "boolean"
-          },
           "streaming_provider": {
             "anyOf": [
               {
@@ -23493,24 +23467,6 @@
             ],
             "title": "Streaming Provider"
           },
-          "tags": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Tags",
-            "type": "array"
-          },
-          "tempo_pref": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TempoPrefOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "title": {
             "anyOf": [
               {
@@ -23521,26 +23477,16 @@
               }
             ],
             "title": "Title"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
           }
         },
         "required": [
           "stable_id",
-          "created_at",
-          "updated_at",
           "has_rb_mapping",
-          "lyrics_available",
-          "auto_cues_available",
-          "stems_available",
           "file_availability",
           "file_exists",
           "is_streaming",
           "has_remote_copy",
           "quality",
-          "stems",
           "energy",
           "energy_source",
           "energy_reason"
@@ -34405,7 +34351,7 @@
     },
     "/api/v1/library/row-assets": {
       "post": {
-        "description": "The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).\n\nPreview strip, vocal regions and cover verdict, read exactly as a ``GET /tracks``\nrow reads them. The browser asks for the rows in view only, so a 9,713-row index\nnever pays these reads up front. An id that is not a library track is absent.\nStrip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.",
+        "description": "The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).\n\nPreview strip, vocal regions, cover verdict and stem bundle summary, read exactly as a\n``GET /tracks`` row reads them. The browser asks for the rows in view only, so a 9,713-row\nindex never pays these reads up front. An id that is not a library track is absent.\nStrip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.",
         "operationId": "post_row_assets",
         "requestBody": {
           "content": {
