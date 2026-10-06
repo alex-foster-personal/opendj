@@ -46,6 +46,14 @@ const ORDER = { single: { type: 'fader', deck: 1, value: 0.5 } };
 
 test.skip(process.platform !== 'darwin', 'AGENT-19 needs a real OS window to hide; only macOS has one here');
 
+/** Every Chromium this file starts. A test that times out never reaches its
+ * own `finally`, so afterEach kills whatever is left (two leaked otherwise). */
+const launched = new Set<ChildProcess>();
+test.afterEach(() => {
+	for (const browser of launched) browser.kill();
+	launched.clear();
+});
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** One raw CDP page session over the browser's DevTools WebSocket. */
@@ -127,6 +135,7 @@ async function launchPlainChromium(): Promise<{ browser: ChildProcess; profile: 
 		],
 		{ stdio: 'ignore' }
 	);
+	launched.add(browser);
 	for (let i = 0; i < 150; i += 1) {
 		try {
 			const [port] = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n');
