@@ -3549,6 +3549,9 @@
 				>
 					← Back
 				</button>
+				<!-- LIBUX-49: left of the search, clear of the feedback dock that floats over
+					 the bottom-right corner when the library header is the window's last row. -->
+				<LibraryEditMenu hasSelection={pane.selected_ids.length > 0} onpick={(action) => void openEditModal(action)} />
 				<div class="search-stack">
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
@@ -3577,7 +3580,6 @@
 					/>
 				</div>
 				</div>
-				<LibraryEditMenu hasSelection={pane.selected_ids.length > 0} onpick={(action) => void openEditModal(action)} />
 			</div>
 		</div>
 		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
