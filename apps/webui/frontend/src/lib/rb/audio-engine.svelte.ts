@@ -200,8 +200,10 @@ import {
 	type StretchScheduleChange
 } from '$lib/rb/stretch-adapter';
 import {
+	ENGINE_RECOVERED_PRESS_PLAY,
 	GRAPH_REBUILD_EXHAUSTED_MESSAGE,
 	GRAPH_REBUILD_RETRY_DELAYS_MS,
+	planResumeAfterRebuild,
 	rebuildGraphWithRetries,
 	reattachingDeckMessage
 } from '$lib/rb/graph-rebuild-retry';
@@ -609,6 +611,8 @@ function _setParam(param: AudioParam, value: number): void {
 
 /** Bug #58: decks a failed rebuild is still trying to re-attach (buffer and identity kept). */
 const _reattachingDecks = new Set<DeckId>();
+/** Bug #58: re-attaching decks that were playing when the rebuild failed (the resume plan reads it). */
+const _reattachWasPlaying = new Set<DeckId>();
 let _rebuildChain: Promise<void> | null = null;
 let _rebuildRetryDelaysMs: readonly number[] = GRAPH_REBUILD_RETRY_DELAYS_MS;
 let _rebuildRetrySleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -742,7 +746,10 @@ function _markDecksReattaching(input: { retry: number; of: number; delay_ms: num
 		const st = deckStates[deck];
 		const rt = _rt[deck];
 		if (!_reattachingDecks.has(deck)) {
-			stoppedPlayingDeck ||= rt.desiredActive || st.playing;
+			if (rt.desiredActive || st.playing) {
+				stoppedPlayingDeck = true;
+				_reattachWasPlaying.add(deck);
+			}
 			recordUnexpectedPause({
 				cause: 'worklet-error',
 				deck,
@@ -782,9 +789,22 @@ function _finishReattach(attempt: number): void {
 			deckStates[deck].processor_error = null;
 		}
 	}
+	const wasPlaying = DECK_IDS.filter(
+		(deck) => _reattachWasPlaying.has(deck) && _rt[deck].processor !== null && deckStates[deck].stable_id !== null
+	);
 	_reattachingDecks.clear();
+	_reattachWasPlaying.clear();
 	if (attempt > 0) {
 		recordPerfEvent('audio-graph-rebuild-recovered', `audio graph rebuilt on retry ${attempt}; decks kept loaded`, null, 'info');
+	}
+	// CORE, Tue 6 Oct 2026: AutoPlay ON resumes what was playing; OFF waits for the DJ.
+	const plan = planResumeAfterRebuild({ auto_play_enabled: uiPrefs.auto_play_enabled, was_playing: wasPlaying });
+	for (const deck of plan.prompt) deckStates[deck].processor_error = ENGINE_RECOVERED_PRESS_PLAY;
+	for (const deck of plan.resume) {
+		void engine.play(deck).catch((error: unknown) => {
+			deckStates[deck].processor_error = ENGINE_RECOVERED_PRESS_PLAY;
+			recordPerfEvent('audio-graph-rebuild-resume-failed', `deck ${deck} did not resume after the rebuild: ${String(error)}`, null, 'error');
+		});
 	}
 }
 
@@ -801,6 +821,7 @@ function _unloadDecksOrphanedByFailedRebuild(error: unknown): void {
 		_recordProcessorFailure(deck, new Error(`${GRAPH_REBUILD_EXHAUSTED_MESSAGE}: ${cause}`));
 	}
 	_reattachingDecks.clear();
+	_reattachWasPlaying.clear();
 }
 
 /** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing, and unregister the
@@ -3294,6 +3315,7 @@ class RbAudioEngine implements AudioEngine {
 	/** Q1: `pressT0Ms` is the operator's input stamp - see `$lib/rb/press-stamp`. */
 	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
+		if (st.processor_error === ENGINE_RECOVERED_PRESS_PLAY) st.processor_error = null;
 		if (rt.desiredActive) return; // transport already running is a valid state
 		// NOT st.beat_sync_enabled: the flag defaults ON, and a track with no
 		// real grid has nothing to phase-lock with. Reading the effective flag

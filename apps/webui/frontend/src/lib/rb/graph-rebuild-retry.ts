@@ -70,3 +70,21 @@ export function reattachingDeckMessage(input: { retry: number; of: number; delay
 		`(retry ${input.retry} of ${input.of} in ${Math.round(input.delay_ms / 1000)} s)`
 	);
 }
+
+/** Shown on a deck that was playing before the stall when AutoPlay is off. */
+export const ENGINE_RECOVERED_PRESS_PLAY = 'audio engine recovered, press play';
+
+/**
+ * CORE decision, Tue 6 Oct 2026 (for the maintainer's review): after a successful retry,
+ * an unattended set (AutoPlay ON) resumes the decks that were playing, because
+ * silence is the worst outcome; a DJ driving (AutoPlay OFF) gets them back
+ * paused with ENGINE_RECOVERED_PRESS_PLAY on each one. Decks that were already
+ * paused are left alone either way.
+ */
+export function planResumeAfterRebuild<D>(input: {
+	auto_play_enabled: boolean;
+	was_playing: readonly D[];
+}): { resume: D[]; prompt: D[] } {
+	if (input.auto_play_enabled) return { resume: [...input.was_playing], prompt: [] };
+	return { resume: [], prompt: [...input.was_playing] };
+}

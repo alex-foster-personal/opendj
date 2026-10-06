@@ -36,8 +36,10 @@
 // [if] every attempt re-attaches deck 1 and then fails on deck 2 [then] only deck
 //   2 is unloaded (control: a deck that got its processor back keeps its track)
 // [if] the first attempt fails and a retry succeeds [then] the decks stay
-//   loaded, read "re-attaching" in between, come back paused and play again,
-//   and a playing deck's stop is tagged as an engine-recovery stop (bug #58)
+//   loaded and read "re-attaching" in between, and a playing deck's stop is
+//   tagged as an engine-recovery stop (bug #58); with AutoPlay OFF the deck that
+//   was playing comes back paused with "audio engine recovered, press play",
+//   with AutoPlay ON it resumes by itself from its saved position
 // [if] a master output selection is parked on setSinkId across a rebuild
 //   [then] it rejects as stale and publishes nothing [⛔️ if the rebuild is
 //   handed the failed-build headphone release, which retires nothing]
@@ -62,6 +64,7 @@ let registry;
 let instrumentation;
 let stretch;
 let recoveryStop;
+let prefs;
 // Bug #58: the retry sleeps this case asked for, in order. The sleep returns at once.
 let retrySleeps = [];
 let restoreRetries = () => {};
@@ -119,7 +122,7 @@ before(async () => {
 		viteApiBase: API_BASE,
 		alias: { '$lib/rb/stretch-adapter': STRETCH_STUB }
 	});
-	({ audio, stores, player, registry, instrumentation, stretch, recoveryStop } = entry);
+	({ audio, stores, player, registry, instrumentation, stretch, recoveryStop, prefs } = entry);
 });
 
 beforeEach(async () => {
@@ -278,15 +281,21 @@ test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails 
 // bug #58: a failed attempt keeps the decks; a later retry brings them back
 //-----------------------------------------------------------------------------
 
-test('bug #58: the first addModule fails, a retry succeeds, and the decks stay loaded, paused and resumable', async () => {
+/**
+ * Deck 1 playing, deck 2 loaded and paused, AutoPlay as given. The first attempt's
+ * first processor fails the way the soak did; every later one starts. Returns what
+ * the decks looked like while the retry was pending.
+ */
+async function failFirstAttemptThenRecover({ autoPlay }) {
 	installWindow('');
 	await loadDeckOne();
 	await audio.engine.load(2, SID_2);
 	await audio.engine.play(1);
 	assert.equal(audio.getDeckState(1).playing, true, 'precondition: deck 1 is playing when the stall hits');
+	// Assigned, not set through setAutoPlayEnabled: that would persist to the daemon double.
+	prefs.uiPrefs.auto_play_enabled = autoPlay;
 	const realCreate = stretch.StretchDeckProcessor.create;
 	let creates = 0;
-	// The first attempt's first processor fails the way the soak did; every later one starts.
 	stretch.StretchDeckProcessor.create = async (...args) => {
 		creates += 1;
 		if (creates === 1) throw new Error('Signalsmith addModule timed out after 15000ms');
@@ -313,10 +322,20 @@ test('bug #58: the first addModule fails, a retry succeeds, and the decks stay l
 	stretch.stubAddModuleTimeouts.length = 0;
 	try {
 		await instrumentation._recoverOutputStallForTests();
+		// The AutoPlay-ON resume is a fire-and-forget play(); let it land.
+		await new Promise((resolve) => setTimeout(resolve, 50));
 	} finally {
 		stretch.StretchDeckProcessor.create = realCreate;
+		prefs.uiPrefs.auto_play_enabled = true;
 	}
 	assert.deepEqual(retrySleeps, [15_000], 'precondition: one failed attempt, one retry');
+	assert.equal(recreateFailedToast(), undefined, 'the retry succeeded, so nothing says the recreate failed');
+	assert.deepEqual(audio.reattachingDecks(), []);
+	return duringRetry;
+}
+
+test('bug #58: the first addModule fails, a retry succeeds, and the decks stay loaded and resumable (AutoPlay OFF: paused, "press play")', async () => {
+	const duringRetry = await failFirstAttemptThenRecover({ autoPlay: false });
 	assert.deepEqual(stretch.stubAddModuleTimeouts, [15_000, 30_000], 'the retry allows addModule longer than the first try');
 	assert.equal(duringRetry.deck1.stable_id, SID, 'if a failed attempt unloads the deck then a slow addModule ejects the set (bug #58) - broken');
 	assert.equal(duringRetry.deck2.stable_id, SID_2, 'every deck keeps its track identity while re-attaching');
@@ -326,15 +345,36 @@ test('bug #58: the first addModule fails, a retry succeeds, and the decks stay l
 	assert.match(duringRetry.playRejection ?? '', /re-attaching after an audio engine restart/, 'play during the retry says why it cannot start');
 	assert.equal(duringRetry.recoveryStop, 'graph-rebuild-failed', 'if the stop is not tagged as engine recovery then AutoPlay disarms itself 31 s later (bug #58) - broken');
 
-	assert.equal(recreateFailedToast(), undefined, 'the retry succeeded, so nothing says the recreate failed');
 	for (const [deck, sid] of [[1, SID], [2, SID_2]]) {
 		assert.equal(audio.getDeckState(deck).stable_id, sid, `deck ${deck} is still loaded after the retry`);
-		assert.equal(audio.getDeckState(deck).processor_error, null, `deck ${deck} dropped its re-attaching note`);
-		assert.equal(audio.getDeckState(deck).playing, false, `deck ${deck} comes back paused, not suddenly audible`);
+		assert.equal(audio.getDeckState(deck).playing, false, `deck ${deck} comes back paused with a DJ driving, not suddenly audible`);
 	}
-	assert.deepEqual(audio.reattachingDecks(), []);
+	assert.equal(
+		audio.getDeckState(1).processor_error,
+		'audio engine recovered, press play',
+		'if the deck that was playing comes back silent with no prompt then the DJ cannot tell it recovered - broken'
+	);
+	assert.equal(audio.getDeckState(2).processor_error, null, 'a deck that was already paused gets no prompt');
 	await audio.engine.play(1);
 	assert.equal(audio.getDeckState(1).playing, true, 'if the kept deck cannot play then "resumable" is a lie - broken');
+	assert.equal(audio.getDeckState(1).processor_error, null, 'pressing play clears the prompt');
+});
+
+test('bug #58: with AutoPlay ON a successful retry resumes the deck that was playing, at its saved position, by itself', async () => {
+	const duringRetry = await failFirstAttemptThenRecover({ autoPlay: true });
+	assert.equal(duringRetry.deck1.playing, false, 'precondition: the deck was stopped while re-attaching');
+	const savedPositionMs = duringRetry.deck1.position_ms;
+	assert.equal(
+		audio.getDeckState(1).playing,
+		true,
+		'if an unattended set stays silent after the engine recovers then the soak ends in silence (CORE: silence is the worst outcome) - broken'
+	);
+	assert.ok(
+		Math.abs(audio.getDeckState(1).position_ms - savedPositionMs) < 1_000,
+		`deck 1 resumes from its saved position (${savedPositionMs} ms), not from the top`
+	);
+	assert.equal(audio.getDeckState(1).processor_error, null, 'a resumed deck shows no prompt');
+	assert.equal(audio.getDeckState(2).playing, false, 'control: a deck that was paused before the stall stays paused');
 });
 
 //-----------------------------------------------------------------------------
