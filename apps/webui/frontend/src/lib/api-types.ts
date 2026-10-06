@@ -9094,6 +9094,7 @@ export interface components {
             refresh_error: string | null;
             /** Refreshing */
             refreshing: boolean;
+            songs?: components["schemas"]["CoverageSongsOut"] | null;
             /** Stems Index */
             stems_index: {
                 [key: string]: string | null;
@@ -9110,6 +9111,26 @@ export interface components {
             unreachable: number;
             /** Waiting On Stems */
             waiting_on_stems: number;
+        };
+        /**
+         * CoverageSongsOut
+         * @description The coverage folded to unique songs (ENRICH-03, ``enrich_songs``).
+         */
+        CoverageSongsOut: {
+            /** Files */
+            files: number;
+            /** Key */
+            key: string;
+            /** Rows */
+            rows: number;
+            /** Songs */
+            songs: number;
+            /** Steps */
+            steps: {
+                [key: string]: {
+                    [key: string]: number | boolean;
+                };
+            };
         };
         /**
          * CoverageVerdictOut

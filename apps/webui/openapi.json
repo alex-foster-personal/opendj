@@ -6055,6 +6055,16 @@
             "title": "Refreshing",
             "type": "boolean"
           },
+          "songs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CoverageSongsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "stems_index": {
             "additionalProperties": {
               "anyOf": [
@@ -6123,6 +6133,53 @@
           "refresh_error"
         ],
         "title": "CoverageOut",
+        "type": "object"
+      },
+      "CoverageSongsOut": {
+        "description": "The coverage folded to unique songs (ENRICH-03, ``enrich_songs``).",
+        "properties": {
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "songs": {
+            "title": "Songs",
+            "type": "integer"
+          },
+          "steps": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "object"
+          }
+        },
+        "required": [
+          "songs",
+          "files",
+          "rows",
+          "key",
+          "steps"
+        ],
+        "title": "CoverageSongsOut",
         "type": "object"
       },
       "CoverageVerdictOut": {
