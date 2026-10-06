@@ -30,6 +30,10 @@ let _armedEmptyActive = false;
 
 let _lastEnabled = false;
 
+function _isEngineRecoveryStop(reason: string | null | undefined): boolean {
+	return typeof reason === 'string' && reason !== '';
+}
+
 export function resetAutoPlayIdleClock(): void {
 	_idleSinceMs = null;
 	resetAutoPlayArmedEmptyClock();
@@ -86,6 +90,8 @@ export function shouldDisarmAutoPlayIdle(input: {
 	any_playing: boolean;
 	pending_master: boolean;
 	silence_recovering?: boolean | undefined;
+	/** Bug #58: the engine stopped the decks while recovering its graph. */
+	engine_recovery_stop?: string | null | undefined;
 	idle_since_ms: number | null;
 	now_ms: number;
 	armed_empty_active: boolean;
@@ -94,6 +100,7 @@ export function shouldDisarmAutoPlayIdle(input: {
 	if (input.any_playing) return false;
 	if (input.pending_master) return false;
 	if (input.silence_recovering === true) return false;
+	if (_isEngineRecoveryStop(input.engine_recovery_stop)) return false;
 	if (input.idle_since_ms === null) return false;
 	const threshold = effectiveAutoPlayIdleDisarmMs({
 		armed_empty_active: input.armed_empty_active
@@ -106,6 +113,8 @@ export function planAutoPlayIdleDisarm(input: {
 	snaps: readonly { playing: boolean }[];
 	pending_master: boolean;
 	silence_recovering?: boolean | undefined;
+	/** Bug #58: the engine stopped the decks while recovering its graph. */
+	engine_recovery_stop?: string | null | undefined;
 	now_ms: number;
 	stall_active: boolean;
 }): AutoPlayIdleDisarmPlan {
@@ -114,7 +123,12 @@ export function planAutoPlayIdleDisarm(input: {
 		return { action: 'continue', idle_since_ms: null };
 	}
 	const anyPlaying = input.snaps.some((d) => d.playing);
-	if (anyPlaying || input.pending_master || input.silence_recovering === true) {
+	if (
+		anyPlaying ||
+		input.pending_master ||
+		input.silence_recovering === true ||
+		_isEngineRecoveryStop(input.engine_recovery_stop)
+	) {
 		_idleSinceMs = null;
 		return { action: 'continue', idle_since_ms: null };
 	}
@@ -128,6 +142,7 @@ export function planAutoPlayIdleDisarm(input: {
 			any_playing: anyPlaying,
 			pending_master: input.pending_master,
 			silence_recovering: input.silence_recovering,
+			engine_recovery_stop: input.engine_recovery_stop,
 			idle_since_ms: _idleSinceMs,
 			now_ms: input.now_ms,
 			armed_empty_active: armedEmptyActive
@@ -145,6 +160,8 @@ export function shouldRaiseAutoPlaySilentStall(input: {
 	any_playing: boolean;
 	pending_master: boolean;
 	silence_recovering?: boolean | undefined;
+	/** Bug #58: the engine stopped the decks while recovering its graph. */
+	engine_recovery_stop?: string | null | undefined;
 	stall_active: boolean;
 	idle_since_ms: number | null;
 	now_ms: number;
@@ -156,6 +173,7 @@ export function shouldRaiseAutoPlaySilentStall(input: {
 	if (input.any_playing) return false;
 	if (input.pending_master) return false;
 	if (input.silence_recovering === true) return false;
+	if (_isEngineRecoveryStop(input.engine_recovery_stop)) return false;
 	if (input.stall_active) return false;
 	if (input.idle_since_ms === null) return false;
 	if (input.source_stable_id === null || input.source_stable_id === '') return false;

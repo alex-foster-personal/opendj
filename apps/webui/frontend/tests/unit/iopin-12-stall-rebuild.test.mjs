@@ -1,4 +1,4 @@
-// wiring checks for: IOPIN-12 (NOT acceptance evidence)
+// wiring checks for: IOPIN-12, PLAY-17 (NOT acceptance evidence)
 //
 // Every case below that builds an audio graph runs against the recording
 // stand-in in fixtures/fake-web-audio.mjs, with a stubbed daemon and a stubbed
@@ -17,18 +17,27 @@
 // Every case here drives the armed recovery itself (rebind, then the engine's
 // recreate), the same entry the liveness poll's `stalled` verdict calls.
 //
-// [if] the rebuild's new graph cannot be built (an ?extroute page whose
-//   interface dropped to 2 channels) [then] every deck it detached is unloaded
-//   with the cause on the deck, and a load on a fixed output works [⛔️ if a
-//   deck keeps its track while play() rejects "no track loaded"]
+// Bug #58 (ADR "Audio graph rebuild retries before unloading", refines IOPIN-12):
+// a failed rebuild keeps the decks loaded and retries after about 15 s, 30 s and
+// 60 s. The unload below now runs only once every retry has failed. Cases here
+// replace the retry sleep with one that records the delay and returns at once.
+//
+// [if] the rebuild's new graph cannot be built on any attempt (an ?extroute page
+//   whose interface dropped to 2 channels) [then] after three retries every deck
+//   it detached is unloaded with "audio engine could not restart, reload the
+//   track" and the cause, and a load on a fixed output works [⛔️ if a deck keeps
+//   its track while play() rejects "no track loaded"]
 // [if] closing the OLD graph rejects during the rebuild [then] the graph state
-//   is still reset, so the next load builds a fresh graph [⛔️ if every later
-//   load fails "audio graph is missing" for the rest of the session]
+//   is still reset and the first retry rebuilds, so the deck stays loaded
+//   [⛔️ if every later load fails "audio graph is missing" for the session]
 // [if] the rebuild succeeds [then] the loaded deck keeps its track and gets a
 //   processor on the new context, and only that context stays registered
 //   (control: the unload above must not overshoot)
-// [if] the rebuild re-attaches deck 1 and then fails on deck 2 [then] only deck
+// [if] every attempt re-attaches deck 1 and then fails on deck 2 [then] only deck
 //   2 is unloaded (control: a deck that got its processor back keeps its track)
+// [if] the first attempt fails and a retry succeeds [then] the decks stay
+//   loaded, read "re-attaching" in between, come back paused and play again,
+//   and a playing deck's stop is tagged as an engine-recovery stop (bug #58)
 // [if] a master output selection is parked on setSinkId across a rebuild
 //   [then] it rejects as stale and publishes nothing [⛔️ if the rebuild is
 //   handed the failed-build headphone release, which retires nothing]
@@ -52,6 +61,10 @@ let player;
 let registry;
 let instrumentation;
 let stretch;
+let recoveryStop;
+// Bug #58: the retry sleeps this case asked for, in order. The sleep returns at once.
+let retrySleeps = [];
+let restoreRetries = () => {};
 const realFetch = globalThis.fetch;
 const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
 
@@ -106,7 +119,7 @@ before(async () => {
 		viteApiBase: API_BASE,
 		alias: { '$lib/rb/stretch-adapter': STRETCH_STUB }
 	});
-	({ audio, stores, player, registry, instrumentation, stretch } = entry);
+	({ audio, stores, player, registry, instrumentation, stretch, recoveryStop } = entry);
 });
 
 beforeEach(async () => {
@@ -118,9 +131,17 @@ beforeEach(async () => {
 	registry.resetAudioContextRegistryForTest();
 	for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 	installDaemon();
+	retrySleeps = [];
+	restoreRetries = audio._configureGraphRebuildRetriesForTests({
+		sleep: async (ms) => {
+			retrySleeps.push(ms);
+		}
+	});
+	recoveryStop.clearEngineRecoveryStop();
 });
 
 afterEach(() => {
+	restoreRetries();
 	globalThis.fetch = realFetch;
 });
 
@@ -146,7 +167,7 @@ async function loadDeckOne() {
 // a failed rebuild never leaves a deck that shows a track it cannot play
 //-----------------------------------------------------------------------------
 
-test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built unloads the deck it detached, names the cause, and the next load plays', async () => {
+test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built retries three times, then unloads the deck it detached, names the cause, and the next load plays', async () => {
 	installWindow('?extroute=1:3');
 	FakeAudioContext.maxChannelCount = 4;
 	await loadDeckOne();
@@ -155,6 +176,7 @@ test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built unloads t
 	FakeAudioContext.maxChannelCount = 2;
 	await instrumentation._recoverOutputStallForTests();
 	assert.ok(recreateFailedToast(), 'precondition: the recreate really failed and said so');
+	assert.deepEqual(retrySleeps, [15_000, 30_000, 60_000], 'if the first failure unloads with no retry then a slow addModule ejects the set (bug #58) - broken');
 	assert.equal(audio.gigDeckGraphIsPresent(), false, 'precondition: the failed rebuild was discarded');
 	const deck = audio.getDeckState(1);
 	assert.equal(
@@ -162,7 +184,7 @@ test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built unloads t
 		null,
 		'if the deck keeps its track after its processor is gone then the deck shows a track play() rejects as "no track loaded" - broken'
 	);
-	assert.match(deck.processor_error ?? '', /audio graph recreate failed/, 'if the deck carries no error then the operator sees an empty deck with no reason - broken');
+	assert.match(deck.processor_error ?? '', /audio engine could not restart, reload the track/, 'if the deck carries no error then the operator sees an empty deck with no reason - broken');
 	assert.match(deck.processor_error ?? '', /extroute needs 4 output channels/, 'the deck names the build error that caused it');
 	assert.match(deck.processor_error ?? '', /reload the track/, 'the deck names the fix');
 	assert.equal(registry.countRegisteredAudioContexts(), 0, 'neither the replaced context nor the failed one stays registered');
@@ -175,29 +197,30 @@ test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built unloads t
 	assert.equal(audio.getDeckState(1).playing, true, 'and the reloaded deck plays');
 });
 
-test('IOPIN-12 wiring check: a rebuild whose teardown of the old graph rejects still resets the graph, so the next load builds a fresh one', async () => {
+test('IOPIN-12 wiring check: a rebuild whose teardown of the old graph rejects still resets the graph, so the first retry rebuilds and the deck stays loaded', async () => {
 	installWindow('');
 	await loadDeckOne();
 	const old = FakeAudioContext.instances.at(-1);
 	// A browser that rejects close() on the stalled context: the teardown throws
-	// BEFORE the rebuild ever reaches its own graph build.
+	// BEFORE the rebuild ever reaches its own graph build. Only the old context
+	// refuses, so the retry (which tears down nothing stuck) succeeds.
 	old.close = async () => {
 		throw new Error('InvalidStateError: the stalled context refused to close');
 	};
 	try {
 		await instrumentation._recoverOutputStallForTests();
-		assert.ok(recreateFailedToast(), 'precondition: the recreate failed on the teardown and said so');
+		assert.deepEqual(retrySleeps, [15_000], 'precondition: the first attempt failed on the teardown and one retry ran');
+		assert.equal(recreateFailedToast(), undefined, 'the retry succeeded, so nothing says the recreate failed');
 		assert.equal(
 			audio.gigDeckGraphIsPresent(),
-			false,
-			'if the old context stays installed with its deck nodes cleared then every later load fails "audio graph is missing" - broken'
+			true,
+			'if the old context stays installed with its deck nodes cleared then every later build fails "audio graph is missing" - broken'
 		);
-		assert.equal(audio.getDeckState(1).stable_id, null, 'the deck the rebuild detached is unloaded, not left showing a dead track');
-		assert.match(audio.getDeckState(1).processor_error ?? '', /refused to close/);
-
-		await audio.engine.load(1, SID);
-		assert.equal(audio.getDeckState(1).stable_id, SID, 'if the next load fails then the deck is dead for the rest of the session - broken');
-		assert.notEqual(FakeAudioContext.instances.at(-1), old, 'the next load built a new context');
+		assert.notEqual(FakeAudioContext.instances.at(-1), old, 'the retry built a new context');
+		assert.equal(audio.getDeckState(1).stable_id, SID, 'if a failed teardown still unloads then one stuck close ejects the set (bug #58) - broken');
+		assert.equal(audio.getDeckState(1).processor_error, null, 'the re-attaching note is cleared once the deck is back');
+		await audio.engine.play(1);
+		assert.equal(audio.getDeckState(1).playing, true, 'the kept deck plays on the rebuilt graph');
 	} finally {
 		// Only this case's close refuses; a later case's teardown must not trip on it.
 		delete old.close;
@@ -222,18 +245,18 @@ test('IOPIN-12 wiring control: a rebuild that succeeds keeps the loaded deck, re
 	);
 });
 
-test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails on deck 2 unloads deck 2 only', async () => {
+test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails on deck 2 every time unloads deck 2 only', async () => {
 	installWindow('');
 	await loadDeckOne();
 	await audio.engine.load(2, SID_2);
 	assert.equal(audio.getDeckState(2).stable_id, SID_2, 'precondition: deck 2 is loaded');
 	const realCreate = stretch.StretchDeckProcessor.create;
 	let creates = 0;
-	// The re-attach makes one processor per loaded deck, deck 1 first. Deck 2's
-	// fails the way a worklet that cannot start on the new context does.
+	// Each attempt makes one processor per loaded deck, deck 1 first. Deck 2's
+	// fails every time, the way a worklet that cannot start on the new context does.
 	stretch.StretchDeckProcessor.create = async (...args) => {
 		creates += 1;
-		if (creates === 2) throw new Error('AudioWorkletNode could not start on the new context');
+		if (creates % 2 === 0) throw new Error('AudioWorkletNode could not start on the new context');
 		return realCreate.apply(stretch.StretchDeckProcessor, args);
 	};
 	try {
@@ -241,7 +264,7 @@ test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails 
 	} finally {
 		stretch.StretchDeckProcessor.create = realCreate;
 	}
-	assert.equal(creates, 2, 'precondition: the rebuild re-attached deck 1 and failed on deck 2');
+	assert.equal(creates, 8, 'precondition: four attempts each re-attached deck 1 and failed on deck 2');
 	assert.ok(recreateFailedToast(), 'precondition: the recreate failed and said so');
 	assert.equal(audio.getDeckState(1).stable_id, SID, 'if a deck the rebuild DID re-attach is unloaded too then one failed deck ejects the whole set - broken');
 	assert.equal(audio.getDeckState(1).processor_error, null);
@@ -249,6 +272,69 @@ test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails 
 	assert.match(audio.getDeckState(2).processor_error ?? '', /could not start on the new context/);
 	await audio.engine.play(1);
 	assert.equal(audio.getDeckState(1).playing, true, 'the re-attached deck still plays');
+});
+
+//-----------------------------------------------------------------------------
+// bug #58: a failed attempt keeps the decks; a later retry brings them back
+//-----------------------------------------------------------------------------
+
+test('bug #58: the first addModule fails, a retry succeeds, and the decks stay loaded, paused and resumable', async () => {
+	installWindow('');
+	await loadDeckOne();
+	await audio.engine.load(2, SID_2);
+	await audio.engine.play(1);
+	assert.equal(audio.getDeckState(1).playing, true, 'precondition: deck 1 is playing when the stall hits');
+	const realCreate = stretch.StretchDeckProcessor.create;
+	let creates = 0;
+	// The first attempt's first processor fails the way the soak did; every later one starts.
+	stretch.StretchDeckProcessor.create = async (...args) => {
+		creates += 1;
+		if (creates === 1) throw new Error('Signalsmith addModule timed out after 15000ms');
+		return realCreate.apply(stretch.StretchDeckProcessor, args);
+	};
+	let duringRetry = null;
+	restoreRetries();
+	restoreRetries = audio._configureGraphRebuildRetriesForTests({
+		sleep: async (ms) => {
+			retrySleeps.push(ms);
+			let playRejection = null;
+			await audio.engine.play(1).catch((error) => {
+				playRejection = error.message;
+			});
+			duringRetry = {
+				deck1: { ...audio.getDeckState(1) },
+				deck2: { ...audio.getDeckState(2) },
+				reattaching: audio.reattachingDecks(),
+				recoveryStop: recoveryStop.engineRecoveryStopReason(),
+				playRejection
+			};
+		}
+	});
+	stretch.stubAddModuleTimeouts.length = 0;
+	try {
+		await instrumentation._recoverOutputStallForTests();
+	} finally {
+		stretch.StretchDeckProcessor.create = realCreate;
+	}
+	assert.deepEqual(retrySleeps, [15_000], 'precondition: one failed attempt, one retry');
+	assert.deepEqual(stretch.stubAddModuleTimeouts, [15_000, 30_000], 'the retry allows addModule longer than the first try');
+	assert.equal(duringRetry.deck1.stable_id, SID, 'if a failed attempt unloads the deck then a slow addModule ejects the set (bug #58) - broken');
+	assert.equal(duringRetry.deck2.stable_id, SID_2, 'every deck keeps its track identity while re-attaching');
+	assert.equal(duringRetry.deck1.playing, false, 'the deck is stopped while it has no processor');
+	assert.match(duringRetry.deck1.processor_error ?? '', /re-?attaching/, 'if the deck says nothing while re-attaching then the operator sees a silent loaded deck - broken');
+	assert.deepEqual(duringRetry.reattaching, [1, 2], 'agents can read which decks are re-attaching');
+	assert.match(duringRetry.playRejection ?? '', /re-attaching after an audio engine restart/, 'play during the retry says why it cannot start');
+	assert.equal(duringRetry.recoveryStop, 'graph-rebuild-failed', 'if the stop is not tagged as engine recovery then AutoPlay disarms itself 31 s later (bug #58) - broken');
+
+	assert.equal(recreateFailedToast(), undefined, 'the retry succeeded, so nothing says the recreate failed');
+	for (const [deck, sid] of [[1, SID], [2, SID_2]]) {
+		assert.equal(audio.getDeckState(deck).stable_id, sid, `deck ${deck} is still loaded after the retry`);
+		assert.equal(audio.getDeckState(deck).processor_error, null, `deck ${deck} dropped its re-attaching note`);
+		assert.equal(audio.getDeckState(deck).playing, false, `deck ${deck} comes back paused, not suddenly audible`);
+	}
+	assert.deepEqual(audio.reattachingDecks(), []);
+	await audio.engine.play(1);
+	assert.equal(audio.getDeckState(1).playing, true, 'if the kept deck cannot play then "resumable" is a lie - broken');
 });
 
 //-----------------------------------------------------------------------------

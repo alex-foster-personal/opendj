@@ -8,7 +8,6 @@
 		dismissReloadResume,
 		reloadResume
 	} from '$lib/rb/reload-resume.svelte';
-	import { uiPrefs } from '$lib/rb/prefs.svelte';
 
 	import { deckStates } from '$lib/player/state.svelte';
 
@@ -38,7 +37,7 @@
 			{reloadResume.offer.decks.length === 1
 				? `Deck ${reloadResume.offer.decks[0]} was playing before the reload and is stopped.`
 				: `Decks ${reloadResume.offer.decks.join(', ')} were playing before the reload and are stopped.`}
-			{#if uiPrefs.auto_play_enabled}
+			{#if reloadResume.auto_play_on}
 				AutoPlay is on but cannot queue anything until a deck plays.
 			{/if}
 		</span>

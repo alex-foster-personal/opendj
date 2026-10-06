@@ -82,11 +82,13 @@ import {
 	getMasterReason,
 	installAutomaticRejoinRunner,
 	installScopedSyncRunner,
+	drillGraphRebuild,
 	isMasterMuted,
 	keySyncPreview,
 	keySyncStatus,
 	mixerState,
 	pitchRanges,
+	reattachingDecks,
 	setMasterMuted,
 	type DeckTransportClock,
 	type PitchRange
@@ -154,8 +156,7 @@ import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/c
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
-import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
-import { reloadResume } from '$lib/rb/reload-resume.svelte';
+import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -693,6 +694,15 @@ export interface PerformanceBrowserIpc {
 	holdToast(id: unknown): boolean;
 	releaseToast(id: unknown): boolean;
 	copyToast(id: unknown): Promise<string>;
+	/**
+	 * Bug #58 fault drill: fail the next `fail_add_module` Signalsmith addModule
+	 * calls, then run the output-stall graph rebuild. Resolves when the rebuild
+	 * (with its retries) finishes; returns the decks still re-attaching (none on
+	 * success) and the state.
+	 */
+	drillGraphRebuild(input: unknown): Promise<{ reattaching: DeckId[]; error: string | null; state: PerformanceState }>;
+	/** Bug #58: decks waiting on a graph rebuild retry. */
+	reattachingDecks(): DeckId[];
 }
 
 /** One toast as an agent sees it. `id` is the same correlation id printed on
@@ -3340,7 +3350,20 @@ export function installPerformanceBrowserIpc(): () => void {
 		dismissToast: (id: unknown) => dismissToast(_toastId(id)),
 		holdToast: (id: unknown) => holdToast(_toastId(id)),
 		releaseToast: (id: unknown) => releaseToast(_toastId(id)),
-		copyToast: (id: unknown) => copyToast(_toastId(id))
+		copyToast: (id: unknown) => copyToast(_toastId(id)),
+		drillGraphRebuild: async (input: unknown) => {
+			_assertCommandSession(commandGeneration);
+			const failures = (input as { fail_add_module?: unknown } | null)?.fail_add_module;
+			if (typeof failures !== 'number' || !Number.isInteger(failures) || failures < 0) {
+				throw new Error(`drillGraphRebuild: fail_add_module must be an integer >= 0, got ${String(failures)}`);
+			}
+			let error: string | null = null;
+			await drillGraphRebuild({ fail_add_module: failures }).catch((cause: unknown) => {
+				error = cause instanceof Error ? cause.message : String(cause);
+			});
+			return { reattaching: reattachingDecks(), error, state: queryPerformanceState() };
+		},
+		reattachingDecks: () => reattachingDecks()
 	});
 	for (const host of hosts) {
 		host.musicDjToolsPerformance = ipc;

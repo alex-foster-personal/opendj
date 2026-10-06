@@ -17,6 +17,29 @@ let stretchImportAttempt = 0;
 let addModuleMemos = new WeakMap<AudioContext, Promise<void>>();
 let stretchReadyByContext = new WeakMap<AudioContext, Promise<CreateSignalsmithStretch>>();
 
+/** Bug #58: a graph rebuild retry may allow addModule longer than the normal 15 s under load. */
+let addModuleTimeoutMs = STRETCH_CREATE_TIMEOUT_MS;
+/** Bug #58 fault drill: the next N addModule calls fail as if the module never arrived. */
+let injectedAddModuleFailures = 0;
+
+export function setStretchAddModuleTimeoutMs(ms: number): void {
+	if (!Number.isFinite(ms) || ms <= 0) throw new Error(`addModule timeout must be a positive number, got ${ms}`);
+	addModuleTimeoutMs = ms;
+}
+
+export function resetStretchAddModuleTimeoutMs(): void {
+	addModuleTimeoutMs = STRETCH_CREATE_TIMEOUT_MS;
+}
+
+export function injectStretchAddModuleFailures(count: number): void {
+	if (!Number.isInteger(count) || count < 0) throw new Error(`injected addModule failures must be an integer >= 0, got ${count}`);
+	injectedAddModuleFailures = count;
+}
+
+export function pendingInjectedAddModuleFailures(): number {
+	return injectedAddModuleFailures;
+}
+
 function _forgetStretchAttempt(attempt: Promise<CreateSignalsmithStretch>): void {
 	if (stretchFactory === attempt) {
 		stretchImportAttempt += 1;
@@ -55,9 +78,13 @@ async function _awaitAddModule(context: AudioContext, moduleUrl: string): Promis
 	if (pending === undefined) {
 		pending = (async () => {
 			try {
+				if (injectedAddModuleFailures > 0) {
+					injectedAddModuleFailures -= 1;
+					throw new StretchProcessorError('Signalsmith addModule failed: injected fault (bug #58 drill)');
+				}
 				await withStretchAddModuleTimeout(
 					context.audioWorklet!.addModule(moduleUrl),
-					STRETCH_CREATE_TIMEOUT_MS
+					addModuleTimeoutMs
 				);
 			} catch (error) {
 				addModuleMemos.delete(context);
@@ -151,6 +178,8 @@ export async function ensureStretchWorkletReady(
 }
 
 export function resetStretchWorkletReadyForTests(): void {
+	addModuleTimeoutMs = STRETCH_CREATE_TIMEOUT_MS;
+	injectedAddModuleFailures = 0;
 	stretchFactory = null;
 	stretchImportAttempt = 0;
 	addModuleMemos = new WeakMap();

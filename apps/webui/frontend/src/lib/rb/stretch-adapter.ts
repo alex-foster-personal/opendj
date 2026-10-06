@@ -484,4 +484,11 @@ function _engineMovesChannels(context: AudioContext): boolean {
 	return _channelMoveVerdict;
 }
 
-export { ensureStretchWorkletReady, resetStretchWorkletReadyForTests } from './stretch-worklet-ready';
+export {
+	ensureStretchWorkletReady,
+	injectStretchAddModuleFailures,
+	pendingInjectedAddModuleFailures,
+	resetStretchAddModuleTimeoutMs,
+	resetStretchWorkletReadyForTests,
+	setStretchAddModuleTimeoutMs
+} from './stretch-worklet-ready';

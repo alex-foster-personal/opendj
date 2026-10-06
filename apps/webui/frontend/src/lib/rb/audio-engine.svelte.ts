@@ -194,8 +194,18 @@ import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	StretchDeckProcessor,
 	ensureStretchWorkletReady,
+	injectStretchAddModuleFailures,
+	resetStretchAddModuleTimeoutMs,
+	setStretchAddModuleTimeoutMs,
 	type StretchScheduleChange
 } from '$lib/rb/stretch-adapter';
+import {
+	GRAPH_REBUILD_EXHAUSTED_MESSAGE,
+	GRAPH_REBUILD_RETRY_DELAYS_MS,
+	rebuildGraphWithRetries,
+	reattachingDeckMessage
+} from '$lib/rb/graph-rebuild-retry';
+import { markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';
 import {
 	AlignedStemDeckProcessor,
 	decodeStemBuffers,
@@ -597,8 +607,70 @@ function _setParam(param: AudioParam, value: number): void {
 // belong to the hardware mixer. Unrouted decks stay on the internal master,
 // which in this mode feeds ONLY the headphone monitor.
 
-/** Issue #2155: new AudioContext plus re-attached decks after output position stall. */
-async function rebuildAudioGraphKeepingDecks(): Promise<void> {
+/** Bug #58: decks a failed rebuild is still trying to re-attach (buffer and identity kept). */
+const _reattachingDecks = new Set<DeckId>();
+let _rebuildChain: Promise<void> | null = null;
+let _rebuildRetryDelaysMs: readonly number[] = GRAPH_REBUILD_RETRY_DELAYS_MS;
+let _rebuildRetrySleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Issue #2155: new AudioContext plus re-attached decks after output position stall.
+ * Bug #58 (refines IOPIN-12): a failed attempt keeps the decks loaded and retries
+ * at about 15 s, 30 s and 60 s; only exhausted retries unload. One chain at a time:
+ * a stall during the retries joins the chain in flight.
+ */
+function rebuildAudioGraphKeepingDecks(): Promise<void> {
+	if (_rebuildChain !== null) return _rebuildChain;
+	const chain = rebuildGraphWithRetries({
+		rebuildOnce: (addModuleTimeoutMs) => _rebuildAudioGraphOnce(addModuleTimeoutMs),
+		onRetryScheduled: (input) => _markDecksReattaching(input),
+		onRecovered: ({ attempt }) => _finishReattach(attempt),
+		onExhausted: (error) => _unloadDecksOrphanedByFailedRebuild(error),
+		sleep: (ms) => _rebuildRetrySleep(ms),
+		delaysMs: _rebuildRetryDelaysMs
+	}).finally(() => {
+		if (_rebuildChain === chain) _rebuildChain = null;
+	});
+	_rebuildChain = chain;
+	return chain;
+}
+
+/** Bug #58 fault drill (agent parity: IPC `drillGraphRebuild`): fail the next N addModule calls, then rebuild. */
+export function drillGraphRebuild(input: { fail_add_module: number }): Promise<void> {
+	injectStretchAddModuleFailures(input.fail_add_module);
+	return rebuildAudioGraphKeepingDecks();
+}
+
+/** Bug #58: which decks are waiting on a rebuild retry. */
+export function reattachingDecks(): DeckId[] {
+	return DECK_IDS.filter((deck) => _reattachingDecks.has(deck));
+}
+
+/** TEST-ONLY: shorten or control the retry schedule. Returns the restore. */
+export function _configureGraphRebuildRetriesForTests(input: {
+	delaysMs?: readonly number[];
+	sleep?: (ms: number) => Promise<void>;
+}): () => void {
+	const previous = { delays: _rebuildRetryDelaysMs, sleep: _rebuildRetrySleep };
+	if (input.delaysMs !== undefined) _rebuildRetryDelaysMs = input.delaysMs;
+	if (input.sleep !== undefined) _rebuildRetrySleep = input.sleep;
+	return () => {
+		_rebuildRetryDelaysMs = previous.delays;
+		_rebuildRetrySleep = previous.sleep;
+	};
+}
+
+async function _rebuildAudioGraphOnce(addModuleTimeoutMs: number): Promise<void> {
+	setStretchAddModuleTimeoutMs(addModuleTimeoutMs);
+	try {
+		await _recreateGraphKeepingDecks();
+	} finally {
+		resetStretchAddModuleTimeoutMs();
+	}
+	await _resumeContext();
+}
+
+async function _recreateGraphKeepingDecks(): Promise<void> {
 	await recreateFromEngineAccess({
 		decks: DECK_IDS,
 		runtime: (deck) => _rt[deck],
@@ -648,20 +720,87 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
 			}
 		}
-	}).catch(_unloadDecksOrphanedByFailedRebuild);
-	await _resumeContext();
+	});
 }
 
-/** IOPIN-12: a failed rebuild leaves each deck it detached with a buffer but no processor, so the deck
- * showed its track while play() rejected "no track loaded". Unload those decks with the cause on the
- * deck, then rethrow for the stall recovery's own report. */
-function _unloadDecksOrphanedByFailedRebuild(error: unknown): never {
-	const cause = error instanceof Error ? error.message : String(error);
-	for (const deck of DECK_IDS) {
-		if (_rt[deck].audioBuffer === null || _rt[deck].processor !== null) continue;
-		_recordProcessorFailure(deck, new Error(`audio graph recreate failed, reload the track: ${cause}`));
+/** Decks a failed attempt left with a buffer but no processor. */
+function _decksWithoutProcessor(): DeckId[] {
+	return DECK_IDS.filter((deck) => _rt[deck].audioBuffer !== null && _rt[deck].processor === null);
+}
+
+/**
+ * Bug #58: a failed rebuild attempt with retries left. Keep the buffer and track
+ * identity, stop the transport where it is, and say on the deck that it is
+ * re-attaching. A stop this causes is tagged as an engine-recovery stop so
+ * AutoPlay stays armed.
+ */
+function _markDecksReattaching(input: { retry: number; of: number; delay_ms: number; error: unknown }): void {
+	const message = reattachingDeckMessage(input);
+	const cause = input.error instanceof Error ? input.error.message : String(input.error);
+	let stoppedPlayingDeck = false;
+	for (const deck of _decksWithoutProcessor()) {
+		const st = deckStates[deck];
+		const rt = _rt[deck];
+		if (!_reattachingDecks.has(deck)) {
+			stoppedPlayingDeck ||= rt.desiredActive || st.playing;
+			recordUnexpectedPause({
+				cause: 'worklet-error',
+				deck,
+				position_ms: st.position_ms,
+				context_state: _ctx?.state ?? 'uninitialized',
+				decoded_duration_ms: st.duration_ms,
+				metadata_duration_ms: rt.metadataDurationMs,
+				cause_error: input.error
+			});
+		}
+		_reattachingDecks.add(deck);
+		rt.pending = [];
+		rt.desiredActive = false;
+		rt.controlActive = false;
+		rt.presentation = createPresentedTransportTimeline(st.position_ms / 1000);
+		rt.nextScheduleRevision = 0;
+		withPauseOrigin('worklet', () => {
+			st.playing = false;
+			st.audible = false;
+			st.transport_pending = false;
+			st.processor_error = message;
+		});
 	}
-	throw error;
+	if (stoppedPlayingDeck) markEngineRecoveryStop('graph-rebuild-failed');
+	recordPerfEvent(
+		'audio-graph-rebuild-retry',
+		`audio graph rebuild failed (${cause}); decks kept loaded, ${message}`,
+		null,
+		'error'
+	);
+}
+
+/** Bug #58: an attempt succeeded. Re-attached decks drop their "reattaching" error and stay paused. */
+function _finishReattach(attempt: number): void {
+	for (const deck of [..._reattachingDecks]) {
+		if (_rt[deck].processor !== null && deckStates[deck].processor_error?.startsWith('audio engine restarting') === true) {
+			deckStates[deck].processor_error = null;
+		}
+	}
+	_reattachingDecks.clear();
+	if (attempt > 0) {
+		recordPerfEvent('audio-graph-rebuild-recovered', `audio graph rebuilt on retry ${attempt}; decks kept loaded`, null, 'info');
+	}
+}
+
+/** IOPIN-12, refined by bug #58: only once every retry has failed, unload each deck left with a buffer but
+ * no processor (it would show a track play() rejects), with a visible deck error. The retry runner rethrows
+ * for the stall recovery's own report. */
+function _unloadDecksOrphanedByFailedRebuild(error: unknown): void {
+	const cause = error instanceof Error ? error.message : String(error);
+	const orphaned = _decksWithoutProcessor();
+	if (orphaned.some((deck) => _reattachingDecks.has(deck) || _rt[deck].desiredActive || deckStates[deck].playing)) {
+		markEngineRecoveryStop('graph-rebuild-failed');
+	}
+	for (const deck of orphaned) {
+		_recordProcessorFailure(deck, new Error(`${GRAPH_REBUILD_EXHAUSTED_MESSAGE}: ${cause}`));
+	}
+	_reattachingDecks.clear();
 }
 
 /** Drop every graph-scoped handle so the next `_ensureGraph()` builds from nothing, and unregister the
@@ -997,6 +1136,9 @@ function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
 function _requireLoaded(deck: DeckId, op: string): { st: DeckState; rt: _DeckRuntime } {
 	const rt = _rt[deck];
 	const st = deckStates[deck];
+	if (rt.processor === null && _reattachingDecks.has(deck)) {
+		throw new Error(`${op}: deck ${deck} is re-attaching after an audio engine restart; try again shortly`);
+	}
 	if (rt.processor === null || rt.durationSec <= 0 || st.stable_id === null) {
 		throw new Error(`${op}: no track loaded on deck ${deck}`);
 	}
@@ -1975,6 +2117,7 @@ const _frameBackstop = createFrameBackstop(() => _rafId, _tickNow);
 
 function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
+	_reattachingDecks.delete(deck);
 	// audible flips BEFORE re-election (excludes this deck as its own replacement) and election runs BEFORE reconciling (r3912339497); stranded is captured NOW, before clearForDeck wipes it and before the scoped continuation below starts (r3912339491, second pass).
 	st.playing = false; st.audible = false;
 	if (wasMaster) {
@@ -3061,6 +3204,7 @@ class RbAudioEngine implements AudioEngine {
 			// Kept in lockstep with publishedAnlz - see `resolvePublishedAnlz`'s own doc.
 			st.bpm = publishedBpm;
 			st.processor_error = null;
+			_reattachingDecks.delete(deck);
 			st.sync_error = null;
 			st.stems = candidateStemState;
 			st.hot_cues = _hotCuesFromSlots(hotCueSlots);

@@ -32,7 +32,6 @@ import {
 	shouldSkipPerformanceSessionRestore
 } from '$lib/rb/library-mode-runtime';
 import { pushToast } from '$lib/stores.svelte';
-import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { planReloadResumeOffer } from '$lib/rb/reload-resume';
 import { offerReloadResume } from '$lib/rb/reload-resume.svelte';
 
@@ -65,7 +64,8 @@ export interface PerformanceSessionRestoreOptions {
 	 * writer stops when it ends. Defaults to the live performance IPC. */
 	commandSession?: () => number | null;
 	operatorMaster?: () => number | null;
-	/** RESCUE-07: whether AutoPlay is on, for the reload-resume log line. */
+	/** RESCUE-07: whether AutoPlay is on, for the reload-resume log line and banner.
+	 * The page passes uiPrefs; unset (tests, other mounts) reads as off. */
 	autoPlayEnabled?: () => boolean;
 }
 
@@ -319,7 +319,7 @@ async function _restoreSession(
 	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>,
 	skipDeckRestore: boolean,
 	now: () => number = () => Date.now(),
-	autoPlayEnabled: () => boolean = () => uiPrefs.auto_play_enabled
+	autoPlayEnabled: () => boolean
 ): Promise<void> {
 	if (skipDeckRestore) return;
 	// RESCUE-07: restore only into an empty engine. When the route remounts
@@ -436,7 +436,7 @@ export function installPerformanceSessionRestore(
 		? _resumeUrlDecks(guardedDispatch, guardedQuery, urlDeckIds)
 		: _restoreSession(
 			guardedDispatch, guardedQuery, snapshot, urlDeckIds, skipDeckRestore,
-			nowFn, opts.autoPlayEnabled ?? (() => uiPrefs.auto_play_enabled)
+			nowFn, opts.autoPlayEnabled ?? (() => false)
 		);
 	void restore.finally(() => {
 		if (disposed) return;

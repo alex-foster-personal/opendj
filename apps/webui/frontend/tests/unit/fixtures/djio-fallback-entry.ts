@@ -15,3 +15,5 @@ export * as mirror from '$lib/rb/ui-mirror';
 export * as instrumentation from '$lib/rb/audio-context-instrumentation';
 // The processor factory the engine and the rebuild share (a stub when the test aliases it).
 export * as stretch from '$lib/rb/stretch-adapter';
+// Bug #58: the engine tags a recovery-caused stop here so AutoPlay stays armed.
+export * as recoveryStop from '$lib/rb/engine-recovery-stop';

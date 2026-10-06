@@ -6,15 +6,14 @@ import type { DeckId } from '$lib/rb/deck-id';
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { reloadResumeOfferMessage, type ReloadResumeOffer } from '$lib/rb/reload-resume';
+import { reloadResume } from '$lib/rb/performance-rescue-restore.svelte';
 
-export const reloadResume = $state<{ offer: ReloadResumeOffer | null; error: string | null }>({
-	offer: null,
-	error: null
-});
+export { reloadResume };
 
 export function offerReloadResume(offer: ReloadResumeOffer | null, autoPlayOn: boolean): void {
 	reloadResume.offer = offer;
 	reloadResume.error = null;
+	reloadResume.auto_play_on = autoPlayOn;
 	if (offer === null) return;
 	const message = reloadResumeOfferMessage(offer, autoPlayOn);
 	recordPerfEvent('reload-resume-offered', message, null, 'warn');
