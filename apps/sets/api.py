@@ -441,6 +441,26 @@ def api_recorder_remembered_input(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+#: The kill switch for the whole REC feature (SET-12 v1 fallback).
+RECORDING_FLAG_ID = "sets.recording"
+RECORDING_DISABLED = (
+    "set recording is disabled in this build (feature flag sets.recording is off; "
+    "see GET /api/v1/flags)"
+)
+
+
+def recording_refusal(request: Request) -> str | None:
+    """Why REC cannot start in this build, or None.
+
+    Both production apps mount ``app.state.feature_flags``; an app without a
+    store (a bare test app) resolves every flag to its declared default, ON.
+    """
+    store = getattr(request.app.state, "feature_flags", None)
+    if store is None or store.enabled(RECORDING_FLAG_ID):
+        return None
+    return RECORDING_DISABLED
+
+
 @router.post(
     "/recorder/start",
     response_model=RecorderStatus,
@@ -454,6 +474,9 @@ async def api_recorder_start(
     answers only once its tap is connected, so the WAV begins within one
     order round trip of this request (SET-12); with no page to ask, nothing
     starts and the answer is 503 with the reason."""
+    refusal = recording_refusal(request)
+    if refusal is not None:
+        raise HTTPException(status_code=403, detail=refusal)
     service = _recorder_service(request)
     channel = None
     if body.source == "master":

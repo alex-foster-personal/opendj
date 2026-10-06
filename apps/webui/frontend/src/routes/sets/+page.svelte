@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 	import { onMount } from 'svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import { writeToastReport } from '$lib/toast-report';
@@ -295,7 +296,7 @@
 		<button class="stop" onclick={recoverRecording} disabled={busy}>Finalize stale session</button>
 	{:else if recorder.active}
 		<span class="external-owner" title="Operating-system process id of the recorder that owns this capture">Owned by process {recorder.pid}</span>
-	{:else}
+	{:else if setRecordingEnabled()}
 		<button class="record" onclick={openInputPicker} disabled={busy}>REC</button>
 	{/if}
 </section>

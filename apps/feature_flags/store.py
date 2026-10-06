@@ -118,6 +118,19 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-03-01",
         sandbox_gated=False,
     ),
+    FlagDef(
+        flag_id="sets.recording",
+        default=True,
+        owner="maintainer",
+        note=(
+            "Set recording (REC: master mix, loopback, external input), SET-12. "
+            "The v1 fallback if the packaged-build verify fails: OFF hides the "
+            "REC controls and POST /api/sets/recorder/start answers 403 "
+            "'set recording is disabled in this build', never a broken start."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
 )
 
 APP_MODE_IDS: tuple[str, ...] = (

@@ -2,6 +2,7 @@
 	// Far-left browser icon rail (SCREENSHOT-SPEC 5a). Spotify is the only
 	// active source at this stage; all other source glyphs remain inert.
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 
 	interface RailIcon {
 		tip?: string;
@@ -81,7 +82,7 @@
 </script>
 
 <nav class="rail" aria-label="browser sources">
-	{#each ICONS as icon, i (i)}
+	{#each ICONS.filter((entry) => entry.action !== 'record' || setRecordingEnabled()) as icon, i (i)}
 		{@const isRecord = icon.action === 'record'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}
 		{@const tip = isRecord
