@@ -12,6 +12,12 @@ is not throttled, so the engine now holds the claim request open and answers
 the moment an order is submitted. Every held answer carries
 ``x-opendj-order-wait-ms`` so the page can tell a held answer from an older
 engine that ignored the parameter.
+
+AGENT-21: ``POST /commands`` never waits forever. An order no leader page has
+claimed within ``ORDER_CLAIM_DEADLINE_S`` is withdrawn and answered ``503``
+``{"reason": "no_leader"}``: the page on record has stopped claiming (a hidden
+tab that lost the mirror lease, a frozen tab), and an agent must learn that
+rather than hang. A claimed order still waits for the page's result.
 """
 from __future__ import annotations
 
@@ -36,6 +42,14 @@ _ORDER_KEYS = frozenset({"single", "sequence", "parallel", "ramp"})
 ORDER_WAIT_MAX_MS = 30_000
 #: AGENT-19: response header naming the hold the engine honoured, in ms.
 ORDER_WAIT_HEADER = "x-opendj-order-wait-ms"
+#: AGENT-21: how long a submitted order may sit unclaimed before POST /commands
+#: answers 503 no_leader. A live leader claims at once (its claim request is a
+#: held long poll); 15 s is 1.5 mirror-lease TTLs, enough for a demoted tab to
+#: re-claim the lease and resume claiming. Per app, `app.state` may carry
+#: `agent_order_claim_deadline_s` instead (tests use a short one).
+ORDER_CLAIM_DEADLINE_S = 15.0
+#: AGENT-21: the 503 body's reason when no leader claimed an order in time.
+NO_LEADER_REASON = "no_leader"
 
 
 @dataclass
@@ -43,6 +57,7 @@ class _PendingOrder:
     order: dict[str, Any]
     result: asyncio.Future[dict[str, Any]]
     claimed: bool = False
+    claimed_event: asyncio.Event | None = None
 
 
 class _OrderBroker:
@@ -53,7 +68,9 @@ class _OrderBroker:
     def submit(self, order: dict[str, Any]) -> tuple[str, asyncio.Future[dict[str, Any]]]:
         order_id = uuid4().hex
         result: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self.pending[order_id] = _PendingOrder(order=order, result=result)
+        self.pending[order_id] = _PendingOrder(
+            order=order, result=result, claimed_event=asyncio.Event()
+        )
         for waiter in self._waiters:
             if not waiter.done():
                 waiter.set_result(None)
@@ -63,8 +80,23 @@ class _OrderBroker:
         for order_id, pending in self.pending.items():
             if not pending.claimed:
                 pending.claimed = True
+                if pending.claimed_event is not None:
+                    pending.claimed_event.set()
                 return order_id, pending.order
         return None
+
+    async def claimed_within(self, order_id: str, deadline_s: float) -> bool:
+        """AGENT-21: True once a page claims ``order_id``; False if ``deadline_s`` passes first."""
+        pending = self.pending[order_id]
+        if pending.claimed:
+            return True
+        if pending.claimed_event is None:
+            raise RuntimeError(f"order {order_id} has no claim event")
+        try:
+            await asyncio.wait_for(pending.claimed_event.wait(), deadline_s)
+        except TimeoutError:
+            return pending.claimed
+        return True
 
     async def claim_within(
         self, wait_s: float, asker_is_gone: Callable[[], Awaitable[bool]]
@@ -231,7 +263,18 @@ def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
     return last
 
 
-@router.post("", response_model=None)
+@router.post(
+    "",
+    response_model=None,
+    responses={
+        503: {
+            "description": (
+                "AGENT-21: no performance page claimed the order within the claim "
+                "deadline (ORDER_CLAIM_DEADLINE_S); body reason is no_leader"
+            )
+        }
+    },
+)
 async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     """Submit one declared order and wait for the real browser result."""
     if not _page_is_open(request):
@@ -247,9 +290,32 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
     broker = _broker(request)
     order_id, result = broker.submit(order)
     try:
+        deadline_s = _claim_deadline_s(request)
+        if not await broker.claimed_within(order_id, deadline_s):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "reason": NO_LEADER_REASON,
+                    "detail": (
+                        f"no performance page claimed the order within {deadline_s:g} s; "
+                        "the page on record is not leading (open or focus /performance)"
+                    ),
+                    "claim_deadline_s": deadline_s,
+                },
+            )
         return await result
     finally:
         broker.discard(order_id)
+
+
+def _claim_deadline_s(request: Request) -> float:
+    """AGENT-21: the app's claim deadline, else ORDER_CLAIM_DEADLINE_S."""
+    configured = getattr(request.app.state, "agent_order_claim_deadline_s", None)
+    if configured is None:
+        return ORDER_CLAIM_DEADLINE_S
+    if not isinstance(configured, int | float) or isinstance(configured, bool) or configured <= 0:
+        raise TypeError(f"app.state.agent_order_claim_deadline_s must be a positive number, got {configured!r}")
+    return float(configured)
 
 
 @router.get("/next", response_model=None)

@@ -20090,6 +20090,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description AGENT-21: no performance page claimed the order within the claim deadline (ORDER_CLAIM_DEADLINE_S); body reason is no_leader */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     next_command_api_v1_commands_next_get: {

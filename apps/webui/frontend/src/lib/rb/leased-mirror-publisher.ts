@@ -6,8 +6,8 @@
  * - Only the leader PUTs. Every PUT names its writer in `x-opendj-lease`; the
  *   first PUT after "Take control" (or a fresh user gesture) also carries
  *   `x-opendj-lease-takeover: 1`.
- * - A follower never PUTs blind. Every LEASE_RECHECK_MS, unless it is hidden
- *   and silent, it reads `GET .../ui-mirror/lease` and CLAIMS leadership when
+ * - A follower never PUTs blind. Every LEASE_RECHECK_MS, unless it is hidden,
+ *   silent and without this browser's lock (AGENT-21), it reads `GET .../ui-mirror/lease` and CLAIMS leadership when
  *   the right tab is not leading (Mon 5 Oct 2026: an idle, backgrounded Chrome
  *   tab held the lease while an agent pane played the set, so the mirror said
  *   nothing was playing):
@@ -193,8 +193,12 @@ export function createLeasedMirrorPublisher(deps: {
 		if (!deps.leadership.isLeader()) {
 			registered = false;
 			leaseCleared = false;
-			// A hidden, silent follower stays completely quiet toward the engine.
-			if (deps.isVisible() || deps.isPlaying()) checkLease();
+			// A hidden, silent follower stays quiet toward the engine, unless it holds
+			// this browser's lock: it is then the only tab here that can lead, and a
+			// free lease must be re-claimed (AGENT-21, Tue 6 Oct 2026: a hidden lock
+			// holder that had lost the lease never re-claimed it, and POST /commands
+			// waited forever for a leader).
+			if (deps.isVisible() || deps.isPlaying() || deps.leadership.holdsLocalLock()) checkLease();
 			return;
 		}
 		const takeover = deps.leadership.consumeTakeover();
