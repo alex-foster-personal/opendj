@@ -33,6 +33,6 @@ or a top-level dependency file.
 - Scorer: <exactly what was measured and how>
 
 ## 10x Workings
-- Card: <link to cards/HUNT-*.md in maintainer/10x-hunter>
+- Card: <link to cards/HUNT-*.md in private_owner/10x-hunter>
 - <the arithmetic from Before/After to Ratio, and the floor derivation>
 -->

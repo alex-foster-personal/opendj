@@ -28,7 +28,7 @@ from scripts.periodic_window import (
     write_github_output,
 )
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 LEDGER = "1492"
 HEAD = "b" * 40
 BASE_50 = "a" * 40

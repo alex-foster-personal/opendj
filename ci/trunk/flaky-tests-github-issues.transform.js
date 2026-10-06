@@ -1,5 +1,5 @@
 /**
- * Trunk Flaky Tests -> GitHub Issues (maintainer/music-dj-tools).
+ * Trunk Flaky Tests -> GitHub Issues (private_owner/music-dj-tools).
  * Event: v2.test_case.status_changed. Files one issue when a test turns FLAKY or BROKEN;
  * every other transition (including back to HEALTHY) is cancelled, not sent.
  *

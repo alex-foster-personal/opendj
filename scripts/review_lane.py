@@ -39,7 +39,7 @@ from scripts.review_gh import TriageError, _gh
 from scripts.review_pr_diff import pr_diff
 from scripts.review_prompt import ALL_FENCES, RUN_ID_PLACEHOLDER, Fence
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 
 #: Seconds to wait for the PR object to catch up with the branch ref.
 HEAD_AGREE_TIMEOUT_S: int = 90

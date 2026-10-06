@@ -100,12 +100,12 @@ test('GITHUB_REPO_BASE stays a credential-free URL a browser can open', () => {
 	// CONTROLS: the same predicate on values that must be refused, so this
 	// test reports on the rules and not merely on today's constant.
 	assert.equal(
-		unusableAsChipBase('git@github.com:maintainer/music-dj-tools'),
+		unusableAsChipBase('git@github.com:private_owner/music-dj-tools'),
 		'not an https://host/owner/repo URL'
 	);
 	assert.equal(
 		unusableAsChipBase(
-			'https://x-access-token:ghs_redacted@github.com/maintainer/music-dj-tools'
+			'https://x-access-token:ghs_redacted@github.com/private_owner/music-dj-tools'
 		),
 		'carries embedded credentials'
 	);

@@ -12,7 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
@@ -46,7 +46,7 @@ def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:
 TRUNK_BATCH_HEAD_RE = re.compile(r"^trunk-(?:merge|temp)/pr-\d+/")
 TRUNK_APP_LOGIN = "app/trunk-io"
 _TESTED_SECTION = "## Pull Requests Being Tested"
-_MEMBER_LINK_RE = re.compile(r"github\.com/maintainer/music-dj-tools/pull/(\d+)")
+_MEMBER_LINK_RE = re.compile(r"github\.com/private_owner/music-dj-tools/pull/(\d+)")
 
 
 def trunk_batch_members(pr: dict) -> list[int] | None:

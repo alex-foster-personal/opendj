@@ -45,7 +45,7 @@ from typing import Any, Protocol
 from scripts.ci_failure_ids import failed_identities
 from scripts.ci_test_selection import RECORD_NAME
 
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 DRAFT_PREFIX = "trunk-merge/"
 ARTIFACT_PREFIX = "pr-test-selection-"
 SHARD_JOB = re.compile(r"^pytest fast lane \(shard \d+ of \d+\)$")

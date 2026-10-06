@@ -4,7 +4,7 @@ Interactive recreation of DJ controller plate diagrams, joined to official MIDI
 message lists. Used for mapping coverage (double-entry), agent/user visual
 feedback ("which button?"), and later teaching / how-to UI.
 
-**Issue:** [#371](https://github.com/maintainer/music-dj-tools/issues/371)
+**Issue:** [#371](https://github.com/private_owner/music-dj-tools/issues/371)
 
 **Skill:** [`.agents/skills/deck-diagram-recreate/SKILL.md`](../../.agents/skills/deck-diagram-recreate/SKILL.md)
 

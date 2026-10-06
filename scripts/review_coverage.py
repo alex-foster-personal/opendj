@@ -130,7 +130,7 @@ from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_wi
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
 from scripts.review_subscription import CURSOR, GROK, LANES_BY_NAME
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 
 #: Reviewers the merge gate expects. A name absent from a PR's checks (or, for
 #: a CHECKLESS_REVIEWERS entry, absent from evidence) is NOT a pass; it is an

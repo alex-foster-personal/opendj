@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 DEFAULT_LEDGER_ISSUE = 1492
 
 EXIT_OK = 0

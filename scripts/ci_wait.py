@@ -194,7 +194,7 @@ from scripts.ci_wait_workflows import (
 )
 from scripts.review_gh import TriageError, _gh
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 DEFAULT_TIMEOUT_S = 1800.0
 DEFAULT_POLL_INTERVAL_S = 20.0
 

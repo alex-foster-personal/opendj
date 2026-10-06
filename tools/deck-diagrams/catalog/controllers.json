@@ -2,7 +2,7 @@
   "version": 1,
   "updated": "2026-07-24",
   "notes": "Quick popularity ranks (1=most). Harden later via deep research - see skill reference.md. Seeded from docs/controller/research/2026-07-22-map-availability-survey.md + brand heuristics.",
-  "issue": "https://github.com/maintainer/music-dj-tools/issues/371",
+  "issue": "https://github.com/private_owner/music-dj-tools/issues/371",
   "controllers": [
     {
       "id": "ddj-flx10",

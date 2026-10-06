@@ -6,7 +6,7 @@
     "title": "feat(perf): render the performance register flag table from per-PR fragments",
     "state": "OPEN",
     "merged": false,
-    "url": "https://github.com/maintainer/music-dj-tools/pull/4240",
+    "url": "https://github.com/private_owner/music-dj-tools/pull/4240",
     "headRefOid": "25ac3b7d9583e6def04780be4a57bb13a26638a3",
     "baseRefName": "main",
     "reviewThreads": {
@@ -24,7 +24,7 @@
            "login": "copilot-pull-request-reviewer"
           },
           "body": "P1 BLOCKING - This enables a main-side failing gate before the render writer exists. Once any new fragment merges, `check_no_hand_edits` reports it as pending and, after six hours, this job exits 1 on every scheduled/main run; the PR description confirms that no writer is deployed. Deploy/wire the main-side regeneration before enabling `--require-current`, or keep this check disabled until then, otherwise merging knowingly makes main red.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4126932337",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4126932337",
           "createdAt": "2026-09-28T20:54:03Z"
          },
          {
@@ -32,7 +32,7 @@
            "login": "maintainer"
           },
           "body": "REBUTTED. The main-side failure before the writer exists is deliberate, recorded, and harmless to the merge path:\n\n- **Recorded decision.** ADR-NEW-append-only-tables-as-fragments (Status and Consequences) and OPS-44 (\"In progress\") both say the main-side check reports the lag until the nucbox render writer is deployed. A red run is the alarm that the writer is missing. Disabling the check would hide exactly the state it exists to report, which is the silent-failure mode this repo forbids.\n- **Not a merge gate.** The `--require-current` step runs only on push to main, the 3h schedule, and dispatch. It never runs on a PR or in the queue, so it cannot block anyone's merge. I found no consumer of this workflow's result in `ops/`, `scripts/` or the other workflows (`git grep` for its name and file).\n- **Repo precedent.** `debt-index-regen.yml`, the same pattern for `.planning/TECH-DEBT.md`, fails on every main run for the same reason (runs at 07:48Z, 11:22Z and 20:47Z on Mon 28 Sep, all `failure`). The ADR names one shared writer for both.\n- **Not red on merge.** Main currently holds no unrendered fragment (`--check --require-current` prints \"the generated table is the current render of every fragment\"). It turns red only 6h after the first new flag merges, if the writer is still missing, and that is the moment someone should be told.\n\n---\n~ [claude-code-opus-5.5-perf-register-review-agent](https://claude.ai/code)\n",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4128421629",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4128421629",
           "createdAt": "2026-09-29T00:36:18Z"
          }
         ]
@@ -51,7 +51,7 @@
            "login": "copilot-pull-request-reviewer"
           },
           "body": "P1 BLOCKING - Editing an existing fragment row, which the docs prescribe for triaging its Triage cell, makes the old rendered text fall into `hand_edited` because this check only matches the fragment's current row text. A triage-only PR therefore fails `--check` unless it also edits the generated table; compare against the base render or otherwise allow stale rows for modified fragments while still rejecting newly hand-typed rows.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4126932414",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4126932414",
           "createdAt": "2026-09-28T20:54:03Z"
          },
          {
@@ -59,7 +59,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in 13cda1e431 (same defect as r4120504272). `--check --base` compares the generated table with the PR's merge base, so a triage-only PR leaves the table unchanged and passes. A typed or reordered row still fails. Tests: `test_a_triage_edit_to_a_rendered_fragment_passes_the_pr_check`, `test_a_row_typed_into_the_table_fails_the_pr_check`, `test_a_hand_reordered_table_fails_the_pr_check`.\n\n---\n~ [claude-code-opus-5.5-perf-register-review-agent](https://claude.ai/code)\n",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4128421066",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4128421066",
           "createdAt": "2026-09-29T00:36:12Z"
          }
         ]
@@ -78,7 +78,7 @@
            "login": "copilot-pull-request-reviewer"
           },
           "body": "P1 BLOCKING - `require_full_clone` only rejects promisor remotes, so a shallow clone is accepted even though this census requires complete history. `merge-base`, `rev-list --not`, and `merge-tree` can then operate on truncated history and produce an apparently valid but incomplete measurement; the existing conflict census treats shallow/unreachable history as an error. Reject `git rev-parse --is-shallow-repository` reporting `true` before measuring.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4126932464",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4126932464",
           "createdAt": "2026-09-28T20:54:03Z"
          },
          {
@@ -86,7 +86,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in fc63101897. `require_full_clone` now also runs `git rev-parse --is-shallow-repository` and refuses `true`. An answer other than true/false, or a git error, is raised as \"cannot tell\", never read as a verdict.\n\nTest: `test_a_shallow_clone_is_refused` (a `--depth 1` bare clone is refused; a full clone of the same repo passes). Mutations: removing the guard turns it red, and treating every clone as shallow turns both clone tests red.\n\n---\n~ [claude-code-opus-5.5-perf-register-review-agent](https://claude.ai/code)\n",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4128421478",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4128421478",
           "createdAt": "2026-09-29T00:36:17Z"
          }
         ]
@@ -105,7 +105,7 @@
            "login": "copilot-pull-request-reviewer"
           },
           "body": "P1 BLOCKING: `_row_date` only checks that the line starts with a pipe and has at least three split cells, so malformed fragments such as `| Sat 26 Sep 2026 | only one cell |` are accepted and rendered. Validate the full five-column row with an escaped-pipe-aware split before rendering; migrated rows contain escaped `\\|` text.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4126932518",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4126932518",
           "createdAt": "2026-09-28T20:54:04Z"
          },
          {
@@ -113,7 +113,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in 13cda1e431 (same defect as r4120504294). Rows are split on unescaped pipes and need exactly five non-empty cells; only the migrated archive may omit or blank Triage. `| Sat 26 Sep 2026 | only one cell |` now fails with \"2 cells, want 5\". Tests: `test_a_malformed_fragment_fails_loudly`, `test_an_escaped_pipe_stays_inside_its_cell`, `test_only_the_migrated_archive_may_omit_the_triage_cell`.\n\n---\n~ [claude-code-opus-5.5-perf-register-review-agent](https://claude.ai/code)\n",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4128421183",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4128421183",
           "createdAt": "2026-09-29T00:36:13Z"
          }
         ]
@@ -132,7 +132,7 @@
            "login": "copilot-pull-request-reviewer"
           },
           "body": "P2 NON-BLOCKING - Using row text as the sole key loses multiplicity. If two fragments contain identical rows, or a hand edit adds/removes one copy, every occurrence maps to the same `Row` and the set-based pending check can accept the wrong count. Match rows as a multiset keyed by text while preserving source/position, and compare occurrence counts.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4126932564",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4126932564",
           "createdAt": "2026-09-28T20:54:04Z"
          },
          {
@@ -140,7 +140,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in 13cda1e431 (same defect as r4124995553). The main side compares the table with the full render as bytes and counts rows with a `Counter`, so a missing or extra copy is reported. Test: `test_a_duplicated_row_counts_as_unrendered`, with an in-test control that the table is current once both copies are rendered.\n\n---\n~ [claude-code-opus-5.5-perf-register-review-agent](https://claude.ai/code)\n",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4128421263",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4128421263",
           "createdAt": "2026-09-29T00:36:14Z"
          }
         ]
@@ -159,7 +159,7 @@
            "login": "copilot-pull-request-reviewer"
           },
           "body": "P1 BLOCKING: `--require-current` uses the first-add timestamp even when a fragment is later edited. Triage is explicitly done by changing the fragment's Triage cell; after an old fragment is triaged, its pending rendered row can be immediately older than 6h and main can fail even though that change just landed. Age pending fragments from the last commit that changed the file, not `--diff-filter=A`.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4126932624",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4126932624",
           "createdAt": "2026-09-28T20:54:05Z"
          },
          {
@@ -167,7 +167,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in 13cda1e431. `--require-current` no longer uses a fragment's first-add time. It walks main's first-parent history for the newest fragment change whose prior state renders to the current table, and dates the lag from that commit. So a triage edit is dated by the merge that brought it to main, not by when the fragment was first added.\n\nTests: `test_a_triage_edit_on_main_is_render_lag_not_a_hand_edit[1.0-False]` (a triage edit merged 1h ago on a 48h-old fragment is within the grace) and `[7.0-True]` (control). Also `test_a_reverted_change_does_not_backdate_the_lag` and `test_a_fresh_fragment_does_not_mask_an_older_unrendered_one`, which cover the two ways the walk could misdate the lag.\n\n---\n~ [claude-code-opus-5.5-perf-register-review-agent](https://claude.ai/code)\n",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/4240#discussion_r4128421372",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/4240#discussion_r4128421372",
           "createdAt": "2026-09-29T00:36:15Z"
          }
         ]

@@ -76,7 +76,7 @@ def test_current_pr_number_passes_branch_to_gh_when_repo_given(tmp_path: Path) -
     repo = _git_repo_on_branch(tmp_path, branch)
     calls, recording_run = _recording_runner()
 
-    number = mod.current_pr_number(repo, "maintainer/music-dj-tools", run=recording_run)
+    number = mod.current_pr_number(repo, "private_owner/music-dj-tools", run=recording_run)
 
     gh_calls = [argv for argv in calls if argv[:3] == ["gh", "pr", "view"]]
     assert len(gh_calls) == 1

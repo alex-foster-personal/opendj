@@ -492,7 +492,7 @@ def run_nightly(
     git_sha: str,
     probe: ProbeFn,
     now: dt.datetime | None = None,
-    repository: str = "maintainer/music-dj-tools",
+    repository: str = "private_owner/music-dj-tools",
     file_issue: bool = True,
 ) -> NightlyOutcome:
     now = now or dt.datetime.now(dt.UTC)

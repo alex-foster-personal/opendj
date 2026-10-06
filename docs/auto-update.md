@@ -34,7 +34,7 @@ button and the CLI cannot drift onto different channels.
 ## The endpoint
 
 ```
-https://github.com/maintainer/issue-assets/releases/latest/download/latest.json
+https://github.com/alex-foster-personal/issue-assets/releases/latest/download/latest.json
 ```
 
 GitHub Releases is the standard host for a Tauri updater: it needs no server,
@@ -45,7 +45,7 @@ stable URL that always resolves to the newest published release.
 
 `music-dj-tools` is private, so its GitHub release assets return 404 to an
 unauthenticated updater. The endpoint above uses the public
-`maintainer/issue-assets` release repository instead. It contains
+`alex-foster-personal/issue-assets` release repository instead. It contains
 only signed desktop release assets and `latest.json`, never source or secrets.
 
 Before the first Air release it returns 404 because no public release exists.
@@ -136,7 +136,7 @@ updates signed by a different key. Rotation requires a verified migration.
 2. On the Air, load signing values without printing them, then run
    `just release`. It builds the dmg, staples the app before recreating and
    signing the updater archive, generates `latest.json`, and publishes the dmg,
-   archive, signature and manifest to `maintainer/issue-assets`.
+   archive, signature and manifest to `alex-foster-personal/issue-assets`.
 3. A retry for the same tag validates its public `latest.json` against the
    configured version, build SHA, tag URL, and updater signature. It then
    returns without rebuilding or overwriting the immutable release.
@@ -149,7 +149,7 @@ updates signed by a different key. Rotation requires a verified migration.
   "platforms": {
     "darwin-aarch64": {
       "signature": "<contents of the .app.tar.gz.sig file>",
-      "url": "https://github.com/maintainer/issue-assets/releases/download/v0.2.0/Open.DJ.app.tar.gz"
+      "url": "https://github.com/alex-foster-personal/issue-assets/releases/download/v0.2.0/Open.DJ.app.tar.gz"
     }
   }
 }

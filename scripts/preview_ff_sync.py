@@ -27,7 +27,7 @@ from scripts.preview_drift_git import MeasurementError
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 DEFAULT_MAIN_REF = "origin/main"
-DEFAULT_REPOSITORY = "maintainer/music-dj-tools"
+DEFAULT_REPOSITORY = "private_owner/music-dj-tools"
 
 EXIT_OK = 0
 EXIT_REFUSED = 1

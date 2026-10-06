@@ -178,7 +178,7 @@ def _pr_clean() -> PullRequest:
         title="t",
         state="OPEN",
         merged=False,
-        url="https://github.com/maintainer/music-dj-tools/pull/9",
+        url="https://github.com/private_owner/music-dj-tools/pull/9",
         head_sha=_HEAD,
         threads=(),
     )

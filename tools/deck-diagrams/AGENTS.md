@@ -1,6 +1,6 @@
 # deck-diagrams - agent entry
 
-Tracking: https://github.com/maintainer/music-dj-tools/issues/371
+Tracking: https://github.com/private_owner/music-dj-tools/issues/371
 
 ## Skill (main workflow)
 

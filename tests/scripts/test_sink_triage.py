@@ -72,7 +72,7 @@ def _record(
 
 _CI_FAILURE_MESSAGE = (
     "CI failed workflow=CI run=34705584177 conclusion=failure "
-    "url=https://github.com/maintainer/music-dj-tools/actions/runs/34705584177 "
+    "url=https://github.com/private_owner/music-dj-tools/actions/runs/34705584177 "
     "sha=98159af7b5fb6d8ef7fd255a43a5d4386a4530b8"
 )
 
@@ -80,7 +80,7 @@ _CI_FAILURE_MESSAGE = (
 def _build_e2e_message(run_id: int = 34705843143) -> str:
     return (
         f"CI failed workflow=E2E run={run_id} conclusion=failure "
-        f"url=https://github.com/maintainer/music-dj-tools/actions/runs/{run_id} "
+        f"url=https://github.com/private_owner/music-dj-tools/actions/runs/{run_id} "
         f"sha=921b0489fa060e5945b8302285b2a2a872b4ab40"
     )
 
@@ -163,7 +163,7 @@ def test_build_e2e_flood_does_not_file_issues(tmp_path: Path) -> None:
         sources=[],
         state_path=tmp_path / "state.json",
         kpi_path=tmp_path / "kpi.json",
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=True,
         records_in=records,
         gh_run=_gh_no_open_issues,
@@ -199,7 +199,7 @@ def test_engine_flood_still_files_when_build_rows_present(tmp_path: Path) -> Non
         sources=[],
         state_path=tmp_path / "state.json",
         kpi_path=tmp_path / "kpi.json",
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=True,
         records_in=records,
         gh_run=_gh_no_open_issues,
@@ -256,7 +256,7 @@ def test_dry_run_fixture_emits_one_create_and_one_comment(tmp_path: Path) -> Non
         sources=[],
         state_path=tmp_path / "state.json",
         kpi_path=tmp_path / "kpi.json",
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=True,
         records_in=records,
         gh_run=gh_run,
@@ -280,7 +280,7 @@ def test_build_kind_records_are_excluded_from_triage(tmp_path: Path) -> None:
         sources=[],
         state_path=tmp_path / "state.json",
         kpi_path=tmp_path / "kpi.json",
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=True,
         records_in=records,
     )
@@ -295,7 +295,7 @@ def test_build_source_site_without_kind_is_excluded(tmp_path: Path) -> None:
         sources=[],
         state_path=tmp_path / "state.json",
         kpi_path=tmp_path / "kpi.json",
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=True,
         records_in=records,
     )
@@ -408,7 +408,7 @@ def test_run_triage_triages_reachable_sources_and_records_the_skip_in_kpi(
         sources=sources,
         state_path=tmp_path / "state" / "sink-triage.json",
         kpi_path=kpi_path,
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=False,
         fetch_ssh=_unreachable_ssh,
     )
@@ -439,7 +439,7 @@ def test_run_triage_raises_and_writes_no_kpi_when_every_source_is_unreachable(
             sources=sources,
             state_path=tmp_path / "state" / "sink-triage.json",
             kpi_path=kpi_path,
-            repo="maintainer/music-dj-tools",
+            repo="private_owner/music-dj-tools",
             dry_run=False,
             fetch_ssh=_unreachable_ssh,
         )
@@ -494,7 +494,7 @@ def test_run_triage_continues_when_one_source_was_reached_and_all_others_failed(
         sources=sources,
         state_path=tmp_path / "state" / "sink-triage.json",
         kpi_path=kpi_path,
-        repo="maintainer/music-dj-tools",
+        repo="private_owner/music-dj-tools",
         dry_run=False,
         fetch_local=_boom_local_after_first_path(truncations),
         fetch_ssh=_unreachable_ssh,

@@ -55,7 +55,7 @@ COMMENT_COOLDOWN_S = 3600
 STALE_AFTER_S = 7200
 TAIL_BYTES = 50 * 1024 * 1024
 MARKER_PREFIX = "<!-- sink-fingerprint:"
-REPO_DEFAULT = "maintainer/music-dj-tools"
+REPO_DEFAULT = "private_owner/music-dj-tools"
 
 _PATH_RE = re.compile(r"(?:/[\w.@+-]+)+|~(?:/[\w.@+-]+)+|[A-Za-z]:\\(?:[\\ \w.@+-]+)+")
 

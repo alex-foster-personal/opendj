@@ -111,7 +111,7 @@ from apps.webui.server.shell_commands import ShellCommandConflictError, shell_br
 #: ``issue-assets`` is public and holds only signed release artifacts and their
 #: manifest. See docs/auto-update.md.
 UPDATE_ENDPOINT: str = (
-    "https://github.com/maintainer/issue-assets"
+    "https://github.com/alex-foster-personal/issue-assets"
     "/releases/latest/download/latest.json"
 )
 

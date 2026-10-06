@@ -228,7 +228,7 @@ describe('pickDoubleClickDeck: never take the master, prefer idle slots', () => 
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3917231692
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3917231692
 // (P1/BLOCKING): a cached replace target that became master since the plain
 // double-click that cached it must not be reused - the early return used to
 // bypass the master exclusion entirely.
@@ -261,7 +261,7 @@ describe('replace target revalidated against current master state', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3918252794
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3918252794
 // (P1/BLOCKING): BrowserPanel._reserveDeckSlot() bumps loadSeq synchronously,
 // before stable_id publishes. Two plain double-clicks arriving before the
 // first async load resolves must not both read the reserved deck as "empty".
@@ -291,7 +291,7 @@ describe('empty-tier candidates honor an in-flight synchronous reservation', () 
 		assert.equal(out.deck, 1);
 	});
 
-	// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919597969
+	// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919597969
 	// (P1/BLOCKING, found on the empty-tier fix above): the stopped and
 	// silent tiers filter on `playing`/`fader`, neither of which changes the
 	// instant _reserveDeckSlot bumps loadSeq - only stable_id does, later,
@@ -337,7 +337,7 @@ describe('empty-tier candidates honor an in-flight synchronous reservation', () 
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919725002
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919725002
 // (P1/BLOCKING, found on the stopped/silent-tier fix above): the two tests
 // above still let a pending reservation win when it is the ONLY candidate in
 // its own tier - an empty (or stopped, or silent) singleton always wins its
@@ -385,7 +385,7 @@ describe('a pending reservation is excluded even as a tier singleton', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3917231700
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3917231700
 // (P1/BLOCKING): the tests above exercise the pure picker directly with
 // hand-built DeckSlotState maps, which is what the picker was split out of
 // BrowserPanel to allow (module docstring, deck-slots.ts:1-9) - there is no
@@ -471,7 +471,7 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919725002
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919725002
 // (corollary of the fix above): reservationPending must also be RELEASED on
 // every path a reservation can end without stable_id/playing/fader ever
 // changing - a load/unload that settles (success or error), and a
@@ -510,7 +510,7 @@ describe('a deck reservation is released on every exit path, not just success', 
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919837812
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919837812
 // (P1/BLOCKING, found on the release-on-every-exit-path fix above): releasing
 // on every non-null `deck` was too broad. The explicit "Load onto deck N"
 // button also passes a non-null deck it never reserved through _reserveDeckSlot
@@ -589,7 +589,7 @@ describe('a reservation is only released by the call that owns it', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919940009
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919940009
 // (P1/BLOCKING): the master exclusion was only checked once, at pickDoubleDeck
 // PICK time. The actual destructive load can happen much later - after a
 // confirm dialog is answered - during which the picked deck can become
@@ -629,7 +629,7 @@ describe('the master deck is revalidated at the load boundary, not just at pick 
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919940011
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919940011
 // (P1/BLOCKING): deckReservationPending is a plain per-deck boolean, so it
 // cannot distinguish which specific reservation attempt currently owns the
 // pending flag once the all-pending fallback lets a later double-click
@@ -683,7 +683,7 @@ describe('a reservation release is scoped to the generation that owns it', () =>
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3920224748
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3920224748
 // (P1/BLOCKING, found on the generation-token fix above): _loadOntoDeck bumps
 // deckLoadSeq[target] again on load SUCCESS (existing recency-for-the-picker
 // behavior), which runs BEFORE the finally releases the reservation. Gating
@@ -727,7 +727,7 @@ describe('a successful load does not invalidate its own reservation release', ()
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3920224754
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3920224754
 // (P1/BLOCKING): the master-exclusion recheck (r3919940009) ran at the UI
 // dispatch boundary, still outside the scheduler's per-deck ordering. A
 // 'master' command sharing this deck's scope ([deck, 'sync']) can be queued
@@ -737,7 +737,7 @@ describe('a successful load does not invalidate its own reservation release', ()
 // getDeckState - authoritative once this command's scope has been acquired,
 // since any earlier same-scope command is guaranteed to have already settled.
 //
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3920297846
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3920297846
 // (P1/BLOCKING, found on the fix above): making that recheck unconditional
 // broke every standalone unload - Deck.svelte's Unload button, Quick Draw's
 // unload action - which engine.unload explicitly supports even when the

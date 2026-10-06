@@ -10,7 +10,7 @@
 import type { ProgressInfo } from 'electron-updater';
 
 /** Generic-provider feed: electron-updater reads `${UPDATE_FEED_URL}/latest-mac.yml`. */
-export const UPDATE_FEED_URL = 'https://github.com/maintainer/issue-assets/releases/latest/download';
+export const UPDATE_FEED_URL = 'https://github.com/alex-foster-personal/issue-assets/releases/latest/download';
 
 export type ApplyProgress =
 	| { phase: 'checking' }

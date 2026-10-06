@@ -114,7 +114,7 @@ test('the drag start actually consults it, and does not refuse in silence', () =
 
 /**
  * Review thread
- * https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3917231707
+ * https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3917231707
  * (P1/BLOCKING): the assertion above only proves the two identifiers occur
  * somewhere inside the function body - it still passes if the handler is
  * unreachable, `onrefused` is not wired through BrowserPanel, or nothing ever
@@ -161,7 +161,7 @@ describe('trackDragRefusal is wired end to end, TrackTable to BrowserPanel', () 
 		);
 	});
 
-	// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919725005
+	// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919725005
 	// (P2/NON-BLOCKING, found on the wiring above): the row's raw
 	// is_streaming was the only thing this refusal checked. All Tracks rows
 	// deliberately start row.is_streaming at null and hydrate the real value

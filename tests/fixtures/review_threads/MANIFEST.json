@@ -1,9 +1,9 @@
 {
- "description": "Trust anchor for the review-thread captures. Each file is a verbatim GraphQL reviewThreads response from maintainer/music-dj-tools, captured Mon 31 Aug 2026. Thread objects are byte-identical to what the API returned; the only edits were selecting a subset of threads and dropping the pageInfo cursor. Tests verify these checksums BEFORE parsing, so an accidental edit fails loudly instead of silently becoming the authoritative capture.",
+ "description": "Trust anchor for the review-thread captures. Each file is a verbatim GraphQL reviewThreads response from private_owner/music-dj-tools, captured Mon 31 Aug 2026. Thread objects are byte-identical to what the API returned; the only edits were selecting a subset of threads and dropping the pageInfo cursor. Tests verify these checksums BEFORE parsing, so an accidental edit fails loudly instead of silently becoming the authoritative capture.",
  "captured": "Mon 31 Aug 2026",
  "captured_utc": "2026-08-31T15:00:00Z",
  "endpoint": "https://api.github.com/graphql",
- "repository": "maintainer/music-dj-tools",
+ "repository": "private_owner/music-dj-tools",
  "regenerate": "Re-capture from the API with scripts/review_thread_triage.py's _THREADS_QUERY and recompute this manifest. Never hand-edit a payload.",
  "files": {
   "pr-492.json": {

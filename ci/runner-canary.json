@@ -1,6 +1,6 @@
 {
   "_doc": "Runner canary config, read by .github/workflows/runner-canary.yml (budget gate), scripts/runner_canary_mirror.py and scripts/runner_canary_report.py. Decision record: docs/decisions/ADR-NEW-runner-canary.md. Each vendor runs ONLY in its target_repo, which must be source_repository or mirror_repository; the workflow's owner allowlist is the set of those owners. Free tiers were read from each vendor's pricing page on Tue 29 Sep 2026; re-read them before trusting a figure a month later.",
-  "source_repository": "maintainer/music-dj-tools",
+  "source_repository": "private_owner/music-dj-tools",
   "mirror_owner": "opendj-ci-canary",
   "mirror_repository": "opendj-ci-canary/music-dj-tools-canary",
   "remote_url_templates": [
@@ -32,7 +32,7 @@
     },
     "avrea": {
       "label": "avrea-ubuntu-latest-2-vcpu",
-      "target_repo": "maintainer/music-dj-tools",
+      "target_repo": "private_owner/music-dj-tools",
       "target_note": "Avrea requires its app to be installed on the configured source repository",
       "vcpu": 2,
       "free_minutes_per_month": 3000,
@@ -45,7 +45,7 @@
     },
     "tenki": {
       "label": "tenki-standard-small-2c-4g",
-      "target_repo": "maintainer/music-dj-tools",
+      "target_repo": "private_owner/music-dj-tools",
       "target_note": "Tenki requires its app to be installed on the configured source repository",
       "size_note": "2 vCPU / 4 GB: Starter workspaces are capped at 2 vCPU / 4 GB without a payment method on file. 2 vCPU also matches Avrea and Blacksmith.",
       "vcpu": 2,

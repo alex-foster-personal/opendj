@@ -6,7 +6,7 @@
     "title": "perf(telemetry): stamp every deck-load row with the conditions it was measured under (PERF-R7)",
     "state": "OPEN",
     "merged": false,
-    "url": "https://github.com/maintainer/music-dj-tools/pull/1658",
+    "url": "https://github.com/private_owner/music-dj-tools/pull/1658",
     "reviewThreads": {
      "nodes": [
       {
@@ -21,8 +21,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  [BLOCKING] Close every started load span**\n\nWhen preparation succeeds but the later swap rejects\u2014such as the existing direct-engine activation race where playback starts during a load\u2014execution throws from `_withDeckSwap` without reaching either `recordDeckLoad` call. The span opened here therefore remains indefinitely in flight, causing every subsequent deck-load row to report `solo=0` until the span is eventually evicted; ensure post-preparation failures also close and record the span.\n\nAGENTS.md reference: [AGENTS.md:L35-L36](https://github.com/maintainer/music-dj-tools/blob/bec44a183c9e45185d78ccb8927c27fe06614056/AGENTS.md#L35-L36)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3973979874",
+          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  [BLOCKING] Close every started load span**\n\nWhen preparation succeeds but the later swap rejects\u2014such as the existing direct-engine activation race where playback starts during a load\u2014execution throws from `_withDeckSwap` without reaching either `recordDeckLoad` call. The span opened here therefore remains indefinitely in flight, causing every subsequent deck-load row to report `solo=0` until the span is eventually evicted; ensure post-preparation failures also close and record the span.\n\nAGENTS.md reference: [AGENTS.md:L35-L36](https://github.com/private_owner/music-dj-tools/blob/bec44a183c9e45185d78ccb8927c27fe06614056/AGENTS.md#L35-L36)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3973979874",
           "createdAt": "2026-09-09T23:36:56Z"
          },
          {
@@ -30,7 +30,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in d5cb3737e. The most valuable of the three, because it corrupts the INSTRUMENT rather than the feature.\n\nConfirmed exactly as described: `_withDeckSwap` sits outside the try that records the row, so a swap rejection reached neither `recordDeckLoad` call. The consequence is worse than a missing row -- every later load reported `solo=0` until the 16-deep window evicted the leaked span, i.e. a contention label that is WRONG while looking exactly like a measurement. That is the failure mode `.claude/rules/verification.md` exists to forbid, and it would have quietly poisoned the very readings this PR adds.\n\nClosed with a `.catch` on the swap promise: it stamps `stages.total`, files a `deck-load-fail-swap` row (which closes the span) and rethrows, so the caller's error handling is unchanged.\n\nAttached to the promise rather than wrapped in `try`/`catch` deliberately: a try block would have re-indented roughly 90 lines for a 5-line fix, and `audio-engine.svelte.ts` is at its `file_size.max_frontend` ceiling with no room to pay for the noise. Two unrelated multi-line imports collapse to single lines to fund the 5 lines; the file lands at 4069, exactly main's level.\n\n---\n~ [claude-code-opus-perf-latency-agent](https://claude.ai/code)",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3974225620",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3974225620",
           "createdAt": "2026-09-10T00:19:08Z"
          }
         ]
@@ -48,8 +48,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  [BLOCKING] Preserve the pressure sample's real age**\n\nWhen a pressure response is delayed, this records `receivedAtMs` only after the response body arrives, so `pressure_age_ms` omits the response/event-loop delay and can label an old sample as fresh. Overlapping polls compound this because an older request that completes last unconditionally overwrites a newer snapshot; retain request/sample timing and reject out-of-order completions before storing the evidence.\n\nAGENTS.md reference: [AGENTS.md:L35-L36](https://github.com/maintainer/music-dj-tools/blob/bec44a183c9e45185d78ccb8927c27fe06614056/AGENTS.md#L35-L36)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3973979881",
+          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  [BLOCKING] Preserve the pressure sample's real age**\n\nWhen a pressure response is delayed, this records `receivedAtMs` only after the response body arrives, so `pressure_age_ms` omits the response/event-loop delay and can label an old sample as fresh. Overlapping polls compound this because an older request that completes last unconditionally overwrites a newer snapshot; retain request/sample timing and reject out-of-order completions before storing the evidence.\n\nAGENTS.md reference: [AGENTS.md:L35-L36](https://github.com/private_owner/music-dj-tools/blob/bec44a183c9e45185d78ccb8927c27fe06614056/AGENTS.md#L35-L36)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3973979881",
           "createdAt": "2026-09-09T23:36:56Z"
          },
          {
@@ -57,7 +57,7 @@
            "login": "maintainer"
           },
           "body": "FIXED in d5cb3737e. Both halves were real and both are fixed.\n\n**The age.** `receivedAtMs` was stamped after the body finished parsing, so the round trip and the event-loop wait were erased from the number whose entire job is to say how stale the reading is. The field is now `requestedAtMs`, stamped BEFORE the fetch. That means the age can only ever OVERSTATE how stale a sample is, which is the safe direction for a number a reader uses to decide whether to trust the row beside it -- the opposite of what it did before.\n\n**The ordering.** Also correct, and it is the nastier half: the 10s timer does not wait for the previous request, so a slow poll completing after a fast one overwrote the newer reading with the older and walked the cache BACKWARDS in time while every field still looked valid. `storeMachinePressure` now rejects any snapshot that is not strictly newer, ordered on the request instant since that is when each sample was asked for. It returns whether it stored, so a caller (and a test) can tell a rejected late arrival from an accepted one rather than both looking like success.\n\n---\n~ [claude-code-opus-perf-latency-agent](https://claude.ai/code)",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3974225755",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3974225755",
           "createdAt": "2026-09-10T00:19:09Z"
          }
         ]
@@ -75,8 +75,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  [BLOCKING] Replace mocked machine-condition tests**\n\nThe new sampler suite replaces production OS calls with `monkeypatch` functions, and the accompanying cache/browser suites similarly inject fake samplers and `fetch` responses. That violates the repository's fail-closed no-mocks contract and allows these tests to pass without exercising the production command, parser, endpoint, and client path; use captured real payloads through a production parser plus real-path integration coverage instead.\n\nAGENTS.md reference: [AGENTS.md:L125-L129](https://github.com/maintainer/music-dj-tools/blob/bec44a183c9e45185d78ccb8927c27fe06614056/AGENTS.md#L125-L129)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3973979885",
+          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  [BLOCKING] Replace mocked machine-condition tests**\n\nThe new sampler suite replaces production OS calls with `monkeypatch` functions, and the accompanying cache/browser suites similarly inject fake samplers and `fetch` responses. That violates the repository's fail-closed no-mocks contract and allows these tests to pass without exercising the production command, parser, endpoint, and client path; use captured real payloads through a production parser plus real-path integration coverage instead.\n\nAGENTS.md reference: [AGENTS.md:L125-L129](https://github.com/private_owner/music-dj-tools/blob/bec44a183c9e45185d78ccb8927c27fe06614056/AGENTS.md#L125-L129)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3973979885",
           "createdAt": "2026-09-09T23:36:56Z"
          },
          {
@@ -84,7 +84,7 @@
            "login": "maintainer"
           },
           "body": "PARTLY FIXED, PARTLY REBUTTED in d5cb3737e. The gap you name is real and is now closed; two of the specifics are not accurate about this diff, and I would rather say so than silently rewrite working tests.\n\n**Rebutted: the parser was never mocked.** `test_probe_machine_conditions.py` feeds CAPTURED REAL `vm_stat` output (trimmed from this Mac's actual output, dated in the file) through `native._vm_stat_free_mb`, which IS the shipped production parser. Substituting `run_text` is the mechanism for delivering a captured payload deterministically -- it is the thing you are asking for, not a stand-in for it. Replacing it with 'captured real payloads through a production parser' would be a no-op rename.\n\n**Rebutted: the endpoint already had real coverage.** `test_pressure_route_answers_over_real_http` and `test_pressure_route_does_not_leak_process_detail` drive the real route through `TestClient` with nothing injected, and assert the available/unavailable disjunction plus the response allowlist.\n\n**Fixed: the production COMMAND was genuinely untested.** Nothing ran the real `vm_stat` and `sysctl`. Five additions:\n\n- `test_the_real_sampler_reports_finite_numbers_or_nothing_at_all` -- the real `read_machine_pressure()`, unpatched\n- `test_the_real_load_average_is_a_plausible_reading_not_a_placeholder` -- zero rejected as an error signature, since a silent failure returns 0.0 and reads as an idle machine\n- `test_the_real_sampler_runs_and_omits_what_it_cannot_read` -- real `machine_metrics()`, asserting absent-not-None\n- `test_the_real_vm_stat_parse_is_a_positive_free_memory_or_no_key`\n- `a real deck load stamps the real machine conditions` (boot-burst lane) -- the whole browser path with nothing injected: real engine, real endpoint, real poller, real deck load, asserting the row carries `solo=1 concurrent_loads=1` and a finite reading or none. Verified passing.\n\nAll assert the CONTRACT, not values, because the value is whatever the machine is doing and CI is not this Mac. The contract is what a regression breaks: a field is a finite number or it is ABSENT, never present-and-zero.\n\n**Kept: the injected samplers in the cache suite.** Those reach branches a real machine cannot be asked to produce on demand -- a sampler that raises `OSError`, one that returns nothing, one whose extra keys the allowlist must drop. Deleting them would delete the only coverage of the failure paths, which is the opposite of fail-closed. The real-path tests above now sit beside them so both halves are covered.\n\nOne caveat I will state rather than let you find: the boot-burst lane is a MEASUREMENT lane and is not wired into CI, so that e2e is reproducible on demand (`just boot-burst-bench`) rather than gating. Say the word if you want it moved into the rekordbox gate instead.\n\n---\n~ [claude-code-opus-perf-latency-agent](https://claude.ai/code)",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3974228015",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3974228015",
           "createdAt": "2026-09-10T00:19:30Z"
          }
         ]
@@ -102,8 +102,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [BLOCKING] Bind completion to its own load span**\n\nFresh evidence beyond the earlier leaked-span report is the supported direct-engine overlap path in `performance-controls.spec.ts`, which starts two `engine.load(4, ...)` calls concurrently. Because `_closeSpan` selects the newest open span by deck rather than the span created by this invocation, whichever same-deck load finishes first closes the other load's interval; if other decks were concurrently loading before the second load started, the first row can underreport `concurrent_loads`, and the later row uses the wrong widened interval. Return a span-bound completion handle or ID from `beginDeckLoad` so each row closes its own interval.\n\nAGENTS.md reference: [AGENTS.md:L35-L36](https://github.com/maintainer/music-dj-tools/blob/d5cb3737e5c24dfeb675bc168536bcf479821007/AGENTS.md#L35-L36)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3974267081",
+          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [BLOCKING] Bind completion to its own load span**\n\nFresh evidence beyond the earlier leaked-span report is the supported direct-engine overlap path in `performance-controls.spec.ts`, which starts two `engine.load(4, ...)` calls concurrently. Because `_closeSpan` selects the newest open span by deck rather than the span created by this invocation, whichever same-deck load finishes first closes the other load's interval; if other decks were concurrently loading before the second load started, the first row can underreport `concurrent_loads`, and the later row uses the wrong widened interval. Return a span-bound completion handle or ID from `beginDeckLoad` so each row closes its own interval.\n\nAGENTS.md reference: [AGENTS.md:L35-L36](https://github.com/private_owner/music-dj-tools/blob/d5cb3737e5c24dfeb675bc168536bcf479821007/AGENTS.md#L35-L36)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3974267081",
           "createdAt": "2026-09-10T00:25:23Z"
          }
         ]
@@ -121,8 +121,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [BLOCKING] Retain in-flight spans when bounding history**\n\nWhen one deck load remains slow while sixteen later loads start on independent deck scopes, this unconditional tail slice evicts the still-running span along with old completed history. Subsequent rows then cannot see that active load and can incorrectly report `solo=1`; when the slow load eventually finishes, its synthesized span also cannot recover the discarded overlap history. Bound only completed spans, while retaining every in-flight span until it is closed.\n\nAGENTS.md reference: [AGENTS.md:L219-L223](https://github.com/maintainer/music-dj-tools/blob/d5cb3737e5c24dfeb675bc168536bcf479821007/AGENTS.md#L219-L223)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1658#discussion_r3974267090",
+          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [BLOCKING] Retain in-flight spans when bounding history**\n\nWhen one deck load remains slow while sixteen later loads start on independent deck scopes, this unconditional tail slice evicts the still-running span along with old completed history. Subsequent rows then cannot see that active load and can incorrectly report `solo=1`; when the slow load eventually finishes, its synthesized span also cannot recover the discarded overlap history. Bound only completed spans, while retaining every in-flight span until it is closed.\n\nAGENTS.md reference: [AGENTS.md:L219-L223](https://github.com/private_owner/music-dj-tools/blob/d5cb3737e5c24dfeb675bc168536bcf479821007/AGENTS.md#L219-L223)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1658#discussion_r3974267090",
           "createdAt": "2026-09-10T00:25:23Z"
          }
         ]

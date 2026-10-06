@@ -6,7 +6,7 @@
     "title": "feat(ops): autoreposync cross-machine repo sync daemon",
     "state": "MERGED",
     "merged": true,
-    "url": "https://github.com/maintainer/music-dj-tools/pull/515",
+    "url": "https://github.com/private_owner/music-dj-tools/pull/515",
     "reviewThreads": {
      "nodes": [
       {
@@ -21,8 +21,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0001\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 101, \"end_line\": 104, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udfe1 **Dirty checkouts are modified**\n\nWhen a dirty checkout is on `main`, `git pull --ff-only` can update non-overlapping files. Active work then sees an unexpected repository revision.\n\n```suggestion\nbranch=\\$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || { echo \"RS_SKIP not a git checkout\"; exit 0; }\nif [ \"\\$branch\" != \"$SYNC_BRANCH\" ]; then echo \"RS_SKIP not on $SYNC_BRANCH (on \\$branch)\"; exit 0; fi\nif [ -n \"\\$(git status --porcelain 2>/dev/null)\" ]; then echo \"RS_SKIP working tree is dirty\"; exit 0; fi\nold=\\$(git rev-parse HEAD)\nif ! pull_out=\\$(git pull --ff-only 2>&1); then\n```\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892979363",
+          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0001\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 101, \"end_line\": 104, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udfe1 **Dirty checkouts are modified**\n\nWhen a dirty checkout is on `main`, `git pull --ff-only` can update non-overlapping files. Active work then sees an unexpected repository revision.\n\n```suggestion\nbranch=\\$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || { echo \"RS_SKIP not a git checkout\"; exit 0; }\nif [ \"\\$branch\" != \"$SYNC_BRANCH\" ]; then echo \"RS_SKIP not on $SYNC_BRANCH (on \\$branch)\"; exit 0; fi\nif [ -n \"\\$(git status --porcelain 2>/dev/null)\" ]; then echo \"RS_SKIP working tree is dirty\"; exit 0; fi\nold=\\$(git rev-parse HEAD)\nif ! pull_out=\\$(git pull --ff-only 2>&1); then\n```\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892979363",
           "createdAt": "2026-08-31T08:50:20Z"
          }
         ]
@@ -40,8 +40,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0002\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 113, \"end_line\": 123, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udfe1 **Dependency failures are never retried**\n\nWhen `uv sync` or `pnpm install` fails, the target is still cached as synchronized. Later ticks skip it, leaving dependencies stale indefinitely.\n\n<details>\n<summary>Prompt for agents</summary>\n\n```\nIn scripts/autoreposync.sh, build_sync_snippet emits RS_WARN for a failed or unavailable dependency installer and then emits RS_SYNCED. process_target treats RS_SYNCED as complete and stores STATE_<target>_SYNCED, so run_tick skips every retry while origin remains at that SHA. Track dependency reconciliation separately from the Git revision, or emit a result that prevents the target from being cached until every required install succeeds. Preserve the intentional agentbox pnpm-skipped-no-node-env policy.\n```\n\n</details>\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892979541",
+          "body": "<!-- devin-review-comment {\"id\": \"BUG_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0002\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 113, \"end_line\": 123, \"side\": \"RIGHT\", \"based_on_repo_rules\": false, \"kind\": \"bug\"} -->\n\n\ud83d\udfe1 **Dependency failures are never retried**\n\nWhen `uv sync` or `pnpm install` fails, the target is still cached as synchronized. Later ticks skip it, leaving dependencies stale indefinitely.\n\n<details>\n<summary>Prompt for agents</summary>\n\n```\nIn scripts/autoreposync.sh, build_sync_snippet emits RS_WARN for a failed or unavailable dependency installer and then emits RS_SYNCED. process_target treats RS_SYNCED as complete and stores STATE_<target>_SYNCED, so run_tick skips every retry while origin remains at that SHA. Track dependency reconciliation separately from the Git revision, or emit a result that prevents the target from being cached until every required install succeeds. Preserve the intentional agentbox pnpm-skipped-no-node-env policy.\n```\n\n</details>\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892979541",
           "createdAt": "2026-08-31T08:50:21Z"
          }
         ]
@@ -59,8 +59,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0001\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 200, \"end_line\": 203, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Stale PID kills unrelated processes**\n\nAfter PID reuse, `kill -0` accepts an unrelated process as the daemon. `stop` or `--takeover` can then terminate it.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892981814",
+          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0001\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 200, \"end_line\": 203, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Stale PID kills unrelated processes**\n\nAfter PID reuse, `kill -0` accepts an unrelated process as the daemon. `stop` or `--takeover` can then terminate it.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892981814",
           "createdAt": "2026-08-31T08:50:43Z"
          }
         ]
@@ -78,8 +78,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0002\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 275, \"end_line\": 277, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Takeover starts before peer exits**\n\n`--takeover` ignores `kill_peer_instance` failures and never waits for peer termination. It can start locally while the peer remains active.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892981916",
+          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0002\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 275, \"end_line\": 277, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Takeover starts before peer exits**\n\n`--takeover` ignores `kill_peer_instance` failures and never waits for peer termination. It can start locally while the peer remains active.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892981916",
           "createdAt": "2026-08-31T08:50:44Z"
          }
         ]
@@ -97,8 +97,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0003\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 266, \"end_line\": 289, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Concurrent starts defeat singleton**\n\nSimultaneous starts can pass both checks before either writes its pidfile. Both daemons run, while only one PID remains recorded.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892982047",
+          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0003\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 266, \"end_line\": 289, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Concurrent starts defeat singleton**\n\nSimultaneous starts can pass both checks before either writes its pidfile. Both daemons run, while only one PID remains recorded.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892982047",
           "createdAt": "2026-08-31T08:50:45Z"
          }
         ]
@@ -116,8 +116,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0004\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 104, \"end_line\": 104, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Wrong upstream can synchronize**\n\nWhen `main` tracks another upstream, bare `git pull --ff-only` updates that upstream. The target is then cached against `origin/main`.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892982175",
+          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0004\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 104, \"end_line\": 104, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Wrong upstream can synchronize**\n\nWhen `main` tracks another upstream, bare `git pull --ff-only` updates that upstream. The target is then cached against `origin/main`.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892982175",
           "createdAt": "2026-08-31T08:50:46Z"
          }
         ]
@@ -135,8 +135,8 @@
           "author": {
            "login": "devin-ai-integration"
           },
-          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0005\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 250, \"end_line\": 252, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Stop removes replacement pidfile**\n\n`stop` removes the pidfile before the daemon exits. A replacement can start, then the old daemon's `EXIT` trap deletes its pidfile.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/maintainer/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892982397",
+          "body": "<!-- devin-review-comment {\"id\": \"ANALYSIS_pr-review-job-63ee2e8656024a2a8c4ae086e9cb8360_0005\", \"file_path\": \"scripts/autoreposync.sh\", \"start_line\": 250, \"end_line\": 252, \"side\": \"RIGHT\", \"kind\": \"analysis\"} -->\n\n\ud83d\udd0d **Stop removes replacement pidfile**\n\n`stop` removes the pidfile before the daemon exits. A replacement can start, then the old daemon's `EXIT` trap deletes its pidfile.\n\n<!-- devin-review-badge-begin -->\n<a href=\"https://app.devin.ai/review/private_owner/music-dj-tools/pull/515\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-devin-review-dark.svg?v=3\">\n    <img src=\"https://static.devin.ai/assets/gh-devin-review-light.svg?v=3\" alt=\"Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->\n\n---\n*Was this helpful? React with \ud83d\udc4d or \ud83d\udc4e to provide feedback.*",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892982397",
           "createdAt": "2026-08-31T08:50:47Z"
          }
         ]
@@ -155,7 +155,7 @@
            "login": "chatgpt-codex-connector"
           },
           "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Skip dirty checkouts before pulling**\n\nWhen a target is on `main` with unrelated uncommitted edits, this pull can still fast-forward and mutate the checkout, contrary to the documented guarantee that dirty trees are logged and left alone. I verified this behavior locally; `git pull -h` defines `--ff-only` only as \u201cabort if fast-forward is not possible,\u201d not as a cleanliness check. Test `git status --porcelain` before pulling so the shared Air checkout is not changed underneath active work.\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892997393",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892997393",
           "createdAt": "2026-08-31T08:52:59Z"
          }
         ]
@@ -174,7 +174,7 @@
            "login": "chatgpt-codex-connector"
           },
           "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Retry failed dependency synchronization**\n\nWhen `uv sync` or `pnpm install` fails or the executable is temporarily unavailable, the snippet still emits `RS_SYNCED`, and this handler records the target as synchronized to `remote_sha`. Subsequent ticks skip it, while a daemon restart sees `old == new` and no longer knows that the lockfile changed, so the checkout can remain indefinitely on stale dependencies. Only set `SYNCED` after all required installs succeed, or retain a pending dependency action for later ticks.\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892997399",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892997399",
           "createdAt": "2026-08-31T08:52:59Z"
          }
         ]
@@ -192,8 +192,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Verify pidfile ownership before signaling**\n\nWhen a pidfile survives a crash or reboot and that PID is later reused, `kill -0` treats the unrelated process as the daemon; startup then refuses, while `stop` or a peer takeover can send `TERM` to that unrelated process. Store and verify process identity or use an ownership-preserving lock rather than treating PID liveness alone as proof of the single autoreposync instance.\n\nAGENTS.md reference: [AGENTS.md:L3-L3](https://github.com/maintainer/music-dj-tools/blob/60e3fe0149dfce3b0b292a54a75288bce4bb379c/AGENTS.md#L3-L3)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/515#discussion_r3892997403",
+          "body": "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Verify pidfile ownership before signaling**\n\nWhen a pidfile survives a crash or reboot and that PID is later reused, `kill -0` treats the unrelated process as the daemon; startup then refuses, while `stop` or a peer takeover can send `TERM` to that unrelated process. Store and verify process identity or use an ownership-preserving lock rather than treating PID liveness alone as proof of the single autoreposync instance.\n\nAGENTS.md reference: [AGENTS.md:L3-L3](https://github.com/private_owner/music-dj-tools/blob/60e3fe0149dfce3b0b292a54a75288bce4bb379c/AGENTS.md#L3-L3)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/515#discussion_r3892997403",
           "createdAt": "2026-08-31T08:53:00Z"
          }
         ]

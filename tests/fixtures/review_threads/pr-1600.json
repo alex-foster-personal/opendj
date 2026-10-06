@@ -6,7 +6,7 @@
     "title": "docs(ops): map the isolated usage seats, their selfcheck, and their self-healing",
     "state": "MERGED",
     "merged": true,
-    "url": "https://github.com/maintainer/music-dj-tools/pull/1600",
+    "url": "https://github.com/private_owner/music-dj-tools/pull/1600",
     "reviewThreads": {
      "nodes": [
       {
@@ -21,8 +21,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [NON-BLOCKING] Preserve account names in the state dump**\n\nWhen a seat's state file is missing or stale\u2014the exact failure this command is meant to diagnose\u2014`cat` prints only the file contents, with all percentage values followed by all timestamps, and never identifies their source files. This makes an omitted account invisible and can cause an operator to associate a percentage or timestamp with the wrong seat, contrary to the preceding instruction not to quote a value without naming its file; print each filename alongside its value instead.\n\nAGENTS.md reference: [AGENTS.md:L94-L101](https://github.com/maintainer/music-dj-tools/blob/c919622285bab49b82fd8a7498fc9c28fab8f5ed/AGENTS.md#L94-L101)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1600#discussion_r3969556694",
+          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [NON-BLOCKING] Preserve account names in the state dump**\n\nWhen a seat's state file is missing or stale\u2014the exact failure this command is meant to diagnose\u2014`cat` prints only the file contents, with all percentage values followed by all timestamps, and never identifies their source files. This makes an omitted account invisible and can cause an operator to associate a percentage or timestamp with the wrong seat, contrary to the preceding instruction not to quote a value without naming its file; print each filename alongside its value instead.\n\nAGENTS.md reference: [AGENTS.md:L94-L101](https://github.com/private_owner/music-dj-tools/blob/c919622285bab49b82fd8a7498fc9c28fab8f5ed/AGENTS.md#L94-L101)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1600#discussion_r3969556694",
           "createdAt": "2026-09-09T14:26:25Z"
          },
          {
@@ -30,7 +30,7 @@
            "login": "maintainer"
           },
           "body": "logged as tech debt: .planning/debt/1600.md",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1600#discussion_r3969604668",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1600#discussion_r3969604668",
           "createdAt": "2026-09-09T14:31:15Z"
          }
         ]
@@ -48,8 +48,8 @@
           "author": {
            "login": "chatgpt-codex-connector"
           },
-          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [NON-BLOCKING] Check watchdog liveness before declaring seats healthy**\n\nWhen `usage-seats-watchdog.timer` is stopped or has never run, the alert file may be absent precisely because nothing is creating it; this command maps that case to `seats-ok`, while section 7's service check omits this timer and the live selfcheck in step 8 is conditional. The advertised health sequence can therefore report dead usage monitoring as healthy, so verify the timer/service or run the selfcheck unconditionally before treating absence as a healthy signal.\n\nAGENTS.md reference: [AGENTS.md:L94-L101](https://github.com/maintainer/music-dj-tools/blob/404343bdd90d8f0f881e51e960a25c634cb4d33d/AGENTS.md#L94-L101)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1600#discussion_r3969644211",
+          "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  [NON-BLOCKING] Check watchdog liveness before declaring seats healthy**\n\nWhen `usage-seats-watchdog.timer` is stopped or has never run, the alert file may be absent precisely because nothing is creating it; this command maps that case to `seats-ok`, while section 7's service check omits this timer and the live selfcheck in step 8 is conditional. The advertised health sequence can therefore report dead usage monitoring as healthy, so verify the timer/service or run the selfcheck unconditionally before treating absence as a healthy signal.\n\nAGENTS.md reference: [AGENTS.md:L94-L101](https://github.com/private_owner/music-dj-tools/blob/404343bdd90d8f0f881e51e960a25c634cb4d33d/AGENTS.md#L94-L101)\n\nUseful? React with \ud83d\udc4d\u00a0/ \ud83d\udc4e.",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1600#discussion_r3969644211",
           "createdAt": "2026-09-09T14:35:12Z"
          },
          {
@@ -57,7 +57,7 @@
            "login": "maintainer"
           },
           "body": "REBUTTED: this runbook step is documented as a fast presence check, and the unconditional live verdict already exists as step 8 (`probe_all.py --selfcheck`), which an operator runs whenever step 7 or a percentage looks wrong. Making step 7 also verify the timer duplicates step 8 in a slower form. The timer-liveness gap you describe is a property of the watchdog, not of this docs-only PR, and it is out of scope for this merge. Leaving as-is.",
-          "url": "https://github.com/maintainer/music-dj-tools/pull/1600#discussion_r3969710885",
+          "url": "https://github.com/private_owner/music-dj-tools/pull/1600#discussion_r3969710885",
           "createdAt": "2026-09-09T14:40:48Z"
          }
         ]

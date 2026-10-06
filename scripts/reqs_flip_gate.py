@@ -35,7 +35,7 @@ from scripts.reqs_cited_unflipped import citations, pending_v1_ids
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQS_JSON = REPO_ROOT / "reqs.json"
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 
 
 def pr_view(pr: int, repo: str = DEFAULT_REPO) -> dict:

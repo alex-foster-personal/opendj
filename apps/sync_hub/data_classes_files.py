@@ -452,7 +452,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "data-dir",
         "/Music/Recovered/",
         "/odj-private",
-        "maintainer/",
+        "private_owner/",
         "/refs/",
         "/blog/",
     ),

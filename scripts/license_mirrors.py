@@ -75,8 +75,8 @@ class ReviewedLicenseText:
 
 
 _FETCHED = "Sat 3 Oct 2026"
-_ISSUE_5143 = "https://github.com/maintainer/music-dj-tools/issues/5143"
-_ISSUE_5189 = "https://github.com/maintainer/music-dj-tools/pull/5189"
+_ISSUE_5143 = "https://github.com/private_owner/music-dj-tools/issues/5143"
+_ISSUE_5189 = "https://github.com/private_owner/music-dj-tools/pull/5189"
 
 
 def _pin(
@@ -189,7 +189,7 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
         "09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7",
         "the upstream generated-validation NOTICE contains the complete BSD-3-Clause and MPL-2.0 "
         "license texts; identical bytes are mirrored as a license while the original notice remains",
-        issue="https://github.com/maintainer/music-dj-tools/issues/5351",
+        issue="https://github.com/private_owner/music-dj-tools/issues/5351",
         fetched="Mon 5 Oct 2026",
     ),
     _pin(
@@ -201,7 +201,7 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
         "09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7",
         "the config NOTICE identifies validate-pyproject schemas under MPL-2.0; the same release's "
         "generated-validation NOTICE carries the complete MPL-2.0 terms and is mirrored unchanged",
-        issue="https://github.com/maintainer/music-dj-tools/issues/5351",
+        issue="https://github.com/private_owner/music-dj-tools/issues/5351",
         fetched="Mon 5 Oct 2026",
     ),
     _pin(
@@ -214,7 +214,7 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
         "the locked crate and exact upstream revision declare MIT but ship no LICENSE or copyright "
         "notice; upstream Cargo metadata and canonical SPDX MIT permission text are staged, "
         "omitting the template copyright placeholder rather than inventing a holder or year",
-        issue="https://github.com/maintainer/music-dj-tools/issues/5351",
+        issue="https://github.com/private_owner/music-dj-tools/issues/5351",
         fetched="Mon 5 Oct 2026",
     ),
     _pin(

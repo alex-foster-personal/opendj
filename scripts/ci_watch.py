@@ -89,7 +89,7 @@ from scripts.review_gate_freshness import CHECKOUT_ROOT
 from scripts.review_gh import TriageError
 from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 POLL_INTERVAL_S = 30.0
 TIMEOUT_S = 4 * 3600.0
 NO_RUNS_GRACE_S = 600.0

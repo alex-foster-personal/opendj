@@ -22,7 +22,7 @@ import sys
 from apps.shared.semver import Semver
 from apps.shared.semver import parse_semver as _parse_semver
 
-DEFAULT_PUBLIC_REPO = "maintainer/issue-assets"
+DEFAULT_PUBLIC_REPO = "alex-foster-personal/issue-assets"
 
 
 def parse_semver(raw: str, *, source: str) -> Semver:

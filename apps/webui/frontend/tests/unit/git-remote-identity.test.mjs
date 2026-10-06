@@ -10,24 +10,24 @@ import { canonicalRepoIdentity } from './git-remote-identity.mjs';
 // asserting "this machine cloned the way I did". See issue #714.
 
 test('canonicalRepoIdentity reduces every origin transport to one identity', () => {
-	const identity = 'github.com/maintainer/music-dj-tools';
+	const identity = 'github.com/private_owner/music-dj-tools';
 	const equivalentRemotes = [
-		'https://github.com/maintainer/music-dj-tools',
-		'https://github.com/maintainer/music-dj-tools.git',
-		'https://github.com/maintainer/music-dj-tools/',
-		'http://github.com/maintainer/music-dj-tools.git',
-		'https://x-access-token:ghs_redacted@github.com/maintainer/music-dj-tools.git',
-		'git@github.com:maintainer/music-dj-tools.git',
-		'git@github.com:maintainer/music-dj-tools',
-		'ssh://git@github.com/maintainer/music-dj-tools.git',
+		'https://github.com/private_owner/music-dj-tools',
+		'https://github.com/private_owner/music-dj-tools.git',
+		'https://github.com/private_owner/music-dj-tools/',
+		'http://github.com/private_owner/music-dj-tools.git',
+		'https://x-access-token:ghs_redacted@github.com/private_owner/music-dj-tools.git',
+		'git@github.com:private_owner/music-dj-tools.git',
+		'git@github.com:private_owner/music-dj-tools',
+		'ssh://git@github.com/private_owner/music-dj-tools.git',
 		// A port is transport, like the scheme and the credentials beside it.
 		// 443 is the real case: it is how an SSH clone gets through a firewall
 		// that blocks 22, and Git's own URI form puts the port right there.
-		'ssh://git@github.com:443/maintainer/music-dj-tools.git',
-		'ssh://git@github.com:22/maintainer/music-dj-tools',
-		'https://github.com:8443/maintainer/music-dj-tools.git',
-		'git://github.com/maintainer/music-dj-tools.git',
-		'GIT@GitHub.com:maintainer/Music-DJ-Tools.git'
+		'ssh://git@github.com:443/private_owner/music-dj-tools.git',
+		'ssh://git@github.com:22/private_owner/music-dj-tools',
+		'https://github.com:8443/private_owner/music-dj-tools.git',
+		'git://github.com/private_owner/music-dj-tools.git',
+		'GIT@GitHub.com:private_owner/Music-DJ-Tools.git'
 	];
 	for (const remote of equivalentRemotes) {
 		assert.equal(canonicalRepoIdentity(remote), identity, remote);
@@ -38,12 +38,12 @@ test('canonicalRepoIdentity keeps the host, so a fork or an Enterprise mirror is
 	// Owner/repo alone is not identity: the same slug exists on any GitHub
 	// Enterprise host, and the ledger's chip links are absolute URLs.
 	assert.notEqual(
-		canonicalRepoIdentity('git@github.example.com:maintainer/music-dj-tools.git'),
-		canonicalRepoIdentity('git@github.com:maintainer/music-dj-tools.git')
+		canonicalRepoIdentity('git@github.example.com:private_owner/music-dj-tools.git'),
+		canonicalRepoIdentity('git@github.com:private_owner/music-dj-tools.git')
 	);
 	assert.notEqual(
 		canonicalRepoIdentity('git@github.com:someone-else/music-dj-tools.git'),
-		canonicalRepoIdentity('git@github.com:maintainer/music-dj-tools.git')
+		canonicalRepoIdentity('git@github.com:private_owner/music-dj-tools.git')
 	);
 });
 

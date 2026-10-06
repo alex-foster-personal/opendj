@@ -77,7 +77,7 @@ from scripts.perf.perfbatch_hunks import (
 
 T = TypeVar("T")
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 DEFAULT_BASE = "origin/main"
 POLICY_PATH = Path(__file__).with_name("perfbatch_policy.toml")
 

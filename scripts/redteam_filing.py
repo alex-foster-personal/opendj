@@ -29,7 +29,7 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.redteam_filing") from None
     raise
 
-DEFAULT_REPOSITORY = "maintainer/music-dj-tools"
+DEFAULT_REPOSITORY = "private_owner/music-dj-tools"
 LABEL_COLOR = "b60205"
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 

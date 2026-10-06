@@ -48,7 +48,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REQS_JSON = REPO_ROOT / "reqs.json"
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 DEFAULT_DAYS = 7
 # A merged PR whose title starts like this recorded the id rather than shipped it.
 DOCS_TITLE = re.compile(r"^docs\b")

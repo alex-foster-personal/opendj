@@ -84,7 +84,7 @@ describe('pitch fader geometry', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3917231716
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3917231716
 // (P2/NON-BLOCKING): this file used to test faderValueFromPitchRatio,
 // pitchRatioFromFaderValue and MIN_TEMPO_RATIO
 // (src/lib/components/rb/deck/pitch-fader-geometry.ts) before it was
@@ -154,7 +154,7 @@ test('invalid inputs are rejected rather than silently coerced', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3918252808
+// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3918252808
 // (P2/NON-BLOCKING): PitchFader's tooltip promised "Double-click resets to
 // 0%" with no dblclick handler behind it - the two pointerdown events of a
 // real double-click instead set the value to wherever it landed. Implemented
@@ -187,7 +187,7 @@ describe('PitchFader double-click reset matches its own tooltip', () => {
 		assert.match(fn, /_setTempoFromValue\(0\.5\)/, 'centre fader value is 0.5, not 0 or 1');
 	});
 
-	// Review thread https://github.com/maintainer/music-dj-tools/pull/945#discussion_r3919503749
+	// Review thread https://github.com/private_owner/music-dj-tools/pull/945#discussion_r3919503749
 	// (P2/NON-BLOCKING, found on the reset above): both pointerdowns that make
 	// up a real double-click already dispatch their own tempo command before
 	// this handler runs. Gating the reset on `pending` (the same guard

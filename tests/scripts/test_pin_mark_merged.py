@@ -18,7 +18,7 @@ import pytest
 
 from scripts.pin_mark_merged import Target, main, merged_note, parse_pr_body, select_merged_pins
 
-THIS_REPO = "maintainer/music-dj-tools"
+THIS_REPO = "private_owner/music-dj-tools"
 ISSUE = f"https://github.com/{THIS_REPO}/issues"
 
 
@@ -53,7 +53,7 @@ def test_closing_keywords_are_read_as_issue_numbers() -> None:
 def test_a_full_issue_url_closing_reference_is_read_too() -> None:
     refs = parse_pr_body(f"Fixes {ISSUE}/884")
     assert refs.issues == set(), "a full URL reference carries its own repo, not a bare number"
-    assert refs.repo_issues == {("maintainer/music-dj-tools", 884)}
+    assert refs.repo_issues == {("private_owner/music-dj-tools", 884)}
 
 
 def test_an_owner_repo_shorthand_closing_reference_is_read_too() -> None:

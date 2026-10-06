@@ -137,7 +137,7 @@ def test_endpoint_matches_the_shell_configuration() -> None:
 def test_endpoint_uses_the_public_release_host() -> None:
     """An unauthenticated updater cannot read assets from the private repo."""
     assert UPDATE_ENDPOINT == (
-        "https://github.com/maintainer/issue-assets"
+        "https://github.com/alex-foster-personal/issue-assets"
         "/releases/latest/download/latest.json"
     )
 

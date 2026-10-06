@@ -67,7 +67,7 @@ def test_archive_moves_one_pin_with_its_full_history(client: TestClient, tmp_pat
         f"/api/v1/feedback/comments/{pin['id']}",
         json={
             "status": "fixed",
-            "issue_url": "https://github.com/maintainer/music-dj-tools/issues/888",
+            "issue_url": "https://github.com/private_owner/music-dj-tools/issues/888",
             "agent_note": "Fixed in 0980e915 on branch af--pin-review-2sep.",
         },
     )
@@ -210,7 +210,7 @@ def test_follow_on_makes_a_new_open_pin_at_the_same_anchor(
         f"/api/v1/feedback/comments/{parent['id']}",
         json={
             "status": "merged",
-            "issue_url": "https://github.com/maintainer/music-dj-tools/issues/888",
+            "issue_url": "https://github.com/private_owner/music-dj-tools/issues/888",
         },
     )
 
@@ -226,7 +226,7 @@ def test_follow_on_makes_a_new_open_pin_at_the_same_anchor(
         parent["page"],
     )
     assert child["text"].startswith(
-        "Follow-on to https://github.com/maintainer/music-dj-tools/issues/888:"
+        "Follow-on to https://github.com/private_owner/music-dj-tools/issues/888:"
     ), "a follow-on that does not name its parent is an orphan - broken"
     assert child["status"] == "open"
 

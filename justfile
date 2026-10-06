@@ -1479,7 +1479,7 @@ perf-harness-tests:
 # covering its own tests. Floor 12213 -> 14783.
 #
 # tests/fleet_mcp left the scope Thu 1 Oct 2026 with the dispatch MCP server,
-# which moved to fleet-af (`fleet--mcp/`, maintainer/fleet-af#9).
+# which moved to fleet-af (`fleet--mcp/`, private_owner/fleet-af#9).
 # Its 81 collected tests run there now; tests/scripts/test_dispatch_mcp_stub.py
 # replaces them here with 4 tests over the caller-side stub. Ratcheted by that
 # delta (-81 +4), floor 14783 -> 14706.
@@ -2115,7 +2115,7 @@ stable-evidence-red-team *args:
 
 # Agent parity for the semver gate inside just release. Runs on any OS with gh.
 release-check-semver:
-    uv run --no-sync python -m scripts.release_semver check --config apps/desktop/src-tauri/tauri.conf.json --repo maintainer/issue-assets
+    uv run --no-sync python -m scripts.release_semver check --config apps/desktop/src-tauri/tauri.conf.json --repo alex-foster-personal/issue-assets
 
 # ----- Preview-branch drift (DEVOPS-05) -----------------------------------
 

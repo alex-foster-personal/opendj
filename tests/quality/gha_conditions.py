@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 TRUNK_APP_LOGIN = "trunk-io[bot]"  # REST user.login on Trunk's draft PRs, e.g. #4355 (id 85644782)
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 
 Scalar = str | bool | int | float | None
 

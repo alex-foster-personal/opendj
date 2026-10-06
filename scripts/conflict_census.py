@@ -47,7 +47,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[1]
-REPO_SLUG: str = "maintainer/music-dj-tools"
+REPO_SLUG: str = "private_owner/music-dj-tools"
 MAIN_REF: str = "refs/heads/main"
 # merge-tree exits 0 clean, 1 on conflicts, >1 on error. Only 1 carries a census.
 MERGE_TREE_CONFLICT: int = 1

@@ -26,7 +26,7 @@ from pathlib import Path
 from scripts.ci_failure_ids import failed_identities
 from scripts.review_gh import TriageError, _gh
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 MAIN_WINDOW = 3
 VERDICT_DEPTH = 30
 WORKFLOW_FILES = ("ci.yml", "e2e.yml")

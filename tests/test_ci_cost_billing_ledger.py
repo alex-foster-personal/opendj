@@ -61,7 +61,7 @@ def test_billing_ledger_makes_at_most_five_api_calls(monkeypatch):
         [
             "ci_cost_ledger",
             "--repository",
-            "maintainer/music-dj-tools",
+            "private_owner/music-dj-tools",
             "--token",
             "token",
             "--month",
@@ -94,7 +94,7 @@ def test_billing_report_lists_minutes_and_net_per_sku(tmp_path, monkeypatch):
         [
             "ci_cost_ledger",
             "--repository",
-            "maintainer/music-dj-tools",
+            "private_owner/music-dj-tools",
             "--billing-json",
             str(fixture),
             "--month",
@@ -135,7 +135,7 @@ def test_stale_billing_feed_is_unknown_without_numbers(tmp_path, monkeypatch):
         [
             "ci_cost_ledger",
             "--repository",
-            "maintainer/music-dj-tools",
+            "private_owner/music-dj-tools",
             "--billing-json",
             str(fixture),
             "--month",
@@ -170,7 +170,7 @@ def test_no_repo_rows_for_month_is_unknown(tmp_path, monkeypatch):
         [
             "ci_cost_ledger",
             "--repository",
-            "maintainer/music-dj-tools",
+            "private_owner/music-dj-tools",
             "--billing-json",
             str(fixture),
             "--month",
@@ -204,7 +204,7 @@ def test_pre_cutover_hosted_rows_pass(tmp_path, monkeypatch):
         [
             "ci_cost_ledger",
             "--repository",
-            "maintainer/music-dj-tools",
+            "private_owner/music-dj-tools",
             "--billing-json",
             str(fixture),
             "--month",
@@ -240,7 +240,7 @@ def test_post_cutover_macos_row_fails_loudly(tmp_path, monkeypatch):
         [
             "ci_cost_ledger",
             "--repository",
-            "maintainer/music-dj-tools",
+            "private_owner/music-dj-tools",
             "--billing-json",
             str(fixture),
             "--month",
@@ -267,7 +267,7 @@ def test_build_billing_ledger_freshness_uses_global_latest():
     now = datetime(2026, 9, 14, 12, 0, tzinfo=UTC)
     stale = build_billing_ledger(
         [_usage_row("2026-08-01", "Actions Linux", 1, 0.01)],
-        repository="maintainer/music-dj-tools",
+        repository="private_owner/music-dj-tools",
         month="2026-09",
         api_calls=1,
         now=now,
@@ -276,7 +276,7 @@ def test_build_billing_ledger_freshness_uses_global_latest():
 
     fresh = build_billing_ledger(
         _fresh_items(_usage_row("2026-09-02", "Actions Linux", 1, 0.01)),
-        repository="maintainer/music-dj-tools",
+        repository="private_owner/music-dj-tools",
         month="2026-09",
         api_calls=1,
         now=now,

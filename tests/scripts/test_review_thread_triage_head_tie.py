@@ -27,7 +27,7 @@ def _pr(head_sha: str) -> PullRequest:
         title="t",
         state="OPEN",
         merged=False,
-        url="https://github.com/maintainer/music-dj-tools/pull/1053",
+        url="https://github.com/private_owner/music-dj-tools/pull/1053",
         head_sha=head_sha,
         threads=(),
     )

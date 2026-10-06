@@ -34,7 +34,7 @@ function partialPin(status) {
 		build: { git_sha: 'abc', built_at_utc: '2026-09-03T00:00:00Z', source: 'test' },
 		status,
 		agent_note: 'PARTIAL: reply composer shipped; remaining work tracked in #4085',
-		issue_url: 'https://github.com/maintainer/music-dj-tools/issues/4085',
+		issue_url: 'https://github.com/private_owner/music-dj-tools/issues/4085',
 		replies: [],
 		attachment: null
 	};

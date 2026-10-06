@@ -34,7 +34,7 @@ from scripts.perf.perf_kpi_ledger_local import (
     outbox_dir_for,
 )
 
-REPOSITORY = "maintainer/music-dj-tools"
+REPOSITORY = "private_owner/music-dj-tools"
 
 
 def _ledger_entries_at_ref(repo_root: Path, ref: str) -> list:

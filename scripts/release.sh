@@ -9,7 +9,7 @@
 # Requirements:
 # - macOS with the Developer ID identity and notarytool profile configured.
 # - TAURI_SIGNING_PRIVATE_KEY supplied through Doppler by the invoking shell.
-# - gh authenticated with write access to maintainer/issue-assets.
+# - gh authenticated with write access to alex-foster-personal/issue-assets.
 #
 # Acceptance:
 # - [if] MDT_SHIP_UNSIGNED is set [then] release exits before building -> broken.
@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-PUBLIC_REPO="maintainer/issue-assets"
+PUBLIC_REPO="alex-foster-personal/issue-assets"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF="$ROOT/apps/desktop/src-tauri/tauri.conf.json"
 MACOS_DIR="$ROOT/apps/desktop/src-tauri/target/release/bundle/macos"

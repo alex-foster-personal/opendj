@@ -12,7 +12,7 @@ x
 - Scorer: wall time of the same command against the same ~300 open PRs
 
 ## 10x Workings
-- Card: https://github.com/maintainer/10x-hunter/blob/master/cards/HUNT-2026-09-29-H-Loop-01.md
+- Card: https://github.com/private_owner/10x-hunter/blob/master/cards/HUNT-2026-09-29-H-Loop-01.md
 - 13.5 / 1.25 = 10.8. The floor is the listing without per-PR mergeability.
 """
 

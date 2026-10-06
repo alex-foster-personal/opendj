@@ -26,7 +26,7 @@ from datetime import datetime
 
 # ----- configuration ---------------------------------------------------------------
 
-REPO = "maintainer/music-dj-tools"
+REPO = "private_owner/music-dj-tools"
 
 GH_BIN = "gh"
 GH_TIMEOUT_SECONDS = 60

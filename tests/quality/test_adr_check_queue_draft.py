@@ -121,8 +121,8 @@ def test_queue_draft_judges_each_batch_member_declaration(
         "author": {"login": "app/trunk-io"},
         "isCrossRepository": False,
         "body": "## Pull Requests Being Tested\n"
-        "- https://github.com/maintainer/music-dj-tools/pull/4001\n"
-        "- https://github.com/maintainer/music-dj-tools/pull/4002\n",
+        "- https://github.com/private_owner/music-dj-tools/pull/4001\n"
+        "- https://github.com/private_owner/music-dj-tools/pull/4002\n",
     }
     member_body = {4001: "ADR: none, because docs only.", 4002: declared}
     bodies = {4227: batch, **{pr: {"body": body} for pr, body in member_body.items()}}

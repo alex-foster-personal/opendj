@@ -27,7 +27,7 @@ STAMP = REPO_ROOT / "scripts" / "ci_frontend_build_stamp.sh"
 ASSERT = REPO_ROOT / "scripts" / "ci_frontend_build_assert.sh"
 ACQUIRE = REPO_ROOT / "scripts" / "ci_frontend_build_acquire_from_ci.sh"
 SHA = "a" * 40
-REPO_SLUG = "maintainer/music-dj-tools"
+REPO_SLUG = "private_owner/music-dj-tools"
 
 # Fake `gh` used for the CI-job-state tests below. Behavior is entirely
 # env-var driven (read at run time) so one script content covers every

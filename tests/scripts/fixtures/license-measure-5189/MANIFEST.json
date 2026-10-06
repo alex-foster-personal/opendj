@@ -1,8 +1,8 @@
 {
   "description": "Captured-real measurement of lock packages whose installed distributions shipped no license text. Produced Sat 3 Oct 2026 on worktree HEAD cbee2e4a82238cf719221e59dbae0c4a9a31f10e by the production collectors in scripts/third_party_licenses.py (python_components, js_components, rust_components), before reviewed texts were attached. Machine-specific worktree prefixes in Python site paths are replaced with /Users/dev/code/music-dj-tools; /tmp measurement sites are kept. Never hand-edit a payload to make a test pass; re-run the collectors and replace the capture plus this manifest together.",
   "captured": "Sat 3 Oct 2026",
-  "issue": "https://github.com/maintainer/music-dj-tools/issues/5143",
-  "pull_request": "https://github.com/maintainer/music-dj-tools/pull/5189",
+  "issue": "https://github.com/private_owner/music-dj-tools/issues/5143",
+  "pull_request": "https://github.com/private_owner/music-dj-tools/pull/5189",
   "measured_source_head": "cbee2e4a82238cf719221e59dbae0c4a9a31f10e",
   "collectors": {
     "module": "scripts/third_party_licenses.py",

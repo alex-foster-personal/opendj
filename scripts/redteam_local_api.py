@@ -544,7 +544,7 @@ def _file_findings(results: Sequence[ProbeResult], index_path: Path) -> None:
         store.read_all(),
         run_id=DEFAULT_RUN_ID,
         priority="p0",
-        github=GhGitHub("maintainer/music-dj-tools"),
+        github=GhGitHub("private_owner/music-dj-tools"),
         extra_labels=("red-team",),
     )
     print(json.dumps({"created": filed.created, "commented": filed.commented}))

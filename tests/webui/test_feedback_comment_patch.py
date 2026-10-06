@@ -116,7 +116,7 @@ def test_agent_authored_pin_keeps_its_author_and_kind(client: TestClient) -> Non
         f"/api/v1/feedback/comments/{r.json()['id']}",
         json={
             "status": "fixed",
-            "issue_url": "https://github.com/maintainer/music-dj-tools/issues/940",
+            "issue_url": "https://github.com/private_owner/music-dj-tools/issues/940",
         },
     )
     assert filed.status_code == 200, filed.text

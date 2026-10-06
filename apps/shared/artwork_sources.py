@@ -42,7 +42,7 @@ from typing import Protocol
 
 from . import audio_files
 
-USER_AGENT = "OpenDJ/1.0 ( https://github.com/maintainer/music-dj-tools )"
+USER_AGENT = "OpenDJ/1.0 ( https://github.com/private_owner/music-dj-tools )"
 MB_URL = "https://musicbrainz.org/ws/2/recording"
 CAA_URL = "https://coverartarchive.org/release-group/{rg}/front-250"
 MB_SPACING_S = 1.1

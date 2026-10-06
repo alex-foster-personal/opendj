@@ -29,7 +29,7 @@ _ISSUE_URL_RE = re.compile(
 )
 _REPO_REF_RE = re.compile(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)\b")
 # Bare ledger refs ("151", "#151") belong to this repository.
-_HOME_REPO = "maintainer/music-dj-tools"
+_HOME_REPO = "private_owner/music-dj-tools"
 _KNOWN_STATUSES = frozenset(
     {"open", "issued", "blocked", "fixed", "merged", "harvested", "archived"}
 )

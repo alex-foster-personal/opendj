@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 
 VARIABLE = "CI_RUNS_ON_MERGE_QUEUE"
 VARIABLE_PREFIX = "CI_RUNS_ON_"
-DEFAULT_REPO = "maintainer/music-dj-tools"
+DEFAULT_REPO = "private_owner/music-dj-tools"
 EXIT_OK, EXIT_STRANDED, EXIT_UNKNOWN = 0, 1, 2
 
 
