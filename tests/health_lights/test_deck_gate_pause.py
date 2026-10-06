@@ -118,9 +118,10 @@ def test_the_drain_pauses_while_a_deck_plays(tmp_path: Path) -> None:
 
 
 def test_every_armed_hold_logs_the_deck_and_both_ids(caplog: pytest.LogCaptureFixture) -> None:
-    """[if] a hold is armed [then] one DEBUG line names deck, old id, new id, [else stop]."""
+    """[if] a hold is armed [then] one INFO line names deck, old id, new id, [else stop]."""
     gate, _, box = _loaded_gate()
-    caplog.set_level(logging.DEBUG, logger="apps.webui.server.coverage_drain_analysis")
+    # INFO, the packaged app's level: a DEBUG line would never be captured there.
+    caplog.set_level(logging.INFO, logger="apps.webui.server.coverage_drain_analysis")
     assert gate() is False
     assert not [r for r in caplog.records if "load hold armed" in r.getMessage()]
     box["mirror"] = _mirror(("e", False), ("b", False), ("c", False), ("d", False))

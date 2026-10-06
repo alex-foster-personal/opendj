@@ -184,7 +184,7 @@ class DeckGate:
             if stable_id is None or self._loaded.get(name) == stable_id:
                 continue
             # DRAIN-PAUSE-01: proves in the packaged app what armed a hold.
-            log.debug("deck gate: load hold armed: deck=%s old=%s new=%s", name, self._loaded.get(name), stable_id)
+            log.info("deck gate: load hold armed: deck=%s old=%s new=%s", name, self._loaded.get(name), stable_id)
             self._hold_until = now + LOAD_SETTLE_S
             self._loaded[name] = stable_id
         return any_deck_playing(mirror) or now < self._hold_until
