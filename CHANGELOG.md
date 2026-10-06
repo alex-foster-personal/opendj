@@ -39,9 +39,11 @@ an internal test build and was never public.
 
 ### Known issues
 
-- **Stems:** <!-- STEMS-KNOWN-ISSUE: placeholder. Replace with the stems Known-issue line that
-  the Preview & Pins stems worker posts on issue #5638 (orders board, item W4). --> _Pending:
-  the stems memory note is still being written._
+- **Stems use a lot of memory.** Each track loaded with stems holds about 100 MB for every
+  minute of audio, so a 5-minute track takes about 500 MB, and four stemmed 5-minute tracks need
+  about 2 GB on top of the app itself. Memory comes back when you eject or replace a track, apart
+  from about 250 MB that the first stems load keeps for the rest of the session. On a Mac with
+  8 GB, loading stems on all four decks may slow the computer down.
 - **Browser output device:** in the browser web UI without microphone permission, choosing the
   default output device can fail with "device default is not found" and show an error toast
   (board item W8; a fix is in progress). The desktop app is not affected.
