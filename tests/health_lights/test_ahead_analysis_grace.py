@@ -51,7 +51,7 @@ def _drain(clock: Clock, runs: list[str], grace_s: float = aa.STARTUP_GRACE_S) -
 
 def test_no_tick_runs_inside_the_boot_grace() -> None:
     """[if] 119.9 s have passed and no index was served [then] the tick runs nothing, [else stop]."""
-    clock, runs = Clock(), []
+    clock, runs = Clock(), list[str]()
     drain = _drain(clock, runs)
     clock.now += 119.9
     assert drain.tick() == aa.STARTUP_GRACE_STATE
@@ -60,7 +60,7 @@ def test_no_tick_runs_inside_the_boot_grace() -> None:
 
 def test_the_drain_ticks_once_120s_have_passed_with_no_index() -> None:
     """[if] 120 s pass with no index served [then] the drain ticks anyway, [else stop]."""
-    clock, runs = Clock(), []
+    clock, runs = Clock(), list[str]()
     drain = _drain(clock, runs)
     clock.now += 120.0
     assert drain.tick() == "ran:strip"
@@ -69,7 +69,7 @@ def test_the_drain_ticks_once_120s_have_passed_with_no_index() -> None:
 
 def test_an_index_served_at_5s_ends_the_grace_early() -> None:
     """[if] the index is served at t=5 s [then] the next tick runs work, [else stop]."""
-    clock, runs = Clock(), []
+    clock, runs = Clock(), list[str]()
     drain = _drain(clock, runs)
     clock.now += 5.0
     assert drain.tick() == aa.STARTUP_GRACE_STATE
@@ -79,7 +79,7 @@ def test_an_index_served_at_5s_ends_the_grace_early() -> None:
 
 def test_an_index_after_the_grace_never_restarts_it() -> None:
     """[if] an index is served after the grace ended [then] ticks still run, [else stop]."""
-    clock, runs = Clock(), []
+    clock, runs = Clock(), list[str]()
     drain = _drain(clock, runs)
     clock.now += 121.0
     drain.index_served()
@@ -102,14 +102,14 @@ def test_build_for_app_arms_the_120s_grace(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_serving_the_index_ends_the_drain_grace(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] GET /tracks/index answers [then] the drain is told the index was served, [else stop]."""
-    clock, runs = Clock(), []
+    clock, runs = Clock(), list[str]()
     drain = _drain(clock, runs)
     backend = SimpleNamespace(
         library_revision=lambda: "r1",
         list_tracks=lambda _f: SimpleNamespace(items=[], next_cursor=None),
     )
     monkeypatch.setattr(tracks_routes, "_listing_items", lambda *_a: [])
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ahead_analysis=drain)))
+    request: Any = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ahead_analysis=drain)))
     response = tracks_routes.get_track_index(request, None, None, backend)
     assert response.status_code == 200
     assert not drain.in_startup_grace()

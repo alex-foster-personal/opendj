@@ -772,9 +772,9 @@ def build_for_app(app: Any) -> AheadDrain:
 
 __all__ = [
     "AHEAD_ENV",
+    "LANE_ORDER",
     "STARTUP_GRACE_S",
     "STARTUP_GRACE_STATE",
-    "LANE_ORDER",
     "AheadDrain",
     "AheadSources",
     "arm_from_environ",
