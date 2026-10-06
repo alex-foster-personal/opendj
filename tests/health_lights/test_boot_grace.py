@@ -81,7 +81,12 @@ def test_ending_the_grace_releases_a_waiter_at_once() -> None:
     """[if] end() is called while a scanner waits [then] the waiter returns, [else stop]."""
     grace = bg.BootGrace(bg.BOOT_GRACE_S)
     released = threading.Event()
-    waiter = threading.Thread(target=lambda: (grace.wait(), released.set()), daemon=True)
+
+    def scanner() -> None:
+        grace.wait()
+        released.set()
+
+    waiter = threading.Thread(target=scanner, daemon=True)
     waiter.start()
     assert not released.wait(0.2), "the waiter must hold while the grace is active"
     grace.end()
@@ -165,7 +170,12 @@ def test_control_a_background_measurement_with_no_gate_runs_at_once() -> None:
     """[if] a cache has no gate [then] it measures at once (control), [else stop]."""
     measured = threading.Event()
     cache = cc.CoverageCache()
-    cache.peek(lambda: (measured.set(), {"total": 1})[1])
+
+    def compute() -> dict[str, object]:
+        measured.set()
+        return {"total": 1}
+
+    cache.peek(compute)
     assert measured.wait(2.0)
 
 
@@ -174,7 +184,7 @@ def test_the_path_refresher_flushes_nothing_inside_the_grace(tmp_path: Path, mon
     grace = bg.BootGrace(bg.BOOT_GRACE_S)
     flushed: list[str] = []
     refresher = par.PathAvailabilityRefresher(data_dir=tmp_path, state_db_path=tmp_path / "state.db", grace=grace)
-    monkeypatch.setattr(refresher, "_flush", lambda paths: flushed.extend(paths))
+    monkeypatch.setattr(refresher, "_flush", flushed.extend)
     monkeypatch.setattr(refresher, "_persist_unpersisted", lambda: None)
     refresher.start()
     try:
