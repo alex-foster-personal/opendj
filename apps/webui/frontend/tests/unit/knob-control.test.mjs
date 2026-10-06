@@ -728,3 +728,59 @@ test('control: with no selection, a dial own wheel step moves only that dial, cl
 	assert.equal(valueOf(a), 1, 'a single dial at the top end left the 0..1 domain');
 	assert.ok(near(valueOf(b), 0.472), 'a single unselected dial no longer moves by exactly one step');
 });
+
+// Sol P1 on #5701 (dfca9f762): a group move bypassed the Alt link, so a
+// linked pair could move the same way. The link must survive group moves.
+
+test('a group nudge drives an unselected Alt partner inversely, with the stagger', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('1:high', 0.5);
+	const p = addDial('2:low', 0.5);
+	knobs.altClickKnob(a);
+	knobs.altClickKnob(p);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.nudgeSelection(0.1);
+	assert.ok(near(valueOf(b), 0.6), 'the unlinked selected dial lost common mode');
+	assert.ok(near(valueOf(p), 0.4), `the Alt partner did not move inversely (${valueOf(p)})`);
+	assert.ok(near(valueOf(a), 0.6 + 0.1 * knobs.KNOB_CFG.linkStagger), 'the rising linked dial lost its stagger');
+});
+
+test('both dials of a linked pair selected: the selection wins, both move together', () => {
+	// CORE, orders board #5638 18:53Z: the maintainer's spec is "adjusts both / all knobs
+	// up and down together"; the link is not applied inside the selection.
+	const a = addDial('1:low', 0.5);
+	const p = addDial('2:low', 0.5);
+	knobs.altClickKnob(a);
+	knobs.altClickKnob(p);
+	knobs.shiftClickKnob(p);
+	knobs.shiftClickKnob(a);
+	knobs.nudgeSelection(0.1);
+	assert.ok(near(valueOf(a), 0.6) && near(valueOf(p), 0.6),
+		`a selected linked pair did not move together (${valueOf(a)}, ${valueOf(p)}) - the link overrode the selection`);
+	const start = knobs.beginSelectionDrag(a);
+	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
+	knobs.applySelectionDrag(start, -px, px);
+	assert.ok(near(valueOf(p), 0.7) && near(valueOf(a), 0.5),
+		`the two-axis drag on a selected linked pair gave ${valueOf(p)}, ${valueOf(a)}`);
+});
+
+test('a two-axis drag keeps the Alt link too, from the pointer-down baselines', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:high', 0.5);
+	const p = addDial('3:low', 0.5);
+	knobs.altClickKnob(a);
+	knobs.altClickKnob(p);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	const start = knobs.beginSelectionDrag(a);
+	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
+	for (const f of [0.3, 0.6, 1]) knobs.applySelectionDrag(start, 0, f * px);
+	assert.ok(near(valueOf(p), 0.4), `the partner did not track inversely without accumulating (${valueOf(p)})`);
+	assert.ok(near(valueOf(b), 0.5), 'pure vertical moved the other deck');
+});
+
+test('control: with no link, group moves are plain common mode', () => {
+	const out = knobs.applyLinkToTargets(['1:low', '2:low'], { '1:low': 0.5, '2:low': 0.5 }, { '1:low': 0.6, '2:low': 0.6 }, null);
+	assert.deepEqual(out, { '1:low': 0.6, '2:low': 0.6 });
+});

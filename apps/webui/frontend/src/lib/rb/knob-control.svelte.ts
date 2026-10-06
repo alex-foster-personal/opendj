@@ -185,6 +185,43 @@ export function twoAxisDragTargets(
 	return out;
 }
 
+/**
+ * Keep the Alt inverse link inside a group move (Sol P1 on #5701). When a
+ * linked dial is selected and its partner is NOT, the dial's move drives the
+ * partner inversely with the usual stagger, exactly as a single-dial move
+ * would.
+ *
+ * When BOTH dials of the pair are selected, the selection wins and the link is
+ * not applied between them (CORE decision, orders board #5638, Tue 6 Oct 2026
+ * 18:53Z). the maintainer's multi-select spec is "it then adjusts both / all knobs up
+ * and down together", and the two-axis drag is his explicit way to split them
+ * ("up and left is one up, one down"); a link overriding that inside the
+ * selection would contradict both. `baselines` must carry the partner's value;
+ * without it the targets are returned unchanged.
+ */
+export function applyLinkToTargets(
+	selection: readonly string[],
+	baselines: Readonly<Record<string, number>>,
+	targets: Readonly<Record<string, number>>,
+	link: LinkedPair | null
+): Record<string, number> {
+	const out = { ...targets };
+	if (link === null) return out;
+	const driver = selection.find((id) => id === link.a || id === link.b);
+	if (driver === undefined) return out;
+	const partner = driver === link.a ? link.b : link.a;
+	// Both selected: the selection wins, each keeps its own selection move.
+	if (selection.includes(partner)) return out;
+	const driverBase = baselines[driver];
+	const partnerBase = baselines[partner];
+	const driverTarget = out[driver];
+	if (driverBase === undefined || partnerBase === undefined || driverTarget === undefined) return out;
+	const next = applyLinkedDelta(driverBase, partnerBase, driverTarget - driverBase);
+	out[driver] = next.primary;
+	out[partner] = next.secondary;
+	return out;
+}
+
 /** Selectors for things a click on is NOT a click on empty space. */
 const _NOT_EMPTY_SELECTOR =
 	'[data-knob-id], button, a, input, select, textarea, label, [role="slider"], [role="button"], [role="menu"], [role="menuitem"], [contenteditable="true"]';
@@ -375,6 +412,13 @@ function _selectionBaselines(): { ids: string[]; baselines: Record<string, numbe
 		ids.push(id);
 		baselines[id] = ref.getValue();
 	}
+	// The Alt partner's baseline too, so a group move can drive it inversely.
+	for (const id of ids) {
+		const partner = _partnerOf(id);
+		if (partner === null || partner in baselines) continue;
+		const ref = _activeRef(partner);
+		if (ref !== undefined) baselines[partner] = ref.getValue();
+	}
 	return { ids, baselines };
 }
 
@@ -384,8 +428,8 @@ function _applyTargets(targets: Readonly<Record<string, number>>): void {
 
 /**
  * Common-mode nudge of the whole selection. One selected dial goes through
- * nudgeKnob, so an Alt link on it still moves its partner inversely; with 2+
- * selected each dial moves by exactly `delta`, clamped.
+ * nudgeKnob; with 2+ selected each dial moves by exactly `delta`, clamped. In
+ * both cases an Alt-linked partner moves inversely with the stagger.
  */
 export function nudgeSelection(delta: number): void {
 	if (!Number.isFinite(delta) || delta === 0) return;
@@ -395,7 +439,9 @@ export function nudgeSelection(delta: number): void {
 		nudgeKnob(ids[0], delta);
 		return;
 	}
-	_applyTargets(commonModeTargets(baselines, delta));
+	const selected: Record<string, number> = {};
+	for (const id of ids) selected[id] = baselines[id];
+	_applyTargets(applyLinkToTargets(ids, baselines, commonModeTargets(selected, delta), knobUi.link));
 }
 
 /**
@@ -423,7 +469,7 @@ export function beginSelectionDrag(id: string): SelectionDragStart | null {
 /** Apply a two-axis drag frame from the pointer-down baselines (no accumulation). */
 export function applySelectionDrag(start: SelectionDragStart, dx: number, dy: number): void {
 	const targets = twoAxisDragTargets(start.ids, start.baselines, dx, dy);
-	if (targets !== null) _applyTargets(targets);
+	if (targets !== null) _applyTargets(applyLinkToTargets(start.ids, start.baselines, targets, knobUi.link));
 }
 
 export function linkedPartnerId(id: string): string | null {
@@ -515,7 +561,8 @@ export function installKnobSelectionGlobal(): void {
 			}
 			const { ids, baselines } = _selectionBaselines();
 			if (ids.length >= 2) {
-				_applyTargets(twoAxisDragTargets(ids, baselines, dx, dy) ?? {});
+				const targets = twoAxisDragTargets(ids, baselines, dx, dy) ?? {};
+				_applyTargets(applyLinkToTargets(ids, baselines, targets, knobUi.link));
 			} else if (ids.length === 1) {
 				nudgeKnob(ids[0], singleDragDelta(dx, dy));
 			}
