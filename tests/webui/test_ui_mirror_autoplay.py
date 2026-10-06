@@ -192,7 +192,8 @@ def test_a_malformed_autoplay_command_is_refused_before_the_page_sees_it(order: 
 
     async def body(client: AsyncClient) -> None:
         assert await _put(client, _doc()) == 202
-        response = await client.post("/api/v1/commands", json=order)
+        # Bounded: an order that slips past validation waits for a page forever.
+        response = await asyncio.wait_for(client.post("/api/v1/commands", json=order), timeout=5)
         assert response.status_code == 422
         assert (await client.get("/api/v1/commands/next")).json() is None
 

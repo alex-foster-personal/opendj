@@ -99,12 +99,15 @@ const ENTRY = [
 	"export { installAutoPlay, readAutoPlayMirrorStatus } from '$lib/rb/auto-play.svelte';",
 	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
-	"export { executeAgentOrder } from '$lib/rb/agent-orders';"
+	"export { executeAgentOrder } from '$lib/rb/agent-orders';",
+	"export { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';"
 ].join('\n');
 
 test('RUNNING it: the autoplay command switches AutoPlay and the next mirror read follows', async () => {
 	const probe = installTimerProbe();
 	let uninstall = null;
+	let uninstallIpc = null;
+	const hadWindow = 'window' in globalThis;
 	try {
 		const live = await loadRuneModule(ENTRY);
 		assert.deepEqual(
@@ -126,6 +129,9 @@ test('RUNNING it: the autoplay command switches AutoPlay and the next mirror rea
 			autoplay_disarm_reason: null
 		});
 
+		// The agent order runs inside the page's command session, as on /performance.
+		globalThis.window ??= {};
+		uninstallIpc = live.installPerformanceBrowserIpc();
 		const off = await live.executeAgentOrder({ kind: 'single', payload: { type: 'autoplay', enabled: false } });
 		assert.deepEqual(off.steps, [{ status: 'succeeded' }]);
 		assert.deepEqual(off.mirror_delta.changed.ui, { auto_play_enabled: false });
@@ -153,7 +159,9 @@ test('RUNNING it: the autoplay command switches AutoPlay and the next mirror rea
 		assert.equal(live.uiPrefs.auto_play_enabled, true, 'neither refused order changed anything');
 		Object.assign(deck, { stable_id: null, playing: false, is_master: false });
 	} finally {
+		if (uninstallIpc !== null) uninstallIpc();
 		if (uninstall !== null) uninstall();
+		if (!hadWindow) delete globalThis.window;
 		probe.restore();
 	}
 });
