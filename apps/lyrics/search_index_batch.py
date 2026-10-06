@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.lyrics import cache as lyrics_cache
+from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.lyrics.search_contract import LyricSearchDocument, build_search_document
 from apps.lyrics.search_index_schema import (
     LyricsCacheUnavailable,
@@ -311,6 +312,11 @@ def _load_candidate(lyrics_dir: Path, stable_id: str) -> LyricSearchDocument | N
     except (TypeError, ValueError):
         return None
     if entry is None or entry.stable_id != stable_id:
+        return None
+    # LYRICS-12: an ASR entry that is only Whisper hallucinations has nothing
+    # to index. It joins ``corrupt``: never indexed, never pending work.
+    entry = servable_lyrics(entry)
+    if entry is None:
         return None
     try:
         return build_search_document(entry)

@@ -57,7 +57,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.cloud import stem_index
+from apps.lyrics import cache as lyrics_cache
 from apps.lyrics import fetch_verdicts, lookup_metadata
+from apps.lyrics.asr_hallucination import cached_entry_is_no_lyrics
 from apps.webui.server import coverage_cloud, library_playable
 from apps.webui.server import coverage_outcomes as outcomes_mod
 from apps.webui.server.routes import ingest_job
@@ -126,19 +128,30 @@ def lyrics_terminal_ids(
     candidates: Sequence[str],
     index: Mapping[str, Mapping[str, str]] | None = None,
 ) -> set[str]:
-    """Ids whose stored fetch verdict says there are no lyrics to fetch.
+    """Ids with no lyrics to fetch: a final fetch verdict, or a no-lyrics ASR cache.
 
     Reads the store ``LyricsFetchService`` writes, through its own freshness
     rule: ``instrumental`` is final, ``no_source`` is final only while the
     track's vocals stem is the one the verdict was recorded against.
     """
-    verdict_dir = fetch_verdicts.verdict_dir(data_dir)
-    if not candidates or not verdict_dir.is_dir():
+    if not candidates:
         return set()
+    # LYRICS-12: a cached ASR transcript that is only hallucinations is the
+    # same final answer as an ``instrumental`` verdict, whatever its ledger says.
+    # One directory listing, so only ids that HAVE a cache file are parsed.
+    lyrics_dir = lyrics_cache.cache_dir(data_dir)
+    cached = {p.stem for p in lyrics_dir.glob("*.json")} if lyrics_dir.is_dir() else set()
+    terminal: set[str] = {
+        sid for sid in candidates if sid in cached and cached_entry_is_no_lyrics(data_dir, sid)
+    }
+    verdict_dir = fetch_verdicts.verdict_dir(data_dir)
+    if not verdict_dir.is_dir():
+        return terminal
     if index is None:
         index = stem_index.load_cached_index_memo(data_dir)
-    terminal: set[str] = set()
     for stable_id in candidates:
+        if stable_id in terminal:
+            continue
         verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
         if verdict is None or verdict.outcome == "cached":
             # ``cached`` with no lyrics-cache entry means the entry was lost;
