@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [app-v1.0.0-alpha.1] - Open DJ 1.0 alpha (unreleased)
+
+The first public release of the Open DJ desktop app, named **Open DJ 1.0 alpha** and tagged
+`app-v1.0.0-alpha.1`. The release lane replaces "(unreleased)" with the date when it creates the
+tag on the exact commit that built the dmg.
+
+App releases use their own `app-v<semver>` tags (ADR "Launch release name 'Open DJ 1.0 alpha'
+and an app tag scheme of its own", `docs/decisions/`). The `1.0.x` entries below this one, and
+the `v1.0*` tags, are the April 2026 library toolchain, not app releases. The `v1.1.1` tag was
+an internal test build and was never public.
+
+### What it is
+
+- A local-first DJ app for macOS: a 4-deck performance screen running on a Web Audio engine
+  over your own library. Your library stays on your Mac.
+- Alpha software. Features, screens and stored data formats can change between releases, and
+  some controls are not finished yet. Keep a backup of your DJ library before letting Open DJ
+  write to it. The alpha stage is shown next to the wordmark in the app (OSSPUB-04).
+- Licensed Apache-2.0. Copyright The Open DJ contributors.
+
+### Added
+
+- Signed and notarized macOS dmg (OPS-14) for Apple Silicon Macs only (arm64; INSTALL-05),
+  macOS 14 or newer. Intel Macs are not supported in this release.
+- First-run setup that imports an existing rekordbox library (tracks, playlists, BPM, key,
+  waveforms, beatgrids and cue points) without writing to rekordbox, or opens with a folder of
+  audio files or an empty library.
+- In-app updater (OPS-15). Each later alpha is offered to installed copies of this one.
+- Each build shows its own identity (git SHA, build time) in the app and at
+  `GET /api/v1/build-info` (INSTALL-07), so a bug report can name the exact build.
+
+### Known issues
+
+- **Stems:** <!-- STEMS-KNOWN-ISSUE: placeholder. Replace with the stems Known-issue line that
+  the Preview & Pins stems worker posts on issue #5638 (orders board, item W4). --> _Pending:
+  the stems memory note is still being written._
+- **Browser output device:** in the browser web UI without microphone permission, choosing the
+  default output device can fail with "device default is not found" and show an error toast
+  (board item W8; a fix is in progress). The desktop app is not affected.
+- **Unfinished controls:** a control with no real data source behind it is visible but inert,
+  and its tooltip says "not implemented - see PARITY-TODO". This is deliberate: Open DJ never
+  shows invented data.
+- **Apple Silicon only:** the dmg does not open on Intel Macs.
+
 ## [1.0.1] - 2026-04-17
 
 Patch release capturing post-v1.0 safety rails, robustness fixes, refactors,
