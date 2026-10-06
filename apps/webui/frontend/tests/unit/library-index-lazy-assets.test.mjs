@@ -8,6 +8,7 @@
 //   - if cover images skip the boot scheduler queue, or are not released when it drains, then broken
 //   - if enrich summary, lyrics-cached-ids or tree prefetch bypass the boot scheduler then broken
 //   - if a row-assets answer does not fill stems, vocals and cover on the asked row then broken
+//   - if a refreshed row (new object, same id) is not asked for again then broken
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +30,7 @@ before(async () => {
 test('the asset window asks only for rows in view plus margin', () => {
 	const rows = Array.from({ length: 10_000 }, (_, i) => ({ stable_id: `t${i}`, strip: null }));
 	rows[5_010].strip = 'held';
-	const ids = fill.stripLessIdsNear(rows, 5_000, 5_030, 30, (id) => id === 't5020');
+	const ids = fill.stripLessIdsNear(rows, 5_000, 5_030, 30, (row) => row.stable_id === 't5020');
 	assert.equal(ids.length, 90 - 2);
 	assert.equal(ids[0], 't4970');
 	assert.equal(ids.at(-1), 't5059');
@@ -38,6 +39,16 @@ test('the asset window asks only for rows in view plus margin', () => {
 	const everything = fill.stripLessIdsNear(rows, 0, rows.length, 0, () => false);
 	assert.equal(everything.length, 9_999);
 	assert.ok(ids.length < everything.length / 100);
+});
+
+test('a refreshed row object is asked for again even though its id was settled', () => {
+	const settled = new WeakSet();
+	const before = [{ stable_id: 'a', strip: null }, { stable_id: 'b', strip: null }];
+	before.forEach((r) => settled.add(r));
+	assert.deepEqual(fill.stripLessIdsNear(before, 0, 2, 0, (r) => settled.has(r)), []);
+	// A library refresh: same ids, new objects carrying no cover or stems.
+	const after = before.map((r) => ({ ...r }));
+	assert.deepEqual(fill.stripLessIdsNear(after, 0, 2, 0, (r) => settled.has(r)), ['a', 'b']);
 });
 
 const STRIP = Buffer.from(new Uint8Array(360).fill(5)).toString('base64');
@@ -173,7 +184,9 @@ test('a row-assets answer fills stems, vocals and cover for the asked rows only'
 			stems: null
 		});
 		const rows = [row('t1'), row('t2')];
-		const out = await fillModule.fetchAndApplyRowAssets(['t1'], rows);
+		const settled = new WeakSet();
+		const out = await fillModule.fetchAndApplyRowAssets(['t1'], () => rows, settled);
+		assert.ok(settled.has(rows[0]) && !settled.has(rows[1]), 'only the answered row object is settled');
 		assert.equal(asked.length, 1);
 		assert.equal(asked[0].url, 'https://rows.example.test/api/v1/library/row-assets');
 		assert.deepEqual(asked[0].body, { ids: ['t1'] });

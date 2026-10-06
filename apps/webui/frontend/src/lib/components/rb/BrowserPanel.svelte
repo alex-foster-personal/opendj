@@ -3637,7 +3637,7 @@
 			removable={editablePane}
 			reorderable={reorderablePane}
 			onscrollcursor={(top) => {
-				_noteLibraryInteraction();
+				_libraryRefreshGate.noteScroll();
 				panes[activePane].rememberScroll(top);
 			}}
 			onrenderedrowcapacity={noteRenderedLibraryRowCapacity}

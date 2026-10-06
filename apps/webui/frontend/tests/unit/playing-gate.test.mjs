@@ -48,6 +48,7 @@ function makeGate({ playing = false, run } = {}) {
 		runs: 0,
 		rows: [],
 		scheduled: [],
+		timers: [],
 		clock: 1000
 	};
 	const gate = gateModule.createPlayingGate({
@@ -60,7 +61,8 @@ function makeGate({ playing = false, run } = {}) {
 		isPlaying: () => state.playing,
 		schedule: (task) => state.scheduled.push(task),
 		now: () => state.clock,
-		record: (kind, stages, deck, labels) => state.rows.push({ kind, stages, deck, labels })
+		record: (kind, stages, deck, labels) => state.rows.push({ kind, stages, deck, labels }),
+		setTimer: (task, ms) => state.timers.push({ task, at: state.clock + ms })
 	});
 	return { gate, state };
 }
@@ -194,6 +196,78 @@ test('an interaction with nothing owed does no work at all', () => {
 	assert.equal(state.runs, 0);
 	assert.equal(state.scheduled.length, 0);
 	assert.equal(state.rows.length, 0);
+});
+
+// ------------------------------------------------------------- the scroll path
+
+/** playing-gate.ts's SCROLL_SETTLE_MS (module-private). */
+const SCROLL_SETTLE_MS = 250;
+
+/** Run every timer due by the gate's clock, oldest first, including re-arms. */
+function fireDueTimers(state) {
+	for (;;) {
+		const i = state.timers.findIndex((t) => t.at <= state.clock);
+		if (i < 0) return;
+		const [t] = state.timers.splice(i, 1);
+		t.task();
+	}
+}
+
+test('a scroll releases owed work only once the scroll settles', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+
+	gate.noteScroll();
+	state.clock += 100;
+	gate.noteScroll();
+	state.clock += 200;
+	fireDueTimers(state);
+	assert.equal(gate.pending, true, 'still scrolling 200 ms after the last event: nothing released');
+	assert.equal(state.scheduled.length, 0);
+
+	state.clock += SCROLL_SETTLE_MS;
+	fireDueTimers(state);
+	assert.equal(gate.pending, false);
+	assert.equal(state.scheduled.length, 1, 'released off the gesture path, as an interaction is');
+	assert.equal(state.rows[0].labels.resumedBy, 'user-interaction');
+});
+
+test('a trigger mid-scroll waits for the scroll to settle even with nothing playing', async () => {
+	const { gate, state } = makeGate({ playing: false });
+	gate.noteScroll();
+	gate.request();
+	assert.equal(state.runs, 0, 'a refetch must not land between two scroll frames');
+	assert.equal(gate.pending, true);
+
+	state.clock += SCROLL_SETTLE_MS;
+	fireDueTimers(state);
+	state.scheduled.splice(0).forEach((task) => task());
+	await flush();
+	assert.equal(state.runs, 1, 'and it does run once the scroll stops');
+
+	// Control: with no scroll, the idle path still runs at once.
+	state.clock += 10_000;
+	gate.request();
+	assert.equal(state.runs, 2);
+});
+
+test('a scroll with nothing owed arms no timer', () => {
+	const { gate, state } = makeGate({ playing: true });
+	for (let i = 0; i < 100; i++) gate.noteScroll();
+	assert.equal(state.timers.length, 0);
+	assert.equal(state.rows.length, 0);
+});
+
+test('a playback stop mid-scroll still waits for the scroll to settle', () => {
+	const { gate, state } = makeGate({ playing: true });
+	gate.request();
+	gate.noteScroll();
+	state.playing = false;
+	gate.drain();
+	assert.equal(gate.pending, true);
+	state.clock += SCROLL_SETTLE_MS;
+	fireDueTimers(state);
+	assert.equal(gate.pending, false);
 });
 
 // ----------------------------------------------------------------- the ring row

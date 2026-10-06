@@ -12,6 +12,7 @@ import { loadTypeScriptModule } from "./load-typescript.mjs";
 // - if a pending id is re-asked sooner than 2 s, 4 s, ... or never capped at 15 s then broken
 // - if an id that scrolled away is still asked then broken
 // - if a filled or not-pending id is asked again while in view then broken
+// - if a reopened (refreshed) row is never asked again, or a pending one loses its backoff, then broken
 //
 // [if] visible rows are not filled in batches with backoff [then] fail, [else stop].
 
@@ -120,4 +121,23 @@ test("[if] an id is in flight [then] a second batch never asks for it", () => {
     m.idsDueForStrip(many, new Map(), new Set(), 0).length,
     m.STRIP_FILL_MAX_IDS,
   );
+});
+
+test("[if] a settled id is reopened [then] it is asked again, and a pending id keeps its backoff", async () => {
+  const h = harness((ids) => ({
+    strips: Object.fromEntries(ids.map((i) => [i, null])),
+    pending: ids.filter((i) => i === "p"),
+  }));
+  h.filler.setVisible(["x", "p"]);
+  await h.advance(150);
+  assert.equal(h.calls.length, 1);
+  // A library refresh replaced row x: the table reopens it.
+  h.filler.reopen(["x", "p"]);
+  h.filler.setVisible(["x", "p"]);
+  await h.advance(150);
+  assert.deepEqual(h.calls[1].ids, ["x"], "x asked again; p still waits out its 2 s backoff");
+  // Control: without reopen, a settled id is never asked again.
+  h.filler.setVisible(["x", "p"]);
+  await h.advance(150);
+  assert.equal(h.calls.length, 2);
 });

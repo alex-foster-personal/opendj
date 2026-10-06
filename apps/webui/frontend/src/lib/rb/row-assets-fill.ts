@@ -26,19 +26,24 @@ export interface RowAssetTarget {
 	stems: StemSummary | null;
 }
 
-/** Ask for `ids`, settle every row among `rows` that has one of them, and return
- * the strips in the filler's shape (null: nothing on disk, or not a track). */
+/** Ask for `ids`, settle every row among `rows()` (read once the answer lands) that
+ * has one of them, and return the strips in the filler's shape (null: nothing on
+ * disk, or not a track). Each such row object not still pending goes into
+ * `settled`, so the table can tell it from a refreshed row that has none yet. */
 export async function fetchAndApplyRowAssets(
 	ids: string[],
-	rows: readonly RowAssetTarget[]
+	rows: () => readonly RowAssetTarget[],
+	settled?: WeakSet<object>
 ): Promise<{ strips: Record<string, { preview_b64: string; preview_max: number } | null>; pending: string[] }> {
 	const answer = await fetchRowAssets(ids);
 	if (typeof answer.assets !== 'object' || answer.assets === null || !Array.isArray(answer.pending)) {
 		throw new Error('POST /library/row-assets answered without assets or pending');
 	}
 	const wanted = new Set(ids);
-	for (const row of rows) {
+	const pending = new Set(answer.pending);
+	for (const row of rows()) {
 		if (!wanted.has(row.stable_id)) continue;
+		if (!pending.has(row.stable_id)) settled?.add(row);
 		const asset = answer.assets[row.stable_id];
 		if (asset === undefined) continue;
 		row.vocals = parseVocals(asset.vocals);

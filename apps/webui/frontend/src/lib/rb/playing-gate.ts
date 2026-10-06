@@ -53,6 +53,16 @@ import { recordPerfTiming } from '$lib/rb/perf-event-log';
 const INTERACTIVE_IDLE_TIMEOUT_MS = 200;
 
 /**
+ * How long after the last scroll event a pane counts as still scrolling.
+ *
+ * Owed work released by a scroll waits this long after the gesture ends, and
+ * a trigger that lands mid-scroll is held the same way even with nothing
+ * playing: a full refetch and re-render landing between two scroll frames is
+ * the stall the user sees, whatever the transport is doing.
+ */
+const SCROLL_SETTLE_MS = 250;
+
+/**
  * The cheapest authoritative "the set is live" read, and the one signal every
  * PERFMODE-04 shed should key off.
  *
@@ -134,6 +144,7 @@ interface PlayingGateOptions {
 	schedule?: IdleScheduler | undefined;
 	now?: (() => number) | undefined;
 	record?: typeof recordPerfTiming | undefined;
+	setTimer?: ((task: () => void, ms: number) => unknown) | undefined;
 }
 
 interface PlayingGate {
@@ -143,6 +154,9 @@ interface PlayingGate {
 	drain(resumedBy?: GateResume): void;
 	/** The user touched the gated surface: release now, off the gesture path. */
 	flushOnInteraction(): void;
+	/** The gated surface scrolled: hold work until the scroll settles, then
+	 * release what is owed as an interaction would. */
+	noteScroll(): void;
 	/** True while a release is owed. */
 	readonly pending: boolean;
 }
@@ -151,6 +165,7 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 	const schedule = options.schedule ?? _scheduleWhenIdle;
 	const now = options.now ?? ((): number => Date.now());
 	const record = options.record ?? recordPerfTiming;
+	const setTimer = options.setTimer ?? ((task: () => void, ms: number): unknown => setTimeout(task, ms));
 	// A rejection is deliberately left to propagate out of the trigger promise
 	// rather than swallowed here: a refresh that throws is a real failure and
 	// the work it wraps is the only layer that knows what to do about it.
@@ -159,6 +174,26 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 	let pending = false;
 	let deferredSince = 0;
 	let coalesced = 0;
+	let lastScrollAt = Number.NEGATIVE_INFINITY;
+	let settleTimer: unknown = null;
+
+	function _scrolling(): boolean {
+		return now() - lastScrollAt < SCROLL_SETTLE_MS;
+	}
+
+	/** One timer per scroll episode, re-armed until the scroll has settled. */
+	function _releaseWhenScrollSettles(): void {
+		if (settleTimer !== null) return;
+		settleTimer = setTimer(
+			() => {
+				settleTimer = null;
+				if (!pending) return;
+				if (_scrolling()) _releaseWhenScrollSettles();
+				else _release('user-interaction', true);
+			},
+			Math.max(0, lastScrollAt + SCROLL_SETTLE_MS - now())
+		);
+	}
 
 	/**
 	 * Close the episode and do the work.
@@ -185,8 +220,10 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 
 	return {
 		request(): void {
-			if (options.isPlaying()) {
+			const scrolling = _scrolling();
+			if (options.isPlaying() || scrolling) {
 				coalesced += 1;
+				if (scrolling) _releaseWhenScrollSettles();
 				if (pending) return;
 				pending = true;
 				deferredSince = now();
@@ -204,6 +241,10 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 		drain(resumedBy: GateResume = 'playback-stopped'): void {
 			if (!pending) return;
 			if (options.isPlaying()) return;
+			if (_scrolling()) {
+				_releaseWhenScrollSettles();
+				return;
+			}
 			_release(resumedBy, false);
 		},
 		flushOnInteraction(): void {
@@ -211,6 +252,12 @@ export function createPlayingGate(options: PlayingGateOptions): PlayingGate {
 			// the no-work path has to be one boolean read.
 			if (!pending) return;
 			_release('user-interaction', true);
+		},
+		noteScroll(): void {
+			// Wired to every scroll event: a clock read and a store, plus one
+			// timer per scroll episode only while work is owed.
+			lastScrollAt = now();
+			if (pending) _releaseWhenScrollSettles();
 		},
 		get pending(): boolean {
 			return pending;

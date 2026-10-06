@@ -258,8 +258,13 @@ test('the deferred refresh drains on a stop and on a library interaction', () =>
 	assert.match(source, /_libraryRefreshGate\.flushOnInteraction\(\);/);
 	assert.equal(
 		source.split('_noteLibraryInteraction();').length - 1,
-		3,
-		'scroll, row select and search all count as asking for fresh rows'
+		2,
+		'row select and search count as asking for fresh rows'
+	);
+	assert.match(
+		source,
+		/onscrollcursor=\{\(top\) => \{\s*_libraryRefreshGate\.noteScroll\(\);/,
+		'scroll asks too, but only once the scroll settles, never between two frames'
 	);
 });
 

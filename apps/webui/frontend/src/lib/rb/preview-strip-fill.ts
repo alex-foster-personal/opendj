@@ -115,6 +115,16 @@ export class PreviewStripFiller {
     this.#schedule(STRIP_FILL_DEBOUNCE_MS);
   }
 
+  /** Forget the settled verdict for these ids so they are asked again. Their
+   * rows were replaced (a library refresh hands out new row objects without
+   * the assets the old ones received); pending backoff and in-flight asks are
+   * left as they are. */
+  reopen(ids: readonly string[]): void {
+    for (const id of ids) {
+      if (this.#state.get(id)?.settled === true) this.#state.delete(id);
+    }
+  }
+
   dispose(): void {
     this.#disposed = true;
     if (this.#timer !== null) this.#deps.clearTimer(this.#timer);
@@ -182,30 +192,35 @@ export class PreviewStripFiller {
 
 /**
  * The ids the filler may ask for: rows in view plus `margin` rows each side that
- * still have no strip by any route (LIBM-172). Since the library index carries no
- * strips, this window is the ONLY thing that keeps a 9,713-row list from asking
- * for every row's disk reads at once.
+ * were listed without a strip and whose row object has not had its row assets
+ * yet (LIBM-172). Since the library index carries no strips, this window is the
+ * ONLY thing that keeps a 9,713-row list from asking for every row's disk reads
+ * at once. `hasAssets` is asked about the row OBJECT, not its id: a library
+ * refresh replaces every row with one that has no cover verdict or stems, and
+ * an id-keyed check left those rows blank for the rest of the session.
  */
-export function stripLessIdsNear(
-  rows: readonly { stable_id: string; strip: unknown }[],
+export function stripLessIdsNear<Row extends { stable_id: string; strip: unknown }>(
+  rows: readonly Row[],
   startIndex: number,
   endIndex: number,
   margin: number,
-  hasStrip: (stable_id: string) => boolean,
+  hasAssets: (row: Row) => boolean,
 ): string[] {
   return rows
     .slice(Math.max(0, startIndex - margin), endIndex + margin)
-    .filter((r) => r.strip === null && !hasStrip(r.stable_id))
+    .filter((r) => r.strip === null && !hasAssets(r))
     .map((r) => r.stable_id);
 }
 
 /** The filler's batch for library rows (LIBM-172): `POST /library/row-assets`, with the
- * module that applies it loaded on first use so it stays off the eager route bundle. */
+ * module that applies it loaded on first use so it stays off the eager route bundle.
+ * `rows` is read after the answer lands, so a refresh mid-request fills the new rows. */
 export async function fetchRowAssetsLazily(
   ids: string[],
-  rows: readonly RowAssetTarget[],
+  rows: () => readonly RowAssetTarget[],
+  settled?: WeakSet<object>,
 ): Promise<PreviewStripBatch> {
-  return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows);
+  return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows, settled);
 }
 
 /**

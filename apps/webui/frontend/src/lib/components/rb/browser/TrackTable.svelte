@@ -1128,11 +1128,14 @@
 	// Strips for rows in view (+ one screen of margin) that were listed without
 	// one: asked for in debounced batches, never per row (NATIVE-21).
 	let filledStrips: Record<string, PreviewStripData | null> = $state({});
+	// Row OBJECTS whose assets landed: a library refresh hands out new rows
+	// without them, and those must be asked for again (not skipped by id).
+	const rowAssetsSettled = new WeakSet<object>();
 	const stripFiller = new PreviewStripFiller({
 		// LIBM-172: one batch settles strip, vocals and cover verdict; lazy so it
 		// stays off the /performance chunk.
 		fetchBatch: async (ids) =>
-			fetchRowAssetsLazily(ids, untrack(() => rows)),
+			fetchRowAssetsLazily(ids, () => untrack(() => rows), rowAssetsSettled),
 		onStrip: (id, wire) => {
 			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
 		},
@@ -1148,9 +1151,12 @@
 			windowInfo.startIndex,
 			windowInfo.endIndex,
 			renderedRowCapacity,
-			(id) => previewStripById[id] != null
+			(row) => rowAssetsSettled.has(row)
 		);
-		untrack(() => stripFiller.setVisible(missing.filter((id) => filledStrips[id] == null)));
+		untrack(() => {
+			stripFiller.reopen(missing);
+			stripFiller.setVisible(missing);
+		});
 	});
 
 	/** Jump to first in-place find match when the query becomes active. */
