@@ -290,3 +290,64 @@ test('start() arms the window and its teardown disarms it', () => {
 	stop();
 	assert.deepEqual(clock.armedDelays(), [], 'teardown leaves no timer behind');
 });
+
+// The poll-counted yield cannot be the only ceiling: a hidden page throttles
+// chained timers and may never deliver an idle frame, and silver's preview
+// went 30+ minutes with feedback todos never requested (Tue 6 Oct 2026).
+function makeBackstopHost() {
+	const base = makeHost();
+	let backstopRun = null;
+	let backstopMs = null;
+	const cleared = [];
+	base.host.setBackstop = (run, ms) => {
+		backstopRun = run;
+		backstopMs = ms;
+		return 9_999;
+	};
+	const clearTimer = base.host.clearTimer;
+	base.host.clearTimer = (handle) => {
+		cleared.push(handle);
+		clearTimer(handle);
+	};
+	return {
+		...base,
+		backstopMs: () => backstopMs,
+		backstopCleared: () => cleared.includes(9_999),
+		fireBackstop() {
+			const run = backstopRun;
+			backstopRun = null;
+			if (run === null) throw new Error('no backstop was armed');
+			run();
+		}
+	};
+}
+
+test('the hard backstop releases a queue whose idle frame never came, and WARNs', () => {
+	const backstopClock = makeBackstopHost();
+	const starved = mod.createBootScheduler(backstopClock.host);
+	starved.listingWalkStarted();
+	starved.defer('feedback:hydrate', () => ran.push('feedback:hydrate'));
+	assert.equal(backstopClock.backstopMs(), mod.BOOT_HARD_CEILING_MS, 'armed with the window, wall clock');
+	backstopClock.tickTimers();
+	assert.equal(backstopClock.hasIdlePending(), true, 'waiting on an idle frame that never comes');
+	assert.deepEqual(ran, []);
+
+	backstopClock.fireBackstop();
+	assert.deepEqual(ran, ['feedback:hydrate'], 'the backstop runs the work, it does not only warn');
+	assert.equal(backstopClock.warnings.length, 1);
+	assert.match(backstopClock.warnings[0], /WARN .*hard backstop.*: feedback:hydrate$/);
+
+	backstopClock.fireIdle();
+	assert.deepEqual(ran, ['feedback:hydrate'], 'a late idle frame does not run anything twice');
+});
+
+test('a normal release cancels the hard backstop, so it never fires on a healthy boot', () => {
+	const backstopClock = makeBackstopHost();
+	const healthy = mod.createBootScheduler(backstopClock.host);
+	healthy.defer('a', () => ran.push('a'));
+	backstopClock.tickTimers();
+	backstopClock.fireIdle();
+	assert.deepEqual(ran, ['a']);
+	assert.equal(backstopClock.backstopCleared(), true, 'the backstop timer is cleared on release');
+	assert.deepEqual(backstopClock.warnings, []);
+});

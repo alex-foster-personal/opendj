@@ -92,6 +92,14 @@ export const DECK_LOAD_YIELD_POLL_MS = 250;
  * settles cannot strand the queue. */
 export const DECK_LOAD_YIELD_MAX_MS = 10_000;
 
+/** Hard backstop, wall clock, measured from the moment the window opens: the
+ * quiet period, the idle wait and the yield ceiling end to end. The yield above
+ * counts POLLS, and a hidden or background page throttles chained timers (to
+ * once a minute under Chrome's intensive throttling) and may never deliver an
+ * idle callback, so a poll-counted ceiling can take forty minutes. One plain
+ * timer armed with the window does not chain and is not stretched that way. */
+export const BOOT_HARD_CEILING_MS = BOOT_QUIET_MS + BOOT_IDLE_TIMEOUT_MS + DECK_LOAD_YIELD_MAX_MS;
+
 /**
  * The platform, injected so the scheduler is testable without a browser and
  * without real time passing.
@@ -103,6 +111,10 @@ export interface BootHost {
 	whenIdle: ((run: () => void, timeoutMs: number) => void) | null;
 	/** Where the ceiling's WARN goes. Defaults to console.warn. */
 	warn?: (message: string) => void;
+	/** The hard backstop's one-shot timer (BOOT_HARD_CEILING_MS). Separate from
+	 * setTimer so a hand-driven test clock can drive the polled path and the
+	 * backstop independently. A host without it has no backstop. */
+	setBackstop?: (run: () => void, ms: number) => number;
 }
 
 export interface BootScheduler {
@@ -136,6 +148,7 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 	let released = false;
 	let armed = false;
 	let timer: number | null = null;
+	let backstop: number | null = null;
 	// Deck loads and the boot listing walk, counted together: either one in
 	// flight means deferred work would compete with something a person feels.
 	let holds = 0;
@@ -172,29 +185,43 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 		}
 	}
 
+	function _cancelBackstop(): void {
+		if (backstop === null) return;
+		host.clearTimer(backstop);
+		backstop = null;
+	}
+
 	function _release(): void {
 		released = true;
 		_cancelTimer();
+		_cancelBackstop();
 		// Arrival order. A task that defers more work sees `released` already
 		// true and goes straight through, so the loop cannot spin.
 		while (queue.length > 0) _run(queue.shift() as QueuedTask);
 	}
 
+	/** A ceiling released the queue: the fail-safe that keeps deferred work
+	 * from being starved fired, which means something upstream never settled.
+	 * Say so loudly and name the work, then run it, instead of quietly paying
+	 * the ceiling on every boot (the #5549 case). */
+	function _releaseAtCeiling(which: string): void {
+		(host.warn ?? console.warn)(
+			`[boot-scheduler] WARN ${which} released ${queue.length} deferred boot task(s) with ` +
+				`${holds} hold(s) never settled (a deck load or the boot listing walk): ` +
+				queue.map((entry) => entry.label).join(', ')
+		);
+		_release();
+	}
+
 	function _releaseOnceDecksAreFree(): void {
 		timer = null;
-		if (holds === 0 || yieldedMs >= DECK_LOAD_YIELD_MAX_MS) {
-			// The ceiling is the fail-safe that keeps deferred work from being
-			// starved. Firing it means a hold (a deck load or the boot listing
-			// walk) never settled, which is a defect upstream, so say so loudly
-			// instead of quietly paying 10 s on every boot (the #5549 case).
-			if (holds > 0) {
-				(host.warn ?? console.warn)(
-					`[boot-scheduler] WARN released ${queue.length} deferred boot task(s) at the ` +
-						`${DECK_LOAD_YIELD_MAX_MS} ms ceiling with ${holds} hold(s) never settled ` +
-						`(a deck load or the boot listing walk): ${queue.map((entry) => entry.label).join(', ')}`
-				);
-			}
+		if (released) return;
+		if (holds === 0) {
 			_release();
+			return;
+		}
+		if (yieldedMs >= DECK_LOAD_YIELD_MAX_MS) {
+			_releaseAtCeiling(`the ${DECK_LOAD_YIELD_MAX_MS} ms yield ceiling`);
 			return;
 		}
 		yieldedMs += DECK_LOAD_YIELD_POLL_MS;
@@ -203,6 +230,7 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 
 	function _onQuietElapsed(): void {
 		timer = null;
+		if (released) return;
 		if (host.whenIdle === null) {
 			_releaseOnceDecksAreFree();
 			return;
@@ -210,10 +238,23 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 		host.whenIdle(_releaseOnceDecksAreFree, BOOT_IDLE_TIMEOUT_MS);
 	}
 
+	function _onBackstop(): void {
+		backstop = null;
+		if (released) return;
+		if (holds === 0 && queue.length === 0) {
+			_release();
+			return;
+		}
+		// Reached only when the polled path above was itself starved: an idle
+		// callback that never came, or chained timers throttled in a hidden page.
+		_releaseAtCeiling(`the ${BOOT_HARD_CEILING_MS} ms hard backstop`);
+	}
+
 	function _arm(): void {
 		if (armed || released) return;
 		armed = true;
 		timer = host.setTimer(_onQuietElapsed, BOOT_QUIET_MS);
+		if (host.setBackstop !== undefined) backstop = host.setBackstop(_onBackstop, BOOT_HARD_CEILING_MS);
 	}
 
 	return {
@@ -234,8 +275,9 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 			return () => {
 				// The page that owns this queue is going away with it, so
 				// there is nothing left for the queued work to serve. Cancel
-				// the timer rather than fire a burst into a dying document.
+				// the timers rather than fire a burst into a dying document.
 				_cancelTimer();
+				_cancelBackstop();
 				armed = false;
 			};
 		}
@@ -255,6 +297,7 @@ function _browserHost(): BootHost {
 	return {
 		setTimer: (run, ms) => setTimeout(run, ms) as unknown as number,
 		clearTimer: (handle) => clearTimeout(handle),
+		setBackstop: (run, ms) => setTimeout(run, ms) as unknown as number,
 		whenIdle:
 			requestIdle === null
 				? null

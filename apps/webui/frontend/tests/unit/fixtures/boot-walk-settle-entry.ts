@@ -7,4 +7,4 @@
  * the other. One entry, one singleton.
  */
 export * from '../../../src/lib/rb/library-boot-hydration';
-export { bootScheduler, BOOT_QUIET_MS, DECK_LOAD_YIELD_MAX_MS } from '../../../src/lib/rb/boot-scheduler';
+export { bootScheduler, BOOT_HARD_CEILING_MS, BOOT_QUIET_MS, DECK_LOAD_YIELD_MAX_MS } from '../../../src/lib/rb/boot-scheduler';
