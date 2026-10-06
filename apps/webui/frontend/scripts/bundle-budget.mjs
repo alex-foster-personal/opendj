@@ -348,7 +348,14 @@ const BUDGETS = [
   // publisher and the follower banner are first-paint on /performance because the
   // election must run before the first mirror PUT. CI measured 261,862 against 261,120
   // (+742). Payback, not yet measured: load TabLeaderBanner only when a tab is a follower.
-  { name: 'performance', limit: 262144, measured: 261862, note: '/performance and children' },
+  // RAISED Mon 5 Oct 2026 (+1 KiB, PR #5482 AGENT-18 follow-up, V1 budget rule): follower
+  // tabs are pure viewers (leader-only writers) and the playing tab claims the lease
+  // (decideFollowerClaim). Local build measured 262,224 against 262,144 (+80). Payback
+  // is the same as #5471's: load TabLeaderBanner only when a tab is a follower.
+  // RAISED Mon 5 Oct 2026 (+2,229 B, PR #5474 RESCUE-07 reload-resume banner, CORE
+  // decision Mon 5 Oct 23:25Z): CI measured 263,349 against 263,168 (+181); the raise is
+  // that overage plus 2 KiB headroom. v1 launch, re-tighten post-v1.
+  { name: 'performance', limit: 265397, measured: 263349, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

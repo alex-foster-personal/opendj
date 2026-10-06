@@ -19,6 +19,7 @@ import type {
 	PerformanceState
 } from '$lib/rb/performance-ipc.svelte';
 import { pushToast } from '$lib/stores.svelte';
+import type { ReloadResumeOffer } from '$lib/rb/reload-resume';
 
 const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 
@@ -37,6 +38,17 @@ export const rescueRestoreStatus = $state<RescueRestoreStatus>({
 	per_deck: { 1: 'pending', 2: 'pending', 3: 'pending', 4: 'pending' },
 	started_at_ms: 0
 });
+
+/**
+ * RESCUE-07: the reload "Resume N decks" offer. reload-resume.svelte.ts owns its
+ * behaviour; the state lives beside the RESCUE-02 status so the performance IPC
+ * reads both through one import.
+ */
+export const reloadResume = $state<{
+	offer: ReloadResumeOffer | null;
+	error: string | null;
+	auto_play_on: boolean;
+}>({ offer: null, error: null, auto_play_on: false });
 
 export interface RescueRestoreDeps {
 	now?: () => number;

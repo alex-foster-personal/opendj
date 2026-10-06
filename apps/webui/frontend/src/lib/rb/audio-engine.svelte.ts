@@ -101,7 +101,7 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
 import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
@@ -470,7 +470,9 @@ let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _quantizedLaunchAt: Record<DeckId, number | null> = { 1: null, 2: null, 3: null, 4: null };
-let _masterMode: MasterMode = 'auto';
+// $state so a narrow `queryMasterMode()` derived updates on lock/unlock
+// without riding every transport tick (PERF-GRID-03).
+let _masterMode: MasterMode = $state('auto');
 let _masterReason: MasterReason = null;
 /**
  * #1475 M enforcement: a static gain ceiling, not a limiter. `_ceilingDbfs` is
@@ -1852,6 +1854,7 @@ function _publishPresentedTransport(
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
+	notePositionSample(deck, st.position_ms, performance.now()); // the paint projects from this instant
 	st.audible = observation.audible;
 	st.transport_pending = observation.transport_pending || _reanchorRampPending(rt);
 	const presentedKeyShift = presentedKeyShiftSemitonesAt(
@@ -3182,6 +3185,12 @@ class RbAudioEngine implements AudioEngine {
 		};
 		if (startAtContextSec !== undefined) {
 			await schedulePlainTransport(startAtContextSec);
+			// RESCUE-07: the shared-instant start (Gig rescue resume) must still
+			// claim a master, or the page plays with none and AutoPlay, which
+			// only arms off the playing master, never queues the next track.
+			if (_masterMode === 'auto' && _masterDeck === null) {
+				_electPlayingMaster({ reason: 'play-claim' });
+			}
 			return;
 		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {

@@ -5,9 +5,8 @@ import { masterSilenceState, outputDeviceLivenessState } from './master-silence-
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
-import { createTabLeadership, type LockManagerLike } from './tab-leadership';
+import type { TabLeadership } from './tab-leadership';
 import { createLeasedMirrorPublisher, MIRROR_PATH } from './leased-mirror-publisher';
-import { bindTabLeadership, publishTabLeadership } from './tab-leadership.svelte';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 import { outputTopologyMirror } from '$lib/rb/audio-output-status.svelte';
@@ -80,6 +79,8 @@ export function buildUiMirror(): Record<string, unknown> {
 	return {
 		client_open: true,
 		client_id: MIRROR_CLIENT_ID,
+		// AGENT-18: the engine hands the lease away from a hidden, silent tab.
+		tab: { visible: document.visibilityState === 'visible' },
 		published_at: new Date().toISOString(),
 		// The elected master, and so the deck a Duration times against when
 		// no clock is named. Without it an agent cannot resolve its own
@@ -159,12 +160,11 @@ export function buildUiMirror(): Record<string, unknown> {
 	};
 }
 
-function _browserLocks(): LockManagerLike | null {
-	const locks = (globalThis.navigator as Navigator | undefined)?.locks;
-	return locks === undefined ? null : (locks as unknown as LockManagerLike);
+function _anyDeckPlaying(): boolean {
+	return Object.values(queryPerformanceState().decks).some((deck) => deck.playing);
 }
 
-export function installUiMirror(): () => void {
+export function installUiMirror(leadership: TabLeadership): () => void {
 	// The engine only knows a performance page is open once it has ACCEPTED a
 	// mirror publish, and every /api/v1/commands route answers 409 until then.
 	// `mirror.isRegistered()` is that precondition, read by the order poll:
@@ -175,17 +175,12 @@ export function installUiMirror(): () => void {
 	// silent toward the engine, so it can neither overwrite the playing tab's
 	// state nor execute an order the operator's tab should run.
 	let lastPublishAtMs: number | null = null;
-	const leadership = createTabLeadership({
-		locks: _browserLocks(),
-		onChange: (snapshot) => {
-			publishTabLeadership(snapshot);
-			if (snapshot.role === 'leader') mirror.publish();
-		}
-	});
 	const mirror = createLeasedMirrorPublisher({
 		leadership,
 		clientId: MIRROR_CLIENT_ID,
 		build: buildUiMirror,
+		isPlaying: _anyDeckPlaying,
+		isVisible: () => document.visibilityState === 'visible',
 		beforePublish: (nowMs) => {
 			if (
 				lastPublishAtMs !== null &&
@@ -201,9 +196,15 @@ export function installUiMirror(): () => void {
 			lastPublishAtMs = nowMs;
 		}
 	});
-	bindTabLeadership(leadership);
+	const unsubscribeLeadership = leadership.subscribe((snapshot) => {
+		if (snapshot.role === 'leader') mirror.publish();
+	});
 	mirror.publish();
 	const interval = window.setInterval(mirror.publish, 1000);
+	// The operator's latest touch makes this the operator's tab (see the claim rules).
+	const noteGesture = (): void => mirror.noteGesture();
+	window.addEventListener('pointerdown', noteGesture, { capture: true, passive: true });
+	window.addEventListener('keydown', noteGesture, { capture: true, passive: true });
 	const uninstallOrderPoll = installAgentOrderPoll(mirror, mirror.publish);
 	// A follower never published, so it has nothing to close; deleting would
 	// blank the leader's live mirror under it.
@@ -223,11 +224,12 @@ export function installUiMirror(): () => void {
 		// is deleted, so teardown never leaves a poll asking about a page the
 		// engine has just been told is gone.
 		window.removeEventListener('pagehide', closeMirrorIfLeader);
+		window.removeEventListener('pointerdown', noteGesture, { capture: true });
+		window.removeEventListener('keydown', noteGesture, { capture: true });
 		mirror.forget();
 		uninstallOrderPoll();
 		window.clearInterval(interval);
 		closeMirrorIfLeader();
-		leadership.dispose();
-		bindTabLeadership(null);
+		unsubscribeLeadership();
 	};
 }
