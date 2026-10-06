@@ -29,7 +29,7 @@
 	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
 	// SET-12: this page's master-mix tap while it feeds a `source: master`
 	// recording. Lazy for the same reason as the picker.
-	let master: Promise<{ stop(): Promise<void> } | null> | null = null;
+	let master: Promise<{ stop(): Promise<unknown> } | null> | null = null;
 	// True while REC is stopping: a status read that lands mid-stop must not
 	// attach a second tap to the recording being stopped.
 	let stopping = false;
