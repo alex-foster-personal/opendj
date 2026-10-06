@@ -39,11 +39,13 @@ an internal test build and was never public.
 
 ### Known issues
 
-- **Stems use a lot of memory.** Each track loaded with stems holds about 100 MB for every
-  minute of audio, so a 5-minute track takes about 500 MB, and four stemmed 5-minute tracks need
-  about 2 GB on top of the app itself. Memory comes back when you eject or replace a track, apart
-  from about 250 MB that the first stems load keeps for the rest of the session. On a Mac with
-  8 GB, loading stems on all four decks may slow the computer down.
+- **Memory use grows during a session.** Open DJ's memory keeps rising while it runs, even with
+  nothing playing: about 27 MB a minute when idle, and about 85 MB a minute with four decks
+  loaded. Each track loaded with stems takes about 130 MB for every minute of audio, and about
+  380 MB of that stays in use after you eject it. After 30 minutes of AutoPlay, memory stayed at
+  about 4.9 GB with every deck empty, against about 0.6 GB at launch. Quitting Open DJ releases
+  all of it. Restart the app before a long set, and on a Mac with 8 GB avoid loading stems on all
+  four decks.
 - **Unfinished controls:** a control with no real data source behind it is visible but inert,
   and its tooltip says "not implemented - see PARITY-TODO". This is deliberate: Open DJ never
   shows invented data.
