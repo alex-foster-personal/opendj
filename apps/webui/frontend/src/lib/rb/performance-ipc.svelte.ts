@@ -160,9 +160,8 @@ import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/perfor
 import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
-import { uiPrefs } from '$lib/rb/prefs.svelte';
+import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler, uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
-import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler } from '$lib/rb/beat-sync-max-enable';
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
 export {
 	installRescueRingWriterHooks,

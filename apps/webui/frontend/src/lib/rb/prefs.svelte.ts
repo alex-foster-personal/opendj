@@ -111,6 +111,9 @@ import {
 } from './ui-skin';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 import { announceBeatSyncMaxChange } from './beat-sync-max-enable';
+// Re-exported so performance-ipc (at the frontend.max_fan_out ceiling) reaches
+// the enabler through the prefs import it already has.
+export { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler } from './beat-sync-max-enable';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 // The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
 // TopBar reads both from this one module (quality ratchet: max fan-out).
