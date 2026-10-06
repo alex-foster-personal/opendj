@@ -282,11 +282,11 @@ def dud_files(index: SongIndex, failures: Iterable[Mapping[str, str]]) -> dict[s
 __all__ = [
     "CFG",
     "SONG_KEY",
+    "LaneInput",
     "SongIndex",
     "build_song_index",
-    "LaneInput",
-    "dud_files",
     "drain_song_view",
+    "dud_files",
     "dud_label",
     "is_red",
     "lane_songs",

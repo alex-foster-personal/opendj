@@ -110,7 +110,7 @@ def test_drain_coverage_reports_songs_and_duds() -> None:
     """[if] the drain computes coverage with a song index [then] lanes carry songs, [else stop]."""
     index = _index(("a", "/m/x.mp3", "T", ["A"], 1000), ("b", "/m/x.mp3", "T", ["A"], 1000), ("c", "/m/c.mp3", "U", ["A"], 1000))
     sources = aa.AheadSources(
-        present_fn=lambda: ["a", "b", "c"], mapped_fn=lambda ids: set(ids), has_strip_fn=lambda _s: True,
+        present_fn=lambda: ["a", "b", "c"], mapped_fn=set, has_strip_fn=lambda _s: True,
         write_strip_fn=lambda _s: None, done_fn=lambda _l, _b: set(), run_lane_fn=lambda _l, _b, _i: {},
         playing_fn=lambda: True, blank_tags_fn=set, refresh_tags_fn=lambda _s: True, declined_fn=lambda _l, _b: {},
         library_values_fn=lambda field: {"a": "rekordbox"} if field == "bpm" else {},
