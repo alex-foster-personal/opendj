@@ -326,3 +326,58 @@ test('the chunk URL and size are what the daemon route expects', () => {
 		'/api/sets/recorder/2026-10-06T03-00-00/master-pcm?stream=a+b&seq=3&sample_rate=48000'
 	);
 });
+
+test('a chunk in flight at a clean stop is dropped quietly: no failure, the tap just ends', async () => {
+	const graph = fakeGraph();
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const failures = [];
+	let ended = 0;
+	const post = async () =>
+		new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	await capture.startMasterMixCapture('S', (why) => failures.push(why), post, () => (ended += 1));
+	const [worklet] = graph.worklets;
+	worklet.port.emit(chunk(100));
+	await settle();
+	assert.deepEqual(failures, [], 'a clean stop is not an error (no toast)');
+	assert.equal(ended, 1);
+	assert.equal(worklet.port.onmessage, null, 'the tap is detached');
+	// Control: a 200 that does not say it dropped the chunk is a contract break, loud.
+	const loud = fakeGraph();
+	capture.setMasterMixTapPoint({ context: loud.context, node: loud.node });
+	const loudFailures = [];
+	await capture.startMasterMixCapture('S', (why) => loudFailures.push(why), async () => new Response('{}', { status: 200 }));
+	loud.worklets[0].port.emit(chunk(100));
+	await settle();
+	assert.equal(loudFailures.length, 1);
+});
+
+test('the page runs one tap per recording, however many times it is asked (order + rail)', async () => {
+	const graph = fakeGraph();
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const realFetch = globalThis.fetch;
+	globalThis.fetch = async () => new Response(null, { status: 204 });
+	try {
+		const first = capture.ensureMasterMixCapture('S1');
+		const second = capture.ensureMasterMixCapture('S1', () => {});
+		assert.equal(first, second);
+		await first;
+		assert.equal(graph.worklets.length, 1);
+		const stats = await capture.stopMasterMixCapture();
+		assert.equal(stats.frames_sent, 0);
+		assert.equal(await capture.stopMasterMixCapture(), null, 'nothing left running');
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+});
+
+test('a master start is pushed to the leader page as an agent order the executor handles', () => {
+	const orders = readFrontendSource('src/lib/rb/agent-orders.ts');
+	assert.match(orders, /if \(order\.type === 'record_master_tap'\) await _recordMasterTap\(order\)/);
+	assert.match(orders, /ensureMasterMixCapture\(command\.session_id\)/);
+	const rail = readFrontendSource('src/lib/components/rb/browser/PerformanceRecorderRail.svelte');
+	assert.match(rail, /m\.ensureMasterMixCapture\(id,/);
+	assert.doesNotMatch(rail, /startMasterMixCapture/, 'the rail must not start a second tap');
+});
