@@ -140,17 +140,32 @@ def upsert_rows(
     now = datetime.now(UTC)
     checked_at = _checked_at_iso(now)
     rewrite_before = _checked_at_iso(now - timedelta(seconds=UNCHANGED_REWRITE_AFTER_S))
-    conn.executemany(
-        "INSERT INTO path_availability("
-        "resolver_namespace, logical_path, materialised_size, checked_at) "
-        "VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(resolver_namespace, logical_path) DO UPDATE SET "
-        "materialised_size = excluded.materialised_size, "
-        "checked_at = excluded.checked_at "
-        "WHERE path_availability.materialised_size IS NOT excluded.materialised_size "
-        "OR path_availability.checked_at < ?",
-        [(namespace, path, size, checked_at, rewrite_before) for path, size in rows],
-    )
+    # ONE transaction for the whole batch (STATE-20). Handles from
+    # ``state_db.open_rw`` are autocommit, so a bare executemany committed
+    # every row on its own: on installed build 9 (Tue 6 Oct 2026) that was
+    # 2,070 of 2,347 WAL commits, each rewriting the same leaf pages again.
+    # A caller already inside a transaction keeps ownership of it.
+    owns_txn = not conn.in_transaction
+    if owns_txn:
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.executemany(
+            "INSERT INTO path_availability("
+            "resolver_namespace, logical_path, materialised_size, checked_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(resolver_namespace, logical_path) DO UPDATE SET "
+            "materialised_size = excluded.materialised_size, "
+            "checked_at = excluded.checked_at "
+            "WHERE path_availability.materialised_size IS NOT excluded.materialised_size "
+            "OR path_availability.checked_at < ?",
+            [(namespace, path, size, checked_at, rewrite_before) for path, size in rows],
+        )
+        if owns_txn:
+            conn.execute("COMMIT")
+    except BaseException:
+        if owns_txn and conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
 
 
 __all__ = [

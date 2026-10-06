@@ -721,7 +721,7 @@
 
 	<button
 		type="button"
-		class="tb-icon theme-toggle topbar-slot-utility"
+		class="tb-icon theme-toggle topbar-slot-pinned"
 		class:on={uiPrefs.ui_skin === 'light'}
 		data-skin-current={uiPrefs.ui_skin}
 		title={skinCycleTitle(uiPrefs.ui_skin)}
@@ -740,7 +740,7 @@
 
 	<button
 		type="button"
-		class="tb-icon theme-toggle topbar-slot-utility"
+		class="tb-icon theme-toggle topbar-slot-pinned"
 		title="Settings (Cmd+,)"
 		aria-label="Open settings"
 		onclick={() => openSettings()}
@@ -1086,6 +1086,9 @@
 		/* Was 1400px (free badge + utility) and 1320px (clock), both measured
 		   against the unlabelled circle. At 1440px - a very common window - the
 		   label is worth 90px and these are worth 115px. */
+		/* Settings and the theme/skin toggle are .topbar-slot-pinned, NOT
+		   evictable: Settings is the only visible door to settings, and both
+		   vanished in a 1508px window (the maintainer, Mon 5 Oct 2026). */
 		.rb-topbar .free-badge,
 		.rb-topbar .topbar-slot-utility,
 		.rb-topbar .clock { display: none; }
