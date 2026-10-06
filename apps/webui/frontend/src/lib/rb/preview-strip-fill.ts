@@ -19,7 +19,7 @@
  *     [if] an id scrolls away [then] it is no longer asked
  */
 
-import type { Vocals } from './api-rb';
+import type { RowAssetTarget } from './row-assets-fill';
 import { bootListingWalkInFlight, whenBootListingWalkSettled } from './library-boot-hydration';
 
 export const STRIP_FILL_DEBOUNCE_MS = 150;
@@ -197,14 +197,6 @@ export function stripLessIdsNear(
     .slice(Math.max(0, startIndex - margin), endIndex + margin)
     .filter((r) => r.strip === null && !hasStrip(r.stable_id))
     .map((r) => r.stable_id);
-}
-
-/** The row fields a `POST /library/row-assets` answer settles (LIBM-172). */
-export interface RowAssetTarget {
-  stable_id: string;
-  vocals: Vocals;
-  artwork_available: boolean | null;
-  artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 }
 
 /** The filler's batch for library rows (LIBM-172): `POST /library/row-assets`, with the

@@ -17,8 +17,8 @@ import { fetchRowAssets, parseVocals, type Vocals } from './api-rb';
 
 type ArtworkStatus = 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 
-/** The row fields an answer settles (preview-strip-fill's RowAssetTarget). */
-interface Target {
+/** The row fields a `POST /library/row-assets` answer settles (LIBM-172). */
+export interface RowAssetTarget {
 	stable_id: string;
 	vocals: Vocals;
 	artwork_available: boolean | null;
@@ -29,7 +29,7 @@ interface Target {
  * the strips in the filler's shape (null: nothing on disk, or not a track). */
 export async function fetchAndApplyRowAssets(
 	ids: string[],
-	rows: readonly Target[]
+	rows: readonly RowAssetTarget[]
 ): Promise<{ strips: Record<string, { preview_b64: string; preview_max: number } | null>; pending: string[] }> {
 	const answer = await fetchRowAssets(ids);
 	if (typeof answer.assets !== 'object' || answer.assets === null || !Array.isArray(answer.pending)) {
