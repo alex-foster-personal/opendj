@@ -21,7 +21,6 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
-		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -32,6 +31,7 @@
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
+	import { createReconcileSummaryRefresh } from '$lib/rb/reconcile-summary-refresh';
 	import {
 		coverageDot as _coverageDot,
 		createCoverageRefresh,
@@ -358,7 +358,6 @@
 	/** The reconcile summary's per-machine breakdown; 'unknown' when the
 	 * engine answered without one, null until the first answer lands. */
 	let libraryAvailability = $state<unknown>(null);
-	let reconcileReadGeneration = 0;
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -1066,6 +1065,7 @@
 			clearInterval(libraryFallbackTimer);
 			clearInterval(healthRefetchTimer);
 			_coverageRefresh.dispose();
+			_reconcileRefresh.dispose();
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -1112,20 +1112,18 @@
 		);
 	}
 
-	async function _loadReconcileSummary(): Promise<void> {
-		const generation = ++reconcileReadGeneration;
-		libraryAvailability = null;
-		try {
-			const summary = await getReconcileSummary();
-			if (generation !== reconcileReadGeneration) return;
-			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
-			allTracksBrokenCount = summary.total_broken;
-			libraryAvailability = summary.availability ?? 'unknown';
-			allTracksReconcileError = null;
-		} catch (error: unknown) {
-			if (generation !== reconcileReadGeneration) return;
-			allTracksReconcileError = error instanceof Error ? error.message : String(error);
+	// HEALTH-15: the engine's last library scan, one read in flight at a time.
+	const _reconcileRefresh = createReconcileSummaryRefresh((read) => {
+		if (read.counts !== null) {
+			allTracksNonBrokenCount = read.counts.nonBroken;
+			allTracksBrokenCount = read.counts.broken;
+			libraryAvailability = read.counts.availability;
 		}
+		allTracksReconcileError = read.error;
+	});
+
+	function _loadReconcileSummary(): Promise<void> {
+		return _reconcileRefresh.load();
 	}
 
 	async function _init(): Promise<void> {

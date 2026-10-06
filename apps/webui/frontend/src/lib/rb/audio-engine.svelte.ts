@@ -3185,6 +3185,12 @@ class RbAudioEngine implements AudioEngine {
 		};
 		if (startAtContextSec !== undefined) {
 			await schedulePlainTransport(startAtContextSec);
+			// RESCUE-07: the shared-instant start (Gig rescue resume) must still
+			// claim a master, or the page plays with none and AutoPlay, which
+			// only arms off the playing master, never queues the next track.
+			if (_masterMode === 'auto' && _masterDeck === null) {
+				_electPlayingMaster({ reason: 'play-claim' });
+			}
 			return;
 		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {

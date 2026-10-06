@@ -160,8 +160,12 @@ test('coverage counts only reachable audio and refetches through the library ref
 
 test('BrowserPanel renders reconciled playable counts without delaying initial playlist rendering', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /getReconcileSummary/);
-	assert.match(src, /allTracksNonBrokenCount = summary\.total_tracks - summary\.total_broken/);
+	// HEALTH-15: the read lives in reconcile-summary-refresh.ts; the panel paints what it applies.
+	const read = source('src/lib/rb/reconcile-summary-refresh.ts');
+	assert.match(read, /getReconcileSummary/);
+	assert.match(read, /nonBroken: summary\.total_tracks - summary\.total_broken/);
+	assert.match(src, /createReconcileSummaryRefresh/);
+	assert.match(src, /allTracksNonBrokenCount = read\.counts\.nonBroken/);
 	assert.match(src, /broken_count: playlistBrokenCount\(p\)/);
 	assert.match(
 		src,

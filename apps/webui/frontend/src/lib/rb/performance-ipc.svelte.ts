@@ -148,7 +148,7 @@ import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/c
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
-import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -455,6 +455,9 @@ export interface PerformanceState {
 		per_deck: Record<DeckId, 'pending' | 'decoded' | 'failed'>;
 		started_at_ms: number;
 	};
+	/** RESCUE-07: decks a reload stopped and the banner offers to resume (null when
+	 * no offer). Agents act on it with `play` per deck, first deck first. */
+	reload_resume: { decks: DeckId[]; error: string | null } | null;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
@@ -1939,6 +1942,10 @@ export function queryPerformanceState(): PerformanceState {
 			per_deck: { ...rescueRestoreStatus.per_deck },
 			started_at_ms: rescueRestoreStatus.started_at_ms
 		},
+		reload_resume:
+			reloadResume.offer === null
+				? null
+				: { decks: [...reloadResume.offer.decks], error: reloadResume.error },
 		preview: {
 			stable_id: previewCue.stable_id,
 			playing: previewCue.playing,
