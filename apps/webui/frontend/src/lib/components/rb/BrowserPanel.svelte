@@ -74,7 +74,10 @@
 		setAutoPlayTrackFeed,
 		getSpotifyPendingTracks,
 		type SpotifyPendingTrack,
+		fillAllTracksFromIndex,
 		fillAllTracksPane,
+		rowsForIndex,
+		clearPlaylistRowCache,
 		fillPlaylistPane,
 		fillAutolistPane,
 		autolistNode,
@@ -87,7 +90,6 @@
 		ensureAudioPrefetch,
 		clearSelection,
 		pruneSelection,
-		fetchAllPages,
 		libraryAudioLoadRefusal,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
@@ -159,6 +161,9 @@
 		canBootAllTracksEarly,
 		bootListingWalkSettled,
 		fetchBootTracksFirstPage,
+		heldAllTracksIndex,
+		loadAllTracksIndex,
+		invalidateLibraryIndex,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
 	// Re-exported by browser-panel-support so BrowserPanel's import fan-out
@@ -1018,7 +1023,7 @@
 		// ever one refetch. Playlist TREE names refresh immediately on
 		// `playlists` / resync (see the handlers below); that is cheap and is
 		// user-visible undo/redo state.
-		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
+		const unsubscribeTracks = subscribeKind('tracks', () => _requestLibraryRefresh());
 		// Tree names are user-visible undo/redo state (v1). The playing-gated
 		// full library refetch can be in flight, deferred, or throw after its
 		// GET /playlists snapshot, which left the history panel enabled while
@@ -1027,15 +1032,15 @@
 		const unsubscribePlaylists = subscribeKind('playlists', () => {
 			invalidateAllPlaylistFirstPages();
 			void _refreshPlaylists();
-			_libraryRefreshGate.request();
+			_requestLibraryRefresh();
 		});
-		const unsubscribeSmartlists = subscribeKind('smartlists', () => _libraryRefreshGate.request());
+		const unsubscribeSmartlists = subscribeKind('smartlists', () => _requestLibraryRefresh());
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => {
 			invalidateAllPlaylistFirstPages();
 			void _refreshPlaylists();
-			_libraryRefreshGate.request();
+			_requestLibraryRefresh();
 		});
 		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
 		// WS is down it is the only thing keeping this pane honest. Poll follows
@@ -1045,7 +1050,7 @@
 			const now = Date.now();
 			if (!shouldRunLibraryFallbackPoll(now, lastLibraryFallbackAt, getConnectionState() === 'open')) return;
 			lastLibraryFallbackAt = now;
-			_libraryRefreshGate.request();
+			_requestLibraryRefresh();
 		}, 60_000);
 
 		// The dots re-ask on their own clock, independent of the playing-gated
@@ -1697,6 +1702,13 @@
 		run: _refreshLibraryRowsOnce
 	});
 
+	/** A library change: held lists go stale NOW, even while the refetch waits (LIBM-171). */
+	function _requestLibraryRefresh(): void {
+		invalidateLibraryIndex();
+		clearPlaylistRowCache();
+		_libraryRefreshGate.request();
+	}
+
 	// The reactive read IS the drain trigger: `anyDeckPlaying` touches every
 	// deck's transport state, so this effect re-runs the instant the last deck
 	// stops and the owed refresh lands with no polling anywhere.
@@ -2049,10 +2061,12 @@
 			if (node.kind === 'all_tracks') {
 				_prefetchPlaylistTreeIntent(treeNodes);
 				const switchStartedAt = performance.now();
-				await fillAllTracksPane({
+				await fillAllTracksFromIndex({
 					pane: p,
 					seq,
-					fetchPage: (cursor) => fetchBootTracksFirstPage(cursor),
+					held: heldAllTracksIndex(),
+					loadIndex: loadAllTracksIndex,
+					firstPage: () => fetchBootTracksFirstPage(undefined),
 					mapRow: (t, order) => _rowFromListWire(t, order),
 					progressTotal: allTracksNonBrokenCount,
 					onFirstPaint: () => {
@@ -2102,6 +2116,7 @@
 						fetchPlaylistFirstPage(node.playlist_id, offset, limit),
 					mapRow: (wire, order) => _rowFromPlaylistWire(wire, order),
 					progressTotal: node.track_count,
+					cacheKey: node.playlist_id,
 					onFirstPaint: (decomposition) => {
 						recordPlaylistSwitchFirstRowsMs(
 							'playlist',
@@ -2177,34 +2192,15 @@
 		return { ..._rowFromPlaylistWire(wire, order), match_context: wire.match_context };
 	}
 
-	async function _fetchAllRows(
-		onPage?: (info: { loaded: number; pageCount: number }) => void
-	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
-		// All Tracks: walk every cursor page with inline preview/file_exists
-		// (contract 1). PAGE_SIZE is per request, while TrackTable's DOM
-		// virtualization keeps the rendered pane bounded. ?available stays
-		// server-default 'all': FR-1 hiding is client-side so the toggle
-		// flips instantly on loaded panes; the API filter exists for agent
-		// parity, not for this UI path.
-		// One ring row per completed walk (PERF-R5 Q9). Both the user-initiated
-		// load and the background refresh land here, and both are the same
-		// ~8k-row cost, so this is the one place that needs the clock.
+	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+		// All Tracks from the library index (LIBM-171): one request when the
+		// library changed, none otherwise. ?available stays 'all': FR-1 hiding is
+		// client-side so the toggle flips instantly. One ring row per refresh
+		// (PERF-R5 Q9). All Tracks has no membership etag.
 		const startedAt = performance.now();
-		const items = await fetchAllPages(
-			(cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }),
-			onPage !== undefined ? { onPage } : {}
-		);
-		const rows = items.map((t, i) => _rowFromListWire(t, i + 1));
-		recordLibraryLoadTiming('all-tracks', {
-			fetchMs: performance.now() - startedAt,
-			rows: rows.length
-		});
-		return {
-			rows,
-			truncated: false,
-			// All Tracks is not a single playlist row - no membership etag.
-			etag: ''
-		};
+		const rows = rowsForIndex(await loadAllTracksIndex(), _rowFromListWire);
+		recordLibraryLoadTiming('all-tracks', { fetchMs: performance.now() - startedAt, rows: rows.length });
+		return { rows, truncated: false, etag: '' };
 	}
 
 	async function _fetchSmartlistRows(

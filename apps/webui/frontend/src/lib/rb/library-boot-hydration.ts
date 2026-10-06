@@ -14,10 +14,12 @@ import {
 	listPlaylistsHydrated,
 	listTracksHydrated,
 	type PlaylistSummaryHydrated,
+	type TrackListItemWire,
 	type TracksPageHydrated
 } from '$lib/rb/api-rb';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import { hydrateConfirmPrefsFromDisk } from '$lib/rb/prefs.svelte';
+import { libraryIndexIsCurrent, loadLibraryIndex, peekLibraryIndex } from './library-index';
 
 /** Per-request page size for BrowserPanel's listing pages after the first. */
 export const LIBRARY_BOOT_PAGE_SIZE = 500;
@@ -113,6 +115,14 @@ export function startLibraryBootHydration(listingWalkRuns = true): void {
 		tracksPromise: fetchBootTracksPage(LIBRARY_BOOT_FIRST_PAGE_SIZE),
 		playlistsPromise: fetchBootPlaylists()
 	};
+	// LIBM-171: the whole index follows the first page (the engine is GIL-bound,
+	// so not beside it). A failure here is the pane's to report when it loads.
+	if (listingWalkRuns) {
+		void bootPrefetch.tracksPromise
+			.catch(() => undefined)
+			.then(() => loadLibraryIndex())
+			.catch(() => undefined);
+	}
 }
 
 /** Read-only boot prefetch state; throws if hydration was never started. */
@@ -190,3 +200,22 @@ export async function fetchBootTracksFirstPage(
 	if (page.next_cursor === null) bootListingWalkSettled();
 	return page;
 }
+
+/** All Tracks' held library index for an instant paint (LIBM-171): null before
+ * the first load, `current: false` once a library change has been seen. */
+export function heldAllTracksIndex(): { items: readonly TrackListItemWire[]; current: boolean } | null {
+	const held = peekLibraryIndex();
+	return held === null ? null : { items: held.items, current: libraryIndexIsCurrent() };
+}
+
+/** The current library index's rows, in ONE request when it is not held. Ends
+ * the boot listing walk either way: the index is the whole listing. */
+export async function loadAllTracksIndex(): Promise<readonly TrackListItemWire[]> {
+	try {
+		return (await loadLibraryIndex()).items;
+	} finally {
+		bootListingWalkSettled();
+	}
+}
+
+export { invalidateLibraryIndex } from './library-index';

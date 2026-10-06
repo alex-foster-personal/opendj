@@ -34,8 +34,8 @@ pytestmark = [pytest.mark.requirement("LIBM-171")]
 TRACKS = 2_300
 NOW = "2026-10-06T00:00:00Z"
 #: Warm index of TRACKS mapped rows, in a child engine. Measured on demon-llama,
-#: Tue 6 Oct 2026: see the PR. A ratchet: lower it, never raise it without a reason.
-INDEX_WARM_BUDGET_MS = 2_500
+#: Tue 6 Oct 2026: 348 ms cold, 359 ms warm, 3.1 MB. A ratchet: lower it, never raise it.
+INDEX_WARM_BUDGET_MS = 1_500
 
 
 def _sid(i: int) -> str:

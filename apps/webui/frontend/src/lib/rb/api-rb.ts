@@ -731,7 +731,28 @@ export async function listTracksHydrated(params: {
 		.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
 		.join('&');
 	const page = await _fetchJson<TracksPageHydrated>(`/api/v1/tracks${qs === '' ? '' : '?' + qs}`);
-	for (const item of page.items) {
+	_assertListingRows(page.items);
+	return page;
+}
+
+export interface TrackIndexWire {
+	revision: string;
+	items: TrackListItemWire[];
+}
+
+/** GET /tracks/index: every listing row in one response (LIBM-171). `no-cache`
+ * so the browser revalidates with the body ETag and a 304 costs no transfer. */
+export async function fetchTrackIndex(): Promise<TrackIndexWire> {
+	const index = await _fetchJson<TrackIndexWire>('/api/v1/tracks/index', 'no-cache');
+	if (typeof index.revision !== 'string' || !Array.isArray(index.items)) {
+		throw new Error('track index response has no revision or no items array');
+	}
+	_assertListingRows(index.items);
+	return index;
+}
+
+function _assertListingRows(items: TrackListItemWire[]): void {
+	for (const item of items) {
 		if (
 			item.file_availability !== 'AVAILABILITY_PENDING' &&
 			typeof item.file_exists !== 'boolean'
@@ -755,7 +776,6 @@ export async function listTracksHydrated(params: {
 			);
 		}
 	}
-	return page;
 }
 
 // ------------------------------------------------- the 4 new endpoints

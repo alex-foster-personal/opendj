@@ -48,8 +48,8 @@ export {
 	setAutoPlayTrackFeed
 } from '$lib/rb/auto-play';
 export { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
-export { fillAllTracksPane } from './fill-all-tracks';
-export { fillPlaylistPane } from './fill-playlist-pane';
+export { fillAllTracksFromIndex, fillAllTracksPane, rowsForIndex } from './fill-all-tracks';
+export { clearPlaylistRowCache, fillPlaylistPane } from './fill-playlist-pane';
 export { fillAutolistPane } from './fill-autolist';
 export {
 	autolistNode,

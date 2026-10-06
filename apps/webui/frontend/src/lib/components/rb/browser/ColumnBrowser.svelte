@@ -31,7 +31,7 @@
 	// fields) but does NOT carry genre - see column-buckets.ts for why a
 	// genre column would be a fake column here (always-null, house rule).
 	import { onMount } from 'svelte';
-	import { listTracksHydrated, RbApiError } from '$lib/rb/api-rb';
+	import { RbApiError } from '$lib/rb/api-rb';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import {
@@ -42,7 +42,7 @@
 		type ColumnSelector
 	} from './column-buckets';
 	import VirtualList from './VirtualList.svelte';
-	import { fetchAllPages } from './virtual-window';
+	import { loadLibraryIndex } from '$lib/rb/library-index';
 
 	// Matches `.row { height: 18px; }` below - see VirtualList's rowHeight doc.
 	const ROW_HEIGHT = 18;
@@ -76,7 +76,8 @@
 
 	async function _load(): Promise<void> {
 		try {
-			const items = await fetchAllPages((cursor) => listTracksHydrated({ limit: 500, cursor }));
+			// LIBM-171: the shared library index, one request at most, often none.
+			const { items } = await loadLibraryIndex();
 			rows = items.map((t) => ({
 				stable_id: t.stable_id,
 				// TrackOut spells its nullable fields optional; absent reads the
