@@ -97,6 +97,7 @@
 			data-testid="playlist-undo"
 			aria-label="Undo playlist edit"
 			title="Undo playlist edit (Ctrl/Cmd+Z). Hover for recent edits."
+			data-custom-tip=""
 			disabled={!playlistHistoryChrome.canUndo}
 			bind:this={historyAnchor}
 			onclick={() => undoPlaylistFromChrome()}
@@ -132,8 +133,8 @@
 		onmouseleave={closeHistory}
 		onblur={closeHistory}
 	>
-		<p class="history-hint" title="Recent playlist edits at the undo cursor">
-			Recent playlist edits
+		<p class="history-hint">
+			Undo playlist edit (Ctrl/Cmd+Z). Recent edits at the undo cursor:
 		</p>
 		<ol class="history-list" data-testid="playlist-history-list">
 			{#each playlistHistoryChrome.entries as entry, index (entry.command_id)}

@@ -211,6 +211,7 @@
 <span
 	class="wrap"
 	role="presentation"
+	data-custom-tip=""
 	bind:this={wrapEl}
 	onmouseenter={onEnter}
 	onmouseleave={onLeave}

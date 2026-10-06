@@ -42,6 +42,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="src-menu"
+	data-hover-card=""
 	style={menuStyle}
 	role="menu"
 	tabindex="-1"
@@ -50,6 +51,7 @@
 	onpointerleave={onClose}
 >
 	<p class="src-head">Source (testing - resets on relaunch)</p>
+	<p class="src-sub">rbx-vs-own A/B: pick which lane each own-rolled feature reads from. On relaunch each lane goes back to its persisted default (own if promoted, rbx otherwise).</p>
 	{#each ANALYSIS_SOURCE_FEATURES as feature (feature)}
 		{@const current = analysisSourceState.features[feature] ?? 'rekordbox'}
 		<div class="src-row">
@@ -96,6 +98,10 @@
 		margin: 0 0 6px;
 		font-weight: 650;
 		letter-spacing: 0.02em;
+		color: var(--rb-text-dim);
+	}
+	.src-sub {
+		margin: 0 0 6px;
 		color: var(--rb-text-dim);
 	}
 	.src-row {

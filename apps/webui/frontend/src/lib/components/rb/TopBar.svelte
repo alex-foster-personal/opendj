@@ -182,6 +182,14 @@
 		return `AutoPlay ON (${d.short}) - last ~16s loads onto a free/stopped deck. ${d.detail}`;
 	});
 
+	// The AutoPlay menu is the one explainer for both AutoPlay buttons, so their
+	// status lines live in its header instead of on a second (title) tooltip.
+	const autoPlayNextLine: string = $derived(
+		autoPlayNextState.armed
+			? `Next-track loop armed (${autoPlayNextState.phase}) - click >| to cancel`
+			: 'Next-track loop (>|): loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'
+	);
+
 	// Pin fc60002b81a8: ">|" split of the AutoPlay button, early next-track
 	// transition trigger. Toggles arm/cancel through the same command path
 	// as every other performance control (see auto-play-next.svelte.ts).
@@ -610,6 +618,7 @@
 	<span
 		class="ap-wrap topbar-slot-autoplay"
 		class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
+		data-custom-tip=""
 		bind:this={autoPlayWrapEl}
 		onpointerenter={_showAutoPlayMenu}
 		onpointerleave={_hideAutoPlayMenu}
@@ -621,7 +630,7 @@
 			class="bsm-toggle"
 			class:on={uiPrefs.auto_play_enabled}
 			aria-pressed={uiPrefs.auto_play_enabled}
-			title={autoPlayTitle}
+			aria-describedby="ap-menu-status"
 			onclick={() => setAutoPlayEnabled(!uiPrefs.auto_play_enabled)}
 		>
 			AutoPlay
@@ -632,9 +641,8 @@
 			data-rust-command="auto_play_next_arm"
 			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
-			title={autoPlayNextState.armed
-				? `Next-track loop armed (${autoPlayNextState.phase}) - click to cancel`
-				: 'Next-track loop: loop the outgoing track\'s last repetitive 8 beats, duck LOW 30% once the incoming bass enters, cut at the approximate drop'}
+			aria-label="Next-track loop"
+			aria-describedby="ap-menu-next"
 			onclick={_toggleAutoPlayNext}
 		>
 			&gt;|
@@ -643,6 +651,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="ap-menu"
+				data-hover-card=""
 				bind:this={autoPlayMenuEl}
 				style={autoPlayMenuStyle}
 				role="dialog"
@@ -651,6 +660,8 @@
 				onpointerleave={() => (autoPlayMenuOpen = false)}
 			>
 				<p class="ap-head">AutoPlay</p>
+				<p class="ap-status" id="ap-menu-status" data-testid="ap-menu-status">{autoPlayTitle}</p>
+				<p class="ap-status" id="ap-menu-next" data-testid="ap-menu-next">{autoPlayNextLine}</p>
 				<label class="ap-row">
 					<input
 						type="checkbox"
@@ -1216,6 +1227,10 @@
 		margin: 0 0 6px;
 		font-weight: 650;
 		letter-spacing: 0.02em;
+	}
+	.ap-status {
+		margin: 0 0 6px;
+		color: var(--rb-text-dim);
 	}
 	.ap-row {
 		display: flex;

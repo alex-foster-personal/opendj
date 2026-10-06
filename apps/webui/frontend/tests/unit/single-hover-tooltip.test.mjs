@@ -24,11 +24,17 @@ class El {
 		this.disabled = false;
 		this.offsetWidth = 80;
 		this.offsetHeight = 18;
+		const classes = new Set();
 		this.classList = {
-			add: () => {},
-			remove: () => {},
-			toggle: () => {},
-			contains: () => false
+			add: (c) => classes.add(c),
+			remove: (c) => classes.delete(c),
+			toggle: (c, force) => {
+				const on = force === undefined ? !classes.has(c) : force;
+				if (on) classes.add(c);
+				else classes.delete(c);
+				return on;
+			},
+			contains: (c) => classes.has(c)
 		};
 	}
 
@@ -309,4 +315,69 @@ test('the rust-inert title observer does not restore title or loop during the pa
 	assert.equal(button.getAttribute('title'), 'Loop length');
 	guard.disconnect();
 	root.remove();
+});
+
+/** The box a user can SEE: shown and not the clipped screen-reader copy. */
+function visibleTip() {
+	const shown = tip();
+	if (shown === undefined) return undefined;
+	return shown.classList.contains('single-hover-tip-sr') ? undefined : shown;
+}
+
+function build(tag, attrs = {}, parent = doc.body) {
+	const el = doc.createElement(tag);
+	for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+	parent.appendChild(el);
+	return el;
+}
+
+test('a titled button inside a hover-card host shows no second box (AutoPlay shape)', async () => {
+	// Tue 6 Oct 2026: the AutoPlay card AND "AutoPlay OFF - ..." showed at once.
+	const wrap = build('span', { 'data-custom-tip': '' });
+	const button = build('button', { title: 'AutoPlay OFF - No automatic next-track handoff.' }, wrap);
+	pointer('pointerover', button);
+	await Promise.resolve();
+	assert.equal(visibleTip(), undefined, 'the card is the one explainer');
+	assert.equal(button.hasAttribute('title'), false, 'native tooltip parked too');
+	pointer('pointerout', button, doc.body);
+	await Promise.resolve();
+	wrap.remove();
+});
+
+test('a titled ANCESTOR of a hover-card host shows no second box (compatible-filter shape)', async () => {
+	const label = build('label', { title: 'Show only tracks compatible with the reference deck' });
+	const host = build('div', { 'data-custom-tip': '' }, label);
+	const input = build('input', {}, host);
+	pointer('pointerover', input);
+	await Promise.resolve();
+	assert.equal(visibleTip(), undefined);
+	assert.equal(label.hasAttribute('title'), false);
+	pointer('pointerout', input, doc.body);
+	await Promise.resolve();
+	assert.equal(label.getAttribute('title'), 'Show only tracks compatible with the reference deck');
+	label.remove();
+});
+
+test('a titled sub-control inside the card body keeps its own box (it is another control)', async () => {
+	const wrap = build('span', { 'data-custom-tip': '' });
+	const card = build('div', { 'data-hover-card': '' }, wrap);
+	const row = build('button', { title: 'Two-track AutoPlay - planned' }, card);
+	pointer('pointerover', row);
+	await Promise.resolve();
+	assert.equal(visibleTip()?.textContent, 'Two-track AutoPlay - planned');
+	pointer('pointerout', row, doc.body);
+	await Promise.resolve();
+	wrap.remove();
+});
+
+test('card body text under a titled host outside the body still shows no box', async () => {
+	const host = build('span', { 'data-custom-tip': '', title: 'host help' });
+	const card = build('div', { 'data-hover-card': '' }, host);
+	const text = build('p', {}, card);
+	pointer('pointerover', text);
+	await Promise.resolve();
+	assert.equal(visibleTip(), undefined, 'the host title belongs outside the body');
+	pointer('pointerout', text, doc.body);
+	await Promise.resolve();
+	host.remove();
 });

@@ -36,6 +36,7 @@
 <div
 	class="pop"
 	data-testid="refresh-analysis-pop"
+	data-hover-card=""
 	use:triggerFloatingAction={{ getTrigger: () => wrapEl ?? null, preferred: 'below', gap: 4 }}
 >
 	<div class="pop-title">Refresh analysis</div>

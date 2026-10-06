@@ -356,7 +356,7 @@
 	</button>
 
 	{#if cardOpen}
-		<div id="perf-meters-panel" class="perf-meters-panel" role="region" aria-label="Performance readout details">
+		<div id="perf-meters-panel" class="perf-meters-panel" data-hover-card="" role="region" aria-label="Performance readout details">
 			<dl class="perf-readout-rows">
 				{#each readoutRows as row (row.key)}
 					<div class="perf-readout-row" data-readout={row.key}>

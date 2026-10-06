@@ -81,7 +81,7 @@
 	}
 </script>
 
-<td class="c-lyrics" onpointerenter={onCellEnter} onpointerleave={onCellLeave}>
+<td class="c-lyrics" data-custom-tip="" onpointerenter={onCellEnter} onpointerleave={onCellLeave}>
 	{#if row.lyrics === null}
 		<span class="lyr-dash" title={LYRIC_NO_DATA_TITLE}>-</span>
 	{:else}

@@ -112,6 +112,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	class="ap-explain-wrap"
+	data-custom-tip=""
 	bind:this={wrapEl}
 	onpointerenter={_show}
 	onpointerleave={_hide}

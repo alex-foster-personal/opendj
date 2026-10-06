@@ -42,6 +42,7 @@
 
 <div
 	class="compat-filter-pop"
+	data-custom-tip=""
 	onmouseenter={_open}
 	onmouseleave={_scheduleClose}
 	onfocusin={_open}

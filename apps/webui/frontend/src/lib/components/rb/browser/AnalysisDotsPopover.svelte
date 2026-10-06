@@ -371,6 +371,7 @@
 	class="wrap"
 	role="group"
 	aria-label={mode === 'issues' ? 'Data-quality issues' : 'Analysis coverage'}
+	data-custom-tip=""
 	tabindex="0"
 	bind:this={wrapEl}
 	onmouseenter={onEnter}
@@ -385,6 +386,7 @@
 		<div
 			class="pop"
 			data-testid="analysis-dots-pop"
+			data-hover-card=""
 			use:triggerFloatingAction={{ getTrigger: () => wrapEl ?? null, preferred: 'below', gap: 4 }}
 		>
 			<div class="pop-title">{mode === 'issues' ? 'Data-quality issues' : 'Analysis coverage'}</div>

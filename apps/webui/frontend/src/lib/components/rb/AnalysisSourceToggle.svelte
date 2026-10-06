@@ -107,6 +107,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	class="src-wrap"
+	data-custom-tip=""
 	bind:this={wrapEl}
 	onpointerenter={_show}
 	onpointerleave={_hide}
@@ -119,7 +120,7 @@
 		class:on={anyOwn}
 		aria-haspopup="true"
 		aria-expanded={menuOpen}
-		title="rbx-vs-own source A/B: pick which lane each own-rolled feature reads from. Testing/dev only - this toggle itself resets on relaunch, back to the lane's persisted default (own if promoted, rbx otherwise), not always rekordbox."
+		aria-label="Analysis source (rbx vs own)"
 	>
 		SOURCE
 		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">

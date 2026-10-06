@@ -19,8 +19,27 @@ export const TIP_PARKED_ATTR = 'data-tip-parked';
 /** The parked help string. Screen readers also get it via `aria-describedby`. */
 export const TIP_DATA_ATTR = 'data-tip';
 
-/** Set on a control that already draws its own rich hover (ControlExplainer). */
+/**
+ * Set on a control that already draws its own rich hover card (ControlExplainer,
+ * the top bar AutoPlay menu, the library hover popovers). Inside it this layer
+ * draws no box, so the card is the one explainer. Titles are still parked, so
+ * the native tooltip cannot show either.
+ */
 export const CUSTOM_TIP_ATTR = 'data-custom-tip';
+
+/**
+ * Set on the body of a hover card. A titled sub-control INSIDE the body (for
+ * example a planned row in the AutoPlay menu) is its own control and gets its
+ * own tip; anything outside the body, inside the host, stays suppressed.
+ */
+export const HOVER_CARD_ATTR = 'data-hover-card';
+
+/** Whether the box may show for `host`, hovered at `target`. Nearest scope wins. */
+export function hoverBoxAllowed(target: HTMLElement, host: HTMLElement): boolean {
+	const scope = target.closest(`[${CUSTOM_TIP_ATTR}], [${HOVER_CARD_ATTR}]`);
+	if (scope === null) return true;
+	return scope.hasAttribute(HOVER_CARD_ATTR) && scope.contains(host);
+}
 
 const TIP_ID = 'single-hover-tip';
 const DESCRIBED_BACKUP_ATTR = 'data-tip-describedby';
@@ -160,11 +179,11 @@ function _onOver(event: Event): void {
 	const target = _element(event.target);
 	if (target === null || target === tipEl) return;
 	const host = _titledHost(target);
-	const showBox = target.closest(`[${CUSTOM_TIP_ATTR}]`) === null;
 	if (host === null) {
 		if (active !== null) _clear();
 		return;
 	}
+	const showBox = hoverBoxAllowed(target, host);
 	if (host === active) {
 		if (!showBox) _hide();
 		return;
