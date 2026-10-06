@@ -104,7 +104,21 @@ test('a /performance boot requests feedback todos within the ceiling of boot sta
 	// buffer would drop the todos entry this reads.
 	await page.addInitScript(() => performance.setResourceTimingBufferSize(20_000));
 	await page.goto('/performance');
-	await todos;
+	const todosRequest = await todos;
+	// waitForRequest resolves when the request STARTS; Chromium appends the
+	// Resource Timing entry only when the response FINISHES. Reading the buffer
+	// before then is a race the test, not the page, can lose: run 37484870161
+	// read it 2 ms after the request began, 131 ms before a 133 ms response
+	// ended. Waiting for the entry keeps the measured property unchanged.
+	await (await todosRequest.response())?.finished();
+	await page.waitForFunction(
+		() =>
+			performance
+				.getEntriesByType('resource')
+				.some((entry) => new URL(entry.name).pathname === '/api/v1/feedback/todos'),
+		undefined,
+		{ timeout: 10_000 }
+	);
 	const gapMs = await page.evaluate((markName) => {
 		const armed = performance.getEntriesByName(markName)[0];
 		const request = performance
