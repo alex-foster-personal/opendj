@@ -537,15 +537,46 @@ test('a gesture takes control from an idle holder, never from a playing one', as
 	assert.equal(engine.requests.filter((r) => r.takeover === '1').length, 1);
 });
 
-test('a hidden, silent follower makes no request at all', async () => {
-	const leader = page(fakeLocks(), 'leader');
+test('a hidden, silent follower without the lock makes no request at all', async () => {
+	const locks = fakeLocks();
+	const leader = page(locks, 'leader');
 	await flush();
-	const quiet = page(fakeLocks(), 'quiet', { visible: false });
+	const quiet = page(locks, 'quiet', { visible: false });
 	await flush();
+	assert.equal(quiet.leadership.holdsLocalLock(), false, 'precondition: a sibling holds the lock');
 	const before = engine.requests.length;
 	await run(6, quiet);
 	assert.equal(engine.requests.length - before, 0);
 	assert.ok(leader);
+});
+
+// AGENT-21, Tue 6 Oct 2026 (#57 worker): a hidden tab that held its Web Lock
+// but had lost the lease never read the lease again, so it never re-claimed a
+// free one, and POST /commands waited forever for a leader.
+test('AGENT-21: a hidden, silent lock holder that lost the lease stays a viewer, then re-claims it once free', async () => {
+	const backgrounded = page(fakeLocks(), 'backgrounded', { visible: false });
+	await flush();
+	const pane = page(fakeLocks(), 'pane', { playing: true });
+	await flush();
+	await run(3, backgrounded, pane);
+	assert.equal(engine.lease.holder, 'pane', 'precondition: the playing pane took the lease');
+	assert.equal(backgrounded.leadership.snapshot().reason, 'another-browser');
+	assert.equal(backgrounded.leadership.holdsLocalLock(), true, 'precondition: it still holds its own lock');
+	const putsWhileViewer = puts('backgrounded');
+	await run(6, backgrounded, pane);
+	assert.equal(puts('backgrounded'), putsWhileViewer, 'while another page holds the lease it stays a viewer: no PUT');
+	assert.equal(backgrounded.role(), 'follower');
+	// The pane closes: its DELETE frees the lease.
+	await engine.fetch(MIRROR_PATH, { method: 'DELETE', headers: { 'x-opendj-client-id': 'pane' } });
+	pane.leadership.dispose();
+	await run(3, backgrounded);
+	assert.equal(
+		backgrounded.role(),
+		'leader',
+		'if a hidden lock holder never re-claims a free lease then agent orders hang with no leader - broken'
+	);
+	assert.equal(engine.lease.holder, 'backgrounded');
+	assert.equal(backgrounded.mirror.isRegistered(), true, 'its order poll can run again');
 });
 
 // ------------------------------------------ confirmed by the engine ---
