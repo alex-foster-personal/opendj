@@ -148,7 +148,7 @@ test('[if] JogDial skips readPalette or a pref swap [then] fail, [else stop].', 
 	}
 	assert.match(
 		jogDialSource,
-		/resolveStripWaveformKind\(deck\.anlz\.waveform\.kind, uiPrefs\.waveform_design\)/,
-		'the wheel honours the mono waveform design like the deck rows'
+		/resolveStripWaveformKind\(deck\.anlz\.waveform\.kind, effectiveWaveformDesign\(uiPrefs\.waveform_design, uiPrefs\.ui_skin\)\)/,
+		'the wheel honours the effective waveform design (auto resolved through the skin) like the deck rows'
 	);
 });
