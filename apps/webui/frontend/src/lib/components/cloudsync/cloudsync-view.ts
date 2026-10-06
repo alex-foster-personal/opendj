@@ -248,6 +248,14 @@ export function chipFullLabel(status: CloudSyncStatus | null): string {
 	return `sync: ${state}`;
 }
 
+/** LESSV-03: the chip's glyphs for a status. Every state shows the cloud; a
+ * working sync (ok) shows ONLY the cloud plus a tick, in white, and every other
+ * state keeps its text label, because those are the ones that need reading. */
+export function chipGlyphs(status: CloudSyncStatus | null): { cloud: true; tick: boolean; text: boolean } {
+	const ok = chipState(status) === 'ok';
+	return { cloud: true, tick: ok, text: !ok };
+}
+
 export function chipShortLabel(status: CloudSyncStatus | null): string {
 	const state = chipState(status);
 	if (state === 'off') return 'off';

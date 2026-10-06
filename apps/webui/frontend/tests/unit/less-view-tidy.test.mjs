@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { before, test } from 'node:test';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const topbar = read('../../src/lib/components/rb/TopBar.svelte');
@@ -69,9 +70,70 @@ test('Find & Replace, Bulk Edit and the Set bar are hidden by the LESS class onl
 // requirement: LESSV-03
 // [if] a working sync shows text or the orange accent instead of cloud + tick in white [then] fail, [else stop]
 test('a working sync is a cloud and a tick, in white', () => {
-	assert.match(chip, /\{#if chipState\(\) === 'ok'\}[\s\S]*?class="chip-tick"[\s\S]*?\{:else\}[\s\S]*?chip-label-full[\s\S]*?\{\/if\}/);
+	assert.match(chip, /\{#if glyphs\.tick\}[\s\S]*?class="chip-tick"[\s\S]*?\{:else\}[\s\S]*?chip-label-full[\s\S]*?\{\/if\}/);
 	const ok = chip.match(/\.chip\.ok\s*\{([^}]*)\}/);
 	assert.ok(ok, 'a .chip.ok rule');
 	assert.match(ok[1], /color:\s*var\(--fg\)/);
 	assert.doesNotMatch(ok[1], /--accent/);
+});
+
+let view;
+before(async () => {
+	view = await loadTypeScriptModule('src/lib/components/cloudsync/cloudsync-view.ts');
+});
+
+function syncStatus(overrides = {}) {
+	return {
+		enabled: false,
+		configured: false,
+		running: false,
+		heartbeat_at: null,
+		enabled_source: 'default',
+		endpoint_source: 'default',
+		reason: null,
+		signed_in_as: null,
+		last_push_at: null,
+		last_pull_at: null,
+		last_result: null,
+		rows_pending: null,
+		endpoint: null,
+		recent_results: [],
+		update_required: null,
+		...overrides
+	};
+}
+
+// requirement: LESSV-03
+// [if] a sync state maps to the wrong glyphs, text or colour [then] fail, [else stop]
+test('sync chip state mapping: ok is cloud + tick in white, off/syncing/error keep their text', () => {
+	const live = { configured: true, running: true, enabled: true };
+	const cases = [
+		['off', syncStatus(), 'sync: off', 'off'],
+		['syncing', syncStatus(live), 'sync: syncing', 'sync'],
+		['error', syncStatus({ ...live, last_result: { status: 'error', message: 'x' } }), 'sync: error', 'err'],
+		['ok', syncStatus({ ...live, last_result: { status: 'ok', message: '' } }), null, null]
+	];
+	for (const [state, status, full, short] of cases) {
+		assert.equal(view.chipState(status), state, `fixture for ${state}`);
+		const glyphs = view.chipGlyphs(status);
+		assert.equal(glyphs.cloud, true, `${state} always shows the cloud`);
+		assert.equal(glyphs.tick, state === 'ok', `${state}: tick only when working`);
+		assert.equal(glyphs.text, state !== 'ok', `${state}: text everywhere except ok`);
+		if (full !== null) {
+			assert.equal(view.chipFullLabel(status), full);
+			assert.equal(view.chipShortLabel(status), short);
+		}
+	}
+	assert.deepEqual(view.chipGlyphs(null), { cloud: true, tick: false, text: true }, 'loading reads as off');
+	// The component renders exactly what chipGlyphs says: the cloud
+	// unconditionally, the tick only under glyphs.tick, the labels otherwise,
+	// and only the ok class is white (the shell foreground, never the accent).
+	assert.match(chip, /<\/svg>\s*\{#if glyphs\.tick\}[\s\S]*?class="chip-tick"[\s\S]*?\{:else\}\s*<span class="chip-label-full">\{fullLabel\}<\/span>\s*<span class="chip-label-short">\{shortLabel\}<\/span>\s*\{\/if\}/);
+	assert.match(chip, /class="chip-icon"/);
+	assert.match(chip, /class:ok=\{chipState\(\) === 'ok'\}/);
+	assert.match(chip, /class:error=\{chipState\(\) === 'error'\}/);
+	const rule = (sel) => chip.match(new RegExp(`\\.chip${sel}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+	assert.match(rule('\\.ok'), /color:\s*var\(--fg\)/);
+	assert.match(rule('\\.error'), /color:\s*var\(--danger\)/);
+	assert.match(rule(''), /color:\s*var\(--muted\)/, 'off and syncing use the muted base colour');
 });
