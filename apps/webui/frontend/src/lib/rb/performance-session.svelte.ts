@@ -55,6 +55,11 @@ export interface PerformanceSessionRestoreOptions {
 	setInterval?: typeof globalThis.setInterval;
 	clearInterval?: typeof globalThis.clearInterval;
 	skipDeckRestore?: boolean;
+	/** AGENT-18: this tab's first restore was cut short by losing leadership;
+	 * load only the URL's decks that are still empty (`_resumeUrlDecks`). */
+	resumeInterruptedRestore?: boolean;
+	/** Called once the deck restore ran to its end without being disposed. */
+	onDeckRestoreSettled?: () => void;
 	/** The route command session this restore belongs to; the snapshot
 	 * writer stops when it ends. Defaults to the live performance IPC. */
 	commandSession?: () => number | null;
@@ -351,6 +356,27 @@ async function _restoreSession(
 	);
 }
 
+/**
+ * AGENT-18: finish a restore that losing leadership cut short. Mon 5 Oct 2026
+ * (silver preview): a tab opened with d1..d4 loaded d1 and d2, lost the lease,
+ * and every later deck failed "restore was disposed". On "Take control" the
+ * re-promoted tab skipped deck restore, so its snapshot writer published the
+ * engine as it stood and the URL lost d3 and d4 for good. The URL is still this
+ * tab's own intent (the writer never ran), so only its ids are used, never the
+ * shared snapshot (another tab may have written it), and only into empty decks.
+ */
+async function _resumeUrlDecks(
+	dispatch: typeof dispatchPerformanceCommand,
+	query: typeof queryPerformanceState,
+	urlDeckIds: Partial<Record<DeeplinkDeckId, string>>
+): Promise<void> {
+	for (const deckId of DECK_IDS) {
+		const stable_id = urlDeckIds[deckId] ?? null;
+		if (stable_id === null || query().decks[deckId].stable_id !== null) continue;
+		await _restoreDeck(dispatch, query, deckId, stable_id, 0, null);
+	}
+}
+
 export function installPerformanceSessionRestore(
 	opts: PerformanceSessionRestoreOptions = {}
 ): () => void {
@@ -399,13 +425,17 @@ export function installPerformanceSessionRestore(
 		if (disposed) throw new Error('performance session restore was disposed');
 	};
 
-	void _restoreSession(
-		(command) => { assertActive(); return dispatch(command); },
-		() => { assertActive(); return query(); },
-		snapshot, urlDeckIds, skipDeckRestore,
-		nowFn, opts.autoPlayEnabled ?? (() => false)
-	).finally(() => {
+	const guardedDispatch: typeof dispatch = (command) => { assertActive(); return dispatch(command); };
+	const guardedQuery: typeof query = () => { assertActive(); return query(); };
+	const restore = opts.resumeInterruptedRestore === true && !skipFromLibrary
+		? _resumeUrlDecks(guardedDispatch, guardedQuery, urlDeckIds)
+		: _restoreSession(
+			guardedDispatch, guardedQuery, snapshot, urlDeckIds, skipDeckRestore,
+			nowFn, opts.autoPlayEnabled ?? (() => false)
+		);
+	void restore.finally(() => {
 		if (disposed) return;
+		opts.onDeckRestoreSettled?.();
 		writer = createSessionSnapshotWriter({
 			now: nowFn,
 			storage,
