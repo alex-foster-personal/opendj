@@ -31,6 +31,7 @@ const leadershipModule = await loadTypeScriptModule('src/lib/rb/tab-leadership.t
 const publisherModule = await loadTypeScriptModule('src/lib/rb/leased-mirror-publisher.ts');
 const orders = await loadTypeScriptModule('src/lib/rb/agent-orders.ts');
 const { createTabLeadership, confirmedLeadership, whileLeader } = leadershipModule;
+const { installDemotionSilencer } = await loadTypeScriptModule('src/lib/rb/leader-only-writers.ts');
 const { createLeasedMirrorPublisher, decideFollowerClaim, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
 const NEXT = '/api/v1/commands/next';
 
@@ -197,6 +198,7 @@ function fakeEngine() {
 	const json = (status, body) =>
 		new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 	state.fetch = async (url, init = {}) => {
+		if (state.down) throw new TypeError('Failed to fetch');
 		const method = init.method ?? 'GET';
 		const headers = init.headers ?? {};
 		state.requests.push({ method, url: String(url), lease: headers['x-opendj-lease'] ?? null, takeover: headers['x-opendj-lease-takeover'] ?? null });
@@ -594,4 +596,60 @@ test('bug #31: Take control from a playing leader in another browser sticks', as
 	assert.equal(engine.lease.holder, 'maintainer-chrome');
 	assert.equal(playing.role(), 'follower');
 	assert.equal(chrome.leadership.isConfirmedLeader(), true);
+});
+
+// --------------------------- (B) a backend restart is not a demotion ---
+
+/** What a `--reload` does to the engine: the in-memory lease and mirror are gone. */
+function restartEngine() {
+	engine.lease = null;
+	engine.mirror = null;
+}
+
+async function leaderThroughRestart({ downSeconds, otherTab }) {
+	const leader = page(fakeLocks(), 'core-pane', { playing: true });
+	let silenced = 0;
+	installDemotionSilencer({ leadership: confirmedLeadership(leader.leadership), silence: () => (silenced += 1) });
+	await flush();
+	await run(2, leader);
+	assert.equal(leader.leadership.isConfirmedLeader(), true, 'precondition: confirmed leader, playing');
+	const follower = otherTab ? page(fakeLocks(), 'maintainer-chrome') : null;
+	await flush();
+	engine.down = true;
+	restartEngine();
+	await run(downSeconds, leader, ...(follower ? [follower] : []));
+	engine.down = false;
+	await run(4, leader, ...(follower ? [follower] : []));
+	return { leader, follower, silenced };
+}
+
+test('(B) a backend restart with no other tab never demotes or silences a playing leader', async () => {
+	const { leader, silenced } = await leaderThroughRestart({ downSeconds: 30, otherTab: false });
+	assert.equal(silenced, 0, 'nothing paused, unloaded or stopped AutoPlay');
+	assert.equal(leader.role(), 'leader');
+	assert.equal(leader.leadership.isConfirmedLeader(), true);
+	assert.equal(engine.lease.holder, 'core-pane', 'the lease was quietly re-claimed');
+	assert.equal(engine.mirror.client_id, 'core-pane');
+});
+
+test('(B) after a restart a silent follower that grabs the free lease first still loses it to the playing leader', async () => {
+	const { leader, silenced } = await leaderThroughRestart({ downSeconds: 5, otherTab: true });
+	assert.equal(silenced, 0);
+	assert.equal(leader.leadership.isConfirmedLeader(), true);
+	assert.equal(engine.lease.holder, 'core-pane');
+});
+
+test('(B) mutation control: treating a failed PUT as a lost lease silences the leader', async () => {
+	// The bug class the soak suspected: an outage read as a demotion.
+	const leader = page(fakeLocks(), 'core-pane', { playing: true });
+	let silenced = 0;
+	installDemotionSilencer({ leadership: confirmedLeadership(leader.leadership), silence: () => (silenced += 1) });
+	await flush();
+	await run(2, leader);
+	engine.down = true;
+	restartEngine();
+	leader.leadership.noteLeaseConflict('nobody'); // what a wrong catch branch would do
+	await flush();
+	assert.equal(silenced, 1, 'the silencer does fire on a demotion, so the tests above measure something');
+	engine.down = false;
 });
