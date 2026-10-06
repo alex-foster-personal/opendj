@@ -12,6 +12,7 @@ Regression lines:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -39,7 +40,7 @@ class DudWorld(World):
 
     def run_lane(self, lane: str, _backend: str, ids: list[str]) -> dict[str, str]:
         self.lane_runs.append((lane, list(ids)))
-        bad = {sid for sid in ids if sid in DUDS and sid not in self.fixed}
+        bad = {sid for sid in ids if self.file_of(sid) in DUDS and self.file_of(sid) not in self.fixed}
         self.done[lane].update(set(ids) - bad)
         return {sid: f"TrackUnreadable: {self.paths[sid]}: ffmpeg exited 69 decoding PCM fingerprint" for sid in bad}
 
@@ -49,7 +50,10 @@ class DudWorld(World):
         return aa.AheadDrain(sources)
 
     def dud_runs(self) -> int:
-        return sum(1 for _lane, ids in self.lane_runs for sid in ids if sid in DUDS)
+        return sum(1 for _lane, ids in self.lane_runs for sid in ids if self.file_of(sid) in DUDS)
+
+    def file_of(self, sid: str) -> str:
+        return Path(self.paths[sid]).stem
 
 
 def _settle(drain: aa.AheadDrain, ticks: int = 12) -> None:
@@ -106,3 +110,21 @@ def test_retry_failed_analysis_tries_a_dud_again(tmp_path: Path) -> None:
     drain.retry_failed()
     _settle(drain)
     assert world.dud_runs() > before
+
+
+def test_rows_sharing_one_dud_file_share_one_record(tmp_path: Path) -> None:
+    """[if] two rows share one dud file (#5578) [then] both skipped, one record, [else stop]."""
+    world = DudWorld(tmp_path)
+    world.present.append("verdad-copy")
+    world.strips.add("verdad-copy")
+    world.paths["verdad-copy"] = world.paths["verdad"]
+    for lane, _backend in aa.LANE_ORDER:
+        world.done[lane].update({"ok1", "ok2"})
+    _settle(world.drain())
+    ledger = json.loads(world.duds_path.read_text())
+    assert sorted(ledger["loudness"]) == sorted([world.paths["verdad"], world.paths["eternity"]])
+    before = world.dud_runs()
+    restarted = world.drain()
+    _settle(restarted)
+    assert world.dud_runs() == before, "a row on a recorded dud file was decoded again"
+    assert restarted.refresh_coverage()["lanes"]["loudness"]["failed"] == 3

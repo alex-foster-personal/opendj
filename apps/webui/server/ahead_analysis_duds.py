@@ -1,8 +1,8 @@
 """Files the ahead drain cannot decode, recorded once and left alone (AHEAD-DUD-01).
 
 A ``TrackUnreadable`` (ffmpeg cannot decode the file, e.g. exit 69) is a property
-of THAT file, not a failure to retry and never a host verdict. It is kept per lane
-with the file's size and mtime in ``state/ahead-analysis-duds.json``, so it
+of THAT file, not a failure to retry and never a host verdict. It is kept per lane,
+keyed by the file path with its size and mtime, in ``state/ahead-analysis-duds.json``, so it
 survives a restart. It is retried only by "Retry failed analysis" or when the
 file changes.
 """
@@ -37,18 +37,21 @@ class DudLedger:
         )
 
     def record(self, lane: str, duds: Mapping[str, str], paths: Mapping[str, str]) -> None:
-        self._duds.setdefault(lane, {}).update({sid: [_token(paths.get(sid)), why] for sid, why in duds.items()})
+        """Keyed by FILE, never stable_id: rows sharing one file (#5578) share one record."""
+        files = {paths[sid]: [_token(paths[sid]), why] for sid, why in duds.items() if sid in paths}
+        self._duds.setdefault(lane, {}).update(files)
         self._save()
 
     def sync(self, lane: str, paths: Mapping[str, str]) -> tuple[dict[str, str], list[str]]:
-        """(duds still current, ids whose file changed and so may be tried again)."""
+        """(rows on a dud file still unchanged, rows whose dud file changed and may be tried again)."""
         lane_duds = self._duds.get(lane, {})
-        changed = [sid for sid, (token, _why) in lane_duds.items() if sid in paths and _token(paths[sid]) != token]
-        for sid in changed:
-            del lane_duds[sid]
+        changed = {file for file, (token, _why) in lane_duds.items() if _token(file) != token}
+        for file in changed:
+            del lane_duds[file]
         if changed:
             self._save()
-        return {sid: str(why) for sid, (_token_, why) in lane_duds.items()}, changed
+        current = {sid: str(lane_duds[file][1]) for sid, file in paths.items() if file in lane_duds}
+        return current, [sid for sid, file in paths.items() if file in changed]
 
     def clear(self) -> None:
         self._duds = {}
