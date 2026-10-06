@@ -9,10 +9,12 @@
 	import {
 		type EnrichSummary,
 		absentLines,
+		dudLines,
 		analysisLines,
 		collapsedLine,
 		lyricsLine,
 		offersRetry,
+		songsTitle,
 		stemsText
 	} from '$lib/enrich/enrich-card';
 
@@ -52,7 +54,7 @@
 	}: Props = $props();
 
 	const lines = $derived(
-		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...absentLines(summary)] : []
+		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary)] : []
 	);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 	const collapsed = $derived(!expanded && summary !== null ? collapsedLine(summary) : null);
@@ -63,7 +65,7 @@
 		{#if collapsed}
 			<p class="enrich-line working" title={collapsed.title} data-testid="enrich-collapsed">{collapsed.text}</p>
 		{:else}
-			<h3>Getting your library ready</h3>
+			<h3 title={summary ? (songsTitle(summary) ?? undefined) : undefined}>Getting your library ready</h3>
 		{/if}
 		<span class="enrich-header-actions">
 			<button
@@ -160,7 +162,10 @@
 		margin: 0;
 		line-height: 16px;
 	}
-	.enrich-line.ready,
+	.enrich-line.ready {
+		/* Green; Gothic redefines --rb-green as white (theme.css). */
+		color: var(--rb-green);
+	}
 	.enrich-line.working {
 		color: var(--rb-text);
 	}

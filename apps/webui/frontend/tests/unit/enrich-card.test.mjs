@@ -31,9 +31,9 @@ function summary(lanes = {}, extra = {}) {
 	};
 }
 
-test('a finished library has no lines and offers no retry', () => {
+test('a finished library reads all ready (green), with no lyrics line and no retry', () => {
 	const s = summary();
-	assert.deepEqual(card.analysisLines(s), []);
+	assert.ok(card.analysisLines(s).every((l) => l.tone === 'ready'));
 	assert.equal(card.lyricsLine(s), null);
 	assert.equal(card.offersRetry(s), false);
 });
@@ -162,7 +162,7 @@ test('a key gap is said as a count with its denominator, still not red', () => {
 	const [value] = card.analysisLines(silver()).filter((l) => l.lane === 'key');
 	assert.equal(value.tone, 'working');
 	assert.equal(value.text, 'Key: 2,243 of 2,270 tracks ready (2,243 from rekordbox), 27 with none yet');
-	assert.equal(value.title, 'Counted over the 2,270 tracks whose audio is on this computer');
+	assert.equal(value.title, null, 'a reading with no song view names no denominator it does not have');
 });
 
 test('mutation control: without source counts the old native-only line still renders', () => {
@@ -247,4 +247,85 @@ test('collapsed: paused lanes say paused, and BPM fully covered by rekordbox is 
 		title: 'Paused while a deck is playing: Key, Loudness, Deck waveforms. More shows the counts.'
 	});
 	assert.equal(card.collapsedLine(silver('running')).text, 'Library: 3 lanes still running');
+});
+
+/* ENRICH-03: songs, duds, the red rule and lyrics-style stems (the maintainer, Tue 6 Oct 2026). */
+
+const songCounts = (over = {}) => ({ total: 1212, done: 1212, missing: 0, failed: 0, declined: 0, duds: 0, failed_reasons: {}, red: false, ...over });
+const SONGS = { songs: 1212, files: 1998, rows: 2268, key: 'title + artists + length to the second; two rows for one file always count once', red_fail_share: 0.05 };
+
+function songSummary(laneOver = {}, extra = {}) {
+	const lanes = {};
+	for (const lane of ['tags', 'strip', 'beatgrid', 'key', 'loudness', 'waveform']) {
+		lanes[lane] = { total: 2268, done: 2268, missing: 0, failed: 0, declined: 0, unavailable: null, songs: songCounts(laneOver[lane]) };
+	}
+	return summary({}, { analysis: { lanes, songs: SONGS, duds: { files: 0, reasons: {} } }, ...extra });
+}
+
+test('lines count songs and the hover names songs in files and the key', () => {
+	const s = songSummary({ loudness: { done: 275, missing: 937 } });
+	const line = card.analysisLines(s).find((l) => l.lane === 'loudness');
+	assert.equal(line.text, 'Loudness: 275 of 1,212 songs done, the rest running in the background');
+	assert.equal(
+		card.songsTitle(s),
+		'1,212 songs in 1,998 files on this computer (2,268 library rows). One song = title + artists + length to the second; two rows for one file always count once.'
+	);
+	assert.equal(line.title, card.songsTitle(s));
+});
+
+test('control: the red flag, not a failure count, makes a lane red (4.9% ready, 5.0% red as the API reports)', () => {
+	const under = songSummary({ loudness: { done: 1153, failed: 59, red: false } });
+	const at = songSummary({ loudness: { done: 1151, failed: 61, red: true } });
+	const lineOf = (s) => card.analysisLines(s).find((l) => l.lane === 'loudness');
+	assert.equal(lineOf(under).tone, 'ready');
+	assert.equal(lineOf(under).text, 'Loudness: 1,153 of 1,212 songs done, 59 failed');
+	assert.equal(lineOf(at).tone, 'failed');
+	assert.equal(card.offersRetry(under), false);
+	assert.equal(card.needsAttention(under, null, null), false);
+	assert.equal(card.offersRetry(at), true);
+	assert.equal(card.needsAttention(at, null, null), true);
+});
+
+test('not analysed yet and paused are never red', () => {
+	const s = songSummary({ waveform: { done: 57, missing: 1155 } });
+	s.analysis.drain = { waveform: { state: 'paused_playing', waiting_on: null, reason: null } };
+	const line = card.analysisLines(s).find((l) => l.lane === 'waveform');
+	assert.equal(line.tone, 'working');
+	assert.match(line.text, /paused while a deck is playing$/);
+});
+
+test('duds are one neutral note with reasons on hover, never a failed line', () => {
+	const s = songSummary({ tags: { done: 1209, duds: 3 } });
+	s.analysis.duds = { files: 5, reasons: { 'the audio cannot be decoded': 2, 'the file has no readable tags or duration': 3 } };
+	assert.deepEqual(card.dudLines(s).map((l) => [l.tone, l.text]), [['note', "5 files can't be read and are skipped"]]);
+	assert.match(card.dudLines(s)[0].title, /2: the audio cannot be decoded/);
+	assert.ok(card.analysisLines(s).every((l) => l.tone !== 'failed'));
+	assert.equal(card.dudLines(songSummary()).length, 0);
+});
+
+test('BPM over songs: under the share of none is the ready tone', () => {
+	const s = songSummary({ beatgrid: { done: 16, missing: 1196 } });
+	s.analysis.lanes.beatgrid.usable_songs = { denominator: 'songs', total: 1212, ready: 1160, none: 52, by_source: { rekordbox: 1158, open_dj: 2 }, allowable: true };
+	const [value, note] = card.analysisLines(s).filter((l) => l.lane === 'beatgrid');
+	assert.deepEqual([value.tone, value.text], ['ready', 'BPM: 1,160 of 1,212 songs ready (1,158 from rekordbox, 2 from Open DJ), 52 with none yet']);
+	assert.equal(note.tone, 'note');
+});
+
+test('stems read lyrics-style from the real separated count', () => {
+	assert.equal(
+		card.stemsText({ state: 'ask', pending: 1222, reason: null, separated: 812, not_yet: 400 }),
+		'Stems: 812 separated, 400 not yet. Separate them?'
+	);
+	assert.equal(
+		card.stemsText({ state: 'no_source', pending: 9, reason: 'no farm', separated: 3, not_yet: 9 }),
+		'Stems: 3 separated, 9 not yet, and this computer cannot make them (no farm)'
+	);
+});
+
+test('lyrics count songs when the coverage carries them, and are red only on the flag', () => {
+	const steps = { lyrics: { done: 700, terminal: 300, pending: 200, failed: 12, red: false } };
+	const s = songSummary({}, { coverage: { ...summary().coverage, songs: { ...SONGS, steps } } });
+	const line = card.lyricsLine(s);
+	assert.equal(line.text, 'Lyrics: 700 found, 300 with none available, 200 still to look up, 12 failed');
+	assert.equal(line.tone, 'working');
 });

@@ -30,6 +30,19 @@ class AbsentFolderOut(BaseModel):
     tracks: int
 
 
+class CoverageSongsOut(BaseModel):
+    """The coverage folded to unique songs (ENRICH-03, ``enrich_songs``)."""
+
+    songs: int
+    files: int
+    rows: int
+    #: How two rows are judged one song (``enrich_songs.SONG_KEY``).
+    key: str
+    #: Per step: done, terminal, pending and failed SONGS.
+    steps: dict[str, dict[str, int | bool]]
+
+
+
 class CoverageOut(BaseModel):
     """Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.
 
@@ -49,6 +62,8 @@ class CoverageOut(BaseModel):
     #: first, at most ``ABSENT_FOLDERS_SHOWN`` (ENRICH-02). Default empty so a
     #: cached reading taken before the field existed still validates.
     absent_folders: list[AbsentFolderOut] = Field(default_factory=list)
+    #: ENRICH-03: the same coverage over unique songs. None on a cached reading taken before it existed.
+    songs: CoverageSongsOut | None = None
     done: dict[str, int]
     terminal: dict[str, int]
     failed: dict[str, int]
@@ -110,4 +125,4 @@ def read_coverage(
     )
 
 
-__all__ = ["COVERAGE_CACHED_HELP", "AbsentFolderOut", "CoverageOut", "cache_for", "read_coverage"]
+__all__ = ["COVERAGE_CACHED_HELP", "AbsentFolderOut", "CoverageOut", "CoverageSongsOut", "cache_for", "read_coverage"]

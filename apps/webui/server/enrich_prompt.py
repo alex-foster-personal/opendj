@@ -93,7 +93,9 @@ def _analysis_left(analysis: Mapping[str, Any] | None) -> bool:
         counts = analysis.get("lanes", {}).get(lane)
         if counts is None:
             continue
-        if counts.get("missing") or counts.get("failed") or counts.get("unavailable"):
+        # ENRICH-03: over songs when the drain reports them, so a dud file alone never raises the card.
+        songs = counts.get("songs") or counts
+        if songs.get("missing") or songs.get("failed") or counts.get("unavailable"):
             return True
     return False
 
@@ -107,18 +109,23 @@ def _lyrics_left(coverage: Mapping[str, Any] | None) -> bool:
 def stems_ask(
     coverage: Mapping[str, Any] | None, decisions: Mapping[str, str]
 ) -> dict[str, Any]:
-    """The stems line of the card: asked, declined, impossible, or nothing to do."""
+    """The stems line of the card: asked, declined, impossible, or nothing to do.
+
+    With a song view (ENRICH-03) it also carries ``separated`` (songs with a
+    real stem bundle, here or in R2) and ``not_yet`` (songs still pending)."""
     if coverage is None:
         return {"state": "unknown", "pending": None, "reason": "stems coverage could not be read"}
     pending = int(coverage["pending"].get("stems", 0))
     refusal = coverage.get("stems_source_refusal")
+    songs = (coverage.get("songs") or {}).get("steps", {}).get("stems")
+    extra = {} if songs is None else {"separated": songs["done"], "not_yet": songs["pending"]}
     if pending == 0:
-        return {"state": "done", "pending": 0, "reason": None}
+        return {"state": "done", "pending": 0, "reason": None, **extra}
     if refusal:
-        return {"state": "no_source", "pending": pending, "reason": str(refusal)}
+        return {"state": "no_source", "pending": pending, "reason": str(refusal), **extra}
     if decisions.get("stems") == "never":
-        return {"state": "user_declined", "pending": pending, "reason": None}
-    return {"state": "ask", "pending": pending, "reason": None}
+        return {"state": "user_declined", "pending": pending, "reason": None, **extra}
+    return {"state": "ask", "pending": pending, "reason": None, **extra}
 
 
 def build_summary(
@@ -147,6 +154,7 @@ def build_summary(
             # straight from the coverage reading (never recounted here).
             "availability": dict(coverage.get("availability", {})),
             "absent_folders": list(coverage.get("absent_folders", [])),
+            "songs": coverage.get("songs"),
             "done": {k: coverage["done"].get(k, 0) for k in ("stems", "lyrics")},
             "terminal": {k: coverage["terminal"].get(k, 0) for k in ("stems", "lyrics")},
             "failed": {k: coverage["failed"].get(k, 0) for k in ("stems", "lyrics")},

@@ -55,12 +55,13 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from apps.cloud import stem_index
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics import fetch_verdicts, lookup_metadata
 from apps.lyrics.asr_hallucination import cached_entry_is_no_lyrics
-from apps.webui.server import coverage_cloud, library_playable
+from apps.webui.server import coverage_cloud, enrich_songs, library_playable
 from apps.webui.server import coverage_outcomes as outcomes_mod
 from apps.webui.server.routes import ingest_job
 
@@ -100,6 +101,8 @@ class CoverageSnapshot:
     #: Vocals targets whose bundle must be fetched from R2 before deriving.
     vocals_cloud_ready: list[Target] = field(default_factory=list)
     stem_cloud: coverage_cloud.StemCloud = coverage_cloud.OFF
+    #: ENRICH-03: the coverage over unique songs (``enrich_songs``); None in hand-built snapshots.
+    songs: dict[str, Any] | None = None
     generated_at: float = field(default_factory=time.time)
 
     @property
@@ -318,6 +321,15 @@ def compute_snapshot(
         counts[step], pending[step] = _partition(
             step, present, done[step], terminal[step], failed[step], len(corrupt[step])
         )
+    # ENRICH-03: the same counts folded to unique songs, for the enrich card.
+    index = enrich_songs.read_song_index(conn_factory, present)
+    songs = {
+        **index.summary(),
+        "steps": {
+            step: enrich_songs.step_songs(index, list(present_ids), done[step], terminal[step], failed[step])
+            for step in STEPS
+        },
+    }
     vocals_ready, vocals_cloud_ready = _by_bundle_place(
         pending["vocals"], stems_local, stems_in_cloud
     )
@@ -336,6 +348,7 @@ def compute_snapshot(
         stems_in_cloud=len(stems_in_cloud),
         vocals_cloud_ready=vocals_cloud_ready,
         stem_cloud=stem_cloud,
+        songs=songs,
     )
 
 
@@ -363,6 +376,7 @@ def response_fields(snapshot: CoverageSnapshot) -> dict[str, object]:
         "stems_index": snapshot.stem_cloud.as_dict(),
         "stems_source_refusal": snapshot.stems_source_refusal,
         "generated_at": snapshot.generated_at,
+        "songs": snapshot.songs,
     }
 
 

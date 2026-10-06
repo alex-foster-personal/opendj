@@ -80,7 +80,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.process_priority import background_argv, lowered_priority
-from apps.webui.server import enrich_sources
+from apps.webui.server import enrich_songs, enrich_sources
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
 from apps.webui.server.ahead_analysis_siblings import with_path_siblings
@@ -287,6 +287,8 @@ class AheadSources:
     declined_fn: Callable[[str, str], dict[str, str]]
     #: field -> {sid: source} of real library values (ENRICH-02); None reports no ``usable``.
     library_values_fn: Callable[[str], dict[str, str]] | None = None
+    #: present ids -> their song index (ENRICH-03); None reports no ``songs``.
+    song_index_fn: Callable[[Sequence[str]], enrich_songs.SongIndex] | None = None
     #: present stable_id -> file path; with it a row whose file a sibling row already
     #: covers counts as done for that lane (#5578). None keeps per-row selection.
     paths_fn: Callable[[], Mapping[str, str]] | None = None
@@ -565,14 +567,16 @@ class AheadDrain:
         mapped = self._src.mapped_fn(present)
         unmapped = [sid for sid in present if sid not in mapped]
         blank = self._src.blank_tags_fn()
-        lanes: dict[str, Any] = {
-            TAGS_LANE: coverage_counts(
-                present, [sid for sid in present if sid not in blank], dict(self._tags_failed)
-            ),
-            STRIP_LANE: coverage_counts(
-                unmapped, [sid for sid in unmapped if self._src.has_strip_fn(sid)], dict(self._strip_failed)
-            ),
+        #: lane -> (denominator, done, declined, failed): the per-file inputs songs fold.
+        inputs: dict[str, enrich_songs.LaneInput] = {
+            TAGS_LANE: (present, {sid for sid in present if sid not in blank}, {}, dict(self._tags_failed)),
+            STRIP_LANE: (unmapped, {sid for sid in unmapped if self._src.has_strip_fn(sid)}, {},
+                         dict(self._strip_failed)),
         }
+        lanes: dict[str, Any] = {
+            lane: coverage_counts(ids, done, failed) for lane, (ids, done, _d, failed) in inputs.items()
+        }
+        values: dict[str, dict[str, str]] = {}
         present_set = set(present)
         for lane, backend in LANE_ORDER:
             done = self._lane_done(lane, backend)
@@ -590,9 +594,14 @@ class AheadDrain:
             field = enrich_sources.VALUE_FIELDS.get(lane)
             if field is not None and self._src.library_values_fn is not None:
                 own = set(done) - set(declined)
-                counts["usable"] = enrich_sources.usable_counts(present, self._src.library_values_fn(field), own)
+                values[lane] = self._src.library_values_fn(field)
+                counts["usable"] = enrich_sources.usable_counts(present, values[lane], own)
             lanes[lane] = counts
-        return {"present": len(present), "rekordbox_mapped": len(mapped), "lanes": lanes}
+            inputs[lane] = (present, set(done), declined, dict(self._lane_failed[lane]))
+        out: dict[str, Any] = {"present": len(present), "rekordbox_mapped": len(mapped), "lanes": lanes}
+        if self._src.song_index_fn is not None:
+            out.update(enrich_songs.drain_song_view(self._src.song_index_fn(present), present, inputs, values, lanes))
+        return out
 
     # --- background loop --------------------------------------------------
     def start(self) -> None:
@@ -776,6 +785,9 @@ def build_for_app(app: Any) -> AheadDrain:
             refresh_tags_fn=refresh_tags,
             declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
             library_values_fn=lambda field: library_value_sources(ingest_routes.open_ro, field),
+            song_index_fn=lambda ids: enrich_songs.read_song_index(
+                ingest_routes.open_ro, [(sid, cache["paths"][sid]) for sid in ids if sid in cache["paths"]]
+            ),
             paths_fn=lambda: dict(cache["paths"]),
         ),
         startup_grace_s=STARTUP_GRACE_S,
