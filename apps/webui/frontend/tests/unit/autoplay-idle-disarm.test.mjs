@@ -135,6 +135,7 @@ test('planAutoPlayIdleDisarm continues while silence_recovering is true', () => 
 	assert.equal(plan.action, 'continue');
 });
 
+// REQ: PLAY-17
 test('bug #58: planAutoPlayIdleDisarm never disarms while an engine-recovery stop is tagged', () => {
 	const { planAutoPlayIdleDisarm, AUTO_PLAY_IDLE_DISARM_MS, resetAutoPlayIdleClock } = autoPlay;
 	const input = {
@@ -155,7 +156,7 @@ test('bug #58: planAutoPlayIdleDisarm never disarms while an engine-recovery sto
 	resetAutoPlayIdleClock();
 });
 
-// REQ: PLAY-09
+// REQ: PLAY-17
 test('RUNNING it: an engine-recovery stop leaves AutoPlay enabled, and the tag clears when a deck plays (bug #58)', async () => {
 	mock.timers.enable({ apis: ['Date'] });
 	const probe = installTimerProbe();

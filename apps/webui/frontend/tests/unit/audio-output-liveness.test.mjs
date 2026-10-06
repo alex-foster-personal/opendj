@@ -170,6 +170,7 @@ describe('installOutputLiveness', () => {
 		assert.equal(h.calls.filter((c) => c === 'recover').length, 1, 'still stalled must not re-recover');
 	});
 
+	// REQ: AUDIOLIVE-15
 	it('bug #58: hidden page, throttled timers, healthy render clock => no stall, no recovery', () => {
 		const h = harness({ latency: 0.19, frozenTimestamp: true });
 		let renderTime = 1;
@@ -186,6 +187,7 @@ describe('installOutputLiveness', () => {
 		assert.notEqual(live.verdict(), 'stalled');
 	});
 
+	// REQ: AUDIOLIVE-15
 	it('bug #58 control: hidden page with the render clock frozen too still stalls and recovers once', () => {
 		const h = harness({ latency: 0.19, frozenTimestamp: true });
 		Object.defineProperty(h.ctx, 'currentTime', { get: () => 1 });
@@ -198,6 +200,7 @@ describe('installOutputLiveness', () => {
 		assert.equal(h.calls.filter((c) => c === 'recover').length, 1);
 	});
 
+	// REQ: AUDIOLIVE-15
 	it('bug #58 control: a visible page keeps the #2155 output-timestamp verdict even if currentTime advances', () => {
 		const h = harness({ latency: 0.19, frozenTimestamp: true });
 		let renderTime = 1;

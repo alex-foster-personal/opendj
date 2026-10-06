@@ -1,4 +1,4 @@
-// wiring checks for: IOPIN-12 (NOT acceptance evidence)
+// wiring checks for: IOPIN-12, PLAY-17 (NOT acceptance evidence)
 //
 // Every case below that builds an audio graph runs against the recording
 // stand-in in fixtures/fake-web-audio.mjs, with a stubbed daemon and a stubbed
