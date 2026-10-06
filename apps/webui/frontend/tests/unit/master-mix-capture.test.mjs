@@ -24,6 +24,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://master-mix.example.test';
 const ENGINE_STUB = fileURLToPath(new URL('./fixtures/master-mix-engine-stub.ts', import.meta.url));
+const RUST_MODE_STUB = fileURLToPath(new URL('./fixtures/master-mix-rust-mode-stub.ts', import.meta.url));
 
 // --------------------------------------------------------------------------
 // the worklet, under a faked AudioWorkletGlobalScope
@@ -230,7 +231,7 @@ async function settle() {
 before(async () => {
 	capture = await loadTypeScriptModule('tests/unit/fixtures/master-mix-capture-entry.ts', {
 		viteApiBase: API_BASE,
-		alias: { '$lib/rb/audio-engine.svelte': ENGINE_STUB }
+		alias: { '$lib/rb/audio-engine.svelte': ENGINE_STUB, '$lib/audio-engine/rust-mode.svelte': RUST_MODE_STUB }
 	});
 });
 
