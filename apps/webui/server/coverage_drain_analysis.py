@@ -28,6 +28,7 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import subprocess
@@ -45,6 +46,8 @@ from apps.analysis_beatgrid.version import PRODUCER_VERSION as BEATGRID_PRODUCER
 from apps.shared.paths import PROJECT_ROOT
 from apps.shared.sync_runtime_gates import any_deck_playing
 from apps.webui.server import coverage_analysis_job
+
+log = logging.getLogger(__name__)
 
 AF_SERVICE_ID: str = "com.af.music-dj-tools.coverage-drain.analysis"
 #: The child's scheduling priority (see ``coverage_analysis_job``).
@@ -180,6 +183,8 @@ class DeckGate:
             stable_id = deck.get("stable_id") if isinstance(deck, dict) else None
             if stable_id is None or self._loaded.get(name) == stable_id:
                 continue
+            # DRAIN-PAUSE-01: proves in the packaged app what armed a hold.
+            log.debug("deck gate: load hold armed: deck=%s old=%s new=%s", name, self._loaded.get(name), stable_id)
             self._hold_until = now + LOAD_SETTLE_S
             self._loaded[name] = stable_id
         return any_deck_playing(mirror) or now < self._hold_until

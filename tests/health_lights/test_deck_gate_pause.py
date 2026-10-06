@@ -14,6 +14,7 @@ Regression lines:
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +115,18 @@ def test_the_drain_pauses_while_a_deck_plays(tmp_path: Path) -> None:
     gate, _, box = _loaded_gate()
     box["mirror"] = _mirror(("a", False), ("b", True), ("c", False), ("d", False))
     assert _drain(tmp_path, gate).tick() == "paused_playing"
+
+
+def test_every_armed_hold_logs_the_deck_and_both_ids(caplog: pytest.LogCaptureFixture) -> None:
+    """[if] a hold is armed [then] one DEBUG line names deck, old id, new id, [else stop]."""
+    gate, _, box = _loaded_gate()
+    caplog.set_level(logging.DEBUG, logger="apps.webui.server.coverage_drain_analysis")
+    assert gate() is False
+    assert not [r for r in caplog.records if "load hold armed" in r.getMessage()]
+    box["mirror"] = _mirror(("e", False), ("b", False), ("c", False), ("d", False))
+    assert gate() is True
+    armed = [r.getMessage() for r in caplog.records if "load hold armed" in r.getMessage()]
+    assert armed == ["deck gate: load hold armed: deck=1 old=a new=e"]
 
 
 def test_a_new_track_on_a_loaded_deck_holds_for_the_settle() -> None:
