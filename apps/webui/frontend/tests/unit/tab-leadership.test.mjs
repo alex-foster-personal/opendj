@@ -32,7 +32,7 @@ const publisherModule = await loadTypeScriptModule('src/lib/rb/leased-mirror-pub
 const orders = await loadTypeScriptModule('src/lib/rb/agent-orders.ts');
 const { createTabLeadership, confirmedLeadership, whileLeader } = leadershipModule;
 const { createLeasedMirrorPublisher, decideFollowerClaim, MIRROR_PATH, LEASE_PATH, LEASE_RECHECK_MS } = publisherModule;
-const NEXT = '/api/v1/commands/next';
+const NEXT = orders.NEXT_ORDER_URL;
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 async function flush() {

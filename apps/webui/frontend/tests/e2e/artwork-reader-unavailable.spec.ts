@@ -333,7 +333,7 @@ test('null artwork availability identifies an unavailable reader without request
 	);
 	await page.route('**/api/v1/client-events', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/client-errors', (route) => route.fulfill({ json: {} }));
-	await page.route('**/api/v1/commands/next', (route) => route.fulfill({ status: 409, json: {} }));
+	await page.route('**/api/v1/commands/next*', (route) => route.fulfill({ status: 409, json: {} }));
 	await page.route('**/api/v1/ingest/coverage**', (route) =>
 		route.fulfill({ json: { total_tracks: 1, on_disk: 1, unreachable: 0, missing: { vocals: 1, stems: 1 }, generated_at: 0 } })
 	);

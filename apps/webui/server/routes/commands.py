@@ -3,15 +3,25 @@
 The Web Audio engine is browser-owned. This router therefore never invents an
 engine result: it holds the agent request until the open page claims and
 executes the order through its normal typed IPC dispatcher.
+
+AGENT-19: ``GET /commands/next?wait_ms=N`` is a LONG POLL. The leader page's
+claim loop used to re-ask every 50 ms on a ``setTimeout``, and a hidden tab's
+timers are throttled by the browser (Chrome aligns them to 1 s, and a timer
+chain to one wake-up per MINUTE after five hidden minutes). A network response
+is not throttled, so the engine now holds the claim request open and answers
+the moment an order is submitted. Every held answer carries
+``x-opendj-order-wait-ms`` so the page can tell a held answer from an older
+engine that ignored the parameter.
 """
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from apps.webui.server.routes.ui_prefs import persist_master_muted
@@ -20,6 +30,12 @@ from apps.webui.server.shell_commands import shell_broker
 router = APIRouter(prefix="/commands", tags=["agent-commands"])
 
 _ORDER_KEYS = frozenset({"single", "sequence", "parallel", "ramp"})
+
+#: AGENT-19: the longest a claim request may be held open. Below every proxy and
+#: webview fetch idle timeout in the path (vite proxy, WKWebView 60 s).
+ORDER_WAIT_MAX_MS = 30_000
+#: AGENT-19: response header naming the hold the engine honoured, in ms.
+ORDER_WAIT_HEADER = "x-opendj-order-wait-ms"
 
 
 @dataclass
@@ -32,11 +48,15 @@ class _PendingOrder:
 class _OrderBroker:
     def __init__(self) -> None:
         self.pending: dict[str, _PendingOrder] = {}
+        self._waiters: set[asyncio.Future[None]] = set()
 
     def submit(self, order: dict[str, Any]) -> tuple[str, asyncio.Future[dict[str, Any]]]:
         order_id = uuid4().hex
         result: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         self.pending[order_id] = _PendingOrder(order=order, result=result)
+        for waiter in self._waiters:
+            if not waiter.done():
+                waiter.set_result(None)
         return order_id, result
 
     def claim(self) -> tuple[str, dict[str, Any]] | None:
@@ -45,6 +65,29 @@ class _OrderBroker:
                 pending.claimed = True
                 return order_id, pending.order
         return None
+
+    async def claim_within(
+        self, wait_s: float, asker_is_gone: Callable[[], Awaitable[bool]]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """AGENT-19: claim now, or hold until an order is submitted or ``wait_s`` passes.
+
+        ``asker_is_gone`` is checked before a held claim is taken: a page that
+        closed mid-hold must not swallow an order it can never execute.
+        """
+        claimed = self.claim()
+        if claimed is not None or wait_s <= 0:
+            return claimed
+        waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._waiters.add(waiter)
+        try:
+            await asyncio.wait_for(waiter, wait_s)
+        except TimeoutError:
+            pass
+        finally:
+            self._waiters.discard(waiter)
+        if await asker_is_gone():
+            return None
+        return self.claim()
 
     def complete(self, order_id: str, result: dict[str, Any]) -> None:
         pending = self.pending.get(order_id)
@@ -180,6 +223,7 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
 @router.get("/next", response_model=None)
 async def next_command(
     request: Request,
+    response: Response,
     consumer: str = Query(
         default="performance",
         description=(
@@ -187,8 +231,22 @@ async def next_command(
             "shell: desktop-shell commands such as apply-update"
         ),
     ),
+    wait_ms: int = Query(
+        default=0,
+        ge=0,
+        le=ORDER_WAIT_MAX_MS,
+        description=(
+            "AGENT-19 long poll, performance consumer only: hold the request up to "
+            "this many ms until an order arrives. 0 answers at once (the AGENT-03 "
+            f"contract). The honoured hold is echoed in the {ORDER_WAIT_HEADER} header."
+        ),
+    ),
 ) -> dict[str, Any] | JSONResponse | None:
     """Let a consumer claim its next command."""
+    if consumer == "shell" and wait_ms != 0:
+        raise HTTPException(
+            status_code=422, detail="wait_ms is only supported for consumer=performance"
+        )
     if consumer == "shell":
         claimed = shell_broker(request).claim()
         if claimed is None:
@@ -202,7 +260,11 @@ async def next_command(
         )
     if not _page_is_open(request):
         return JSONResponse(status_code=409, content={"client_open": False})
-    claimed = _broker(request).claim()
+    claimed = await _broker(request).claim_within(wait_ms / 1000, request.is_disconnected)
+    if claimed is None and not _page_is_open(request):
+        # The mirror was closed while the request was held.
+        return JSONResponse(status_code=409, content={"client_open": False})
+    response.headers[ORDER_WAIT_HEADER] = str(wait_ms)
     if claimed is None:
         return None
     order_id, order = claimed
