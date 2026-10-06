@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "AbsentFolderOut": {
+        "description": "One folder that library rows point into and this Mac does not have.",
+        "properties": {
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "folder",
+          "tracks"
+        ],
+        "title": "AbsentFolderOut",
+        "type": "object"
+      },
       "AccessProbeOut": {
         "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
         "properties": {
@@ -5919,6 +5938,13 @@
       "CoverageOut": {
         "description": "Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.\n\n``on_disk`` is the denominator (``availability.present``). Per step,\n``done + terminal + failed + pending == on_disk``. ``missing`` and\n``corrupt`` keep their artifact meaning for the refresh job's targeting:\n``corrupt`` (structurally invalid entries) is a subset of ``missing``.",
         "properties": {
+          "absent_folders": {
+            "items": {
+              "$ref": "#/components/schemas/AbsentFolderOut"
+            },
+            "title": "Absent Folders",
+            "type": "array"
+          },
           "age_s": {
             "title": "Age S",
             "type": "number"

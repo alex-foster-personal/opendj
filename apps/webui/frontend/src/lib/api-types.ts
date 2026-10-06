@@ -6841,6 +6841,16 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AbsentFolderOut
+         * @description One folder that library rows point into and this Mac does not have.
+         */
+        AbsentFolderOut: {
+            /** Folder */
+            folder: string;
+            /** Tracks */
+            tracks: number;
+        };
+        /**
          * AccessProbeOut
          * @description One folder, and whether this process can actually read it.
          *
@@ -8980,6 +8990,8 @@ export interface components {
          *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
          */
         CoverageOut: {
+            /** Absent Folders */
+            absent_folders?: components["schemas"]["AbsentFolderOut"][];
             /** Age S */
             age_s: number;
             /** Availability */
