@@ -13,6 +13,7 @@
  * Regression lines:
  * - if any library header control sits on a second line at 1280x800 on an editable playlist then broken
  * - if Find & Replace, Bulk Edit or MyTags show before the pencil is clicked, or not after, then broken
+ * - if the pencil's hover tip still draws over the open menu then broken
  * - if a menu item does not open its own editor, or the selection items work with nothing selected, then broken
  * - if the add-track search is visible, or unmounted, on an editable playlist then broken
  * - if GET /tracks?q= or PUT /playlists/{id}/tracks stops answering while the search is hidden then broken
@@ -61,6 +62,8 @@ test('the edit actions sit behind one pencil and the header stays one line', asy
 
 	await pencil.click();
 	for (const item of items) await expect(item).toBeVisible();
+	// The pointer is still on the pencil: its hover tip must not draw over the open menu.
+	await expect(page.locator('.single-hover-tip')).toBeHidden();
 	// Nothing is selected yet: the two selection actions say why they are off.
 	await expect(items[0]).toBeDisabled();
 	await expect(items[1]).toBeDisabled();

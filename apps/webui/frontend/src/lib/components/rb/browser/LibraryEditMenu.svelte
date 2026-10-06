@@ -21,6 +21,14 @@
 	let wrapEl: HTMLSpanElement | undefined = $state();
 	let triggerEl: HTMLButtonElement | undefined = $state();
 
+	// The pencil's hover tip sits where the open menu draws. While the menu is open it
+	// is the one explainer: data-custom-tip on the wrapper tells the shared tooltip
+	// layer to draw no box, and a pointerover makes it re-read that now. The list is a
+	// hover card, so a disabled item still shows its own "select tracks first" tip.
+	$effect(() => {
+		if (open) triggerEl?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+	});
+
 	function pick(action: 'find-replace' | 'bulk-edit' | 'mytag'): void {
 		open = false;
 		onpick(action);
@@ -41,7 +49,7 @@
 
 <svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeyDown} />
 
-<span class="library-edit-menu" bind:this={wrapEl}>
+<span class="library-edit-menu" bind:this={wrapEl} data-custom-tip={open ? '' : undefined}>
 	<button
 		bind:this={triggerEl}
 		type="button"
@@ -70,6 +78,7 @@
 		role="menu"
 		aria-label="Edit tags"
 		data-testid="library-edit-menu-list"
+		data-hover-card
 		use:triggerFloatingAction={{ getTrigger: () => triggerEl ?? null, preferred: 'below', gap: 4 }}
 	>
 		<button
