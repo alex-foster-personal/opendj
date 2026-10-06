@@ -44,9 +44,6 @@ an internal test build and was never public.
   about 2 GB on top of the app itself. Memory comes back when you eject or replace a track, apart
   from about 250 MB that the first stems load keeps for the rest of the session. On a Mac with
   8 GB, loading stems on all four decks may slow the computer down.
-- **Browser output device:** in the browser web UI without microphone permission, choosing the
-  default output device can fail with "device default is not found" and show an error toast
-  (board item W8; a fix is in progress). The desktop app is not affected.
 - **Unfinished controls:** a control with no real data source behind it is visible but inert,
   and its tooltip says "not implemented - see PARITY-TODO". This is deliberate: Open DJ never
   shows invented data.
