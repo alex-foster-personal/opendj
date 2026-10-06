@@ -12,7 +12,7 @@ from collections.abc import Callable
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from apps.webui.server import coverage_cache
+from apps.webui.server import boot_grace, coverage_cache
 from apps.webui.server.routes import ingest_coverage
 
 COVERAGE_CACHED_HELP = (
@@ -95,7 +95,10 @@ def cache_for(app: FastAPI) -> coverage_cache.CoverageCache:
     with _cache_lock:
         cache = getattr(app.state, "coverage_cache", None)
         if cache is None:
-            cache = app.state.coverage_cache = coverage_cache.CoverageCache()
+            cache = app.state.coverage_cache = coverage_cache.CoverageCache(
+                # PERF-BOOT-01: a background re-measure waits for the launch's index.
+                background_gate=lambda: boot_grace.for_app(app).wait(),
+            )
         return cache
 
 

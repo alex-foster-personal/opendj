@@ -24,6 +24,7 @@ from pathlib import Path
 from apps.adapters.rekordbox import config
 from apps.shared.state import db as state_db
 
+from .boot_grace import NO_GRACE, BootGrace
 from .rb_vendor_pkg import path_index
 
 log = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ _BATCH_SIZE: int = 64
 
 
 class PathAvailabilityRefresher:
-    def __init__(self, *, data_dir: Path, state_db_path: Path) -> None:
+    def __init__(self, *, data_dir: Path, state_db_path: Path, grace: BootGrace = NO_GRACE) -> None:
         self._data_dir = Path(data_dir)
         self._state_db_path = Path(state_db_path)
         self._queue: queue.Queue[str | None] = queue.Queue()
@@ -43,6 +44,7 @@ class PathAvailabilityRefresher:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._grace = grace
 
     @property
     def running(self) -> bool:
@@ -82,6 +84,9 @@ class PathAvailabilityRefresher:
             self._unpersisted.update(((namespace, path), size) for path, size in rows)
 
     def _run(self) -> None:
+        # PERF-BOOT-01: the first pass waits for the launch's library index. Paths
+        # scheduled meanwhile queue up; answers a request recorded are kept.
+        self._grace.wait(self._stop)
         batch: list[str] = []
         while not self._stop.is_set():
             try:
@@ -172,10 +177,11 @@ class PathAvailabilityRefresher:
 _ACTIVE: dict[str, PathAvailabilityRefresher] = {}
 
 
-def configure(*, data_dir: Path, state_db_path: Path) -> None:
+def configure(*, data_dir: Path, state_db_path: Path, grace: BootGrace = NO_GRACE) -> None:
     _ACTIVE["refresher"] = PathAvailabilityRefresher(
         data_dir=data_dir,
         state_db_path=state_db_path,
+        grace=grace,
     )
 
 
@@ -186,11 +192,11 @@ def start() -> None:
     refresher.start()
 
 
-def start_for_state_db(state_db_path: Path) -> None:
+def start_for_state_db(state_db_path: Path, grace: BootGrace = NO_GRACE) -> None:
     """Configure and start against ``<data_dir>/state/state.db``."""
     db = Path(state_db_path)
     data_dir = db.parent.parent if db.parent.name == "state" else db.parent
-    configure(data_dir=data_dir, state_db_path=db)
+    configure(data_dir=data_dir, state_db_path=db, grace=grace)
     start()
 
 

@@ -38,7 +38,13 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
-from . import analysis_autostart, coverage_drain, library_jobs_autostart, lyric_index_autostart
+from . import (
+    analysis_autostart,
+    boot_grace,
+    coverage_drain,
+    library_jobs_autostart,
+    lyric_index_autostart,
+)
 from .backend import (
     BackendError,
     ConflictError,
@@ -332,7 +338,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         _start_ahead_analysis_if_armed(app)
         from . import path_availability_refresh
 
-        path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
+        path_availability_refresh.start_for_state_db(
+            Path(app.state.state_db_path), grace=boot_grace.for_app(app)
+        )
         from . import state_maintenance
 
         state_maintenance.start_for_state_db(Path(app.state.state_db_path))

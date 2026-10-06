@@ -37,6 +37,8 @@ Requirements (mini-PRD):
     [if] nothing is measured yet [then] peek returns None and one measurement starts behind it
     [if] four peeks arrive while it runs [then] still exactly one measurement
     [if] the first background measurement fails [then] last_refresh_error names it, the next peek retries
+  ✔︎ PERF-BOOT-01 a background measurement waits for its gate
+    [if] a background_gate is set [then] a refresh runs only after the gate returns
 """
 from __future__ import annotations
 
@@ -78,10 +80,14 @@ class CoverageCache:
         max_age_s: float = COVERAGE_MAX_AGE_S,
         clock: Callable[[], float] = time.monotonic,
         spawn: Callable[[Callable[[], None]], None] = _spawn_daemon,
+        background_gate: Callable[[], None] | None = None,
     ) -> None:
         self._max_age_s = max_age_s
         self._clock = clock
         self._spawn = spawn
+        #: Waited on by a BACKGROUND measurement before it starts (PERF-BOOT-01: the
+        #: engine boot grace); a reader that measures in its own thread never waits.
+        self._background_gate = background_gate
         self._changed = threading.Condition()
         self._fields: Fields | None = None
         self._measured_at = 0.0
@@ -141,6 +147,8 @@ class CoverageCache:
 
     #-------------------------------------------------------------------------
     def _refresh(self, compute: Compute) -> None:
+        if self._background_gate is not None:
+            self._background_gate()
         try:
             fields = compute()
         except Exception as error:  # reported in refresh_error, and the next read retries

@@ -82,7 +82,7 @@ from pydantic import BaseModel
 from apps.shared.platform_paths import is_unplayable_path
 from apps.shared.state.db import open_ro
 
-from .. import coverage_cache, library_playable, rb_vendor
+from .. import boot_grace, coverage_cache, library_playable, rb_vendor
 from ..backend import MAX_LIMIT, Playlist, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
 from ..sqlite_backend import SqliteBackend
@@ -450,7 +450,9 @@ def summary_cache_for(app: FastAPI) -> coverage_cache.CoverageCache:
         cache = getattr(app.state, "reconcile_summary_cache", None)
         if cache is None:
             cache = app.state.reconcile_summary_cache = coverage_cache.CoverageCache(
-                max_age_s=SUMMARY_MAX_AGE_S
+                max_age_s=SUMMARY_MAX_AGE_S,
+                # PERF-BOOT-01: the startup scan waits for the launch's library index.
+                background_gate=lambda: boot_grace.for_app(app).wait(),
             )
         return cache
 

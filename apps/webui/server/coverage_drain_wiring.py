@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from apps.lyrics.service import LyricsFetchService
 from apps.shared.events import publish
+from apps.webui.server import boot_grace
 from apps.webui.server import coverage_cloud_vocals as cloud_vocals_mod
 from apps.webui.server import coverage_drain_analysis as analysis_step
 from apps.webui.server import coverage_memory, coverage_recency, stem_cache_enforcer
@@ -84,6 +85,7 @@ def build_for_app(app: FastAPI) -> CoverageDrain:
         config=config,
         unavailable_steps={step: why for step, why in refusals.items() if why is not None},
         on_change=changed,
+        boot_grace=boot_grace.for_app(app),
         cloud_vocals=cloud_vocals_mod.CloudVocals(
             data_dir=data_dir,
             inputs_fn=cloud_inputs,

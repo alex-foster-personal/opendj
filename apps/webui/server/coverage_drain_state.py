@@ -134,7 +134,7 @@ def _validated_cap(value: Any, where: Path) -> int:
 @dataclass
 class DrainStatus:
     #: idle | green | running | blocked | paused_playing | yielding_user_jobs
-    #: | yielding_memory_pressure | stopped | disabled
+    #: | yielding_memory_pressure | stopped | disabled | paused_startup (PERF-BOOT-01)
     state: str = "idle"
     enabled: bool = True
     #: Per-step switches (``DrainConfig.steps``); a step that is off never runs.

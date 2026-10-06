@@ -36,6 +36,9 @@ Requirements (mini-PRD):
   ✔︎ ✅ 🎯 never competes with playback
     [if] any deck is playing [then] the tick runs no job and reads no snapshot
     [if] playback starts between jobs [then] the next tick pauses
+  ✔︎ never competes with the launch (PERF-BOOT-01)
+    [if] the engine boot grace holds and no index was served [then] the tick takes no snapshot
+    [if] the first /tracks/index is served, or the grace times out [then] the next tick runs
   ✔︎ ✅ 🎯 one job per tick, vocals before lyrics, no stems
     [if] vocals work is attemptable [then] lyrics does not run that tick
     [if] a track has no stem bundle [then] it is reported, never run
@@ -91,6 +94,7 @@ from apps.webui.server.coverage_drain_jobs import (
     vocals_capability_refusal,
     vocals_job,
 )
+from apps.webui.server.boot_grace import NO_GRACE, BootGrace
 from apps.webui.server.coverage_drain_state import DrainConfig, DrainStatus, config_path
 from apps.webui.server.coverage_stems_terminal import StemsCheck
 from apps.webui.server.routes.ingest_coverage import CoverageSnapshot, Target
@@ -115,6 +119,8 @@ YIELDING_STEPS: frozenset[str] = frozenset({"analysis"})
 #: Pending-stems tracks classified per tick by the terminal check (an ffprobe
 #: each, about 50 ms), so a 600-track backlog clears in half a minute.
 STEMS_CHECK_BATCH: int = 20
+#: The tick's state while the engine's boot grace holds it (PERF-BOOT-01).
+STARTUP_GRACE_STATE: str = "paused_startup"
 
 def build_for_app(app: Any) -> CoverageDrain:
     """The engine's drain (``coverage_drain_wiring``), kept importable here."""
@@ -149,6 +155,7 @@ class CoverageDrain:
         on_change: Callable[[str, str], None] | None = None,
         cloud_vocals: cloud_vocals_mod.CloudVocals | None = None,
         stems_check: StemsCheck | None = None,
+        boot_grace: BootGrace = NO_GRACE,
     ) -> None:
         unknown = set(jobs) - set(JOB_ORDER)
         if unknown:
@@ -162,6 +169,7 @@ class CoverageDrain:
         self._on_change = on_change
         self._cloud_vocals = cloud_vocals
         self._stems_check = stems_check
+        self._boot_grace = boot_grace
         #: Vocals targets of this tick that need their bundle fetched first.
         self._cloud_ids: frozenset[str] = frozenset()
         #: Set after construction (``build_for_app``); the default is inert.
@@ -283,6 +291,8 @@ class CoverageDrain:
             return "stopped"
         if self._playing_fn():
             return "paused_playing"
+        if self._boot_grace.active():
+            return STARTUP_GRACE_STATE  # PERF-BOOT-01: the launch's index goes first
         return None
 
     def _phases(self, snapshot: CoverageSnapshot) -> list[tuple[str, Sequence[Target]]]:
@@ -506,7 +516,7 @@ class CoverageDrain:
                 continue
             if outcome.startswith(("ran:", "failed:")):
                 interval = ACTIVE_INTERVAL_S
-            elif outcome in ("paused_playing", "yielding_user_jobs"):
+            elif outcome in ("paused_playing", "yielding_user_jobs", STARTUP_GRACE_STATE):
                 interval = PAUSED_INTERVAL_S
             else:
                 interval = IDLE_INTERVAL_S
@@ -520,6 +530,7 @@ __all__ = [
     "ANALYSIS_NICENESS",
     "COVERAGE_DRAIN_ENV",
     "LOAD_SETTLE_S",
+    "STARTUP_GRACE_STATE",
     "AnalysisPolicy",
     "CoverageDrain",
     "DeckGate",

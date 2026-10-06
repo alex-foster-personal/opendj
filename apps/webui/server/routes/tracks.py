@@ -31,7 +31,7 @@ from apps.shared.state.writer_tracks import (
 )
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
-from .. import rb_vendor
+from .. import boot_grace, rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
 from ..deps import get_library_data_dir, get_read_state, get_write_state
 from ..errors import precondition_required
@@ -467,6 +467,8 @@ def get_track_index(
     drain = getattr(request.app.state, "ahead_analysis", None)
     if drain is not None:
         drain.index_served()
+    # PERF-BOOT-01: and the engine boot grace the background scanners wait on ends.
+    boot_grace.for_app(request.app).end()
     if if_none_match == etag:
         return Response(status_code=304, headers=headers)
     if accept_encoding is not None and "gzip" in accept_encoding:

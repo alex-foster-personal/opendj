@@ -28,6 +28,7 @@ from . import (
     ahead_analysis,
     analysis_autostart,
     analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
+    boot_grace,
     coverage_drain,
     library_jobs_autostart,
     lyric_index_autostart,
@@ -427,6 +428,9 @@ def _build_default_app() -> FastAPI:
         auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
         stem_hydration=True,
     )
+    # PERF-BOOT-01: the background scanners hold their first pass until the
+    # launch's library index is served, or BOOT_GRACE_S.
+    boot_grace.arm(app)
     # HEALTH-15: the daemon's first reconcile scan starts now, not on the
     # browser's first read (39 to 61 s on the silver preview under load).
     reconcile_routes.warm_summary_snapshot(app, backend)
