@@ -29,7 +29,6 @@ import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
 import { stemWorkSignal } from './stem-decode-policy';
-import type { PreviewStripBatch } from './preview-strip-fill';
 import type { StemFetchProgress } from './stem-types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
@@ -285,10 +284,10 @@ export interface PreviewStripData {
 	max: number;
 }
 
-/** Re-read the Preview strips of up to 200 listed rows (NATIVE-21). Never a
+/** The strip, vocals and cover verdict of up to 200 rows in view (LIBM-172). Never a
  * decode: null is "nothing on disk yet"; `pending` ids are being written. */
-export async function fetchPreviewStrips(ids: string[]): Promise<PreviewStripBatch> {
-	return unwrap(api.POST('/api/v1/library/preview-strips', { body: { ids } }));
+export async function fetchRowAssets(ids: string[]) {
+	return unwrap(api.POST('/api/v1/library/row-assets', { body: { ids } }));
 }
 
 /** Decode one row's preview pair. null preview_b64 = the real "no ANLZ

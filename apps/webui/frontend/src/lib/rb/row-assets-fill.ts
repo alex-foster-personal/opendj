@@ -13,23 +13,16 @@
  * `fetchRowAssetsLazily`), so none of it rides the /performance route's eager bundle.
  */
 
-import { API_BASE } from '$lib/api';
-import { parseVocals, type Vocals } from './api-rb';
+import { fetchRowAssets, parseVocals, type Vocals } from './api-rb';
 
-interface RowAssetWire {
-	preview_b64: string | null;
-	preview_max: number | null;
-	vocals: unknown;
-	artwork_available: boolean | null;
-	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
-}
+type ArtworkStatus = 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 
 /** The row fields an answer settles (preview-strip-fill's RowAssetTarget). */
 interface Target {
 	stable_id: string;
 	vocals: Vocals;
 	artwork_available: boolean | null;
-	artwork_status: RowAssetWire['artwork_status'];
+	artwork_status: ArtworkStatus;
 }
 
 /** Ask for `ids`, settle every row among `rows` that has one of them, and return
@@ -38,13 +31,7 @@ export async function fetchAndApplyRowAssets(
 	ids: string[],
 	rows: readonly Target[]
 ): Promise<{ strips: Record<string, { preview_b64: string; preview_max: number } | null>; pending: string[] }> {
-	const response = await fetch(`${API_BASE}/api/v1/library/row-assets`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify({ ids })
-	});
-	if (!response.ok) throw new Error(`POST /library/row-assets failed with ${response.status}`);
-	const answer = (await response.json()) as { assets: Record<string, RowAssetWire>; pending: string[] };
+	const answer = await fetchRowAssets(ids);
 	if (typeof answer.assets !== 'object' || answer.assets === null || !Array.isArray(answer.pending)) {
 		throw new Error('POST /library/row-assets answered without assets or pending');
 	}
@@ -54,16 +41,15 @@ export async function fetchAndApplyRowAssets(
 		const asset = answer.assets[row.stable_id];
 		if (asset === undefined) continue;
 		row.vocals = parseVocals(asset.vocals);
-		row.artwork_available = asset.artwork_available;
-		row.artwork_status = asset.artwork_status;
+		row.artwork_available = asset.artwork_available ?? null;
+		row.artwork_status = asset.artwork_status as ArtworkStatus;
 	}
 	const strips: Record<string, { preview_b64: string; preview_max: number } | null> = {};
 	for (const id of ids) {
 		const asset = answer.assets[id];
-		strips[id] =
-			asset === undefined || asset.preview_b64 === null || asset.preview_max === null
-				? null
-				: { preview_b64: asset.preview_b64, preview_max: asset.preview_max };
+		const b64 = asset?.preview_b64 ?? null;
+		const max = asset?.preview_max ?? null;
+		strips[id] = b64 === null || max === null ? null : { preview_b64: b64, preview_max: max };
 	}
 	return { strips, pending: answer.pending };
 }

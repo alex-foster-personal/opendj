@@ -487,12 +487,21 @@ test('null artwork availability identifies an unavailable reader without request
 			}
 		})
 	);
-	// preview-strip-fill.ts (NATIVE-21) asks for the strips of strip-less rows
-	// in view. Answered "nothing on disk yet" for every id, never a strip, so
-	// no row gains a waveform and no id is pending a retry.
-	await page.route('**/api/v1/library/preview-strips', (route) => {
+	// preview-strip-fill.ts (NATIVE-21, LIBM-172) asks /library/row-assets for
+	// the strip, vocals and cover verdict of strip-less rows in view. Answered
+	// "nothing on disk yet" with the same cover verdict as the row below
+	// (artwork_available null: the reader is unavailable), so no row gains a
+	// waveform, the cover stays unresolved and no id is pending a retry.
+	await page.route('**/api/v1/library/row-assets', (route) => {
 		const { ids } = route.request().postDataJSON() as { ids: string[] };
-		return route.fulfill({ json: { strips: Object.fromEntries(ids.map((id) => [id, null])), pending: [] } });
+		const none = {
+			preview_b64: null,
+			preview_max: null,
+			vocals: { status: 'not_analyzed' },
+			artwork_available: null,
+			artwork_status: 'no_image_path'
+		};
+		return route.fulfill({ json: { assets: Object.fromEntries(ids.map((id) => [id, none])), pending: [] } });
 	});
 	// client-performance-samples.ts's `startClientPerformanceSampling`, also
 	// deferred from app-init.ts (`scheduler.defer('client-samples:first', ...)`,
