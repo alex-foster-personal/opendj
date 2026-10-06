@@ -2,7 +2,7 @@
 
 [if] the page streams its master mix [then] REC writes it as a WAV set, [else stop].
 
-Mutation controls (run by hand on demon-llama for this change, each went red):
+Mutation controls (run by hand on the Air for this change, each went red):
 dropping the seq check in MasterMixWriter.append, dropping the header rewrite in
 _Segment.append, and defaulting RecorderStartRequest.source to "master".
 """
@@ -294,6 +294,7 @@ def test_the_packaged_engine_app_records_the_master_mix(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     out = json.loads(result.stdout.strip().splitlines()[-1])
