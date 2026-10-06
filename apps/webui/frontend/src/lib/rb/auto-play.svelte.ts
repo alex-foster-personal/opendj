@@ -63,6 +63,7 @@ import {
 	resetAutoPlaySilenceRecovery,
 	resolveAutoPlaySourceForTick
 } from '$lib/rb/autoplay-silence-recover';
+import { clearEngineRecoveryStop, engineRecoveryStopReason } from '$lib/rb/engine-recovery-stop';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
@@ -324,12 +325,15 @@ async function _tick(): Promise<void> {
 	});
 	if (anyPlaying) {
 		noteAutoPlayPlaybackStarted();
+		// Bug #58: a deck playing again ends any engine-recovery stop.
+		clearEngineRecoveryStop();
 	}
 	const idlePlan = planAutoPlayIdleDisarm({
 		enabled: uiPrefs.auto_play_enabled,
 		snaps,
 		pending_master: _pendingMaster !== null,
 		silence_recovering: isSilenceRecovering(),
+		engine_recovery_stop: engineRecoveryStopReason(),
 		now_ms: Date.now(),
 		stall_active: readAutoPlayStall() !== null
 	});
@@ -350,6 +354,7 @@ async function _tick(): Promise<void> {
 			any_playing: anyPlaying,
 			pending_master: _pendingMaster !== null,
 			silence_recovering: isSilenceRecovering(),
+			engine_recovery_stop: engineRecoveryStopReason(),
 			stall_active: readAutoPlayStall() !== null,
 			idle_since_ms: readAutoPlayIdleSinceMs(),
 			now_ms: Date.now(),

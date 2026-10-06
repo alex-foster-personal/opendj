@@ -9,6 +9,9 @@
  *   stays up [⛔️ if disarming deletes the explanation the room still needs].
  * [if] a deck starts playing again before the threshold [then] AutoPlay stays armed
  *   [⛔️ if a brief pause between tracks disarms the feature].
+ * [if] bug #58: every deck stopped because the ENGINE was recovering its audio graph
+ *   [then] AutoPlay stays enabled and armed past the idle threshold, and the tag
+ *   clears when a deck plays again [⛔️ if a recovery stop switches AutoPlay off].
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -24,6 +27,7 @@ const ENTRY = [
 	"export { setAutoPlayEnabled, uiPrefs } from '$lib/rb/prefs.svelte';",
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
 	"export { readAutoPlayStall, noteAutoPlayExhaustion } from '$lib/rb/autoplay-stall.svelte';",
+	"export { clearEngineRecoveryStop, engineRecoveryStopReason, markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';",
 	"export { AUTO_PLAY_ARMED_EMPTY_DISARM_MS, AUTO_PLAY_IDLE_DISARM_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
 ].join('\n');
 
@@ -129,6 +133,70 @@ test('planAutoPlayIdleDisarm continues while silence_recovering is true', () => 
 		stall_active: false
 	});
 	assert.equal(plan.action, 'continue');
+});
+
+test('bug #58: planAutoPlayIdleDisarm never disarms while an engine-recovery stop is tagged', () => {
+	const { planAutoPlayIdleDisarm, AUTO_PLAY_IDLE_DISARM_MS, resetAutoPlayIdleClock } = autoPlay;
+	const input = {
+		enabled: true,
+		snaps: [{ playing: false }, { playing: false }],
+		pending_master: false,
+		stall_active: false
+	};
+	resetAutoPlayIdleClock();
+	planAutoPlayIdleDisarm({ ...input, engine_recovery_stop: 'graph-rebuild-failed', now_ms: 0 });
+	const tagged = planAutoPlayIdleDisarm({ ...input, engine_recovery_stop: 'graph-rebuild-failed', now_ms: AUTO_PLAY_IDLE_DISARM_MS * 10 });
+	assert.equal(tagged.action, 'continue', 'if a recovery-caused stop disarms AutoPlay then the set cannot resume on its own - broken');
+	// Mutation control: the same idle stretch with no tag does disarm.
+	resetAutoPlayIdleClock();
+	planAutoPlayIdleDisarm({ ...input, engine_recovery_stop: null, now_ms: 0 });
+	const untagged = planAutoPlayIdleDisarm({ ...input, engine_recovery_stop: null, now_ms: AUTO_PLAY_IDLE_DISARM_MS + 1 });
+	assert.equal(untagged.action, 'disarm');
+	resetAutoPlayIdleClock();
+});
+
+// REQ: PLAY-09
+test('RUNNING it: an engine-recovery stop leaves AutoPlay enabled, and the tag clears when a deck plays (bug #58)', async () => {
+	mock.timers.enable({ apis: ['Date'] });
+	const probe = installTimerProbe();
+	let uninstall = null;
+	let mod = null;
+	try {
+		mod = await loadRuneModule(ENTRY);
+		uninstall = mod.installAutoPlay();
+		await probe.flush();
+		assert.equal(mod.uiPrefs.auto_play_enabled, true);
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		await settle();
+		stopEveryDeck(mod);
+		mod.markEngineRecoveryStop('graph-rebuild-failed');
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_ARMED_EMPTY_DISARM_MS + 1);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, true, 'if a recovery-caused stop disarms AutoPlay then the soak set never resumes - broken');
+		assert.equal(mod.readAutoPlayStall(), null, 'a recovery stop is not reported as an idle no-deck-playing stall');
+
+		mod.deckStates[1].stable_id = 'src-1';
+		mod.deckStates[1].playing = true;
+		mod.deckStates[1].is_master = true;
+		await settle();
+		assert.equal(mod.engineRecoveryStopReason(), null, 'a deck playing again ends the recovery stop');
+
+		// Control: a later ordinary stop still disarms on the normal clock.
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_IDLE_DISARM_MS + 1);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, false, 'if the tag never clears then AutoPlay can never disarm again - broken');
+	} finally {
+		if (uninstall !== null) uninstall();
+		mod?.clearEngineRecoveryStop();
+		mod?.resetAutoPlayIdleClock();
+		probe.restore();
+		mock.timers.reset();
+	}
 });
 
 // REQ: PLAY-09

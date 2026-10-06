@@ -30,3 +30,17 @@ export async function ensureStretchWorkletReady(_context: AudioContext) {
 }
 
 export function resetStretchWorkletReadyForTests() {}
+
+// Bug #58: the rebuild retry sets the addModule timeout and the fault drill injects failures.
+export const stubAddModuleTimeouts: number[] = [];
+export function setStretchAddModuleTimeoutMs(ms: number) {
+	stubAddModuleTimeouts.push(ms);
+}
+export function resetStretchAddModuleTimeoutMs() {}
+let stubInjectedFailures = 0;
+export function injectStretchAddModuleFailures(count: number) {
+	stubInjectedFailures = count;
+}
+export function pendingInjectedAddModuleFailures() {
+	return stubInjectedFailures;
+}
