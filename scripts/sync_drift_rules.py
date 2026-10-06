@@ -396,6 +396,8 @@ SHIPPED_MIGRATIONS: dict[int, str] = {
     22: "c60afedcaf0b4ffc",
     # v23 (tracks.restored_at and tracks.deleted_reason, issue #4628).
     23: "f364648aac8d9582",
+    # v24 (drop the never-read idx_path_availability_checked, STATE-21).
+    24: "d9a16327965bb5e0",
 }
 
 
