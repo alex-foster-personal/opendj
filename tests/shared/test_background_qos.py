@@ -4,6 +4,8 @@ Regression lines:
   - if the queue child on darwin does not start under taskpolicy -b then lanes take performance cores
   - if linux or windows argv gains taskpolicy then the child never starts there
   - if a missing taskpolicy on darwin falls back to nice-only then the starvation returns silently
+
+[if] the drain lane child skips macOS background QoS [then] fail, [else stop].
 """
 from __future__ import annotations
 

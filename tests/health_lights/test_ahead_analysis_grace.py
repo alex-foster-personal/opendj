@@ -5,6 +5,8 @@ Regression lines:
   - if the drain still waits once 120 s have passed then a headless engine never drains
   - if a served /tracks/index does not end the grace then the launch waits 120 s for nothing
   - if build_for_app does not arm the grace then the packaged engine never gets it
+
+[if] the drain ticks inside its boot grace or past 120 s waits [then] fail, [else stop].
 """
 from __future__ import annotations
 
