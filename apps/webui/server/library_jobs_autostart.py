@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from apps.analysis import queue_user, queue_user_runner
 from apps.analysis.queue_user_lanes import USER_JOB_LANES
 from apps.analysis.queue_user_runner import runner_from_environ
 from apps.analysis.store import open_conn
+from apps.shared.state.db import is_sqlite_busy
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +69,8 @@ class LibraryJobsWatcher:
         runner_from_environ()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        #: Ticks skipped because the writer lock stayed busy past busy_timeout.
+        self.busy_ticks = 0
 
     def start(self) -> None:
         if not self.enabled or self._thread is not None:
@@ -103,7 +107,30 @@ class LibraryJobsWatcher:
 
     def _loop(self) -> None:
         while not self._stop.wait(self.interval_s):
-            try:
-                self.tick()
-            except Exception:
+            self.run_tick()
+
+    def run_tick(self) -> None:
+        """One loop pass: a tick that lost the writer lock is retried next tick.
+
+        The tick's connection already waits ``busy_timeout``
+        (:data:`apps.shared.state.db.DEFAULT_BUSY_TIMEOUT_S`, via ``open_rw``),
+        so reaching here busy means another writer held the lock past it. That
+        is contention, not a defect in this drain: one WARNING line with a
+        running count, no traceback (STATE-22). Every other error keeps the
+        full ``log.exception`` it always had, and the loop keeps running.
+        """
+        try:
+            self.tick()
+        except sqlite3.OperationalError as exc:
+            if not is_sqlite_busy(exc):
                 log.exception("library-jobs tick failed")
+                return
+            self.busy_ticks += 1
+            log.warning(
+                "library-jobs tick skipped: state.db writer lock busy past "
+                "busy_timeout (%d busy tick(s) since start), retrying next tick: %s",
+                self.busy_ticks,
+                exc,
+            )
+        except Exception:
+            log.exception("library-jobs tick failed")
