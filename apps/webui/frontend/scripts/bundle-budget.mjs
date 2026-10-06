@@ -360,7 +360,14 @@ const BUDGETS = [
   // the folders of files not on this Mac. The card is first paint on /performance. CI
   // measured 265,423 against 265,397 (+26). Payback, not yet measured: load the expanded
   // card body only when More is pressed.
-  { name: 'performance', limit: 266421, measured: 265423, note: '/performance and children' },
+  // RAISED Tue 6 Oct 2026 (+3,355 B, shared build-16 budget PR, CORE rule: one budget PR for the
+  // build-16 set instead of per-PR raises). Clean origin/main ef76df4099 measured 266,105 locally
+  // (316 B of headroom). Each PR merged alone onto that main: #5577 boot-walk settle +13
+  // (estimate reserved +200 for its later head), #5565 lazy library-index assets +384, #5573 Beat Sync
+  // Max enables sync +42, #5576 ENRICH-03 card R1-R4 +485, #5570 drain QoS 0 (backend only). All five
+  // merged measured 267,017 (the shares add up to within 1 B). #5572 SET-12 is reserved at +512, not
+  // yet measured. Projected tip 267,728: 1,307 over 266,421, plus 2 KiB headroom. Payback: issue #5522.
+  { name: 'performance', limit: 269776, measured: 267017, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
