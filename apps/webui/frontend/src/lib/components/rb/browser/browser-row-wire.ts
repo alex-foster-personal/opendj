@@ -335,7 +335,17 @@ const INDEX_ROW_DEFERRED = {
 } as const satisfies Pick<TrackListItemWire, 'preview_b64' | 'preview_max' | 'vocals' | 'artwork_available' | 'artwork_status'>;
 
 /** The index row's left-out fields that rowFromListWire requires but never copies. */
-const INDEX_ROW_UNREAD = {
+const INDEX_ROW_UNREAD: Pick<
+	TrackListItemWire,
+	| 'provenance'
+	| 'tags'
+	| 'created_at'
+	| 'updated_at'
+	| 'lyrics_available'
+	| 'auto_cues_available'
+	| 'stems_available'
+	| 'stems'
+> = {
 	provenance: {},
 	tags: [],
 	created_at: '',
@@ -344,7 +354,7 @@ const INDEX_ROW_UNREAD = {
 	auto_cues_available: false,
 	stems_available: false,
 	stems: { status: 'none' }
-} as const;
+};
 
 /** A library index row, or a full listing row (the boot first page), as a BrowserRow. */
 export function rowFromIndexWire(item: TrackIndexItemWire | TrackListItemWire, order: number): BrowserRow {
