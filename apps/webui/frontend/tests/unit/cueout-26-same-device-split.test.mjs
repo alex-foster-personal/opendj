@@ -15,6 +15,7 @@ const FRONTEND = fileURLToPath(new URL('../..', import.meta.url));
 const HEADPHONES = `${FRONTEND}/src/lib/player/headphones.ts`;
 const TOPBAR = `${FRONTEND}/src/lib/components/rb/TopBar.svelte`;
 const BADGE = `${FRONTEND}/src/lib/components/rb/SameDeviceSplitBadge.svelte`;
+const BANNER = `${FRONTEND}/src/lib/components/rb/MainOutputFaultBanner.svelte`;
 
 let headphones;
 let collision;
@@ -171,6 +172,8 @@ test('the split shows a visible line in the TopBar', () => {
 		collision.sameDeviceSplitText('External Headphones'),
 		'Split cue: master L / cue R (same device: External Headphones)'
 	);
-	assert.match(readFileSync(TOPBAR, 'utf8'), /<SameDeviceSplitBadge \/>/);
+	// The badge rides in MainOutputFaultBanner, which the TopBar mounts.
+	assert.match(readFileSync(TOPBAR, 'utf8'), /<MainOutputFaultBanner \/>/);
+	assert.match(readFileSync(BANNER, 'utf8'), /<SameDeviceSplitBadge \/>/);
 	assert.match(readFileSync(BADGE, 'utf8'), /split_reason !== 'same_device'/);
 });

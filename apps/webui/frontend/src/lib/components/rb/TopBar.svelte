@@ -102,7 +102,6 @@
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import MainOutputFaultBanner from './MainOutputFaultBanner.svelte';
-	import SameDeviceSplitBadge from './SameDeviceSplitBadge.svelte';
 	import {
 		APP_MODES,
 		LOCAL_STEMS_EXECUTOR_FLAG_ID,
@@ -848,9 +847,9 @@
 				</button>
 			</div>
 		{/if}
-		<!-- CUEOUT-25: MAIN on the headphone CUE device, or a failed MAIN route. -->
+		<!-- CUEOUT-25: MAIN on the headphone CUE device, or a failed MAIN route.
+		     It also renders the CUEOUT-26 same-device split badge right after itself. -->
 		<MainOutputFaultBanner />
-		<SameDeviceSplitBadge />
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.

@@ -8,6 +8,9 @@
 	import { engine, mixerState } from '$lib/rb/audio-engine.svelte';
 	import { preferredMasterOutputDeviceId } from '$lib/player/headphones';
 	import { mainOutputFault, mainOutputFaultText } from '$lib/player/main-cue-collision';
+	// CUEOUT-26: the same-device split badge is mounted here, directly after the
+	// banner, rather than in TopBar.svelte, which is at the import fan-out ceiling.
+	import SameDeviceSplitBadge from './SameDeviceSplitBadge.svelte';
 
 	let busy = $state(false);
 	let fixError = $state<string | null>(null);
@@ -57,6 +60,7 @@
 		{/if}
 	</div>
 {/if}
+<SameDeviceSplitBadge />
 
 <style>
 	.main-fault {
