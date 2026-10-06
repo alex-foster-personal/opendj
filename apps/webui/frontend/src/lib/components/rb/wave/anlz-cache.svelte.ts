@@ -34,8 +34,8 @@ import {
 } from '$lib/components/rb/wave/anlz-cache-retry';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
+import { SvelteMap } from 'svelte/reactivity';
 import { isUsbTrackId } from '$lib/rb/track-source';
-import { nonReactive } from '$lib/rb/non-reactive';
 import {
 	refreshAnalysisSourceDecks as _refreshAnalysisSourceDecksImpl,
 	type AnalysisSourceRefreshDeck,
@@ -70,7 +70,10 @@ export type AnlzEntry =
 	| { status: 'ready'; data: AnlzData; retryAfter?: number; touched?: number }
 	| { status: 'error'; code: string };
 
-const _cache = $state<Record<string, AnlzEntry>>({});
+// B9: a SvelteMap is reactive per key but stores each entry as-is. A deep $state
+// proxied every payload read through it, one signal per waveform bin and beat
+// (~100k per track, outside the LRU's budget). Entries are replaced, never edited.
+const _cache = new SvelteMap<string, AnlzEntry>();
 bindAnlzCapCache(_cache);
 registerCapsConsumer('anlz', applyAnlzCaps);
 
@@ -104,7 +107,7 @@ export { isAnlzEntryUsable, isRetryableAnlzData } from '$lib/components/rb/wave/
  * than leaving it stuck forever (discussion_r3975650980 P2 BLOCKING). */
 function _fetchAndPublish(stable_id: string): void {
 	const generation = currentAnlzFetchGeneration();
-	_cache[stable_id] = { status: 'loading', generation };
+	_cache.set(stable_id, { status: 'loading', generation });
 	const startedAt = performance.now();
 	void fetchAnlz(stable_id).then(
 		(data: AnlzData) => {
@@ -123,10 +126,10 @@ function _fetchAndPublish(stable_id: string): void {
 			}
 			if (err instanceof RbApiError) {
 				// Explicit backend state (e.g. ANALYSIS_NOT_FOUND, 0.1% of tracks).
-				_cache[stable_id] = { status: 'error', code: err.code };
+				_cache.set(stable_id, { status: 'error', code: err.code });
 				return;
 			}
-			_cache[stable_id] = { status: 'error', code: 'FETCH_FAILED' };
+			_cache.set(stable_id, { status: 'error', code: 'FETCH_FAILED' });
 			throw err; // loud: network/shape failures must not vanish
 		}
 	);
@@ -141,9 +144,9 @@ function _fetchAndPublish(stable_id: string): void {
  * would otherwise never refetch until reselected; restarting here while the
  * stable_id still has an active consumer closes that gap. */
 function _discardSuperseded(stable_id: string, generation: number): void {
-	const entry = _cache[stable_id];
+	const entry = _cache.get(stable_id);
 	if (entry === undefined || entry.status !== 'loading' || entry.generation !== generation) return;
-	delete _cache[stable_id];
+	_cache.delete(stable_id);
 	if (_hasActiveConsumer(stable_id)) _fetchAndPublish(stable_id);
 }
 
@@ -331,7 +334,7 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 		// bound on how long this mismatch stays true. Evicting leaves the id
 		// reading as never-requested; the next `ensureAnlz`/load re-fetches
 		// under whatever source is confirmed by then.
-		delete _cache[stable_id];
+		_cache.delete(stable_id);
 		return;
 	}
 	const existingTimer = _retryTimers.get(stable_id);
@@ -345,7 +348,7 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 	// read `previous` as null here by construction - `revalidateAnlz` is the
 	// one caller that keeps the prior entry intact, which is exactly the path
 	// this distinction exists for.
-	const previousEntry = _cache[stable_id];
+	const previousEntry = _cache.get(stable_id);
 	const previous = previousEntry !== undefined && previousEntry.status === 'ready' ? previousEntry.data : null;
 	// `resolveDisplayedAnlz` below already prefers a cache-entry grid over the
 	// deck's own, but that is only the DISPLAY projection: quantize, beat
@@ -374,21 +377,17 @@ function _publishAnlzResult(stable_id: string, data: AnlzData, alreadyScoped = f
 		!(alreadyScoped && !hasAnlzBeatgrid(data))
 			? _authoritativeGridSink(stable_id, data, hasAnlzBeatgrid(data), alreadyScoped)
 			: undefined;
-	// B9: stored by reference, never deep-proxied. Read through `_cache` the
-	// payload grew a signal per waveform bin and beat (~100k per track, beyond
-	// the LRU's byte estimate). Entries are only ever replaced, never edited.
-	nonReactive(data);
 	if (!isRetryableAnlzData(data)) {
-		_cache[stable_id] = { status: 'ready', data, touched: nextAnlzTouch() };
+		_cache.set(stable_id, { status: 'ready', data, touched: nextAnlzTouch() });
 		applyAnlzCaps();
 		return sinkSettlement;
 	}
-	_cache[stable_id] = {
+	_cache.set(stable_id, {
 		status: 'ready',
 		data,
 		retryAfter: performance.now() + RETRYABLE_COOLDOWN_MS,
 		touched: nextAnlzTouch()
-	};
+	});
 	applyAnlzCaps();
 	_retryTimers.set(
 		stable_id,
@@ -486,7 +485,7 @@ export function installAuthoritativeAnlzErrorSink(sink: AuthoritativeAnlzErrorSi
  * failed (Codex P1 BLOCKING, PR #1587, third round: "a failure settling
  * after the swap still never invalidates the loaded deck"). */
 function _publishAnlzError(stable_id: string, code: string): void {
-	_cache[stable_id] = { status: 'error', code };
+	_cache.set(stable_id, { status: 'error', code });
 	if (_authoritativeErrorSink !== null) _authoritativeErrorSink(stable_id, code);
 }
 
@@ -527,7 +526,7 @@ export function resolveDisplayedAnlz(
 ): AnlzData | null {
 	if (deckAnlz !== null && !isRetryableAnlzData(deckAnlz)) return deckAnlz;
 	if (stable_id === null) return deckAnlz;
-	const entry = _cache[stable_id];
+	const entry = _cache.get(stable_id);
 	if (entry === undefined || entry.status !== 'ready') return deckAnlz;
 	if (hasAnlzBeatgrid(entry.data)) return entry.data;
 	if (deckAnlz !== null && hasAnlzBeatgrid(deckAnlz)) return { ...entry.data, beatgrid: deckAnlz.beatgrid };
@@ -609,7 +608,7 @@ export async function fetchAnlzUntilSourceConfirmed(fetch: () => Promise<AnlzDat
  * hide the cold fetch this warm-up exists to pay for. Sampled 1 in 5 because
  * arrow-key row selection fires this in bursts. */
 export function ensureAnlz(stable_id: string): void {
-	const existing = _cache[stable_id];
+	const existing = _cache.get(stable_id);
 	if (existing !== undefined && !dueForEnsureRefetch(existing)) {
 		if (isAnlzEntryUsable(existing)) retouchAnlzReadyEntry(_cache, stable_id);
 		return;
@@ -639,7 +638,7 @@ export function setAnlzPrefetchShedRequest(fn: ((id: 'waveform-detail-bands') =>
  * `waveform-detail-bands` job while a deck plays under pressure.
  */
 export function ensureAnlzPrefetch(stable_id: string): void {
-	const existing = _cache[stable_id];
+	const existing = _cache.get(stable_id);
 	if (existing !== undefined && !dueForEnsureRefetch(existing)) {
 		if (isAnlzEntryUsable(existing)) retouchAnlzReadyEntry(_cache, stable_id);
 		return;
@@ -716,7 +715,7 @@ export function revalidateAnlz(stable_id: string): void {
 
 /** Pure read; undefined = never requested for this stable_id. */
 export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
-	return _cache[stable_id];
+	return _cache.get(stable_id);
 }
 
 /** Overwrites the shared cache entry with a known-fresh /anlz payload,
@@ -739,7 +738,7 @@ export function refreshAnlzCacheEntry(
  * this the pre-mutation entry stays 'ready' and keeps serving stale bytes to
  * a later load() forever (discussion_r3918817422). */
 export function invalidateAnlzCacheEntry(stable_id: string): void {
-	delete _cache[stable_id];
+	_cache.delete(stable_id);
 }
 
 /** Evicts every cached entry outright, all at once. Used when a change
@@ -749,7 +748,7 @@ export function invalidateAnlzCacheEntry(stable_id: string): void {
  * track not already cached and still serve it a stale hit later
  * (discussion_r3921666943). */
 export function invalidateAllAnlzCacheEntries(): void {
-	for (const stable_id of Object.keys(_cache)) delete _cache[stable_id];
+	_cache.clear();
 }
 
 /** Evicts every READY entry whose stamped `beatgrid_source` disagrees with
@@ -766,13 +765,13 @@ export function evictAnlzCacheEntriesServingOtherSource(
 	wantedSource: 'rekordbox' | 'own'
 ): boolean {
 	let evictedAny = false;
-	for (const [stable_id, entry] of Object.entries(_cache)) {
+	for (const [stable_id, entry] of [..._cache]) {
 		if (
 			entry.status === 'ready' &&
 			!isUsbTrackId(stable_id) &&
 			!anlzSourceMatchesSelection(entry.data, wantedSource)
 		) {
-			delete _cache[stable_id];
+			_cache.delete(stable_id);
 			evictedAny = true;
 		}
 	}
@@ -811,7 +810,7 @@ export function refreshAnalysisSourceDecks(
 /** Count of ready ANLZ entries for memory tracking. */
 export function anlzCacheEntryCount(): number {
 	let count = 0;
-	for (const entry of Object.values(_cache)) {
+	for (const entry of _cache.values()) {
 		if (entry.status === 'ready') count++;
 	}
 	return count;

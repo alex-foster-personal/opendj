@@ -10,9 +10,9 @@ export interface AnlzLruEntry {
 export const ANLZ_ESTIMATE_BYTES = 1.2 * 1024 * 1024;
 
 let _touchSeq = 0;
-let _boundCache: Record<string, AnlzLruEntry> | null = null;
+let _boundCache: Map<string, AnlzLruEntry> | null = null;
 
-export function bindAnlzCapCache(cache: Record<string, AnlzLruEntry>): void {
+export function bindAnlzCapCache(cache: Map<string, AnlzLruEntry>): void {
 	_boundCache = cache;
 }
 
@@ -28,12 +28,12 @@ export interface EvictAnlzLruOptions<T extends AnlzLruEntry> {
 }
 
 export function evictAnlzLru<T extends AnlzLruEntry>(
-	cache: Record<string, T>,
+	cache: Map<string, T>,
 	opts: EvictAnlzLruOptions<T>
 ): void {
 	const readyIds: string[] = [];
 	let readyBytes = 0;
-	for (const [id, entry] of Object.entries(cache)) {
+	for (const [id, entry] of cache) {
 		if (!opts.isReady(entry)) continue;
 		readyIds.push(id);
 		readyBytes += opts.estimateBytes(entry);
@@ -42,7 +42,7 @@ export function evictAnlzLru<T extends AnlzLruEntry>(
 		let victim: string | null = null;
 		let oldest = Infinity;
 		for (const id of readyIds) {
-			const entry = cache[id];
+			const entry = cache.get(id) as T;
 			const touched = entry.touched ?? 0;
 			if (touched < oldest) {
 				oldest = touched;
@@ -50,8 +50,8 @@ export function evictAnlzLru<T extends AnlzLruEntry>(
 			}
 		}
 		if (victim === null) break;
-		readyBytes -= opts.estimateBytes(cache[victim]);
-		delete cache[victim];
+		readyBytes -= opts.estimateBytes(cache.get(victim) as T);
+		cache.delete(victim);
 		readyIds.splice(readyIds.indexOf(victim), 1);
 	}
 }
@@ -89,7 +89,7 @@ export function holdAnlzEntryCap(cap: number): () => void {
 }
 
 export function applyAnlzCapsToCache<T extends AnlzLruEntry>(
-	cache: Record<string, T>,
+	cache: Map<string, T>,
 	isReady: (entry: T) => boolean
 ): void {
 	evictAnlzLru(cache, {
@@ -101,12 +101,12 @@ export function applyAnlzCapsToCache<T extends AnlzLruEntry>(
 }
 
 export function retouchAnlzReadyEntry<T extends AnlzLruEntry>(
-	cache: Record<string, T>,
+	cache: Map<string, T>,
 	stable_id: string
 ): void {
-	const entry = cache[stable_id];
+	const entry = cache.get(stable_id);
 	if (entry !== undefined && entry.status === 'ready') {
-		cache[stable_id] = { ...entry, touched: nextAnlzTouch() };
+		cache.set(stable_id, { ...entry, touched: nextAnlzTouch() });
 	}
 }
 
