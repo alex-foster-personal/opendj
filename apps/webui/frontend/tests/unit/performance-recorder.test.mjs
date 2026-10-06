@@ -179,6 +179,8 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(performanceRecorderRail, /<RecordInputPicker/);
 	assert.match(performanceRecorderRail, /import\('.\/RecordInputPicker.svelte'\)/);
 	assert.match(performanceRecorderRail, /await stopMasterTap\(\);\s*setRecorder\(await stopPerformanceRecorder\(recorder\)\)/);
+	// SET-12, found live: a status poll landing mid-stop attached a second tap.
+	assert.match(performanceRecorderRail, /if \(stopping \|\| master !== null/);
 	assert.match(performanceRecorderRail, /onrecord=\{\(\) => void togglePerformanceRecording\(\)\}/);
 	assert.match(recordInputPicker, /listRecorderDevices\(\)/);
 	assert.match(recordInputPicker, /Tracklist only \(no audio\)/);

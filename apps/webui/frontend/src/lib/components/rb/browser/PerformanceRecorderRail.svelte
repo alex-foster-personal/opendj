@@ -30,6 +30,9 @@
 	// SET-12: this page's master-mix tap while it feeds a `source: master`
 	// recording. Lazy for the same reason as the picker.
 	let master: Promise<{ stop(): Promise<void> } | null> | null = null;
+	// True while REC is stopping: a status read that lands mid-stop must not
+	// attach a second tap to the recording being stopped.
+	let stopping = false;
 
 	onMount(() => {
 		void refreshRecorderStatus();
@@ -57,7 +60,7 @@
 	// without it. A tap that cannot start stops the recording and says why.
 	function syncMasterTap(status: RecorderStatus): void {
 		const id = status.session_id;
-		if (master !== null || !status.owned || status.capture_source !== 'master' || id === null) return;
+		if (stopping || master !== null || !status.owned || status.capture_source !== 'master' || id === null) return;
 		master = import('$lib/sets/master-mix-capture')
 			.then((m) => m.startMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')))
 			.catch(async (error: unknown) => {
@@ -93,8 +96,13 @@
 		try {
 			recorder = await getRecorderStatus();
 			if (recorder.active) {
-				await stopMasterTap();
-				setRecorder(await stopPerformanceRecorder(recorder));
+				stopping = true;
+				try {
+					await stopMasterTap();
+					setRecorder(await stopPerformanceRecorder(recorder));
+				} finally {
+					stopping = false;
+				}
 				pushToast('Recording stopped and session finalized.', 'info');
 				return;
 			}
