@@ -47,7 +47,7 @@ test('queued, failed and unavailable read differently', () => {
 	const lines = card.analysisLines(s);
 	const byLane = Object.fromEntries(lines.map((l) => [l.lane, l]));
 	assert.equal(byLane.beatgrid.tone, 'working');
-	assert.match(byLane.beatgrid.text, /351 of 1,274 done/);
+	assert.match(byLane.beatgrid.text, /351 of 1,274 tracks done/);
 	assert.equal(byLane.key.tone, 'failed');
 	assert.equal(byLane.key.title, '4: LaneContractError: beat past end');
 	assert.equal(byLane.loudness.tone, 'unavailable');
@@ -168,8 +168,8 @@ test('a key gap is said as a count with its denominator, still not red', () => {
 test('mutation control: without source counts the old native-only line still renders', () => {
 	const old = summary({ beatgrid: { total: 2270, done: 16, missing: 2254 } });
 	const [line] = card.analysisLines(old).filter((l) => l.lane === 'beatgrid');
-	assert.equal(line.text, 'BPM and beatgrid: 16 of 2,270 done, the rest running in the background');
-	assert.notEqual(card.analysisLines(silver())[0].text, line.text);
+	assert.equal(line.text, 'BPM and beatgrid: 16 of 2,270 tracks done, the rest running in the background');
+	assert.notEqual(card.analysisLines(silver()).find((l) => l.lane === 'beatgrid').text, line.text);
 });
 
 test('each drain state reads as its own phrase', () => {
@@ -205,7 +205,7 @@ test('a source mix lists every source, largest first as the API ranks it', () =>
 	const s = silver();
 	s.analysis.lanes.beatgrid.usable = silverUsable(2270, { rekordbox: 2100, inferred: 98, mik: 50, open_dj: 22 });
 	assert.equal(
-		card.analysisLines(s)[0].text,
+		card.analysisLines(s).find((l) => l.lane === 'beatgrid').text,
 		'BPM: 2,270 of 2,270 tracks ready (2,100 from rekordbox, 98 inferred from file tags, 50 from Mixed In Key, 22 from Open DJ)'
 	);
 });
