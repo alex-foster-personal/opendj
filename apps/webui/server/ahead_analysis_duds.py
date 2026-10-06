@@ -6,6 +6,7 @@ with the file's size and mtime in ``state/ahead-analysis-duds.json``, so it
 survives a restart. It is retried only by "Retry failed analysis" or when the
 file changes.
 """
+
 from __future__ import annotations
 
 import json

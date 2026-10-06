@@ -9,6 +9,7 @@ Regression lines:
   - if two undecodable files close the lane for every other track then broken
   - if a dud is not retried after "Retry failed analysis" or a change to the file then broken
 """
+
 from __future__ import annotations
 
 import os
