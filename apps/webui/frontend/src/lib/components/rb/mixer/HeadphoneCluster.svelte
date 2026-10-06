@@ -198,12 +198,17 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
+<!-- The headphone mark sits inside the MIX and VOL captions ("[icon] MIX"), not beside the dial. -->
+{#snippet hpCaptionIcon()}
+	<svg class="hp-caption-icon" viewBox="0 0 12 12" width="8" height="8" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
+{/snippet}
+
 <div class="hp" data-performance-control="headphones">
 	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" showDelayMs={60}>
-		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
 			label="MIX"
+			captionLead={hpCaptionIcon}
 			accessibleLabel="Headphone CUE to MASTER mix"
 			value={headphoneState.mix}
 			onchange={onmix}
@@ -213,10 +218,10 @@
 		/>
 	</ControlExplainer>
 	<ControlExplainer title="VOL" bullets={levelBullets} showDelayMs={60}>
-		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-level')}
 			label="VOL"
+			captionLead={hpCaptionIcon}
 			accessibleLabel="Headphone cue gain"
 			value={headphoneState.level}
 			onchange={onlevel}
@@ -417,11 +422,6 @@
 		align-items: center;
 		gap: 4px;
 		min-width: 0;
-	}
-	.hp-control-icon {
-		font-size: 9px;
-		line-height: 1;
-		margin-right: 2px;
 	}
 	.hp-btn {
 		font: inherit;

@@ -13,7 +13,7 @@
 	 * bass dipping through a crossover. Sensitivity lives in KNOB_CFG, not here,
 	 * so horizontal drag stays the fine-adjust axis.
 	 */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, type Snippet } from 'svelte';
 	import { createDeferredClickGuard } from '$lib/rb/deferred-click';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
@@ -57,6 +57,8 @@
 		resetValue?: number;
 		/** Optional delayed single-click action (suppressed by drag and double-click). */
 		onsingleclick?: () => void;
+		/** Optional mark rendered inside the caption, before the label text ("[icon] MIX"). */
+		captionLead?: Snippet;
 	}
 
 	let {
@@ -70,7 +72,8 @@
 		size = 30,
 		accentColor,
 		resetValue = 0.5,
-		onsingleclick
+		onsingleclick,
+		captionLead
 	}: Props = $props();
 
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
@@ -279,7 +282,7 @@
 	{#if takeoverGhost !== null}
 		<span class="sr-only">Hardware at {(takeoverGhost.value * 100).toFixed(0)}%; move to {(takeoverGhost.target * 100).toFixed(0)}% to pick up.</span>
 	{/if}
-	<span class="label">{label}</span>
+	<span class="label">{#if captionLead}<span class="label-lead">{@render captionLead()}</span>{/if}{label}</span>
 </div>
 
 <style>
@@ -374,6 +377,12 @@
 		letter-spacing: 0.04em;
 		color: var(--rb-text-dim);
 		line-height: 1;
+	}
+	.label-lead {
+		display: inline-block;
+		margin-right: 2px;
+		vertical-align: middle;
+		line-height: 0;
 	}
 	.knob.knob-stem-accent .indicator:not(.white):not(.rainbow) {
 		stroke: var(--knob-accent-color);
