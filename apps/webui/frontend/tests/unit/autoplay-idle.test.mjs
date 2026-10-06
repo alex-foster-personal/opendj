@@ -13,6 +13,9 @@
  *     deck starts playing [⛔️ if a deck playing re-enables it].
  *   [if] a PLAY-08 stall is up when idle passes the threshold [then] the banner stays [⛔️ if lost].
  *   [if] bug #58: the ENGINE stopped the decks [then] no idle clock runs and no stall is raised.
+ *   [if] AutoPlay runs out of candidates (no-compatible-track) and the decks then run to their ends
+ *     [then] AutoPlay is still enabled and the stall names the exhaustion [⛔️ if it reads "disabled"]
+ *     (silver, Tue 6 Oct 2026 09:11Z).
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -31,7 +34,8 @@ const ENTRY = [
 	"export { deckStates } from '$lib/rb/audio-engine.svelte';",
 	"export { readAutoPlayStall, noteAutoPlayExhaustion } from '$lib/rb/autoplay-stall.svelte';",
 	"export { clearEngineRecoveryStop, engineRecoveryStopReason, markEngineRecoveryStop } from '$lib/rb/engine-recovery-stop';",
-	"export { AUTO_PLAY_IDLE_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';"
+	"export { AUTO_PLAY_IDLE_MS, AUTO_PLAY_SILENT_STALL_MS, resetAutoPlayIdleClock } from '$lib/rb/autoplay-idle';",
+	"export { setAutoPlayTrackFeed } from '$lib/rb/auto-play';"
 ].join('\n');
 
 function settle() {
@@ -255,5 +259,33 @@ test('RUNNING it: an engine-recovery stop raises no idle stall, and the tag clea
 		playMaster(mod);
 		await settle();
 		assert.equal(mod.engineRecoveryStopReason(), null, 'a deck playing again ends the recovery stop');
+	});
+});
+
+// REQ: PLAY-18
+test('RUNNING it: exhaustion (no-compatible-track) then the decks running out leaves AutoPlay enabled (silver 09:11Z)', async () => {
+	await withAutoPlay(async (mod) => {
+		// The only feed row is the track already playing, so the real picker finds
+		// nothing and the controller raises its own exhaustion stall.
+		mod.setAutoPlayTrackFeed('exhaustion-fixture', [
+			{ stable_id: 'src-1', key: '8A', bpm: 124, file_exists: true, title: 'Src', artist: 'A' }
+		]);
+		Object.assign(mod.deckStates[1], {
+			stable_id: 'src-1', playing: true, audible: true, is_master: true, duration_ms: 300_000, position_ms: 295_000
+		});
+		await settle();
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-compatible-track', 'control: the controller itself raised the exhaustion stall');
+		// Both decks at their exact ends, as in the silver snapshot.
+		mod.deckStates[1].position_ms = 300_000;
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(LONG_IDLE_MS);
+		await settle();
+		assert.equal(mod.uiPrefs.auto_play_enabled, true, 'if exhaustion plus idle writes the toggle off then broken');
+		const status = mod.readAutoPlayMirrorStatus();
+		assert.equal(status.autoplay_enabled, true);
+		assert.equal(status.autoplay_armed, false);
+		assert.notEqual(status.autoplay_disarm_reason, 'disabled', 'an exhaustion stop must never read like a user stop');
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-compatible-track', 'the exhaustion explanation survives the idle period');
 	});
 });
