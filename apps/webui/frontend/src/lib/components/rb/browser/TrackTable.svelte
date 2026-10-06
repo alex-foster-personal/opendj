@@ -1277,8 +1277,9 @@
 
 	// LIBM-172: cover images wait for the boot library index (or 8 s), so ~30
 	// artwork reads do not compete with it on the single-worker engine.
-	let artworkReleased = $state(!bootListingWalkInFlight());
-	if (!artworkReleased) void whenBootListingWalkSettled(8_000).then(() => (artworkReleased = true));
+	const artworkHeldAtMount = bootListingWalkInFlight();
+	let artworkReleased = $state(!artworkHeldAtMount);
+	if (artworkHeldAtMount) void whenBootListingWalkSettled(8_000).then(() => (artworkReleased = true));
 
 	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
 		return (
