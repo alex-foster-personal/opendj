@@ -381,3 +381,27 @@ test('a master start is pushed to the leader page as an agent order the executor
 	assert.match(rail, /m\.ensureMasterMixCapture\(id,/);
 	assert.doesNotMatch(rail, /startMasterMixCapture/, 'the rail must not start a second tap');
 });
+
+test('once a recording is stopped the tap never re-posts a chunk (seen live: seq 0 sent 21 times)', async () => {
+	const graph = fakeGraph();
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const posted = [];
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	const post = async (url) => {
+		posted.push(new URL(url).searchParams.get('seq'));
+		await gate;
+		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), { status: 200 });
+	};
+	const handle = await capture.startMasterMixCapture('S', assert.fail, post);
+	const [worklet] = graph.worklets;
+	worklet.port.emit(chunk(100));
+	worklet.port.emit(chunk(100));
+	worklet.port.emit(chunk(100));
+	const stopping = handle.stop();
+	await settle();
+	release();
+	await stopping;
+	for (let i = 0; i < 5; i += 1) await settle();
+	assert.deepEqual(posted, ['0'], 'the dropped answer ends the tap; nothing is sent again');
+});

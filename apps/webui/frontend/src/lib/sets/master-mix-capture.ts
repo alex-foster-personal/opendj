@@ -109,6 +109,9 @@ export async function startMasterMixCapture(
 	}
 
 	function end(): void {
+		// Always drop what is queued, even when already stopped: a queue left
+		// behind is re-posted by the next kick (SET-12, seen live under load).
+		queue.length = 0;
 		if (stopped) return;
 		stopped = true;
 		stats.tap_stopped_ms = Date.now();
@@ -119,6 +122,7 @@ export async function startMasterMixCapture(
 	}
 
 	function fail(reason: string): void {
+		queue.length = 0;
 		if (failed !== null || stopped) return;
 		failed = reason;
 		clearInterval(watch);
@@ -129,7 +133,7 @@ export async function startMasterMixCapture(
 	}
 
 	async function pump(): Promise<void> {
-		while (queue.length > 0 && failed === null) {
+		while (queue.length > 0 && failed === null && !stopped) {
 			const chunk = queue[0];
 			let response: Response;
 			try {
@@ -174,7 +178,7 @@ export async function startMasterMixCapture(
 	function kick(): void {
 		sending ??= pump().finally(() => {
 			sending = null;
-			if (queue.length > 0 && failed === null) kick();
+			if (queue.length > 0 && failed === null && !stopped) kick();
 		});
 	}
 
