@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from apps.webui.server.headphone_reports import client_id_of, headphone_reports
+from apps.webui.server.routes.commands import order_loop_state
 
 router = APIRouter(prefix="/state", tags=["agent-state"])
 _LOG = logging.getLogger(__name__)
@@ -355,4 +356,10 @@ async def get_ui_mirror(request: Request) -> dict[str, Any] | JSONResponse:
     mirror = _mirror_store(request)
     if mirror is None:
         return JSONResponse(status_code=409, content={"client_open": False})
-    return deepcopy(mirror)
+    document = deepcopy(mirror)
+    # AGENT-22: engine-observed, never page-reported: a dead order loop keeps
+    # publishing this mirror, so only the engine can say it stopped asking.
+    document["last_order_poll_at"], document["order_loop_state"] = order_loop_state(
+        request, datetime.now(UTC)
+    )
+    return document

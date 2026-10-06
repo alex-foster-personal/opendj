@@ -577,6 +577,12 @@ def _state_text(mirror: dict[str, Any], prefs: dict[str, Any] | None = None) -> 
         f"context: {mirror.get('context_state', 'absent')}",
         f"open: {mirror.get('client_open', 'absent')}",
     ]
+    # AGENT-22: engine-observed; "stale" means agent orders will not run here.
+    loop_state = mirror.get("order_loop_state")
+    if loop_state is None:
+        lines.append("order loop: absent")
+    else:
+        lines.append(f"order loop: {loop_state} (last poll {mirror.get('last_order_poll_at')})")
     master = mirror.get("master")
     if isinstance(master, dict):
         lines.append(

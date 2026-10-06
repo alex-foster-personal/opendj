@@ -24,7 +24,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -134,6 +135,10 @@ class _OrderBroker:
     def discard(self, order_id: str) -> None:
         self.pending.pop(order_id, None)
 
+    def running(self) -> int:
+        """Orders a page has claimed and not yet answered (a ramp can run a minute)."""
+        return sum(1 for p in self.pending.values() if p.claimed and not p.result.done())
+
 
 def _broker(request: Request) -> _OrderBroker:
     broker = getattr(request.app.state, "agent_command_broker", None)
@@ -143,6 +148,52 @@ def _broker(request: Request) -> _OrderBroker:
     if not isinstance(broker, _OrderBroker):
         raise TypeError("app.state.agent_command_broker has an invalid type")
     return broker
+
+
+@dataclass
+class OrderPollLiveness:
+    """AGENT-22: when the page's order loop last asked for an order.
+
+    The page's loop is the only thing that runs agent orders, and a dead one
+    is silent (the mirror keeps publishing). The engine observes the loop
+    where its polls land: ``last_at`` moves when a claim arrives and when it
+    is answered, and ``waiting`` counts claims held open right now.
+    """
+
+    last_at: datetime | None = None
+    waiting: int = 0
+
+
+#: A live loop re-claims within milliseconds of each answer, so a page with no
+#: claim held, no order running and no poll for this long has a dead loop.
+ORDER_LOOP_STALE_MS = 10_000
+
+OrderLoopState = Literal["polling", "running_order", "stale", "never_polled"]
+
+
+def order_loop_state(request: Request, now: datetime) -> tuple[str | None, OrderLoopState]:
+    """AGENT-22: ``(last_order_poll_at, order_loop_state)`` for the mirror."""
+    liveness = order_poll_liveness(request)
+    if liveness.last_at is None:
+        return None, "never_polled"
+    last = liveness.last_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    if liveness.waiting > 0:
+        return last, "polling"
+    if _broker(request).running() > 0:
+        return last, "running_order"
+    if (now - liveness.last_at).total_seconds() * 1000 > ORDER_LOOP_STALE_MS:
+        return last, "stale"
+    return last, "polling"
+
+
+def order_poll_liveness(request: Request) -> OrderPollLiveness:
+    liveness = getattr(request.app.state, "order_poll_liveness", None)
+    if liveness is None:
+        liveness = OrderPollLiveness()
+        request.app.state.order_poll_liveness = liveness
+    if not isinstance(liveness, OrderPollLiveness):
+        raise TypeError("app.state.order_poll_liveness has an invalid type")
+    return liveness
 
 
 def page_is_open(request: Request) -> bool:
@@ -358,7 +409,14 @@ async def next_command(
         )
     if not _page_is_open(request):
         return JSONResponse(status_code=409, content={"client_open": False})
-    claimed = await _broker(request).claim_within(wait_ms / 1000, request.is_disconnected)
+    liveness = order_poll_liveness(request)
+    liveness.last_at = datetime.now(UTC)
+    liveness.waiting += 1
+    try:
+        claimed = await _broker(request).claim_within(wait_ms / 1000, request.is_disconnected)
+    finally:
+        liveness.waiting -= 1
+        liveness.last_at = datetime.now(UTC)
     if claimed is None and not _page_is_open(request):
         # The mirror was closed while the request was held.
         return JSONResponse(status_code=409, content={"client_open": False})

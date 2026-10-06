@@ -20,7 +20,11 @@
  *   forever on a page that is about to re-register a second later.
  * [if] a 409 does not stand the poll down [then ⛔] it re-asks 20x/s and turns
  *   one console error into hundreds.
- * [if] any OTHER non-2xx is absorbed [then ⛔] a real broken route is silent.
+ * [if] any OTHER non-2xx is absorbed silently [then ⛔] a real broken route is silent.
+ * [if] any non-2xx, on the claim OR the result POST, ends the loop [then ⛔]
+ *   every agent command on this page (play, autoplay, the watchdog's resume)
+ *   stops with no visible symptom (P1, found on SET-12 #5572: a withdrawn
+ *   order's result got 404 and the loop threw). Only uninstall ends it.
  * [if] the uninstall does not stop the loop [then ⛔] it outlives /performance
  *   and polls an engine the route has already told the page is gone.
  *
@@ -147,17 +151,100 @@ test('a 409 stands the poll down as an expected state, and never throws', async 
 	assert.ok(calls.length > afterConflict, 'a 409 pauses the loop, it does not kill it');
 });
 
-test('any other non-2xx is raised, never absorbed', async () => {
+/** Capture console.warn/error lines while `body` runs. */
+async function capturingConsole(body) {
+	const seen = { warn: [], error: [] };
+	const real = { warn: console.warn, error: console.error };
+	console.warn = (message) => seen.warn.push(String(message));
+	console.error = (message) => seen.error.push(String(message));
+	try {
+		await body();
+	} finally {
+		console.warn = real.warn;
+		console.error = real.error;
+	}
+	return seen;
+}
+
+test('a claim 500 is loud once and the loop keeps polling, never dies', async () => {
 	const page = registration(true);
 	respond = () => json(500, { detail: 'broker exploded' });
 	let running = true;
+	let loop;
+	const seen = await capturingConsole(async () => {
+		loop = orders.pollAgentOrders(page, () => {}, () => running);
+		await new Promise((resolve) => setTimeout(resolve, orders.CLAIM_RETRY_MS * 2 + 300));
+		running = false;
+		await loop;
+	});
+	assert.ok(calls.length >= 2, `the loop asked again after the 500, saw ${calls.length} claims`);
+	assert.equal(seen.error.filter((l) => l.includes('agent order poll failed: 500')).length, 1, 'loud, once per outage');
+	// It recovers on its own once the engine answers again.
+	respond = heldEmpty;
+});
 
-	await assert.rejects(
-		() => orders.pollAgentOrders(page, () => {}, () => running),
-		/agent order poll failed: 500/,
-		'a 500 is a real defect and must reach the client error log'
-	);
-	running = false;
+/** One order, then held-empty claims; the result POST answers `resultAnswer`. */
+function oneOrderThen(resultAnswer) {
+	let served = false;
+	const resultPosts = [];
+	respond = (url) => {
+		if (url.endsWith('/result')) {
+			resultPosts.push(url);
+			return resultAnswer();
+		}
+		if (!served) {
+			served = true;
+			return json(200, { id: 'o1', kind: 'single', payload: { type: 'play', deck: 1, playing: true } });
+		}
+		return heldEmpty();
+	};
+	return resultPosts;
+}
+
+async function runLoopBriefly() {
+	const page = registration(true);
+	let running = true;
+	let loop;
+	const seen = await capturingConsole(async () => {
+		loop = orders.pollAgentOrders(page, () => {}, () => running);
+		await hops(40);
+		await settle();
+		running = false;
+		await loop;
+	});
+	return seen;
+}
+
+for (const [name, answer, level] of [
+	['404 (the engine withdrew the order)', () => json(404, { detail: 'unknown command order' }), 'info'],
+	['410 (the engine withdrew the order)', () => json(410, { detail: 'gone' }), 'info'],
+	['500', () => json(500, { detail: 'broker exploded' }), 'warn'],
+	['network error', () => { throw new TypeError('Load failed'); }, 'warn']
+]) {
+	test(`a result POST answered ${name} leaves the loop polling (${level})`, async () => {
+		const resultPosts = oneOrderThen(answer);
+		const seen = await runLoopBriefly();
+		assert.deepEqual(resultPosts, ['/api/v1/commands/o1/result']);
+		const after = calls.indexOf('/api/v1/commands/o1/result');
+		assert.ok(calls.slice(after + 1).filter((u) => u === NEXT).length >= 1, 'the loop claimed again after the result');
+		const lines = level === 'info' ? infos : seen.warn;
+		assert.equal(lines.filter((l) => l.includes('agent order o1')).length, 1, `one ${level} line naming the order`);
+		if (level === 'info') assert.equal(seen.warn.length + seen.error.length, 0, 'an expected withdrawal is not a warning');
+	});
+}
+
+test('an order that fails still reports failed: surviving never hides a failed order', async () => {
+	const posted = [];
+	oneOrderThen(() => json(202, { accepted: true }));
+	const fakeFetch = globalThis.fetch;
+	globalThis.fetch = async (url, init) => {
+		if (String(url).endsWith('/result')) posted.push(JSON.parse(init.body));
+		return fakeFetch(url, init);
+	};
+	await runLoopBriefly();
+	assert.equal(posted.length, 1);
+	// No performance IPC under node: the step fails, and the result says so.
+	assert.equal(posted[0].steps[0].status, 'failed');
 });
 
 test('an unreachable engine does not kill the loop or reject', async () => {
