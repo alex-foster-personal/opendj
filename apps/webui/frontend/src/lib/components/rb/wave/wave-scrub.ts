@@ -17,6 +17,7 @@
  */
 
 import {
+	positionWithinGridSpan,
 	quantizeToNearestBeat,
 	quantizeToNearestDownbeat,
 	validateBeatGrid
@@ -56,6 +57,8 @@ export function snapWaveTargetMs(
 	} catch {
 		return targetMs;
 	}
+	// Off the grid there is no line to snap to (SEEK-GRID-01, #5601).
+	if (!positionWithinGridSpan(beats, targetMs / 1000)) return targetMs;
 	try {
 		const snappedSec =
 			mode === 'beat'

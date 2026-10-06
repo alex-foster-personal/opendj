@@ -527,6 +527,19 @@ function _walkBeatGrid(beats: readonly AnlzBeat[]): void {
 	}
 }
 
+/** True when `positionSec` lies within one beat interval of the grid: from a
+ * beat before the first beat to a beat after the last, each edge measured by
+ * its own outermost interval. A grid of fewer than two beats has no interval,
+ * so every position counts as on it (the old snap). */
+export function positionWithinGridSpan(beats: readonly AnlzBeat[], positionSec: number): boolean {
+	if (beats.length < 2) return true;
+	const first = beats[0].t;
+	const last = beats[beats.length - 1].t;
+	const before = first - (beats[1].t - first);
+	const after = last + (last - beats[beats.length - 2].t);
+	return positionSec >= before && positionSec <= after;
+}
+
 /** Return the exact t of the nearest beat. Equidistant ties choose earlier. */
 export function quantizeToNearestBeat(
 	beats: readonly AnlzBeat[],
@@ -573,12 +586,21 @@ export function quantizeToNearestDownbeat(
  * failed downbeat detection) degrades to the nearest available beat, or to
  * that single downbeat, rather than throwing: an approximate grid line beats
  * refusing to seek/loop at all.
+ *
+ * A position more than one beat outside the grid is returned unchanged
+ * (SEEK-GRID-01, #5601): there is no beat there to snap to. Clamping it put a
+ * 156 s seek on the last beat of a grid that stopped at 36 s while the audio
+ * ran to 180 s. Every quantized seek, CUE set and manual loop endpoint goes
+ * through here, so all of them get the same rule.
  */
 export function quantizeToNearestGridBeat(
 	beats: readonly AnlzBeat[],
 	positionSec: number,
 	gridBeats: 1 | 4 | 8
 ): number {
+	validateBeatGrid(beats);
+	_assertFiniteNonNegative('positionSec', positionSec);
+	if (!positionWithinGridSpan(beats, positionSec)) return positionSec;
 	if (gridBeats === 1) return quantizeToNearestBeat(beats, positionSec);
 	validateBeatGrid(beats);
 	_assertFiniteNonNegative('positionSec', positionSec);

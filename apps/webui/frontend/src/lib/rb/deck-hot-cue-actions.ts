@@ -1,5 +1,5 @@
 import type { HotCueMutation } from '$lib/rb/api-rb';
-import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
+import { quantizeToNearestGridBeat } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import { deckHasTrustedBeatGrid, effectiveQuantize } from '$lib/player/grid-features';
@@ -42,7 +42,7 @@ export function createDeckHotCueActions(
 		const validPosition = Number.isFinite(ms) && ms >= 0;
 		const beats = deck.anlz?.beatgrid.beats;
 		if (validPosition && (fixedPositionMs === undefined || quantizeFixedPosition) && effectiveQuantize(deck) && beats !== undefined) {
-			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
+			ms = Math.round(quantizeToNearestGridBeat(beats, ms / 1000, 1) * 1000); // off-grid positions are kept (SEEK-GRID-01)
 		}
 		if (Number.isFinite(ms) && ms >= 0) ms = Math.round(ms);
 		try {
