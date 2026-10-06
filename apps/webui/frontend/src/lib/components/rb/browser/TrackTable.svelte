@@ -235,7 +235,7 @@
 	function keyCompatStyle(key: string | null): string | undefined {
 		const base = keyCellStyle(key);
 		if (!keyCompat(key) || masterKeyColor === null) return base;
-		const border = `box-shadow: inset 0 0 0 1px ${masterKeyColor}`;
+		const border = `--key-compat-color: ${masterKeyColor}`;
 		return base === undefined ? border : `${base};${border}`;
 	}
 
@@ -2833,6 +2833,16 @@
 		justify-content: center;
 		padding: 0 2px;
 	}
+	.h-plays .th-label {
+		justify-content: center;
+	}
+	/* The header glyph has a viewBox and no intrinsic size, so without an
+	 * explicit box it stretches to fill its flex label. */
+	.plays-icon {
+		flex: 0 0 auto;
+		width: 10px;
+		height: 10px;
+	}
 	.c-plays {
 		font-size: 10px;
 	}
@@ -2912,6 +2922,19 @@
 		padding-left: 4px;
 		padding-right: 4px;
 	}
+	/* Compatible-key ring as an overlay ABOVE the row separator
+	   (tbody tr::after, z-index 4), so all four sides show; an inset
+	   box-shadow on the td itself lost its bottom edge under it. A skin may
+	   set --rb-key-compat-border (mono-dev: white) over the master key hue. */
+	.c-key.key-compat::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		border-radius: 2px;
+		box-shadow: inset 0 0 0 1px var(--rb-key-compat-border, var(--key-compat-color));
+		pointer-events: none;
+	}
 	.c-key.key-inert {
 		color: var(--rb-text-dim);
 		font-size: 0.85em;
@@ -2932,9 +2955,11 @@
 		background: color-mix(in srgb, #a855f7 12%, transparent);
 	}
 	.c-bpm.bpm-compatible { box-shadow: inset 0 0 0 1px var(--rb-green); }
-	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px #d45a4f; }
-	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px #e14238; }
-	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px #ff2f25; }
+	/* Skin hook: Gothic (mono-dev) drops the red ring (--rb-bpm-mismatch-ring,
+	 * theme.css); the inline heat colour already dims an off-tempo number. */
+	.c-bpm.bpm-warn { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #d45a4f); }
+	.c-bpm.bpm-danger { box-shadow: inset 0 0 0 1px var(--rb-bpm-mismatch-ring, #e14238); }
+	.c-bpm.bpm-critical { box-shadow: inset 0 0 0 2px var(--rb-bpm-mismatch-ring, #ff2f25); }
 	tr.rb-row-paired td {
 		box-shadow: inset 0 -2px 0 color-mix(in srgb, #a855f7 85%, transparent);
 	}

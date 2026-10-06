@@ -13,6 +13,7 @@
     "test:unit:all": "svelte-kit sync && node --experimental-strip-types --test --test-reporter=tap --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit-unit-all.xml --test-concurrency=4 --test-timeout=120000 tests/unit/*.test.mjs tests/unit/slow/*.test.mjs",
     "test:e2e": "uv sync --locked --extra dev --extra analysis && uv run --no-sync python -m apps.webui.port_config claim && playwright test",
     "test:live:wave-raf": "node tests/live/wave-row-raf-attribution.mjs",
+    "test:live:playhead-smoothness": "node tests/live/playhead-smoothness.mjs",
     "test:live:device-latency-floor": "node tests/live/device-latency-floor.mjs",
     "test:live:stem-decode-workers": "node tests/live/stem-decode-workers.mjs",
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",

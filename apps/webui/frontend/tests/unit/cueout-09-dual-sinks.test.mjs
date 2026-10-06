@@ -66,13 +66,15 @@ test('dualSinkAssignment auto-pins master to speakers when cue is headphones and
 		}),
 		{ masterId: 'speakers', cueId: 'hp', autoPinnedMaster: false }
 	);
+	// CUEOUT-25: a MASTER equal to the cue device is the silent-room defect
+	// (silver, Mon 5 Oct 2026), so it is re-picked rather than kept.
 	assert.deepEqual(
 		headphones.dualSinkAssignment({
 			outputs: WIRED,
 			selectedCueId: 'hp',
 			selectedMasterId: 'hp'
 		}),
-		{ masterId: 'hp', cueId: 'hp', autoPinnedMaster: false }
+		{ masterId: 'speakers', cueId: 'hp', autoPinnedMaster: true }
 	);
 });
 

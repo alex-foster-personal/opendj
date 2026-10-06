@@ -1,0 +1,407 @@
+{
+ "_provenance": "REAL timings: GET /api/v1/tracks/c78318d3b5302a60ecd6f05ea47c90e82fa2ad13/lyrics (source lrclib, 100 lines), captured from the live daemon Mon 5 Oct 2026. Line TEXT is masked (every non-space character replaced by 'x', length and word breaks kept) so no lyric text is committed; the lane math depends only on start_ms and text length. Chosen as the densest cached track: 99 of 100 adjacent lines collide on one row at WAVE_WINDOW_S zoom.",
+ "stable_id": "c78318d3b5302a60ecd6f05ea47c90e82fa2ad13",
+ "source": "lrclib",
+ "lines": [
+  {
+   "start_ms": 150,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 2060,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 3210,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 4450,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 5850,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 7130,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 8380,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 9550,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 11590,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 12820,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 14040,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 15480,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 16550,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 17640,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 20030,
+   "text": "xxxxxxxx xxx xxxxx xxxx xxxxx xxx"
+  },
+  {
+   "start_ms": 22180,
+   "text": "x xxxxx xxxxxx x xxxxx xxxxx xxxx xxxx xxxx xxx"
+  },
+  {
+   "start_ms": 24850,
+   "text": "xxxxxxxx xxxx xxxx xx xxx xxxx xx xx xx"
+  },
+  {
+   "start_ms": 27450,
+   "text": "xxxx xx xx xxx xxx xxxx"
+  },
+  {
+   "start_ms": 29370,
+   "text": "xxx xx x xxxx xxxx xxxx xxx"
+  },
+  {
+   "start_ms": 31620,
+   "text": "xxx xxx xxxxxx xxx xxxxx xx xx xxxxxx"
+  },
+  {
+   "start_ms": 34310,
+   "text": "xxxxxxxx xxx xxxx xx xxxxx xxxx xx xxxx xx"
+  },
+  {
+   "start_ms": 36910,
+   "text": "xxxx xx xxxx xxx xxxxx"
+  },
+  {
+   "start_ms": 38340,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 40460,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 41420,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 42720,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 44330,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 45310,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 46770,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 48020,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 50030,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 51230,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 52480,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 53950,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 55190,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 56340,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 57690,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 59570,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 60880,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 62080,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 62900,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 64730,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 66170,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 67260,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 69160,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 70410,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 71640,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 73120,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 74370,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 75520,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 77550,
+   "text": "xxxxxxxx xxx xxxxx xxxx xxx xxxxx xxx"
+  },
+  {
+   "start_ms": 79680,
+   "text": "x xxxxx xxxxxx x xxxxx xxxxx xxxx xxxxx xxxx xx"
+  },
+  {
+   "start_ms": 82430,
+   "text": "xxxxxxxx xxxx xxxx xx xxx xxxx xx xx xx"
+  },
+  {
+   "start_ms": 84990,
+   "text": "xxxx xx xx xxx xxx xxxx"
+  },
+  {
+   "start_ms": 87150,
+   "text": "xxx xx x xxxx xxxx xxxx xxx"
+  },
+  {
+   "start_ms": 89460,
+   "text": "xx xxx xxxxxx xx xxx xxxxx xxx xx xxxxx"
+  },
+  {
+   "start_ms": 91810,
+   "text": "xxxxxxxx xxx xxxx xx xxxxx xxxx xx xxxx xx"
+  },
+  {
+   "start_ms": 94680,
+   "text": "xxxx xx xxxx xxx xx xxxx"
+  },
+  {
+   "start_ms": 96170,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 98190,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 99310,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 100500,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 101920,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 103090,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 104260,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 105420,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 107630,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 108950,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 110000,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 111410,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 112740,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 113900,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 115340,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 117120,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 118470,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 119610,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 121230,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 122420,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 123430,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 124910,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 126840,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 128180,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 129300,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 130780,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 131990,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 133160,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 134540,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 136490,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 137640,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 138910,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 140500,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 141650,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 142720,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 144120,
+   "text": "xxxx xx x xxxx xxx xx xxxx xx xxxxx"
+  },
+  {
+   "start_ms": 145940,
+   "text": "xxx xxx xxxx xxxx xxxxxxx"
+  },
+  {
+   "start_ms": 147380,
+   "text": "xxx xxxx xxxx xxxx xxxxx"
+  },
+  {
+   "start_ms": 148340,
+   "text": "xxxxx xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 150080,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 151140,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  },
+  {
+   "start_ms": 152340,
+   "text": "xxxxxxxxxx xxxxxxxxx"
+  }
+ ]
+}

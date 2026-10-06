@@ -9,8 +9,8 @@
 {#if issues.length > 0}
 	<span class="minor-issue-square" title={title} aria-label={title} data-testid="minor-issue-square">
 		<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
-			<rect x="1" y="1" width="8" height="8" rx="1" fill="var(--rb-issue-square, #e8a838)" />
-			<path d="M5 2.5v3.2M5 7.2h.01" stroke="#1a1a1a" stroke-width="1.1" stroke-linecap="round" />
+			<rect class="mis-fill" x="1" y="1" width="8" height="8" rx="1" />
+			<path class="mis-ink" d="M5 2.5v3.2M5 7.2h.01" stroke-width="1.1" stroke-linecap="round" />
 		</svg>
 	</span>
 {/if}
@@ -20,5 +20,13 @@
 		display: inline-flex;
 		margin-left: 2px;
 		vertical-align: middle;
+	}
+	/* Skin hooks (theme.css): Gothic (mono-dev) paints a light gray square with a
+	 * black '!'. In CSS, not SVG attributes, so the var() resolves everywhere. */
+	.mis-fill {
+		fill: var(--rb-issue-square, #e8a838);
+	}
+	.mis-ink {
+		stroke: var(--rb-issue-square-ink, #1a1a1a);
 	}
 </style>

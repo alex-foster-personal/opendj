@@ -165,7 +165,11 @@ def test_track_out_lyrics_available_for_asr_cache(
         Lyrics(
             stable_id="track-with-asr-lyrics",
             source="asr",
-            lines=(LyricLine(start_ms=500, text="hello world"),),
+            # Two real lines: LYRICS-12 serves fewer as no-lyrics.
+            lines=(
+                LyricLine(start_ms=500, text="hello world"),
+                LyricLine(start_ms=3000, text="hello again"),
+            ),
         ),
     )
 

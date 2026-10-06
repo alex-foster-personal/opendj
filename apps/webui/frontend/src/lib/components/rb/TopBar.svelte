@@ -35,10 +35,11 @@
 		setDeckLayoutMode,
 		describeTwoDeckToggle,
 		toggleLyricsGlobal,
-		toggleTheme,
+		cycleUiSkin,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
+	import { skinCycleTitle } from '$lib/rb/ui-skin';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
@@ -100,6 +101,7 @@
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
+	import MainOutputFaultBanner from './MainOutputFaultBanner.svelte';
 	import {
 		APP_MODES,
 		LOCAL_STEMS_EXECUTOR_FLAG_ID,
@@ -271,9 +273,10 @@
 		return WAVE_ICON_XS.map((x, i) => `${x},${row.cy + row.offsets[i]}`).join(' ');
 	}
 
-	/** Gear (settings) icon: 8 square teeth radiating off the ring so the
-	 * glyph reads as a mechanical cog, not a sun with rays. */
-	const GEAR_TOOTH_ANGLES: number[] = [0, 45, 90, 135, 180, 225, 270, 315];
+	/** Settings gear: the industry-standard cog outline (Lucide "settings",
+	 * ISC licence). The earlier 8 square teeth read as a sun at 12px. */
+	const SETTINGS_GEAR_PATH =
+		'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z';
 
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
@@ -719,15 +722,19 @@
 	<button
 		type="button"
 		class="tb-icon theme-toggle topbar-slot-pinned"
-		class:on={uiPrefs.theme === 'light'}
-		title={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-		onclick={toggleTheme}
+		class:on={uiPrefs.ui_skin === 'light'}
+		data-skin-current={uiPrefs.ui_skin}
+		title={skinCycleTitle(uiPrefs.ui_skin)}
+		aria-label={skinCycleTitle(uiPrefs.ui_skin)}
+		onclick={cycleUiSkin}
 	>
-		{#if uiPrefs.theme === 'dark'}
-			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
-		{:else}
+		<!-- One glyph per skin: moon = default dark, half disc = Gothic, sun = Light. -->
+		{#if uiPrefs.ui_skin === 'default'}
 			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M9.8 8.1A4.5 4.5 0 0 1 3.9 2.2 4.6 4.6 0 1 0 9.8 8.1Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
+		{:else if uiPrefs.ui_skin === 'mono-dev'}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2Z" fill="currentColor" /></svg>
+		{:else if uiPrefs.ui_skin === 'light'}
+			<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.4" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M6 0.8v1.3M6 9.9v1.3M0.8 6h1.3M9.9 6h1.3M2.3 2.3l.9.9M8.8 8.8l.9.9M9.7 2.3l-.9.9M3.2 8.8l-.9.9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" /></svg>
 		{/if}
 	</button>
 
@@ -738,18 +745,20 @@
 		aria-label="Open settings"
 		onclick={() => openSettings()}
 	>
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<circle cx="6" cy="6" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3" />
-			{#each GEAR_TOOTH_ANGLES as angle (angle)}
-				<rect
-					x="5.15"
-					y="0.6"
-					width="1.7"
-					height="1.7"
-					fill="currentColor"
-					transform={`rotate(${angle} 6 6)`}
-				/>
-			{/each}
+		<svg
+			class="settings-gear"
+			width="13"
+			height="13"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d={SETTINGS_GEAR_PATH} />
+			<circle cx="12" cy="12" r="3" />
 		</svg>
 	</button>
 
@@ -826,6 +835,8 @@
 				</button>
 			</div>
 		{/if}
+		<!-- CUEOUT-25: MAIN on the headphone CUE device, or a failed MAIN route. -->
+		<MainOutputFaultBanner />
 	</div>
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.

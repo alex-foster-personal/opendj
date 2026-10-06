@@ -58,6 +58,7 @@ import {
 import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import {
+	ANALYSIS_SOURCE_FEATURES,
 	analysisSourceState,
 	installAnalysisSourceRefreshRunner,
 	setAnalysisSource,
@@ -116,9 +117,13 @@ import {
 	setLibraryPanelCollapsed,
 	setShowStems,
 	setWaveformDesign,
+	setUiSkin,
+	setWavePalette,
+	setWaveSplitMaster,
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
 import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
+import { parseSkinSettings, type SkinSettings } from '$lib/rb/ui-skin';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -143,7 +148,7 @@ import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/c
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
-import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -236,6 +241,7 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesign }
+	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
 			/** Optional load condition is checked inside the queue, not at input time.
 	 * A stale momentary gesture is a no-op and returns the unchanged read model. */
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null; if_load_generation?: number }
@@ -330,7 +336,11 @@ export type PerformanceCommand =
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
 	| { type: 'playlist_undo' }
 	| { type: 'playlist_redo' }
-	| { type: 'rescue_resume'; decks: Array<{ deck: DeckId; position_ms: number }> }
+	| {
+			type: 'rescue_resume';
+			decks: Array<{ deck: DeckId; position_ms: number }>;
+			master_deck: DeckId;
+	  }
 	| { type: 'rescue_stop_all' };
 
 export interface PerformanceDeckSnapshot {
@@ -445,6 +455,9 @@ export interface PerformanceState {
 		per_deck: Record<DeckId, 'pending' | 'decoded' | 'failed'>;
 		started_at_ms: number;
 	};
+	/** RESCUE-07: decks a reload stopped and the banner offers to resume (null when
+	 * no offer). Agents act on it with `play` per deck, first deck first. */
+	reload_resume: { decks: DeckId[]; error: string | null } | null;
 	waveform_stutter: ReturnType<typeof waveformStutterSnapshot>;
 	library_panels: { next_collapsed: boolean; recommended_collapsed: boolean };
 	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
@@ -495,6 +508,9 @@ export interface PerformanceState {
 	ui: {
 		show_stems: boolean;
 		waveform_design: WaveformDesign;
+		ui_skin: SkinSettings['ui_skin'];
+		wave_palette: SkinSettings['wave_palette'];
+		wave_split_master: SkinSettings['wave_split_master'];
 	};
 }
 
@@ -1235,11 +1251,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'analysis_source') {
 		_exactKeys(record, ['type', 'feature', 'source']);
-		if (record.feature !== 'beatgrid') throw new TypeError(`analysis-source feature must be beatgrid; got ${String(record.feature)}`);
+		if (!(ANALYSIS_SOURCE_FEATURES as readonly unknown[]).includes(record.feature)) {
+			throw new TypeError(`analysis-source feature must be one of ${ANALYSIS_SOURCE_FEATURES.join(', ')}; got ${String(record.feature)}`);
+		}
 		if (record.source !== 'rekordbox' && record.source !== 'own') {
 			throw new TypeError(`analysis-source source must be rekordbox or own; got ${String(record.source)}`);
 		}
-		return { type, feature: record.feature, source: record.source };
+		return { type, feature: record.feature as AnalysisSourceFeature, source: record.source };
 	}
 	if (type === 'auto_play_two_track') {
 		_exactKeys(record, ['type']);
@@ -1278,7 +1296,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type };
 	}
 	if (type === 'rescue_resume') {
-		_exactKeys(record, ['type', 'decks']);
+		_exactKeys(record, ['type', 'decks', 'master_deck']);
 		if (!Array.isArray(record.decks) || record.decks.length === 0) {
 			throw new RangeError('rescue_resume requires at least one deck');
 		}
@@ -1289,7 +1307,14 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 			return { deck: _deck(row.deck), position_ms };
 		});
-		return { type, decks };
+		if (record.master_deck === undefined) {
+			throw new TypeError('rescue_resume requires master_deck (RESCUE-06)');
+		}
+		const master_deck = _deck(record.master_deck);
+		if (!decks.some((entry) => entry.deck === master_deck)) {
+			throw new RangeError(`rescue_resume master_deck ${master_deck} is not one of the resumed decks`);
+		}
+		return { type, decks, master_deck };
 	}
 	if (type === 'pairing_snapshot_open') {
 		_exactKeys(record, ['type']);
@@ -1320,6 +1345,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'show_stems') {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
+	}
+	if (type === 'set_skin') {
+		_exactKeys(record, ['type', 'ui_skin', 'wave_palette', 'wave_split_master']);
+		return { type, ...parseSkinSettings(record) };
 	}
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design']);
@@ -1667,6 +1696,50 @@ function _quantizedLaunchArmedSnapshot(
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
+// ------------------------------------------- narrow reads for UI $derived
+
+/*
+ * PERF-GRID-03: a component that needs ONE field must not `$derived` the whole
+ * `queryPerformanceState()`. That snapshot reads every deck's position, so the
+ * derived re-ran on every transport tick and rebuilt four deck snapshots plus
+ * the transition read each time. Measured on demon-llama with two synced
+ * decks playing: 61% of main-thread time after the grid memo landed. These
+ * accessors return exactly what the matching snapshot field holds and track
+ * only what that field depends on.
+ *
+ * The two armed countdowns are clock-derived (`remaining_ms`, expiry read as
+ * null), so while one is armed it also tracks the decks' positions: it then
+ * ticks and expires exactly as the full snapshot did, and costs nothing while
+ * nothing is armed.
+ */
+
+function _trackTransportTicks(): void {
+	for (const deckId of DECK_IDS) void getDeckState(deckId).position_ms;
+}
+
+/** Same value as `queryPerformanceState().master_mode`. */
+export function queryMasterMode(): MasterMode {
+	return getMasterMode();
+}
+
+/** Same value as `queryPerformanceState().decks[deckId].waveform_seek_armed`. */
+export function queryWaveformSeekArmed(
+	deckId: DeckId
+): { target_position_ms: number; remaining_ms: number } | null {
+	if (waveformSeekArmed[deckId] === null) return null;
+	_trackTransportTicks();
+	return _waveformSeekArmedSnapshot(deckId);
+}
+
+/** Same value as `queryPerformanceState().decks[deckId].quantized_launch_armed`. */
+export function queryQuantizedLaunchArmed(
+	deckId: DeckId
+): { remaining_ms: number; launch_at_context_sec: number } | null {
+	if (quantizedLaunchArmed[deckId] === null) return null;
+	_trackTransportTicks();
+	return _quantizedLaunchArmedSnapshot(deckId);
+}
+
 function _openPairingSnapshot(): PairingSnapshot {
 	const loaded = DECK_IDS.flatMap((deckId) => {
 		const deck = getDeckState(deckId);
@@ -1869,6 +1942,10 @@ export function queryPerformanceState(): PerformanceState {
 			per_deck: { ...rescueRestoreStatus.per_deck },
 			started_at_ms: rescueRestoreStatus.started_at_ms
 		},
+		reload_resume:
+			reloadResume.offer === null
+				? null
+				: { decks: [...reloadResume.offer.decks], error: reloadResume.error },
 		preview: {
 			stable_id: previewCue.stable_id,
 			playing: previewCue.playing,
@@ -1913,7 +1990,10 @@ export function queryPerformanceState(): PerformanceState {
 		feedback_marks: performanceFeedbackSummary(),
 		ui: {
 			show_stems: uiPrefs.show_stems,
-			waveform_design: uiPrefs.waveform_design
+			waveform_design: uiPrefs.waveform_design,
+			ui_skin: uiPrefs.ui_skin,
+			wave_palette: uiPrefs.wave_palette,
+			wave_split_master: uiPrefs.wave_split_master
 		}
 	};
 }
@@ -2011,6 +2091,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
 		command.type === 'set_waveform_design' ||
+		command.type === 'set_skin' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -2338,6 +2419,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setShowStems(command.enabled);
 	} else if (command.type === 'set_waveform_design') {
 		setWaveformDesign(command.design);
+	} else if (command.type === 'set_skin') {
+		setUiSkin(command.ui_skin);
+		setWavePalette(command.wave_palette);
+		setWaveSplitMaster(command.wave_split_master);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.
@@ -2498,7 +2583,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			deck: entry.deck,
 			positionSec: entry.position_ms / 1000
 		}));
-		await engine.rescueResumeTogether(plans);
+		await engine.rescueResumeTogether(plans, command.master_deck);
 		_rescueRestoredDecks = command.decks.map((entry) => entry.deck);
 	} else if (command.type === 'rescue_stop_all') {
 		const decks = _rescueRestoredDecks.length > 0 ? _rescueRestoredDecks : DECK_IDS.filter(
