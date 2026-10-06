@@ -142,7 +142,7 @@ def _check_autoplay_commands(body: dict[str, Any]) -> None:
                 f"autoplay takes exactly type and enabled, got {sorted(command)}"
             )
         if not isinstance(command["enabled"], bool):
-            raise ValueError(f"autoplay enabled must be boolean, got {command['enabled']!r}")
+            raise TypeError(f"autoplay enabled must be boolean, got {command['enabled']!r}")
 
 
 def _persistable_master_mute(command: Any) -> bool | None:
