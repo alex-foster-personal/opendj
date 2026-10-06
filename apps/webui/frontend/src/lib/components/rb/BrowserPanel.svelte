@@ -9,7 +9,6 @@
 	// genre/streaming fallback on All Tracks rows). Editable ratings via
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
-	import AlphaBadge from '$lib/components/AlphaBadge.svelte';
 	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
@@ -22,7 +21,6 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
-		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -33,6 +31,7 @@
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
+	import { createReconcileSummaryRefresh } from '$lib/rb/reconcile-summary-refresh';
 	import {
 		coverageDot as _coverageDot,
 		createCoverageRefresh,
@@ -359,7 +358,6 @@
 	/** The reconcile summary's per-machine breakdown; 'unknown' when the
 	 * engine answered without one, null until the first answer lands. */
 	let libraryAvailability = $state<unknown>(null);
-	let reconcileReadGeneration = 0;
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -1067,6 +1065,7 @@
 			clearInterval(libraryFallbackTimer);
 			clearInterval(healthRefetchTimer);
 			_coverageRefresh.dispose();
+			_reconcileRefresh.dispose();
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -1113,20 +1112,18 @@
 		);
 	}
 
-	async function _loadReconcileSummary(): Promise<void> {
-		const generation = ++reconcileReadGeneration;
-		libraryAvailability = null;
-		try {
-			const summary = await getReconcileSummary();
-			if (generation !== reconcileReadGeneration) return;
-			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
-			allTracksBrokenCount = summary.total_broken;
-			libraryAvailability = summary.availability ?? 'unknown';
-			allTracksReconcileError = null;
-		} catch (error: unknown) {
-			if (generation !== reconcileReadGeneration) return;
-			allTracksReconcileError = error instanceof Error ? error.message : String(error);
+	// HEALTH-15: the engine's last library scan, one read in flight at a time.
+	const _reconcileRefresh = createReconcileSummaryRefresh((read) => {
+		if (read.counts !== null) {
+			allTracksNonBrokenCount = read.counts.nonBroken;
+			allTracksBrokenCount = read.counts.broken;
+			libraryAvailability = read.counts.availability;
 		}
+		allTracksReconcileError = read.error;
+	});
+
+	function _loadReconcileSummary(): Promise<void> {
+		return _reconcileRefresh.load();
 	}
 
 	async function _init(): Promise<void> {
@@ -3736,7 +3733,6 @@
 		<!-- This is our own app, not the vendor whose library format it reads
 		     (pin 571f4281ecea, the maintainer, Wed 2 Sep 2026). -->
 		<span class="wordmark">open dj</span>
-		<AlphaBadge />
 		<LibraryJobsChrome />
 		<div class="library-health" aria-label="library processing health">
 			{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
@@ -4246,10 +4242,13 @@
 	}
 	.library-health:hover .health-popover,
 	.library-health:focus-within .health-popover { display: block; }
+	/* Regular weight in the UI font (the maintainer, Mon 5 Oct 2026: "bolded, which is
+	   incorrect"). The shipped Anybody subset is weight 800 only, so the brand
+	   face cannot draw this regular; it stays on the bold titles. */
 	.wordmark {
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
-		font-weight: 600;
+		font-weight: 400;
 		letter-spacing: 0.5px;
 	}
 	.grip {

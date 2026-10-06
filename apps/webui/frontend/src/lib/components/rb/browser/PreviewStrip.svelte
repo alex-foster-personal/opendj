@@ -33,7 +33,7 @@
 		markerBandHeightForSurface,
 		readPalette
 	} from '../wave/cues';
-	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
+	import { vocalAlpha } from '../wave/render';
 
 	const W = 165;
 	const H = 14;
@@ -157,7 +157,7 @@
 			durMs !== null &&
 			durMs > 0
 		) {
-			ctx.fillStyle = VOCAL_BLUE;
+			ctx.fillStyle = bandColors.vocal;
 			for (const region of voc.regions) {
 				const x0 = Math.max(0, ((region.start_s * 1000) / durMs) * W);
 				const x1 = Math.min(W, ((region.end_s * 1000) / durMs) * W);

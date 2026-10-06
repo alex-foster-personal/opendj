@@ -255,26 +255,39 @@ def _materialise_raw_audio_path(
     return mapped.resolved
 
 
+#: Candidate order for a machine's local location rows: a row probed
+#: available first, then primary before alternate, then oldest.
+_LOCAL_LOCATION_ORDER = (
+    "available DESC, CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
+    "created_at, location_id"
+)
+
+
 def _local_audio_raw_candidates(
     conn: sqlite3.Connection,
     stable_id: str,
     *,
     machine_id: str,
 ) -> list[tuple[str, Literal["location", "track_path"]]]:
-    """Ordered raw path candidates for ``stable_id`` on this machine."""
+    """Ordered raw path candidates for ``stable_id`` on this machine.
+
+    EVERY local location row on this machine is a candidate, available rows
+    first, then primary before alternate. A primary whose file is gone (an
+    imported path from another Mac) must not shadow a relinked alternate
+    that is on disk: callers take the first candidate that materialises.
+    """
     candidates: list[tuple[str, Literal["location", "track_path"]]] = []
     if _locations_machine_scoped(conn):
-        row = conn.execute(
-            "SELECT file_path FROM track_locations "
-            "WHERE stable_id = ? AND machine_id = ? AND deleted_at IS NULL "
-            "AND kind = 'local' AND file_path IS NOT NULL "
-            "ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
-            "created_at, location_id "
-            "LIMIT 1",
+        rows = conn.execute(
+            f"SELECT file_path FROM track_locations "
+            f"WHERE stable_id = ? AND machine_id = ? AND deleted_at IS NULL "
+            f"AND kind = 'local' AND file_path IS NOT NULL "
+            f"ORDER BY {_LOCAL_LOCATION_ORDER}",
             (stable_id, machine_id),
-        ).fetchone()
-        if row is not None and row[0]:
-            candidates.append((str(row[0]), "location"))
+        ).fetchall()
+        for (file_path,) in rows:
+            if file_path and not any(raw == str(file_path) for raw, _ in candidates):
+                candidates.append((str(file_path), "location"))
     tracks_sql = (
         "SELECT file_path FROM tracks WHERE stable_id = ? AND deleted_at IS NULL"
         if _tracks_soft_deletes(conn)
@@ -347,19 +360,17 @@ def local_audio_path_raw(
     return (None, "track_path")
 
 
-def _first_local_location_paths(
+def _local_location_paths(
     conn: sqlite3.Connection, stable_ids: Sequence[str], machine_id: str,
-) -> dict[str, str]:
-    """Per id, the path of its FIRST local location row on ``machine_id``.
+) -> dict[str, list[str]]:
+    """Per id, every local location path on ``machine_id``, in candidate order.
 
-    Only the first row per id counts, even when its path is empty: the per-id
-    reader (:func:`_local_audio_raw_candidates`) takes LIMIT 1 and then drops
-    an empty path rather than falling through to the next row.
+    Same order as the per-id reader (:func:`_local_audio_raw_candidates`), so
+    a listed row and its single-track routes agree on which file plays.
     """
-    location_by_id: dict[str, str] = {}
+    location_by_id: dict[str, list[str]] = {}
     if not _locations_machine_scoped(conn):
         return location_by_id
-    first_location_seen: set[str] = set()
     for batch in _batched(list(stable_ids), ID_BIND_BATCH):
         placeholders = ",".join("?" * len(batch))
         rows = conn.execute(
@@ -367,18 +378,13 @@ def _first_local_location_paths(
             f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
             f"AND deleted_at IS NULL AND kind = 'local' "
             f"AND file_path IS NOT NULL "
-            f"ORDER BY stable_id, "
-            f"CASE role WHEN 'primary' THEN 0 ELSE 1 END, "
-            f"created_at, location_id",
+            f"ORDER BY stable_id, {_LOCAL_LOCATION_ORDER}",
             (*batch, machine_id),
         ).fetchall()
         for stable_id, file_path in rows:
-            sid = str(stable_id)
-            if sid in first_location_seen:
-                continue
-            first_location_seen.add(sid)
-            if file_path:
-                location_by_id[sid] = str(file_path)
+            paths = location_by_id.setdefault(str(stable_id), [])
+            if file_path and str(file_path) not in paths:
+                paths.append(str(file_path))
     return location_by_id
 
 
@@ -393,14 +399,14 @@ def bulk_local_audio_paths(
 
     Answers exactly what :func:`local_audio_path` answers per id (the listing
     batches through this, and a listed row must agree with its single-track
-    routes): the FIRST local location row in :func:`_local_audio_raw_candidates`
-    order is the location candidate, then ``tracks.file_path``.
+    routes): each local location row in :func:`_local_audio_raw_candidates`
+    order, then ``tracks.file_path``; the first that materialises wins.
     """
     out: dict[str, Path | None] = {sid: None for sid in stable_ids}
     if not stable_ids:
         return out
     owner = machine_id or _sync_stamp.local_machine_id(conn)
-    location_by_id = _first_local_location_paths(conn, stable_ids, owner)
+    location_by_id = _local_location_paths(conn, stable_ids, owner)
     track_paths: dict[str, str | None] = {}
 
     tracks_deleted_filter = (
@@ -417,7 +423,7 @@ def bulk_local_audio_paths(
             track_paths[str(stable_id)] = str(file_path) if file_path else None
 
     for sid in stable_ids:
-        for raw in (location_by_id.get(sid), track_paths.get(sid)):
+        for raw in (*location_by_id.get(sid, ()), track_paths.get(sid)):
             if not raw:
                 continue
             resolved = _materialise_raw_audio_path(raw, path_map=path_map)

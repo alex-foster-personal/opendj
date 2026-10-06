@@ -257,11 +257,10 @@ def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     """[if] the listing batches path resolution
     [then] every id resolves as local_audio_path does, [else stop].
 
-    Includes the one shape where the two used to differ: an id whose FIRST
-    ordered local location has an empty path. The per-id reader takes that
-    row (LIMIT 1) and drops it before falling back to ``tracks.file_path``;
-    the bulk reader used to fall through to the next location instead, so the
-    listing could report a file its own single-track routes cannot find.
+    Includes an id whose FIRST ordered local location has an empty path: both
+    readers skip it and fall through to its next local location, so a dead or
+    empty primary never shadows a playable alternate (deck-load bug on silver,
+    Mon 5 Oct 2026), and the listing agrees with the single-track routes.
     """
     present = _flac(tmp_path / "present.flac")
     via_location = _flac(tmp_path / "via-location.flac")
@@ -277,7 +276,7 @@ def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
         "f" * 40: None,
     }
     # Raw inserts: upsert_track would add a primary location mirroring
-    # file_path, and the per-id reader only ever considers the FIRST location.
+    # file_path, which would hide the shapes under test.
     state_conn.executemany(
         "INSERT INTO tracks (stable_id, stable_id_tier, duration_ms, file_path, "
         "created_at, updated_at) VALUES (?, 'inferred', 1000, ?, '2026-09-25', '2026-09-25')",
@@ -314,7 +313,7 @@ def test_bulk_local_audio_paths_answers_what_the_per_id_reader_does(
     assert locations.bulk_local_audio_paths(state_conn, list(shapes)) == per_id
     # Control: the fixture reaches both answers, so equality is not vacuous.
     assert per_id["a" * 40] == present and per_id["b" * 40] == via_location
-    assert per_id["c" * 40] is None
+    assert per_id["c" * 40] == c_fallback
     assert per_id["d" * 40] == via_track_fallback
 
 

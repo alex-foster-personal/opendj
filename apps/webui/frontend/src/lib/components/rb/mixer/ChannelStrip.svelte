@@ -18,7 +18,7 @@
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
-	import { STEM_COLORS } from '$lib/rb/stem-colors';
+	import { stemCssColor } from '$lib/rb/stem-colors';
 	import {
 		STEM_DIAL_LABELS,
 		stemDialAssignment,
@@ -105,12 +105,13 @@
 		clickSelect(deckId, event.shiftKey);
 	}
 
-	/** Pin 4eebbc65a699 / MIXUX-03: TRIM at 70% of the 30px EQ dial. MORE only -
-	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
-	const TRIM_SIZE = 21;
-	/** Pin 4eebbc65a699 / MIXUX-03: FILTER slot at 130% of the 30px EQ dial.
+	/** MIXUX-03 (the maintainer, Mon 5 Oct 2026, revised twice that day): TRIM at
+	 * 80% of the 30px EQ dial. MORE only - pin 246b0f5's LESS mode uses the
+	 * smaller LESS_TRIM_SIZE below. */
+	const TRIM_SIZE = 24;
+	/** MIXUX-03 (the maintainer, Mon 5 Oct 2026, revised twice that day): FILTER slot at 120% of the 30px EQ dial.
 	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
-	const FILTER_SLOT_SIZE = 39;
+	const FILTER_SLOT_SIZE = 36;
 
 	// ------------------------------------------------------- level calibration (#1475)
 
@@ -230,7 +231,7 @@
 				value: deck.stems.controls[stem].gain,
 				onchange: (value) => onStemGain(stem, value),
 				knobRole: stemKnobRole(stem),
-				accentColor: STEM_COLORS[stem],
+				accentColor: stemCssColor(stem),
 				accessibleLabel: `${STEM_DIAL_LABELS[stem].toLowerCase()} stem level deck ${deckId}`,
 				stemControl: stem
 			};

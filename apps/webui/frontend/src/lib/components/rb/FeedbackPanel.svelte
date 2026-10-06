@@ -293,6 +293,7 @@
 	}
 
 	.fb-panel-title {
+		font-family: var(--rb-font-brand);
 		font-weight: 650;
 		letter-spacing: 0.06em;
 		font-size: 9px;

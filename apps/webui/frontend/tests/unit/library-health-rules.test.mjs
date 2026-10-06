@@ -345,3 +345,40 @@ test('the lights re-ask soon while a refresh runs, back off, and then stand down
 	assert.equal(dots.coverageRecheckDelayMs({ ok: false }, 0), 3000);
 	assert.equal(dots.coverageRecheckDelayMs({ ok: false }, 5), null);
 });
+
+// REQ: HEALTH-15
+test('the reconcile summary re-asks on its own longer schedule, then stands down', () => {
+	// [if] a reconcile scan is still running [then] re-ask for about two minutes, [else stop].
+	const running = { ok: true, refreshing: true, refresh_error: null };
+	assert.deepEqual(
+		[0, 1, 2, 3, 4, 5, 6].map((n) =>
+			dots.coverageRecheckDelayMs(running, n, dots.RECONCILE_RECHECK_DELAYS_MS)
+		),
+		[3000, 5000, 10000, 15000, 30000, 60000, null]
+	);
+});
+
+// REQ: HEALTH-15
+test('a refresh keeps one read in flight: overlapping loads book one trailing read', async () => {
+	// [if] three loads land while one read is in flight [then] reads never overlap, [else stop].
+	let inFlight = 0;
+	let maxInFlight = 0;
+	let reads = 0;
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	const refresh = dots.createCoverageRefresh(async () => {
+		reads += 1;
+		inFlight += 1;
+		maxInFlight = Math.max(maxInFlight, inFlight);
+		await gate;
+		inFlight -= 1;
+		return { ok: true, refreshing: false, refresh_error: null };
+	});
+	const loads = [refresh.load(), refresh.load(), refresh.load()];
+	release();
+	await Promise.all(loads);
+	refresh.dispose();
+	assert.equal(maxInFlight, 1, 'two summary reads ran at once');
+	// One read plus exactly one trailing read for the loads that arrived mid-flight.
+	assert.equal(reads, 2);
+});

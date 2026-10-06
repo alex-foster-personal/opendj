@@ -12,9 +12,10 @@
  * band paints only for an engaged loop the engine actually reports.
  */
 import {
+	BLOCK_BAR_PX,
+	BLOCK_PITCH_PX,
 	drawLoopRegion,
 	resolveStripWaveformKind,
-	VOCAL_BLUE,
 	vocalAlpha
 } from '../wave/render';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
@@ -131,7 +132,7 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 			frame.bandColors ?? DEFAULT_BAND_COLORS
 		);
 		if (frame.vocals !== null && durationMs !== null && durationMs > 0) {
-			_drawVocalBars(ctx, frame.vocals, durationMs, w);
+			_drawVocalBars(ctx, frame.vocals, durationMs, w, (frame.bandColors ?? DEFAULT_BAND_COLORS).vocal);
 		}
 	}
 	// The loop band is NOT gated on analysis: it overlays the strip rect
@@ -171,6 +172,10 @@ function _drawPreview(
 	const n = bands.length;
 	if (n === 0) return;
 	const w = widthPx / n;
+	if (design === 'blocks') {
+		_drawBlocks(ctx, bands, kind, widthPx, heightPx, colors);
+		return;
+	}
 	if (design === 'line') {
 		ctx.strokeStyle = colors.mono;
 		ctx.lineWidth = 1;
@@ -203,11 +208,12 @@ function _drawVocalBars(
 	ctx: CanvasRenderingContext2D,
 	vocals: StripVocals,
 	durationMs: number,
-	widthPx: number
+	widthPx: number,
+	vocalColor: string
 ): void {
 	// rekordbox + demucs render identically; barless states draw nothing.
 	if (vocals.status !== 'rekordbox' && vocals.status !== 'demucs') return;
-	ctx.fillStyle = VOCAL_BLUE;
+	ctx.fillStyle = vocalColor;
 	for (const region of vocals.regions) {
 		const x0 = Math.max(0, ((region.start_s * 1000) / durationMs) * widthPx);
 		const x1 = Math.min(widthPx, ((region.end_s * 1000) / durationMs) * widthPx);
@@ -234,5 +240,39 @@ function _drawLoopCueBands(
 		ctx.lineWidth = 1;
 		ctx.strokeStyle = LOOP_CUE_OUTLINE;
 		ctx.strokeRect(band.left + 0.5, 0.5, Math.max(0, band.right - band.left - 1), markerHeight - 1);
+	}
+}
+
+/** 'blocks' design: one-sided bars growing up from the bottom baseline,
+ * BLOCK_BAR_PX wide on a BLOCK_PITCH_PX pitch. 'tri' payloads stack the bands
+ * like the tri strip (low behind, high in front, each its own height);
+ * 'mono' payloads paint one color. */
+function _drawBlocks(
+	ctx: CanvasRenderingContext2D,
+	bands: StripBands,
+	kind: 'tri' | 'mono',
+	widthPx: number,
+	heightPx: number,
+	colors: WaveBandColors
+): void {
+	const n = bands.length;
+	const layers: [string, (i: number) => number][] =
+		kind === 'mono'
+			? [[colors.mono, (i) => Math.max(bands.low[i], bands.mid[i], bands.high[i])]]
+			: [
+					[colors.low, (i) => bands.low[i]],
+					[colors.mid, (i) => bands.mid[i]],
+					[colors.high, (i) => bands.high[i]]
+				];
+	for (const [color, valueAt] of layers) {
+		ctx.fillStyle = color;
+		for (let x = 0; x < widthPx; x += BLOCK_PITCH_PX) {
+			const p0 = Math.floor((x / widthPx) * n);
+			const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+			let v = 0;
+			for (let i = p0; i <= p1; i++) v = Math.max(v, valueAt(i));
+			const barH = Math.round(Math.max(0, Math.min(1, v)) * heightPx);
+			if (barH > 0) ctx.fillRect(x, heightPx - barH, BLOCK_BAR_PX, barH);
+		}
 	}
 }

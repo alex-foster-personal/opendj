@@ -25,6 +25,7 @@
 	 *     [then ⛔️] broken
 	 */
 	import type { PreflightCheck } from '$lib/api';
+	import { checkOffersRunSetup } from '$lib/preflight/preflight-actions';
 	import { RUN_SETUP_LABEL, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 
 	let {
@@ -44,9 +45,7 @@
 	let setupBusy = $state(false);
 	let setupError = $state<string | null>(null);
 
-	const offersRunSetup = $derived(
-		check.id === 'library-attached' && (check.status === 'pending' || check.status === 'fail')
-	);
+	const offersRunSetup = $derived(checkOffersRunSetup(check));
 
 	const displayLabel = $derived(
 		labelOverride ??
@@ -143,7 +142,6 @@
 				class="run-setup"
 				data-testid="preflight-run-setup"
 				disabled={setupBusy || runSetupBlocked() !== null}
-				title={runSetupBlocked() ?? 'Import a library now, or keep using the app empty.'}
 				onclick={() => void handleRunSetup()}
 			>
 				{setupBusy ? 'Opening setup...' : RUN_SETUP_LABEL}

@@ -183,3 +183,14 @@ No code from the projects above is copied into this repository. (Beat This!, abo
 cited here because their documentation, file-format specs, and issue
 trackers directly informed our implementation and are the references we
 return to when something does not match.
+
+--------------------------------------------------------------------------
+Third-party source snippets vendored into this repository
+--------------------------------------------------------------------------
+
+* Lucide icons (the "settings" gear outline in
+  apps/webui/frontend/src/lib/components/rb/TopBar.svelte)
+    Homepage: https://lucide.dev
+    License:  ISC. Copyright (c) for portions of Lucide are held by Cole
+              Bemis 2013-2022 as part of Feather (MIT). All other copyright
+              (c) for Lucide are held by Lucide Contributors 2022.

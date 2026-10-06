@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from apps.analysis import run as analysis_run
 from apps.lyrics import cache as lyrics_cache
+from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.shared.paths import PROJECT_ROOT
 from apps.stems.artifacts import (
     StemArtifactError,
@@ -233,6 +234,11 @@ def valid_lyrics_ids(lyrics_dir: Path) -> tuple[set[str], set[str]]:
             continue
         if entry.stable_id != stable_id:
             corrupt.add(stable_id)
+            continue
+        if servable_lyrics(entry) is None:
+            # LYRICS-12: an ASR transcript of only Whisper hallucinations is
+            # no lyrics. Neither done nor corrupt: coverage counts it terminal
+            # (ingest_coverage.lyrics_terminal_ids), the same as instrumental.
             continue
         done.add(stable_id)
     return done, corrupt

@@ -38,7 +38,7 @@ from tests.opendj_cli import ts_contract
 _SAMPLE_TOKENS = (
     "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
-    "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band",
+    "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto",
 )
 
 
@@ -164,7 +164,7 @@ def test_set_waveform_design_builds_the_bus_command() -> None:
         "type": "set_waveform_design",
         "design": "tri-band",
     }
-    with pytest.raises(InvocationError, match="tri-band\\|mono\\|line"):
+    with pytest.raises(InvocationError, match="tri-band\\|mono\\|line\\|blocks"):
         parse_invocation(["set_waveform_design", "rainbow"])
 
 

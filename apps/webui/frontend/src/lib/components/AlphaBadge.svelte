@@ -7,18 +7,19 @@
 </span>
 
 <style>
+	/* OSSPUB-07 (the maintainer, Mon 5 Oct 2026): a quiet stage marker, not an orange
+	   chip. Plain text in the theme's primary text colour, so the light skin
+	   still reads; .perf-root surfaces define --rb-text, the shell defines --fg. */
 	.release-stage {
 		display: inline-block;
 		margin-left: 4px;
-		padding: 0 4px;
-		border: 1px solid #d97757;
-		border-radius: 3px;
-		color: #d97757;
-		font-size: 9px;
-		font-weight: 700;
-		line-height: 13px;
-		letter-spacing: 0.6px;
-		text-transform: uppercase;
+		border: none;
+		background: none;
+		color: var(--rb-text, var(--fg));
+		font-size: 0.75em;
+		font-style: italic;
+		font-weight: 400;
+		text-transform: lowercase;
 		vertical-align: middle;
 		cursor: help;
 	}

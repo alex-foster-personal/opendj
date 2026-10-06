@@ -11,6 +11,8 @@ count decides whether hide-broken shows a playlist at all.
      hide-broken neither hides it nor shows a playlist that cannot play [else stop].
 [if] the tree counts a track the audio route refuses, or the reverse for a
      checked track [then] the parity test goes red [else stop].
+
+[if] tree, rows and deck load disagree on a playable track [then] fail, [else stop].
 """
 from __future__ import annotations
 

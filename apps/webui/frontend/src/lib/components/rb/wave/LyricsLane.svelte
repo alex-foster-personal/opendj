@@ -4,7 +4,9 @@
 		activeLyricLineIndex,
 		lyricLaneGroups,
 		lyricLanePositionPercent,
-		lyricLaneWidthPercent,
+		lyricLaneSlots,
+		LYRIC_ENTRY_GAP_PX,
+		LYRIC_ROW_CENTER_PCT,
 		type LyricLine
 	} from './lyrics-lane';
 
@@ -24,6 +26,7 @@
 		lyrics === null ? -1 : activeLyricLineIndex(lyrics.lines, positionMs)
 	);
 	const groups = $derived(lyrics === null ? [] : lyricLaneGroups(lyrics.lines));
+	const slots = $derived(lyricLaneSlots(groups, pitch, WAVE_WINDOW_S));
 </script>
 
 {#if loadError !== null}
@@ -31,6 +34,7 @@
 {:else if lyrics !== null}
 	<div class="lyrics-lane" aria-label="Synced lyrics">
 		{#each groups as group, groupIndex (group.start_ms)}
+			{@const slot = slots[groupIndex]}
 			{@const active = activeIndex >= group.firstIndex && activeIndex <= group.lastIndex}
 			{@const left = lyricLanePositionPercent({
 				lineStartMs: group.start_ms,
@@ -38,12 +42,9 @@
 				pitch,
 				windowSeconds: WAVE_WINDOW_S
 			})}
-			{@const maxWidth = lyricLaneWidthPercent({
-				lineStartMs: group.start_ms,
-				nextStartMs: groups[groupIndex + 1]?.start_ms ?? null,
-				pitch,
-				windowSeconds: WAVE_WINDOW_S
-			})}
+			<!-- Two-row slots clamp each entry to the next entry on ITS row
+			     (i + 2), which subsumes the adjacent-entry clamp. -->
+			{@const maxWidth = Number.isFinite(slot.maxWidthPct) ? slot.maxWidthPct : null}
 			<!-- Drawn from its start rightwards, so a line stays on screen
 			     until its END leaves the left edge, not its start. -->
 			{#if left <= 110 && (maxWidth === null ? left >= -100 : left + maxWidth >= 0)}
@@ -51,7 +52,9 @@
 					class:active
 					class="lyric-line"
 					style:left={`${left}%`}
-					style:max-width={maxWidth === null ? undefined : `${maxWidth}%`}
+					style:top={`${LYRIC_ROW_CENTER_PCT[slot.row]}%`}
+					style:max-width={maxWidth === null ? undefined : `calc(${maxWidth}% - ${LYRIC_ENTRY_GAP_PX}px)`}
+					data-row={slot.row}
 					aria-current={active ? 'true' : undefined}
 				>{group.text}</span>
 			{/if}
@@ -62,26 +65,32 @@
 <style>
 	.lyrics-lane {
 		position: absolute;
-		inset: auto 0 2px;
-		height: 16px;
+		inset: 0;
 		overflow: hidden;
 		pointer-events: none;
 		z-index: 2;
 	}
+	/* Left edge sits on the line's timestamp; max-width stops it short of the
+	   next entry on its row (lyricLaneSlots), so rows never collide. Box and
+	   outline are skin tokens (--rb-lyric-box-alpha, --rb-lyric-outline-px). */
 	.lyric-line {
 		position: absolute;
-		bottom: 0;
+		transform: translateY(-50%);
 		box-sizing: border-box;
-		padding: 0 3px;
+		padding: 0 2px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		border-radius: 2px;
-		background: color-mix(in srgb, var(--rb-bg) 85%, transparent);
-		color: color-mix(in srgb, var(--rb-text) 70%, transparent);
+		color: color-mix(in srgb, var(--rb-text) 85%, transparent);
+		background: rgb(0 0 0 / var(--rb-lyric-box-alpha));
 		font-size: 10px;
-		line-height: 16px;
-		text-shadow: 0 1px 2px var(--rb-bg);
+		line-height: 13px;
+		text-shadow:
+			var(--rb-lyric-outline-px) 0 #000,
+			calc(-1 * var(--rb-lyric-outline-px)) 0 #000,
+			0 var(--rb-lyric-outline-px) #000,
+			0 calc(-1 * var(--rb-lyric-outline-px)) #000;
 		transition: color 80ms linear, font-weight 80ms linear;
 	}
 	.lyric-line.active {

@@ -32,7 +32,9 @@ const SELECTORS = {
 	darkBase: '.perf-root',
 	lightBase: "html[data-theme='light'] .perf-root",
 	darkLegacy: "html[data-wave-palette='legacy'] .perf-root",
-	lightLegacy: "html[data-theme='light'][data-wave-palette='legacy'] .perf-root"
+	lightLegacy: "html[data-theme='light'][data-wave-palette='legacy'] .perf-root",
+	darkMono: "html[data-wave-palette='mono'] .perf-root",
+	lightMono: "html[data-theme='light'][data-wave-palette='mono'] .perf-root"
 };
 
 let wp;
@@ -46,6 +48,8 @@ function cascade(scheme, choice) {
 	if (scheme === 'light') blocks.push(SELECTORS.lightBase);
 	if (choice === 'legacy') blocks.push(SELECTORS.darkLegacy);
 	if (scheme === 'light' && choice === 'legacy') blocks.push(SELECTORS.lightLegacy);
+	if (choice === 'mono') blocks.push(SELECTORS.darkMono);
+	if (scheme === 'light' && choice === 'mono') blocks.push(SELECTORS.lightMono);
 	return Object.assign({}, ...blocks.map((sel) => cc.parseColorTokens(THEME_CSS, sel)));
 }
 
@@ -194,7 +198,7 @@ describe('#4219 waveform band palette', () => {
 
 	it('wave-palette.ts mirrors theme.css for every scheme and choice', () => {
 		for (const scheme of ['dark', 'light']) {
-			for (const choice of ['rekordbox', 'legacy']) {
+			for (const choice of ['rekordbox', 'legacy', 'mono']) {
 				const tokens = cascade(scheme, choice);
 				assert.deepEqual(
 					wp.resolveWaveBandColors(scheme, choice),
@@ -202,7 +206,8 @@ describe('#4219 waveform band palette', () => {
 						low: tokens['rb-wave-low'],
 						mid: tokens['rb-wave-mid'],
 						high: tokens['rb-wave-high'],
-						mono: tokens['rb-wave-mono']
+						mono: tokens['rb-wave-mono'],
+						vocal: tokens['rb-wave-vocal']
 					},
 					`${scheme}/${choice}`
 				);
@@ -215,7 +220,8 @@ describe('#4219 waveform band palette', () => {
 			low: '#e8a13a',
 			mid: 'rgba(61, 125, 217, 0.85)',
 			high: 'rgba(207, 224, 242, 0.9)',
-			mono: '#3d7dd9'
+			mono: '#3d7dd9',
+			vocal: '#4fb2ff'
 		});
 		assert.equal(wp.resolveStripBandColors('dark').low, '#2767d8');
 	});

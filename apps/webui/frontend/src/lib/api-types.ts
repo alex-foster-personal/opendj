@@ -4503,7 +4503,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Reconcile Summary */
+        /**
+         * Reconcile Summary
+         * @description Scan now, or (``cached``) answer from the last scan without ever
+         *     scanning in the request (HEALTH-15). The browser asks ``cached``; a caller
+         *     that acts on the counts asks without it.
+         */
         get: operations["reconcile_summary_api_v1_reconcile_summary_get"];
         put?: never;
         post?: never;
@@ -5067,6 +5072,26 @@ export interface paths {
          * @description Mark the performance page closed during its unmount lifecycle.
          */
         delete: operations["close_ui_mirror_api_v1_state_ui_mirror_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/state/ui-mirror/lease": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ui Mirror Lease
+         * @description AGENT-18: which page holds the mirror lease (always 200; ``held`` false when none).
+         */
+        get: operations["get_ui_mirror_lease_api_v1_state_ui_mirror_lease_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -13700,18 +13725,32 @@ export interface components {
         };
         /** ReconcileSummary */
         ReconcileSummary: {
+            /**
+             * Age S
+             * @default 0
+             */
+            age_s: number | null;
             /** Availability */
             availability?: {
                 [key: string]: number;
             } | null;
+            /** Computed At */
+            computed_at?: number | null;
             /** Orphan Broken */
-            orphan_broken: number;
+            orphan_broken: number | null;
             /** Playlists */
             playlists: components["schemas"]["PlaylistBrokenSummary"][];
+            /** Refresh Error */
+            refresh_error?: string | null;
+            /**
+             * Refreshing
+             * @default false
+             */
+            refreshing: boolean;
             /** Total Broken */
-            total_broken: number;
+            total_broken: number | null;
             /** Total Tracks */
-            total_tracks: number;
+            total_tracks: number | null;
         };
         /**
          * RecorderDevicesResponse
@@ -24860,7 +24899,10 @@ export interface operations {
     };
     reconcile_summary_api_v1_reconcile_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Answer at once from the last library scan instead of scanning for this request. `age_s` says how old it is; when `refreshing` is true a newer scan is running. Before the first scan has finished the counts, `computed_at` and `age_s` are null and `refreshing` is true: ask again shortly. Without this the library is scanned for this request. */
+                cached?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -24874,6 +24916,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReconcileSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -25836,7 +25887,12 @@ export interface operations {
     publish_ui_mirror_api_v1_state_ui_mirror_put: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description AGENT-18: the publishing page's client id, claiming the mirror lease. */
+                "x-opendj-lease"?: string | null;
+                /** @description AGENT-18: '1' when the operator pressed Take control on this page. */
+                "x-opendj-lease-takeover"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -25854,9 +25910,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -25896,6 +25950,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ui_mirror_lease_api_v1_state_ui_mirror_lease_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
