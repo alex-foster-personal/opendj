@@ -104,9 +104,9 @@ test('MIXUX-03 ChannelStrip TRIM is 20% smaller than EQ dials in MORE mode', asy
 	assert.ok(Number(lessEqSizeMatch[1]) < 30, 'LESS_EQ_SIZE must actually be smaller than the 30px EQ default');
 });
 
-// requirement: MIXUX-11
+// requirement: MIXUX-12
 // [if] the FILTER dial renders at any size other than TRIM's, in MORE or LESS [then] fail, [else stop]
-test('MIXUX-11 ChannelStrip FILTER is the same size as TRIM in both views and wired live', async () => {
+test('MIXUX-12 ChannelStrip FILTER is the same size as TRIM in both views and wired live', async () => {
 	const src = await readFile('src/lib/components/rb/mixer/ChannelStrip.svelte', 'utf8');
 	const knobTag = (label) => new RegExp(`<Knob\\b(?:(?!/>)[\\s\\S])*?label="${label}"(?:(?!/>)[\\s\\S])*?/>`);
 	const filterKnob = src.match(knobTag('FILTER'));

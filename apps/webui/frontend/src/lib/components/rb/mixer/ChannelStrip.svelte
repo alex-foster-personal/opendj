@@ -195,7 +195,7 @@
 	const EQ_SIZE = 30;
 	const trimSize = $derived(less ? LESS_TRIM_SIZE : TRIM_SIZE);
 	const eqSize = $derived(less ? LESS_EQ_SIZE : EQ_SIZE);
-	/** MIXUX-11 (the maintainer, Tue 6 Oct 2026: "let's make the filter/color knob the
+	/** MIXUX-12 (the maintainer, Tue 6 Oct 2026: "let's make the filter/color knob the
 	 * same size as trim"): FILTER is TRIM's size in both views, which supersedes
 	 * MIXUX-03's 120% FILTER. channel-strip-less-floor.test.mjs reads this line
 	 * to size FILTER in the MORE and LESS floors. */

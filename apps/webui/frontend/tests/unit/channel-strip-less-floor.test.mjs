@@ -266,7 +266,7 @@ test('the mixer LESS floor (+page.svelte) covers the real ChannelStrip LESS-mode
 
 	const lessTrimSize = Number(firstMatch(stripSrc, /const LESS_TRIM_SIZE = (\d+(?:\.\d+)?);/, 'LESS_TRIM_SIZE')[1]);
 	const lessEqSize = Number(firstMatch(stripSrc, /const LESS_EQ_SIZE = (\d+(?:\.\d+)?);/, 'LESS_EQ_SIZE')[1]);
-	// MIXUX-11: FILTER is TRIM's size in both views.
+	// MIXUX-12: FILTER is TRIM's size in both views.
 	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
 	const lessFilterSize = lessTrimSize;
 
@@ -364,7 +364,7 @@ test('the mixer MORE floor (+page.svelte) covers the real ChannelStrip MORE-mode
 
 	const trimSizeMatch = firstMatch(stripSrc, /const TRIM_SIZE = (\d+(?:\.\d+)?);/, 'TRIM_SIZE');
 	const eqSizeMatch = firstMatch(stripSrc, /const EQ_SIZE = (\d+(?:\.\d+)?);/, 'EQ_SIZE');
-	// MIXUX-11: FILTER is TRIM's size in both views.
+	// MIXUX-12: FILTER is TRIM's size in both views.
 	firstMatch(stripSrc, /const filterSize = \$derived\(trimSize\);/, 'filterSize derived from trimSize');
 	const trimSize = Number(trimSizeMatch[1]);
 	const eqSize = Number(eqSizeMatch[1]);
