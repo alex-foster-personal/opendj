@@ -50,6 +50,7 @@ an internal test build and was never public.
 - **Unfinished controls:** a control with no real data source behind it is visible but inert,
   and its tooltip says "not implemented - see PARITY-TODO". This is deliberate: Open DJ never
   shows invented data.
+- **`>|` (next-track loop) is experimental:** the transition is abrupt and does not blend yet.
 - **Apple Silicon only:** the dmg does not open on Intel Macs.
 
 ## [1.0.1] - 2026-04-17
