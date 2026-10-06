@@ -168,7 +168,7 @@ describe('auto-play deck pick', () => {
 		assert.equal(pickSourceDeck([deck({ id: 1, playing: false })]), null);
 	});
 
-	it('picks empty follower before stopped; never a playing deck', () => {
+	it('partner first, then empty before stopped; never a playing deck', () => {
 		const { pickFollowerDeck } = mod;
 		assert.equal(
 			pickFollowerDeck(
@@ -180,7 +180,7 @@ describe('auto-play deck pick', () => {
 				],
 				1
 			),
-			3
+			2
 		);
 		assert.equal(
 			pickFollowerDeck(
@@ -206,6 +206,45 @@ describe('auto-play deck pick', () => {
 			),
 			null
 		);
+	});
+});
+
+describe('[PLAY-22] auto-play prefers the partner deck (1<->2, 3<->4)', () => {
+	const pick = (decks, source) => mod.pickFollowerDeck(decks.map((d) => deck(d)), source);
+	it('source 1, deck 2 loaded and stopped, 3/4 empty: deck 2 (cleared by the handoff)', () => {
+		assert.equal(
+			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'x' }, { id: 3 }, { id: 4 }], 1),
+			2
+		);
+	});
+	it('source 1, deck 2 empty: deck 2', () => {
+		assert.equal(pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2 }, { id: 3 }, { id: 4 }], 1), 2);
+	});
+	it('source 2: deck 1; source 3: deck 4; source 4: deck 3', () => {
+		assert.equal(pick([{ id: 1, stable_id: 'x' }, { id: 2, stable_id: 'src', playing: true }, { id: 3 }, { id: 4 }], 2), 1);
+		assert.equal(pick([{ id: 1 }, { id: 2 }, { id: 3, stable_id: 'src', playing: true }, { id: 4, stable_id: 'y' }], 3), 4);
+		assert.equal(pick([{ id: 1 }, { id: 2 }, { id: 3, stable_id: 'y' }, { id: 4, stable_id: 'src', playing: true }], 4), 3);
+	});
+	it('partner playing: the old rule, empty first, then stopped, never a playing deck', () => {
+		assert.equal(
+			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'p', playing: true }, { id: 3, stable_id: 'x' }, { id: 4 }], 1),
+			4
+		);
+		assert.equal(
+			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'p', playing: true }, { id: 3, stable_id: 'x' }, { id: 4, stable_id: 'z', playing: true }], 1),
+			3
+		);
+	});
+	it('a two-track AutoPlay set ping-pongs 1<->2 and never touches 3/4', () => {
+		const decks = [{ id: 1, stable_id: 'a', playing: true }, { id: 2 }, { id: 3 }, { id: 4 }];
+		let source = 1;
+		for (let i = 0; i < 4; i++) {
+			const follower = pick(decks, source);
+			assert.ok(follower === 1 || follower === 2, `handoff ${i} reached deck ${follower}`);
+			decks[follower - 1] = { id: follower, stable_id: `t${i}`, playing: true };
+			decks[source - 1] = { id: source, stable_id: decks[source - 1].stable_id, playing: false };
+			source = follower;
+		}
 	});
 });
 
