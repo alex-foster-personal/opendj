@@ -491,3 +491,25 @@ test('the order executor runs the pushed cancel', () => {
 	assert.match(orders, /order\.type === 'record_master_tap_cancel'/);
 	assert.match(orders, /cancelMasterMixCapture\(String\(order\.session_id\)\)/);
 });
+
+test('a dropped answer is terminal even with chunks queued behind it: zero retries', async () => {
+	const graph = fakeGraph();
+	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
+	const first = gate();
+	const posted = [];
+	const post = async (url) => {
+		posted.push(new URL(url).searchParams.get('seq'));
+		if (posted.length === 1) await first.promise;
+		return new Response(JSON.stringify({ dropped: 'recording_stopped', session_id: 'S' }), { status: 200 });
+	};
+	const ended = [];
+	await capture.startMasterMixCapture('S', assert.fail, post, () => ended.push(true));
+	const [worklet] = graph.worklets;
+	// Chunk 0 is in flight when the stop lands; chunks 1-4 queue behind it.
+	for (let i = 0; i < 5; i += 1) worklet.port.emit(chunk(100));
+	await settle();
+	first.open();
+	for (let i = 0; i < 5; i += 1) await settle();
+	assert.deepEqual(posted, ['0'], 'the queued chunks are dropped, never posted');
+	assert.equal(ended.length, 1, 'the tap ends once, quietly');
+});

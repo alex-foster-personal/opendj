@@ -521,3 +521,59 @@ def test_the_packaged_engine_app_records_the_master_mix(tmp_path: Path) -> None:
         "stop": 200,
         "late": [200, {"dropped": "recording_stopped", "session_id": out["late"][1].get("session_id")}],
     }
+
+
+def test_a_tap_still_streaming_into_a_stopped_recording_is_logged_at_info(master_client, caplog) -> None:
+    """[if] a stopped recording keeps receiving chunks [then] an INFO canary names it, [else stop]."""
+    import logging
+
+    from apps.sets import recorder_service
+
+    client, _ = master_client
+    client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    assert _pcm(client, 0, _tone(480)).status_code == 204
+    client.post(f"/api/sets/recorder/{SESSION}/stop")
+    caplog.set_level(logging.INFO, logger=recorder_service.__name__)
+    for seq in range(1, recorder_service.LATE_CHUNK_CANARY + 1):
+        assert _pcm(client, seq, _tone(480)).status_code == 200
+    assert [r for r in caplog.records if "late chunks" in r.getMessage()] == [], "in-flight stragglers are quiet"
+    for seq in range(recorder_service.LATE_CHUNK_CANARY + 1, 9):
+        assert _pcm(client, seq, _tone(480)).status_code == 200
+    canaries = [r.getMessage() for r in caplog.records if "late chunks" in r.getMessage()]
+    assert canaries == [
+        f"master mix: 3 late chunks for stopped recording {SESSION}; a page tap is still streaming",
+        f"master mix: 4 late chunks for stopped recording {SESSION}; a page tap is still streaming",
+        f"master mix: 8 late chunks for stopped recording {SESSION}; a page tap is still streaming",
+    ]
+    assert all(r.levelno == logging.INFO for r in caplog.records if "late chunks" in r.getMessage())
+
+
+def test_a_start_that_times_out_on_the_tap_pushes_a_cancel_after_the_attach(monkeypatch) -> None:
+    """[if] the page connects its tap only after the start gave up [then] a cancel order follows, [else stop]."""
+    from types import SimpleNamespace
+
+    from apps.webui.server import sets_master_tap
+    from apps.webui.server.routes.commands import _broker
+
+    monkeypatch.setattr(sets_master_tap, "ATTACH_DEADLINE_S", 0.05)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ui_mirror={"page": 1})))
+    channel = sets_master_tap.OrderBusMasterTap()
+    never = lambda: asyncio.sleep(0, result=False)  # noqa: E731
+
+    async def run() -> list[dict]:
+        broker = _broker(request)
+        attached = asyncio.create_task(channel.attach(request, SESSION))
+        attach_id, attach_order = await broker.claim_within(1.0, never)
+        with pytest.raises(MasterTapUnavailable, match="did not connect its tap"):
+            await attached
+        cancel_id, cancel_order = await broker.claim_within(1.0, never)
+        # The slow page finishes both orders late; neither result is refused,
+        # so the page's order loop survives (a withdrawn order 404s it).
+        broker.complete(attach_id, {"steps": [{"status": "succeeded"}], "mirror_delta": {"changed": {}}})
+        broker.complete(cancel_id, {"steps": [{"status": "succeeded"}], "mirror_delta": {"changed": {}}})
+        await asyncio.sleep(0)
+        return [attach_order, cancel_order]
+
+    attach_order, cancel_order = asyncio.run(run())
+    assert attach_order["payload"] == {"type": "record_master_tap", "session_id": SESSION}
+    assert cancel_order == {"kind": "single", "payload": {"type": "record_master_tap_cancel", "session_id": SESSION}}
