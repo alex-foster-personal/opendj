@@ -20,7 +20,8 @@ Requirements (mini-PRD):
     [if] the CLI exits anything else non-zero [then ⛔️] StepUnavailable
   ✔︎ ✅ 🎯 nothing starts while a deck is playing or loading
     [if] a deck reports playing [then] the gate holds
-    [if] a deck's track changed [then] the gate holds for LOAD_SETTLE_S
+    [if] a deck took a track it did not hold before [then] the gate holds for LOAD_SETTLE_S
+    [if] decks are loaded and stopped [then] the gate does not hold (DRAIN-PAUSE-01)
   ✔︎ ✅ user-ordered work goes first
     [if] the refresh job or any queue item is running [then] analysis yields
 """
@@ -151,7 +152,13 @@ def analysis_job(data_dir: Path, *, backend: str) -> JobFn:
 # gates
 #-----------------------------------------------------------------------------
 class DeckGate:
-    """True while any deck is playing, or a track landed on one moments ago."""
+    """True while any deck is playing, or a NEW track landed on one moments ago.
+
+    A loaded, stopped deck never holds (DRAIN-PAUSE-01): a DJ almost always has
+    decks loaded. Only a track the deck did not hold before starts the settle
+    hold, so a deck whose id blinks out of a mirror snapshot and back (a second
+    publisher, a reload of the same track) is not a load each time.
+    """
 
     def __init__(
         self,
@@ -161,7 +168,8 @@ class DeckGate:
     ) -> None:
         self._mirror_fn = mirror_fn
         self._clock = clock
-        self._loaded: dict[str, str | None] = {}
+        #: The last track each deck actually held; an empty snapshot does not clear it.
+        self._loaded: dict[str, str] = {}
         self._hold_until: float = 0.0
 
     def __call__(self) -> bool:
@@ -170,8 +178,9 @@ class DeckGate:
         decks = (mirror or {}).get("decks")
         for name, deck in (decks.items() if isinstance(decks, dict) else ()):
             stable_id = deck.get("stable_id") if isinstance(deck, dict) else None
-            if stable_id is not None and self._loaded.get(name) != stable_id:
-                self._hold_until = now + LOAD_SETTLE_S
+            if stable_id is None or self._loaded.get(name) == stable_id:
+                continue
+            self._hold_until = now + LOAD_SETTLE_S
             self._loaded[name] = stable_id
         return any_deck_playing(mirror) or now < self._hold_until
 
