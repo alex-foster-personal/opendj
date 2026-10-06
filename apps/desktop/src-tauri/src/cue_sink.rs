@@ -1541,6 +1541,22 @@ mod tests {
         assert!(released, "the fight ends in a reported release");
     }
 
+    /// Hardware check, run by hand on a Mac (`cargo test -- --ignored --nocapture`):
+    /// a MacBook's own speakers must classify as `Speaker` through the real
+    /// data-source read. Positive control for the classifier on hardware; with
+    /// wired headphones in the jack it must also print the speakers as muted.
+    #[test]
+    #[ignore = "needs real CoreAudio hardware"]
+    #[cfg(target_os = "macos")]
+    fn live_listing_classifies_the_builtin_speakers() {
+        let devices = list_output_devices().expect("CoreAudio output listing");
+        println!("{}", serde_json::to_string_pretty(&devices_json(&devices)).unwrap());
+        assert!(
+            devices.iter().any(|d| d.builtin_role == BuiltinRole::Speaker),
+            "no built-in speaker classified: the data-source read or the UID fallback is broken"
+        );
+    }
+
     #[test]
     fn device_signature_tracks_membership_and_default_not_names() {
         let a = vec![device("a", true), device("b", false)];
