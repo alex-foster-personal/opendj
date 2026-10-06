@@ -12,6 +12,7 @@ import {
 	type UnexpectedPauseCause
 } from '$lib/rb/unexpected-pause';
 import type { DeckId } from '$lib/rb/deck-slots';
+import { deckStopCause, recordDeckStop, type DeckStopCause } from '$lib/rb/deck-stop-log';
 
 type PlayingPosition = {
 	deck: DeckId;
@@ -39,6 +40,17 @@ export function withPauseOrigin<T>(origin: PauseOrigin, fn: () => T): T {
 
 export function readPauseOrigin(): PauseOrigin {
 	return _pauseOrigin;
+}
+
+/**
+ * PLAY-18: log a deck's stop (deck-stop-log.ts). The cause is read from the
+ * pause origin and the running command unless the call site knows it.
+ */
+export function recordDeckStopOf(
+	st: { deck_id: DeckId; position_ms: number; stable_id: string | null },
+	cause: DeckStopCause = deckStopCause(st.deck_id, _pauseOrigin)
+): void {
+	recordDeckStop({ deck: st.deck_id, cause, position_ms: st.position_ms, stable_id: st.stable_id });
 }
 
 export function setPlayingPositionReader(

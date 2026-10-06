@@ -5,7 +5,6 @@ import { masterSilenceState, outputDeviceLivenessState } from './master-silence-
 import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { readAutoPlayMirrorStatus } from './auto-play.svelte';
 import { readLastDeckStop } from './deck-stop-log';
-import type { DeckId } from './deck-slots';
 import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import type { TabLeadership } from './tab-leadership';
@@ -128,7 +127,7 @@ export function buildUiMirror(): Record<string, unknown> {
 				phrases: deck.phrases,
 				// PLAY-18: the deck's last stop and its cause; user_pause is true only
 				// when a person stopped it. The engine logs each new one on ingest.
-				last_stop: readLastDeckStop(Number(id) as DeckId)
+				last_stop: readLastDeckStop(deck.deck_id)
 			}])
 		),
 		browser: {

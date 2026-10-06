@@ -18,8 +18,10 @@
  * - `unattributed`: none of the above could be shown; never guessed.
  */
 import { recordPerfEvent } from '$lib/rb/perf-event-log';
-import type { DeckId } from '$lib/rb/deck-slots';
 import type { PauseOrigin } from '$lib/rb/unexpected-pause';
+
+/** deck-slots' DeckId, spelled as the literal perf-event-log already uses. */
+type DeckId = 1 | 2 | 3 | 4;
 
 export type CommandSource = 'user-ui' | 'agent-command' | 'autoplay-handoff' | 'app-command' | 'engine';
 

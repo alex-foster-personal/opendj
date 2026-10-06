@@ -98,7 +98,6 @@ import { deckFacingMessage } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import { allDecks, withDeckCommandSource, type CommandSource } from './deck-stop-log';
-import type { TransitionStatus } from './transition-classifier';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -445,7 +444,8 @@ export interface PerformanceState {
 	master_mode: MasterMode;
 	master_reason: MasterReason;
 	/** TRANS-01: dual-deck blend the TopBar pill also reads via readTransition(). */
-	transition: TransitionStatus;
+	/** readTransition's own status, typed through the function this module already imports. */
+	transition: ReturnType<typeof readTransition>;
 	command_pending: boolean;
 	command_queued: number;
 	load_play_intent: Record<DeckId, { generation: number; desired_play: boolean } | null>;
