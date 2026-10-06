@@ -101,7 +101,7 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs } from '$lib/rb/engine-clock-reports';
 import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
@@ -1854,8 +1854,8 @@ function _publishPresentedTransport(
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
-	notePositionSample(deck, st.position_ms, performance.now()); // the paint projects from this instant
 	st.audible = observation.audible;
+	notePositionSample(deck, st, presentedSampleAtMs(observation, outputTimestamp)); // every playhead projects from this instant (ANIM-CLOCK-01)
 	st.transport_pending = observation.transport_pending || _reanchorRampPending(rt);
 	const presentedKeyShift = presentedKeyShiftSemitonesAt(
 		rt.presentation,
@@ -3185,6 +3185,12 @@ class RbAudioEngine implements AudioEngine {
 		};
 		if (startAtContextSec !== undefined) {
 			await schedulePlainTransport(startAtContextSec);
+			// RESCUE-07: the shared-instant start (Gig rescue resume) must still
+			// claim a master, or the page plays with none and AutoPlay, which
+			// only arms off the playing master, never queues the next track.
+			if (_masterMode === 'auto' && _masterDeck === null) {
+				_electPlayingMaster({ reason: 'play-claim' });
+			}
 			return;
 		}
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {

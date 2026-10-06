@@ -196,8 +196,11 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 			lastPublishAtMs = nowMs;
 		}
 	});
+	let lastRole = leadership.snapshot().role;
 	const unsubscribeLeadership = leadership.subscribe((snapshot) => {
-		if (snapshot.role === 'leader') mirror.publish();
+		// Publish at once on BECOMING leader only; a confirmation notice is not a new role.
+		if (snapshot.role === 'leader' && lastRole !== 'leader') mirror.publish();
+		lastRole = snapshot.role;
 	});
 	mirror.publish();
 	const interval = window.setInterval(mirror.publish, 1000);

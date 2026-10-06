@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -142,6 +144,90 @@ def data_dir_for_request(request: Request) -> Path:
 cloudsync_data_dir = data_dir_for_request
 
 
+# ----- one sync-set count walk at a time (PERF-RB-04) -------------------------
+
+
+class SyncSetCounts(NamedTuple):
+    """The three sync-set readouts ``GET /status`` adds to the status file."""
+
+    hash_pending: int
+    quarantined: int
+    excluded_total: int
+
+
+@dataclass
+class _Flight:
+    """One running count walk and the callers waiting on its answer."""
+
+    done: threading.Event = field(default_factory=threading.Event)
+    waiters: int = 0
+    result: SyncSetCounts | None = None
+    error: BaseException | None = None
+
+
+_FLIGHTS_LOCK = threading.Lock()
+_FLIGHTS: dict[Path, _Flight] = {}
+
+
+def count_sync_set(db_path: Path) -> SyncSetCounts:
+    """Walk the sync set once: every row judged in Python, so it is slow."""
+    conn = state_db.open_ro(db_path)
+    try:
+        return SyncSetCounts(
+            hash_pending=sync_set.count_hash_pending(conn),
+            quarantined=sync_set.count_quarantined_roots(conn),
+            excluded_total=sync_set.excluded_total(conn),
+        )
+    finally:
+        conn.close()
+
+
+def in_flight_waiters(db_path: Path) -> int:
+    """Callers waiting on the walk now running for ``db_path`` (0 when none)."""
+    with _FLIGHTS_LOCK:
+        flight = _FLIGHTS.get(db_path)
+        return 0 if flight is None else flight.waiters
+
+
+def sync_set_counts(db_path: Path) -> SyncSetCounts:
+    """The sync-set counts, from the walk already running when there is one.
+
+    The walk judges every sync-set row in Python, and the status chip polls
+    this route every 30 s from each open tab. Before this, every poll started
+    its own walk. On Mon 5 Oct 2026 the silver preview held ELEVEN at once,
+    each over 120 s: 32% of the backend's sampled CPU, and a GIL convoy that
+    cut the All Tracks listing to about 10 rows/s (a cold walk measured 18.9 s
+    alone and 97.7 s beside six status pollers). A caller that arrives while
+    a walk runs now waits for it and takes its answer, so at most one walk per
+    database runs at any time. Nothing is cached: the first call after a walk
+    finishes starts a new one, so an answer is never older than the walk the
+    caller joined. A failed walk raises in every caller that joined it.
+    """
+    with _FLIGHTS_LOCK:
+        flight = _FLIGHTS.get(db_path)
+        leader = flight is None
+        if flight is None:
+            flight = _FLIGHTS[db_path] = _Flight()
+        else:
+            flight.waiters += 1
+    if not leader:
+        flight.done.wait()
+        if flight.error is not None:
+            raise flight.error
+        assert flight.result is not None
+        return flight.result
+    try:
+        flight.result = count_sync_set(db_path)
+    except BaseException as exc:
+        flight.error = exc
+        raise
+    finally:
+        with _FLIGHTS_LOCK:
+            del _FLIGHTS[db_path]
+        flight.done.set()
+    return flight.result
+
+
 UNREADABLE_RESPONSES: dict[int | str, dict[str, Any]] = {
     500: {"description": "a CloudSync state file in the data dir is malformed or unreadable"}
 }
@@ -160,14 +246,10 @@ def get_status(request: Request) -> CloudSyncStatusOut:
                 "message": str(exc),
             },
         ) from exc
-    db_path = data_dir / "state" / "state.db"
-    conn = state_db.open_ro(db_path)
-    try:
-        wire["hash_pending"] = sync_set.count_hash_pending(conn)
-        wire["quarantined"] = sync_set.count_quarantined_roots(conn)
-        wire["excluded_total"] = sync_set.excluded_total(conn)
-    finally:
-        conn.close()
+    counts = sync_set_counts(data_dir / "state" / "state.db")
+    wire["hash_pending"] = counts.hash_pending
+    wire["quarantined"] = counts.quarantined
+    wire["excluded_total"] = counts.excluded_total
     return CloudSyncStatusOut(**wire)
 
 
