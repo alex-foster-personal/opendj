@@ -35,6 +35,8 @@ export interface AutoPlayHandoffSteps {
 	play: () => Promise<unknown>;
 	notifySyncSkip: (message: string) => void;
 	onPlayDispatched: () => void;
+	/** Abandon cleanup could not unload the track; says why. Never a handoff failure. */
+	notifyCleanupFailed: (message: string) => void;
 }
 
 /**
@@ -67,8 +69,18 @@ export async function runAutoPlayHandoff(
 		throw new AutoPlayHandoffError('load', error);
 	}
 	// ---- commit point: nextId is on the follower deck from here down ----
+	// Undo only what this handoff did, and only if the deck still shows it:
+	// another actor may have replaced the track since (Sol P1, round 2). A
+	// cleanup that fails is reported on its own and still counts as abandoned,
+	// so the candidate is never blamed for it (Sol P1 on #5648).
 	const abandon = async (): Promise<AutoPlayHandoffOutcome> => {
-		if (loadedHere) await steps.unload();
+		if (loadedHere && steps.followerStableId() === nextId) {
+			try {
+				await steps.unload();
+			} catch (error: unknown) {
+				steps.notifyCleanupFailed(error instanceof Error ? error.message : String(error));
+			}
+		}
 		return 'abandoned-disarmed';
 	};
 	try {

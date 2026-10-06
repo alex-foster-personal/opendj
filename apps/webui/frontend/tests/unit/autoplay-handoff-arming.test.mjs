@@ -61,7 +61,8 @@ function fakeSteps({ occupied = null, disarmAfter = null } = {}) {
 			beatSync: step('beatSync'),
 			play: step('play'),
 			notifySyncSkip: () => log.push('syncSkipToast'),
-			onPlayDispatched: () => log.push('playDispatched')
+			onPlayDispatched: () => log.push('playDispatched'),
+			notifyCleanupFailed: (message) => log.push(`cleanupFailed:${message}`)
 		}
 	};
 }
@@ -144,6 +145,36 @@ describe('[PLAY-20] abandon cleanup only touches what this handoff loaded (Sol P
 		assert.equal(await handoff.runAutoPlayHandoff('next-1', fake.steps), 'abandoned-disarmed');
 		assert.deepEqual(fake.log, ['unload', 'load', 'unload']);
 		assert.equal(fake.onDeck(), null);
+	});
+});
+
+
+describe('[PLAY-20] abandon cleanup checks the deck and never blames the candidate (Sol round 2)', () => {
+	it('the follower was replaced by someone else after the load: the replacement is left alone', async () => {
+		const fake = fakeSteps({ disarmAfter: 'beatSync' });
+		const beatSync = fake.steps.beatSync;
+		let onDeck = null;
+		fake.steps.followerStableId = () => onDeck;
+		fake.steps.load = async () => {
+			fake.log.push('load');
+			onDeck = 'next-1';
+		};
+		fake.steps.beatSync = async () => {
+			onDeck = 'user-pick';
+			return beatSync();
+		};
+		assert.equal(await handoff.runAutoPlayHandoff('next-1', fake.steps), 'abandoned-disarmed');
+		assert.deepEqual(fake.log, ['load', 'beatSync'], 'no unload of a track this handoff did not put there');
+		assert.equal(onDeck, 'user-pick');
+	});
+
+	it('a failed cleanup unload is reported and still abandons, never a commit failure', async () => {
+		const fake = fakeSteps({ disarmAfter: 'load' });
+		fake.steps.unload = async () => {
+			throw new Error('engine busy');
+		};
+		assert.equal(await handoff.runAutoPlayHandoff('next-1', fake.steps), 'abandoned-disarmed');
+		assert.deepEqual(fake.log, ['load', 'cleanupFailed:engine busy']);
 	});
 });
 

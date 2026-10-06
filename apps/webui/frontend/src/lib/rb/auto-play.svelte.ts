@@ -237,7 +237,9 @@ async function _handoff(
 		play: () =>
 			dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true }, undefined, 'autoplay-handoff'),
 		notifySyncSkip: (message) => pushToast(message, 'info'),
-		onPlayDispatched: noteAutoPlayFollowerPlayDispatched
+		onPlayDispatched: noteAutoPlayFollowerPlayDispatched,
+		notifyCleanupFailed: (message) =>
+			pushToast(`auto-play: deck ${follower} kept ${nextId.slice(0, 12)}... after AutoPlay was switched off: ${message}`, 'error')
 	});
 	if (outcome === 'abandoned-disarmed') {
 		console.info(
