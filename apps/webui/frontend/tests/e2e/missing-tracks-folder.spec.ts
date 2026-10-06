@@ -7,6 +7,7 @@
 import { expect, type Page, test } from '@playwright/test';
 
 import { stubPlaylistsRoute } from './support/rekordbox-gate-playlist-routes';
+import { stubUiMirrorRoutes } from './support/ui-mirror-routes';
 
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
@@ -153,7 +154,7 @@ async function stubPerformanceApis(
 		})
 	);
 	await page.route('**/api/v1/stems/tiers', (route) => route.fulfill({ json: [] }));
-	await page.route('**/api/v1/state/ui-mirror', (route) => route.fulfill({ json: {} }));
+	await stubUiMirrorRoutes(page);
 	await page.route('**/api/v1/feedback/performance-marks', (route) =>
 		route.fulfill({ json: { count: 0, last_mark: null } })
 	);
