@@ -26,7 +26,7 @@ type FaultInputs = Pick<
 	'output_mode' | 'selected_output_device_id' | 'selected_master_output_device_id' | 'outputs' | 'routes'
 >;
 
-function _labelOf(outputs: FaultInputs['outputs'], deviceId: string): string {
+function _labelOf(outputs: readonly FaultInputs['outputs'][number][], deviceId: string): string {
 	const label = outputs.find((output) => output.id === deviceId)?.label ?? '';
 	return label.trim() === '' ? deviceId : label;
 }
