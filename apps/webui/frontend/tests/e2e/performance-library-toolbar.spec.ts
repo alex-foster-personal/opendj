@@ -41,10 +41,11 @@ test('the edit actions sit behind one pencil and the header stays one line', asy
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await openFixturePlaylist(page);
 
-	// One line: every visible header control overlaps the same horizontal band. A
+	// One line: every visible toolbar control overlaps the same horizontal band (the
+	// pane tabs on the left stack their own stepper on purpose, so they are not judged). A
 	// pixel cap would depend on the platform's font metrics; a second row would not.
-	const rows = await page.locator('.pane-header').evaluate((header) => {
-		const boxes = [...header.querySelectorAll('button, input, label, select')]
+	const rows = await page.locator('.pane-header .header-right').evaluate((header) => {
+		const boxes = [...header.querySelectorAll('button, label, select')]
 			.map((el) => el.getBoundingClientRect())
 			.filter((r) => r.width > 0 && r.height > 0);
 		return { lowestTop: Math.max(...boxes.map((r) => r.top)), highestBottom: Math.min(...boxes.map((r) => r.bottom)) };

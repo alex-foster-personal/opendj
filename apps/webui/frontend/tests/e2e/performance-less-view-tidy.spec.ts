@@ -118,8 +118,9 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 		['LINK', page.locator('.link-btn')],
 		['PAD', page.locator('.topbar-slot-pad')],
 		['FX (unfinished)', page.locator('button[aria-label="FX panel"]')],
-		['Find & Replace', page.getByTestId('library-edit-menu-list').getByRole('menuitem', { name: 'Find & Replace' })],
-		['Bulk Edit', page.getByTestId('library-edit-menu-list').getByRole('menuitem', { name: 'Bulk Edit' })],
+		// CSS, not role, locators: a role query skips display:none, and MOUNTED is the point.
+		['Find & Replace', page.locator('[data-testid="library-edit-menu-list"] > button', { hasText: 'Find & Replace' })],
+		['Bulk Edit', page.locator('[data-testid="library-edit-menu-list"] > button', { hasText: 'Bulk Edit' })],
 		['Set bar', page.getByTestId('playlist-set-tabs')],
 		['R (channel 1)', page.locator('button[aria-label="meter red anchor channel 1"]')],
 		['M (channel 1)', page.locator('button[aria-label="master ceiling channel 1"]')]
