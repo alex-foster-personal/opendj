@@ -223,12 +223,15 @@ test('a hidden leader executes agent orders with a median under 2 s and none pas
 	try {
 		leader = await openHiddenLeader(String(baseURL), request);
 		await hide(leader);
-		// Control: the page under test really is timer-throttled. Three chained
-		// 50 ms timers take about 150 ms in a visible tab and at least 1 s here.
-		const chainMs = await leader.page.evaluate<number>(
-			'(async () => { const s = performance.now(); for (let i = 0; i < 3; i += 1) await new Promise((r) => setTimeout(r, 50)); return performance.now() - s; })()'
+		// Control: the page under test really is timer-throttled. A 50 ms interval
+		// fires about 60 times in 3 s in a visible tab; hidden, at most once per
+		// aligned wake-up (1 s, or a minute). Counted from outside the page.
+		await leader.page.evaluate(
+			'(() => { window.__agent19Ticks = 0; window.__agent19Interval = setInterval(() => { window.__agent19Ticks += 1; }, 50); return 1; })()'
 		);
-		expect(chainMs, 'control: the hidden page must be timer-throttled').toBeGreaterThanOrEqual(900);
+		await sleep(3_000);
+		const ticks = await leader.page.evaluate<number>('(() => { clearInterval(window.__agent19Interval); return window.__agent19Ticks; })()');
+		expect(ticks, 'control: a 50 ms interval in the hidden page must be throttled').toBeLessThanOrEqual(10);
 		const latencies: number[] = [];
 		for (let i = 0; i < ORDERS; i += 1) {
 			latencies.push(await timedOrder(request, 30_000));
