@@ -115,7 +115,13 @@ export interface BootHost {
 	 * setTimer so a hand-driven test clock can drive the polled path and the
 	 * backstop independently. A host without it has no backstop. */
 	setBackstop?: (run: () => void, ms: number) => number;
+	/** Records that the boot window opened (a performance mark in the browser),
+	 * so a test can measure deferred work from boot start, not from navigation. */
+	markArmed?: () => void;
 }
+
+/** The performance mark the browser host records when the boot window opens. */
+export const BOOT_ARMED_MARK = 'boot-scheduler:armed';
 
 export interface BootScheduler {
 	/** Run `task` once the boot window has closed, or now if it already has.
@@ -253,6 +259,7 @@ export function createBootScheduler(host: BootHost): BootScheduler {
 	function _arm(): void {
 		if (armed || released) return;
 		armed = true;
+		host.markArmed?.();
 		timer = host.setTimer(_onQuietElapsed, BOOT_QUIET_MS);
 		if (host.setBackstop !== undefined) backstop = host.setBackstop(_onBackstop, BOOT_HARD_CEILING_MS);
 	}
@@ -298,6 +305,11 @@ function _browserHost(): BootHost {
 		setTimer: (run, ms) => setTimeout(run, ms) as unknown as number,
 		clearTimer: (handle) => clearTimeout(handle),
 		setBackstop: (run, ms) => setTimeout(run, ms) as unknown as number,
+		markArmed: () => {
+			if (globalThis.performance?.getEntriesByName(BOOT_ARMED_MARK).length === 0) {
+				globalThis.performance.mark(BOOT_ARMED_MARK);
+			}
+		},
 		whenIdle:
 			requestIdle === null
 				? null
