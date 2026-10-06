@@ -59,6 +59,7 @@ import {
 } from '$lib/rb/autoplay-idle';
 import {
 	isSilenceRecovering,
+	pickPausedMasterSource,
 	noteAutoPlayFollowerPlayDispatched,
 	resetAutoPlaySilenceRecovery,
 	resolveAutoPlaySourceForTick
@@ -86,6 +87,7 @@ import {
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import type { DeckId } from '$lib/rb/deck-slots';
+import { classifyAutoPlayStatus, type AutoPlayMirrorStatus } from '$lib/rb/autoplay-status';
 
 const POLL_MS = 250;
 /** Failed load/play attempts per source track before stopping. */
@@ -135,6 +137,25 @@ export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 
 export function readAutoPlayHandoffInFlight(): boolean {
 	return _inFlight;
+}
+
+/**
+ * AGENT-20: what the UI-mirror publishes about AutoPlay. Read-only: it uses
+ * the same source picks as `_tick` but never the resolver, which clears the
+ * silence-recovery flag as a side effect.
+ */
+export function readAutoPlayMirrorStatus(): AutoPlayMirrorStatus {
+	const snaps = _snaps();
+	const source =
+		pickSourceDeck(snaps) ?? (isSilenceRecovering() ? pickPausedMasterSource(snaps) : null);
+	return classifyAutoPlayStatus({
+		enabled: uiPrefs.auto_play_enabled,
+		installed: _stopArmWatcher !== null,
+		stall_reason: readAutoPlayStall()?.reason ?? null,
+		has_source: source !== null && source.stable_id !== null,
+		handoff_pending: _inFlight || _pendingMaster !== null,
+		any_playing: snaps.some((deck) => deck.playing)
+	});
 }
 function _clearChartedOrder(): void {
 	clearChartedAutoPlayOrder(_chartKeyRef);

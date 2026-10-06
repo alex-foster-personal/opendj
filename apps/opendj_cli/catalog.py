@@ -297,6 +297,9 @@ _VERBS: tuple[Verb, ...] = (
     )),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
+    Verb("autoplay", "autoplay", (_ENABLED,),
+         observes=(Observe(("autoplay_enabled",), "enabled"),),
+         note="AGENT-20: the AutoPlay switch; the mirror's autoplay_armed says if it will hand off."),
     Verb("set_waveform_design", "set_waveform_design", (
         arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "tri-band|mono|line|blocks"),
     )),
