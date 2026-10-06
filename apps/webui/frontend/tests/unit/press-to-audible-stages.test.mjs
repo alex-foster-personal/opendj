@@ -168,7 +168,8 @@ test('the UI command boundary stamps the press before anything can queue', () =>
 	const runAt = ipc.indexOf('_commandScheduler.run(scopes, run)');
 	assert.ok(stampAt !== -1 && runAt !== -1);
 	assert.ok(
-		ipc.includes('return _dispatchUnknown(command, _currentCommandSession(), pressT0Ms);'),
+		// DECKUX-39 appended the caller after the stamp; the stamp's place is what matters.
+		/return _dispatchUnknown\(\s*command,\s*_currentCommandSession\(\),\s*pressT0Ms,/.test(ipc),
 		'the stamp must reach the dispatcher, or the scheduler wait it exists to expose ' +
 			'is measured from after the wait'
 	);
@@ -192,7 +193,7 @@ test('agent-native parity: the browser IPC can carry the same press stamp', () =
 		'the PerformanceBrowserIpc contract must expose the stamp'
 	);
 	assert.ok(
-		ipc.includes('_dispatchUnknown(message, commandGeneration, _validatedPressStamp(pressT0Ms))'),
+		/_dispatchUnknown\(\s*message,\s*commandGeneration,\s*_validatedPressStamp\(pressT0Ms\),/.test(ipc),
 		'and the installed dispatch must actually forward it'
 	);
 	assert.ok(
