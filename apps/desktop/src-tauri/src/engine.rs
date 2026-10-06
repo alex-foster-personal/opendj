@@ -56,7 +56,7 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a stopping engine gets between SIGTERM and SIGKILL.
 ///
 /// Long enough for the engine's own shutdown to finish: uvicorn's graceful
-/// window (`GRACEFUL_SHUTDOWN_S`, apps/engine_core/__main__.py), the refresh
+/// window (`GRACEFUL_SHUTDOWN_S`, apps/shared/uvicorn_shutdown.py), the refresh
 /// job's CLIs being stopped (`STOP_ALL_MAX_S`,
 /// apps/webui/server/routes/ingest_cli_procs.py), and the job runner settling
 /// jobs still forking (`_SPAWN_SETTLE_S`, apps/engine_core/jobs/runner.py),

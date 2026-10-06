@@ -19,11 +19,15 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { playheadMs } from '$lib/rb/playhead-display.svelte';
+	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import ControlExplainer from './ControlExplainer.svelte';
+	import { readPalette, resolveStripWaveformKind } from '$lib/components/rb/wave/render';
 	import {
 		blitJogRadial,
 		JOG_RADIAL_INNER_RADIUS,
 		type JogRadialFrame,
+		type JogRadialPalette,
 		type StripVocals
 	} from './jog-radial-render';
 
@@ -49,7 +53,15 @@
 	} = $props();
 
 	const DIAL_CSS_PX = 104;
-	let radialCanvas: HTMLCanvasElement | undefined = $state();
+	// null, not undefined: Svelte 5 sets an unmounted bind:this to null, and the
+	// canvas lives inside {#if showRadialCanvas}, which a deck handoff, a track
+	// reload or an HMR swap unmounts. Typing it `| undefined` let a `=== undefined`
+	// guard pass null into getComputedStyle (soak tester, Mon 5 Oct 2026).
+	let radialCanvas: HTMLCanvasElement | null = $state(null);
+	// Same palette source as the deck rows (WaveRow.svelte): the .perf-root
+	// --rb-wave-* vars, re-read when the theme, the waveform colour choice or
+	// the skin swaps them. $state.raw so an idle deck still repaints on a swap.
+	let radialPalette = $state.raw<JogRadialPalette | null>(null);
 
 	const radialOn: boolean = $derived(uiPrefs.jog_radial_waveform);
 	const previewBands = $derived(deck.anlz?.waveform.preview ?? null);
@@ -104,11 +116,18 @@
 	// Range readout is REAL from the engine's per-deck pitchRanges store;
 	// 100 renders as WIDE per SCREENSHOT-SPEC 3.
 	const rangeText: string = $derived(pitchRange === 100 ? 'WIDE' : `+-${pitchRange}`);
+	// The position every rotating part of the dial is drawn from (phase marks,
+	// progress trail): the shared per-deck playhead clock (ANIM-CLOCK-01), so the
+	// marks turn smoothly and in phase with the strip; reported to the probe.
+	const jogPositionMs: number = $derived(playheadMs(deck.deck_id, deck));
+	$effect(() => {
+		if (deck.audible) tracePlayhead('jog', deck.deck_id, jogPositionMs);
+	});
 	const dialCircumference = 2 * Math.PI * 46;
 	const tickAngle: number = $derived(
 		deck.duration_ms === null || deck.duration_ms <= 0
 			? 0
-			: Math.min(1, Math.max(0, deck.position_ms / deck.duration_ms)) * 360
+			: Math.min(1, Math.max(0, jogPositionMs / deck.duration_ms)) * 360
 	);
 
 	// Pin 67a4ce88805f: an obviously-playing deck needs a fast white line
@@ -121,11 +140,11 @@
 	// phase (4 beats default)";
 	// jogPhaseBeats resolves that (and the unimplemented 'phase' sentinel)
 	// to DEFAULT_PQTZ_BAR_BEATS while still honouring a chosen 4 or 8.
-	// position_ms is the engine-published presentation position, never a
-	// browser clock, so this only ever moves with real playback.
+	// jogPositionMs is projected from the engine's output timestamp and freezes
+	// when the deck pauses or its clock stalls, so this only moves with playback.
 	const barBeats: number = $derived(jogPhaseBeats(deck.quantize_grid_beats));
 	const barPhase: number | null = $derived(
-		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, deck.position_ms / 1000), barBeats)
+		pqtzBarPhase(deck.anlz?.beatgrid.beats ?? [], Math.max(0, jogPositionMs / 1000), barBeats)
 	);
 	const phaseAngle: number = $derived((barPhase ?? 0) * 360);
 	const phaseTitle: string = $derived(
@@ -201,7 +220,20 @@
 
 	$effect(() => {
 		const c = radialCanvas;
-		if (c === undefined || !showRadialCanvas || previewBands === null || deck.anlz === null) return;
+		// Not mounted: no element to read vars from, so skip by design. The draw
+		// effect below needs both a canvas and a palette, so it skips too.
+		if (c === null) return;
+		void uiPrefs.theme;
+		void uiPrefs.wave_palette;
+		void uiPrefs.ui_skin;
+		radialPalette = readPalette(c); // throws if not under .perf-root
+	});
+
+	$effect(() => {
+		const c = radialCanvas;
+		const palette = radialPalette;
+		if (c === null || palette === null) return;
+		if (!showRadialCanvas || previewBands === null || deck.anlz === null) return;
 		const ctx = c.getContext('2d');
 		if (ctx === null) throw new Error('JogDial: radial canvas 2d context unavailable');
 		const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio ?? 1;
@@ -215,8 +247,8 @@
 		const frame: JogRadialFrame = {
 			widthPx: css,
 			heightPx: css,
-			playingFace: deck.audible,
-			kind: deck.anlz.waveform.kind,
+			palette,
+			kind: resolveStripWaveformKind(deck.anlz.waveform.kind, uiPrefs.waveform_design),
 			preview: previewBands,
 			vocals: radialVocals,
 			durationSec: radialDurationSec

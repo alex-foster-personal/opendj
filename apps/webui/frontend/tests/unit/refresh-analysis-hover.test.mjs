@@ -211,3 +211,14 @@ test('a failed popover import is shown inline with its error text, a Reload and 
 	assert.match(branch, /onclick=\{\(\) => location\.reload\(\)\}>Reload<\/button>/);
 	assert.match(branch, /onclick=\{onLeave\}>Close<\/button>/);
 });
+
+// HEALTH-12: on the silver preview (Mon 5 Oct 2026) an uncached coverage read
+// took 43 to 60 s, so every hover started a whole-library measure of its own.
+test('a hover reads the cached coverage; only a finished refresh measures afresh', () => {
+	// [if] the pointer enters the button [then] coverage is read cached, [else stop].
+	const enter = refresh.slice(refresh.indexOf('async function onEnter()'), refresh.indexOf('function onLeave()'));
+	assert.match(enter, /getIngestCoverage\(\{ cached: true \}\)/);
+	assert.doesNotMatch(enter, /getIngestCoverage\(\)/);
+	const poll = refresh.slice(refresh.indexOf('async function _poll()'), refresh.indexOf('function _syncTimer()'));
+	assert.match(poll, /getIngestCoverage\(\)/, 'a finished refresh changes the counts, so it measures');
+});

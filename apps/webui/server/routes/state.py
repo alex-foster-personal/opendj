@@ -37,6 +37,10 @@ LEASE_TTL_S = 10.0
 class MirrorLease:
     holder: str
     expires_monotonic: float
+    # Bug #31: taken with Take control. An operator's explicit choice is never handed
+    # back to a playing tab by the audible rule (the old leader is still playing for
+    # the moment it takes to go silent). It lasts while the same holder renews it.
+    operator_claimed: bool = False
 
 
 def _live_lease(request: Request) -> MirrorLease | None:
@@ -71,15 +75,70 @@ def _refuse(body: dict[str, Any], reason: str, extra: dict[str, Any]) -> JSONRes
     return JSONResponse(status_code=409, content={"accepted": False, "reason": reason, **extra})
 
 
-def _lease_body(lease: MirrorLease | None) -> dict[str, Any]:
+def _audible(document: dict[str, Any]) -> bool:
+    """Any deck in this mirror document is playing."""
+    decks = document.get("decks")
+    if not isinstance(decks, dict):
+        return False
+    return any(isinstance(deck, dict) and deck.get("playing") is True for deck in decks.values())
+
+
+def _yieldable(document: dict[str, Any]) -> bool:
+    """A hidden tab with nothing playing: it gives the lease to any visible claimant."""
+    tab = document.get("tab")
+    return isinstance(tab, dict) and tab.get("visible") is False and not _audible(document)
+
+
+def _holder_document(request: Request, lease: MirrorLease) -> dict[str, Any] | None:
+    """The holder's own latest snapshot, or None when the stored one is someone else's."""
+    stored = _mirror_store(request)
+    if stored is None or stored.get("client_id") != lease.holder:
+        return None
+    return stored
+
+
+def _lease_body(request: Request, lease: MirrorLease | None) -> dict[str, Any]:
+    ttl_ms = int(LEASE_TTL_S * 1000)
     if lease is None:
-        return {"held": False, "holder": None, "expires_in_ms": None, "ttl_ms": int(LEASE_TTL_S * 1000)}
+        return {
+            "held": False,
+            "holder": None,
+            "expires_in_ms": None,
+            "ttl_ms": ttl_ms,
+            "holder_playing": None,
+            "holder_yieldable": None,
+            "holder_operator_claimed": None,
+        }
+    holder_doc = _holder_document(request, lease)
     return {
         "held": True,
         "holder": lease.holder,
         "expires_in_ms": max(0, int((lease.expires_monotonic - monotonic()) * 1000)),
-        "ttl_ms": int(LEASE_TTL_S * 1000),
+        "ttl_ms": ttl_ms,
+        "holder_playing": None if holder_doc is None else _audible(holder_doc),
+        "holder_yieldable": None if holder_doc is None else _yieldable(holder_doc),
+        "holder_operator_claimed": lease.operator_claimed,
     }
+
+
+def _handover_reason(request: Request, lease: MirrorLease, body: dict[str, Any]) -> str | None:
+    """AGENT-18: why a non-holder may take the lease without a takeover, or None.
+
+    The engine prefers an audible writer: a holder that is silent loses the
+    lease to a claimant that is playing, and a hidden, silent holder loses it
+    to any visible claimant. Mon 5 Oct 2026: an idle backgrounded Chrome tab
+    held the lease while an agent pane played the set.
+    """
+    holder_doc = _holder_document(request, lease)
+    if holder_doc is None:
+        return None
+    claimant_tab = body.get("tab")
+    claimant_visible = not (isinstance(claimant_tab, dict) and claimant_tab.get("visible") is False)
+    if _audible(body) and not _audible(holder_doc) and not lease.operator_claimed:
+        return "audible_over_silent"
+    if _yieldable(holder_doc) and claimant_visible:
+        return "visible_over_hidden_idle"
+    return None
 
 
 def _received_at() -> str:
@@ -120,8 +179,13 @@ async def publish_ui_mirror(
     current_doc = _mirror_store(request)
     new_at, old_at = _published_at(body), _published_at(current_doc)
     stored_age_s = monotonic() - getattr(request.app.state, "ui_mirror_received_monotonic", float("-inf"))
+    # Compared within ONE writer (its own reordered PUTs), or for unleased writers.
+    # Between two leased tabs the lease decides; their clocks may disagree (Mon 5
+    # Oct 2026: a second browser's takeover was refused as "stale" by 2 s of skew).
+    same_writer = current_doc is not None and current_doc.get("client_id") == body.get("client_id")
     if (
         takeover != "1"
+        and (same_writer or lease_id is None)
         and new_at is not None
         and old_at is not None
         and new_at < old_at
@@ -140,8 +204,26 @@ async def publish_ui_mirror(
             )
         current = _live_lease(request)
         if current is not None and current.holder != lease_id and takeover != "1":
-            return _refuse(body, "lease_held", _lease_body(current))
-        request.app.state.ui_mirror_lease = MirrorLease(lease_id, monotonic() + LEASE_TTL_S)
+            reason = _handover_reason(request, current, body)
+            if reason is None:
+                return _refuse(body, "lease_held", _lease_body(request, current))
+            _LOG.warning(
+                "ui-mirror lease handover: reason=%s from=%s to=%s",
+                reason,
+                current.holder,
+                lease_id,
+            )
+        elif current is not None and current.holder != lease_id:
+            _LOG.warning("ui-mirror lease takeover: from=%s to=%s", current.holder, lease_id)
+        if takeover == "1":
+            operator_claimed = True
+        elif current is not None and current.holder == lease_id:
+            operator_claimed = current.operator_claimed
+        else:
+            operator_claimed = False
+        request.app.state.ui_mirror_lease = MirrorLease(
+            lease_id, monotonic() + LEASE_TTL_S, operator_claimed=operator_claimed
+        )
     stored = deepcopy(body)
     stored["received_at"] = _received_at()
     request.app.state.ui_mirror = stored
@@ -180,7 +262,7 @@ async def close_ui_mirror(
 @router.get("/ui-mirror/lease")
 async def get_ui_mirror_lease(request: Request) -> dict[str, Any]:
     """AGENT-18: which page holds the mirror lease (always 200; ``held`` false when none)."""
-    return _lease_body(_live_lease(request))
+    return _lease_body(request, _live_lease(request))
 
 
 @router.get("/ui-mirror", response_model=None)

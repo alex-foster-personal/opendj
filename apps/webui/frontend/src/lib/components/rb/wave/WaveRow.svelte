@@ -7,7 +7,7 @@
 	import { fetchTrackLyrics } from '$lib/rb/api-rb';
 	import {
 		performanceCommandStatus,
-		queryPerformanceState,
+		queryWaveformSeekArmed,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { hasTrustedBeatGrid } from '$lib/player/grid-features';
@@ -43,10 +43,10 @@
 		type PresentationStallState
 	} from '$lib/player/transport/presentation-stall';
 	import { isPresentationClockStalled } from '$lib/rb/presentation-clock-report';
+	import { playheadMs } from '$lib/rb/playhead-display.svelte';
+	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import {
 		initPaintScheduleState,
-		initPositionInterpolatorState,
-		paintPositionMs,
 		paintScrollPx,
 		shouldSkipRepaint
 	} from './paint-position';
@@ -195,7 +195,7 @@
 	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
 
 	const showStems = $derived(uiPrefs.show_stems);
-	const waveformSeekArmed = $derived(queryPerformanceState().decks[deckId].waveform_seek_armed);
+	const waveformSeekArmed = $derived(queryWaveformSeekArmed(deckId));
 	const masterDownbeatOverlay = $derived.by(() =>
 		masterDownbeatOverlayForDeck({
 			beatSyncMax: uiPrefs.beat_sync_max,
@@ -243,13 +243,18 @@
 		});
 	}
 
-	// Pin 53ba89ca8ddc (waveform jitter): see `./paint-position.ts` for the
-	// measurement + rationale (tested there, a `.svelte` file cannot be).
-	// `stallState` below folds raw `deck.position_ms`, never this value.
-	const _paintPositionState = initPositionInterpolatorState();
-
+	// Every playhead element draws from one clock per deck (ANIM-CLOCK-01,
+	// `$lib/rb/playhead-clock.ts`): dead reckoning from the engine's output
+	// timestamp, small drift slewed out, discontinuities snapped. A scrub wins
+	// outright; an untrusted clock paints the raw sample, so a stall stays
+	// visible. `stallState` below folds raw `deck.position_ms`, never this value.
 	function _paintPositionMs(): number {
-		return paintPositionMs(_paintPositionState, scrubPreviewMs, deck, clockUntrusted, performance.now());
+		if (scrubPreviewMs !== null) return scrubPreviewMs;
+		return clockUntrusted ? deck.position_ms : playheadMs(deckId, deck);
+	}
+
+	function _partnerPaintMs(id: DeckId, partner: { position_ms: number; playing: boolean }): number {
+		return isPresentationClockStalled(id) ? partner.position_ms : playheadMs(id, partner);
 	}
 
 	const stemScrollPx = $derived(
@@ -284,6 +289,7 @@
 		const paintPositionMs = _paintPositionMs();
 		const scrollPx = paintScrollPx(paintPositionMs, deck.duration_ms, cssW, WAVE_WINDOW_S, deck.pitch);
 		const ghost = ghostSeekFrame(waveformSeekArmed, performance.now());
+		const partnerPaintMs = splitPartner === null || partnerState === null ? null : _partnerPaintMs(splitPartner.id, partnerState);
 		const visualInputs = [
 			ghost.blinkPhase,
 			deck.stable_id,
@@ -297,10 +303,13 @@
 			palette,
 			splitPartner?.id ?? null,
 			partnerAnlz,
-			partnerState?.position_ms ?? null,
+			partnerPaintMs,
 			partnerState?.pitch ?? null
 		] as const;
+		tracePlayhead('wave-clock', deckId, paintPositionMs); // before the sub-pixel skip: the clock itself
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
+		tracePlayhead('wave', deckId, paintPositionMs);
+		if (splitPartner !== null && partnerPaintMs !== null) tracePlayhead('wave-partner', splitPartner.id, partnerPaintMs);
 		const dpr = window.devicePixelRatio;
 		if (el.width !== cssW * dpr || el.height !== cssH * dpr) {
 			el.width = cssW * dpr;
@@ -317,7 +326,7 @@
 			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone);
 			return;
 		}
-		if (splitPartner !== null && partnerState !== null && partnerState.duration_ms !== null) {
+		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
 			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: uiPrefs.waveform_design };
 			paintSplitRow(
@@ -325,7 +334,7 @@
 				ctx,
 				{
 					...common,
-					positionMs: partnerState.position_ms,
+					positionMs: partnerPaintMs,
 					durationMs: partnerState.duration_ms,
 					anlz: partnerAnlz,
 					pitch: partnerState.pitch,
@@ -389,9 +398,12 @@
 
 	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
-		const pulse = syncPlayheadTone === 'drift';
-		const hovered = deckHoverUi.deckId === deckId;
-		if (!(deck.playing || seeking || waveformSeekArmed !== null || partnerMoving || (hovered && (pulse || masterMoving)))) return;
+		// The hover and drift-pulse inputs are read ONLY when nothing else keeps the
+		// loop running. Read unconditionally, a follower's sync tone flipping mid-frame
+		// re-ran this effect, cancelled the frame already queued and dropped one
+		// (ANIM-CLOCK-01: about one frame a second on the follower's strip).
+		const running = deck.playing || seeking || waveformSeekArmed !== null || partnerMoving;
+		if (!running && !(deckHoverUi.deckId === deckId && (syncPlayheadTone === 'drift' || masterMoving))) return;
 		let raf = requestAnimationFrame(function waveRowFrame(timestamp) {
 			draw();
 			if (cssW > 0 && cssH > 0 && !document.hidden) noteWaveformPaintFrame(deckId, timestamp);

@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -432,6 +432,33 @@ def _remap_update(conn: sqlite3.Connection, table: str, loser: str, survivor: st
     conn.execute("RELEASE remap_sid")
 
 
+#: Bound on SQL parameters per ``IN (...)`` probe in :func:`losers_with_children`.
+_CHILD_PROBE_CHUNK: int = 500
+
+
+def losers_with_children(conn: sqlite3.Connection, losers: Iterable[str]) -> set[str]:
+    """The ``losers`` that still own a row in some ``tracks(stable_id)`` child table.
+
+    :func:`remap_track_children` only reads and writes rows WHERE
+    ``stable_id = loser`` in exactly these tables, so for every other loser it
+    is a no-op. A read, safe outside any transaction.
+    """
+    wanted = list(dict.fromkeys(losers))
+    found: set[str] = set()
+    for table, _pk in _child_tables(conn):
+        for start in range(0, len(wanted), _CHILD_PROBE_CHUNK):
+            chunk = wanted[start : start + _CHILD_PROBE_CHUNK]
+            placeholders = ", ".join("?" for _ in chunk)
+            found.update(
+                str(row[0])
+                for row in conn.execute(
+                    f"SELECT DISTINCT stable_id FROM {_ident(table)} WHERE stable_id IN ({placeholders})",
+                    chunk,
+                )
+            )
+    return found
+
+
 def remap_track_children(conn: sqlite3.Connection, loser: str, survivor: str) -> None:
     """Point every ``tracks(stable_id)`` child at ``survivor``, then the loser
     row can be dropped without CASCADE-deleting those children."""
@@ -533,6 +560,7 @@ __all__ = [
     "hub_library_size",
     "is_removed",
     "log_hash_conflict",
+    "losers_with_children",
     "names_held_parent",
     "remap_track_children",
     "resolve_track_identity",
