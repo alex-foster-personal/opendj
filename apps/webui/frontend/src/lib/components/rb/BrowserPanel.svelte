@@ -227,6 +227,7 @@
 	} from '$lib/rb/deck-slots';
 	import TrackEditModals from './TrackEditModals.svelte';
 	import AddTrackSearch from './browser/AddTrackSearch.svelte';
+	import LibraryEditMenu from './browser/LibraryEditMenu.svelte';
 	import PerformanceRecorderRail from './browser/PerformanceRecorderRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
@@ -3535,7 +3536,9 @@
 					<span>available offline</span>
 				</label>
 				{#if editablePane}
-					<AddTrackSearch onadd={addTrack} />
+					<!-- LIBUX-49 (B8): hidden for now, never removed. Agents add tracks through
+						 PUT /playlists/:id/tracks; performance-library-toolbar.spec.ts drives it. -->
+					<span class="add-track-parked" data-testid="add-track-parked"><AddTrackSearch onadd={addTrack} /></span>
 				{/if}
 				<button
 					type="button"
@@ -3574,13 +3577,7 @@
 					/>
 				</div>
 				</div>
-				<div class="edit-actions-stack">
-					<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
-					<div class="edit-actions-fold">
-						<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
-						<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
-					</div>
-				</div>
+				<LibraryEditMenu hasSelection={pane.selected_ids.length > 0} onpick={(action) => void openEditModal(action)} />
 			</div>
 		</div>
 		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
@@ -3922,8 +3919,8 @@
 	   second line when it cannot fit, and this header grows with it. Measured
 	   at 1280x800: `.list-panel` is 944px there, and an editable playlist's
 	   header-right is 808px + the 190px AddTrackSearch = 998px, so something
-	   HAD to give. A fixed height gave `.list-panel`'s `overflow: hidden` the
-	   rightmost controls (Bulk Edit, MyTags) silently; growing instead costs
+	   HAD to give (before LIBUX-49 parked AddTrackSearch). A fixed height gave
+	   `.list-panel`'s `overflow: hidden` the rightmost controls silently; growing instead costs
 	   one row of library, which is this panel's documented degradation.
 	   `library-min-5-rows.test.mjs` reads this number as the header's floor. */
 	.pane-header {
@@ -3952,18 +3949,9 @@
 		flex: 1 1 auto;
 		min-width: 0;
 	}
-	.edit-actions-stack {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 3px;
-		flex: none;
-	}
-	.edit-actions-fold {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 3px;
+	/* LIBUX-49 (B8): the add-track search is parked, mounted and hidden. */
+	.add-track-parked {
+		display: none;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;

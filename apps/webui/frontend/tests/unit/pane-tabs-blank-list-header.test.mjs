@@ -19,10 +19,10 @@ test('active ephemeral blank list tab omits the vertical stepper column', () => 
 	assert.match(PANE_TABS, /\.tab\.active[\s\S]*max-height:\s*24px/);
 });
 
-// REQ: LIBUX-19
-test('browser header groups edit actions under Find and Replace', () => {
-	assert.match(BROWSER_PANEL, /class="edit-actions-stack"/);
-	assert.match(BROWSER_PANEL, /class="edit-actions-fold"/);
+// REQ: LIBUX-19, LIBUX-49
+test('browser header keeps its edit actions behind the one pencil menu', () => {
+	assert.match(BROWSER_PANEL, /<LibraryEditMenu hasSelection=\{pane\.selected_ids\.length > 0\}/);
+	assert.doesNotMatch(BROWSER_PANEL, /edit-actions-(stack|fold)/);
 	assert.match(BROWSER_PANEL, /class="header-controls-cluster"/);
 });
 

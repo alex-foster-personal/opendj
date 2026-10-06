@@ -14,6 +14,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const topbar = read('../../src/lib/components/rb/TopBar.svelte');
 const page = read('../../src/routes/performance/+page.svelte');
+const editMenu = read('../../src/lib/components/rb/browser/LibraryEditMenu.svelte');
 const chip = read('../../src/lib/components/CloudSyncStatusChip.svelte');
 
 function lessViewTopbarRule() {
@@ -57,14 +58,18 @@ test('Find & Replace, Bulk Edit and the Set bar are hidden by the LESS class onl
 	const m = page.match(/((?:\t\.perf-root\.deck-layout-less :global\([^\n]*,\n)+\t\.perf-root\.deck-layout-less :global\([^\n]*\{\n\t\tdisplay: none;)/);
 	assert.ok(m, '+page.svelte must carry the LESS hide rule');
 	for (const selector of [
-		'.edit-actions-stack > .rb-lit-button',
-		'.edit-actions-fold > .rb-lit-button:first-child',
+		'.edit-menu-list > [data-less-hidden]',
 		"[data-testid='playlist-set-tabs']"
 	]) {
 		assert.ok(m[1].includes(selector), `LESS must hide ${selector}`);
 	}
-	// MyTags (the fold's second button) is not one of the maintainer's named controls.
-	assert.equal(m[1].includes('last-child'), false);
+	// MyTags is not one of the maintainer's named controls: the pencil menu (LIBUX-49) marks
+	// exactly Find & Replace and Bulk Edit, and never MyTags.
+	const buttons = editMenu.split('<button').slice(1).map((chunk) => chunk.split('</button>')[0]);
+	const marked = buttons
+		.filter((b) => b.includes('data-less-hidden'))
+		.map((b) => b.match(/>\s*([A-Za-z][^<>]*?)\s*$/)?.[1]);
+	assert.deepEqual(marked, ['Find &amp; Replace', 'Bulk Edit']);
 });
 
 // requirement: LESSV-03

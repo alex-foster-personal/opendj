@@ -42,6 +42,13 @@ async function setLayout(page: Page, mode: 'MORE' | 'LESS'): Promise<void> {
 	}
 }
 
+/** Open the library pencil menu (LIBUX-49) if it is shut. */
+async function openEditMenu(page: Page): Promise<void> {
+	const pencil = page.getByTestId('library-edit-menu');
+	if ((await pencil.getAttribute('aria-expanded')) !== 'true') await pencil.click();
+	await expect(pencil).toHaveAttribute('aria-expanded', 'true');
+}
+
 async function deckOneHeight(page: Page): Promise<number> {
 	const box = await page.locator(".rb-deck[data-deck='1']").boundingBox();
 	if (box === null) throw new Error('deck 1 has no box');
@@ -108,26 +115,32 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 		['LINK', page.locator('.link-btn')],
 		['PAD', page.locator('.topbar-slot-pad')],
 		['FX (unfinished)', page.locator('button[aria-label="FX panel"]')],
-		['Find & Replace', page.locator('.edit-actions-stack > button', { hasText: 'Find & Replace' })],
-		['Bulk Edit', page.locator('.edit-actions-fold > button', { hasText: 'Bulk Edit' })],
+		['Find & Replace', page.getByTestId('library-edit-menu-list').getByRole('menuitem', { name: 'Find & Replace' })],
+		['Bulk Edit', page.getByTestId('library-edit-menu-list').getByRole('menuitem', { name: 'Bulk Edit' })],
 		['Set bar', page.getByTestId('playlist-set-tabs')],
 		['R (channel 1)', page.locator('button[aria-label="meter red anchor channel 1"]')],
 		['M (channel 1)', page.locator('button[aria-label="master ceiling channel 1"]')]
 	] as const;
 
+	// Find & Replace and Bulk Edit live in the library pencil menu (LIBUX-49), so
+	// the menu is opened in each view before they are judged.
 	await setLayout(page, 'MORE');
+	await openEditMenu(page);
 	for (const [name, locator] of hidden) {
 		await expect(locator, `${name} must be visible in MORE`).toBeVisible();
 	}
 	await setLayout(page, 'LESS');
+	await openEditMenu(page);
 	for (const [name, locator] of hidden) {
 		await expect(locator, `${name} must be hidden in LESS`).toBeHidden();
 		await expect(locator, `${name} must stay MOUNTED in LESS (hidden, not removed)`).toHaveCount(1);
 	}
-	// Kept on purpose: the real 2-deck toggle and MyTags.
+	// Kept on purpose: the real 2-deck toggle and MyTags. MyTags showing also proves
+	// the menu is open, so its two siblings are hidden by LESS, not by a shut menu.
 	await expect(page.getByRole('button', { name: '2 deck view' })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'MyTags', exact: true })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'MyTags', exact: true })).toBeVisible();
 	await setLayout(page, 'MORE');
+	await openEditMenu(page);
 	for (const [name, locator] of hidden) {
 		await expect(locator, `${name} must come back in MORE`).toBeVisible();
 	}
