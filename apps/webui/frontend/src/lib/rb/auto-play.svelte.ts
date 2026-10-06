@@ -86,6 +86,7 @@ import {
 } from '$lib/rb/autoplay-stall.svelte';
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
+import { runAutoPlayHandoff } from '$lib/rb/auto-play-handoff';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { classifyAutoPlayStatus, type AutoPlayMirrorStatus } from '$lib/rb/autoplay-status';
 
@@ -220,26 +221,29 @@ function _syncPlayedSet(): void {
  * after is, because the operator now has a loaded deck and a second load would
  * be exactly the duplicate this module exists to prevent.
  */
-async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: string): Promise<void> {
-	try {
-		const occupied = deckStates[follower].stable_id;
-		if (occupied !== null && occupied !== nextId) {
-			await dispatchPerformanceCommand({ type: 'unload', deck: follower }, undefined, 'autoplay-handoff');
-		}
-		if (deckStates[follower].stable_id !== nextId) {
-			await dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId }, undefined, 'autoplay-handoff');
-		}
-	} catch (error: unknown) {
-		throw new AutoPlayHandoffError('load', error);
-	}
-	// ---- commit point: nextId is on deck `follower` from here down ----
-	try {
-		const syncSkip = await applyAutoPlayBeatSyncDecision(source, follower);
-		if (syncSkip !== null) pushToast(syncSkip, 'info');
-		await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true }, undefined, 'autoplay-handoff');
-		noteAutoPlayFollowerPlayDispatched();
-	} catch (error: unknown) {
-		throw new AutoPlayHandoffError('commit', error);
+async function _handoff(
+	source: AutoPlayDeckSnap,
+	follower: DeckId,
+	nextId: string,
+	generation: number
+): Promise<void> {
+	const outcome = await runAutoPlayHandoff(nextId, {
+		stillArmed: () => _armedAt(generation),
+		followerStableId: () => deckStates[follower].stable_id,
+		unload: () => dispatchPerformanceCommand({ type: 'unload', deck: follower }, undefined, 'autoplay-handoff'),
+		load: () =>
+			dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId }, undefined, 'autoplay-handoff'),
+		beatSync: () => applyAutoPlayBeatSyncDecision(source, follower),
+		play: () =>
+			dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true }, undefined, 'autoplay-handoff'),
+		notifySyncSkip: (message) => pushToast(message, 'info'),
+		onPlayDispatched: noteAutoPlayFollowerPlayDispatched
+	});
+	if (outcome === 'abandoned-disarmed') {
+		console.info(
+			`[autoplay] handoff abandoned: AutoPlay was switched off mid-handoff (deck ${follower}, ${nextId.slice(0, 12)})`
+		);
+		return;
 	}
 	// pickSourceDeck only ever arms off the master, so AutoPlay must move
 	// master to the deck it just started - otherwise the next tick still sees
@@ -512,7 +516,7 @@ async function _tick(): Promise<void> {
 	_playedIds.add(source.stable_id);
 	_playedIds.add(nextId);
 	try {
-		await _handoff(source, follower, nextId);
+		await _handoff(source, follower, nextId, generation);
 		_attemptsFor = { source: '', failed_ids: [] };
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
