@@ -367,7 +367,14 @@ const BUDGETS = [
   // Max enables sync +42, #5576 ENRICH-03 card R1-R4 +485, #5570 drain QoS 0 (backend only). All five
   // merged measured 267,017 (the shares add up to within 1 B). #5572 SET-12 is reserved at +512, not
   // yet measured. Projected tip 267,728: 1,307 over 266,421, plus 2 KiB headroom. Payback: issue #5522.
-  { name: 'performance', limit: 269776, measured: 267017, note: '/performance and children' },
+  // RAISED Tue 6 Oct 2026 (+2,178 B, shared build-17 / batch-2 budget PR, CORE rule: one raise for
+  // the set, extends #5582). Clean origin/main 5cb903d82a measured 269,151 locally (625 B of headroom;
+  // #5588, #5593 and #5600 are already in it). Each batch-2 PR merged alone onto that main: #5599 +589,
+  // #5565 +353, #5607 +160, #5579 +83, #5615 +82, #5611 +1, #5605 -3, #5603 -4, #5602 -50, #5595 -731,
+  // #5610 0 (server only); #5587 conflicts alone, reserved +275 (its author's +358 for #5579/#5587 less
+  // #5579's measured +83). Net +755, projected 269,906: 130 over 269,776, plus 2 KiB. Without #5595's
+  // -731 the tip would be 270,637, still under the new limit. Payback: issue #5522.
+  { name: 'performance', limit: 271954, measured: 269151, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
