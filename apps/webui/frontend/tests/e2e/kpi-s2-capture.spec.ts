@@ -118,7 +118,7 @@ test('capture S2 press-to-audible press rows', async ({ page, request, browser }
 		const ipc = window.musicDjToolsPerformance;
 		if (ipc === undefined) throw new Error('performance IPC is not installed');
 		await ipc.dispatch({ type: 'beat_sync', deck, enabled: false });
-		await ipc.dispatch({ type: 'quantize', deck, enabled: false });
+		await ipc.dispatch({ type: 'quantize', deck, enabled: false, by_user: true });
 	}, DECK);
 
 	const syncOff = await page.evaluate((deck) => {

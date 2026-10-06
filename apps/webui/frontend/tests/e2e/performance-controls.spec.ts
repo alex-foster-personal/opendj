@@ -1069,7 +1069,7 @@ test.describe('performance controls and browser IPC', () => {
 		const serialization = await page.evaluate(async () => {
 			const ipc = window.musicDjToolsPerformance;
 			if (ipc === undefined) throw new Error('performance IPC is not installed');
-			const first = ipc.dispatch({ type: 'quantize', deck: 1, enabled: false });
+			const first = ipc.dispatch({ type: 'quantize', deck: 1, enabled: false, by_user: true });
 			const second = ipc.dispatch({ type: 'quantize', deck: 1, enabled: true });
 			const during = ipc.query();
 			await Promise.all([first, second]);
@@ -1484,7 +1484,7 @@ test.describe('performance controls and browser IPC', () => {
 		// Separate Web Audio contexts can resample to different device rates.
 		// Duration must agree within one sample at the lowest supported rate.
 		expect(Math.abs(publicDurationMs - decodedDurationMs)).toBeLessThanOrEqual(1000 / 8000);
-		await _dispatch(page, { type: 'quantize', deck: 1, enabled: false });
+		await _dispatch(page, { type: 'quantize', deck: 1, enabled: false, by_user: true });
 		await _dispatch(page, { type: 'seek', deck: 1, position_ms: originMs });
 
 		const waveform = page.locator('.rb-waverow canvas[aria-label="deck 1 waveform seek"]');
@@ -2029,7 +2029,7 @@ test.describe('performance controls and browser IPC', () => {
 		await _dispatch(page, { type: 'load', deck: 3, stable_id: initialMasterTrack.stable_id });
 		await _dispatch(page, { type: 'master', deck: 1 });
 		await _dispatch(page, { type: 'beat_sync', deck: 3, enabled: false });
-		await _dispatch(page, { type: 'quantize', deck: 3, enabled: false });
+		await _dispatch(page, { type: 'quantize', deck: 3, enabled: false, by_user: true });
 		await _dispatch(page, {
 			type: 'seek',
 			deck: 1,
@@ -2073,7 +2073,7 @@ test.describe('performance controls and browser IPC', () => {
 		).toBeGreaterThan(100);
 		const initialFollowerPitch = initialMasterTrack.bpm / followerTrack.bpm;
 		await _dispatch(page, { type: 'tempo', deck: 2, ratio: initialFollowerPitch });
-		await _dispatch(page, { type: 'quantize', deck: 2, enabled: false });
+		await _dispatch(page, { type: 'quantize', deck: 2, enabled: false, by_user: true });
 		const initiallyAligned = await page.evaluate(
 			async ({ followerAnchorMs }) => {
 				const ipc = window.musicDjToolsPerformance;

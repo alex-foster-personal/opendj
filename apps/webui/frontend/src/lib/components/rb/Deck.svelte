@@ -268,11 +268,13 @@
 		await runPerformanceCommandFromUi({ type: 'safety_loop_clear', deck: deckId });
 	}
 
+	/** Q1-DEFAULT-ON: the Q button is a person's toggle, so its off sticks for this track. */
 	async function toggleQuantize(): Promise<void> {
 		await runPerformanceCommandFromUi({
 			type: 'quantize',
 			deck: deckId,
-			enabled: !deck.quantize_enabled
+			enabled: !deck.quantize_enabled,
+			by_user: true
 		});
 	}
 

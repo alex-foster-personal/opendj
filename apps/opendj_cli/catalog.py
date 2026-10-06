@@ -193,7 +193,11 @@ _VERBS: tuple[Verb, ...] = (
         _DECK, arg("range", "int", int_enum_value(PITCH_RANGE_VALUES), "8|16|100"),
     )),
     # ----- deck mode toggles -------------------------------------------
-    Verb("quantize", "quantize", (_DECK, _ENABLED), quick_draws=("quantize.toggle",)),
+    Verb("quantize", "quantize", (
+        _DECK, _ENABLED, arg("by_user", "bool", bool_value, "true|false", optional=True),
+    ), quick_draws=("quantize.toggle",),
+         note="Q1-DEFAULT-ON: an off reverts to on unless by_user is true (a person asked); "
+              "a user off holds until the deck's next load."),
     Verb("quantize_grid", "quantize_grid", (
         _DECK, arg("beats", "int", int_enum_value(QUANTIZE_GRID_VALUES), "1|4|8"),
     ), note="'phase' is on the wire type but not implemented, so it is not offered."),

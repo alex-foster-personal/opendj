@@ -565,7 +565,9 @@ export async function decideOnPage(command: PerformanceCommand): Promise<void> {
 			if (typeof command.enabled !== 'boolean') {
 				throw new TypeError('setQuantize: enabled must be boolean');
 			}
-			await send(command);
+			// `by_user` is page-side provenance (Q1-DEFAULT-ON); the engine's
+			// protocol takes exactly type, deck and enabled.
+			await send({ type: 'quantize', deck: command.deck, enabled: command.enabled });
 			const st = deckStates[command.deck];
 			st.quantize_enabled = command.enabled;
 			if (command.enabled && gridFeaturesInert(st)) {

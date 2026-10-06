@@ -151,7 +151,7 @@ export const QUICK_DRAW_ACTIONS: Record<QuickDrawActionId, QuickDrawAction> = {
 		'Quantize',
 		'P1',
 		(c) => c.quantize_enabled,
-		(deck, enabled) => ({ type: 'quantize', deck, enabled })
+		(deck, enabled) => ({ type: 'quantize', deck, enabled, by_user: true })
 	),
 	'beat_sync.toggle': _toggle(
 		'beat_sync.toggle',

@@ -260,7 +260,11 @@ export type PerformanceCommand =
 	| { type: 'loop_interval_base'; deck: DeckId; base: number }
 	| { type: 'tempo'; deck: DeckId; ratio: number }
 	| { type: 'pitch_range'; deck: DeckId; range: PitchRange }
-	| { type: 'quantize'; deck: DeckId; enabled: boolean }
+	// Q1-DEFAULT-ON: `by_user: true` is the command's provenance, set by the
+	// Q button, the Quick Draw toggle, and an agent relaying a person's
+	// explicit ask. Without it an `enabled: false` is not a user's, and
+	// `_quantizeDefaultOn` reverts it to on at dispatch.
+	| { type: 'quantize'; deck: DeckId; enabled: boolean; by_user?: boolean }
 	// Pin a67bafbfc4b0: the quantize GRID, separate from the on/off toggle
 	// above. 1/4/8 are real and change engine.setQuantizeGrid; 'phase'
 	// (match to the detected phase length) is explicitly NOT implemented -
@@ -1531,6 +1535,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`range must be 8, 16, or 100; got ${String(record.range)}`);
 		}
 		return { type, deck, range: record.range };
+	} else if (type === 'quantize' && record.by_user !== undefined) {
+		_exactKeys(record, ['type', 'deck', 'enabled', 'by_user']);
+		return { type, deck, enabled: _boolean('enabled', record.enabled), by_user: _boolean('by_user', record.by_user) };
 	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -2208,7 +2215,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
 	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
 	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
-	if (await executeInRustEngine(command, pushToast)) return;
+	if (await executeInRustEngine(command, pushToast)) {
+		if (command.type === 'load') await _quantizeOnForNewTrack(command.deck);
+		return;
+	}
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
@@ -2245,6 +2255,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		waveformSeekArmed[command.deck] = null;
 		quantizedLaunchArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
+		await _quantizeOnForNewTrack(command.deck);
 	} else if (command.type === 'load_play_intent') {
 		// Q1: the stamp rides WITH the intent, so the play this eventually
 		// becomes can time from the operator's keydown and not from the load.
@@ -2791,7 +2802,8 @@ function _releasePreset(id: string, phase: 'idle' | 'ready' | 'error', error: st
 	if (phase === 'idle') performancePresetLifecycle.id = null;
 }
 
-async function _dispatchWithinPreset(command: PerformanceCommand): Promise<PerformanceState> {
+async function _dispatchWithinPreset(requested: PerformanceCommand): Promise<PerformanceState> {
+	const command = _quantizeDefaultOn(requested, `performance preset ${_presetClaim?.id ?? '(released)'}`);
 	const deck = _commandDeck(command);
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 	try {
@@ -3103,10 +3115,53 @@ export function abortPreparedPerformancePreset(id: string, reason: string): void
 	_releasePreset(id, 'error', _errorMessage(error));
 }
 
+// ------------------------------------------------- Q1 quantize default on ---
+
+/** Frames that are the dispatcher itself, never the caller worth naming. */
+const _DISPATCH_FRAMES = /dispatchPerformanceCommand|runPerformanceCommandFromUi|_dispatchUnknown|dispatchCallerFromStack/;
+
+/**
+ * Q1-DEFAULT-ON: the first stack frame outside the dispatcher, so the WARN for
+ * a reverted off names who sent it (`restoreDeckConfigFromSnapshot`, an agent
+ * order's `_one`, ...). Read synchronously at dispatch entry, before any
+ * await can detach the stack from its caller.
+ */
+export function dispatchCallerFromStack(stack: string | undefined): string {
+	const frames = (stack ?? '').split('\n').slice(1).map((line) => line.trim()).filter((line) => line !== '');
+	return frames.find((frame) => !_DISPATCH_FRAMES.test(frame)) ?? 'unknown caller';
+}
+
+/**
+ * Q1-DEFAULT-ON (the maintainer, B4): Quantize is on unless a USER turned it off. An
+ * off without `by_user: true` is rewritten to on before it can reach either
+ * engine, and the WARN names the caller. Every command path reaches this:
+ * `_dispatchUnknown` (UI, IPC bridge, agent order bus, session and rescue
+ * restore) and `_dispatchWithinPreset`.
+ */
+function _quantizeDefaultOn(command: PerformanceCommand, caller: string): PerformanceCommand {
+	if (command.type !== 'quantize' || command.enabled || command.by_user === true) return command;
+	console.warn(
+		`[quantize] CH${command.deck}: Quantize off without user provenance reverted to on (Q1-DEFAULT-ON); caller: ${caller}`
+	);
+	return { type: 'quantize', deck: command.deck, enabled: true };
+}
+
+/**
+ * Q1-DEFAULT-ON: every load starts with Quantize on. A user's off holds for
+ * the track it was made on and ends here, on the next successful load.
+ */
+async function _quantizeOnForNewTrack(deck: DeckId): Promise<void> {
+	if (getDeckState(deck).quantize_enabled) return;
+	const command: PerformanceCommand = { type: 'quantize', deck, enabled: true };
+	if (!(await executeInRustEngine(command, pushToast))) engine.setQuantize(deck, true);
+	console.info(`[quantize] CH${deck}: Quantize back on for the new track (a user off holds for one track)`);
+}
+
 async function _dispatchUnknown(
 	message: unknown,
 	commandGeneration: number,
-	pressT0Ms?: number
+	pressT0Ms: number | undefined,
+	caller: string
 ): Promise<PerformanceState> {
 	_assertCommandSession(commandGeneration);
 	let command: PerformanceCommand;
@@ -3116,6 +3171,7 @@ async function _dispatchUnknown(
 		_persistCommandError(null, error);
 		throw error;
 	}
+	command = _quantizeDefaultOn(command, caller);
 	const deck = _commandDeck(command);
 	if (command.type === 'load') {
 		onDeckLoadStart(command.deck);
@@ -3255,7 +3311,7 @@ export async function dispatchPerformanceCommand(
 	command: PerformanceCommand,
 	pressT0Ms?: number
 ): Promise<PerformanceState> {
-	return _dispatchUnknown(command, _currentCommandSession(), pressT0Ms);
+	return _dispatchUnknown(command, _currentCommandSession(), pressT0Ms, dispatchCallerFromStack(new Error().stack));
 }
 
 /**
@@ -3339,7 +3395,12 @@ export function installPerformanceBrowserIpc(): () => void {
 	const ipc: PerformanceBrowserIpc = Object.freeze({
 		version: 1 as const,
 		dispatch: (message: unknown, pressT0Ms?: number) =>
-			_dispatchUnknown(message, commandGeneration, _validatedPressStamp(pressT0Ms)),
+			_dispatchUnknown(
+				message,
+				commandGeneration,
+				_validatedPressStamp(pressT0Ms),
+				'window.musicDjToolsPerformance.dispatch (IPC bridge)'
+			),
 		query: () => {
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();

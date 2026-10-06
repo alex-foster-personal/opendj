@@ -94,9 +94,13 @@ export function assertPresetTracksReady(
 
 function _configureDeckCommands(definition: PerformanceDeckPreset): PerformanceCommand[] {
 	const deck = definition.deck;
+	// Q1-DEFAULT-ON: a preset is the operator's own saved configuration and
+	// owns every control while it runs, so its Quantize writes carry user
+	// provenance (the transient off lands the cue exactly; the last write is
+	// the preset's own choice, held until the deck's next load).
 	return [
 		{ type: 'pitch_range', deck, range: definition.pitch_range },
-		{ type: 'quantize', deck, enabled: false },
+		{ type: 'quantize', deck, enabled: false, by_user: true },
 		{ type: 'sync_mode', deck, mode: definition.sync_mode },
 		{ type: 'beat_sync', deck, enabled: definition.beat_sync_enabled },
 		{ type: 'master_tempo', deck, enabled: definition.master_tempo_enabled },
@@ -108,7 +112,7 @@ function _configureDeckCommands(definition: PerformanceDeckPreset): PerformanceC
 			beats: definition.loop.beats,
 			start_ms: definition.loop.in_ms
 		},
-		{ type: 'quantize', deck, enabled: definition.quantize_enabled }
+		{ type: 'quantize', deck, enabled: definition.quantize_enabled, by_user: true }
 	];
 }
 
