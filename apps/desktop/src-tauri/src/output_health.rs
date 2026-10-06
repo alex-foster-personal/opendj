@@ -12,6 +12,25 @@ pub fn probe_output_health_json() -> String {
     platform::probe_output_health_json()
 }
 
+/// The verdict for the default output. A HAL that runs is not a room that
+/// hears: the MacBook speakers keep "delivering" while the headphone jack's
+/// sense has muted their amplifier, so that case outranks `ok`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn health_verdict(delivering: bool, default_muted_by_jack: bool) -> &'static str {
+    if default_muted_by_jack {
+        "muted_by_jack"
+    } else if delivering {
+        "ok"
+    } else {
+        "not_delivering"
+    }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub const MUTED_BY_JACK_REASON: &str = "The default output is the MacBook speakers, but headphones occupy the \
+     headphone jack, which mutes the speakers: the device runs and nobody hears it. Choose the headphones as the \
+     output, or use split cue.";
+
 /// JSON body for `POST /api/v1/audio/switch-output`.
 pub fn switch_output_json() -> String {
     platform::switch_output_json()
@@ -787,6 +806,7 @@ pub(crate) mod platform {
                 "io_cycles_advanced": null,
                 "hal_overload_recent": null,
                 "probe_available": false,
+                "master_pin_fault": crate::cue_sink::master_fault_json(),
                 "checked_at": utc_timestamp_iso(),
             })
             .to_string(),
@@ -813,14 +833,31 @@ pub(crate) mod platform {
         let io_cycles_advanced = cycle_after > cycle_before;
         let hal_overload = hal_overload_recent();
         let delivering = device_delivering_verdict(running_before, running_after, io_cycles_advanced);
-        let reason = if delivering {
+        // A listing that fails leaves the mute unknown, not false: say so.
+        let (default_muted_by_jack, listing_error) = match crate::cue_sink::list_output_devices() {
+            Ok(devices) => (
+                uid.as_deref()
+                    .and_then(|default_uid| devices.iter().find(|d| d.uid == default_uid))
+                    .is_some_and(|device| crate::cue_sink::muted_by_jack(device, &devices)),
+                None,
+            ),
+            Err(err) => (false, Some(err)),
+        };
+        let reason = if default_muted_by_jack {
+            MUTED_BY_JACK_REASON.to_string()
+        } else if let Some(err) = listing_error.as_ref() {
+            format!("output listing failed, so a jack-muted speaker cannot be ruled out: {err}")
+        } else if delivering {
             String::new()
         } else if hal_overload {
             "Default output device is not advancing IO cycles; recent HAL overload signatures were seen in the system log".into()
         } else {
             "Default output device is not delivering audio (IO cycles did not advance during probe tone)".into()
         };
-        let verdict = if delivering { "ok" } else { "not_delivering" };
+        let verdict = match (listing_error.is_some(), health_verdict(delivering, default_muted_by_jack)) {
+            (true, "ok") => "unknown",
+            (_, verdict) => verdict,
+        };
         Ok(serde_json::json!({
             "device_delivering": delivering,
             "verdict": verdict,
@@ -830,6 +867,8 @@ pub(crate) mod platform {
             "io_cycles_advanced": io_cycles_advanced,
             "hal_overload_recent": hal_overload,
             "probe_available": true,
+            "default_muted_by_jack": default_muted_by_jack,
+            "master_pin_fault": crate::cue_sink::master_fault_json(),
             "checked_at": utc_timestamp_iso(),
         })
         .to_string())
@@ -913,6 +952,7 @@ mod platform {
             "io_cycles_advanced": null,
             "hal_overload_recent": null,
             "probe_available": false,
+            "master_pin_fault": serde_json::Value::Null,
             "checked_at": utc_timestamp_iso(),
         })
         .to_string()
@@ -945,7 +985,16 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::{auhal_plan, fourcc, pick_cycle_target};
+    use super::{auhal_plan, fourcc, health_verdict, pick_cycle_target};
+
+    #[test]
+    fn a_jack_muted_default_is_never_ok_even_while_the_hal_delivers() {
+        assert_eq!(health_verdict(true, true), "muted_by_jack", "build 10: delivering, muted, reported ok");
+        assert_eq!(health_verdict(false, true), "muted_by_jack");
+        // Controls: an unmuted device keeps the delivering verdict both ways.
+        assert_eq!(health_verdict(true, false), "ok");
+        assert_eq!(health_verdict(false, false), "not_delivering");
+    }
 
     #[test]
     fn fourcc_packs_big_endian_like_the_sdk_literals() {

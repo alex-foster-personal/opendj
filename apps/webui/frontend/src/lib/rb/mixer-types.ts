@@ -47,7 +47,19 @@ export interface MixerChannelState {
 export interface HeadphoneOutputDevice {
 	id: string;
 	label: string;
+	/** CUEOUT-26, Mac shell only: the id of the output that actually sounds
+	 * for this one (the occupied headphone jack for the muted MacBook
+	 * speakers). Absent in a browser listing, where every id is its own. */
+	physical_id?: string;
+	/** CUEOUT-26, Mac shell only: the MacBook speakers while headphones occupy the jack. */
+	muted_by_jack?: boolean;
+	/** CoreAudio transport from the Mac shell (`builtin`, `usb`, `virtual`, ...). */
+	transport?: string;
 }
+
+/** CUEOUT-26: why the cue runs as split cue. `same_device`: MAIN and CUE are
+ * one physical output, so master plays L and cue R on it. */
+export type HeadphoneSplitReason = 'same_device';
 
 /** Headphone output routing. Unknown modes fail fast. */
 export type HeadphoneOutputMode = 'practice' | 'two_outputs' | 'split_cable';
@@ -218,6 +230,9 @@ export interface HeadphoneState {
 	device_access: IoDeviceAccess;
 	/** Live output liveness verdict from the monitor path; absent until probed. */
 	liveness_verdict?: LivenessVerdict;
+	/** CUEOUT-26: set while split cue was chosen because MAIN and CUE are one
+	 * physical output; null or absent when the operator picked the mode. */
+	split_reason?: HeadphoneSplitReason | null;
 }
 
 /** Whole mixer surface including the real headphone cue bus. */

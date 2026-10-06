@@ -15,6 +15,14 @@ log = logging.getLogger(__name__)
 
 SHELL_JSON_NAME = ".engine.shell.json"
 SHELL_TIMEOUT_S = 3.0
+SHELL_HEALTH_TIMEOUT_REASON = "shell_health_timeout"
+
+
+class ShellHealthTimeout(RuntimeError):
+    """The shell's health server accepted nothing or answered nothing within
+    ``SHELL_TIMEOUT_S``. Not a verdict: the probe never ran to completion, so
+    the route answers 503 with ``reason: shell_health_timeout``, never a 500
+    and never a guessed device state (silver, Tue 6 Oct 2026, HAL overload)."""
 
 
 def _utc_now() -> str:
@@ -69,7 +77,13 @@ class ShellOutputHealthClient:
         try:
             with urlopen(request, timeout=SHELL_TIMEOUT_S) as response:
                 body = response.read().decode("utf-8")
+        except TimeoutError as err:
+            raise ShellHealthTimeout(f"{method} {path} timed out after {SHELL_TIMEOUT_S}s: {err}") from err
         except URLError as err:
+            if isinstance(err.reason, TimeoutError):
+                raise ShellHealthTimeout(
+                    f"{method} {path} timed out after {SHELL_TIMEOUT_S}s: {err.reason}"
+                ) from err
             return _unknown(f"shell output-health request failed: {err}")
         try:
             payload = json.loads(body)
@@ -103,4 +117,9 @@ def data_dir_from_state_db(state_db_path: Path) -> Path:
     return state_db_path.parent
 
 
-__all__ = ["ShellOutputHealthClient", "data_dir_from_state_db"]
+__all__ = [
+    "SHELL_HEALTH_TIMEOUT_REASON",
+    "ShellHealthTimeout",
+    "ShellOutputHealthClient",
+    "data_dir_from_state_db",
+]

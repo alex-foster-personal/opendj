@@ -19,6 +19,8 @@
  * shell that failed to start the sink), and the caller keeps the Chrome path.
  */
 
+import type { HeadphoneOutputDevice } from '$lib/rb/mixer-types';
+
 /** Frames per socket message. 256 = two render quanta, ~5.3 ms at 48 kHz:
  * small enough to keep the relay's contribution to cue latency negligible,
  * large enough that per-message overhead does not matter. */
@@ -40,6 +42,10 @@ export interface NativeOutputDevice {
 	channels: number;
 	transport: string;
 	is_default: boolean;
+	/** CUEOUT-26: the MacBook speakers while headphones occupy the jack. */
+	muted_by_jack: boolean;
+	/** CUEOUT-26: the uid that actually sounds for this one (the jack for the muted speakers). */
+	physical_uid: string;
 }
 
 /** What the shell reports when it opens a cue device. */
@@ -56,6 +62,13 @@ export type NativeCueSinkEvent =
 	| { type: 'device_lost'; uid: string }
 	| { type: 'stats'; uid: string; ring: Record<string, number | boolean> }
 	| { type: 'master_reasserted'; uid: string; from_uid: string | null }
+	| {
+			type: 'master_pin_released';
+			uid: string;
+			reason: 'muted_by_jack' | 'shares_cue' | 'overridden_by_system';
+			message: string;
+			default_uid: string | null;
+	  }
 	| { type: 'disconnected'; reason: string };
 
 /** Read the shell's announcement. Throws on a malformed one: a shell that set
@@ -87,8 +100,19 @@ export function nativeDeviceUid(deviceId: string): string {
 }
 
 /** Shell listing -> the `{ id, label }` rows the I/O selects render. */
-export function nativeOutputsAsHeadphoneOutputs(devices: readonly NativeOutputDevice[]): { id: string; label: string }[] {
-	return devices.map((device) => ({ id: nativeDeviceId(device.uid), label: device.name }));
+export function nativeOutputsAsHeadphoneOutputs(devices: readonly NativeOutputDevice[]): HeadphoneOutputDevice[] {
+	return devices.map((device) => {
+		if (typeof device.muted_by_jack !== 'boolean' || typeof device.physical_uid !== 'string') {
+			throw new Error(`native output ${device.uid} is missing muted_by_jack/physical_uid: shell and page are out of step`);
+		}
+		return {
+			id: nativeDeviceId(device.uid),
+			label: device.name,
+			physical_id: nativeDeviceId(device.physical_uid),
+			muted_by_jack: device.muted_by_jack,
+			transport: device.transport
+		};
+	});
 }
 
 /**

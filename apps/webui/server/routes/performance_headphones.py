@@ -46,6 +46,12 @@ _PAGE_REQUIRED = "performance page is not attached"
 class HeadphoneOutputDeviceOut(BaseModel):
     id: str
     label: str
+    # CUEOUT-26, Mac shell only: the output that actually sounds for this one
+    # (the occupied headphone jack for the muted MacBook speakers), whether the
+    # jack has muted it, and its CoreAudio transport. Absent in a browser listing.
+    physical_id: str | None = None
+    muted_by_jack: bool | None = None
+    transport: str | None = None
 
 
 class HeadphoneCalibrationProbeOut(BaseModel):
@@ -103,6 +109,9 @@ class HeadphoneStateOut(BaseModel):
     selected_master_output_device_id: str | None
     selected_input_device_id: str | None
     output_mode: str
+    # CUEOUT-26: "same_device" while split cue runs because MAIN and CUE are one
+    # physical output (master L / cue R); null when the operator chose the mode.
+    split_reason: str | None = None
     outputs: list[HeadphoneOutputDeviceOut]
     inputs: list[HeadphoneOutputDeviceOut]
     supported: bool

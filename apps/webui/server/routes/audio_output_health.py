@@ -4,10 +4,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ..shell_output_health import ShellOutputHealthClient, data_dir_from_state_db
+from ..shell_output_health import (
+    SHELL_HEALTH_TIMEOUT_REASON,
+    ShellHealthTimeout,
+    ShellOutputHealthClient,
+    data_dir_from_state_db,
+)
 from ..state_paths import resolve_state_db_path
 
 router = APIRouter(prefix="/audio", tags=["audio"])
@@ -22,6 +27,11 @@ class AudioOutputHealthOut(BaseModel):
     io_cycles_advanced: bool | None = None
     hal_overload_recent: bool | None = None
     probe_available: bool
+    # True when the default output is the MacBook speakers muted by an
+    # occupied headphone jack (verdict ``muted_by_jack``).
+    default_muted_by_jack: bool | None = None
+    # The shell's current MASTER pin fault (kind, uid, stage, message), or null.
+    master_pin_fault: dict[str, Any] | None = None
     checked_at: str
 
 
@@ -35,6 +45,13 @@ class AudioSwitchOutputOut(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+def _timeout_503(error: ShellHealthTimeout) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={"reason": SHELL_HEALTH_TIMEOUT_REASON, "verdict": "unknown", "message": str(error)},
+    )
+
+
 def _client(request: Request) -> ShellOutputHealthClient:
     data_dir = data_dir_from_state_db(resolve_state_db_path(request))
     return ShellOutputHealthClient(data_dir=Path(data_dir))
@@ -44,17 +61,21 @@ def _client(request: Request) -> ShellOutputHealthClient:
 def get_output_health(
     client: ShellOutputHealthClient = Depends(_client),  # noqa: B008
 ) -> dict[str, Any]:
-    return client.get_output_health()
+    try:
+        return client.get_output_health()
+    except ShellHealthTimeout as error:
+        raise _timeout_503(error) from error
 
 
 @router.post("/switch-output", response_model=AudioSwitchOutputOut)
 def post_switch_output(
     client: ShellOutputHealthClient = Depends(_client),  # noqa: B008
 ) -> dict[str, Any]:
-    payload = client.post_switch_output()
+    try:
+        payload = client.post_switch_output()
+    except ShellHealthTimeout as error:
+        raise _timeout_503(error) from error
     if payload.get("cycled") is not True:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=503, detail=payload)
     return payload
 

@@ -248,6 +248,46 @@ impl CueRing {
     }
 }
 
+/// What a built-in output physically is. A MacBook's speakers and its
+/// headphone jack share one codec: jack sense mutes the speakers while
+/// anything is plugged in, so while the jack is occupied the two are ONE usable
+/// output, the jack. CoreAudio says which through the output data source
+/// (`'ispk'` internal speaker, `'hdpn'` headphones); an Intel Mac's single
+/// "Built-in Output" switches its data source, an Apple silicon Mac lists a
+/// separate "External Headphones" device only while the jack is occupied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinRole {
+    NotBuiltin,
+    Speaker,
+    Headphones,
+}
+
+impl BuiltinRole {
+    fn as_json(self) -> Value {
+        match self {
+            BuiltinRole::NotBuiltin => Value::Null,
+            BuiltinRole::Speaker => json!("speaker"),
+            BuiltinRole::Headphones => json!("headphones"),
+        }
+    }
+}
+
+/// Classify one device. The data source is the authority; the well-known
+/// Apple silicon UIDs only stand in when the data source cannot be read.
+pub fn builtin_role(transport: &str, data_source: Option<u32>, uid: &str) -> BuiltinRole {
+    if transport != "builtin" {
+        return BuiltinRole::NotBuiltin;
+    }
+    match data_source {
+        Some(code) if code == crate::output_health::fourcc(b"ispk") => BuiltinRole::Speaker,
+        Some(code) if code == crate::output_health::fourcc(b"hdpn") => BuiltinRole::Headphones,
+        Some(_) => BuiltinRole::NotBuiltin,
+        None if uid == "BuiltInSpeakerDevice" => BuiltinRole::Speaker,
+        None if uid == "BuiltInHeadphoneOutputDevice" => BuiltinRole::Headphones,
+        None => BuiltinRole::NotBuiltin,
+    }
+}
+
 /// One output-capable device as the page sees it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputDevice {
@@ -256,6 +296,32 @@ pub struct OutputDevice {
     pub channels: u32,
     pub transport: &'static str,
     pub is_default: bool,
+    pub builtin_role: BuiltinRole,
+    /// `kAudioDevicePropertyJackIsConnected` where the device answers it.
+    pub jack_connected: Option<bool>,
+}
+
+/// The built-in headphone device occupying the jack, when there is one.
+fn occupied_jack(devices: &[OutputDevice]) -> Option<&OutputDevice> {
+    devices
+        .iter()
+        .find(|d| d.builtin_role == BuiltinRole::Headphones && d.jack_connected != Some(false))
+}
+
+/// True for the built-in speakers while the headphone jack is occupied: the
+/// HAL still runs and "delivers", but the amplifier is muted, so nobody hears it.
+pub fn muted_by_jack(device: &OutputDevice, devices: &[OutputDevice]) -> bool {
+    device.builtin_role == BuiltinRole::Speaker && occupied_jack(devices).is_some()
+}
+
+/// The uid of the output that actually sounds for `uid`: the occupied jack for
+/// the muted built-in speakers, otherwise the device itself. Two uids with the
+/// same physical output are ONE output for MASTER/CUE routing.
+pub fn physical_output_uid<'a>(uid: &'a str, devices: &'a [OutputDevice]) -> &'a str {
+    match devices.iter().find(|d| d.uid == uid) {
+        Some(device) if muted_by_jack(device, devices) => occupied_jack(devices).map_or(uid, |jack| jack.uid.as_str()),
+        Some(_) | None => uid,
+    }
 }
 
 pub fn devices_json(devices: &[OutputDevice]) -> Value {
@@ -269,6 +335,10 @@ pub fn devices_json(devices: &[OutputDevice]) -> Value {
                     "channels": d.channels,
                     "transport": d.transport,
                     "is_default": d.is_default,
+                    "builtin_role": d.builtin_role.as_json(),
+                    "jack_connected": d.jack_connected,
+                    "muted_by_jack": muted_by_jack(d, devices),
+                    "physical_uid": physical_output_uid(&d.uid, devices),
                 })
             })
             .collect(),
@@ -286,24 +356,142 @@ pub fn device_signature(devices: &[OutputDevice]) -> String {
     parts.join("\n")
 }
 
-/// What the pin watcher should do after a listing. `Some(uid)` means set the
-/// default output back to the pinned device. Only while a cue device is open:
-/// two-device cue is when a headphone plug or a Bluetooth reconnect taking the
-/// default would put the room in the DJ's ears, and outside it the operator's
-/// own change in macOS Sound settings is theirs to make. Never when the pinned
-/// device is gone: there is nothing to put back, and the room follows macOS.
-pub fn master_reassert_target(pinned: Option<&str>, cue_open: bool, devices: &[OutputDevice]) -> Option<String> {
-    if !cue_open {
-        return None;
+/// After one re-assert, a second move of the default inside this window is a
+/// fight (the operator or macOS itself insists), so the pin is released and the
+/// room follows macOS instead of being reverted every second.
+pub const REASSERT_FIGHT_WINDOW: Duration = Duration::from_secs(10);
+
+/// Why MASTER cannot be (or stay) pinned. Each one is surfaced to the page,
+/// the shell log and `GET /api/v1/audio/output-health`; none is silent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MasterFault {
+    /// The pin is the built-in speakers while headphones occupy the jack.
+    MutedByJack { uid: String, jack_uid: String, cue_on_jack: bool },
+    /// MASTER and the open CUE device are one physical output.
+    SharesCue { uid: String, cue_uid: String },
+    /// The default moved off the pin again right after a re-assert.
+    OverriddenBySystem { uid: String, default_uid: Option<String> },
+}
+
+impl MasterFault {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            MasterFault::MutedByJack { .. } => "muted_by_jack",
+            MasterFault::SharesCue { .. } => "shares_cue",
+            MasterFault::OverriddenBySystem { .. } => "overridden_by_system",
+        }
     }
-    let pinned = pinned?;
-    let present = devices.iter().any(|d| d.uid == pinned);
-    let default_is_pinned = devices.iter().any(|d| d.uid == pinned && d.is_default);
-    if present && !default_is_pinned {
-        Some(pinned.to_string())
-    } else {
-        None
+
+    pub fn uid(&self) -> &str {
+        match self {
+            MasterFault::MutedByJack { uid, .. }
+            | MasterFault::SharesCue { uid, .. }
+            | MasterFault::OverriddenBySystem { uid, .. } => uid,
+        }
     }
+
+    pub fn message(&self) -> String {
+        match self {
+            MasterFault::MutedByJack { cue_on_jack: true, .. } => "MASTER and CUE can't share the MacBook's built-in output: \
+                 the speakers are muted while headphones are in the jack. Use split cue (master L / cue R) \
+                 or choose another MASTER device."
+                .into(),
+            MasterFault::MutedByJack { cue_on_jack: false, .. } => "MacBook speakers are muted while headphones are \
+                 plugged into the headphone jack, so MASTER there would be silent. Choose the headphones or another output."
+                .into(),
+            MasterFault::SharesCue { cue_uid, .. } => format!(
+                "MASTER and CUE are the same output ({cue_uid}); use split cue (master L / cue R) on it, not two outputs."
+            ),
+            MasterFault::OverriddenBySystem { uid, default_uid } => format!(
+                "master pin overridden by system: the default output moved to {} again right after MASTER was put \
+                 back on {uid}; MASTER now follows the system output.",
+                default_uid.as_deref().unwrap_or("another device")
+            ),
+        }
+    }
+
+    pub fn to_json(&self, stage: &str) -> Value {
+        json!({ "kind": self.kind(), "uid": self.uid(), "stage": stage, "message": self.message() })
+    }
+}
+
+/// Refuse a MASTER pin that cannot sound, before anything changes. `None`
+/// for a device that is absent: setting the default reports that itself.
+pub fn master_pin_refusal(uid: &str, cue_uid: Option<&str>, devices: &[OutputDevice]) -> Option<MasterFault> {
+    let device = devices.iter().find(|d| d.uid == uid)?;
+    if muted_by_jack(device, devices) {
+        let jack_uid = physical_output_uid(uid, devices).to_string();
+        let cue_on_jack = cue_uid.is_some_and(|cue| physical_output_uid(cue, devices) == jack_uid);
+        return Some(MasterFault::MutedByJack { uid: uid.into(), jack_uid, cue_on_jack });
+    }
+    match cue_uid {
+        Some(cue) if physical_output_uid(cue, devices) == physical_output_uid(uid, devices) => {
+            Some(MasterFault::SharesCue { uid: uid.into(), cue_uid: cue.into() })
+        }
+        Some(_) | None => None,
+    }
+}
+
+/// What the pin watcher does after a listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PinDecision {
+    Hold,
+    /// Set the default output back to this pinned device.
+    Reassert(String),
+    /// Drop the pin and let the room follow macOS, reporting why.
+    Release(MasterFault),
+}
+
+/// The pin watcher's policy. The re-assert exists for one case only: while a
+/// cue device is open, a headphone plug or a Bluetooth reconnect taking the
+/// default would put the room in the DJ's ears (CUEOUT-09 P0). So it fires only
+/// for a pin that can sound, on a device genuinely distinct from the cue, and
+/// at most once per `REASSERT_FIGHT_WINDOW`; a pin that cannot sound or keeps
+/// losing the default is released with a reason, never reverted forever.
+/// Outside two-device cue the operator's own change in macOS Sound settings
+/// stands, and a vanished pin has nothing to put back.
+pub fn master_pin_decision(
+    pinned: Option<&str>,
+    cue_uid: Option<&str>,
+    devices: &[OutputDevice],
+    since_last_reassert: Option<Duration>,
+) -> PinDecision {
+    let Some(pinned) = pinned else { return PinDecision::Hold };
+    if !devices.iter().any(|d| d.uid == pinned) {
+        return PinDecision::Hold;
+    }
+    if let Some(fault) = master_pin_refusal(pinned, cue_uid, devices) {
+        return PinDecision::Release(fault);
+    }
+    let default_uid = devices.iter().find(|d| d.is_default).map(|d| d.uid.clone());
+    if default_uid.as_deref() == Some(pinned) || cue_uid.is_none() {
+        return PinDecision::Hold;
+    }
+    match since_last_reassert {
+        Some(elapsed) if elapsed < REASSERT_FIGHT_WINDOW => {
+            PinDecision::Release(MasterFault::OverriddenBySystem { uid: pinned.into(), default_uid })
+        }
+        Some(_) | None => PinDecision::Reassert(pinned.into()),
+    }
+}
+
+/// The current MASTER fault, for `GET /api/v1/audio/output-health` and the
+/// CLI. Process-wide because the health server has no handle on a connection.
+static MASTER_FAULT: Mutex<Option<Value>> = Mutex::new(None);
+
+fn set_master_fault(fault: Option<Value>) {
+    *MASTER_FAULT.lock().expect("master fault mutex") = fault;
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn master_fault_json() -> Value {
+    MASTER_FAULT.lock().expect("master fault mutex").clone().unwrap_or(Value::Null)
+}
+
+/// The shell's output listing, for the health probe.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn list_output_devices() -> Result<Vec<OutputDevice>, String> {
+    platform::list_outputs()
 }
 
 /// A parsed control message from the page.
@@ -407,6 +595,8 @@ struct Shared {
     ring: Arc<CueRing>,
     output: Mutex<Option<platform::CueOutput>>,
     master_pin: Mutex<Option<String>>,
+    /// When the watcher last put the default back on the pin; cleared by a new pin.
+    last_reassert: Mutex<Option<Instant>>,
     /// Bumped per accepted connection; an older connection loop sees the
     /// change and exits, so exactly one page feeds the ring.
     generation: AtomicU64,
@@ -432,6 +622,7 @@ impl CueSinkServer {
             ring: Arc::new(CueRing::new(RING_CAPACITY_FRAMES)),
             output: Mutex::new(None),
             master_pin: Mutex::new(None),
+            last_reassert: Mutex::new(None),
             generation: AtomicU64::new(0),
         });
         let token = shared.token.clone();
@@ -569,6 +760,8 @@ fn finish(shared: &Arc<Shared>, generation: u64, result: Result<(), String>, log
             log("cue sink: page disconnected; cue device closed");
         }
         *shared.master_pin.lock().expect("master pin mutex") = None;
+        *shared.last_reassert.lock().expect("last reassert mutex") = None;
+        set_master_fault(None);
     }
     result
 }
@@ -597,13 +790,24 @@ fn handle_command(shared: &Arc<Shared>, command: Command, log: fn(&str)) -> Resu
             Ok(json!({ "type": "closed", "was_open": closed }))
         }
         Command::SetMaster { uid } => {
+            let devices = platform::list_outputs()?;
+            let cue_uid = shared.output.lock().expect("cue output mutex").as_ref().map(|o| o.uid().to_string());
+            if let Some(fault) = master_pin_refusal(&uid, cue_uid.as_deref(), &devices) {
+                log(&format!("cue sink: refused to pin master to {uid}: {}", fault.message()));
+                set_master_fault(Some(fault.to_json("refused")));
+                return Err(fault.message());
+            }
             platform::set_default_output(&uid)?;
             *shared.master_pin.lock().expect("master pin mutex") = Some(uid.clone());
+            *shared.last_reassert.lock().expect("last reassert mutex") = None;
+            set_master_fault(None);
             log(&format!("cue sink: master pinned to {uid} (macOS default output)"));
             Ok(json!({ "type": "master_set", "uid": uid }))
         }
         Command::ClearMaster => {
             *shared.master_pin.lock().expect("master pin mutex") = None;
+            *shared.last_reassert.lock().expect("last reassert mutex") = None;
+            set_master_fault(None);
             Ok(json!({ "type": "master_cleared" }))
         }
     }
@@ -633,15 +837,35 @@ fn housekeeping(shared: &Arc<Shared>, last_signature: &mut Option<String>, log: 
         }
     }
     let pinned = shared.master_pin.lock().expect("master pin mutex").clone();
-    let cue_open = shared.output.lock().expect("cue output mutex").is_some();
-    if let Some(target) = master_reassert_target(pinned.as_deref(), cue_open, &devices) {
-        let from = devices.iter().find(|d| d.is_default).map(|d| d.uid.clone());
-        match platform::set_default_output(&target) {
-            Ok(()) => {
-                log(&format!("cue sink: macOS moved the default output to {from:?}; MASTER put back on {target}"));
-                events.push(json!({ "type": "master_reasserted", "uid": target, "from_uid": from }));
+    let cue_uid = shared.output.lock().expect("cue output mutex").as_ref().map(|o| o.uid().to_string());
+    let since_last_reassert = shared.last_reassert.lock().expect("last reassert mutex").map(|at| at.elapsed());
+    match master_pin_decision(pinned.as_deref(), cue_uid.as_deref(), &devices, since_last_reassert) {
+        PinDecision::Hold => {}
+        PinDecision::Reassert(target) => {
+            let from = devices.iter().find(|d| d.is_default).map(|d| d.uid.clone());
+            match platform::set_default_output(&target) {
+                Ok(()) => {
+                    *shared.last_reassert.lock().expect("last reassert mutex") = Some(Instant::now());
+                    log(&format!("cue sink: macOS moved the default output to {from:?}; MASTER put back on {target}"));
+                    events.push(json!({ "type": "master_reasserted", "uid": target, "from_uid": from }));
+                }
+                Err(err) => log(&format!("cue sink: putting MASTER back on {target} failed: {err}")),
             }
-            Err(err) => log(&format!("cue sink: putting MASTER back on {target} failed: {err}")),
+        }
+        PinDecision::Release(fault) => {
+            *shared.master_pin.lock().expect("master pin mutex") = None;
+            *shared.last_reassert.lock().expect("last reassert mutex") = None;
+            let message = fault.message();
+            log(&format!("cue sink: master pin on {} released ({}): {message}", fault.uid(), fault.kind()));
+            set_master_fault(Some(fault.to_json("released")));
+            let default_uid = devices.iter().find(|d| d.is_default).map(|d| d.uid.clone());
+            events.push(json!({
+                "type": "master_pin_released",
+                "uid": fault.uid(),
+                "reason": fault.kind(),
+                "message": message,
+                "default_uid": default_uid,
+            }));
         }
     }
     let signature = device_signature(&devices);
@@ -656,7 +880,7 @@ fn housekeeping(shared: &Arc<Shared>, last_signature: &mut Option<String>, log: 
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use super::{CueRing, OutputDevice};
+    use super::{builtin_role, CueRing, OutputDevice};
     use crate::output_health::platform::{
         get_cf_string, get_default_output_device, get_device_list, output_channel_count, prop_addr,
         set_default_output_device, set_unit_property, AURenderCallbackStruct, AudioBuffer, AudioBufferList,
@@ -684,6 +908,8 @@ mod platform {
     const K_AUDIO_DEVICE_PROPERTY_LATENCY: u32 = fourcc(b"ltnc");
     const K_AUDIO_DEVICE_PROPERTY_SAFETY_OFFSET: u32 = fourcc(b"saft");
     const K_AUDIO_DEVICE_PROPERTY_BUFFER_FRAME_SIZE: u32 = fourcc(b"fsiz");
+    const K_AUDIO_DEVICE_PROPERTY_DATA_SOURCE: u32 = fourcc(b"ssrc");
+    const K_AUDIO_DEVICE_PROPERTY_JACK_IS_CONNECTED: u32 = fourcc(b"jack");
 
     fn transport_name(code: u32) -> &'static str {
         match code {
@@ -728,7 +954,24 @@ mod platform {
                 get_scoped::<u32>(id, K_AUDIO_DEVICE_PROPERTY_TRANSPORT_TYPE, K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL)
                     .map(transport_name)
                     .unwrap_or("other");
-            out.push(OutputDevice { uid, name, channels, transport, is_default: Some(id) == default });
+            // Both reads fail on most devices (no data source, no jack):
+            // that is "unknown", and the classifier falls back to the UID.
+            let data_source =
+                get_scoped::<u32>(id, K_AUDIO_DEVICE_PROPERTY_DATA_SOURCE, K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT).ok();
+            let jack_connected =
+                get_scoped::<u32>(id, K_AUDIO_DEVICE_PROPERTY_JACK_IS_CONNECTED, K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT)
+                    .ok()
+                    .map(|connected| connected != 0);
+            let builtin_role = builtin_role(transport, data_source, &uid);
+            out.push(OutputDevice {
+                uid,
+                name,
+                channels,
+                transport,
+                is_default: Some(id) == default,
+                builtin_role,
+                jack_connected,
+            });
         }
         Ok(out)
     }
@@ -1124,23 +1367,178 @@ mod tests {
     }
 
     fn device(uid: &str, is_default: bool) -> OutputDevice {
-        OutputDevice { uid: uid.into(), name: uid.into(), channels: 2, transport: "other", is_default }
+        OutputDevice {
+            uid: uid.into(),
+            name: uid.into(),
+            channels: 2,
+            transport: "other",
+            is_default,
+            builtin_role: BuiltinRole::NotBuiltin,
+            jack_connected: None,
+        }
+    }
+
+    const SPK: &str = "BuiltInSpeakerDevice";
+    const JACK: &str = "BuiltInHeadphoneOutputDevice";
+
+    fn builtin(uid: &str, role: BuiltinRole, is_default: bool) -> OutputDevice {
+        OutputDevice { transport: "builtin", builtin_role: role, ..device(uid, is_default) }
+    }
+
+    /// silver, Tue 6 Oct 2026: wired headphones in the MacBook's own jack, an
+    /// HDMI display and a virtual device. `default` names the macOS default.
+    fn silver(default: &str) -> Vec<OutputDevice> {
+        vec![
+            builtin(SPK, BuiltinRole::Speaker, default == SPK),
+            builtin(JACK, BuiltinRole::Headphones, default == JACK),
+            device("lg", default == "lg"),
+            device("blackhole", default == "blackhole"),
+        ]
     }
 
     #[test]
-    fn master_pin_is_put_back_only_with_cue_open_and_the_pinned_device_present_but_not_default() {
-        let speakers = device("spk", false);
-        let phones = device("phones", true);
-        let both = [speakers.clone(), phones.clone()];
-        assert_eq!(master_reassert_target(Some("spk"), true, &both), Some("spk".into()));
-        assert_eq!(master_reassert_target(Some("spk"), true, &[device("spk", true), device("phones", false)]), None);
-        assert_eq!(master_reassert_target(Some("spk"), true, &[phones.clone()]), None, "vanished pin: nothing to restore");
-        assert_eq!(master_reassert_target(None, true, &both), None, "no pin: macOS decides");
+    fn builtin_role_reads_the_data_source_first_and_the_uid_only_as_a_fallback() {
+        let ispk = Some(crate::output_health::fourcc(b"ispk"));
+        let hdpn = Some(crate::output_health::fourcc(b"hdpn"));
+        assert_eq!(builtin_role("builtin", ispk, "whatever"), BuiltinRole::Speaker);
+        assert_eq!(builtin_role("builtin", hdpn, "BuiltInSpeakerDevice"), BuiltinRole::Headphones, "data source wins");
+        assert_eq!(builtin_role("builtin", None, SPK), BuiltinRole::Speaker);
+        assert_eq!(builtin_role("builtin", None, JACK), BuiltinRole::Headphones);
+        assert_eq!(builtin_role("usb", hdpn, JACK), BuiltinRole::NotBuiltin, "only built-in hardware shares the jack");
+        assert_eq!(builtin_role("builtin", Some(crate::output_health::fourcc(b"line")), SPK), BuiltinRole::NotBuiltin);
+    }
+
+    #[test]
+    fn the_speakers_are_muted_and_merge_into_the_jack_only_while_the_jack_is_occupied() {
+        let occupied = silver(SPK);
+        assert!(muted_by_jack(&occupied[0], &occupied));
+        assert_eq!(physical_output_uid(SPK, &occupied), JACK);
+        assert_eq!(physical_output_uid(JACK, &occupied), JACK);
+        assert_eq!(physical_output_uid("lg", &occupied), "lg");
+        // Controls: no headphone device, or one that says its jack is empty.
+        let empty = vec![builtin(SPK, BuiltinRole::Speaker, true), device("lg", false)];
+        assert!(!muted_by_jack(&empty[0], &empty));
+        assert_eq!(physical_output_uid(SPK, &empty), SPK);
+        let mut unplugged = silver(SPK);
+        unplugged[1].jack_connected = Some(false);
+        assert!(!muted_by_jack(&unplugged[0], &unplugged), "a jack that reports empty mutes nothing");
+        // An Intel Mac lists one built-in device; nothing is muted by it.
+        let intel = vec![builtin("BuiltInOutput", BuiltinRole::Headphones, true)];
+        assert!(!muted_by_jack(&intel[0], &intel));
+    }
+
+    #[test]
+    fn devices_json_carries_the_mute_and_the_physical_output() {
+        let listed = devices_json(&silver(JACK));
+        assert_eq!(listed[0]["muted_by_jack"], json!(true));
+        assert_eq!(listed[0]["physical_uid"], json!(JACK));
+        assert_eq!(listed[0]["builtin_role"], json!("speaker"));
+        assert_eq!(listed[1]["muted_by_jack"], json!(false));
+        assert_eq!(listed[2]["builtin_role"], Value::Null);
+    }
+
+    #[test]
+    fn set_master_refuses_the_jack_muted_speakers_and_the_cue_device_itself() {
+        let devices = silver(JACK);
+        let shared_pair = master_pin_refusal(SPK, Some(JACK), &devices).expect("built-in pair refused");
+        assert_eq!(shared_pair.kind(), "muted_by_jack");
+        assert!(shared_pair.message().contains("can't share the MacBook's built-in output"), "{}", shared_pair.message());
+        let no_cue = master_pin_refusal(SPK, None, &devices).expect("muted speakers refused without a cue too");
+        assert!(no_cue.message().contains("muted while headphones"), "{}", no_cue.message());
+        assert_eq!(master_pin_refusal(JACK, Some(JACK), &devices).map(|f| f.kind()), Some("shares_cue"));
+        // Controls: genuinely different devices, the jack itself with no cue,
+        // and the speakers once the jack is empty are all pinnable.
+        assert_eq!(master_pin_refusal("lg", Some(JACK), &devices), None);
+        assert_eq!(master_pin_refusal(JACK, None, &devices), None);
+        assert_eq!(master_pin_refusal(JACK, Some("lg"), &devices), None);
+        let empty = vec![builtin(SPK, BuiltinRole::Speaker, true), device("usb-phones", false)];
+        assert_eq!(master_pin_refusal(SPK, Some("usb-phones"), &empty), None);
+    }
+
+    #[test]
+    fn the_jack_muted_pin_is_released_never_reasserted() {
+        // The build-10 loop: MASTER pinned on the speakers, cue on the jack,
+        // macOS puts the default on the jack. Old policy: put back, forever.
+        let decision = master_pin_decision(Some(SPK), Some(JACK), &silver(JACK), None);
+        match decision {
+            PinDecision::Release(MasterFault::MutedByJack { cue_on_jack: true, .. }) => {}
+            other => panic!("expected a muted_by_jack release, got {other:?}"),
+        }
+        // Even while the speakers are still the default, a muted pin is a fault.
+        assert!(matches!(master_pin_decision(Some(SPK), None, &silver(SPK), None), PinDecision::Release(_)));
+    }
+
+    #[test]
+    fn control_genuinely_distinct_devices_keep_the_cueout_09_reassert() {
+        // MASTER on the HDMI display, cue on the jack: plugging in moved the
+        // default to the jack. Putting the room back is the P0 protection.
+        assert_eq!(master_pin_decision(Some("lg"), Some(JACK), &silver(JACK), None), PinDecision::Reassert("lg".into()));
+        let speakers_and_usb = vec![builtin(SPK, BuiltinRole::Speaker, false), device("usb-phones", true)];
         assert_eq!(
-            master_reassert_target(Some("spk"), false, &both),
-            None,
+            master_pin_decision(Some(SPK), Some("usb-phones"), &speakers_and_usb, None),
+            PinDecision::Reassert(SPK.into()),
+            "speakers are not muted by USB headphones"
+        );
+        // A re-assert long ago does not count against a fresh move.
+        assert_eq!(
+            master_pin_decision(Some("lg"), Some(JACK), &silver(JACK), Some(REASSERT_FIGHT_WINDOW * 3)),
+            PinDecision::Reassert("lg".into())
+        );
+    }
+
+    #[test]
+    fn a_second_move_inside_the_window_releases_the_pin_instead_of_fighting() {
+        let decision = master_pin_decision(Some("lg"), Some(JACK), &silver(JACK), Some(Duration::from_secs(1)));
+        assert_eq!(
+            decision,
+            PinDecision::Release(MasterFault::OverriddenBySystem { uid: "lg".into(), default_uid: Some(JACK.into()) })
+        );
+        if let PinDecision::Release(fault) = decision {
+            assert!(fault.message().starts_with("master pin overridden by system"), "{}", fault.message());
+        }
+    }
+
+    #[test]
+    fn the_watcher_holds_when_there_is_nothing_to_protect() {
+        assert_eq!(master_pin_decision(Some("lg"), Some(JACK), &silver("lg"), None), PinDecision::Hold, "default is the pin");
+        assert_eq!(master_pin_decision(None, Some(JACK), &silver(JACK), None), PinDecision::Hold, "no pin: macOS decides");
+        assert_eq!(
+            master_pin_decision(Some("gone"), Some(JACK), &silver(JACK), None),
+            PinDecision::Hold,
+            "vanished pin: nothing to restore"
+        );
+        assert_eq!(
+            master_pin_decision(Some("lg"), None, &silver(JACK), None),
+            PinDecision::Hold,
             "no cue open: the operator's own Sound-settings change stands"
         );
+    }
+
+    /// Simulates the 1 s housekeeping loop against an adversary that moves the
+    /// default off the pin every tick, and counts re-asserts. Bounded, not a loop.
+    #[test]
+    fn an_insistent_default_change_costs_at_most_one_reassert() {
+        let mut pinned = Some("lg".to_string());
+        let mut last_reassert: Option<Duration> = None;
+        let mut reasserts = 0;
+        let mut released = false;
+        for tick in 0..60u64 {
+            let now = Duration::from_secs(tick);
+            let since = last_reassert.map(|at| now - at);
+            match master_pin_decision(pinned.as_deref(), Some(JACK), &silver(JACK), since) {
+                PinDecision::Reassert(_) => {
+                    reasserts += 1;
+                    last_reassert = Some(now);
+                }
+                PinDecision::Release(_) => {
+                    pinned = None;
+                    released = true;
+                }
+                PinDecision::Hold => {}
+            }
+        }
+        assert_eq!(reasserts, 1, "one re-assert, then follow");
+        assert!(released, "the fight ends in a reported release");
     }
 
     #[test]

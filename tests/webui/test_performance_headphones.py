@@ -581,3 +581,60 @@ def test_create_app_mounts_every_headphone_route(client) -> None:
     for method, route in HEADPHONE_IPC_ROUTES.values():
         assert route in paths
         assert method.lower() in paths[route]
+
+
+@pytest.mark.requirement("CUEOUT-26")
+def test_get_headphones_carries_the_same_device_split_and_the_jack_fields() -> None:
+    """[if] the page mirrors an automatic same-device split [then] GET /performance/headphones shows split_reason and the jack-muted output, [else stop]."""
+
+    async def run() -> None:
+        headphones = dict(_DEFAULT_HEADPHONES)
+        headphones.update(
+            {
+                "output_mode": "split_cable",
+                "split_reason": "same_device",
+                "selected_master_output_device_id": "native:BuiltInHeadphoneOutputDevice",
+                "outputs": [
+                    {
+                        "id": "native:BuiltInSpeakerDevice",
+                        "label": "MacBook Pro Speakers",
+                        "physical_id": "native:BuiltInHeadphoneOutputDevice",
+                        "muted_by_jack": True,
+                        "transport": "builtin",
+                    },
+                    {
+                        "id": "native:BuiltInHeadphoneOutputDevice",
+                        "label": "External Headphones",
+                        "physical_id": "native:BuiltInHeadphoneOutputDevice",
+                        "muted_by_jack": False,
+                        "transport": "builtin",
+                    },
+                ],
+            }
+        )
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
+            await _open_page(client, headphones=headphones)
+            got = await client.get("/api/v1/performance/headphones")
+        assert got.status_code == 200, got.text
+        body = got.json()
+        assert body["split_reason"] == "same_device"
+        assert body["output_mode"] == "split_cable"
+        speakers = body["outputs"][0]
+        assert speakers["muted_by_jack"] is True
+        assert speakers["physical_id"] == "native:BuiltInHeadphoneOutputDevice"
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("CUEOUT-26")
+def test_control_operator_state_has_no_split_reason() -> None:
+    """[if] the page never auto-split [then] split_reason is null, [else stop]."""
+
+    async def run() -> None:
+        async with AsyncClient(transport=ASGITransport(app=_app()), base_url="http://test") as client:
+            await _open_page(client)
+            got = await client.get("/api/v1/performance/headphones")
+        assert got.status_code == 200, got.text
+        assert got.json()["split_reason"] is None
+
+    asyncio.run(run())

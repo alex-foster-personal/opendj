@@ -1,7 +1,7 @@
 // requirement: CUEOUT-25
-// [if] a saved MAIN equals the HEADPHONE CUE device [then] dualSinkAssignment re-picks a room output and marks it auto-pinned, [else stop]
+// [if] a saved MAIN equals the HEADPHONE CUE device [then] dualSinkAssignment runs split cue on that device (CUEOUT-26 superseded the CUEOUT-25 re-pick), [else stop]
 // [if] MAIN and CUE are distinct present devices [then] the saved MAIN is kept, no banner fault and no repair are raised, [else stop]
-// [if] selectMasterOutput is asked for the CUE device in two_outputs [then] it throws before touching the MAIN route, [else stop]
+// [if] selectMasterOutput is asked for the CUE device in two_outputs [then] it enters split cue on that device instead of a silent room (CUEOUT-26), [else stop]
 // [if] MAIN equals CUE in two_outputs [then] mainOutputFault names that device and offers a room fix, [else stop]
 // [if] a refresh repairs a conflicting saved MAIN [then] the repaired MAIN is persisted after it is pinned, [else stop]
 import assert from 'node:assert/strict';
@@ -43,19 +43,18 @@ function headphoneState(overrides) {
 	};
 }
 
-test('a saved MAIN equal to the CUE device is re-picked to the room on load', () => {
-	assert.deepEqual(
-		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP }),
-		{ masterId: SPEAKERS, cueId: HP, autoPinnedMaster: true }
-	);
-	// The Mac app reports where the room already plays; that wins over a label guess unless it is the cue.
+test('a saved MAIN equal to the CUE device runs split cue on it (CUEOUT-26), never a silent room', () => {
+	const split = { masterId: HP, cueId: HP, autoPinnedMaster: false, splitSameDevice: true };
+	assert.deepEqual(headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP }), split);
 	assert.deepEqual(
 		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP, currentRoomId: 'native:lg' }),
-		{ masterId: 'native:lg', cueId: HP, autoPinnedMaster: true }
+		split,
+		'an explicit MAIN on the cue device is the operator saying one output'
 	);
+	// Control: an UNPINNED MAIN with the room elsewhere still gets the room.
 	assert.deepEqual(
-		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: HP, currentRoomId: HP }),
-		{ masterId: SPEAKERS, cueId: HP, autoPinnedMaster: true }
+		headphones.dualSinkAssignment({ outputs: SILVER, selectedCueId: HP, selectedMasterId: null, currentRoomId: 'native:lg' }),
+		{ masterId: 'native:lg', cueId: HP, autoPinnedMaster: true }
 	);
 });
 
@@ -66,21 +65,15 @@ test('control: a distinct saved MAIN is kept and not re-pinned', () => {
 	);
 });
 
-test('selectMasterOutput guard refuses the CUE device in two_outputs only', () => {
-	assert.throws(() => collision.assertMainIsNotCue(HP, HP, 'two_outputs'), /MAIN output cannot be the HEADPHONE CUE device/);
-	// Controls: a distinct device, no cue, and split_cable (one device by design) all pass.
-	assert.doesNotThrow(() => collision.assertMainIsNotCue(SPEAKERS, HP, 'two_outputs'));
-	assert.doesNotThrow(() => collision.assertMainIsNotCue(HP, null, 'two_outputs'));
-	assert.doesNotThrow(() => collision.assertMainIsNotCue(HP, HP, 'split_cable'));
-});
-
-test('selectMasterOutput runs the guard before its try, so a refusal never fails the live MAIN route', () => {
+test('selectMasterOutput turns MAIN-on-the-CUE-device into split cue before its try, so the live MAIN route is never failed', () => {
 	const source = readFileSync(HEADPHONES, 'utf8');
 	const body = source.slice(source.indexOf('export async function selectMasterOutput('));
-	const guard = body.indexOf('assertMainIsNotCue(');
+	const split = body.indexOf('_enterSameDeviceSplit(');
+	const sameCheck = body.indexOf('sameOutputDevice(mixerState.headphones.outputs, deviceId, cueId)');
 	const tryAt = body.indexOf('try {');
-	assert.ok(guard > 0, 'selectMasterOutput must call assertMainIsNotCue');
-	assert.ok(guard < tryAt, 'the guard must run before the try that marks routes.master failed');
+	assert.ok(sameCheck > 0 && split > sameCheck, 'selectMasterOutput must split when MAIN is the CUE output');
+	assert.ok(split < tryAt, 'the split must run before the try that marks routes.master failed');
+	assert.ok(!source.includes('assertMainIsNotCue('), 'the CUEOUT-25 refusal is superseded, not kept beside the split');
 });
 
 test('MAIN equal to CUE raises the banner fault with a room fix', () => {

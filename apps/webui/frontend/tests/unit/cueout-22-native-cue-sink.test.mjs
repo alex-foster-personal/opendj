@@ -50,9 +50,33 @@ test('native ids round-trip and browser ids are refused', () => {
 	assert.throws(() => sink.nativeDeviceUid('native:'), /not a native output id/);
 	assert.deepEqual(
 		sink.nativeOutputsAsHeadphoneOutputs([
-			{ uid: 'spk', name: 'MacBook Pro Speakers', channels: 2, transport: 'builtin', is_default: true }
+			{
+				uid: 'spk',
+				name: 'MacBook Pro Speakers',
+				channels: 2,
+				transport: 'builtin',
+				is_default: true,
+				muted_by_jack: false,
+				physical_uid: 'spk'
+			}
 		]),
-		[{ id: 'native:spk', label: 'MacBook Pro Speakers' }]
+		[
+			{
+				id: 'native:spk',
+				label: 'MacBook Pro Speakers',
+				physical_id: 'native:spk',
+				muted_by_jack: false,
+				transport: 'builtin'
+			}
+		]
+	);
+	// CUEOUT-26: a shell listing without the jack fields is a shell/page mismatch, not "unmuted".
+	assert.throws(
+		() =>
+			sink.nativeOutputsAsHeadphoneOutputs([
+				{ uid: 'spk', name: 'MacBook Pro Speakers', channels: 2, transport: 'builtin', is_default: true }
+			]),
+		/missing muted_by_jack\/physical_uid/
 	);
 });
 
