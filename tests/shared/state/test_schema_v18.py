@@ -1,6 +1,6 @@
 """Migration v18: persisted path availability index (issue #1037, PERF-RB-01).
 
-[if] v18 is applied [then] path_availability and its checked_at index exist, [else stop].
+[if] v18 is applied [then] path_availability exists, [else stop].
 """
 from __future__ import annotations
 
@@ -28,7 +28,8 @@ def test_fresh_ladder_creates_path_availability() -> None:
     """[if] a fresh schema is applied [then] the index table exists, [else stop]."""
     conn = sqlite3.connect(":memory:")
     state_schema.apply_migrations(conn)
-    assert {"path_availability", "idx_path_availability_checked"} <= _objects(conn)
+    # Its checked_at index is created here and dropped again at v24 (STATE-21).
+    assert "path_availability" in _objects(conn)
     conn.close()
 
 
