@@ -382,7 +382,7 @@ test('a master start is pushed to the leader page as an agent order the executor
 	assert.doesNotMatch(rail, /startMasterMixCapture/, 'the rail must not start a second tap');
 });
 
-test('once a recording is stopped the tap never re-posts a chunk (seen live: seq 0 sent 21 times)', async () => {
+test('a dropped answer during a stop ends the tap with no second post', async () => {
 	const graph = fakeGraph();
 	capture.setMasterMixTapPoint({ context: graph.context, node: graph.node });
 	const posted = [];
