@@ -325,6 +325,7 @@ def test_a_malformed_remembered_input_is_an_error_not_nothing(picker_client, con
 @pytest.mark.parametrize(
     "body",
     [
+        {"sources": []},
         {"source": "loopback", "sources": []},
         {"ffmpeg_device_idx": 0, "source": "loopback", "device_name": "BlackHole 2ch", "sources": []},
         {"source": "none", "device_name": "BlackHole 2ch", "sources": []},
