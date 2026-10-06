@@ -6,11 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
-## [app-v1.0.0-alpha.1] - Open DJ 1.0 alpha (unreleased)
+## [app-v1.0.0-alpha.1] - 2026-10-06
 
 The first public release of the Open DJ desktop app, named **Open DJ 1.0 alpha** and tagged
-`app-v1.0.0-alpha.1`. The release lane replaces "(unreleased)" with the date when it creates the
-tag on the exact commit that built the dmg.
+`app-v1.0.0-alpha.1`.
 
 App releases use their own `app-v<semver>` tags (ADR "Launch release name 'Open DJ 1.0 alpha'
 and an app tag scheme of its own", `docs/decisions/`). The `1.0.x` entries below this one, and
