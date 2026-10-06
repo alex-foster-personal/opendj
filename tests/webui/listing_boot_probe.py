@@ -25,6 +25,7 @@ change the filesystem between two requests and see what the next one says:
     {"op": "rename", "path": "...", "to": "..."}
     {"op": "symlink", "path": "...", "target": "..."}  (replaces a link already there)
     {"op": "post", "name": "reanchor", "url": "/api/v1/library/share-root/reanchor"}
+    {"op": "post", "name": "assets", "url": "/api/v1/library/row-assets", "json": {"ids": ["..."]}}
 
     python -m tests.webui.listing_boot_probe <spec.json>
 """
@@ -174,7 +175,7 @@ def main(spec_path: str) -> None:
                 if step["op"] == "get":
                     results[step["name"]] = _get(client, trace, step["url"])
                 elif step["op"] == "post":
-                    answer = client.post(step["url"])
+                    answer = client.post(step["url"], json=step.get("json"))
                     results[step["name"]] = {"status": answer.status_code, "body": answer.json()}
                 else:
                     _mutate(step)

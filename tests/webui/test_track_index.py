@@ -12,7 +12,7 @@ The perf half runs on a real rekordbox-mapped 2,300-row state.db in a child
 engine (``tests.webui.listing_boot_probe``), the size of the maintainer's present library.
 
 Regression one-liners:
-  - if the index rows are not the /tracks walk rows minus provenance then broken
+  - if the index rows are not the /tracks walk rows minus the deferred fields then broken
   - if the index costs more sql statements per 1000 rows than a /tracks page then broken
   - if a warm index of 2,300 rows takes longer than INDEX_WARM_BUDGET_MS then broken
   - if a matching If-None-Match does not answer 304 then broken
@@ -36,6 +36,9 @@ NOW = "2026-10-06T00:00:00Z"
 #: Warm index of TRACKS mapped rows, in a child engine. Measured on demon-llama,
 #: Tue 6 Oct 2026: 348 ms cold, 359 ms warm, 3.1 MB. A ratchet: lower it, never raise it.
 INDEX_WARM_BUDGET_MS = 1_500
+#: Row fields the index never sends (LIBM-172): provenance, and the per-row disk reads
+#: that POST /library/row-assets serves for rows in view.
+DEFERRED = frozenset({"provenance", "preview_b64", "preview_max", "vocals", "artwork_available", "artwork_status"})
 
 
 def _sid(i: int) -> str:
@@ -80,8 +83,8 @@ def _seed(root: Path) -> tuple[Path, Path]:
         master.executemany(
             "INSERT INTO djmdContent (ID, ImagePath, AnalysisDataPath, DJPlayCount) VALUES (?, ?, ?, 0)",
             [
-                (str(i + 1), f"/PIONEER/Artwork/{i:08x}/artwork.jpg",
-                 f"/PIONEER/USBANLZ/{i:08x}/ANLZ0000.DAT")
+                (str(i + 1), f"/PIONEER/Artwork/{i % 4096:03x}/{i:08x}/artwork.jpg",
+                 f"/PIONEER/USBANLZ/{i % 4096:03x}/{i:08x}/ANLZ0000.DAT")
                 for i in range(TRACKS)
             ],
         )
@@ -105,14 +108,14 @@ def probe(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     return run_boot_probe(data_dir, home, steps, root)
 
 
-def test_index_is_the_full_walk_minus_provenance(probe) -> None:
-    """[if] the index rows differ from the /tracks walk minus provenance [then] fail, [else stop]."""
+def test_index_is_the_full_walk_minus_deferred_fields(probe) -> None:
+    """[if] index rows differ from the /tracks walk minus deferred fields [then] fail, [else stop]."""
     walk = [row for name in ("page_1", "page_2", "page_3") for row in probe[name]["body"]["items"]]
     index = probe["index_warm"]["body"]
     assert len(walk) == TRACKS
     assert isinstance(index["revision"], str) and index["revision"] != ""
-    assert all("provenance" not in row for row in index["items"])
-    assert index["items"] == [{k: v for k, v in row.items() if k != "provenance"} for row in walk]
+    assert all(DEFERRED.isdisjoint(row) for row in index["items"])
+    assert index["items"] == [{k: v for k, v in row.items() if k not in DEFERRED} for row in walk]
 
 
 def test_index_sql_cost_is_per_read_page_not_per_row(probe) -> None:

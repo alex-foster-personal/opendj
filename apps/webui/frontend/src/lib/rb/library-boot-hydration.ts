@@ -14,7 +14,7 @@ import {
 	listPlaylistsHydrated,
 	listTracksHydrated,
 	type PlaylistSummaryHydrated,
-	type TrackListItemWire,
+	type TrackIndexItemWire,
 	type TracksPageHydrated
 } from '$lib/rb/api-rb';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -188,6 +188,19 @@ export function bootListingWalkInFlight(): boolean {
 export function bootListingWalkSettled(): void {
 	settleBootListingWalk?.();
 	settleBootListingWalk = null;
+	for (const wake of walkWaiters.splice(0)) wake();
+}
+
+const walkWaiters: Array<() => void> = [];
+
+/** Resolves when the boot listing walk (the library index) has settled, or after
+ * `maxMs`, so a caller holding work behind it never loses it (LIBM-172). */
+export function whenBootListingWalkSettled(maxMs: number): Promise<void> {
+	if (settleBootListingWalk === null) return Promise.resolve();
+	return new Promise((resolve) => {
+		walkWaiters.push(resolve);
+		setTimeout(resolve, maxMs);
+	});
 }
 
 async function _bootTracksPage(cursor: string | undefined): Promise<TracksPageHydrated> {
@@ -218,14 +231,14 @@ export async function fetchBootTracksFirstPage(
 
 /** All Tracks' held library index for an instant paint (LIBM-171): null before
  * the first load, `current: false` once a library change has been seen. */
-export function heldAllTracksIndex(): { items: readonly TrackListItemWire[]; current: boolean } | null {
+export function heldAllTracksIndex(): { items: readonly TrackIndexItemWire[]; current: boolean } | null {
 	const held = peekLibraryIndex();
 	return held === null ? null : { items: held.items, current: libraryIndexIsCurrent() };
 }
 
 /** The current library index's rows, in ONE request when it is not held. Ends
  * the boot listing walk either way: the index is the whole listing. */
-export async function loadAllTracksIndex(): Promise<readonly TrackListItemWire[]> {
+export async function loadAllTracksIndex(): Promise<readonly TrackIndexItemWire[]> {
 	try {
 		return (await loadLibraryIndex()).items;
 	} finally {

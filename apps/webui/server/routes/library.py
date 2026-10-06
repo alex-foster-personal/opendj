@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
@@ -18,6 +18,10 @@ from apps.webui.server.library_readiness import (
     ReadinessAxis,
     query_library_readiness,
 )
+from apps.webui.server import rb_vendor
+from apps.webui.server.backend import StateBackend
+from apps.webui.server.deps import get_library_data_dir, get_read_state
+from apps.webui.server.models import RowAssetOut, RowAssetsOut
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_preview_strips
 
 router = APIRouter(prefix="/library", tags=["library"])
@@ -116,6 +120,43 @@ def post_preview_strips(body: PreviewStripsIn, request: Request) -> PreviewStrip
             for sid, strip in found.strips.items()
         },
         pending=pending,
+    )
+
+
+@router.post("/row-assets", response_model=RowAssetsOut, operation_id="post_row_assets")
+def post_row_assets(
+    body: PreviewStripsIn,
+    request: Request,
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+) -> RowAssetsOut:
+    """The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).
+
+    Preview strip, vocal regions and cover verdict, read exactly as a ``GET /tracks``
+    row reads them. The browser asks for the rows in view only, so a 9,713-row index
+    never pays these reads up front. An id that is not a library track is absent.
+    Strip-less unmapped ids bump the ahead-analysis drain, as ``/preview-strips`` does.
+    """
+    found = backend.get_tracks_bulk(body.ids)
+    tracks = [found[sid] for sid in dict.fromkeys(body.ids) if sid in found]
+    rows = rb_vendor.build_track_rows(tracks, data_dir=data_dir)
+    drain = getattr(request.app.state, "ahead_analysis", None)
+    pending = [r["stable_id"] for r in rows if r["preview_b64"] is None and not r["has_rb_mapping"]]
+    if drain is not None:
+        for sid in pending:
+            drain.bump(sid)
+    return RowAssetsOut(
+        assets={
+            r["stable_id"]: RowAssetOut(
+                preview_b64=r["preview_b64"],
+                preview_max=r["preview_max"],
+                vocals=r["vocals"],
+                artwork_available=r["artwork_available"],
+                artwork_status=r["artwork_status"],
+            )
+            for r in rows
+        },
+        pending=pending if drain is not None else [],
     )
 
 

@@ -92,6 +92,7 @@
 		pruneSelection,
 		libraryAudioLoadRefusal,
 		rowFromListWire as _rowFromListWire,
+		rowFromIndexWire as _rowFromIndexWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		applySettledAvailability,
 		startPendingSettle,
@@ -1113,11 +1114,9 @@
 	function _prefetchPlaylistTreeIntent(
 		nodes: Array<{ playlist_id: string; kind?: string }>
 	): void {
-		prefetchPlaylistTreeIntent(
-			nodes
-				.filter((node) => node.kind !== 'folder' && node.kind !== 'taglist')
-				.map((node) => node.playlist_id)
-		);
+		const ids = nodes.filter((n) => n.kind !== 'folder' && n.kind !== 'taglist').map((n) => n.playlist_id);
+		// LIBM-172: speculative pages wait for the boot library index.
+		bootScheduler.defer('browser-panel:playlist-tree-intent', () => prefetchPlaylistTreeIntent(ids));
 	}
 
 	// HEALTH-15: the engine's last library scan, one read in flight at a time.
@@ -2086,7 +2085,7 @@
 					held: heldAllTracksIndex(),
 					loadIndex: loadAllTracksIndex,
 					firstPage: () => fetchBootTracksFirstPage(undefined),
-					mapRow: (t, order) => _rowFromListWire(t, order),
+					mapRow: (t, order) => _rowFromIndexWire(t, order),
 					progressTotal: allTracksNonBrokenCount,
 					onFirstPaint: () => {
 						recordPlaylistSwitchFirstRowsMs(
@@ -2217,7 +2216,7 @@
 		// client-side so the toggle flips instantly. One ring row per refresh
 		// (PERF-R5 Q9). All Tracks has no membership etag.
 		const startedAt = performance.now();
-		const rows = rowsForIndex(await loadAllTracksIndex(), _rowFromListWire);
+		const rows = rowsForIndex(await loadAllTracksIndex(), _rowFromIndexWire);
 		recordLibraryLoadTiming('all-tracks', { fetchMs: performance.now() - startedAt, rows: rows.length });
 		return { rows, truncated: false, etag: '' };
 	}

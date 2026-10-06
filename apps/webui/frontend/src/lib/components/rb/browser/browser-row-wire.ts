@@ -19,6 +19,7 @@ import {
 	parseVocals,
 	type FileAvailabilityStatus,
 	type PlaylistTrackRowWire,
+	type TrackIndexItemWire,
 	type TrackListItemWire
 } from '$lib/rb/api-rb';
 import type { BrowserRow } from './pane-contract.svelte';
@@ -319,4 +320,21 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		is_remix: track.is_remix ?? null,
 		is_radio_edit: track.is_radio_edit ?? null
 	};
+}
+
+/** What a library index row says before `POST /library/row-assets` answers for
+ * it (LIBM-172): no strip yet, no vocal regions yet, cover not yet checked. No
+ * sort, filter or search reads these fields (library-index-lazy-assets test). */
+export const INDEX_ROW_DEFERRED = {
+	preview_b64: null,
+	preview_max: null,
+	vocals: { status: 'not_analyzed' },
+	artwork_available: null,
+	artwork_status: 'unresolved'
+} as const satisfies Pick<TrackListItemWire, 'preview_b64' | 'preview_max' | 'vocals' | 'artwork_available' | 'artwork_status'>;
+
+/** A library index row, or a full listing row (the boot first page), as a BrowserRow. */
+export function rowFromIndexWire(item: TrackIndexItemWire | TrackListItemWire, order: number): BrowserRow {
+	if ('artwork_status' in item) return rowFromListWire(item, order);
+	return rowFromListWire({ ...item, ...INDEX_ROW_DEFERRED, provenance: {} }, order);
 }

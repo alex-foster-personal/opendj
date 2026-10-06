@@ -1,5 +1,6 @@
 /** Loads GET /tracks/lyrics-cached-ids once for wave-row lyrics gating (#1869). */
 import { API_BASE } from '$lib/api';
+import { bootScheduler } from '$lib/rb/boot-scheduler';
 
 import { shouldFetchTrackLyrics } from './lyrics-cached-ids';
 
@@ -27,8 +28,11 @@ async function loadLyricsCachedIds(): Promise<void> {
 export function ensureLyricsCachedIdsLoaded(): void {
 	if (loadStarted) return;
 	loadStarted = true;
-	void loadLyricsCachedIds().catch((error: unknown) => {
-		loadError = error instanceof Error ? error : new Error(String(error));
+	// LIBM-172: a 1.7 s engine read at boot; it waits for the library index.
+	bootScheduler.defer('lyrics-cached-ids:load', () => {
+		void loadLyricsCachedIds().catch((error: unknown) => {
+			loadError = error instanceof Error ? error : new Error(String(error));
+		});
 	});
 }
 

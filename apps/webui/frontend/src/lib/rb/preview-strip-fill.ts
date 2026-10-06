@@ -176,3 +176,22 @@ export class PreviewStripFiller {
     this.#schedule(Math.max(0, due - this.#deps.now()));
   }
 }
+
+/**
+ * The ids the filler may ask for: rows in view plus `margin` rows each side that
+ * still have no strip by any route (LIBM-172). Since the library index carries no
+ * strips, this window is the ONLY thing that keeps a 9,713-row list from asking
+ * for every row's disk reads at once.
+ */
+export function stripLessIdsNear(
+  rows: readonly { stable_id: string; strip: unknown }[],
+  startIndex: number,
+  endIndex: number,
+  margin: number,
+  hasStrip: (stable_id: string) => boolean,
+): string[] {
+  return rows
+    .slice(Math.max(0, startIndex - margin), endIndex + margin)
+    .filter((r) => r.strip === null && !hasStrip(r.stable_id))
+    .map((r) => r.stable_id);
+}

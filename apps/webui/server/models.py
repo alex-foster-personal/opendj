@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from .models_grid_quality import GridQualityRowOut
 from .models_tempo_pref import TempoPrefOut, TempoPrefPatch
@@ -237,15 +238,50 @@ class TracksPage(BaseModel):
     next_cursor: str | None = None
 
 
-class TrackIndexOut(BaseModel):
-    """GET /tracks/index: every listing row in one response (LIBM-171).
+class TrackIndexItemOut(TrackListItemOut):
+    """One library index row: a listing row without its per-row disk reads (LIBM-172).
 
-    Rows carry no ``provenance`` (its default, an empty map); the library
-    ``revision`` was read before the rows.
+    The preview strip, vocal regions and cover verdict are read off disk per
+    row, which was 7.8 s of a cold 9,713-row index. They are never sent here
+    (excluded and absent from the schema); the browser asks
+    ``POST /library/row-assets`` for the rows in view. ``provenance`` is left
+    out too: ``GET /tracks/{sid}`` serves it.
+    """
+
+    provenance: SkipJsonSchema[dict[str, ProvenanceOut]] = Field(default={}, exclude=True)
+    preview_b64: SkipJsonSchema[str | None] = Field(default=None, exclude=True)
+    preview_max: SkipJsonSchema[int | None] = Field(default=None, exclude=True)
+    vocals: SkipJsonSchema[dict[str, Any]] = Field(default_factory=dict, exclude=True)
+    artwork_available: SkipJsonSchema[bool | None] = Field(default=None, exclude=True)
+    artwork_status: SkipJsonSchema[str] = Field(default="unresolved", exclude=True)
+
+
+class TrackIndexOut(BaseModel):
+    """GET /tracks/index: every library row in one response (LIBM-171, LIBM-172).
+
+    The library ``revision`` was read before the rows.
     """
 
     revision: str
-    items: list[TrackListItemOut]
+    items: list[TrackIndexItemOut]
+
+
+class RowAssetOut(BaseModel):
+    """The per-row disk reads a library index row leaves out (LIBM-172)."""
+
+    preview_b64: str | None
+    preview_max: int | None
+    vocals: dict[str, Any]
+    artwork_available: bool | None
+    artwork_status: Literal["ok", "no_image_path", "unresolved", "file_missing"]
+
+
+class RowAssetsOut(BaseModel):
+    """``assets`` holds every asked id that is a library track; ``pending`` lists
+    strip-less ids the ahead-analysis drain was bumped for (ask again later)."""
+
+    assets: dict[str, RowAssetOut]
+    pending: list[str]
 
 
 class TrackPatch(BaseModel):

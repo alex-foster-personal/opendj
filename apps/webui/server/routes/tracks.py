@@ -40,6 +40,7 @@ from ..models import (
     LyricsUnavailableOut,
     QualityRungOut,
     TrackListItemOut,
+    TrackIndexItemOut,
     TrackIndexOut,
     TrackLyricsOut,
     TrackOut,
@@ -359,16 +360,22 @@ def list_tracks(
 
 
 def _listing_items(
-    request: Request, tracks: list[Track], available: AvailableFilter
+    request: Request, tracks: list[Track], available: AvailableFilter, *, for_index: bool = False
 ) -> list[TrackListItemOut]:
-    """One listing row per track, in order: the shared body of /tracks and /tracks/index."""
+    """One listing row per track, in order: the shared body of /tracks and /tracks/index.
+
+    ``for_index`` builds :class:`TrackIndexItemOut` rows and skips the per-row disk
+    reads those rows do not carry (LIBM-172).
+    """
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)
     rows = rb_vendor.build_track_rows(
         tracks,
         jobs_store=getattr(request.app.state, "jobs_store", None),
         data_dir=get_library_data_dir(request),
+        with_row_assets=not for_index,
     )
+    item_model = TrackIndexItemOut if for_index else TrackListItemOut
     stable_ids = [t.stable_id for t in tracks]
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
@@ -389,7 +396,7 @@ def _listing_items(
         # passed twice.
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
-            TrackListItemOut(
+            item_model(
                 **base,
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
@@ -425,9 +432,6 @@ def _listing_items(
 
 #: Tracks read per backend call while the index is assembled (the backend's own cap).
 INDEX_READ_PAGE = 1000
-#: Fields the index leaves out: the per-field provenance map is about 780 bytes
-#: of a 2.6 KB row and no list reads it. GET /tracks/{sid} still serves it.
-INDEX_OMITTED_FIELDS = frozenset({"provenance"})
 
 
 # Declared BEFORE /{stable_id} so "index" is not swallowed as an id.
@@ -441,26 +445,25 @@ def get_track_index(
     """Every library row in ONE response: the browser's local library index (LIBM-171).
 
     The same rows, in the same order, as walking ``GET /tracks`` to the end, minus
-    ``provenance``. The browser holds this once and resolves All Tracks from it,
-    the way rekordbox, Serato and Traktor hold their library in memory, instead of
-    re-walking ~23 pages on every switch. ``revision`` is the library revision read
-    BEFORE the rows, so a change made while they were read shows as a newer
-    revision on the next ``GET /tracks/revision``. The ETag is a hash of the body:
-    ``If-None-Match`` with it answers 304, gzip when the client accepts it.
+    ``provenance`` and the per-row disk reads (preview strip, vocals, cover verdict:
+    LIBM-172), which the browser asks ``POST /library/row-assets`` for, rows in view
+    only. The browser holds this once and resolves All Tracks from it, the way
+    rekordbox, Serato and Traktor hold their library in memory. ``revision`` is the
+    library revision read BEFORE the rows, so a change made while they were read
+    shows as a newer revision on the next ``GET /tracks/revision``. The ETag is a
+    hash of the body: ``If-None-Match`` with it answers 304, gzip when accepted.
     """
     revision = backend.library_revision()
     items: list[TrackListItemOut] = []
     cursor: str | None = None
     while True:
         page = backend.list_tracks(TrackFilter(cursor=cursor, limit=INDEX_READ_PAGE))
-        items.extend(_listing_items(request, page.items, "all"))
+        items.extend(_listing_items(request, page.items, "all", for_index=True))
         if page.next_cursor is None:
             break
         cursor = page.next_cursor
     out = TrackIndexOut.model_validate({"revision": revision, "items": items})
-    body = out.model_dump_json(
-        by_alias=True, exclude={"items": {"__all__": set(INDEX_OMITTED_FIELDS)}}
-    ).encode()
+    body = out.model_dump_json(by_alias=True).encode()
     etag = f'"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
     headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
     # PERF-DRAIN-02: the launch's index is out, so the ahead drain's boot grace may end.

@@ -14,11 +14,11 @@
  * No $state here, so node:test loads it directly.
  */
 
-import { fetchTrackIndex, type TrackIndexWire, type TrackListItemWire } from './api-rb';
+import { fetchTrackIndex, type TrackIndexItemWire, type TrackIndexWire } from './api-rb';
 
 export interface LibraryIndex {
 	readonly revision: string;
-	readonly items: readonly TrackListItemWire[];
+	readonly items: readonly TrackIndexItemWire[];
 	readonly generation: number;
 }
 

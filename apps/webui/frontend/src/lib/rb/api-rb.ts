@@ -735,9 +735,19 @@ export async function listTracksHydrated(params: {
 	return page;
 }
 
+/** Fields a library index row leaves out (LIBM-172): per-row disk reads that
+ * `POST /library/row-assets` serves for the rows in view. */
+export type TrackIndexDeferredField =
+	| 'preview_b64'
+	| 'preview_max'
+	| 'vocals'
+	| 'artwork_available'
+	| 'artwork_status';
+export type TrackIndexItemWire = Omit<TrackListItemWire, TrackIndexDeferredField | 'provenance'>;
+
 export interface TrackIndexWire {
 	revision: string;
-	items: TrackListItemWire[];
+	items: TrackIndexItemWire[];
 }
 
 /** GET /tracks/index: every listing row in one response (LIBM-171). `no-cache`
@@ -751,7 +761,7 @@ export async function fetchTrackIndex(): Promise<TrackIndexWire> {
 	return index;
 }
 
-function _assertListingRows(items: TrackListItemWire[]): void {
+function _assertListingRows(items: TrackIndexItemWire[]): void {
 	for (const item of items) {
 		if (
 			item.file_availability !== 'AVAILABILITY_PENDING' &&

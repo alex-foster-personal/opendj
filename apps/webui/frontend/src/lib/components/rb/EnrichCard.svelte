@@ -16,6 +16,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, unwrap } from '$lib/api/client';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import EnrichCardView from '$lib/components/rb/EnrichCardView.svelte';
 	import { type EnrichSummary, needsAttention } from '$lib/enrich/enrich-card';
@@ -87,7 +88,9 @@
 		);
 
 	onMount(() => {
-		void load();
+		// LIBM-172: the summary is a multi-second engine read; it waits for the
+		// boot library index (the scheduler's ceiling still runs it).
+		bootScheduler.defer('enrich-card:load', () => void load());
 		const timer = setInterval(() => void load(), REFRESH_MS);
 		return () => clearInterval(timer);
 	});

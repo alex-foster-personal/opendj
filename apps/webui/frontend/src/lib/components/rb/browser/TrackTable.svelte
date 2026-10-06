@@ -27,7 +27,6 @@
 		artworkUrl,
 		artworkStatusLabel,
 		decodePreviewStrip,
-		fetchPreviewStrips,
 		type PreviewStripData,
 		type Vocals
 	} from '$lib/rb/api-rb';
@@ -88,7 +87,8 @@
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
-	import { PreviewStripFiller } from '$lib/rb/preview-strip-fill';
+	import { PreviewStripFiller, stripLessIdsNear } from '$lib/rb/preview-strip-fill';
+	import { bootListingWalkInFlight, whenBootListingWalkSettled } from '$lib/rb/library-boot-hydration';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
@@ -1125,7 +1125,10 @@
 	// one: asked for in debounced batches, never per row (NATIVE-21).
 	let filledStrips: Record<string, PreviewStripData | null> = $state({});
 	const stripFiller = new PreviewStripFiller({
-		fetchBatch: fetchPreviewStrips,
+		// LIBM-172: one batch settles strip, vocals and cover verdict; lazy so it
+		// stays off the /performance chunk.
+		fetchBatch: async (ids) =>
+			(await import('$lib/rb/row-assets-fill')).fetchAndApplyRowAssets(ids, untrack(() => rows)),
 		onStrip: (id, wire) => {
 			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
 		},
@@ -1136,14 +1139,13 @@
 	});
 	$effect(() => () => stripFiller.dispose());
 	$effect(() => {
-		const margin = renderedRowCapacity;
-		const near = rows.slice(
-			Math.max(0, windowInfo.startIndex - margin),
-			windowInfo.endIndex + margin
+		const missing = stripLessIdsNear(
+			rows,
+			windowInfo.startIndex,
+			windowInfo.endIndex,
+			renderedRowCapacity,
+			(id) => previewStripById[id] != null
 		);
-		const missing = near
-			.filter((r) => r.strip === null && previewStripById[r.stable_id] == null)
-			.map((r) => r.stable_id);
 		untrack(() => stripFiller.setVisible(missing.filter((id) => filledStrips[id] == null)));
 	});
 
@@ -1273,8 +1275,14 @@
 		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
 	}
 
+	// LIBM-172: cover images wait for the boot library index (or 8 s), so ~30
+	// artwork reads do not compete with it on the single-worker engine.
+	let artworkReleased = $state(!bootListingWalkInFlight());
+	if (!artworkReleased) void whenBootListingWalkSettled(8_000).then(() => (artworkReleased = true));
+
 	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
 		return (
+			artworkReleased &&
 			artworkAvailable === true &&
 			shouldFetchArtwork(stableId) &&
 			!artworkLoadFailed.has(stableId)
