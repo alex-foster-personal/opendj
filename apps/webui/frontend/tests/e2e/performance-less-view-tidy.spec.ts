@@ -166,3 +166,54 @@ test('the routes behind LESS-hidden controls keep working while they are hidden'
 	expect(listed.status()).toBe(200);
 	expect(((await listed.json()) as { sets: { name: string }[] }).sets.map((s) => s.name)).toContain(name);
 });
+
+// CORE review of #5584 (Tue 6 Oct 2026): in the mixer's crossfader row the
+// "magic crossfader" label was clipped under its own chevron and read as
+// running into the crossfader. Both skins, both views, the two common windows.
+test('the crossfade curve label is never clipped and never touches the crossfader', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/performance?muted=1');
+	await page.waitForSelector('.rb-mixer');
+	for (const skin of ['default', 'mono-dev']) {
+		for (let i = 0; i < 4; i++) {
+			if ((await page.locator('[data-skin-current]').getAttribute('data-skin-current')) === skin) break;
+			await page.locator('[data-skin-current]').click();
+		}
+		await expect(page.locator('[data-skin-current]')).toHaveAttribute('data-skin-current', skin);
+		for (const mode of ['MORE', 'LESS'] as const) {
+			await setLayout(page, mode);
+			for (const viewport of [
+				{ width: 1440, height: 900 },
+				{ width: 1280, height: 800 }
+			]) {
+				await page.setViewportSize(viewport);
+				const m = await page.evaluate(() => {
+					const select = document.querySelector('.rb-mixer select.xf-curve') as HTMLSelectElement;
+					const fader = document.querySelector('.rb-mixer .xfader') as HTMLElement;
+					if (select === null || fader === null) throw new Error('crossfader row not mounted');
+					const probe = select.cloneNode(true) as HTMLSelectElement;
+					probe.style.maxWidth = 'none';
+					probe.style.position = 'absolute';
+					probe.style.visibility = 'hidden';
+					select.parentElement!.appendChild(probe);
+					const intrinsic = probe.getBoundingClientRect().width;
+					probe.remove();
+					const thumb = fader.querySelector('.thumb-visual')?.getBoundingClientRect() ?? null;
+					return {
+						rendered: select.getBoundingClientRect().width,
+						intrinsic,
+						selectRight: select.getBoundingClientRect().right,
+						faderLeft: fader.getBoundingClientRect().left,
+						thumbLeft: thumb?.left ?? Infinity
+					};
+				});
+				const label = `${skin} ${mode} ${viewport.width}x${viewport.height}`;
+				expect(m.rendered, `${label}: label clipped (${m.rendered}px of ${m.intrinsic}px)`).toBeGreaterThanOrEqual(
+					m.intrinsic - 0.5
+				);
+				expect(m.selectRight, `${label}: label overlaps the crossfader`).toBeLessThanOrEqual(m.faderLeft);
+				expect(m.selectRight, `${label}: label touches the crossfader handle`).toBeLessThan(m.thumbLeft);
+			}
+		}
+	}
+});
