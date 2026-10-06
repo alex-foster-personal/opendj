@@ -39,7 +39,6 @@ from ..etag import compute_etag
 from ..models import (
     LyricsUnavailableOut,
     QualityRungOut,
-    TrackIndexItemOut,
     TrackIndexOut,
     TrackListItemOut,
     TrackLyricsOut,
@@ -360,28 +359,19 @@ def list_tracks(
 
 
 def _listing_items(
-    request: Request, tracks: list[Track], available: AvailableFilter, *, for_index: bool = False
+    request: Request, tracks: list[Track], available: AvailableFilter
 ) -> list[TrackListItemOut]:
-    """One listing row per track, in order: the shared body of /tracks and /tracks/index.
-
-    ``for_index`` builds :class:`TrackIndexItemOut` rows and skips the per-row reads
-    those rows do not carry (LIBM-172), including the three optional-resource flags.
-    """
+    """One listing row per track, in order: the shared body of /tracks and /tracks/index."""
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)
     rows = rb_vendor.build_track_rows(
         tracks,
         jobs_store=getattr(request.app.state, "jobs_store", None),
         data_dir=get_library_data_dir(request),
-        with_row_assets=not for_index,
     )
-    item_model = TrackIndexItemOut if for_index else TrackListItemOut
     stable_ids = [t.stable_id for t in tracks]
-    no_flags = dict.fromkeys(stable_ids, False)
-    lyrics_by_sid = no_flags if for_index else _lyrics_available_bulk(data_dir, stable_ids)
-    auto_cues_by_sid = (
-        no_flags if for_index else _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
-    )
+    lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
+    auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
     for track, row in zip(tracks, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
@@ -391,7 +381,7 @@ def _listing_items(
             has_rb_mapping=row["has_rb_mapping"],
             lyrics_available=lyrics_by_sid[track.stable_id],
             auto_cues_available=auto_cues_by_sid[track.stable_id],
-            stems_available=False if for_index else _stems_available(track.stable_id, row["stems"], request),
+            stems_available=_stems_available(track.stable_id, row["stems"], request),
             artwork_available=row["artwork_available"],
         ).model_dump()
         # TrackOut already carries play_count (default 0). The listing value is
@@ -399,7 +389,7 @@ def _listing_items(
         # passed twice.
         base["play_count"] = int(row.get("play_count") or 0)
         items.append(
-            item_model(
+            TrackListItemOut(
                 **base,
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
@@ -433,8 +423,85 @@ def _listing_items(
     return items
 
 
+def _index_rows(request: Request, tracks: list[Track]) -> list[dict[str, Any]]:
+    """One library index row per track, in order, as plain data (LIBM-172).
+
+    Only the fields :class:`TrackIndexItemOut` serializes, read as a ``GET /tracks``
+    row reads them, minus the per-row disk reads (``with_row_assets=False``). The
+    route validates every row ONCE, in one call, and serializes once: building a
+    ``TrackOut``, dumping it and validating a listing row again, per row, was the
+    largest pure-Python cost of the index after the disk reads.
+    """
+    rows = rb_vendor.build_track_rows(
+        tracks,
+        jobs_store=getattr(request.app.state, "jobs_store", None),
+        data_dir=get_library_data_dir(request),
+        with_row_assets=False,
+    )
+    return [
+        {
+            "stable_id": track.stable_id,
+            "title": track.title,
+            "artist": track.artist,
+            "album": track.album,
+            "duration_ms": track.duration_ms,
+            "bpm": track.bpm,
+            "key": track.key,
+            "rating": track.rating,
+            "notes": track.notes,
+            "file_path": track.file_path,
+            "play_count": int(row.get("play_count") or 0),
+            "has_rb_mapping": row["has_rb_mapping"],
+            "file_availability": row["file_availability"],
+            "file_exists": row["file_exists"],
+            "is_remote": bool(row.get("is_remote")),
+            "is_streaming": row["is_streaming"],
+            "streaming_provider": row["streaming_provider"],
+            "has_remote_copy": bool(row["has_remote_copy"]),
+            "cloud_transfer": row["cloud_transfer"],
+            "quality": row["quality"],
+            "energy": row["energy"],
+            "energy_source": row["energy_source"],
+            "energy_reason": row["energy_reason"],
+            "bpm_source": row.get("bpm_source"),
+            "bpm_method": row.get("bpm_method"),
+            "bpm_confidence": row.get("bpm_confidence"),
+            "bpm_confidence_error": row.get("bpm_confidence_error"),
+            "lyrics": row.get("lyrics"),
+            "grid_quality": row["grid_quality"],
+            "is_remix": bool(row.get("is_remix")),
+            "is_radio_edit": bool(row.get("is_radio_edit")),
+            "genre": row.get("genre"),
+            "genre_reason": row.get("genre_reason"),
+            "genre_guess": row.get("genre_guess"),
+        }
+        for track, row in zip(tracks, rows, strict=True)
+    ]
+
+
 #: Tracks read per backend call while the index is assembled (the backend's own cap).
 INDEX_READ_PAGE = 1000
+
+
+def track_index_body(request: Request, backend: StateBackend) -> bytes:
+    """The ``GET /tracks/index`` JSON body: plain rows, validated and serialized once.
+
+    ``revision`` is read BEFORE the rows. ``TrackIndexOut`` validates the whole list in
+    one call and its serializer writes the body, so field order and number formatting
+    are the model's (the golden test in tests/webui/test_track_index_body.py holds the
+    bytes to the per-row model path this replaced).
+    """
+    revision = backend.library_revision()
+    rows: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        page = backend.list_tracks(TrackFilter(cursor=cursor, limit=INDEX_READ_PAGE))
+        rows.extend(_index_rows(request, page.items))
+        if page.next_cursor is None:
+            break
+        cursor = page.next_cursor
+    index = TrackIndexOut.model_validate({"revision": revision, "items": rows})
+    return index.model_dump_json(by_alias=True).encode()
 
 
 # Declared BEFORE /{stable_id} so "index" is not swallowed as an id.
@@ -448,25 +515,16 @@ def get_track_index(
     """Every library row in ONE response: the browser's local library index (LIBM-171).
 
     The same rows, in the same order, as walking ``GET /tracks`` to the end, minus
-    ``provenance`` and the per-row disk reads (preview strip, vocals, cover verdict:
-    LIBM-172), which the browser asks ``POST /library/row-assets`` for, rows in view
-    only. The browser holds this once and resolves All Tracks from it, the way
-    rekordbox, Serato and Traktor hold their library in memory. ``revision`` is the
-    library revision read BEFORE the rows, so a change made while they were read
-    shows as a newer revision on the next ``GET /tracks/revision``. The ETag is a
-    hash of the body: ``If-None-Match`` with it answers 304, gzip when accepted.
+    the fields no library view reads off an index row and the per-row disk reads
+    (preview strip, vocals, cover verdict, stems: LIBM-172), which the browser asks
+    ``POST /library/row-assets`` for, rows in view only. The browser holds this once
+    and resolves All Tracks from it, the way rekordbox, Serato and Traktor hold their
+    library in memory. ``revision`` is the library revision read BEFORE the rows, so a
+    change made while they were read shows as a newer revision on the next
+    ``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it
+    answers 304, gzip when accepted.
     """
-    revision = backend.library_revision()
-    items: list[TrackListItemOut] = []
-    cursor: str | None = None
-    while True:
-        page = backend.list_tracks(TrackFilter(cursor=cursor, limit=INDEX_READ_PAGE))
-        items.extend(_listing_items(request, page.items, "all", for_index=True))
-        if page.next_cursor is None:
-            break
-        cursor = page.next_cursor
-    out = TrackIndexOut.model_validate({"revision": revision, "items": items})
-    body = out.model_dump_json(by_alias=True).encode()
+    body = track_index_body(request, backend)
     etag = f'"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
     headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
     # PERF-DRAIN-02: the launch's index is out, so the ahead drain's boot grace may end.
