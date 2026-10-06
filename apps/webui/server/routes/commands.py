@@ -271,6 +271,34 @@ def _check_autoplay_commands(body: dict[str, Any]) -> None:
             raise TypeError(f"autoplay enabled must be boolean, got {command['enabled']!r}")
 
 
+#: DECKUX-39: command types whose OFF only a person may ask for, and the name
+#: the refusal uses. The page enforces the same rule (agent-orders.ts).
+USER_ONLY_OFF = {"quantize": "Quantize"}
+
+
+def user_only_off_refusal(command_type: str) -> str:
+    """The 422 detail for an off that carries no user provenance."""
+    return (
+        f"{command_type} off refused: only a user turns {USER_ONLY_OFF[command_type]} off; "
+        "send by_user: true when a person asked for this"
+    )
+
+
+def _check_user_only_offs(body: dict[str, Any]) -> None:
+    """DECKUX-39: an agent order may switch these off only with ``by_user: true``.
+
+    Refused here as a 422 (fail fast) rather than reverted on the page: the
+    agent learns at once that it must relay a person's ask.
+    """
+    for command in _order_commands(body):
+        if not isinstance(command, dict) or command.get("type") not in USER_ONLY_OFF:
+            continue
+        if "by_user" in command and not isinstance(command["by_user"], bool):
+            raise TypeError(f"{command['type']} by_user must be boolean, got {command['by_user']!r}")
+        if command.get("enabled") is False and command.get("by_user") is not True:
+            raise ValueError(user_only_off_refusal(command["type"]))
+
+
 def _persistable_master_mute(command: Any) -> bool | None:
     """The muted value of a master_mute that may reach disk, else None."""
     if not isinstance(command, dict) or command.get("type") != "master_mute":
@@ -333,6 +361,7 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
     try:
         order = _order(body)
         _check_autoplay_commands(body)
+        _check_user_only_offs(body)
         muted_to_persist = _master_mute_from_order(body)
     except (ValueError, TypeError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

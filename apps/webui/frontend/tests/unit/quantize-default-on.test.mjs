@@ -158,10 +158,11 @@ test('a programmatic off through dispatchPerformanceCommand names the calling fu
 	);
 });
 
-test('an agent order off without user provenance reverts; with by_user it lands', async () => {
-	await m.executeAgentOrder({ kind: 'single', payload: { type: 'quantize', deck: 4, enabled: false } });
+test('an agent order off without user provenance is REFUSED naming the flag; with by_user it lands', async () => {
+	const refused = await m.executeAgentOrder({ kind: 'single', payload: { type: 'quantize', deck: 4, enabled: false } });
+	assert.equal(refused.steps[0].status, 'failed', 'if an agent command off is silently reverted instead of refused then broken');
+	assert.match(refused.steps[0].error, /send by_user: true when a person asked for this/);
 	assert.equal(quantizeOn(4), true, 'if an agent order without by_user turns Quantize off then broken');
-	assert.match(quantizeWarnings().join('\n'), /CH4: .*caller: .*_one/, 'the WARN names the agent-order executor');
 
 	warnings = [];
 	await m.executeAgentOrder({ kind: 'single', payload: { type: 'quantize', deck: 4, enabled: false, by_user: true } });

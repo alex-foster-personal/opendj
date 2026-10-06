@@ -196,7 +196,7 @@ _VERBS: tuple[Verb, ...] = (
     Verb("quantize", "quantize", (
         _DECK, _ENABLED, arg("by_user", "bool", bool_value, "true|false", optional=True),
     ), quick_draws=("quantize.toggle",),
-         note="Q1-DEFAULT-ON: an off reverts to on unless by_user is true (a person asked); "
+         note="DECKUX-39: an off is refused (422) unless by_user is true (a person asked); "
               "a user off holds until the deck's next load."),
     Verb("quantize_grid", "quantize_grid", (
         _DECK, arg("beats", "int", int_enum_value(QUANTIZE_GRID_VALUES), "1|4|8"),
