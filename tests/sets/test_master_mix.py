@@ -1,5 +1,7 @@
 """REC "Master mix (internal)": the page streams its master bus, the daemon writes WAV (SET-12).
 
+[if] the page streams its master mix [then] REC writes it as a WAV set, [else stop].
+
 Mutation controls (run by hand on demon-llama for this change, each went red):
 dropping the seq check in MasterMixWriter.append, dropping the header rewrite in
 _Segment.append, and defaulting RecorderStartRequest.source to "master".
