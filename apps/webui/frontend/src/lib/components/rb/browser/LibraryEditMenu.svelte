@@ -23,7 +23,9 @@
 
 	// The pencil's hover tip sits where the open menu draws. While the menu is open it
 	// is the one explainer: data-custom-tip on the wrapper tells the shared tooltip
-	// layer to draw no box, and a pointerover makes it re-read that now. The list is a
+	// layer to draw no box. Chromium re-fires pointerover under a still pointer when the
+	// DOM changes, so the layer re-reads it; the dispatched pointerover is for engines
+	// that do not (WKWebView is not verified either way). The list is a
 	// hover card, so a disabled item still shows its own "select tracks first" tip.
 	$effect(() => {
 		if (open) triggerEl?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
