@@ -424,6 +424,7 @@ export function armAudioContextWatchdog(
 			setInterval: (fn, ms) => setInterval(fn, ms),
 			clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
 			now: () => performance.now(),
+			isHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
 			recoverOutput: () => {
 				void _outputStallRecovery?.recover();
 			},

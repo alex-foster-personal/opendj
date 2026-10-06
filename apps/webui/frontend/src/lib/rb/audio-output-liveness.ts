@@ -36,6 +36,8 @@ export interface LivenessAudioContext {
 	readonly outputLatency: number;
 	readonly baseLatency: number;
 	readonly sinkId?: unknown;
+	/** The render clock. Advances whenever the audio thread renders, hidden tab or not. */
+	readonly currentTime?: number;
 	getOutputTimestamp(): { contextTime?: number; performanceTime?: number };
 }
 
@@ -45,6 +47,13 @@ export interface LivenessEffects {
 	setInterval(fn: () => void, ms: number): unknown;
 	clearInterval(handle: unknown): void;
 	now?: () => number;
+	/**
+	 * Bug #58 (Tue 6 Oct 2026): true while the document is hidden. A hidden tab's
+	 * timers are throttled and its output timestamp can stop updating while the
+	 * audio thread renders normally, so a hidden page may only call a stall when the
+	 * render clock (`currentTime`) is frozen too. Omitted = always visible.
+	 */
+	isHidden?: () => boolean;
 	recoverOutput?(): void;
 	/**
 	 * Re-bind a context whose output went dead. Omitted = the MASTER context,
@@ -99,7 +108,19 @@ export function installOutputLiveness(
 	let lastContextTime: number | null = null;
 	let lastAdvanceAtMs = 0;
 	let stallEdgeReported = false;
+	let lastRenderTime: number | null = null;
 	const now = (): number => effects.now?.() ?? Date.now();
+
+	/**
+	 * Bug #58: on a hidden page the stall verdict needs the audio clock frozen as
+	 * well. A render clock that advanced since the last poll, or one we cannot read,
+	 * means "not provably stalled". Visible pages keep the #2155 behaviour.
+	 */
+	function _hiddenButRendering(renderTime: number | null, previousRenderTime: number | null): boolean {
+		if (effects.isHidden?.() !== true) return false;
+		if (renderTime === null || previousRenderTime === null) return true;
+		return renderTime > previousRenderTime;
+	}
 
 	function tick(): void {
 		tickVerdict();
@@ -118,11 +139,15 @@ export function installOutputLiveness(
 			deadPolls = 0;
 			lastContextTime = null;
 			lastAdvanceAtMs = 0;
+			lastRenderTime = null;
 			stallEdgeReported = false;
 			verdict = 'idle';
 			return;
 		}
 
+		const previousRenderTime = lastRenderTime;
+		const renderTime = typeof ctx.currentTime === 'number' && Number.isFinite(ctx.currentTime) ? ctx.currentTime : null;
+		lastRenderTime = renderTime;
 		const ts = ctx.getOutputTimestamp();
 		const contextTime = ts.contextTime;
 		if (typeof contextTime !== 'number' || !Number.isFinite(contextTime)) {
@@ -139,6 +164,11 @@ export function installOutputLiveness(
 				verdict = 'ok';
 				return;
 			}
+		} else if (lastContextTime !== null && _hiddenButRendering(renderTime, previousRenderTime)) {
+			// Bug #58: a hidden tab whose render clock still advances is rendering;
+			// only its output timestamp (and its timers) are being throttled.
+			// Fall through to the latency checks: a dead device is still a dead device.
+			lastAdvanceAtMs = now();
 		} else if (lastContextTime !== null) {
 			const stalledForMs = now() - lastAdvanceAtMs;
 			if (stalledForMs >= OUTPUT_STALL_MS) {

@@ -26,6 +26,9 @@
  *   one recoverOutput call
  * [if] outputLatency is > 0 but the timestamp is frozen [then] stalled, never ok
  * [if] the timestamp advances [then] verdict ok and recoverOutput is not called
+ * [if] bug #58: the page is hidden, timers are throttled to 60 s and the output timestamp
+ *   is frozen but currentTime (the render clock) advances [then] no stall, no recovery
+ * [if] the page is hidden and the render clock is frozen too [then] stalled + recover once
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -167,6 +170,47 @@ describe('installOutputLiveness', () => {
 		assert.equal(h.calls.filter((c) => c === 'recover').length, 1, 'still stalled must not re-recover');
 	});
 
+	it('bug #58: hidden page, throttled timers, healthy render clock => no stall, no recovery', () => {
+		const h = harness({ latency: 0.19, frozenTimestamp: true });
+		let renderTime = 1;
+		Object.defineProperty(h.ctx, 'currentTime', { get: () => renderTime });
+		h.effects.isHidden = () => true;
+		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		for (let i = 0; i < 5; i++) {
+			h.advance(60_000);
+			renderTime += 60;
+			h.poll();
+		}
+		assert.equal(h.calls.filter((c) => c === 'recover').length, 0,
+			'if a throttled hidden tab with a running render clock recovers then a healthy set is torn down - broken');
+		assert.notEqual(live.verdict(), 'stalled');
+	});
+
+	it('bug #58 control: hidden page with the render clock frozen too still stalls and recovers once', () => {
+		const h = harness({ latency: 0.19, frozenTimestamp: true });
+		Object.defineProperty(h.ctx, 'currentTime', { get: () => 1 });
+		h.effects.isHidden = () => true;
+		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.poll();
+		h.advance(60_000);
+		h.poll();
+		assert.equal(live.verdict(), 'stalled', 'if a hidden tab can never stall then a real dead graph stays silent - broken');
+		assert.equal(h.calls.filter((c) => c === 'recover').length, 1);
+	});
+
+	it('bug #58 control: a visible page keeps the #2155 output-timestamp verdict even if currentTime advances', () => {
+		const h = harness({ latency: 0.19, frozenTimestamp: true });
+		let renderTime = 1;
+		Object.defineProperty(h.ctx, 'currentTime', { get: () => renderTime });
+		h.effects.isHidden = () => false;
+		const live = mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
+		h.poll();
+		h.advance(mod.OUTPUT_STALL_MS + 1);
+		renderTime += 3;
+		h.poll();
+		assert.equal(live.verdict(), 'stalled');
+	});
+
 	it('advancing timestamp stays ok and never calls recoverOutput', () => {
 		const h = harness({ latency: 0.19 });
 		mod.installOutputLiveness(h.ctx, h.effects, h.isPlaying);
@@ -243,6 +287,7 @@ describe('wiring (source guard)', () => {
 		const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/audio-context-instrumentation.ts', import.meta.url)), 'utf8');
 		assert.ok(src.includes('installOutputLiveness('), 'if the liveness poll is not installed at graph build then the detector is code nobody runs - broken');
 		assert.ok(src.includes('__mdtAudioOutput'), 'if the snapshot is not exposed then an agent cannot read output health - broken');
+		assert.ok(src.includes('isHidden: () =>'), 'if the master liveness is not told the page is hidden then a throttled tab false-recovers (bug #58) - broken');
 	});
 
 	it('disarmContextInstrumentation uninstalls the liveness poll', () => {
