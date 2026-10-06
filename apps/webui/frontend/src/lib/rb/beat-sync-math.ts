@@ -556,7 +556,8 @@ export function quantizeToNearestBeat(
  * BeatSyncMax stores hot cues on bars, rather than merely on the nearest beat:
  * a hand-set cue must be phase-safe before a later synchronized launch can
  * use it. Ties are stable toward the earlier downbeat, matching ordinary
- * quantization.
+ * quantization. A position more than one beat outside the grid is returned
+ * unchanged, as in `quantizeToNearestGridBeat` (SEEK-GRID-01).
  */
 export function quantizeToNearestDownbeat(
 	beats: readonly AnlzBeat[],
@@ -566,6 +567,7 @@ export function quantizeToNearestDownbeat(
 	_assertFiniteNonNegative('positionSec', positionSec);
 	const downbeats = beats.filter((beat) => beat.n === 1);
 	if (downbeats.length === 0) throw new Error('PQTZ beat grid contains no downbeat');
+	if (!positionWithinGridSpan(beats, positionSec)) return positionSec;
 	return downbeats[_nearestBeatIndex(downbeats, positionSec)].t;
 }
 
