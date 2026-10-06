@@ -1,5 +1,7 @@
 """Undecodable files are recorded once and skipped (AHEAD-DUD-01).
 
+[if] a file is undecodable [then] it is recorded once per file and skipped, [else stop].
+
 Build 16's verify: the loudness lane sat at 2268/2270 and re-decoded the same two
 files (ffmpeg exit 69) every pass. Two duds alone in a chunk also read as one
 "shared" reason, so the lane was closed for the whole host.
