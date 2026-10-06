@@ -17,7 +17,7 @@ from typing import Any, Literal
 from . import capture as capture_mod
 from . import paths as sets_paths
 from . import record as record_mod
-from .master_mix import MASTER_MIX_DEVICE_LABEL
+from .master_mix import MASTER_MIX_DEVICE_LABEL, MasterMixRecordingStopped
 from .state import SetsState
 
 #: Manifest/DB capture_device for a session started without audio (SET-10).
@@ -73,6 +73,9 @@ class RecorderService:
         self._lock = threading.Lock()
         self._recorder: record_mod.Recorder | None = None
         self._source: RecordSource | None = None
+        # Recordings this daemon stopped cleanly, newest last, so a chunk the
+        # page had in flight at the stop is told apart from a lost one (SET-12).
+        self._cleanly_stopped: list[str] = []
 
     def _idle_status(self) -> dict[str, Any]:
         return {
@@ -306,13 +309,19 @@ class RecorderService:
     ) -> None:
         """Append one master-mix chunk to the live recording (SET-12).
 
-        Raises :class:`RecorderConflict` when no owned master-mix recording
+        Raises :class:`MasterMixRecordingStopped` for a chunk that was in
+        flight when its recording was cleanly stopped (quiet, 410),
+        :class:`RecorderConflict` when no owned master-mix recording
         with that id is live, and :class:`MasterMixChunkRefused` for a chunk
         that would leave a hole or is malformed. The file write happens
         outside the service lock so status reads never wait on the disk.
         """
         with self._lock:
             recorder = self._recorder
+            if (recorder is None or recorder.session_id != session_id) and (
+                session_id in self._cleanly_stopped
+            ):
+                raise MasterMixRecordingStopped(f"recording {session_id} was stopped")
             if recorder is None or recorder.session_id != session_id:
                 active = "nothing" if recorder is None else f"session {recorder.session_id}"
                 raise RecorderConflict(f"{active} is recording here, not {session_id}")
@@ -364,6 +373,8 @@ class RecorderService:
                     f"session {self._recorder.session_id} is active, not {session_id}"
                 )
             record_mod.stop(self._recorder)
+            if self._source == "master":
+                self._cleanly_stopped = [*self._cleanly_stopped[-7:], self._recorder.session_id]
             self._recorder = None
             self._source = None
         return self._idle_status()

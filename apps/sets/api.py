@@ -46,7 +46,8 @@ from .audio import (
 from .capture import CaptureUnavailable, default_input_device
 from .classify import CLASS_LIST, read_transitions
 from .label import append_label
-from .master_mix import MasterMixChunkRefused
+from .master_mix import MasterMixChunkRefused, MasterMixRecordingStopped
+from .master_tap import MasterTapUnavailable, master_tap_channel
 from .recorder_service import (
     RecorderConflict,
     RecorderRequestInvalid,
@@ -445,14 +446,29 @@ def api_recorder_remembered_input(request: Request) -> dict[str, Any]:
     response_model=RecorderStatus,
     status_code=201,
 )
-def api_recorder_start(
+async def api_recorder_start(
     request: Request,
     body: RecorderStartRequest,
 ) -> dict[str, Any]:
-    # Sync: a start resolves the input with ffmpeg and waits out the
-    # capture startup check, both blocking.
+    """Start REC. A ``master`` start pushes the attach to the open page and
+    answers only once its tap is connected, so the WAV begins within one
+    order round trip of this request (SET-12); with no page to ask, nothing
+    starts and the answer is 503 with the reason."""
+    service = _recorder_service(request)
+    channel = None
+    if body.source == "master":
+        try:
+            channel = master_tap_channel(request)
+        except MasterTapUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        reason = channel.unavailable_reason(request)
+        if reason is not None:
+            raise HTTPException(status_code=503, detail=reason)
     try:
-        return _recorder_service(request).start(
+        # In the threadpool: a device start resolves the input with ffmpeg and
+        # waits out the capture startup check, both blocking.
+        status = await run_in_threadpool(
+            service.start,
             session_id=body.session_id,
             source=body.source,
             ffmpeg_device_idx=body.ffmpeg_device_idx,
@@ -465,12 +481,23 @@ def api_recorder_start(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except CaptureUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if channel is None:
+        return status
+    try:
+        await channel.attach(request, status["session_id"])
+    except MasterTapUnavailable as exc:
+        # Nothing is feeding it: stop rather than leave a recording that
+        # can only fail after its 10 s attach timeout.
+        await run_in_threadpool(service.stop, status["session_id"])
+        raise HTTPException(status_code=503, detail=f"the master mix could not be tapped: {exc}") from exc
+    return await run_in_threadpool(service.status)
 
 
 @router.post(
     "/recorder/{session_id}/master-pcm",
     status_code=204,
     response_class=Response,
+    responses={200: {"description": "dropped: the recording was cleanly stopped while this chunk was in flight"}},
     openapi_extra={
         "requestBody": {
             "required": True,
@@ -487,7 +514,9 @@ async def api_recorder_master_pcm(
 ) -> Response:
     """One chunk of the page's master mix for a ``source: master`` recording (SET-12).
 
-    The body is interleaved little-endian int16 stereo frames. 409 when no
+    The body is interleaved little-endian int16 stereo frames. 204 written;
+    200 ``{"dropped": "recording_stopped"}`` when its recording was cleanly
+    stopped while the chunk was in flight (the page ends quietly); 409 when no
     owned master recording has this id, or the chunk would leave a hole
     (a lost or out-of-order chunk); the page stops its tap and says so.
     """
@@ -503,6 +532,11 @@ async def api_recorder_master_pcm(
             sample_rate=sample_rate,
             pcm=pcm,
         )
+    except MasterMixRecordingStopped:
+        # The page's last chunk was in flight at a clean stop: expected, so it
+        # is dropped and answered 200 with a reason the page ends on quietly.
+        # Not a 4xx: a browser logs every 4xx as a console error (SET-12).
+        return JSONResponse(status_code=200, content={"dropped": "recording_stopped", "session_id": session_id})
     except (RecorderConflict, MasterMixChunkRefused) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(status_code=204)

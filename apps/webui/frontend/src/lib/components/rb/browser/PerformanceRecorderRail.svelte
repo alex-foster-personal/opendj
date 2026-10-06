@@ -27,9 +27,9 @@
 	// /performance bundle budget (charged to other-lazy instead). Non-null
 	// means the picker is open.
 	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
-	// SET-12: this page's master-mix tap while it feeds a `source: master`
-	// recording. Lazy for the same reason as the picker.
-	let master: Promise<{ stop(): Promise<unknown> } | null> | null = null;
+	// SET-12: the recording this page's master-mix tap feeds, if any. The tap
+	// module is lazy for the same reason as the picker.
+	let tapSession: string | null = null;
 	// True while REC is stopping: a status read that lands mid-stop must not
 	// attach a second tap to the recording being stopped.
 	let stopping = false;
@@ -56,25 +56,27 @@
 	});
 
 	// SET-12: a master recording (started here, by an agent, or before a
-	// reload) is fed by this page; attach the tap whenever one is live
-	// without it. A tap that cannot start stops the recording and says why.
+	// reload) is fed by this page. The start route already pushed the attach
+	// to the leader page; this makes sure of it (the same one tap, never a
+	// second) and gives the tap this page's toast. A tap that cannot start
+	// stops the recording and says why.
 	function syncMasterTap(status: RecorderStatus): void {
 		const id = status.session_id;
-		if (stopping || master !== null || !status.owned || status.capture_source !== 'master' || id === null) return;
-		master = import('$lib/sets/master-mix-capture')
-			.then((m) => m.startMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')))
+		if (stopping || tapSession === id || !status.owned || status.capture_source !== 'master' || id === null) return;
+		tapSession = id;
+		import('$lib/sets/master-mix-capture')
+			.then((m) => m.ensureMasterMixCapture(id, (why) => pushToast(`Set recording: ${why}`, 'error')))
 			.catch(async (error: unknown) => {
 				pushToast(`REC failed: the master mix could not be recorded: ${String(error)}`, 'error');
+				tapSession = null;
 				recorder = await stopPerformanceRecorder(status).catch(() => recorder);
-				master = null;
-				return null;
 			});
 	}
 
 	async function stopMasterTap(): Promise<void> {
-		const tap = await master;
-		master = null;
-		await tap?.stop();
+		if (tapSession === null) return;
+		tapSession = null;
+		await (await import('$lib/sets/master-mix-capture')).stopMasterMixCapture();
 	}
 
 	function setRecorder(status: RecorderStatus): void {

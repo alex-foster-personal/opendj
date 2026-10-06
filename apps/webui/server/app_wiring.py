@@ -26,6 +26,7 @@ from starlette.types import Scope
 from apps.feature_flags import FlagStore, load_flags
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
+from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.shared.state.db import StateStoreBusyError
 from apps.sync_hub import hosted_config as sync_hub_hosted_config
@@ -85,6 +86,7 @@ from .routes import cloudsync_ops as cloudsync_ops_routes
 from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
+from .sets_master_tap import OrderBusMasterTap
 from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
@@ -702,6 +704,8 @@ def _mount_api_routers(app: FastAPI) -> None:
     ):
         app.include_router(router, prefix=api_prefix)
     app.include_router(sets_router)
+    # SET-12: a master REC start pushes the attach to the open page.
+    setattr(app.state, MASTER_TAP_CHANNEL_STATE, OrderBusMasterTap())
     app.include_router(play_analytics_router)
 
 

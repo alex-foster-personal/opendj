@@ -84,7 +84,8 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 export async function startMasterMixCapture(
 	sessionId: string,
 	onfailure: (reason: string) => void,
-	post: typeof fetch = fetch
+	post: typeof fetch = fetch,
+	onended: () => void = () => {}
 ): Promise<MasterMixCapture> {
 	const unavailable = masterMixUnavailableReason();
 	if (unavailable !== null) throw new Error(unavailable);
@@ -107,6 +108,16 @@ export async function startMasterMixCapture(
 		tap = null;
 	}
 
+	function end(): void {
+		if (stopped) return;
+		stopped = true;
+		stats.tap_stopped_ms = Date.now();
+		clearInterval(watch);
+		detach();
+		queue.length = 0;
+		onended();
+	}
+
 	function fail(reason: string): void {
 		if (failed !== null || stopped) return;
 		failed = reason;
@@ -114,6 +125,7 @@ export async function startMasterMixCapture(
 		detach();
 		queue.length = 0;
 		onfailure(reason);
+		onended();
 	}
 
 	async function pump(): Promise<void> {
@@ -131,6 +143,19 @@ export async function startMasterMixCapture(
 				);
 			} catch (error) {
 				fail(`the master mix could not reach the recorder: ${String(error)}`);
+				return;
+			}
+			if (response.status === 200) {
+				// The recording was stopped cleanly while this chunk was in
+				// flight (an agent or another tab stopped it): the daemon says
+				// so with a 200 and drops it. Expected, so no toast (SET-12).
+				const body = (await response.json().catch(() => null)) as { dropped?: string } | null;
+				if (body?.dropped === 'recording_stopped') {
+					console.debug(`master mix: recording ${sessionId} stopped; tap ends`);
+					end();
+					return;
+				}
+				fail(`the recorder answered 200 to master-mix audio without saying it was dropped`);
 				return;
 			}
 			if (!response.ok) {
@@ -247,4 +272,47 @@ export async function startMasterMixCapture(
 			return { ...stats };
 		}
 	};
+}
+
+// ------------------------------------------------------- one tap per page ---
+
+let current: { sessionId: string; capture: Promise<MasterMixCapture>; notify: (why: string) => void } | null = null;
+
+/** The page's one master tap for `sessionId`: started on first ask, the same
+ *  tap on every later ask (the start route's pushed order and the REC rail
+ *  both ask, SET-12). `notify` reports a tap that fails mid-recording; the
+ *  REC rail passes its toast, an agent order has none (the rail's status read
+ *  still toasts the daemon's failed capture). */
+export function ensureMasterMixCapture(
+	sessionId: string,
+	notify?: (why: string) => void
+): Promise<MasterMixCapture> {
+	if (current?.sessionId === sessionId) {
+		if (notify) current.notify = notify;
+		return current.capture;
+	}
+	if (current !== null) void stopMasterMixCapture();
+	const entry = { sessionId, notify: notify ?? ((why: string) => console.error(`master mix: ${why}`)) };
+	const capture = startMasterMixCapture(
+		sessionId,
+		(why) => entry.notify(why),
+		fetch,
+		() => {
+			if (current?.capture === capture) current = null;
+		}
+	);
+	current = { ...entry, capture };
+	capture.catch(() => {
+		if (current?.capture === capture) current = null;
+	});
+	return capture;
+}
+
+/** Stop the page's tap, flushing its last chunk; null when none is running. */
+export async function stopMasterMixCapture(): Promise<MasterMixStats | null> {
+	const running = current;
+	current = null;
+	if (running === null) return null;
+	const capture = await running.capture.catch(() => null);
+	return capture === null ? null : capture.stop();
 }

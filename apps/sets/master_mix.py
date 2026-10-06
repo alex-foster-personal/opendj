@@ -60,6 +60,15 @@ class MasterMixChunkRefused(ValueError):
     """A chunk that cannot be written where it claims to belong."""
 
 
+class MasterMixRecordingStopped(MasterMixChunkRefused):
+    """A chunk that arrived after its recording was cleanly stopped.
+
+    Expected once at most per stop (the page's last chunk was in flight), so
+    the route answers 410 and the page drops it quietly. A chunk out of order
+    DURING a recording stays :class:`MasterMixChunkRefused` (409, loud).
+    """
+
+
 def _wav_header(sample_rate: int, data_bytes: int) -> bytes:
     byte_rate = sample_rate * FRAME_BYTES
     return (
@@ -117,6 +126,9 @@ class MasterMixWriter:
         self._lock = threading.Lock()
         self._started_at = monotonic()
         self._last_chunk_at: float | None = None
+        # When the first accepted frame was captured: arrival minus its own
+        # duration (the page posts a chunk once it is full), server clock.
+        self._first_frame_at: float | None = None
         self._stream: str | None = None
         self._next_seq = 0
         self._segment: _Segment | None = None
@@ -171,7 +183,7 @@ class MasterMixWriter:
             raise MasterMixChunkRefused(f"a {len(pcm)}-byte chunk exceeds {MAX_CHUNK_BYTES}")
         with self._lock:
             if self._closed:
-                raise MasterMixChunkRefused("the recording has stopped")
+                raise MasterMixRecordingStopped("the recording has stopped")
             if stream != self._stream:
                 if seq != 0:
                     raise MasterMixChunkRefused(
@@ -197,6 +209,8 @@ class MasterMixWriter:
             segment.append(pcm)
             self._next_seq += 1
             self._last_chunk_at = self._monotonic()
+            if self._first_frame_at is None:
+                self._first_frame_at = self._last_chunk_at - len(pcm) / FRAME_BYTES / sample_rate
             self.chunks_accepted += 1
             self.frames_accepted += len(pcm) // FRAME_BYTES
 
@@ -217,7 +231,14 @@ class MasterMixWriter:
             self._segment.close()
             self._segment = None
 
-    def summary(self) -> dict[str, int]:
+    def start_to_first_frame_ms(self) -> int | None:
+        """Server-clock ms from the recording's start to its first captured
+        frame (SET-12: under about 100 ms once a page is attached on start)."""
+        if self._first_frame_at is None:
+            return None
+        return round((self._first_frame_at - self._started_at) * 1000)
+
+    def summary(self) -> dict[str, int | None]:
         """What was accepted, for the ``master_mix_closed`` timeline event: the
         frame total must equal the WAV frames on disk across every segment."""
         with self._lock:
@@ -225,6 +246,7 @@ class MasterMixWriter:
                 "frames_accepted": self.frames_accepted,
                 "chunks_accepted": self.chunks_accepted,
                 "streams": self.streams,
+                "start_to_first_frame_ms": self.start_to_first_frame_ms(),
             }
 
     def close(self) -> None:
@@ -240,5 +262,6 @@ __all__ = [
     "MAX_CHUNK_BYTES",
     "STALL_TIMEOUT_S",
     "MasterMixChunkRefused",
+    "MasterMixRecordingStopped",
     "MasterMixWriter",
 ]

@@ -9,6 +9,7 @@ exact frame-count tests); defaulting RecorderStartRequest.source to "master".
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -26,6 +27,7 @@ from fastapi.testclient import TestClient
 from apps.sets import capture, master_mix, rec_cli
 from apps.sets.__main__ import main as sets_main
 from apps.sets.api import router
+from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE, MasterTapUnavailable
 from apps.sets.recorder_service import RecorderService
 
 pytestmark = pytest.mark.requirement("SET-12")
@@ -163,7 +165,10 @@ def test_wav_frames_equal_frames_sent_exactly_across_rolls_and_streams(tmp_path:
         sent += frames
     writer.close()
     assert len(list(tmp_path.glob("audio_*.wav"))) >= 4, "the roll and the stream change must both open segments"
-    assert writer.summary() == {"frames_accepted": sent, "chunks_accepted": 10, "streams": 2}
+    summary = writer.summary()
+    assert {k: summary[k] for k in ("frames_accepted", "chunks_accepted", "streams")} == {
+        "frames_accepted": sent, "chunks_accepted": 10, "streams": 2
+    }
     assert _wav_frames_total(tmp_path) == sent
 
 
@@ -178,14 +183,43 @@ def test_stop_closes_with_every_sent_frame_and_nothing_after(master_client, monk
         sent += frames
     client.post(f"/api/sets/recorder/{SESSION}/stop")
     late = _pcm(client, len(_CHUNK_FRAMES), _tone(480))
-    assert late.status_code == 409
+    # In flight at a clean stop: dropped, and said so without a 4xx (SET-12).
+    assert (late.status_code, late.json()) == (200, {"dropped": "recording_stopped", "session_id": SESSION})
     session_dir = service.sets_root / SESSION
     events = [json.loads(line) for line in (session_dir / "timeline.jsonl").read_text().splitlines()]
     [closed] = [e["value"] for e in events if e["action"] == "master_mix_closed"]
-    assert closed == {"frames_accepted": sent, "chunks_accepted": len(_CHUNK_FRAMES), "streams": 1}
+    assert {k: closed[k] for k in ("frames_accepted", "chunks_accepted", "streams")} == {
+        "frames_accepted": sent, "chunks_accepted": len(_CHUNK_FRAMES), "streams": 1
+    }
     assert _wav_frames_total(session_dir) == sent
     manifest = json.loads((session_dir / "manifest.json").read_text())
     assert len(manifest["mp3_segments"]) >= 3, "SEGMENT_SECONDS=1 must have rolled"
+
+
+class _FakePage:
+    """Stands in for the /performance page behind the start route's push
+    channel (production: the AGENT-03 order bus). ``first_chunk`` makes it act
+    like a real tap: its first audio leaves the moment it is attached."""
+
+    def __init__(self, service: RecorderService) -> None:
+        self.service = service
+        self.attached: list[str] = []
+        self.reason: str | None = None
+        self.fail_attach: str | None = None
+        self.first_chunk: bytes | None = None
+
+    def unavailable_reason(self, request) -> str | None:
+        return self.reason
+
+    async def attach(self, request, session_id: str) -> None:
+        if self.fail_attach is not None:
+            raise MasterTapUnavailable(self.fail_attach)
+        self.attached.append(session_id)
+        if self.first_chunk is not None:
+            self.service.write_master_pcm(
+                session_id, stream="page", seq=0, sample_rate=RATE, pcm=self.first_chunk
+            )
+
 
 @pytest.fixture
 def master_client(tmp_path: Path):
@@ -200,10 +234,12 @@ def master_client(tmp_path: Path):
     )
     app = FastAPI()
     app.state.sets_recorder_service = service
+    page = _FakePage(service)
+    setattr(app.state, MASTER_TAP_CHANNEL_STATE, page)
     app.include_router(router)
     with TestClient(app) as client:
+        client.page = page  # type: ignore[attr-defined]
         yield client, service
-
 
 def _pcm(client: TestClient, seq: int, pcm: bytes, session: str = SESSION, stream: str = "tab-1"):
     return client.post(
@@ -256,6 +292,114 @@ def test_master_pcm_is_409_when_it_cannot_land(master_client) -> None:
     assert gap.status_code == 409
     assert "a chunk was lost" in gap.json()["detail"]
     assert _pcm(client, 1, b"\x00\x01\x02", session=SESSION + "_1").status_code == 409
+
+
+def test_a_master_start_pushes_the_attach_and_audio_begins_at_once(master_client) -> None:
+    """[if] REC starts source=master [then] the page taps before it answers, [else stop]."""
+    client, service = master_client
+    client.page.first_chunk = _tone(480)
+    started = client.post("/api/sets/recorder/start", json={"session_id": SESSION, "source": "master", "sources": []})
+    assert started.status_code == 201, started.text
+    assert client.page.attached == [SESSION], "the start must push the attach, not wait for a poll"
+    assert started.json()["capture"] == "recording"
+    client.post(f"/api/sets/recorder/{SESSION}/stop")
+    events = [json.loads(line) for line in (service.sets_root / SESSION / "timeline.jsonl").read_text().splitlines()]
+    [closed] = [e["value"] for e in events if e["action"] == "master_mix_closed"]
+    # Server clock, start accepted -> first captured frame. CORE's bar is ~100 ms;
+    # build 15 lost 4,100-4,600 ms waiting for the rail's status poll.
+    assert closed["start_to_first_frame_ms"] is not None
+    assert closed["start_to_first_frame_ms"] < 100, closed
+
+
+def test_a_master_start_with_no_page_starts_nothing(master_client) -> None:
+    """[if] no /performance page can be asked [then] 503 and no session, [else stop]."""
+    client, service = master_client
+    client.page.reason = "no /performance page is open to record the master mix"
+    response = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
+    assert response.status_code == 503
+    assert "no /performance page is open" in response.json()["detail"]
+    assert client.get("/api/sets/recorder").json()["active"] is False
+    assert not service.sets_root.exists() or not any(service.sets_root.iterdir())
+
+
+def test_a_master_start_whose_tap_fails_is_stopped_and_says_why(master_client) -> None:
+    """[if] the page cannot connect its tap [then] 503 and REC is stopped, [else stop]."""
+    client, _ = master_client
+    client.page.fail_attach = "the audio engine will not run (suspended)"
+    response = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
+    assert response.status_code == 503
+    assert "will not run (suspended)" in response.json()["detail"]
+    assert client.get("/api/sets/recorder").json()["active"] is False
+
+
+def test_a_server_with_no_page_channel_refuses_master(tmp_path: Path) -> None:
+    """[if] the host installed no page channel [then] master is 503, never silent, [else stop]."""
+    app = FastAPI()
+    app.state.sets_recorder_service = RecorderService(
+        sets_root=tmp_path / "sets", db_path=tmp_path / "sets" / "sets.db", capture_enabled=False
+    )
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
+    assert response.status_code == 503
+    assert "no channel to a /performance page" in response.json()["detail"]
+
+
+def test_only_a_cleanly_stopped_recording_drops_late_chunks_quietly(master_client) -> None:
+    """[if] a chunk names a recording never stopped here [then] 409 stays loud, [else stop]."""
+    client, _ = master_client
+    assert _pcm(client, 0, _tone(480), session="2026-10-06T04-00-00").status_code == 409
+
+
+def test_rec_cli_returns_only_once_audio_is_written() -> None:
+    """[if] `rec start` answers while starting [then] it waits for recording or fails, [else stop]."""
+    reads = iter([{"capture": "starting"}, {"capture": "recording", "session_id": SESSION}])
+    status = rec_cli.wait_until_recording("u", {"capture": "starting"}, read=lambda: next(reads), sleep=lambda _s: None)
+    assert status["capture"] == "recording"
+    failed = iter([{"capture": "failed", "capture_error": "no master-mix audio arrived within 10 s"}])
+    with pytest.raises(rec_cli.RecCommandFailed, match="no master-mix audio arrived"):
+        rec_cli.wait_until_recording("u", {"capture": "starting"}, read=lambda: next(failed), sleep=lambda _s: None)
+    clock = iter([0.0, 5.0, 20.0])
+    with pytest.raises(rec_cli.RecCommandFailed, match="did not start within"):
+        rec_cli.wait_until_recording(
+            "u", {"capture": "starting"}, timeout_s=12, read=lambda: {"capture": "starting"},
+            sleep=lambda _s: None, monotonic=lambda: next(clock),
+        )
+
+
+def test_the_order_bus_channel_attaches_through_the_leader_page() -> None:
+    """[if] a master start is pushed [then] the page gets record_master_tap at once, [else stop]."""
+    from types import SimpleNamespace
+
+    from apps.webui.server.sets_master_tap import OrderBusMasterTap
+
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ui_mirror={"page": 1})))
+    channel = OrderBusMasterTap()
+    assert channel.unavailable_reason(request) is None
+    assert "no /performance page" in (
+        channel.unavailable_reason(SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ui_mirror=None)))) or ""
+    )
+
+    async def page(outcome: dict) -> dict:
+        from apps.webui.server.routes.commands import _broker
+
+        broker = _broker(request)
+        claimed = await broker.claim_within(1.0, lambda: asyncio.sleep(0, result=False))
+        assert claimed is not None
+        order_id, order = claimed
+        broker.complete(order_id, outcome)
+        return order
+
+    async def run(outcome: dict) -> dict:
+        attached = asyncio.create_task(channel.attach(request, SESSION))
+        order = await page(outcome)
+        await attached
+        return order
+
+    order = asyncio.run(run({"steps": [{"status": "succeeded"}], "mirror_delta": {"changed": {}}}))
+    assert order == {"kind": "single", "payload": {"type": "record_master_tap", "session_id": SESSION}}
+    with pytest.raises(MasterTapUnavailable, match="will not run"):
+        asyncio.run(run({"steps": [{"status": "failed", "error": "will not run"}], "mirror_delta": {"changed": {}}}))
 
 
 def test_master_pcm_requires_its_stream_seq_and_rate(master_client) -> None:
@@ -313,10 +457,23 @@ from pathlib import Path
 from starlette.testclient import TestClient
 from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig
+from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 
 app = create_app(EngineConfig(data_dir=Path(os.environ["MDT_DATA_DIR"])))
 pcm = b"".join(struct.pack("<hh", v, v) for v in (int(9000 * math.sin(i / 7)) for i in range(48000)))
+out = {"channel": type(getattr(app.state, MASTER_TAP_CHANNEL_STATE)).__name__}
 with TestClient(app, base_url="http://127.0.0.1") as client:
+    no_page = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
+    out["no_page"] = [no_page.status_code, "no /performance page is open" in no_page.text]
+
+    class Page:
+        def unavailable_reason(self, request):
+            return None
+
+        async def attach(self, request, session_id):
+            out["attached"] = session_id
+
+    setattr(app.state, MASTER_TAP_CHANNEL_STATE, Page())
     start = client.post("/api/sets/recorder/start", json={"source": "master", "sources": []})
     sid = start.json().get("session_id")
     chunk = client.post(
@@ -327,13 +484,21 @@ with TestClient(app, base_url="http://127.0.0.1") as client:
     )
     status = client.get("/api/sets/recorder").json()
     stop = client.post(f"/api/sets/recorder/{sid}/stop")
-print(json.dumps({"start": start.status_code, "chunk": chunk.status_code,
-                  "capture": status.get("capture"), "stop": stop.status_code}))
+    late = client.post(
+        f"/api/sets/recorder/{sid}/master-pcm",
+        params={"stream": "probe", "seq": 1, "sample_rate": 48000},
+        content=pcm,
+        headers={"content-type": "application/octet-stream"},
+    )
+out.update({"start": start.status_code, "attached_ok": out.get("attached") == sid, "chunk": chunk.status_code,
+            "capture": status.get("capture"), "stop": stop.status_code, "late": [late.status_code, late.json()]})
+out.pop("attached", None)
+print(json.dumps(out))
 """
 
 
 def test_the_packaged_engine_app_records_the_master_mix(tmp_path: Path) -> None:
-    """[if] engine_core serves REC source=master [then] start, chunk, stop all succeed, [else stop]."""
+    """[if] engine_core serves REC source=master [then] it pushes, records, drops late, [else stop]."""
     result = subprocess.run(
         [sys.executable, "-c", _ENGINE_PROBE],
         cwd=REPO_ROOT,
@@ -345,4 +510,13 @@ def test_the_packaged_engine_app_records_the_master_mix(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     out = json.loads(result.stdout.strip().splitlines()[-1])
-    assert out == {"start": 201, "chunk": 204, "capture": "recording", "stop": 200}
+    assert out == {
+        "channel": "OrderBusMasterTap",
+        "no_page": [503, True],
+        "start": 201,
+        "attached_ok": True,
+        "chunk": 204,
+        "capture": "recording",
+        "stop": 200,
+        "late": [200, {"dropped": "recording_stopped", "session_id": out["late"][1].get("session_id")}],
+    }

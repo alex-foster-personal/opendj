@@ -62,9 +62,18 @@ function _changed(before: unknown, after: unknown): unknown {
 	return Object.keys(changed).length === 0 ? undefined : changed;
 }
 
+/** SET-12: a master REC start pushes this order so the tap connects at once
+ *  instead of at the REC rail's next status poll (which lost ~4.5 s). */
+async function _recordMasterTap(command: Record<string, unknown>): Promise<void> {
+	if (typeof command.session_id !== 'string') throw new TypeError('record_master_tap needs session_id');
+	await (await import('$lib/sets/master-mix-capture')).ensureMasterMixCapture(command.session_id);
+}
+
 async function _one(command: unknown): Promise<AgentStepResult> {
 	try {
-		await dispatchPerformanceCommand(_command(command));
+		const order = _command(command) as unknown as Record<string, unknown>;
+		if (order.type === 'record_master_tap') await _recordMasterTap(order);
+		else await dispatchPerformanceCommand(_command(command));
 		return { status: 'succeeded' };
 	} catch (error) {
 		return { status: 'failed', error: _message(error) };

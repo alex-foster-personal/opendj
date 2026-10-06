@@ -10,17 +10,19 @@ explicit ``--source``, so a script and the button cannot disagree.
     python -m apps.sets rec status --base-url URL
     python -m apps.sets rec stop --base-url URL
 
-A master recording is fed by the open /performance page, which attaches its
-tap when it next reads the recorder status (every 5 s while idle).
+A master start is pushed to the open /performance page, which connects its tap
+before the start answers; `rec start` returns once audio is really written.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import urllib.error
+import time
 import urllib.request
 from typing import Any
 
+from .master_mix import ATTACH_TIMEOUT_S
 from .recorder_service import RECORD_SOURCES
 
 _TIMEOUT_S = 30.0
@@ -59,6 +61,34 @@ def start_body(source: str, device_name: str | None, sources: list[str]) -> dict
     return body
 
 
+
+def wait_until_recording(
+    base_url: str,
+    status: dict[str, Any],
+    *,
+    timeout_s: float = ATTACH_TIMEOUT_S + 2,
+    poll_s: float = 0.2,
+    read: Any = None,
+    sleep: Any = time.sleep,
+    monotonic: Any = time.monotonic,
+) -> dict[str, Any]:
+    """Return once the started capture is really writing (SET-12), or raise.
+
+    A start answers while the first audio is still on its way (``starting``);
+    the CLI, like the REC button, only reports a recording once it records.
+    A capture that fails (no audio within the daemon's 10 s) raises with the
+    daemon's reason."""
+    read = read or (lambda: _call(base_url, "GET", "/api/sets/recorder"))
+    deadline = monotonic() + timeout_s
+    while status.get("capture") in ("starting", "waiting_permission"):
+        if monotonic() > deadline:
+            raise RecCommandFailed(f"the capture did not start within {timeout_s:g} s: {status}")
+        sleep(poll_s)
+        status = read()
+    if status.get("capture") in ("failed", "stopped"):
+        raise RecCommandFailed(f"the capture failed: {status.get('capture_error') or status}")
+    return status
+
 def dispatch(args: argparse.Namespace) -> int:
     if args.rec_cmd == "start":
         status = _call(
@@ -67,6 +97,7 @@ def dispatch(args: argparse.Namespace) -> int:
             "/api/sets/recorder/start",
             start_body(args.source, args.device_name, args.sources),
         )
+        status = wait_until_recording(args.base_url, status)
     elif args.rec_cmd == "status":
         status = _call(args.base_url, "GET", "/api/sets/recorder")
     elif args.rec_cmd == "stop":
@@ -100,4 +131,4 @@ def add_parser(sub: Any) -> None:
     rec.set_defaults(func=dispatch)
 
 
-__all__ = ["RecCommandFailed", "add_parser", "dispatch", "start_body"]
+__all__ = ["RecCommandFailed", "add_parser", "dispatch", "start_body", "wait_until_recording"]
