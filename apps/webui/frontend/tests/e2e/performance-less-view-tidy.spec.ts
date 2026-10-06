@@ -103,16 +103,16 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 	await expect(page.getByTestId('playlist-set-tabs')).toBeAttached();
 
 	const hidden = [
-		['Stage', page.getByRole('button', { name: 'Open karaoke stage' })],
+		['Stage', page.locator('.topbar-slot-stage')],
 		['voice command', page.locator('input[aria-label="text command entry"]')],
 		['LINK', page.locator('.link-btn')],
 		['PAD', page.locator('.topbar-slot-pad')],
-		['FX (unfinished)', page.getByRole('button', { name: 'FX panel' })],
-		['Find & Replace', page.getByRole('button', { name: 'Find & Replace', exact: true })],
-		['Bulk Edit', page.getByRole('button', { name: 'Bulk Edit', exact: true })],
+		['FX (unfinished)', page.locator('button[aria-label="FX panel"]')],
+		['Find & Replace', page.locator('.edit-actions-stack > button', { hasText: 'Find & Replace' })],
+		['Bulk Edit', page.locator('.edit-actions-fold > button', { hasText: 'Bulk Edit' })],
 		['Set bar', page.getByTestId('playlist-set-tabs')],
-		['R (channel 1)', page.getByRole('button', { name: 'meter red anchor channel 1' })],
-		['M (channel 1)', page.getByRole('button', { name: 'master ceiling channel 1' })]
+		['R (channel 1)', page.locator('button[aria-label="meter red anchor channel 1"]')],
+		['M (channel 1)', page.locator('button[aria-label="master ceiling channel 1"]')]
 	] as const;
 
 	await setLayout(page, 'MORE');

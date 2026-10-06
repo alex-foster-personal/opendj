@@ -37,7 +37,9 @@ async function enterLessMode(
 ): Promise<void> {
 	await page.setViewportSize(viewport);
 	await page.goto('/performance');
-	await page.getByRole('button', { name: 'LESS' }).click();
+	// Scoped and exact: the enrich card's own "Less" (collapse) button also
+	// matches a loose name, and appears only while the library is enriching.
+	await page.locator('.deck-layout-toggle').getByRole('button', { name: 'LESS', exact: true }).click();
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
 	// Scoped to `.rb-deck` specifically (not the bare `[data-deck='3']`
 	// attribute selector, which also matches WaveRow's own row div - that
@@ -163,7 +165,7 @@ test('performance: the MORE/LESS toggle is compact, not oversized chrome pushing
 // tall. Both halves of the ask are asserted from RENDERED geometry rather than
 // from the stylesheet: a `grid-template-areas` string proves intent, a
 // bounding box proves the pixels.
-test('performance LESS mode: FILTER is visible, with the fader left of the EQs and STEM right', async ({
+test('performance LESS mode: FILTER is visible right of the EQs, fader left, STEM below', async ({
 	page
 }) => {
 	await enterLessMode(page);
@@ -354,17 +356,18 @@ test('performance LESS mode: at the deck-area FLOOR no strip control spills out 
 		}
 		expect(cells.trim!.bottom).toBeLessThanOrEqual(cells.cue!.top);
 		expect(cells.cue!.bottom).toBeLessThanOrEqual(cells.filter!.top);
-		for (const [name, cell] of [
-			['STEM label', cells.stemLabel!],
-			['STEM chips', cells.stem!]
-		] as const) {
-			expect(
-				cell.top,
-				`channel ${deck} ${name} (top ${cell.top}) belongs in the row BELOW the dial block ` +
-					`(EQ bottom ${cells.eq!.bottom}, fader bottom ${cells.fader!.bottom})`
-			).toBeGreaterThanOrEqual(Math.max(cells.eq!.bottom, cells.fader!.bottom));
-		}
-		expect(cells.stemLabel!.right).toBeLessThanOrEqual(cells.stem!.left);
+		expect(
+			cells.stem!.top,
+			`channel ${deck} STEM chips (top ${cells.stem!.top}) belong in the row BELOW the dial ` +
+				`block (EQ bottom ${cells.eq!.bottom}, fader bottom ${cells.fader!.bottom})`
+		).toBeGreaterThanOrEqual(Math.max(cells.eq!.bottom, cells.fader!.bottom));
+		// The STEM mode label sits top right, in the head row above TRIM.
+		expect(
+			cells.stemLabel!.bottom,
+			`channel ${deck} STEM label (bottom ${cells.stemLabel!.bottom}) belongs in the head row ` +
+				`ABOVE the dial block (EQ top ${cells.eq!.top})`
+		).toBeLessThanOrEqual(cells.eq!.top);
+		expect(cells.stemLabel!.left).toBeGreaterThanOrEqual(cells.eq!.right);
 	}
 
 	// Second line of defence, cheap: the headphone/crossfader row the strips
