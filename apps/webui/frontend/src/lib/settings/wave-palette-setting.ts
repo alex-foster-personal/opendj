@@ -40,7 +40,7 @@ export const UI_SKIN_SETTING: SettingDef = {
 	}
 };
 
-/** Split main waveform: master deck on top, this deck below (skin preview). */
+/** Split main waveform: master deck on top, this deck below. Opt-in. */
 export const WAVE_SPLIT_MASTER_SETTING: SettingDef = {
 	id: 'wave_split_master',
 	label: 'Split waveform (master on top)',
@@ -48,12 +48,12 @@ export const WAVE_SPLIT_MASTER_SETTING: SettingDef = {
 	keywords: ['split', 'master', 'waveform', 'beat', 'matching', 'phase', 'wavestack'],
 	title: 'Deck waveform rows: master on the top half, this deck on the bottom half',
 	detail:
-		'Each deck row paints the MASTER deck above the centerline and this deck below it, each on its own playhead and tempo, so in-phase beats meet at the line. On the master deck the top half shows the next loaded deck. Auto turns it on for the Mono dev skin. Same path as the set_skin performance command.',
+		'Opt-in, intended for a future decks-only view. Off (and Auto, on every skin) paints the standard mirrored waveform. On: each deck row paints the MASTER deck above the centerline and this deck below it, each on its own playhead and tempo, so in-phase beats meet at the line; the master deck keeps its own mirrored waveform. Same path as the set_skin performance command.',
 	implemented: true,
 	control: {
 		kind: 'enum',
 		options: [
-			{ value: 'auto', label: 'Auto (follow skin)' },
+			{ value: 'auto', label: 'Auto (off)' },
 			{ value: 'on', label: 'On' },
 			{ value: 'off', label: 'Off' }
 		]

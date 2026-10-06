@@ -151,8 +151,9 @@
 	const masterAnlz = $derived(masterAnlzForDeck(masterState, getAnlzEntry));
 	const masterBeats = $derived(masterAnlz?.beatgrid.beats ?? null);
 
-	// Split main waveform (wave_split_master): partner deck on the top half.
-	const splitOn = $derived(waveSplitActive(uiPrefs.wave_split_master, uiPrefs.ui_skin));
+	// Split main waveform (wave_split_master, opt-in): partner deck on the
+	// top half; the master row has no partner, so it paints plain mirrored.
+	const splitOn = $derived(waveSplitActive(uiPrefs.wave_split_master));
 	const splitPartner = $derived(
 		splitOn
 			? splitPartnerDeck(
