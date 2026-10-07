@@ -1,0 +1,28 @@
+# Source: https://raw.githubusercontent.com/darksv/rusty-chromaprint/97d67dfed02854ac5d5eaa9ac965b9abe3dff690/chromaprint/Cargo.toml
+[package]
+name = "rusty-chromaprint"
+version = "0.3.0"
+edition = "2021"
+description = "Pure Rust port of Chromaprint"
+license = "MIT"
+homepage = "https://github.com/darksv/rusty-chromaprint"
+repository = "https://github.com/darksv/rusty-chromaprint"
+readme = "../README.md"
+rust-version = "1.63"
+exclude = ["data/**"]
+
+[dependencies]
+rustfft = "6.2.0"
+rubato = "0.16.0"
+
+# Source: https://spdx.org/licenses/MIT.txt
+# Upstream declares MIT but supplies no copyright notice or LICENSE file at this revision.
+# The template copyright placeholder is omitted; no holder or year is invented.
+MIT License
+
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

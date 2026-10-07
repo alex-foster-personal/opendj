@@ -1,0 +1,277 @@
+{
+  "artifacts": [
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079356425/zip",
+      "created_at": "2026-09-30T05:31:28Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:31:27Z",
+      "id": 11079356425,
+      "name": "fast-tier-leg-4",
+      "size_in_bytes": 124210,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079317552/zip",
+      "created_at": "2026-09-30T05:38:08Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:38:06Z",
+      "id": 11079317552,
+      "name": "ci-insights-shard-1-attempt-1",
+      "size_in_bytes": 113625,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079311277/zip",
+      "created_at": "2026-09-30T05:28:55Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:28:53Z",
+      "id": 11079311277,
+      "name": "fast-tier-leg-3",
+      "size_in_bytes": 122891,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079296396/zip",
+      "created_at": "2026-09-30T05:29:31Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:29:29Z",
+      "id": 11079296396,
+      "name": "fast-tier-leg-1",
+      "size_in_bytes": 123626,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079162225/zip",
+      "created_at": "2026-09-30T05:32:06Z",
+      "expired": false,
+      "expires_at": "2026-10-03T05:32:04Z",
+      "id": 11079162225,
+      "name": "frontend-unit-junit",
+      "size_in_bytes": 200614,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079078234/zip",
+      "created_at": "2026-09-30T05:38:06Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:38:04Z",
+      "id": 11079078234,
+      "name": "test-durations-shard-1",
+      "size_in_bytes": 121161,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11079058597/zip",
+      "created_at": "2026-09-30T05:40:35Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:40:33Z",
+      "id": 11079058597,
+      "name": "test-durations-shard-3",
+      "size_in_bytes": 121293,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078998314/zip",
+      "created_at": "2026-09-30T05:36:07Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:36:10Z",
+      "id": 11078998314,
+      "name": "test-durations-shard-4",
+      "size_in_bytes": 121990,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078992058/zip",
+      "created_at": "2026-09-30T05:26:47Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:26:46Z",
+      "id": 11078992058,
+      "name": "production-frontend-8e04097a5dedd1abfa9426f598d4e15e08dfde3a",
+      "size_in_bytes": 914603,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078988400/zip",
+      "created_at": "2026-09-30T05:36:09Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:36:12Z",
+      "id": 11078988400,
+      "name": "ci-insights-shard-4-attempt-1",
+      "size_in_bytes": 114564,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078929249/zip",
+      "created_at": "2026-09-30T05:40:37Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:40:35Z",
+      "id": 11078929249,
+      "name": "ci-insights-shard-3-attempt-1",
+      "size_in_bytes": 114436,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078923813/zip",
+      "created_at": "2026-09-30T05:37:37Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:37:36Z",
+      "id": 11078923813,
+      "name": "test-durations-shard-2",
+      "size_in_bytes": 122585,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078918904/zip",
+      "created_at": "2026-09-30T05:37:39Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:37:38Z",
+      "id": 11078918904,
+      "name": "ci-insights-shard-2-attempt-1",
+      "size_in_bytes": 114540,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078613715/zip",
+      "created_at": "2026-09-30T05:36:23Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:36:21Z",
+      "id": 11078613715,
+      "name": "ci-insights-shard-5-attempt-1",
+      "size_in_bytes": 114587,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078518769/zip",
+      "created_at": "2026-09-30T05:36:21Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:36:20Z",
+      "id": 11078518769,
+      "name": "test-durations-shard-5",
+      "size_in_bytes": 122644,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078383522/zip",
+      "created_at": "2026-09-30T05:29:33Z",
+      "expired": false,
+      "expires_at": "2026-10-02T05:29:32Z",
+      "id": 11078383522,
+      "name": "quality-report",
+      "size_in_bytes": 3608,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    },
+    {
+      "archive_download_url": "https://api.github.com/repos/private_owner/music-dj-tools/actions/artifacts/11078363576/zip",
+      "created_at": "2026-09-30T05:29:49Z",
+      "expired": false,
+      "expires_at": "2026-10-01T05:29:48Z",
+      "id": 11078363576,
+      "name": "fast-tier-leg-2",
+      "size_in_bytes": 124227,
+      "workflow_run": {
+        "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+        "head_repository_id": 1212927351,
+        "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+        "id": 36673368018,
+        "repository_id": 1212927351
+      }
+    }
+  ],
+  "total_count": 17
+}

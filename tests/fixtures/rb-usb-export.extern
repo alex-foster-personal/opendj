@@ -1,3 +1,0 @@
-# External real-fixture pointer. Media bytes are supplied outside the public source tree.
-# Resolve through MUX_FIXTURE_HOST; verify the unchanged ANLZ manifest before use.
-rb-usb-export
