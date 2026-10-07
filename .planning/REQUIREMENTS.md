@@ -7361,7 +7361,7 @@ in this codebase and adding one is a separate, contentious DSP commitment.
 
 ### Donations (FUND)
 
-- [x] **FUND-01** (shipped Mon 31 Aug 2026): Donations MUST be link-out only via `.github/FUNDING.yml` pointing at Ko-fi and GitHub Sponsors. No OAuth, no webhook, no backend. (Ko-fi handle may stay commented until claimed.)
+- [ ] **FUND-01** (descoped Wed 7 Oct 2026; was shipped Mon 31 Aug 2026): Donations MUST be link-out only via `.github/FUNDING.yml` pointing at Ko-fi and GitHub Sponsors. No OAuth, no webhook, no backend. (Ko-fi handle may stay commented until claimed.) The file is removed until a real target exists: the owner account has no GitHub Sponsors listing and no Ko-fi handle is claimed, so the Sponsor button led nowhere. Restore the file in the same change that adds a live Sponsors listing or Ko-fi page.
   - [if] donations require OAuth or a webhook [then] link-out-only is broken ⛔️
   - [if] donations are collected in-app instead of via FUNDING.yml [then] the link-out surface is missing ⛔️
 - [ ] **FUND-02**: Patreon is explicitly rejected. Revisit only if a hosted backend exists for other reasons AND supporters ask for it by name.
