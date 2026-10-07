@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Open DJ does not work the way it should.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem, do not file it here: use the
+        Security tab and "Report a vulnerability" so it stays private.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence of steps that makes it happen. Say how often it happens.
+      placeholder: |
+        1. Load a track on deck 1
+        2. Turn on AutoPlay
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Open DJ version and build
+      description: The version and build shown in the app, or the `build_info` block printed by `opendj --json status`.
+      placeholder: "1.0 alpha (app-v1.0.0-alpha.1), build 9e87db38"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: Mac and macOS version
+      placeholder: "MacBook Air M2, macOS 15.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: library
+    attributes:
+      label: Library source
+      options:
+        - rekordbox library
+        - A folder of music
+        - Other or not sure
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste any error text. Remove anything private first.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag in screenshots or a short screen recording, if they help show the problem.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
