@@ -23,14 +23,19 @@ test('TopBar wires Stage through the shared openStage store and deck read model'
 	);
 });
 
-test('TopBar renders one always-present Stage button disabled when no deck is loaded', () => {
+// LYR-12 (W40): Stage moved from its own top-bar slot into the LYR hover menu.
+test('TopBar renders one Stage button, inside the LYR menu, disabled when no deck is loaded', () => {
+	assert.doesNotMatch(source, /topbar-slot-stage/, 'the standalone Stage slot is gone');
 	assert.equal(
-		(source.match(/class="bsm-toggle topbar-slot-stage"/g) ?? []).length,
+		(source.match(/class="bsm-toggle lyr-menu-stage"/g) ?? []).length,
 		1,
 		'exactly one Stage button must be present'
 	);
-	assert.match(source, /disabled=\{stageTarget === null\}/);
-	assert.match(source, /aria-label="Open karaoke stage"/);
+	const menu = source.slice(source.indexOf('class="ap-menu lyr-menu"'), source.indexOf('</span>', source.indexOf('class="ap-menu lyr-menu"')));
+	assert.match(menu, /class="bsm-toggle lyr-menu-stage"/, 'Stage lives in the LYR menu');
+	assert.match(menu, /disabled=\{stageTarget === null\}/);
+	assert.match(menu, /aria-label="Open karaoke stage"/);
+	assert.match(menu, /onclick=\{_openStageFromTopBar\}/);
 });
 
 test('compact lyric chip is not presented as the global LYR preference being off', () => {

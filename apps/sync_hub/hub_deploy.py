@@ -2,7 +2,7 @@
 
 A hub is a headless ``python -m apps.engine_core serve`` with ``MDT_IS_HUB=1``
 on a dedicated data dir, bound to 127.0.0.1 on a fixed port and exposed to
-the tailnet only through ``tailscale serve`` (docs/cloudsync/hub-runbook.md).
+the tailnet only through ``tailscale serve`` ((private path)).
 The packaged desktop app is never the hub: its shell hard-codes the bind.
 
 Everything that launches a hub derives from :func:`hub_serve_argv` and
@@ -53,11 +53,11 @@ from pathlib import Path
 from typing import Literal
 from xml.sax.saxutils import escape
 
+from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import hub_user
-from apps.webui.server.request_guard import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 
 Kind = Literal["systemd", "launchd"]
 Verdict = Literal["OK", "CRITICAL", "UNKNOWN"]

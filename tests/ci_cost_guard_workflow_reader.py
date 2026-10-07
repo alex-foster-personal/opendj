@@ -24,6 +24,7 @@ from tests.scripts.ci_runner_routes import (
     CANARY_VENDOR_MATRIX,
     MERGE_QUEUE_DISJUNCT,
 )
+from tests.workflow_conditions import top_level_disjuncts
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 CANARY_CONFIG = WORKFLOW_DIR.parents[1] / "ci" / "runner-canary.json"
@@ -193,32 +194,6 @@ def matrix_runs(job_id: str, job: dict) -> int:
         )
         runs *= len(values)
     return runs
-
-
-def top_level_disjuncts(condition: str) -> list[str]:
-    """`condition` split on `||` at bracket depth zero.
-
-    A plain `str.split("||")` would cut inside a parenthesized clause and hand
-    back fragments, and a fragment reads as a weaker claim than the clause it
-    came from - the same fail-open shape `event_set` refuses below.
-    """
-    stripped = re.sub(r"\s+", " ", condition).strip()
-    parts, depth, start = [], 0, 0
-    index = 0
-    while index < len(stripped):
-        char = stripped[index]
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-        elif char == "|" and depth == 0 and stripped[index : index + 2] == "||":
-            parts.append(stripped[start:index].strip())
-            index += 2
-            start = index
-            continue
-        index += 1
-    parts.append(stripped[start:].strip())
-    return [part for part in parts if part]
 
 
 def event_set(condition: str, variable: str) -> set[str]:

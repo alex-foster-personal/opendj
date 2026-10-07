@@ -35,6 +35,7 @@ test('run is undefined when opener is missing or selection is empty', () => {
 test('TrackContextMenu and BrowserPanel wire add-to-playlist helpers', () => {
 	const menu = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(menu, /addToPlaylistMenuItem\(targetIds, onaddtoplaylist\)/);
+	// W28: the registry decides visibility; the host binds the id to the picker.
+	assert.match(menu, /'add-playlist': onaddtoplaylist \? \(\) => onaddtoplaylist\(targetIds\) : undefined/);
 	assert.match(panel, /onaddtoplaylist=/);
 });

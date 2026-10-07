@@ -64,7 +64,12 @@ def get_track_audio(
     picked = rb_vendor.resolve_playable_audio(
         stable_id, share=share, jobs_store=jobs_store
     )
-    probe = probe_readable_byte(picked.path, timeout_s=AUDIO_ACCESS_TIMEOUT_S)
+    # create_app sets the deadline on app.state (W45); an app built from the
+    # bare router, as some unit tests do, keeps the product default.
+    timeout_s: float = getattr(
+        request.app.state, "audio_access_timeout_s", AUDIO_ACCESS_TIMEOUT_S
+    )
+    probe = probe_readable_byte(picked.path, timeout_s=timeout_s)
     if probe.outcome == "timeout" or (
         probe.outcome == "error" and probe.errno in _BLOCKED_ACCESS_ERRNOS
     ):
@@ -74,7 +79,7 @@ def get_track_audio(
                 "code": "AUDIO_ACCESS_BLOCKED",
                 "message": (
                     f"opening {picked.path} did not return within "
-                    f"{AUDIO_ACCESS_TIMEOUT_S:.0f}s"
+                    f"{timeout_s:.0f}s"
                 ),
             },
         )

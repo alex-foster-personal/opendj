@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.webui.server.playlist_writeback import (
+from apps.smartlists.playlist_writeback import (
     VendorPlaylist,
     WritebackBackup,
     WritebackConflict,
@@ -253,7 +253,7 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
     from apps.shared.state import db as state_db
     from apps.shared.state import paths as state_paths
     from apps.smartlists import djay_writer as djay_writer_module
-    from apps.webui.server import playlist_writeback as writeback_module
+    from apps.smartlists import playlist_writeback as writeback_module
 
     state_path = tmp_path / "custom-state.db"
     decoy_path = tmp_path / "default-state.db"
@@ -358,7 +358,7 @@ def test_backup_is_taken_from_the_exact_target_and_rollback_is_cas_protected(ser
 
 
 def test_wrong_target_path_is_refused_by_production_factory(monkeypatch, tmp_path) -> None:
-    from apps.webui.server import playlist_writeback as module
+    from apps.smartlists import playlist_writeback as module
     monkeypatch.setattr(module.paths, "REKORDBOX_LIVE_DB", tmp_path / "live.db")
     with (
         pytest.raises(ValueError, match="refusing target"),
@@ -368,7 +368,7 @@ def test_wrong_target_path_is_refused_by_production_factory(monkeypatch, tmp_pat
 
 
 def test_production_factory_refuses_unowned_mapping_state(monkeypatch, tmp_path) -> None:
-    from apps.webui.server import playlist_writeback as module
+    from apps.smartlists import playlist_writeback as module
 
     target_path = tmp_path / "MediaLibrary.db"
     target_path.touch()
@@ -378,6 +378,31 @@ def test_production_factory_refuses_unowned_mapping_state(monkeypatch, tmp_path)
         module.default_writer_factory("djay", "live", target_path),
     ):
         pass
+
+
+def test_production_factory_opens_the_checked_target_not_the_requested_link(
+    monkeypatch, tmp_path,
+) -> None:
+    """A link to the live target passes the check; the writer must open what was checked,
+    so retargeting the link after the check cannot redirect the write. The real
+    build_djay_writer runs: the yielded writer's own path is the evidence."""
+    from apps.shared.state import db as state_db
+    from apps.smartlists import playlist_writeback as module
+    from apps.smartlists.djay_writer import DjayPlaylistWriter
+
+    state_path = tmp_path / "state.db"
+    with state_db.connect_rw(state_path):
+        pass
+    target_path = tmp_path / "MediaLibrary.db"
+    target_path.touch()
+    link_path = tmp_path / "link.db"
+    link_path.symlink_to(target_path)
+    monkeypatch.setattr(module.paths, "DJAY_LIVE_DB", target_path)
+
+    with module.default_writer_factory("djay", "live", link_path, state_db_path=state_path) as writer:
+        assert isinstance(writer, DjayPlaylistWriter)
+        assert writer.djay_db_path == target_path.resolve()
+        assert writer.djay_db_path != link_path
 
 
 def _assert_connection_closed(connection: sqlite3.Connection) -> None:
@@ -391,7 +416,7 @@ def test_service_closes_real_bound_mapping_connection_after_success(
     """A successful request releases its exact backend-owned mapping DB."""
     from apps.shared.state import db as state_db
     from apps.shared.state import paths as state_paths
-    from apps.webui.server import playlist_writeback as module
+    from apps.smartlists import playlist_writeback as module
 
     state_path = tmp_path / "custom-state.db"
     decoy_path = tmp_path / "default-state.db"
@@ -441,7 +466,7 @@ def test_service_closes_real_bound_mapping_connection_after_exception(
 ) -> None:
     """A vendor read failure releases mapping state without relying on GC."""
     from apps.shared.state import db as state_db
-    from apps.webui.server import playlist_writeback as module
+    from apps.smartlists import playlist_writeback as module
 
     state_path = tmp_path / "state.db"
     with state_db.connect_rw(state_path):

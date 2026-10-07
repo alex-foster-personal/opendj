@@ -38,7 +38,7 @@ from typing import IO, Any
 
 import pytest
 
-from scripts.server_owner_guard import process_start_time
+from tests.support.process_identity import process_start_time
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "server_owner_guard.py"

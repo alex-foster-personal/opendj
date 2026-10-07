@@ -19,7 +19,7 @@
  */
 
 import type { WaveformDesign, WaveformDesignPref } from './waveform-design';
-import { parseWavePalettePref, type WavePaletteChoice, type WavePalettePref } from './wave-palette';
+import { parseWavePalettePref, type WavePaletteChoice, type WavePalettePref, type WaveScheme } from './wave-palette';
 
 export type UiSkin = 'default' | 'mono-dev' | 'light';
 
@@ -46,7 +46,7 @@ export const UI_SKIN_PRE_GOTHIC_DEFAULT: UiSkin = 'default';
 export const SKIN_WAVE_LOOK: Readonly<Record<UiSkin, Readonly<{ design: WaveformDesign; palette: WavePaletteChoice }>>> = {
 	default: { design: 'tri-band', palette: 'rekordbox' },
 	'mono-dev': { design: 'blocks', palette: 'mono' },
-	light: { design: 'tri-band', palette: 'rekordbox' }
+	light: { design: 'blocks', palette: 'mono' }
 };
 
 export function effectiveWaveformDesign(pref: WaveformDesignPref, skin: UiSkin): WaveformDesign {
@@ -57,6 +57,15 @@ export function effectiveWaveformDesign(pref: WaveformDesignPref, skin: UiSkin):
 export function effectiveWavePalette(pref: WavePalettePref, skin: UiSkin): WavePaletteChoice {
 	if (pref === 'auto') return SKIN_WAVE_LOOK[skin].palette;
 	return pref;
+}
+
+/** The light/dark band hues a canvas waveform needs. Gothic is dark and
+ * Light is light whatever the stored theme says (each skin repaints both
+ * themes); only the Default skin follows the theme. */
+export function effectiveWaveScheme(theme: WaveScheme, skin: UiSkin): WaveScheme {
+	if (skin === 'light') return 'light';
+	if (skin === 'mono-dev') return 'dark';
+	return theme;
 }
 
 export function parseUiSkin(raw: unknown): UiSkin | undefined {

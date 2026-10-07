@@ -3,6 +3,7 @@
 Closes DNS-rebinding and cross-site simple-POST writes while preserving agent
 and CLI parity: requests without an ``Origin`` header keep working.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,15 +15,11 @@ from pathlib import Path
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 from apps.shared.sync_bind_guard import is_loopback_host
 from apps.webui.port_config import WEBUI_ENV_FILE, _read_dotenv, _resolved_raw_value
 
-ALLOWED_HOSTS_ENV = "MUSIC_DJ_ALLOWED_HOSTS"
 SHARE_ORIGIN_ENV = "MUSIC_DJ_SHARE_ORIGIN"
-HOSTNAME_RE = re.compile(
-    r"^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?"
-    r"(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$"
-)
 _LOOPBACK_HOSTNAMES: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
 _MUTATING_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _BENCH_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1):87\d\d$"
@@ -51,7 +48,7 @@ class TrustedOrigins:
 def request_host(request: Request) -> str:
     """Bare hostname from Host / X-Forwarded-Host (first value, port stripped)."""
     forwarded = request.headers.get("x-forwarded-host", "")
-    raw = (forwarded.split(",", 1)[0] or request.headers.get("host") or "")
+    raw = forwarded.split(",", 1)[0] or request.headers.get("host") or ""
     host = raw.strip().lower()
     if host.startswith("["):
         end = host.find("]")
@@ -64,34 +61,13 @@ def request_host(request: Request) -> str:
     return host
 
 
-def parse_allowed_hosts(
-    raw_value: str | None,
-    *,
-    env_name: str = ALLOWED_HOSTS_ENV,
-) -> list[str]:
-    """Bare hostnames from ``MUSIC_DJ_ALLOWED_HOSTS``. Unset means loopback only."""
-    if raw_value is None or raw_value.strip() == "":
-        return []
-    hosts = [part.strip() for part in raw_value.split(",") if part.strip()]
-    if not hosts:
-        raise ValueError(f"{env_name} was set but named no hostname")
-    for host in hosts:
-        if not HOSTNAME_RE.fullmatch(host):
-            raise ValueError(
-                f"{env_name} must list bare hostnames, got {host!r}"
-            )
-    return hosts
-
-
 def resolve_allowed_hosts_from_environ(
     environ: Mapping[str, str] | None = None,
     *,
     dotenv_path: Path = WEBUI_ENV_FILE,
 ) -> list[str]:
     effective = os.environ if environ is None else environ
-    raw = _resolved_raw_value(
-        ALLOWED_HOSTS_ENV, effective, _read_dotenv(dotenv_path)
-    )
+    raw = _resolved_raw_value(ALLOWED_HOSTS_ENV, effective, _read_dotenv(dotenv_path))
     return parse_allowed_hosts(raw)
 
 

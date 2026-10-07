@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-from tests.ci_cost_guard_workflow_reader import top_level_disjuncts
+from tests.workflow_conditions import top_level_disjuncts
 
 REPO = Path(__file__).resolve().parents[2]
 SECURITY = REPO / ".github" / "workflows" / "security.yml"

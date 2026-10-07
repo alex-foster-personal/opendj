@@ -45,7 +45,9 @@ test('readout carries a key line above the main tempo number, both Camelot-colou
 test('readout tempo line carries a percentage-offset-from-original annotation, only when pitched', () => {
 	const block = readoutBlock();
 	assert.match(block, /tempoChanged/, 'no tempoChanged gate for the percent-offset line');
-	assert.match(block, /%/, 'no percent sign in the tempo readout');
+	// DECKUX-41: the percent sign now comes from the shared formatTempoPct ("+2%", "-2%", "±0%").
+	assert.match(block, /\{tempoPctText\}/, 'the tempo line renders the shared formatter text');
+	assert.match(header, /const tempoPctText: string = \$derived\(formatTempoPct\(deck\.pitch\)\);/);
 });
 
 test('hovering the readout wraps it in ControlExplainer with a working reset action', () => {

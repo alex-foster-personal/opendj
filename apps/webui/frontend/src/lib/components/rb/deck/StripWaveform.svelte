@@ -13,6 +13,7 @@
 	// PVDI regions (status 'rekordbox'); the two barless states surface as
 	// explicit tooltips - three mandatory states, nothing invented.
 	// Scrub-hover lyrics: hovering shows the word under the pointer above the strip.
+	import { vocalsStatusTitle } from '$lib/components/rb/wave/vocals-title';
 	import ScrubLyricStrip from '$lib/components/lyrics/ScrubLyricStrip.svelte';
 	import { cancelHoverLoad, hoverLoadLyrics, lyricEntry } from '$lib/lyrics/lyrics-cache.svelte';
 	import {
@@ -27,7 +28,7 @@
 	import { playheadMs } from '$lib/rb/playhead-display.svelte';
 	import { tracePlayhead } from '$lib/rb/playhead-trace';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { effectiveWaveformDesign, effectiveWavePalette } from '$lib/rb/ui-skin';
+	import { effectiveWaveformDesign, effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
 	import { resolveStripBandColors } from '$lib/rb/wave-palette';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
@@ -89,13 +90,7 @@
 	// Validated vocals of the loaded analysis; null while no anlz payload.
 	const vocals: Vocals | null = $derived(deck.anlz === null ? null : vocalsOf(deck.anlz));
 
-	const vocalsTitle: string | null = $derived.by(() => {
-		if (vocals === null) return null;
-		if (vocals.status === 'no_vocals') return 'no vocals detected';
-		else if (vocals.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
-		else if (vocals.status === 'demucs') return 'vocals: local detection';
-		else return null; // rekordbox: the bars themselves are the signal
-	});
+	const vocalsTitle: string | null = $derived(vocalsStatusTitle(vocals));
 
 	const memoryCuesMs: number[] = $derived(
 		deck.anlz === null
@@ -191,7 +186,7 @@
 			loop: deck.loop,
 			loopCues,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
-			bandColors: resolveStripBandColors(uiPrefs.theme, effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin))
+			bandColors: resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin))
 		});
 	});
 
@@ -367,7 +362,7 @@
 		min-height: var(--rb-strip-h);
 		padding: 0;
 		margin: 0;
-		background: #080a0d;
+		background: var(--rb-well, #080a0d);
 		border: 1px solid var(--rb-border);
 		cursor: pointer;
 		overflow: hidden;
@@ -455,7 +450,7 @@
 		top: 0;
 		bottom: 0;
 		width: 1px;
-		background: #ffffff;
-		box-shadow: 0 0 3px rgba(255, 255, 255, 0.7);
+		background: var(--rb-strip-pos, #ffffff);
+		box-shadow: 0 0 3px var(--rb-strip-pos-glow, rgba(255, 255, 255, 0.7));
 	}
 </style>

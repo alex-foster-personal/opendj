@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest something Open DJ should do.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For open-ended ideas or questions, Discussions is the better place. Use this form when
+        you can describe a concrete problem and the change you want.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Other tools, workarounds, or other ways Open DJ could solve it.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Open DJ version
+      description: The version shown in the app, if you are using it.
+      placeholder: "1.0 alpha"
+    validations:
+      required: false

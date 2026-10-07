@@ -381,3 +381,70 @@ test('card body text under a titled host outside the body still shows no box', a
 	await Promise.resolve();
 	host.remove();
 });
+
+/** Every element from `el` up to the document that still has a live `title`. */
+function liveTitlesInChain(el) {
+	const out = [];
+	for (let n = el; n !== null; n = n.parentElement) {
+		if (n.hasAttribute('title')) out.push(n);
+	}
+	return out;
+}
+
+test('nested titles: no element in the hovered chain keeps a live title, all restored on leave', async () => {
+	// Tue 6 Oct 2026, the maintainer: "double hover-explainers still an issue". The deck's
+	// stems chip had a title inside a titled stems row; parking only the chip let
+	// the browser fall back to the row's title and draw a native tooltip anyway.
+	const panel = build('section', { title: 'Deck 1' });
+	const stems = build('div', { title: 'This track has no stems: none on this machine and none in the cloud.' }, panel);
+	const plain = build('span', {}, stems);
+	const chip = build('button', { title: 'VOCAL: no stem bundle' }, plain);
+	pointer('pointerover', chip);
+	await Promise.resolve();
+	assert.deepEqual(liveTitlesInChain(chip), [], 'no native tooltip can draw from any ancestor');
+	assert.equal(visibleTip()?.textContent, 'VOCAL: no stem bundle', 'the hovered chip owns the one tip');
+	assert.equal(stems.getAttribute('aria-describedby'), null, 'ancestors are not described by the tip');
+	assert.equal(plain.hasAttribute('data-tip-parked'), false, 'an untitled ancestor is left alone');
+	pointer('pointerout', chip, doc.body);
+	await Promise.resolve();
+	assert.equal(chip.getAttribute('title'), 'VOCAL: no stem bundle');
+	assert.equal(stems.getAttribute('title'), 'This track has no stems: none on this machine and none in the cloud.');
+	assert.equal(panel.getAttribute('title'), 'Deck 1');
+	for (const el of [panel, stems, plain, chip]) {
+		assert.equal(el.hasAttribute('data-tip-parked'), false);
+		assert.equal(el.hasAttribute('data-tip'), false);
+	}
+	panel.remove();
+});
+
+test('nested titles: moving from the chip onto its titled row hands the tip to the row', async () => {
+	const stems = build('div', { title: 'Stems row help' });
+	const chip = build('button', { title: 'Chip help' }, stems);
+	pointer('pointerover', chip);
+	await Promise.resolve();
+	pointer('pointerout', chip, stems);
+	pointer('pointerover', stems);
+	await Promise.resolve();
+	assert.equal(visibleTip()?.textContent, 'Stems row help');
+	assert.equal(chip.getAttribute('title'), 'Chip help', 'the chip is restored once the pointer leaves it');
+	assert.equal(stems.hasAttribute('title'), false);
+	pointer('pointerout', stems, doc.body);
+	await Promise.resolve();
+	assert.equal(stems.getAttribute('title'), 'Stems row help');
+	stems.remove();
+});
+
+test('single title under untitled ancestors: only the host is parked, as before', async () => {
+	const outer = build('div');
+	const button = build('button', { title: 'Loop length' }, outer);
+	pointer('pointerover', button);
+	await Promise.resolve();
+	assert.equal(button.hasAttribute('title'), false);
+	assert.equal(outer.hasAttribute('data-tip-parked'), false);
+	assert.equal(outer.hasAttribute('data-tip'), false);
+	assert.equal(visibleTip()?.textContent, 'Loop length');
+	pointer('pointerout', button, doc.body);
+	await Promise.resolve();
+	assert.equal(button.getAttribute('title'), 'Loop length');
+	outer.remove();
+});

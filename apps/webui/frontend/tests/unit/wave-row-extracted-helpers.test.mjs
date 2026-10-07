@@ -36,11 +36,11 @@ test('wave row vocals title names every barless state and stays quiet for rekord
 	assert.equal(vocals.waveRowVocalsTitle(null), null);
 	assert.equal(
 		vocals.waveRowVocalsTitle(anlzWithVocals({ status: 'no_vocals', fps: 150, regions: [] })),
-		'no vocals detected'
+		'no vocals found'
 	);
 	assert.equal(
 		vocals.waveRowVocalsTitle(anlzWithVocals({ status: 'not_analyzed' })),
-		'vocals not analyzed in rekordbox'
+		'vocals not analyzed yet'
 	);
 	assert.equal(
 		vocals.waveRowVocalsTitle(

@@ -238,6 +238,12 @@ class JobsStore {
 	 * settled. Gates whether an 'initial-connect' resync may skip its own
 	 * refetch - see the comment at that resync subscription. */
 	#initialHydratePending = false;
+	/** Counts every upsert, and remembers the count at each id's latest one.
+	 * hydrate() compares against the count when its GET started, so a row a
+	 * frame delivered while the GET was in flight is newer than the snapshot
+	 * and survives it. */
+	#upsertSeq = 0;
+	#upsertedAt = new Map<string, number>();
 
 	/** Replace the list from the server. A failure leaves the previous rows
 	 * on screen: a transient 500 must not look like "all your jobs vanished".
@@ -252,11 +258,25 @@ class JobsStore {
 			return;
 		}
 		this.loading = true;
+		const since = this.#upsertSeq;
 		try {
 			const rows = await unwrap(
 				api.GET('/api/v1/jobs', { params: { query: { limit: JOBS_LIST_LIMIT } } })
 			);
-			this.jobs = [...rows].sort(compareJobs);
+			// The snapshot is as of when the server answered, which can be
+			// BEFORE a frame this tab already applied: the GET and the socket
+			// race, and on a busy main thread the response continuation can run
+			// after a later `jobs.updated`. Replacing wholesale then rolled a
+			// succeeded job back to running, and no further frame ever came to
+			// repair it (onboarding gauntlet, PR #5677 CI). Rows upserted since
+			// this GET started win over the snapshot; every other row is the
+			// server's.
+			const fresher = this.jobs.filter((row) => (this.#upsertedAt.get(row.id) ?? 0) > since);
+			const fresherIds = new Set(fresher.map((row) => row.id));
+			this.jobs = [...rows.filter((row) => !fresherIds.has(row.id)), ...fresher].sort(compareJobs);
+			for (const id of [...this.#upsertedAt.keys()]) {
+				if (!this.jobs.some((row) => row.id === id)) this.#upsertedAt.delete(id);
+			}
 			this.error = null;
 		} catch (exc) {
 			this.error = _message(exc);
@@ -268,6 +288,8 @@ class JobsStore {
 
 	/** Insert or replace one row by id, keeping the newest-first order. */
 	upsert(job: Job): void {
+		this.#upsertSeq += 1;
+		this.#upsertedAt.set(job.id, this.#upsertSeq);
 		const next = this.jobs.filter((row) => row.id !== job.id);
 		next.push(job);
 		this.jobs = next.sort(compareJobs);

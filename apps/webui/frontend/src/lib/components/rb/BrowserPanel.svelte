@@ -287,6 +287,18 @@
 		unregisterAnlzConsumer
 	} from './wave/anlz-cache.svelte';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
+	/**
+	 * LIBWS-01/03: set only when the Library workspace (CrateDesk) mounts this
+	 * browser. It then refuses deck loads with `refusal` and publishes the
+	 * active pane's selection through `publish`. Gig mounts it without one.
+	 * A prop rather than an import keeps the browser off the workspace module
+	 * (frontend.max_fan_out).
+	 */
+	interface BrowserLibraryHost {
+		refusal: string;
+		publish(ids: readonly string[], rows: readonly BrowserRow[], paneTitle: string): void;
+	}
+	let { library = null }: { library?: BrowserLibraryHost | null } = $props();
 	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
 	// so panes no longer cap fetches at 500 rows - All Tracks walks every
 	// cursor page (PAGE_SIZE is a per-request page size, not a result cap);
@@ -489,6 +501,12 @@
 				onError: (exc) => console.error(`[pending-settle] ${id}: ${String(exc)}`)
 			})
 		);
+	});
+	// LIBWS-01: the Library workspace's inspector follows this pane's selection.
+	$effect(() => {
+		if (library === null) return;
+		// A whole-collection search shows its own result rows, not the playlist's.
+		library.publish(pane.selected_ids, wholeCollectionActive ? pane.search_results : pane.rows, pane.title);
 	});
 	const spotifyPlaylists = $derived(playlists.filter((playlist) => playlist.vendor === 'spotify'));
 	const loadedIds = $derived(
@@ -1662,7 +1680,9 @@
 				p.rows = result.rows;
 				p.truncated = result.truncated;
 				p.etag = result.etag;
-				pruneSelection(p, result.rows);
+				// A search-hit selection names search rows; the playlist refresh
+				// must not rebuild it from playlist rows.
+				if (!(p === pane && wholeCollectionActive)) pruneSelection(p, result.rows);
 			} catch (exc) {
 				console.error(
 					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
@@ -2633,6 +2653,13 @@
 		// generation number, not a boolean, is what makes that safe.
 		let loadIntent: ReturnType<typeof beginPendingLoadPlay> | null = null;
 		try {
+			// LIBWS-03: Library mode has no decks; a load would build the
+			// audio engine the mode switch tore down. Inside the try so the
+			// finally still releases a picker reservation.
+			if (library !== null) {
+				pushToast(library.refusal, 'info');
+				return;
+			}
 			if (isRemovedStickRow(row)) {
 				pushToast('cannot load: Stick removed', 'error');
 				return;
@@ -2836,7 +2863,10 @@
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
 		const range = event !== undefined && event.shiftKey;
 		const orderedIds = range ? renderedRows.map((r) => r.stable_id) : [];
-		const orderedRows = range
+		// A whole-collection search shows its own rows, not the playlist's, so a
+		// Ctrl-select must name tracks from those rows: every consumer of
+		// `selected_ids` (inspector, bulk edit, context menu) then agrees.
+		const orderedRows = range || wholeCollectionActive
 			? renderedRows.map((r) => ({ stable_id: r.stable_id, order: r.order }))
 			: undefined;
 		p.select(row.stable_id, extend, range, orderedIds, row.order, orderedRows);
@@ -2844,10 +2874,14 @@
 		// Selecting an unmapped row is the only place OUR ffmpeg decode ever
 		// runs (issue #735); the strip-adoption effect below picks up the
 		// result (including a later ambient retry) once it lands in the cache.
-		ensureAnlzPrefetch(row.stable_id);
+		// Library mode starts no decode work from browsing (LIBWS-03): the ANLZ
+		// warm runs our ffmpeg decoder for an unmapped track.
+		if (library === null) ensureAnlzPrefetch(row.stable_id);
 		// Warm audio ArrayBuffer in background (never awaited - see
 		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
-		ensureAudioPrefetch(row.stable_id);
+		// Library mode has no deck to load onto, so the warm would only hold
+		// RAM the mode promises to leave free (LIBWS-03).
+		if (library === null) ensureAudioPrefetch(row.stable_id);
 	}
 
 	function _moveMidiSelection(delta: number): void {
@@ -3352,7 +3386,7 @@
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >
-	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} oncollection={selectCollectionSource} />
+	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} oncollection={selectCollectionSource} recordable={library === null} />
 	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel
@@ -3613,6 +3647,7 @@
 			searching={pane.searching}
 		/>
 		<TrackTable
+			libraryMode={library !== null}
 			pairedPartnerIds={pairingIndex.partnerIds}
 			{provider}
 			selectedIds={pane.selected_ids}
@@ -3646,7 +3681,7 @@
 			onloadrow={loadRow}
 			onpickdoubledeck={pickDoubleDeck}
 			onloadconfirmcancelled={_releaseDeckReservation}
-			onpreviewseek={previewSeek}
+			onpreviewseek={library === null ? previewSeek : undefined}
 			onrefused={(reason) => pushToast(reason, 'error')}
 			onrate={rateRow}
 			onrowvisible={rowVisible}
@@ -3697,7 +3732,8 @@
 				{isLibraryPanelsCollapsed() ? '‹' : '›'}
 			</button>
 		</div>
-		{#if !isLibraryPanelsCollapsed()}
+		<!-- LIBWS-03: the suggest strips follow deck 1, which Library mode lacks. -->
+		{#if !isLibraryPanelsCollapsed() && library === null}
 			<div class="library-panels-strips" class:busy={deckLoadBusy} aria-busy={deckLoadBusy}>
 			{#if deckLoadBusy}
 				<div class="library-panels-load-overlay" data-testid="library-panels-deck-load-spinner">
@@ -3766,21 +3802,25 @@
 			</div>
 		</div>
 		<div class="tray-right-cluster">
-			<button
-				type="button"
-				class="tray-midi"
-				aria-label="Open audio I/O and MIDI"
-				title="Open audio I/O view (MIDI connect)"
-				onclick={() => {
-					// Same entry as the mixer's I/O button: acquire the audio devices
-					// inside this click's user gesture (selectAudioOutput needs it,
-					// and device labels stay locked without it), then open the view.
-					void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
-					openIoView();
-				}}
-			>
-				MIDI
-			</button>
+			<!-- Library mode has no audio engine to open: the MIDI / audio I/O
+			     entry acquires the output devices, so it is Gig only. -->
+			{#if library === null}
+				<button
+					type="button"
+					class="tray-midi"
+					aria-label="Open audio I/O and MIDI"
+					title="Open audio I/O view (MIDI connect)"
+					onclick={() => {
+						// Same entry as the mixer's I/O button: acquire the audio devices
+						// inside this click's user gesture (selectAudioOutput needs it,
+						// and device labels stay locked without it), then open the view.
+						void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
+						openIoView();
+					}}
+				>
+					MIDI
+				</button>
+			{/if}
 			<button
 				type="button"
 				class="tray-preview"

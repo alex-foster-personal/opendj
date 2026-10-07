@@ -83,7 +83,7 @@ test('shell rules outside the token blocks carry no hard-coded hex color', () =>
 	const withoutTokenBlocks = APP_CSS.replace(/:root \{[^}]*\}/, '').replace(
 		/html\[data-theme='light'\] \{[^}]*\}/,
 		''
-	);
+	).replace(/html\[data-skin='light'\] \{[^}]*\}/, '');
 	const literals = withoutTokenBlocks.match(/#[0-9a-fA-F]{3,6}\b/g) ?? [];
 	assert.deepEqual(literals, []);
 });
@@ -123,3 +123,16 @@ for (const rel of SHELL_CHROME) {
 		assert.deepEqual(undeclared, [], `${rel} reads tokens app.css does not declare`);
 	});
 }
+
+// CHROME-21: the Light skin (Gothic flipped) layers neutral grays over the
+// light shell; what it leaves alone falls through from the light block.
+test('Light skin shell (light block plus its neutral overrides) meets every stated WCAG floor', () => {
+	const light = cc.parseColorTokens(APP_CSS, "html[data-theme='light']");
+	const skin = cc.parseColorTokens(APP_CSS, "html[data-skin='light']");
+	assert.ok(Object.keys(skin).length >= 8, `Light skin shell parse looks short (${Object.keys(skin).length})`);
+	const tokens = { ...light, ...skin };
+	const violations = cc.validateScheme(tokens, SHELL_PAIRINGS);
+	assert.deepEqual(violations, [], cc.describeViolations(violations));
+	// The skin block comes after the shared light block so it wins at equal specificity.
+	assert.ok(APP_CSS.indexOf("html[data-skin='light'] {") > APP_CSS.indexOf("html[data-theme='light'] {"));
+});

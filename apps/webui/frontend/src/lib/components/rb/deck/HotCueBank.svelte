@@ -22,7 +22,7 @@
 	// this case. Same inert-with-tooltip treatment, gated on stable_id
 	// instead (issue #804).
 	//
-	// A USB stick track (Play from USB, specs/usb-play-from-stick.md 4b and
+	// A USB stick track (Play from USB, (private path) 4b and
 	// decision 2) has no rekordbox mapping and needs none: save, rename,
 	// clear and undo stay in this session (lib/rb/stick-session-edits.ts),
 	// never written to the stick, and every edit control says so.
@@ -279,6 +279,7 @@
 							aria-busy={pending}
 							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
 							data-testid={`hot-cue-${deck.deck_id}-${entry.slot}`}
+							data-hot-cue-slot={entry.slot}
 							data-performance-control="hot-cue"
 							data-proposal-kind={visible !== null ? visible.kind : undefined}
 							title={entry.cue === null

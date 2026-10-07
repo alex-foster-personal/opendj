@@ -171,3 +171,106 @@ export function canPhaseLockTo(
 export function gridFeaturesInert(st: Pick<DeckState, 'anlz' | 'stable_id'>): boolean {
 	return st.stable_id !== null && !deckHasTrustedBeatGrid(st);
 }
+
+// ----- PLAY-27: a follower that cannot phase-lock still starts, unsynced -----
+// Lives beside canPhaseLockTo (PLAY-25), its gridless-master twin, so the engine
+// gains no import edge for it.
+/*
+ * PLAY-27: a follower that cannot phase-lock still starts, unsynced.
+ *
+ * Tue 6 Oct 2026 21:21:58Z, silver preview, build 18: AutoPlay loaded the next
+ * track on deck 1, then `play` tried to join the master's phase and the Beat
+ * Sync planner refused ("follower grid has no phase-capable bar anchor with
+ * tempo ratio within [0.84, 1.16] for beat n=1"). The refusal was thrown out
+ * of `play`, the follower never started, and the room went silent (#5735).
+ * PLAY-25 had closed the same hole for a gridless MASTER; this closes it for
+ * every plan the follower side cannot satisfy: a tempo ratio outside the
+ * pitch window, no phase-capable bar anchor, or a follower grid the planner
+ * rejects.
+ *
+ * Only a plan refusal ({@link BeatSyncPhaseLockError}) falls back. Anything
+ * else (no audio context, a master that is not playing, a schedule failure)
+ * still throws, because starting anyway would hide a real fault.
+ *
+ * Requirements (mini-PRD):
+ *   ✔︎ A plan refusal starts the follower on plain transport.
+ *     [if] the planner refuses every follower [then] the follower starts
+ *       unsynced and one INFO line names the reason [⛔️ if play throws]
+ *   ✔︎ A lockable follower still locks.
+ *     [if] the join succeeds [then] plain transport is never scheduled
+ *       [⛔️ if a good sync is replaced by an unsynced start]
+ *   ✔︎ Other failures stay loud.
+ *     [if] the join fails for any other reason [then] it is rethrown and
+ *       nothing is started [⛔️ if a real fault is masked]
+ */
+/** The Beat Sync planner could not phase-lock ANY of the requested followers. */
+export class BeatSyncPhaseLockError extends Error {
+	/** One entry per follower the planner refused, with the red notice to show for it. */
+	readonly failed: readonly UnlockedFollower[];
+	constructor(message: string, failed: readonly UnlockedFollower[] = []) {
+		super(message);
+		this.name = 'BeatSyncPhaseLockError';
+		this.failed = failed;
+	}
+}
+
+/** A follower Beat Sync could not lock, and the notice that says so. */
+export interface UnlockedFollower {
+	deck: number;
+	message: string;
+	notice: string;
+}
+
+/**
+ * The red notice for a follower that plays on unsynced (PLAY-27). The pitch
+ * bound stays hard (the maintainer's pin 9bf12adccb45): a tempo the follower cannot
+ * reach inside its pitch range is named as a percentage; any other refusal
+ * (no phase-capable anchor, a master past its grid) names the planner's reason.
+ */
+export function unlockedFollowerNotice(
+	deck: number,
+	follower: Pick<DeckState, 'bpm'> & Partial<Pick<DeckState, 'anlz'>>,
+	master: Pick<DeckState, 'bpm' | 'pitch'> & Partial<Pick<DeckState, 'anlz'>>,
+	pitchRangePct: number,
+	reason: string
+): string {
+	// The tag when there is one, else the grid's own tempo (a grid-only deck carries no tag).
+	const trackBpm = (st: Pick<DeckState, 'bpm'> & Partial<Pick<DeckState, 'anlz'>>): number | null =>
+		st.bpm ?? st.anlz?.beatgrid.beats[0]?.bpm ?? null;
+	const followerBpm = trackBpm(follower);
+	const masterTrackBpm = trackBpm(master);
+	const masterBpm = masterTrackBpm === null ? null : masterTrackBpm * master.pitch;
+	const range = pitchRangePct / 100;
+	if (followerBpm !== null && masterBpm !== null && followerBpm > 0 && masterBpm > 0) {
+		const needed = masterBpm / followerBpm;
+		if (needed < Math.max(0.01, 1 - range) || needed > 1 + range) {
+			const away = Math.round(Math.abs(followerBpm / masterBpm - 1) * 100);
+			return `Beat Sync cannot lock deck ${deck}: tempo ${away}% away; playing unsynced`;
+		}
+	}
+	return `Beat Sync cannot lock deck ${deck}: ${reason}; playing unsynced`;
+}
+
+/**
+ * Join the master's phase, or start unsynced when the planner refuses.
+ * Returns how the follower started.
+ */
+export async function joinPhaseOrStartUnsynced(
+	deck: number,
+	join: () => Promise<void>,
+	startUnsynced: () => Promise<void>,
+	log: (line: string) => void = console.info,
+	onRefusal: (error: BeatSyncPhaseLockError) => void = () => {}
+): Promise<'synced' | 'unsynced'> {
+	try {
+		await join();
+		return 'synced';
+	} catch (error) {
+		if (!(error instanceof BeatSyncPhaseLockError)) throw error;
+		log(`[beat-sync] deck ${deck} starts unsynced: ${error.message}`);
+		onRefusal(error);
+		await startUnsynced();
+		return 'unsynced';
+	}
+}
+

@@ -117,7 +117,7 @@ test('control: only the automatic handoff reasons re-join; claims and re-electio
 test('control: the MANUAL master switch does re-join (so the guard can say yes)', () => {
 	const source = readFrontendSource(ENGINE);
 	const manual = body(source, 'async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {', '\n\t}\n');
-	assert.match(manual, /_synchronizeFollowers\(deck, followers, \{ reanchorDecks: new Set\(followers\) \}\)/);
+	assert.match(manual, /_synchronizeFollowers\(deck, followers, \{ reanchorDecks: new Set\(followers\)(, quietPlanRefusal: true)? \}\)/); // PLAY-27 adds quietPlanRefusal
 });
 
 test('2. a partial schedule failure still records the phase lock of every follower that locked', () => {

@@ -482,13 +482,18 @@
 	.when {
 		opacity: 0.72;
 	}
+	/* The dark amber is 1.7:1 on the light shell; there it takes the light
+	   shell's --warning (app.css), which clears AA. */
+	:global(html:is([data-theme='light'], [data-skin='light'])) {
+		--build-warn: var(--warning);
+	}
 	/* A dirty or drifted build must not be able to pass for a clean one at a
 	   glance, so these are the only two colours in the readout. */
 	.dirty,
 	.drift,
 	.update-badge {
 		font-weight: 700;
-		color: #e0b341;
+		color: var(--build-warn, #e0b341);
 	}
 	/* The one control that is an ACTION rather than a readout, so it is the
 	   one thing in this component that carries the accent colour. */
@@ -503,7 +508,7 @@
 	}
 	.build-identity.drifted .summary,
 	.build-identity.fault .summary {
-		box-shadow: inset 0 0 0 1px #e0b341;
+		box-shadow: inset 0 0 0 1px var(--build-warn, #e0b341);
 	}
 	/* Opens UPWARD from the tray and is anchored to its right edge, so it
 	   never resizes the tray row and never runs off the window. */
@@ -593,6 +598,6 @@
 		opacity: 0.72;
 	}
 	.reason {
-		color: #e0b341;
+		color: var(--build-warn, #e0b341);
 	}
 </style>

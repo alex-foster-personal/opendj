@@ -18,13 +18,13 @@ GATED (a bug here can damage the user's library):
 
 NOT GATED (the app's own working copies; losing them costs a re-import):
 
-  * ``data/master.plain.db`` -- decrypted working copy.  ``rb_vendor`` and the
+  * ``(private path)`` -- decrypted working copy.  ``rb_vendor`` and the
     hot-cue routes write here on purpose.  ``python -m apps.sync.apply_analysis``
     without ``--live`` opens that file ``mode=ro`` and is not a write surface;
     the gated surface ``module.sync.apply_analysis`` remains the ``--live`` path
     through ``_live_rb_db_path(live=True)``.
-  * ``data/master.db.copy`` (``REKORDBOX_WORKING_DB``), ``data/state/state.db``,
-    ``data/writeback-backups/``, ``data/reconcile/backups/``, the anlz cache.
+  * ``(private path)`` (``REKORDBOX_WORKING_DB``), ``(private path)``,
+    ``(private path)/``, ``(private path)/``, the anlz cache.
   * djay Pro's ``MediaLibrary.db`` and audio-file ID3 tags -- different vendors,
     a different decision, out of scope for THIS gate.
 
@@ -34,7 +34,7 @@ THE MAP
 gated set above.  Most carry ``gated=True`` and refuse while the flag is off; a
 few carry ``gated=False`` with a written reason (see RECOVERY PATHS below) and
 are enumerated anyway, so the map stays the whole truth rather than only the
-blocked half.  ``tests/test_rekordbox_writeback_gate.py`` iterates it, so:
+blocked half.  ``(private path)`` iterates it, so:
 
   * a gated surface that stops calling the guard fails the static test;
   * an UNgated surface that quietly grows a guard also fails it, so the
@@ -257,16 +257,16 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
     WriteSurface(
         surface_id="module.playlist_writeback.service_apply",
         kind="module",
-        entrypoint="apps.webui.server.playlist_writeback.WritebackService.apply",
+        entrypoint="apps.smartlists.playlist_writeback.WritebackService.apply",
         target="live master.db (service layer, past dry-run and confirm)",
-        guard_site="apps/webui/server/playlist_writeback.py",
+        guard_site="apps/smartlists/playlist_writeback.py",
     ),
     WriteSurface(
         surface_id="module.playlist_writeback.service_rollback",
         kind="module",
-        entrypoint="apps.webui.server.playlist_writeback.WritebackService.rollback",
+        entrypoint="apps.smartlists.playlist_writeback.WritebackService.rollback",
         target="live master.db (service layer, replays a preimage)",
-        guard_site="apps/webui/server/playlist_writeback.py",
+        guard_site="apps/smartlists/playlist_writeback.py",
         gated=False,
         reason=(
             "same recovery-path reasoning as http.playlists.writeback.rollback. "

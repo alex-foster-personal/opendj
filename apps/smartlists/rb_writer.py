@@ -26,7 +26,7 @@ When ``live=True``, the writer refuses to mutate until:
    (pyrekordbox holds an exclusive handle; writing while the app is
    open would corrupt master.db).
 2. A timestamped copy of ``master.db`` has been stored under
-   ``data/reconcile/backups/`` (mirrors :mod:`apps.reconcile.apply`).
+   ``(private path)/`` (mirrors :mod:`apps.reconcile.apply`).
 
 Both guards run lazily once per writer instance, right before the first
 mutation; repeated ``create_playlist`` / ``apply_diff`` calls on the
@@ -325,7 +325,7 @@ class RBPlaylistWriter:
 
     def list_playlists(self):
         """Return stable Rekordbox IDs for safe writeback target selection."""
-        from apps.webui.server.playlist_writeback import VendorPlaylist
+        from apps.smartlists.playlist_writeback import VendorPlaylist
 
         return [
             VendorPlaylist(playlist_id=str(playlist.ID), name=playlist.Name or "")
@@ -428,8 +428,8 @@ class RBPlaylistWriter:
         from pyrekordbox.db6 import tables
         from sqlalchemy import text
 
+        from apps.smartlists.playlist_writeback import WritebackBackup, WritebackConflict
         from apps.smartlists.writeback_backup import exclusive_target_lock, write_reversal
-        from apps.webui.server.playlist_writeback import WritebackBackup, WritebackConflict
 
         self._assert_safe_to_write(take_backup=False)
         session = getattr(self.db, "session", None)
@@ -487,7 +487,7 @@ class RBPlaylistWriter:
 
     def backup_target(self):
         """Snapshot the exact DB this writer opened, never the working copy."""
-        from apps.webui.server.playlist_writeback import WritebackBackup
+        from apps.smartlists.playlist_writeback import WritebackBackup
 
         return WritebackBackup(
             _online_backup_unlocked_rekordbox(self.db, self.live_db_path)
@@ -498,8 +498,8 @@ class RBPlaylistWriter:
         from pyrekordbox.db6 import tables
         from sqlalchemy import text
 
+        from apps.smartlists.playlist_writeback import WritebackConflict
         from apps.smartlists.writeback_backup import exclusive_target_lock, read_reversal
-        from apps.webui.server.playlist_writeback import WritebackConflict
 
         # Recovery path: the one-way gate rail is skipped here on purpose (see
         # _assert_safe_to_write). pgrep still runs, and the lock, the CAS on

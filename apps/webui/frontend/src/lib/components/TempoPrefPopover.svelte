@@ -45,9 +45,14 @@
 		);
 	}
 
+	// Re-clamp once loading settles too: the panel is measured while it only
+	// says "loading...", and the loaded form is wider and taller, so an anchor
+	// near the window's right or bottom edge pushed Save off screen.
 	$effect(() => {
 		void x;
 		void y;
+		void loading;
+		void loadError;
 		void placePanel();
 	});
 

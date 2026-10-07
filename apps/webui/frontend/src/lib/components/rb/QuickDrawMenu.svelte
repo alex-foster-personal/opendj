@@ -27,6 +27,8 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import { vocalFixMenuItem } from './vocal-correction-menu';
 	import { menuStemTiers } from '$lib/rb/stem-tier-menu';
+	import { menuFor, type CueSlot, type MenuTarget, type ResolvedMenuItem } from '$lib/context-menu/registry';
+	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 
 	type CtxItem = {
 		id: string;
@@ -39,6 +41,9 @@
 		disabled?: boolean;
 		title?: string;
 		testId?: string;
+		/** A toggle or choice item's state from the engine read model; renders
+		 * as menuitemcheckbox with a check mark. Undefined for plain actions. */
+		checked?: boolean;
 		/** Present only on Load to CHn; pointer handlers own the click-drag blend. */
 		loadDeck?: DeckId;
 		stableId?: string;
@@ -169,56 +174,200 @@
 		return id !== null && id !== '' ? id : null;
 	}
 
+	const CUE_SLOTS: readonly CueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+	/**
+	 * W28: name what was right-clicked, so the registry (not this component)
+	 * decides the items. Most specific first: a hot-cue pad and a mixer strip
+	 * sit inside deck-ish markup, and a track row can sit inside the browser.
+	 */
+	type QuickDrawTarget =
+		| Extract<MenuTarget, { kind: 'hot-cue' | 'mixer-channel' | 'waveform' | 'deck' }>
+		| { kind: 'track-chip'; stableId: string }
+		| { kind: 'tree-readonly' | 'library-source' | 'perf-empty' };
+
+	function _deckAttr(el: Element | null, attr: string): DeckId | null {
+		const n = Number(el?.getAttribute(attr));
+		return DECK_IDS.includes(n as DeckId) ? (n as DeckId) : null;
+	}
+
+	function _targetOf(t: EventTarget | null, knownStableId: string | null): QuickDrawTarget {
+		if (knownStableId !== null) return { kind: 'track-chip', stableId: knownStableId };
+		if (!(t instanceof Element)) return { kind: 'perf-empty' };
+		const cue = t.closest('[data-hot-cue-slot]');
+		const cueDeck = _deckAttr(cue?.closest('[data-deck]') ?? null, 'data-deck');
+		const slot = cue?.getAttribute('data-hot-cue-slot') as CueSlot | null | undefined;
+		if (cueDeck !== null && slot != null && CUE_SLOTS.includes(slot)) {
+			return { kind: 'hot-cue', deck: cueDeck, slot };
+		}
+		const mixerDeck = _deckAttr(t.closest('[data-mixer-channel]'), 'data-mixer-channel');
+		if (mixerDeck !== null) return { kind: 'mixer-channel', deck: mixerDeck };
+		// A read-only tree or source strip owns everything inside it: a child
+		// carrying a stable id there (a stick track, say) must not borrow the
+		// track-chip actions. A marker only wins over a stable id it encloses.
+		const markedEl = t.closest('[data-menu-target]');
+		const marked = markedEl?.getAttribute('data-menu-target');
+		const stableEl = t.closest('[data-stable-id]');
+		if (
+			(marked === 'tree-readonly' || marked === 'library-source') &&
+			(stableEl === null || markedEl!.contains(stableEl))
+		) {
+			return { kind: marked };
+		}
+		const stableId = _stableIdFromTarget(t);
+		if (stableId !== null) return { kind: 'track-chip', stableId };
+		const deck = _deckFromTarget(t);
+		if (deck !== null) {
+			return t.closest('[data-wave-surface]') !== null ? { kind: 'waveform', deck } : { kind: 'deck', deck };
+		}
+		return { kind: 'perf-empty' };
+	}
+
+	function _toCtxItem(item: ResolvedMenuItem, run: CtxItem['run'] | undefined): CtxItem {
+		const ctxItem: CtxItem = {
+			id: item.id,
+			label: item.label,
+			disabled: !item.enabled || run === undefined,
+			title: item.enabled && run === undefined ? `not available in this view - ${item.title}` : item.title,
+			run: run ?? (async () => {})
+		};
+		if (item.testId !== undefined) ctxItem.testId = item.testId;
+		if (item.checked !== undefined) ctxItem.checked = item.checked;
+		return ctxItem;
+	}
+
+	function _trackChipItems(stableId: string): CtxItem[] {
+		// A chip names a track but carries no availability, so it is resolved
+		// as present; a missing file still fails loudly in the load path.
+		const items: CtxItem[] = [];
+		for (const item of menuFor({ kind: 'track-chip' }, { audio: 'present' })) {
+			if (item.id === 'stems-tiers') {
+				items.push(..._stemItems(stableId));
+				continue;
+			}
+			const deck = Number(item.id.slice('load-'.length)) as DeckId;
+			const ctxItem = _toCtxItem(item, async () => {
+				if (getDeckState(deck).stable_id !== null) {
+					await runPerformanceCommandFromUi({ type: 'unload', deck });
+				}
+				await runPerformanceCommandFromUi({ type: 'load', deck, stable_id: stableId });
+			});
+			items.push({ ...ctxItem, id: `${item.id}-${stableId}`, loadDeck: deck, stableId });
+		}
+		return items;
+	}
+
+	function _deckItems(
+		target: Extract<QuickDrawTarget, { kind: 'deck' | 'waveform' }>,
+		event: MouseEvent | null,
+		eventTarget: EventTarget | null
+	): CtxItem[] {
+		const deck = target.deck;
+		const state = getDeckState(deck);
+		const loaded = state.stable_id !== null;
+		const runners: Record<string, CtxItem['run']> = {
+			play: (pressT0Ms) => _togglePlay(deck, pressT0Ms),
+			unload: (pressT0Ms) => _runAction('unload', deck, pressT0Ms),
+			'exit-loop': (pressT0Ms) => _runAction('loop.exit', deck, pressT0Ms),
+			'beat-sync': (pressT0Ms) =>
+				runPerformanceCommandFromUi(
+					{ type: 'beat_sync', deck, enabled: !getDeckState(deck).beat_sync_enabled },
+					pressT0Ms
+				).then(() => {}),
+			'make-master': (pressT0Ms) => _runAction('master', deck, pressT0Ms)
+		};
+		if (target.kind === 'deck') {
+			return menuFor(target, {
+				loaded,
+				playing: state.playing,
+				looping: state.loop !== null,
+				synced: state.beat_sync_enabled,
+				master: state.is_master
+			}).map((item) => _toCtxItem(item, runners[item.id]));
+		}
+		const vocal = event !== null ? vocalFixMenuItem(event, eventTarget) : null;
+		return menuFor(target, { loaded, looping: state.loop !== null, vocalHit: vocal !== null }).map((item) => {
+			if (item.id !== 'vocal-fix-comment' || vocal === null) return _toCtxItem(item, runners[item.id]);
+			// The vocal item keeps its own live probe of the feedback API.
+			const ctxItem = _toCtxItem(item, vocal.run);
+			ctxItem.disabled = vocal.disabled;
+			if (vocal.title !== undefined) ctxItem.title = vocal.title;
+			return ctxItem;
+		});
+	}
+
+	function _hotCueItems(target: Extract<QuickDrawTarget, { kind: 'hot-cue' }>): CtxItem[] {
+		const { deck, slot } = target;
+		const state = getDeckState(deck);
+		const actions = createDeckHotCueActions(() => deck, () => getDeckState(deck));
+		const cue = state.hot_cues.find((c) => c.slot === slot);
+		const runners: Record<string, CtxItem['run']> = {
+			'cue-jump': (pressT0Ms) =>
+				runPerformanceCommandFromUi({ type: 'hot_cue_trigger', deck, slot }, pressT0Ms).then(() => {}),
+			// A move keeps the cue's name; the registry disables it when the cue
+			// has a loop or color the save command cannot carry.
+			'cue-save': () => actions.saveHotCueAt(slot, cue?.comment ?? undefined).then(() => {}),
+			'cue-clear': () => actions.clearHotCueAt(slot).then(() => {})
+		};
+		return menuFor(target, {
+			loaded: state.stable_id !== null,
+			filled: cue !== undefined,
+			moveLoses: cue === undefined ? 'nothing' : cue.is_loop ? 'loop' : cue.color_table_index !== null ? 'color' : 'nothing'
+		}).map((item) => _toCtxItem(item, runners[item.id]));
+	}
+
+	function _mixerItems(target: Extract<QuickDrawTarget, { kind: 'mixer-channel' }>): CtxItem[] {
+		const deck = target.deck;
+		const ch = mixerState.channels[deck];
+		const send = (command: Parameters<typeof runPerformanceCommandFromUi>[0]) =>
+			runPerformanceCommandFromUi(command).then(() => {});
+		const runners: Record<string, CtxItem['run']> = {
+			// 0.5 is flat for every EQ band and bypass for the filter (mixer-types.ts).
+			'eq-reset': async () => {
+				for (const band of ['low', 'mid', 'high'] as const) await send({ type: 'eq', deck, band, value: 0.5 });
+			},
+			'filter-reset': () => send({ type: 'filter', deck, value: 0.5 }),
+			'channel-cue': () => send({ type: 'channel_cue', deck, enabled: !ch.cue_enabled }),
+			'assign-a': () => send({ type: 'assign', deck, assign: 'A' }),
+			'assign-b': () => send({ type: 'assign', deck, assign: 'B' }),
+			'assign-thru': () => send({ type: 'assign', deck, assign: 'THRU' })
+		};
+		return menuFor(target, {
+			eqFlat: ch.eq_low === 0.5 && ch.eq_mid === 0.5 && ch.eq_high === 0.5,
+			filterFlat: ch.filter === 0.5,
+			cue: ch.cue_enabled,
+			assign: ch.assign
+		}).map((item) => _toCtxItem(item, runners[item.id]));
+	}
+
 	function _contextItems(
 		target: EventTarget | null,
 		knownStableId: string | null = null,
 		event: MouseEvent | null = null
 	): CtxItem[] {
-		const stableId = knownStableId ?? _stableIdFromTarget(target);
-		if (stableId !== null) {
-			stemTargetId = stableId;
-			if (knownStableId === null) void _loadStemEstimates(stableId).catch((e) => {
-				console.error('[quick-draw] stem estimates unavailable', e);
-				stemEstimateById = { _error: String(e) };
-			});
-			return [
-				...DECK_IDS.map((deck) => ({
-				id: `load-${deck}-${stableId}`,
-				label: `Load to CH${deck}`,
-				testId: `quick-draw-load-ch${deck}`,
-				loadDeck: deck,
-				stableId,
-				run: async () => {
-					if (getDeckState(deck).stable_id !== null) {
-						await runPerformanceCommandFromUi({ type: 'unload', deck });
-					}
-					await runPerformanceCommandFromUi({ type: 'load', deck, stable_id: stableId });
-				}
-			})),
-				..._stemItems(stableId)
-			];
-		}
-		const deck = _deckFromTarget(target);
-		if (deck === null) return [];
-		const items: CtxItem[] = [
-			{
-				id: `unload-${deck}`,
-				label: `Unload CH${deck}`,
-				run: (pressT0Ms) => _runAction('unload', deck, pressT0Ms)
+		const menuTarget = _targetOf(target, knownStableId);
+		switch (menuTarget.kind) {
+			case 'track-chip': {
+				const stableId = menuTarget.stableId;
+				stemTargetId = stableId;
+				if (knownStableId === null) void _loadStemEstimates(stableId).catch((e) => {
+					console.error('[quick-draw] stem estimates unavailable', e);
+					stemEstimateById = { _error: String(e) };
+				});
+				return _trackChipItems(stableId);
 			}
-		];
-		if (getDeckState(deck).loop !== null) {
-			items.push({
-				id: `exit-loop-${deck}`,
-				label: `Exit Loop CH${deck}`,
-				run: (pressT0Ms) => _runAction('loop.exit', deck, pressT0Ms)
-			});
+			case 'deck':
+			case 'waveform':
+				return _deckItems(menuTarget, event, target);
+			case 'hot-cue':
+				return _hotCueItems(menuTarget);
+			case 'mixer-channel':
+				return _mixerItems(menuTarget);
+			case 'tree-readonly':
+			case 'library-source':
+			case 'perf-empty':
+				return menuFor({ kind: menuTarget.kind }, {}).map((item) => _toCtxItem(item, undefined));
 		}
-		if (event !== null) {
-			const vocal = vocalFixMenuItem(event, target);
-			if (vocal !== null) items.unshift(vocal);
-		}
-		return items;
 	}
 
 	function onContextMenu(e: MouseEvent): void {
@@ -226,6 +375,13 @@
 		if (!(t instanceof Element) || t.closest('.perf-root') === null) return;
 		e.preventDefault();
 		e.stopPropagation();
+		// W28: a library surface whose registry menu is empty gets no menu at
+		// all, rather than the deck launcher (which is not about that target).
+		const kind = _targetOf(t, null).kind;
+		if (kind === 'tree-readonly' || kind === 'library-source') {
+			_close();
+			return;
+		}
 		x = e.clientX;
 		y = e.clientY;
 		// A deck-target menu has no row, so a late ladder or estimate for an
@@ -472,7 +628,8 @@
 						type="button"
 						class="qd-item"
 						class:qd-inert={item.disabled === true}
-						role="menuitem"
+						role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+						aria-checked={item.checked}
 						data-testid={item.testId}
 						disabled={item.disabled === true}
 						title={item.title ?? null}
@@ -506,7 +663,9 @@
 							void item.run(e.timeStamp);
 						}}
 					>
-						{item.label}
+						{#if item.checked !== undefined}<svg class="qd-check" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
+								>{#if item.checked}<path d="M2 6.5l2.5 2.5L10 3.5" fill="none" stroke="currentColor" stroke-width="1.6" />{/if}</svg
+							>{/if}{item.label}
 					</button>
 				{/each}
 			{/if}
@@ -579,6 +738,11 @@
 		cursor: not-allowed;
 	}
 
+	.qd-check {
+		flex: none;
+		margin-right: 4px;
+		vertical-align: -1px;
+	}
 	.qd-item {
 		display: block;
 		width: 100%;

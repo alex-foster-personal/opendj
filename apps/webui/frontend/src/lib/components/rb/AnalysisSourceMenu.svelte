@@ -84,7 +84,7 @@
 		z-index: 90;
 		width: 190px;
 		padding: 8px 9px 9px;
-		background: #0a0c0f;
+		background: var(--rb-well, #0a0c0f);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);

@@ -21,12 +21,12 @@ from pathlib import Path
 import pytest
 
 from apps.dedup import library_scan
-from apps.engine_core.audio_engine import BIN_ENV
 from apps.reconcile import locate
 from apps.reconcile.fingerprint_evidence import FingerprintEvidence
 from apps.shared import audio_files, platform_paths
 from apps.shared import fingerprints as fp_mod
 from apps.shared.fingerprints import compare, compute, match
+from apps.shared.odj_audio_binary import BIN_ENV
 from tests.rust_build_env import build_audio_engine
 
 pytestmark = pytest.mark.requirement("META-09")

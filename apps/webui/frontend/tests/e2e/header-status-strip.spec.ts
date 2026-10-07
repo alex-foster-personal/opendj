@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test';
 
 import { spendBootLanding } from './support/boot-landing';
 
+// `/` is Library mode's full-window Crate Desk (LIBWS-01), which has no app
+// shell; /pairings is a plain app-shell route that still mounts this header.
+const APP_SHELL_ROUTE = '/pairings';
+
 // Each test here opens `/` cold and reads the APP-SHELL header, which the
 // PERFMODE-11 landing redirect replaces with the performance top bar mid-load;
 // support/boot-landing.ts has the full account.
@@ -14,7 +18,7 @@ test.beforeEach(async ({ page }) => {
 
 test('at 1280px the header status strip separates every readout with middle dots', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.goto('/');
+	await page.goto(APP_SHELL_ROUTE);
 
 	const strip = page.getByTestId('header-status-strip');
 	await expect(strip).toBeVisible();
@@ -42,7 +46,7 @@ test('at 1280px the header status strip separates every readout with middle dots
 
 test('at narrow width the status strip never concatenates readouts', async ({ page }) => {
 	await page.setViewportSize({ width: 720, height: 800 });
-	await page.goto('/');
+	await page.goto(APP_SHELL_ROUTE);
 
 	const strip = page.getByTestId('header-status-strip');
 	await expect(strip).toBeVisible();
@@ -71,7 +75,7 @@ test('at narrow width the status strip never concatenates readouts', async ({ pa
 
 test('only the CloudSync chip uses sync: in the app-shell header', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.goto('/');
+	await page.goto(APP_SHELL_ROUTE);
 
 	const strip = page.getByTestId('header-status-strip');
 	const chip = page.getByRole('button', { name: 'CloudSync status' });

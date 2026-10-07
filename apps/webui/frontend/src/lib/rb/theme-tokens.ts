@@ -91,6 +91,22 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-master': '#856500',
   'rb-master-ink': '#fffdf8',
   'rb-master-text': '#4a3700',
+  // Light-only skin hooks (CHROME-19); Default and Gothic leave them unset.
+  'rb-jog-text': '#c8cdd2',
+  'rb-jog-text-dim': '#9aa0a6',
+  'rb-well': '#fffdf8',
+  'rb-strip-pos': '#27241f',
+  'rb-text-muted': '#5d574e',
+  'rb-knob-ring': '#ffffff',
+  'rb-knob-cap': '#e2e2e2',
+  'rb-knob-cap-edge': '#8a8a8a',
+  'rb-knob-indicator-white': '#121212',
+  'rb-knob-takeover': '#8a5a00',
+  'rb-stem-vocal': '#4f6a80',
+  'rb-stem-instrumental': '#566b49',
+  'rb-stem-drums': '#7a5f45',
+  'rb-stem-bass': '#625a7a',
+  'rb-stem-other': '#3f6b63',
 };
 
 /** Mirrors the two `[data-wave-palette='legacy']` override blocks in

@@ -173,6 +173,7 @@ import {
 import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
+	BeatSyncPhaseLockError,
 	canPhaseLockTo,
 	deckHasRealBeatGrid,
 	deckHasTrustedBeatGrid,
@@ -181,7 +182,9 @@ import {
 	gridFeatureInertTip,
 	gridFeaturesInert,
 	hasRealBeatGrid,
-	hasTrustedBeatGrid
+	hasTrustedBeatGrid,
+	joinPhaseOrStartUnsynced,
+	unlockedFollowerNotice
 } from '$lib/player/grid-features';
 import {
 	beatSyncMaxFollowers,
@@ -1279,8 +1282,8 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 		void _automaticRejoinRunner(async () => {
 			if (_masterDeck !== next || !deckStates[next].playing) return;
 			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
-			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) });
-		}).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
+			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers), quietPlanRefusal: true });
+		}).catch((e: unknown) => e instanceof BeatSyncPhaseLockError ? _toastUnlocked(e) : pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error')); // PLAY-27
 	}
 	return next;
 }
@@ -2005,7 +2008,7 @@ function _publishPresentedTransport(
 	if (rt.processor === null || rt.durationSec <= 0) return null;
 	// The sample clock is handed over so a stalled HAL output position falls back
 	// to it rather than freezing the waveform. See
-	// .planning/hardening-ledger/decisions/presentation-clock-fallback.md.
+	// (private path).
 	// CUEOUT-14: the room hears everything master_delay_ms later than the
 	// render clock, so the playhead and PLAY light lag by exactly that.
 	const presentedRevisionBefore = rt.presentation.presented_revision;
@@ -2214,6 +2217,7 @@ interface _SyncOptions {
 	/** Q1: the press behind this sync. Set ONLY by `play` (one pressed follower);
 	 * resync callers leave it unset so a background re-anchor files no press row. */
 	pressT0Ms?: number;
+	quietPlanRefusal?: boolean; // PLAY-27: the caller recovers from a plan refusal (unsynced start or free follower), so it is no deck error
 }
 
 /**
@@ -2489,7 +2493,7 @@ async function _synchronizeFollowers(
 			rawFollowerPositionSec: number;
 		};
 		const planned: _PlannedFollower[] = [];
-		const planFailed: { deck: DeckId; message: string }[] = [];
+		const planFailed: { deck: DeckId; message: string; notice: string }[] = [];
 		// Ownership is re-read HERE, downstream of every await above (context
 		// resume, and the superseded-pending wait that can park this call for a
 		// scheduled instant). A deck whose BEAT SYNC went dark inside that
@@ -2525,17 +2529,15 @@ async function _synchronizeFollowers(
 				planned.push({ deck, st, plan, rawFollowerPositionSec });
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				planFailed.push({ deck, message });
-				deckStates[deck].sync_error = message;
+				planFailed.push({ deck, message, notice: unlockedFollowerNotice(deck, deckStates[deck], masterState, pitchRanges[deck], message) });
+				if (options.quietPlanRefusal !== true) deckStates[deck].sync_error = message;
 			}
 		}
 		if (planned.length === 0 && options.masterSchedule === undefined) {
-			const detail =
-				planFailed.length > 0
-					? planFailed.map((f) => `deck ${f.deck}: ${f.message}`).join('; ')
-					: 'no followers';
-			throw new Error(`Beat Sync: no followers could phase-lock (${detail})`);
+			const detail = planFailed.length > 0 ? planFailed.map((f) => `deck ${f.deck}: ${f.message}`).join('; ') : 'no followers';
+			throw new BeatSyncPhaseLockError(`Beat Sync: no followers could phase-lock (${detail})`, planFailed);
 		}
+		if (options.quietPlanRefusal === true) for (const f of planFailed) deckStates[f.deck].sync_error = f.message; // PLAY-27: only an all-failed refusal is quiet
 		const schedules = [
 			...(options.masterSchedule === undefined
 				? []
@@ -2644,6 +2646,7 @@ async function _synchronizeFollowers(
 		// after disposal must not brand a remounted session's decks with an
 		// error raised against the decks they replaced.
 		if (session !== _engineSession) throw error;
+		if (options.quietPlanRefusal === true && error instanceof BeatSyncPhaseLockError) throw error;
 		for (const deck of followers) {
 			if (!succeededDecks.includes(deck) && deckStates[deck].sync_error === null) deckStates[deck].sync_error = String(error);
 		}
@@ -2651,6 +2654,7 @@ async function _synchronizeFollowers(
 		throw error;
 	}
 }
+const _toastUnlocked = (e: BeatSyncPhaseLockError): void => { for (const f of e.failed) { console.info(`[beat-sync] ${f.notice}`); pushToast(f.notice, 'error'); } }; // PLAY-27: red, the pitch bound stays hard
 const _resyncTracking = createBeatgridResyncTracking(); // pending/gridless tracking; cleared per deck below, unload() and dispose() - see beatgrid-resync.ts
 const _beatgridResyncPorts: BeatgridResyncPorts = {
 	deckIds: DECK_IDS, syncMaster: _syncMaster, playing: (deck) => deckStates[deck].playing,
@@ -3375,11 +3379,12 @@ class RbAudioEngine implements AudioEngine {
 			}
 			return;
 		}
+		// PLAY-27: a plan the follower cannot satisfy starts it unsynced, never aborts play.
+		const joinPhase = (master: DeckId, unsynced: () => Promise<void> = () => schedulePlainTransport()) =>
+			joinPhaseOrStartUnsynced(deck, () => _synchronizeFollowers(master, [deck], { quietPlanRefusal: true, ...(pressT0Ms === undefined ? {} : { pressT0Ms }) }), unsynced, console.info, _toastUnlocked);
 		if (_masterMode === 'locked' && owned !== null && owned !== deck) {
 			if (syncClock !== null && canPhaseLockTo(st, deckStates[syncClock])) {
-				await _synchronizeFollowers(syncClock, [deck], {
-					...(pressT0Ms === undefined ? {} : { pressT0Ms })
-				});
+				await joinPhase(syncClock);
 			} else {
 				await schedulePlainTransport();
 			}
@@ -3388,18 +3393,14 @@ class RbAudioEngine implements AudioEngine {
 			_electPlayingMaster({ reason: 'play-claim' });
 			const elected = _masterDeck;
 			if (elected !== null && elected !== deck && canPhaseLockTo(st, deckStates[elected])) {
-				await _synchronizeFollowers(elected, [deck], {
-					...(pressT0Ms === undefined ? {} : { pressT0Ms })
-				});
+				await joinPhase(elected, async () => {}); // already playing on plain transport
 			}
 		} else if (_masterMode === 'locked' && owned === deck && syncClock === null) {
 			await schedulePlainTransport();
 		} else if (syncClock === deck || !syncActive || (syncClock !== null && !canPhaseLockTo(st, deckStates[syncClock]))) {
 			await schedulePlainTransport();
 		} else if (syncClock !== null) {
-			await _synchronizeFollowers(syncClock, [deck], {
-				...(pressT0Ms === undefined ? {} : { pressT0Ms })
-			});
+			await joinPhase(syncClock);
 		}
 	}
 
@@ -4178,11 +4179,10 @@ class RbAudioEngine implements AudioEngine {
 		if (previousMaster !== deck) _bumpReanchorOperation(deck);
 		_assignMaster(deck, 'manual');
 		try {
-			await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
+			await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers), quietPlanRefusal: true });
 		} catch (error) {
-			_assignMaster(previousMaster);
-			_masterMode = previousMode;
-			throw error;
+			if (!(error instanceof BeatSyncPhaseLockError)) { _assignMaster(previousMaster); _masterMode = previousMode; throw error; }
+			_toastUnlocked(error); // PLAY-27: the new master stands; unlockable followers play on unsynced
 		}
 		if (options?.lock === true) {
 			_masterMode = 'locked';

@@ -5,6 +5,7 @@
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { deckArtworkUrl } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
+	import { formatTempoPct } from '$lib/rb/tempo-format';
 	import { formatKeySyncDeltaText, keySyncNotationBullet } from '$lib/rb/key-sync-copy';
 	import {
 		DECK_IDS,
@@ -237,10 +238,9 @@
 	// keyColor above which tracks the shifted (current) key.
 	const origKeyColor: string | null = $derived(camelotKeyColor(deck.key));
 	const keyChanged: boolean = $derived(deck.key !== null && deck.key_shift_semitones !== 0);
-	// Percentage offset matches PitchFader's own (pitch - 1) * 100 arithmetic.
-	const tempoPct: number = $derived(Math.round((deck.pitch - 1) * 100));
 	const tempoChanged: boolean = $derived(deck.pitch !== 1);
-	const tempoPctText: string = $derived(tempoPct >= 0 ? `+${tempoPct}` : String(tempoPct));
+	// DECKUX-41: the shared formatter, the same one JogDial uses ("+2%", "-2%", "±0%").
+	const tempoPctText: string = $derived(formatTempoPct(deck.pitch));
 	const resetTitle: string = $derived(
 		deck.bpm === null
 			? 'Reset to original tempo'
@@ -403,7 +403,7 @@
 				>{bpmText}</span>
 				{#if tempoChanged}
 					<span class="readout-tempo-line">
-						{tempoPctText}% <span class="from"> (from {deck.bpm?.toFixed(0) ?? '--'}bpm)</span>
+						{tempoPctText} <span class="from"> (from {deck.bpm?.toFixed(0) ?? '--'}bpm)</span>
 					</span>
 				{/if}
 			</div>

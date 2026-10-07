@@ -476,7 +476,7 @@
 		width: 100%;
 	}
 	.interval-grid button {
-		background: #080a0d;
+		background: var(--rb-well, #080a0d);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
 		color: var(--rb-text);
@@ -509,17 +509,19 @@
 		position: relative;
 		width: 44px;
 	}
+	/* 2px in, not 1px: at 1px its border lay against the loop readout's own
+	 * border on the top and right, a 2px corner (UIBORDER-02). */
 	.restart-btn {
 		position: absolute;
-		top: 1px;
-		right: 1px;
+		top: 2px;
+		right: 2px;
 		width: 12px;
 		height: 12px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: 0;
-		background: rgba(8, 10, 13, 0.75);
+		background: color-mix(in srgb, var(--rb-well, #080a0d) 75%, transparent);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
 		color: var(--rb-text-dim);
@@ -535,7 +537,7 @@
 	}
 	.readout {
 		width: 44px;
-		background: #080a0d;
+		background: var(--rb-well, #080a0d);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
 		color: var(--rb-text);

@@ -60,7 +60,8 @@ test("CHROME-15 if Auto does not resolve to each skin's declared look then switc
 	assert.deepEqual(skin.SKIN_WAVE_LOOK, {
 		default: { design: 'tri-band', palette: 'rekordbox' },
 		'mono-dev': { design: 'blocks', palette: 'mono' },
-		light: { design: 'tri-band', palette: 'rekordbox' }
+		// CHROME-21: Light is Gothic flipped, so it shares Gothic's mono blocks.
+		light: { design: 'blocks', palette: 'mono' }
 	});
 	for (const s of skin.UI_SKIN_CHOICES) {
 		assert.equal(skin.effectiveWaveformDesign('auto', s), skin.SKIN_WAVE_LOOK[s].design, s);

@@ -334,7 +334,7 @@
 		max-height: 320px;
 		overflow-y: auto;
 		padding: 6px;
-		background: #0a0c0f;
+		background: var(--rb-well, #0a0c0f);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -389,7 +389,7 @@
 		margin-top: 4px;
 		padding: 4px;
 		box-sizing: border-box;
-		background: #11151a;
+		background: var(--rb-well, #11151a);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
 		color: var(--rb-text);

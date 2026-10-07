@@ -172,10 +172,10 @@ test('every numeric readout in the stick tree carries a hover title', () => {
 
 test('a stick row keeps only its deck loads in the context menu; a library row keeps every item', async () => {
 	const menu = await loadTypeScriptModule('src/lib/components/rb/browser/track-context-menu.ts');
-	// The ids TrackContextMenu builds, read from the component so a new item
-	// is classified here the day it is added.
-	const component = source('src/lib/components/rb/browser/TrackContextMenu.svelte');
-	const staticIds = [...component.matchAll(/\bid: '([a-z-]+)'/g)].map((m) => m[1]);
+	// The ids TrackContextMenu shows, read from the W28 registry it resolves,
+	// so a new item is classified here the day it is added.
+	const registry = await loadTypeScriptModule('src/lib/context-menu/registry.ts');
+	const staticIds = registry.MENU_CONTRIBUTIONS.track.map((c) => c.id).filter((id) => !id.startsWith('load-'));
 	assert.ok(staticIds.includes('analyze') && staticIds.includes('copy-path'), `ids read: ${staticIds}`);
 	const items = [
 		...[1, 2, 3, 4].map((deck) => ({ id: `load-${deck}`, run: () => {} })),
@@ -198,5 +198,7 @@ test('TrackContextMenu builds every row menu through the stick filter', () => {
 	const build = between(component, 'function trackMenuItems(', '</script>');
 	const returns = [...build.matchAll(/^\t\treturn\b/gm)];
 	assert.equal(returns.length, 1, 'one return, so no path can skip the filter');
-	assert.match(build, /return menuItemsForTrack\(row\.stable_id, \[/);
+	assert.match(build, /return menuItemsForTrack\(row\.stable_id, bindMenuItems\(resolved, runners\)\);/);
+	// ...and the registry itself is told the row is a stick row.
+	assert.match(build, /source: isUsbTrackId\(row\.stable_id\) \? 'usb'/);
 });

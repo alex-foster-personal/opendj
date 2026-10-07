@@ -196,8 +196,8 @@
 		color: var(--wave-key-color, var(--rb-text-dim));
 		font-weight: 600;
 	}
-	/* Gothic de-colors chrome; its key reads as plain primary text. */
-	:global(html[data-skin='mono-dev']) .key {
+	/* Gothic (and Light, Gothic flipped) de-colors chrome; its key reads as plain primary text. */
+	:global(html:is([data-skin='mono-dev'], [data-skin='light'])) .key {
 		color: var(--rb-text);
 	}
 	.bpm {

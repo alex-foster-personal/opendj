@@ -6,7 +6,8 @@ Requirements:
 ✔︎ One tag that will not parse costs one lane, and is listed in unreadable_anlz.
 ✔︎ PCO2 (.EXT) cues win over PCOB (.DAT); PCOB only fills a list PCO2 cannot.
 ✔︎ Every file must resolve under <volume>/PIONEER/USBANLZ.
-✔︎ The payload is the library /anlz shape (build_anlz_payload) minus stable_id/points.
+✔︎ The payload is the library /anlz shape (build_anlz_payload) minus stable_id/points
+  (held by (private path), which reads the web UI's builder).
 
 Acceptance tests (single-line intent):
 
@@ -28,10 +29,7 @@ MDT_USB_STICK_ROOT, read only, and fails closed when it is unset (see live_stick
 
 from __future__ import annotations
 
-import os
-import statistics
 import struct
-import time
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +38,6 @@ from construct.core import ConstructError
 from pyrekordbox.anlz import AnlzFile
 
 from apps.sync.usb.pioneer.anlz_track import (
-    HOT_CUE_SLOTS,
     StickAnlzFileMissing,
     StickAnlzPathRefused,
     StickAnlzUnreadable,
@@ -54,7 +51,6 @@ from tests.sync.usb.anlz_bytes import (
     pcpt,
     pmai,
     pqtz,
-    pssi,
     pvdi,
     pwav,
     pwv3,
@@ -63,7 +59,6 @@ from tests.sync.usb.anlz_bytes import (
     pwv7,
     write_track,
 )
-from tests.sync.usb.live_stick import live_stick_root
 
 POINTS = 256
 SHARED_DIR = "PIONEER/USBANLZ/P016/00024756"
@@ -262,206 +257,3 @@ def test_missing_analysis_is_a_typed_file_missing(tmp_path: Path) -> None:
         with pytest.raises(StickAnlzFileMissing) as excinfo:
             _read(tmp_path, analyze_path)
         assert excinfo.value.code == "USB_FILE_MISSING"
-
-
-# ----- parity with the library builder ------------------------------------------
-
-
-def _library_payload(monkeypatch: pytest.MonkeyPatch, dat: Path, points: int) -> dict[str, Any]:
-    """The REAL build_anlz_payload over the same files, its I/O seams pinned."""
-    from apps.adapters.rekordbox import paths as rb_paths
-    from apps.shared import platform_paths as pp
-    from apps.webui.server import rb_vendor
-    from apps.webui.server.rb_vendor_pkg import anlz as rb_anlz
-    from apps.webui.server.rb_vendor_pkg import anlz_cache, beatgrid_issue_cache
-    from apps.webui.server.rb_vendor_pkg import db as rb_db
-
-    monkeypatch.setattr(rb_paths, "anlz_dir", lambda _content: dat.parent)
-    monkeypatch.setattr(
-        rb_paths,
-        "resolve_asset_path",
-        lambda original: pp.MappedPath(
-            original=original, resolved=dat, mapped=True, reason="native"
-        ),
-    )
-    monkeypatch.setattr(
-        rb_paths,
-        "_asset_sibling",
-        lambda mapped, candidate: pp.MappedPath(
-            original=mapped.original, resolved=candidate, mapped=True, reason="native"
-        ),
-    )
-    monkeypatch.setattr(anlz_cache, "_anlz_mtime", lambda _directory: 1.0)
-    monkeypatch.setattr(anlz_cache, "_load_cached_payload", lambda *_args: None)
-    monkeypatch.setattr(anlz_cache, "_store_cached_payload", lambda *_args: None)
-    monkeypatch.setattr(beatgrid_issue_cache, "_ensure_beatgrid_issue_cached", lambda *_args: None)
-    monkeypatch.setattr(rb_db, "fetch_cues", lambda _vendor_id: [])
-    monkeypatch.setattr(rb_anlz, "apply_own_overlays", lambda payload, *_args: payload)
-    content = rb_vendor.RbContent(
-        stable_id="parity",
-        vendor_id="v",
-        folder_path=None,
-        image_path=None,
-        analysis_data_path=str(dat),
-        length_s=None,
-        comment=None,
-        genre=None,
-    )
-    return rb_vendor.build_anlz_payload(content, points)
-
-
-@pytest.mark.parametrize("kind", ["tri", "mono"])
-def test_payload_matches_the_library_builder(
-    kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    masked = pssi([(1, 1), (17, 5), (33, 2)], end_beat=48, masked=True)
-    assert not 1 <= int.from_bytes(masked[18:20], "big") <= 3, (
-        "control: the masked PSSI must read as garbled, or the XOR path is not exercised"
-    )
-    rel = f"PIONEER/USBANLZ/P002/{kind.upper():0>8}/ANLZ0000.DAT"
-    path = write_track(
-        tmp_path,
-        rel,
-        dat=pmai(pqtz(grid(351, 90.0, 48)), pwav(400, 5), pcob(1), pcob(0)),
-        ext=pmai(pwv3(1800, 6), pcob(1), pcob(0), pco2(1, pcp2(1, 351, color=43)), pco2(0), masked),
-        twoex=pmai(pwv6(1200, 7), pwv7(1800, 7)) if kind == "tri" else None,
-    )
-    points = 700  # below the detail length, so downsampling is compared too
-
-    ours = _read(tmp_path, path, points=points).payload
-    theirs = _library_payload(monkeypatch, tmp_path / rel, points)
-
-    assert set(ours) == set(theirs) - {"stable_id", "points"}, (
-        "if the payload key set drifts from build_anlz_payload then the deck contract is broken"
-    )
-    for key in ("waveform", "beatgrid", "phrases", "vocals", "unreadable_anlz"):
-        assert ours[key] == theirs[key], (
-            f"if {key} drifts from build_anlz_payload then parity is broken"
-        )
-    assert ours["waveform"]["kind"] == kind
-    assert len(ours["phrases"]) == 3 and ours["phrases"][1]["kind"] == 5, "the masked PSSI decoded"
-
-
-def test_cue_rows_validate_as_the_library_hot_cue_model(tmp_path: Path) -> None:
-    from apps.adapters.rekordbox.cues import HOT_CUE_SLOTS as LIBRARY_SLOTS
-    from apps.webui.server.routes.rb_hot_cues import AnlzCueOut
-
-    assert HOT_CUE_SLOTS == LIBRARY_SLOTS
-    path = write_track(
-        tmp_path,
-        "PIONEER/USBANLZ/P003/00000001/ANLZ0000.DAT",
-        dat=pmai(pqtz(grid(0, 128.0, 4))),
-        ext=pmai(
-            pco2(1, pcp2(1, 245, color=43), pcp2(5, 1531, comment="E", color=19)),
-            pco2(0, pcp2(0, 100, loop_ms=4000)),
-        ),
-    )
-    result = _read(tmp_path, path)
-
-    cue_fields = set(AnlzCueOut.model_fields) - {"revision"}
-    assert all(set(cue) == cue_fields for cue in result.payload["cues"]), (
-        "if a stick cue's key set differs from the library AnlzCue then the deck contract is broken"
-    )
-    for cue in result.payload["cues"]:
-        if cue["kind"] == "hot_cue":
-            AnlzCueOut(**cue, revision="r")
-    for hot in result.hot_cues:
-        AnlzCueOut.model_validate(
-            {
-                "kind": "hot_cue",
-                "slot": HOT_CUE_SLOTS[hot["slot"]],
-                "in_ms": hot["position_ms"],
-                "out_ms": None,
-                "is_loop": False,
-                "active_loop": False,
-                "beat_loop_size": None,
-                "color_table_index": hot["color"],
-                "comment": hot["label"],
-                "revision": "r",
-            }
-        )
-    loops = [cue for cue in result.payload["cues"] if cue["kind"] == "loop"]
-    assert loops == [
-        {
-            "kind": "loop",
-            "slot": None,
-            "in_ms": 100,
-            "out_ms": 4000,
-            "is_loop": True,
-            "active_loop": False,
-            "beat_loop_size": None,
-            "color_table_index": None,
-            "comment": None,
-        }
-    ]
-
-
-# ----- live stick (read only) ------------------------------------------------------
-
-STICK_BUDGET_MEDIAN_MS = 20.0
-STICK_TIMING_PASSES = 3
-
-
-def _stick_root() -> Path:
-    return live_stick_root(os.environ)
-
-
-def test_live_stick_every_track_decodes_within_budget() -> None:
-    from apps.analysis_waveform.native import waveform_materialization_backend
-    from apps.sync.usb.pioneer.reader import read_usb_export
-    from apps.webui.server.rb_vendor_pkg.own_beatgrid_overlay import _beatgrid_payload
-
-    root = _stick_root()
-    tracks = [t for t in read_usb_export(root)["tracks"] if t["analyze_path"]]
-    assert tracks, "control: the stick export lists tracks with analysis"
-
-    # Per-track best of STICK_TIMING_PASSES, then the median: the minimum is
-    # the least load-sensitive estimate on a shared machine (timeit's advice).
-    best_ms: dict[int, dict[int, float]] = {1200: {}, 38400: {}}
-    results: dict[int, Any] = {}
-    for points, best in best_ms.items():
-        for _ in range(STICK_TIMING_PASSES if points == 1200 else 1):
-            for track in tracks:
-                start = time.perf_counter()
-                results[track["id"]] = _read(root, track["analyze_path"], points=points)
-                elapsed_ms = (time.perf_counter() - start) * 1000
-                best[track["id"]] = min(best.get(track["id"], elapsed_ms), elapsed_ms)
-    partial = {
-        tid: r.payload["unreadable_anlz"]
-        for tid, r in results.items()
-        if r.payload["unreadable_anlz"]
-    }
-    medians = {points: statistics.median(best.values()) for points, best in best_ms.items()}
-    print(
-        f"[STICK] {len(tracks)} tracks: {len(tracks) - len(partial)} decode fully, "
-        f"{len(partial)} with unreadable tags {partial}; median ms "
-        f"{medians[1200]:.1f} at 1200 points (best of {STICK_TIMING_PASSES}), "
-        f"{medians[38400]:.1f} at 38400 (one pass, waveform backend "
-        f"{waveform_materialization_backend()}), max {max(best_ms[38400].values()):.1f}"
-    )
-
-    shared = {
-        Path(t["analyze_path"]).stem: t
-        for t in tracks
-        if Path(t["analyze_path"]).parent.as_posix() == "/" + SHARED_DIR
-    }
-    assert set(shared) >= {"ANLZ0000", "ANLZ0001"}, (
-        f"control: {SHARED_DIR} holds two tracks on this stick"
-    )
-    for stem, track in shared.items():
-        expected, _ = _beatgrid_payload(
-            {"PQTZ": AnlzFile.parse_file(root / track["analyze_path"].lstrip("/")).get_tag("PQTZ")}
-        )
-        assert results[track["id"]].payload["beatgrid"] == expected, (
-            f"if {stem} is not decoded from its own .DAT then the shared-directory case is broken"
-        )
-    grids = [
-        results[shared[stem]["id"]].payload["beatgrid"]["beats"]
-        for stem in ("ANLZ0000", "ANLZ0001")
-    ]
-    assert grids[0] != grids[1], (
-        "if ANLZ0001 gets ANLZ0000's grid then exact-file resolution is broken"
-    )
-    assert medians[1200] < STICK_BUDGET_MEDIAN_MS, (
-        f"if the median stick decode exceeds {STICK_BUDGET_MEDIAN_MS} ms then deck load regresses"
-    )

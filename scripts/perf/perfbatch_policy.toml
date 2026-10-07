@@ -9,7 +9,7 @@
 #
 # Hunk-level classification (PERFBATCH-07, scripts/perf/perfbatch_hunks.py)
 # runs AFTER this policy: a pipeline path is a mutation only when its diff
-# holds a changed line outside the allowlist in docs/perf/perfbatch-gates.md.
+# holds a changed line outside the allowlist in (private path).
 
 [pipeline]
 # A diff under one of these needs idle plus quality-ok markers unless every
@@ -18,6 +18,9 @@ prefixes = [
   "apps/stems/",
   "apps/lyrics/",
   "scripts/stems_modal_worker.py",
+  # The relay's Modal call (model, overlap, shifts) lives here since SMARTEST-CI
+  # round 12; the gate's coverage follows the code.
+  "scripts/stems_relay_app.py",
   "scripts/stems_local_worker.py",
   "scripts/stem_bundle_worker.py",
   "scripts/stem_farm_runner.py",
@@ -48,13 +51,13 @@ exempt = [
 # diff made only of these prints "OK -- measurement-only (declared prefix)".
 #
 # - scripts/perf/, tests/perf/, tests/fixtures/perf/, docs/perf/,
-#   specs/perf-latency-program.md: the perf program itself.
+#   (private path): the perf program itself.
 # - .planning/REQUIREMENTS.md, reqs.json, justfile,
 #   .github/workflows/perfbatch-gate.yml: requirement and gate plumbing.
-# - ops/agentic-testing/, ops/agentic_testing/, tests/agentic_testing/:
+# - (private path)/, (private path)/, tests/agentic_testing/:
 #   AGT-01 (issue #2123) luna primer plus persona checker. Neither path
 #   changes stems or lyrics throughput or latency.
-# - docs/decisions/, specs/: written records.
+# - (private path)/, specs/: written records.
 #
 # PERF-UI-01 (issue #2303), the short-viewport /performance layout, needs no
 # entry: its paths are outside every pipeline prefix already.
@@ -63,15 +66,15 @@ prefixes = [
   "tests/perf/",
   "tests/fixtures/perf/",
   "docs/perf/",
-  "specs/perf-latency-program.md",
+  "(private path)",
   ".planning/REQUIREMENTS.md",
   "reqs.json",
   "justfile",
   ".github/workflows/perfbatch-gate.yml",
-  "ops/agentic-testing/",
-  "ops/agentic_testing/",
+  "(private path)/",
+  "(private path)/",
   "tests/agentic_testing/",
-  "docs/decisions/",
+  "(private path)/",
   "specs/",
 ]
 

@@ -9,8 +9,10 @@ function source(relativePath) {
 
 test('TreeContextMenu exposes New smartlist and smartlist Rename/Duplicate', () => {
 	const src = source('src/lib/components/rb/browser/TreeContextMenu.svelte');
-	const playlistIdx = src.indexOf("'New playlist'");
-	const smartlistIdx = src.indexOf("'New smartlist'");
+	// W28: item labels and order live in the registry.
+	const registry = source('src/lib/context-menu/registry.ts');
+	const playlistIdx = registry.indexOf("'New playlist'");
+	const smartlistIdx = registry.indexOf("'New smartlist'");
 	assert.ok(playlistIdx >= 0 && smartlistIdx > playlistIdx);
 	assert.match(src, /onrenamesmartlist\?\.\(smartlist\)/);
 	assert.match(src, /onduplicatesmartlist\?\.\(smartlist\)/);

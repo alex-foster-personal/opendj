@@ -316,7 +316,7 @@ const BUDGETS = [
   // ceilings; the union carries main's V1 polish AND the Preview's I/O panel,
   // Mixtour pickup, phase lock and USB play on /performance. Reviewed raise to
   // the measured size ceiled to KiB (245 KiB), no extra headroom; flagged in
-  // docs/perf/performance-register.md. Payback candidates: the I/O panel body
+  // (private path). Payback candidates: the I/O panel body
   // and the USB browse store behind their first open.
   // MEASURED again Fri 2 Oct 2026 after main eede75a4 and the Preview's #5000
   // (enrich card collapses beside the help buttons) merged in: 251,283, 403
@@ -374,7 +374,29 @@ const BUDGETS = [
   // #5610 0 (server only); #5587 conflicts alone, reserved +275 (its author's +358 for #5579/#5587 less
   // #5579's measured +83). Net +755, projected 269,906: 130 over 269,776, plus 2 KiB. Without #5595's
   // -731 the tip would be 270,637, still under the new limit. Payback: issue #5522.
-  { name: 'performance', limit: 271954, measured: 269151, note: '/performance and children' },
+  // RAISED Thu 1 Oct 2026: 236 -> 249 KiB for PR #4764 (Crate Desk, LIBWS-01).
+  // Library mode now mounts the same BrowserPanel Gig does, behind a dynamic
+  // import from "/" so the library first paint stays under its unchanged ceiling
+  // (local: 256,543, base 256,695). Sharing the browser with a lazy importer
+  // makes Rollup split what was one 215,093 chunk on the base into two
+  // (110,383 + 106,988 = 217,371): about 2.3 KB of lost cross-chunk compression,
+  // plus the workspace guards in BrowserPanel, TrackTable and TrackContextMenu.
+  // Local, both sides on a clean `git worktree add` build: base 113f4b99
+  // measured 239,584 over 18 files, this head 242,549 over 21, +2,965. No eager
+  // import can be demoted to recover it: the browser IS this route's UI. The
+  // ceiling follows the +5% ceil-to-KiB rule on 242,549.
+  // Ported to main by the Crate Desk port (#4764): main's larger ceiling above is kept;
+  // see the next RAISED/MEASURED note for the measurement on the ported tree.
+  // RAISED Tue 6 Oct 2026 (+3,502 B, Crate Desk port of #4764 to main, LIBWS-01; within the
+  // V1 rule of up to 4 KiB per V1 PR; draft, held for JIK's product call). Local, one build
+  // each, clean `git worktree add`: origin/main 4d00338f6 measured 269,714 over 22 files; this
+  // branch 272,784 over 25, +3,070 (830 over the old limit). Same mechanism the source
+  // measured (+2,965): "/" now lazy-imports the shared BrowserPanel, so Rollup splits the
+  // browser out of this route's chunk and the split loses cross-chunk compression, plus the
+  // Library-mode guards in BrowserPanel, TrackTable and TrackContextMenu. The raise is the
+  // measured size ceiled to KiB (273,408) plus 2 KiB headroom. Payback: none open; the
+  // browser is this route's UI and stays eager.
+  { name: 'performance', limit: 275456, measured: 272784, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -519,6 +541,19 @@ const BUDGETS = [
   // MERGED Fri 2 Oct 2026 through Sat 3 Oct: the Preview port measured 302,097
   // and reviewed a 303,104 ceiling. Main's #4014 x #4906 ceiling is 296,960.
   // This merge keeps the larger Preview ceiling.
+  // RAISED Thu 1 Oct 2026: 260 -> 277 KiB for PR #4764 (Crate Desk, LIBWS-01).
+  // The Crate Desk (library top bar, preview bar, track inspector, selection
+  // summary) is dynamically imported from "/" so it stays off the boot path,
+  // which lands it here by design: one chunk of 7,724 gzip. Local, both sides on
+  // a clean build: base 113f4b99 measured 261,402 over 53 files, this head
+  // 269,475 over 55, +8,073 (the chunk plus terser jitter). Base alone was
+  // under its 266,240 ceiling, so the diff, not trunk growth, crossed it. The
+  // ceiling follows the +5% ceil-to-KiB rule on 269,475.
+  // Ported to main by the Crate Desk port (#4764): main's larger ceiling above is kept.
+  // MEASURED Tue 6 Oct 2026 on the port: origin/main 4d00338f6 259,420 over 82 files, this
+  // branch 267,525 over 85, +8,105 (the lazy Crate Desk chunk, as the source measured
+  // +8,073), inside the unchanged 303,104 ceiling. The "/" library budget fell 2,263
+  // (269,671 -> 267,408): VirtualTable/TrackRow left the eager closure.
   { name: 'other-lazy', limit: 303104, measured: 302097, note: 'all other routes plus deferred shell' },
 ];
 

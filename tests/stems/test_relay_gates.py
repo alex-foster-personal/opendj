@@ -422,3 +422,19 @@ def _await_terminal(
             return state
         time.sleep(0.02)
     raise AssertionError(f"separation {separation_id} never went terminal")
+
+
+# ----- round 12: the Modal backend is supplied by the entrypoint, never defaulted -----
+
+
+def test_the_relay_refuses_to_assemble_without_a_backend() -> None:
+    with pytest.raises(RuntimeError, match=r"scripts\.stems_relay_app"):
+        build_app(allowlist=ALLOWLIST)
+
+
+def test_the_entrypoint_imports_without_modal_and_names_the_backend() -> None:
+    import importlib
+
+    entrypoint = importlib.import_module("scripts.stems_relay_app")
+    assert callable(entrypoint.build_relay_app)
+    assert callable(entrypoint.modal_backend)

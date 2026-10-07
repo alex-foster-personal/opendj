@@ -148,6 +148,7 @@ def test_get_track_lyrics_words_returns_ordered_words(client: TestClient) -> Non
     assert [w["idx"] for w in body["words"]] == [0, 1, 2]
     assert body["words"][0]["witness"] == "contradict"
     assert body["verdict"]["effective"] == "vocal"
+    assert body["available"] is True
 
 
 def test_missing_track_lyrics_words_is_404(client: TestClient) -> None:

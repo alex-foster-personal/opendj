@@ -2,7 +2,7 @@
 
 WHY (measured Mon 14 Sep 2026): 915 of 921 present tracks already carry a
 4-stem demucs bundle (mostly MP3 parts, schema v1) under
-``data/state/stems/<stable_id>/``, but ``lyric_verdict`` has zero rows for
+``(private path)/<stable_id>/``, but ``lyric_verdict`` has zero rows for
 them -- the library browser's lyrics column reads every one as "not
 processed". The verdict those tracks need (vocal / sparse / no-lyrics) is a
 pure function of stem vocal coverage (:mod:`apps.lyrics.vocal_presence`), so
@@ -98,7 +98,7 @@ present but unreadable, malformed, or non-file one is a hard
 :func:`load_reserved_ids`.
 
 **Cheaper than decoding twice.** ``apps.vocals from-stems`` already computes
-this exact coverage number when it fills ``data/state/vocal-cache``. When a
+this exact coverage number when it fills ``(private path)``. When a
 compatible cache entry exists (schema current, ``params.derived_from_stems``
 True, its ``params.bundle_layout``/``params.bundle_stem_sha256`` matching
 the ON-DISK bundle's own identity, its recorded ``duration_s`` matching that
@@ -126,15 +126,15 @@ from typing import Any
 from apps.lyrics import store
 from apps.lyrics.vocal_presence import coverage_verdict
 from apps.shared.state import sync_stamp
-from apps.vocals import cache as vcache
-from apps.vocals import from_stems as vfrom_stems
-from apps.webui.server.stem_artifacts import (
+from apps.stems.artifacts import (
     ROFORMER_STEMS_DIR,
     StemArtifactError,
     StemBundle,
     StemBundleNotFoundError,
     load_stem_bundle,
 )
+from apps.vocals import cache as vcache
+from apps.vocals import from_stems as vfrom_stems
 
 #: Distinct from ``apps.lyrics.karaoke_cache.PIPELINE_VERSION``: that one
 #: versions the WORD-level alignment pipeline; this constant versions only

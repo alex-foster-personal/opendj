@@ -36,8 +36,13 @@ type MusicalRow = {
 
 // WebKit measures rendered 10B at 29.23px and 124 at 33px once the table cell
 // padding is included, so compact columns must not go below their rounded values.
-const KEY_MIN_WIDTH = 30;
-const BPM_MIN_WIDTH = 33;
+// Where the font stack lands on Inter (Chromium on Linux and Windows, or any
+// machine with Inter installed) the text alone is wider: 11px tabular "124"
+// measures 21.41px and "12B" (suffix at 0.67em) 19.09px, against the 21px and
+// 18px that 33 and 30 leave inside 6+6px padding, so the BPM column showed
+// "1..." (Wed 7 Oct 2026 nit sweep N6). The floors carry that plus ~2px.
+const KEY_MIN_WIDTH = 32;
+const BPM_MIN_WIDTH = 36;
 const MUSICAL_CHAR_WIDTH = 7;
 const MUSICAL_CELL_PADDING = 7;
 

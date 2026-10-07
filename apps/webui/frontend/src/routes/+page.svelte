@@ -1,77 +1,70 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { listTracks, type Track } from '$lib/api';
-	import VirtualTable from '$lib/components/VirtualTable.svelte';
-	import { pushToast } from '$lib/stores.svelte';
+	// LIBWS-01: Library mode's default view is the Crate Desk
+	// (lib/components/library/CrateDesk.svelte). The root layout renders this
+	// route without the app shell (see +layout.svelte).
+	//
+	// The desk sits behind a dynamic import on purpose: it carries the whole
+	// shared browser, and every cold open lands on "/" before PERFMODE-11
+	// redirects it to Gig, so a static import would make every boot download
+	// it twice over the library budget (scripts/bundle-budget.mjs). Behind the
+	// import its browser chunks are the ones /performance already pays for.
+	//
+	// No first-run gate here, deliberately: that is ONE gate in the root
+	// layout (raiseSetupOnFirstRun), and a second copy would be a second
+	// decision about the same thing.
+	import { onMount, type Component } from 'svelte';
+	import { enterLibraryWorkspace, leaveLibraryWorkspace } from '$lib/library/library-workspace.svelte';
 
-	let tracks = $state<Track[]>([]);
-	let nextCursor = $state<string | null>(null);
-	let loading = $state(false);
-	let q = $state('');
-	let bpmMin = $state('');
-	let bpmMax = $state('');
-	let ratingMin = $state('');
+	// Set before the browser's first render so its deck guards hold from the
+	// first frame, not from after mount.
+	enterLibraryWorkspace();
 
-	async function fetchPage(cursor: string | null = null): Promise<void> {
-		if (loading) return;
-		loading = true;
-		try {
-			const page = await listTracks({
-				q, bpm_min: bpmMin || null, bpm_max: bpmMax || null,
-				rating_min: ratingMin || null, cursor, limit: 200
-			});
-			tracks = cursor ? [...tracks, ...page.items] : page.items;
-			// `next_cursor` is optional AND nullable in the schema; both spellings
-			// mean the same "no further page" to this view.
-			nextCursor = page.next_cursor ?? null;
-		} catch (exc) {
-			pushToast(`Failed to load tracks: ${exc}`, 'error');
-		} finally {
-			loading = false;
-		}
-	}
+	let CrateDesk: Component | null = $state(null);
+	let loadError: string | null = $state(null);
 
-	/**
-	 * No first-run gate here any more, deliberately.
-	 *
-	 * It used to live on this page, which meant the ask only existed on one
-	 * route and only over an empty table. It is now ONE gate in the root
-	 * layout, raising the setup overlay over the performance view -- see
-	 * raiseSetupOnFirstRun in src/routes/+layout.svelte. A second copy here
-	 * would be a second decision about the same thing.
-	 */
 	onMount(() => {
-		void fetchPage();
+		let cancelled = false;
+		import('$lib/components/library/CrateDesk.svelte').then(
+			(mod) => {
+				if (!cancelled) CrateDesk = mod.default;
+			},
+			(error: unknown) => {
+				if (!cancelled) loadError = error instanceof Error ? error.message : String(error);
+			}
+		);
+		return () => {
+			cancelled = true;
+			leaveLibraryWorkspace();
+		};
 	});
-
-	let filterTimer: ReturnType<typeof setTimeout> | null = null;
-	function onFilterChange(): void {
-		if (filterTimer) clearTimeout(filterTimer);
-		filterTimer = setTimeout(() => fetchPage(null), 200);
-	}
 </script>
 
-<h2>Library</h2>
-<form class="filters" onsubmit={(e) => e.preventDefault()}>
-	<input placeholder="Search title/artist" bind:value={q} oninput={onFilterChange} />
-	<input placeholder="BPM min" bind:value={bpmMin} oninput={onFilterChange} />
-	<input placeholder="BPM max" bind:value={bpmMax} oninput={onFilterChange} />
-	<input placeholder="Min rating" bind:value={ratingMin} oninput={onFilterChange} />
-</form>
+<svelte:head>
+	<title>Open DJ - Library</title>
+</svelte:head>
 
-<VirtualTable {tracks} onload_more={() => nextCursor && fetchPage(nextCursor)} />
-
-{#if loading}
-	<p>Loading...</p>
+{#if CrateDesk}
+	<CrateDesk />
+{:else if loadError !== null}
+	<p class="desk-status desk-error" role="alert" data-testid="library-workspace-error">
+		The library view failed to load: {loadError}. Reload the page to retry.
+	</p>
+{:else}
+	<p class="desk-status" data-testid="library-workspace-loading">Loading library...</p>
 {/if}
 
 <style>
-	.filters {
-		display: flex;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
+	.desk-status {
+		position: fixed;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		margin: 0;
+		background: #0a0c0f;
+		color: #8a94a3;
+		font: 12px system-ui, sans-serif;
 	}
-	.filters input {
-		width: 160px;
+	.desk-error {
+		color: #ff6b6b;
 	}
 </style>

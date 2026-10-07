@@ -180,8 +180,8 @@ export interface RbUiPrefs
 	/** Library list: keep only remixes (title-marker heuristic, backend
 	 * is_remix; the lyric repair signal joins it after the library run). */
 	remixes_filter: boolean;
-	/** Library list: keep only tracks with real word-level lyrics spanning
-	 * more than 5 derived lines (pane-contract VOCALS_FILTER_MIN_LINES). */
+	/** Library list: keep only tracks with vocals (VOCALS-FILTER-01, the rule
+	 * is browser/vocals-filter.ts rowVocalsVerdict). */
 	vocals_filter: boolean;
 	/** Library list: keep only tracks with local audio present. */
 	available_offline_filter: boolean;

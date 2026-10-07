@@ -26,7 +26,8 @@
 		recordingBusy = false,
 		recordingWaiting = false,
 		recordingTip = null,
-		onrecord = () => {}
+		onrecord = () => {},
+		recordable = true
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
@@ -39,6 +40,8 @@
 		/** Overrides the REC tooltip, e.g. while waiting for permission. */
 		recordingTip?: string | null;
 		onrecord?: () => void;
+		/** False hides REC whatever the recording flag says (Library mode). */
+		recordable?: boolean;
 	} = $props();
 
 	const ICONS: RailIcon[] = [
@@ -85,8 +88,8 @@
 	const SPOTIFY_ARCS_D = 'M4.6 6.6C6.8 5.9 9.4 6.1 11.4 7.2M5 8.6C6.8 8.1 8.9 8.3 10.5 9.2M5.4 10.5C6.8 10.1 8.4 10.3 9.6 11';
 </script>
 
-<nav class="rail" aria-label="browser sources">
-	{#each ICONS.filter((entry) => entry.action !== 'record' || setRecordingEnabled()) as icon, i (i)}
+<nav class="rail" aria-label="browser sources" data-menu-target="library-source">
+	{#each ICONS.filter((entry) => entry.action !== 'record' || (recordable && setRecordingEnabled())) as icon, i (i)}
 		{@const isRecord = icon.action === 'record'}
 		{@const isHome = icon.action === 'collection'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}

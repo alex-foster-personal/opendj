@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/alex-foster-personal/opendj/security/advisories/new
+    about: Report it privately to the maintainers. Please do not open a public issue for security problems.
+  - name: Questions and ideas
+    url: https://github.com/alex-foster-personal/opendj/discussions
+    about: Ask a question, share an idea, or show what you made with Open DJ.
+  - name: Open DJ website
+    url: https://open-dj.com
+    about: Download, features, known issues and the FAQ.

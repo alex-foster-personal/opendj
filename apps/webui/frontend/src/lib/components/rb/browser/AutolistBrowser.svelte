@@ -23,7 +23,7 @@
 	});
 </script>
 
-<div class="autolist-root">
+<div class="autolist-root" data-menu-target="tree-readonly">
 	{#each GROUPS as group (group.id)}
 		<div class="group" data-testid={group.testid}>
 			<div

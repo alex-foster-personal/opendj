@@ -24,7 +24,11 @@ export function camelotKeyColor(key: string | null): string | null {
 	if (parsed === null) return null;
 	const hue = CAMELOT_HUES[parsed.number - 1];
 	const major = parsed.mode === 'B';
-	return major ? `hsl(${hue} 72% 62%)` : `hsl(${hue} 68% 55%)`;
+	// Lightness is a skin hook: Light (theme.css) darkens both so the swatch
+	// text clears 4.5:1 on its pale rows; other skins leave them unset.
+	return major
+		? `hsl(${hue} 72% var(--rb-key-lightness-major, 62%))`
+		: `hsl(${hue} 68% var(--rb-key-lightness-minor, 55%))`;
 }
 
 /** Hover text: `10B → D major`. Musical notation is normalized to Camelot

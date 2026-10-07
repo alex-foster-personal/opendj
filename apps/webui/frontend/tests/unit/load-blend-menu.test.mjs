@@ -26,7 +26,10 @@ const dispatch = read('src/lib/rb/load-blend-dispatch.ts');
 const gesture = read('src/lib/rb/load-blend-gesture.ts');
 
 test('Load items carry data-testid quick-draw-load-ch', () => {
-	assert.match(menu, /testId: `quick-draw-load-ch\$\{deck\}`/);
+	// W28: the test id is the registry's; the menu renders whatever it resolves.
+	const registry = read('src/lib/context-menu/registry.ts');
+	assert.match(registry, /testId: \(\) => `quick-draw-load-ch\$\{deck\}`/);
+	assert.match(menu, /menuFor\(\{ kind: 'track-chip' \}/);
 	assert.match(menu, /data-testid=\{item\.testId\}/);
 });
 

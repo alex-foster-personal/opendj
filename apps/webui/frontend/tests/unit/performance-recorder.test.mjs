@@ -166,7 +166,8 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(iconRail, /action: 'record'/);
 	assert.match(iconRail, /disabled=\{isInert \|\| \(isRecord && recordingBusy\)\}/);
 	assert.match(iconRail, /isRecord \? onrecord : undefined/);
-	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} \/>/);
+	// Gig mounts the recording rail; Library mode passes recordable=false (no REC).
+	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} recordable=\{library === null\} \/>/);
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);
 	assert.match(performanceRecorderRail, /async function togglePerformanceRecording\(\): Promise<void>/);
 	assert.match(performanceRecorderRail, /recorder = await getRecorderStatus\(\)/);
@@ -217,7 +218,7 @@ test('REC lights only once audio is written, not while the macOS microphone prom
 test('the rail lights REC from the capture state and polls while it is waiting', () => {
 	assert.match(performanceRecorderRail, /recording=\{rail\.recording\}/);
 	assert.match(performanceRecorderRail, /recordingWaiting=\{rail\.waiting\}/);
-	assert.match(performanceRecorderRail, /const after = rail\.poll;\s*if \(after === null\) return;/);
+	assert.match(performanceRecorderRail, /const after = rail\.poll;\s*if \(after === null \|\| !recordable\) return;/);
 	assert.match(performanceRecorderRail, /setTimeout\(\(\) => void refreshRecorderStatus\(\), after\)/);
 	assert.match(iconRail, /class:waiting=\{isRecord && recordingWaiting\}/);
 });

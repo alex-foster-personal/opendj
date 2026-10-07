@@ -252,7 +252,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		keywords: ['waveform', 'design', 'auto', 'skin', 'tri-band', 'mono', 'line', 'blocks', 'wavestack', 'strip'],
 		title: 'Deck and library waveform paint style',
 		detail:
-			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws single-color bars. The preview shows the effective design for the current skin.',
+			'Auto (default) follows the skin: Gothic paints blocks, Default and Light paint tri-band. Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. Blocks draws bars stacked in the band colors (shades of gray in the Mono palette). The preview shows the effective design for the current skin, painted by the deck renderer itself on a real 12 s track sample.',
 		implemented: true,
 		preview: 'waveform',
 		control: {
@@ -501,7 +501,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	HIDE_TODO_SETTING,
 	DEV_UI_SETTING,
 
-	// ----- cloudsync (specs/cloudsync-spec.md D5) -------------------------
+	// ----- cloudsync ((private path) D5) -------------------------
 	// Navigation entries to the policy matrix / pin list / overview on /cloudsync.
 	// Full CRUD backing every row there is live at /api/v1/cloudsync/*
 	// (apps/webui/server/routes/cloudsync.py).

@@ -8,6 +8,7 @@
 	// Interactive: hover = thin red scrub line; click = onseek(ratio) if wired.
 	// Scrub-hover lyrics: when lyric words are cached, hovering shows the word
 	// under the pointer above the strip.
+	import { vocalsStatusTitle } from '$lib/components/rb/wave/vocals-title';
 	import ScrubLyricStrip from '$lib/components/lyrics/ScrubLyricStrip.svelte';
 	import { cancelHoverLoad, hoverLoadLyrics, lyricEntry } from '$lib/lyrics/lyrics-cache.svelte';
 	import { previewCancelWarm, previewWarmOnHover } from '$lib/player/preview-cue.svelte';
@@ -25,7 +26,7 @@
 	import type { WaveformDesign } from '$lib/rb/waveform-design';
 	import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import { effectiveWaveformDesign, effectiveWavePalette } from '$lib/rb/ui-skin';
+	import { effectiveWaveformDesign, effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
 	import { drawStripPreviewBands } from '../deck/strip-waveform-render';
 	import {
 		drawLoopCueBands,
@@ -105,13 +106,7 @@
 	let dpr = $state(1);
 	let hoverX: number | null = $state(null);
 
-	const title: string | null = $derived.by(() => {
-		if (vocals === null) return null;
-		if (vocals.status === 'no_vocals') return 'no vocals detected';
-		else if (vocals.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
-		else if (vocals.status === 'demucs') return 'vocals: local detection';
-		else return null;
-	});
+	const title: string | null = $derived(vocalsStatusTitle(vocals));
 
 	$effect(() => {
 		dpr = window.devicePixelRatio || 1;
@@ -126,7 +121,7 @@
 	$effect(() => {
 		const design = effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		if (canvas && strip !== null && revealed) {
-			const bandColors = resolveStripBandColors(uiPrefs.theme, effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
+			const bandColors = resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
 			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors);
 		}
 	});

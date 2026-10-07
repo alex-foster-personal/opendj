@@ -110,7 +110,8 @@ export async function applyAutoPlayBeatSyncDecision(
 	} else if (decision === 'disable' && currentlyOn) {
 		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false }, undefined, 'autoplay-handoff');
 	}
-	if (!source.beat_sync_enabled || probe.ok) return null;
+	// PLAY-27: under Max ('keep') sync stays lit and the engine's red notice names the refusal.
+	if (!source.beat_sync_enabled || probe.ok || decision === 'keep') return null;
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
 	return formatAutoPlaySyncSkipToast({
 		follower_deck: follower,

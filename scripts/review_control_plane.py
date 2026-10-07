@@ -18,7 +18,7 @@ model, seat, or skipped values are likewise ambiguous and count for no harness.
 Claude's marker regex is imported from review_claude.py (same as Sol from review_sol).
 
 REVIEW-13 DEBT-ONLY CARRY (Thu 1 Oct 2026): a review counts at an earlier head when every
-commit since changed only `.planning/debt/<this-pr>.md`, the same rule review_coverage
+commit since changed only `(private path)/<this-pr>.md`, the same rule review_coverage
 applies (`review_coverage_carry.is_debt_only_since`, imported, not copied). Without it each
 debt-log push reset REVIEW-13 to "(none)" and drew two fresh paid reviews (#4626: Sol
 re-raised the same logged P2s 8 times). Independence is unchanged: carried reviews are
@@ -123,8 +123,8 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "scripts/codex_home.py",
     "ops/fleet/kpi.sh",
     "scripts/oss_tip_rules.py",
-    ".claude/settings*",
-    ".claude/rules/*",
+    "(private path)*",
+    "(private path)/*",
     ".mcp.json",
     "AGENTS.md",
     "CLAUDE.md",
@@ -151,8 +151,8 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "tests/scripts/test_review_submitted_state.py",
     "scripts/interpreter_contract.py",
     "scripts/provenance_*.py",
-    "tests/scripts/provenance_fixtures.py",
-    "tests/scripts/test_review_coverage_head_tie.py",
+    "(private path)",
+    "(private path)",
     "tests/fixtures/_resolver.py",
     "tests/testclient_host_allowlist.py",
     "tests/standalone/__init__.py",
@@ -169,7 +169,7 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "tests/fixtures/github/review_pending_real.*",
     "conftest.py",
     "tests/conftest.py",
-    "tests/scripts/conftest.py",
+    "(private path)",
     "tests/__init__.py",
     "tests/scripts/__init__.py",
     "pyproject.toml",
@@ -180,7 +180,7 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "pytest.ini",
     "setup.cfg",
     "tox.ini",
-    "tests/scripts/test_review_control_plane.py",
+    "(private path)",
     *ROOT_IMPORT_PATHS,
 )
 CONTROL_PLANE_ROOT_FILES: tuple[str, ...] = ("*.py", "*.pyc", "*.so", "*.pyd")
@@ -199,6 +199,9 @@ AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
 }
 AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
+#: The note `git cherry-pick -x` writes between a message and its trailers. A paragraph of only
+#: these is passed over when looking for markers; it attributes nothing itself (#5731, 13a22177a).
+GIT_CHERRY_PICK_NOTE = re.compile(r"\(cherry picked from commit [0-9a-f]{40}\)")
 #: Same trusted-login rule as Sol's SOL_LOGINS in scripts/review_sol.py; login AND marker required.
 SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
 GROK_REVIEW_MARKER = re.compile(
@@ -272,10 +275,15 @@ def control_plane_hits(paths: Sequence[str]) -> tuple[str, ...]:
 
 
 def author_markers(message: str) -> set[str]:
-    """Harness markers from the message's trailer block only (#4361 r4137687862)."""
+    """Harness markers from the message's trailer block only (#4361 r4137687862).
+
+    A paragraph made only of exact `git cherry-pick -x` notes is skipped, so a marker above the
+    note is still read; any other paragraph that is not markers and trailers ends the walk."""
     markers: set[str] = set()
     for paragraph in reversed(re.split(r"\n[ \t]*\n", message.strip())):
         lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        if lines and all(GIT_CHERRY_PICK_NOTE.fullmatch(x) for x in lines):
+            continue
         if not lines or not all(AUTHOR_MARKER.fullmatch(x) or GIT_TRAILER_LINE.fullmatch(x) for x in lines):
             break
         markers |= {m.group(1) for x in lines if (m := AUTHOR_MARKER.fullmatch(x))}

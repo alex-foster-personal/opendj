@@ -428,7 +428,7 @@
 		width: max-content;
 		max-width: 240px;
 		padding: 7px 9px 8px;
-		background: #0a0c0f;
+		background: var(--rb-well, #0a0c0f);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);

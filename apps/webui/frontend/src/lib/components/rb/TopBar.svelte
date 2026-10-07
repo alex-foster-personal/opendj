@@ -145,6 +145,12 @@
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
 	let autoPlayMenuEl: HTMLDivElement | undefined = $state();
+	// LYR-12: LYR's hover is a small menu (its explainer plus the Stage button),
+	// not a native title, so it can hold a button and never doubles up.
+	let lyrMenuOpen = $state(false);
+	let lyrWrapEl: HTMLSpanElement | undefined = $state();
+	let lyrMenuStyle = $state('');
+	let lyrMenuEl: HTMLDivElement | undefined = $state();
 	let modePickerEl: HTMLDetailsElement | undefined = $state();
 	let modeMenuStyle = $state('');
 	let modeMenuEl: HTMLDivElement | undefined = $state();
@@ -224,8 +230,35 @@
 				: (e as PointerEvent).relatedTarget;
 		if (next instanceof Node && autoPlayWrapEl?.contains(next)) return;
 		// Fixed menu is outside the wrap - keep open when moving into it.
-		if (next instanceof Element && next.closest?.('.ap-menu')) return;
+		if (next instanceof Element && next.closest?.('.ap-menu:not(.lyr-menu)')) return;
 		autoPlayMenuOpen = false;
+	}
+
+	async function _placeLyrMenu(): Promise<void> {
+		if (!lyrWrapEl) return;
+		const r = lyrWrapEl.getBoundingClientRect();
+		await tick();
+		const menuRect = lyrMenuEl?.getBoundingClientRect() ?? { width: 220, height: 110 };
+		const box = clampToViewport(
+			r.left,
+			r.bottom + 6,
+			{ width: menuRect.width, height: menuRect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		lyrMenuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
+	}
+
+	function _showLyrMenu(): void {
+		lyrMenuOpen = true;
+		void _placeLyrMenu();
+	}
+
+	function _hideLyrMenu(e: FocusEvent | PointerEvent): void {
+		const next = e.relatedTarget;
+		if (next instanceof Node && lyrWrapEl?.contains(next)) return;
+		// The fixed menu is a child of the wrap, but keep the guard explicit.
+		if (next instanceof Element && next.closest?.('.lyr-menu')) return;
+		lyrMenuOpen = false;
 	}
 
 	async function _placeModeMenu(): Promise<void> {
@@ -390,6 +423,12 @@
 		}
 		return null;
 	});
+
+	const lyrTitle = $derived(
+		uiPrefs.lyrics_global
+			? 'Lyric overlays ON - click LYR to hide waveform word lanes, deck lyric lines and scrub-hover words everywhere (per-surface toggles keep their state)'
+			: 'Lyric overlays OFF globally - click LYR to restore them (library Lyrics column is unaffected; it has its own setting)'
+	);
 
 	const stageTitle = $derived(
 		stageTarget === null
@@ -583,36 +622,64 @@
 		BeatSyncMax
 	</button>
 
-	<button
-		type="button"
-		class="bsm-toggle topbar-slot-lyr"
-		class:on={uiPrefs.lyrics_global}
-		aria-pressed={uiPrefs.lyrics_global}
-		title={uiPrefs.lyrics_global
-			? 'Lyric overlays ON - click to hide waveform word lanes, deck lyric lines and scrub-hover words everywhere (per-surface toggles keep their state)'
-			: 'Lyric overlays OFF globally - click to restore them (library Lyrics column is unaffected; it has its own setting)'}
-		onclick={toggleLyricsGlobal}
+	<!-- LYR-12 (W40): LYR's one explainer is this hover menu, which also holds
+	     the Stage button that used to be its own top-bar slot. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<span
+		class="lyr-wrap topbar-slot-lyr-wrap"
+		data-custom-tip=""
+		bind:this={lyrWrapEl}
+		onpointerenter={_showLyrMenu}
+		onpointerleave={_hideLyrMenu}
+		onfocusin={_showLyrMenu}
+		onfocusout={_hideLyrMenu}
 	>
-		LYR
-	</button>
+		<button
+			type="button"
+			class="bsm-toggle topbar-slot-lyr"
+			class:on={uiPrefs.lyrics_global}
+			aria-pressed={uiPrefs.lyrics_global}
+			aria-describedby="lyr-menu-status"
+			onclick={toggleLyricsGlobal}
+		>
+			LYR
+		</button>
+		{#if lyrMenuOpen}
+			<div
+				class="ap-menu lyr-menu"
+				data-hover-card=""
+				data-testid="lyr-menu"
+				bind:this={lyrMenuEl}
+				style={lyrMenuStyle}
+				role="dialog"
+				aria-label="Lyrics options"
+			>
+				<p class="ap-head">Lyrics</p>
+				<p class="ap-status" id="lyr-menu-status" data-testid="lyr-menu-status">{lyrTitle}</p>
+				<div class="lyr-stage-row">
+					<button
+						type="button"
+						class="bsm-toggle lyr-menu-stage"
+						data-testid="lyr-menu-stage"
+						disabled={stageTarget === null}
+						aria-label="Open karaoke stage"
+						aria-describedby="lyr-menu-stage-status"
+						onclick={_openStageFromTopBar}
+					>
+						Stage
+					</button>
+					<p class="ap-status" id="lyr-menu-stage-status" data-testid="lyr-menu-stage-status">{stageTitle}</p>
+				</div>
+			</div>
+		{/if}
+	</span>
 	<span
 		class="lyrics-compact-chip topbar-slot-lyr-compact"
-		title="Waveform word lane hidden at this viewport height - LYR preference stays on; use Stage for full-screen lyrics"
+		title="Waveform word lane hidden at this viewport height - LYR preference stays on; hover LYR for the full-screen Stage"
 		aria-label="Waveform lyrics compact - word lane hidden at this height"
 	>
 		WF hidden
 	</span>
-
-	<button
-		type="button"
-		class="bsm-toggle topbar-slot-stage"
-		disabled={stageTarget === null}
-		aria-label="Open karaoke stage"
-		title={stageTitle}
-		onclick={_openStageFromTopBar}
-	>
-		Stage
-	</button>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<span
@@ -847,10 +914,12 @@
 				</button>
 			</div>
 		{/if}
-		<!-- CUEOUT-25: MAIN on the headphone CUE device, or a failed MAIN route.
-		     It also renders the CUEOUT-26 same-device split badge right after itself. -->
-		<MainOutputFaultBanner />
 	</div>
+	<!-- CUEOUT-25: MAIN on the headphone CUE device, or a failed MAIN route.
+	     It also renders the CUEOUT-26 same-device split badge right after itself.
+	     CUEOUT-28: a sibling of the master column, not inside it, so the 28px
+	     top bar does not clip it under the slider and meter. -->
+	<MainOutputFaultBanner />
 
 	<!-- master mute: REAL -> gain 0 on the last node before the destination.
 	     Opt-in at startup with ?muted=1 for headless UI-test agents. -->
@@ -1045,10 +1114,6 @@
 	   effect. This group is the right thing to drop first: every member is
 	   placeholder chrome - the eight view icons and LINK are `rb-inert` and
 	   `disabled`, PAD is a dim label - so nothing operable leaves the row. */
-	@media (max-width: 1400px) {
-		.rb-topbar .topbar-slot-stage { font-size: 0; }
-		.rb-topbar .topbar-slot-stage::after { content: 'STG'; font-size: 9px; }
-	}
 	@media (max-width: 980px) {
 		.rb-topbar .topbar-slot-bsm { font-size: 0; }
 		.rb-topbar .topbar-slot-bsm::after { content: 'BSM'; font-size: 9px; }
@@ -1191,7 +1256,7 @@
 	.rb-topbar.less-view .topbar-slot-pad,
 	.rb-topbar.less-view .topbar-slot-utility,
 	.rb-topbar.less-view .free-badge,
-	.rb-topbar.less-view .topbar-slot-stage,
+	.rb-topbar.less-view .lyr-stage-row,
 	.rb-topbar.less-view :global(.cmd-entry) { display: none; }
 
 	/* SHORT WINDOWS (max-height 799px). The compact lyric chip ("WF hidden",
@@ -1210,7 +1275,7 @@
 	   1280x720 and many laptop windows, so no control may yield here that the
 	   width tiers above keep. Re-swept at 600, 720 and 800px high after that
 	   narrowing: 0 crushed widths, overflow only at 790-791px (1-2px). Below
-	   1023px nothing evictable is left, so SOURCE abbreviates the way BSM, STG
+	   1023px nothing evictable is left, so SOURCE abbreviates the way BSM
 	   and AP already do; it keeps its aria-label and its menu. Placed after
 	   the base rules so the pair-long/pair-short swap wins. */
 	@media (max-height: 799px) and (max-width: 1795px) {
@@ -1286,7 +1351,10 @@
 		width: 220px;
 		transform: translateX(-100%);
 		padding: 8px 9px 9px;
-		background: #0a0c0f;
+		/* UX-MENU-01: the skin's own surface, never a literal. A hardcoded dark
+		   card under Light's dark ink read 1.27:1 (W34). theme.css guarantees
+		   --rb-text and --rb-text-dim on --rb-bg at 4.5:1 in every skin. */
+		background: var(--rb-bg);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -1295,6 +1363,35 @@
 		font-size: 10px;
 		line-height: 1.35;
 		text-align: left;
+	}
+	/* UX-MENU-02: a transparent bridge over the gap between the trigger and the
+	   card. Without it the pointer leaves the trigger's wrap on its way down,
+	   the menu closes, and nothing inside it (Stage, the AutoPlay options) can
+	   be reached with a mouse. The bridge is part of the card for hit testing,
+	   so the pointer never leaves the wrap. */
+	.ap-menu::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 100%;
+		height: 10px;
+	}
+	/* LYR-12: shares the AutoPlay menu's look, but opens from LYR's left edge. */
+	.lyr-wrap {
+		display: inline-flex;
+	}
+	.lyr-menu {
+		transform: none;
+	}
+	.lyr-stage-row {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		column-gap: 8px;
+		align-items: center;
+	}
+	.lyr-stage-row .ap-status {
+		margin: 0;
 	}
 	.ap-head {
 		margin: 0 0 6px;
@@ -1388,7 +1485,7 @@
 		left: 0;
 		width: 300px;
 		padding: 7px;
-		background: #0a0c0f;
+		background: var(--rb-bg); /* UX-MENU-01 */
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);

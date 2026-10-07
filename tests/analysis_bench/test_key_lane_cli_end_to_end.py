@@ -12,6 +12,7 @@ since NATIVE-04's producer half (a real candidate) is not built yet.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -82,3 +83,20 @@ def test_run_without_controls_cannot_post(bundle: Path, tmp_path: Path, capsys) 
     assert code == 2
     assert "cannot be posted" in capsys.readouterr().err
     assert log.read_text() == "# spec\n"
+
+
+def test_key_builder_forwards_paths_resolved_against_the_callers_cwd(tmp_path: Path) -> None:
+    """The builder runs as a child in the repo root; a relative path the caller typed must
+    still name the file under the caller's cwd, not under the repo (Codex on #3830)."""
+    args = cli._parser().parse_args([
+        "fixtures", "build", "--lane", "key", "--version", "v1", "--dir", "out",
+        "--rekordbox", "rb.db", "--mik-windows", "mik.db", "--mik-macos", "c.mikdb",
+        "--audio-root", "audio", "--copy-manifest", "m.jsonl", "--seed", "7",
+    ])
+    with contextlib.chdir(tmp_path):
+        argv = cli._key_builder_argv(args)
+    for flag, name in (("--out", "out"), ("--rekordbox", "rb.db"), ("--mik-windows", "mik.db"),
+                       ("--mik-macos", "c.mikdb"), ("--audio-root", "audio"),
+                       ("--copy-manifest", "m.jsonl")):
+        assert argv[argv.index(flag) + 1] == str(tmp_path / name), flag
+    assert argv[argv.index("--seed") + 1] == "7"

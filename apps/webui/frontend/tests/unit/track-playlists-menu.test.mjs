@@ -40,7 +40,7 @@ test('TrackContextMenu wires the popover and menu helper without BrowserPanel ed
 		'utf8'
 	);
 
-	assert.match(trackContextMenu, /showInPlaylistsMenuItem/);
+	assert.match(trackContextMenu, /'show-in-playlists': \(\) => onshowinplaylists\(row, menuX, menuY\)/);
 	assert.match(trackTable, /<TrackRowPopovers bind:playlistsMenu/);
 	assert.match(trackRowPopovers, /import\('\.\/TrackPlaylistsPopover\.svelte'\)/);
 	assert.match(trackRowPopovers, /<PlaylistsPopover/);

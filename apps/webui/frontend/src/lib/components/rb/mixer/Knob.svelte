@@ -316,27 +316,31 @@
 		outline: none;
 	}
 	.pickup-ghost-indicator line {
-		stroke: #f2b84b;
+		stroke: var(--rb-knob-takeover, #f2b84b);
 		stroke-width: 1.5;
 		stroke-dasharray: 1.5 1;
 	}
-	.takeover-armed .ring { stroke: #f2b84b; }
+	.takeover-armed .ring { stroke: var(--rb-knob-takeover, #f2b84b); }
 	.knob.warn-orange .cap {
-		stroke: color-mix(in srgb, var(--rb-knob-warn) 70%, #101318);
-		fill: color-mix(in srgb, var(--rb-knob-warn) 18%, #23272f);
+		stroke: color-mix(in srgb, var(--rb-knob-warn) 70%, var(--rb-knob-cap-edge, #101318));
+		fill: color-mix(in srgb, var(--rb-knob-warn) 18%, var(--rb-knob-cap, #23272f));
 	}
 	.knob.warn-orange .indicator:not(.white):not(.rainbow) {
 		stroke: var(--rb-knob-warn);
 	}
 	.knob.warn-red .cap {
-		stroke: color-mix(in srgb, var(--rb-knob-alarm) 75%, #101318);
-		fill: color-mix(in srgb, var(--rb-knob-alarm) 22%, #23272f);
+		stroke: color-mix(in srgb, var(--rb-knob-alarm) 75%, var(--rb-knob-cap-edge, #101318));
+		fill: color-mix(in srgb, var(--rb-knob-alarm) 22%, var(--rb-knob-cap, #23272f));
 	}
 	.knob.warn-red .indicator:not(.white):not(.rainbow) {
 		stroke: var(--rb-knob-alarm);
 	}
+	/* Gothic and Light have no accent glow (transparent), so they draw a
+	 * focus outline instead (--rb-focus-outline, theme.css); Default has none. */
 	.knob:focus-visible {
 		filter: drop-shadow(0 0 3px var(--rb-accent-glow));
+		outline: var(--rb-focus-outline, none);
+		outline-offset: 1px;
 	}
 	svg {
 		display: block;
@@ -354,14 +358,15 @@
 		stroke: var(--rb-knob-warn);
 		stroke-dasharray: 3 2;
 	}
+	/* The knob hooks are Light-only (theme.css); other skins take the fallback. */
 	.ring {
-		fill: #0b0d10;
+		fill: var(--rb-knob-ring, #0b0d10);
 		stroke: var(--rb-border);
 		stroke-width: 1;
 	}
 	.cap {
-		fill: #23272f;
-		stroke: #101318;
+		fill: var(--rb-knob-cap, #23272f);
+		stroke: var(--rb-knob-cap-edge, #101318);
 		stroke-width: 1;
 	}
 	.indicator {
@@ -370,7 +375,7 @@
 		stroke-linecap: round;
 	}
 	.indicator.white {
-		stroke: #f0f2f5;
+		stroke: var(--rb-knob-indicator-white, #f0f2f5);
 	}
 	.indicator.rainbow {
 		stroke: var(--knob-rainbow-0);
@@ -406,8 +411,8 @@
 		stroke: var(--knob-accent-color);
 	}
 	.knob.knob-stem-accent .cap {
-		stroke: color-mix(in srgb, var(--knob-accent-color) 80%, #101318);
-		fill: color-mix(in srgb, var(--knob-accent-color) 42%, #23272f);
+		stroke: color-mix(in srgb, var(--knob-accent-color) 80%, var(--rb-knob-cap-edge, #101318));
+		fill: color-mix(in srgb, var(--knob-accent-color) var(--rb-knob-stem-tint, 42%), var(--rb-knob-cap, #23272f));
 	}
 	.knob.knob-stem-accent .label {
 		color: var(--knob-accent-color);

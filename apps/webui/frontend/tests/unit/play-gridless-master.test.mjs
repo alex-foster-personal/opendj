@@ -55,7 +55,7 @@ test('[PLAY-25] control: two gridded decks still phase-lock, and a gridless or u
 
 test('[PLAY-25] SHAPE GUARD: every phase-join branch in play asks canPhaseLockTo about its master', () => {
 	const body = engineBlockAfter('	async play(deck: DeckId, pressT0Ms?: number, startAtContextSec?: number): Promise<void> {');
-	const joins = body.split('await _synchronizeFollowers(').length - 1;
+	const joins = body.split('await joinPhase(').length - 1; // PLAY-27 routes every join through joinPhase
 	assert.ok(joins >= 3, `expected the three phase-join branches in play, found ${joins}`);
 	assert.match(body, /syncClock !== null && canPhaseLockTo\(st, deckStates\[syncClock\]\)/);
 	assert.match(body, /elected !== deck && canPhaseLockTo\(st, deckStates\[elected\]\)/);

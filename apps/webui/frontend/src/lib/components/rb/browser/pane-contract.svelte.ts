@@ -443,24 +443,20 @@ export function canMutatePlaylist(
 		&& !pane.whole_collection;
 }
 
-/** Vocals filter: tracks need MORE than 5 derived lyric lines. */
-export const VOCALS_FILTER_MIN_LINES = 6;
-
 /** Remixes checkbox: only an explicit wire true passes; null (synthetic rows)
  * is not a claimed remix and must not pass. */
 export function rowIsRemix(row: BrowserRow): boolean {
 	return row.is_remix === true;
 }
 
-/** Vocals checkbox: real word-level lyrics spanning at least
- * VOCALS_FILTER_MIN_LINES derived lines. */
-export function rowHasVocalLyrics(row: BrowserRow): boolean {
-	return (
-		row.lyrics !== null &&
-		row.lyrics.n_lines !== null &&
-		row.lyrics.n_lines >= VOCALS_FILTER_MIN_LINES
-	);
-}
+// Vocals checkbox (VOCALS-FILTER-01): the three-way has-vocals rule lives in
+// ./vocals-filter; re-exported under the name BrowserPanel.svelte imports.
+export {
+	VOCALS_FILTER_MIN_LINES,
+	rowHasVocals as rowHasVocalLyrics,
+	vocalsFilterCounts,
+	vocalsFilterTitle
+} from './vocals-filter';
 
 /** Available-offline filter: local audio present, not cloud-only or streaming. */
 export function rowIsLocallyAvailable(row: BrowserRow): boolean {

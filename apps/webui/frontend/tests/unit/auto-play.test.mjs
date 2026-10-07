@@ -934,6 +934,7 @@ describe('auto-play Beat Sync handoff policy', () => {
 			max_ratio: 1.16
 		});
 		assert.match(toast, /Beat Sync skipped \(bar\)/);
+		assert.match(toast, /Beat Sync left off\.$/);
 		assert.match(toast, /BAR needs a twin within pitch range \[0.84, 1.16\]/);
 		assert.doesNotMatch(toast, /Select BEAT mode/);
 		assert.doesNotMatch(toast, /auto-switch/);

@@ -13,6 +13,8 @@
  * unit testable.
  */
 
+import type { AppModeId } from '$lib/rb/app-mode';
+
 export interface SidebarNavLink {
 	href: string;
 	label: string;
@@ -47,6 +49,19 @@ export const SIDEBAR_NAV_LINKS: readonly SidebarNavLink[] = [
 export function sidebarNavLinks(showDev: boolean): SidebarNavLink[] {
 	return SIDEBAR_NAV_LINKS.filter((l) => showDev || l.dev !== true);
 }
+
+/**
+ * What the app shell hands a full-bleed route's own top bar (LIBWS-01): the
+ * nav links it would have rendered in the sidebar, and the mode switch. The
+ * root layout already owns both prefs reads, so it provides them as context
+ * and the top bar stays off the prefs module (frontend.max_fan_in).
+ */
+export interface ShellNav {
+	readonly links: SidebarNavLink[];
+	selectMode(id: AppModeId): void;
+}
+
+export const SHELL_NAV_CONTEXT = Symbol('shell-nav');
 
 /** Whether `href` is the page on screen. '/' matches only itself; any other
  * link also matches its sub-routes (/settings matches /settings/x) but never

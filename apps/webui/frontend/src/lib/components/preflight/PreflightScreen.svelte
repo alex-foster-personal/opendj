@@ -277,7 +277,7 @@
 		   here: app.css has no severity tokens yet. */
 		--preflight-warn: #e8a33d;
 	}
-	:global(html[data-theme='light']) {
+	:global(html:is([data-theme='light'], [data-skin='light'])) {
 		--preflight-ok: #2e9e63;
 		--preflight-warn: #b3701a;
 	}

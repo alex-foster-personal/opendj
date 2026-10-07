@@ -111,14 +111,21 @@ class CoverageVerdictOut(BaseModel):
 
 
 class KaraokeTrackOut(BaseModel):
-    """The words payload. ``verdict`` is ALWAYS set: see the 404 rule."""
+    """The words payload, including an explicit known-but-wordless state."""
 
     model_config = ConfigDict(frozen=True)
 
-    verdict: CoverageVerdictOut
+    verdict: CoverageVerdictOut | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="coverage verdict, omitted when the known track has no word lyrics",
+    )
     words: list[KaraokeWordOut]
     lines: list[KaraokeLineOut] | None = Field(
         default=None, description="present only when requested with ?include=lines"
+    )
+    available: bool = Field(
+        description="true when this track has word-level lyrics available",
     )
 
 

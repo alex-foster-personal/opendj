@@ -535,9 +535,15 @@ fn each_engine_state_is_answered_by_the_first_state_carrying_its_number() {
     assert!(child.wait().unwrap().success());
 }
 
-/// A load that fails to decode refuses the commands queued behind it rather
+/// A load that fails to decode refuses the commands parked behind it rather
 /// than running them against the deck's previous track. A FIFO holds the
-/// decode open, so the queued command is deterministically behind the load.
+/// decode open until the test feeds it, but that alone does not put the
+/// command behind the load: stdin is read on its own thread, so on a slow
+/// runner the decode could fail before the engine reads the command, which
+/// then correctly runs on the old track (the "direct" control below). So the
+/// test proves the read first: a crossfader is never parked behind a deck's
+/// load, and stdin lines are handled in the order they arrive, so its result
+/// means the play before it was read and parked. Only then is the FIFO fed.
 #[cfg(unix)]
 #[test]
 fn a_failed_load_refuses_the_commands_queued_behind_it() {
@@ -570,6 +576,11 @@ fn a_failed_load_refuses_the_commands_queued_behind_it() {
 
     writeln!(stdin, "{}", load("bad", &fifo)).unwrap();
     writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+    // Proof the engine has read "queued" (and parked it behind the load,
+    // which cannot finish until the FIFO is fed): a command it never parks,
+    // sent after it on the same pipe, has been answered.
+    writeln!(stdin, "{}", json!({"id": "read", "cmd": {"type": "crossfader", "value": 0.5}})).unwrap();
+    assert_eq!(result_for("read")["ok"], true);
     // Feed the decoder bytes that are not audio, then close: the load fails.
     std::fs::write(&fifo, b"not audio at all").unwrap();
     assert_eq!(result_for("bad")["ok"], false);

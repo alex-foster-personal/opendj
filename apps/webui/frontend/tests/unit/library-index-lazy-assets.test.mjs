@@ -118,7 +118,13 @@ test('no sort, filter or search reads the deferred fields', () => {
 			);
 		}
 	}
-	assert.equal(ids(index.filter(contract.rowHasVocalLyrics)), ids(full.filter(contract.rowHasVocalLyrics)));
+	// The Vocals checkbox (VOCALS-FILTER-01) is the one deliberate reader of
+	// `vocals`: a region-less index row is "not analyzed yet", never "no vocals",
+	// so it can only be missing from the filter, never wrongly in it.
+	const vocalIds = new Set(full.filter(contract.rowHasVocalLyrics).map((r) => r.stable_id));
+	assert.ok(index.filter(contract.rowHasVocalLyrics).every((r) => vocalIds.has(r.stable_id)));
+	const counts = contract.vocalsFilterCounts(index);
+	assert.equal(counts.without, 0, 'deferred vocals never count as no vocals');
 });
 
 test('cover images wait in the boot scheduler queue and are released when it drains', () => {

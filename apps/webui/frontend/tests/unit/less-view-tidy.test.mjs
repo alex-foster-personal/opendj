@@ -34,7 +34,7 @@ test('the LESS top bar hides Stage, voice command and every unfinished control',
 		'.topbar-slot-pad',
 		'.topbar-slot-utility',
 		'.free-badge',
-		'.topbar-slot-stage',
+		'.lyr-stage-row',
 		':global(.cmd-entry)'
 	]) {
 		assert.ok(rule.includes(selector), `LESS must hide ${selector}`);
@@ -49,7 +49,8 @@ test('the LESS top bar hides Stage, voice command and every unfinished control',
 test('nothing in the top bar is unmounted by the deck layout', () => {
 	assert.doesNotMatch(topbar, /\{#if[^}]*deck_layout/);
 	assert.match(topbar, /<CommandEntry \/>/);
-	assert.match(topbar, /class="bsm-toggle topbar-slot-stage"/);
+	// Stage lives in the LYR menu (LYR-12), which is mounted on hover, not by layout.
+	assert.match(topbar, /class="bsm-toggle lyr-menu-stage"/);
 });
 
 // requirement: LESSV-02, LESSV-05

@@ -8,10 +8,13 @@
 
 	let {
 		rating,
-		onrate
+		onrate,
+		disabledReason = null
 	}: {
 		rating: number | null;
 		onrate: (next: number) => void;
+		/** Non-null renders the stars inert, with this as the reason on hover. */
+		disabledReason?: string | null;
 	} = $props();
 
 	let hoverN: number | null = $state(null);
@@ -45,7 +48,8 @@
 			role="radio"
 			aria-checked={rating !== null && rating >= n}
 			aria-label={`Set rating ${n}`}
-			title={`Set rating ${n}`}
+			title={disabledReason ?? `Set rating ${n}`}
+			disabled={disabledReason !== null}
 			onpointerenter={() => (hoverN = n)}
 			onclick={(e) => _click(e, n)}
 			ondblclick={(e) => e.stopPropagation()}

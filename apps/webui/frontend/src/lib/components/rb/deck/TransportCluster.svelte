@@ -132,7 +132,7 @@
 		width: 38px;
 		height: 38px;
 		border-radius: 50%;
-		background: radial-gradient(circle at 50% 35%, #262b33, #101318 75%);
+		background: var(--rb-round-face, radial-gradient(circle at 50% 35%, #262b33, #101318 75%));
 		border: 1px solid var(--rb-border);
 		color: var(--rb-text);
 		font-family: var(--rb-font);

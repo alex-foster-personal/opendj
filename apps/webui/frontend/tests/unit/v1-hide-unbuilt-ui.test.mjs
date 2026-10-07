@@ -23,6 +23,14 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const read = (rel) =>
 	readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), 'utf8');
 
+/** The registry's track contributions: from `const TRACK_MENU` to the next top-level item. */
+function trackMenuSource() {
+	const src = read('src/lib/context-menu/registry.ts');
+	const start = src.indexOf('const TRACK_MENU');
+	assert.ok(start >= 0, 'TRACK_MENU not found in the registry');
+	return src.slice(start, src.indexOf('\n/**', start));
+}
+
 // ------------------------------------------------------------ item 1
 
 test('RecommendedSection renders no "not implemented" placeholder, but still renders paired rows', () => {
@@ -72,25 +80,30 @@ test('TopBar 2-deck button is live, pressed-state aware, and on the hotkey sette
 // ------------------------------------------------------------ item 3
 
 test('TrackContextMenu keeps real rows and drops the inert unbuilt ones', () => {
-	const src = read('src/lib/components/rb/browser/TrackContextMenu.svelte');
+	// W28: the rows live in the registry's track contributions.
+	const src = trackMenuSource();
 	for (const id of ['edit', 'stems-open', 'offline', 'cloud-only']) {
 		assert.doesNotMatch(src, new RegExp(`id: '${id}'`), `${id} row should be hidden`);
 	}
 	for (const id of ['finder', 'copy-path', 'analyze', 'stems-generate', 'lyrics', 'remove-playlist']) {
 		assert.match(src, new RegExp(`id: '${id}'`), `${id} row should stay`);
 	}
-	assert.match(src, /run: removable \? \(\) => onremoverow\?\.\(row\) : undefined/);
+	assert.match(src, /id: 'remove-playlist',[\s\S]*?when: \(ctx\) => ctx\.source === 'playlist'/);
+	const host = read('src/lib/components/rb/browser/TrackContextMenu.svelte');
+	assert.match(host, /source: isUsbTrackId\(row\.stable_id\) \? 'usb' : removable \? 'playlist' : 'collection'/);
 });
 
 test('TreeContextMenu keeps real rows and drops the inert unbuilt ones', () => {
-	const src = read('src/lib/components/rb/browser/TreeContextMenu.svelte');
+	// W28: the rows live in the registry's tree contributions.
+	const src = read('src/lib/context-menu/registry.ts');
 	for (const id of ['new-folder', 'export', 'spotify', 'offline', 'sort']) {
 		assert.doesNotMatch(src, new RegExp(`id: '${id}'`), `${id} row should be hidden`);
 	}
 	// forbid-duplicates appears exactly once: the live playlist checkbox,
 	// with no inert placeholder for folders/smartlists.
 	assert.equal(src.match(/id: 'forbid-duplicates'/g)?.length, 1);
-	assert.match(src, /run: \(\) => onforbidduplicates\?\.\(node\)/);
+	const host = read('src/lib/components/rb/browser/TreeContextMenu.svelte');
+	assert.match(host, /'forbid-duplicates': \(\) => onforbidduplicates\?\.\(node\)/);
 	for (const id of ['new-playlist', 'new-smartlist', 'rename', 'delete', 'duplicate', 'reveal']) {
 		assert.match(src, new RegExp(`id: '${id}'`), `${id} row should stay`);
 	}

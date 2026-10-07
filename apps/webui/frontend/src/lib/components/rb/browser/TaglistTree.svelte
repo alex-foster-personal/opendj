@@ -45,7 +45,7 @@
 	});
 </script>
 
-<div class="taglist-root">
+<div class="taglist-root" data-menu-target="tree-readonly">
 	{#if error !== null}
 		<div class="row rb-inert" title={error}>
 			<span class="name dim">taglists unavailable</span>

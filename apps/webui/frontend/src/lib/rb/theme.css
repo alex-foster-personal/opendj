@@ -60,6 +60,7 @@
 	--rb-rail-record: #d0342c;
 	--rb-knob-warn: var(--rb-orange);  /* EQ dial past ~30% throw */
 	--rb-knob-alarm: var(--rb-red);    /* EQ dial past ~50% throw */
+	--rb-focus-outline: none;          /* knob keyboard focus: Default shows the accent glow; Gothic and Light (no glow) set an outline */
 	--rb-artwork-filter: none;         /* mono-dev grays artwork; html-level too, for pages outside .perf-root */
 	--rb-key-compat-border: initial;   /* unset: the compatible-key ring uses the master key's hue */
 	--rb-issue-square: initial;        /* unset: library minor-issue '!' square keeps its amber fill */
@@ -123,6 +124,32 @@ html[data-theme='light'] .perf-root {
 	--rb-master: #856500;
 	--rb-master-ink: #fffdf8;
 	--rb-master-text: #4a3700;
+	/* The light-only hooks, as in the Light skin block below (which says
+	 * what each one fixes). mono-dev resets them so Gothic on the light
+	 * theme keeps its dark wells. */
+	--rb-jog-text: #c8cdd2;
+	--rb-jog-text-dim: #9aa0a6;
+	--rb-round-face: radial-gradient(circle at 50% 35%, #fffdf8, #e4ddd0 75%);
+	--rb-well: #fffdf8;
+	--rb-strip-pos: #27241f;
+	--rb-strip-pos-glow: rgba(39, 36, 31, 0.35);
+	--rb-text-muted: #5d574e;
+	--rb-key-lightness-major: 24%;
+	--rb-key-lightness-minor: 22%;
+	--rb-knob-ring: #ffffff;
+	--rb-knob-cap: #e2e2e2;
+	--rb-knob-cap-edge: #8a8a8a;
+	--rb-knob-indicator-white: #121212;
+	--rb-knob-takeover: #8a5a00;
+	--rb-knob-stem-tint: 15%; /* a stem knob's cap takes 15% of its accent (42% elsewhere), so the dark accent indicator keeps 3:1 on it */
+	/* Stem accents (EQ knob indicator and label, stem rows): the bright
+	 * defaults in stem-colors.ts are 1.3-2.3:1 on these light faces, so the
+	 * light theme takes the Light skin's dark tints. */
+	--rb-stem-vocal: #4f6a80;
+	--rb-stem-instrumental: #566b49;
+	--rb-stem-drums: #7a5f45;
+	--rb-stem-bass: #625a7a;
+	--rb-stem-other: #3f6b63;
 }
 
 /* Legacy waveform palette (pre-#4219: orange low, blue mid, near-white
@@ -219,6 +246,25 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-stem-drums: #b8a088;
 	--rb-stem-bass: #a59cba;
 	--rb-stem-other: #86aea6;
+	/* Light-only hooks (see the Light skin block): unset, so Gothic keeps
+	 * its dark wells and jog ink even on the light theme. */
+	--rb-jog-text: initial;
+	--rb-jog-text-dim: initial;
+	--rb-round-face: initial;
+	--rb-well: initial;
+	--rb-strip-pos: initial;
+	--rb-strip-pos-glow: initial;
+	--rb-text-muted: initial;
+	--rb-key-lightness-major: initial;
+	--rb-key-lightness-minor: initial;
+	--rb-knob-ring: initial;
+	--rb-knob-cap: initial;
+	--rb-knob-cap-edge: initial;
+	--rb-knob-indicator-white: initial;
+	--rb-knob-takeover: initial;
+	--rb-knob-stem-tint: initial;
+	/* No accent glow here, so keyboard focus on a knob is an outline. */
+	--rb-focus-outline: 1px solid var(--rb-accent);
 }
 /* Track artwork in grayscale, color back on hover. Keyed on the artwork
  * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it
@@ -227,35 +273,36 @@ html[data-skin='mono-dev'] .perf-root {
 html[data-skin='mono-dev'] {
 	--rb-artwork-filter: grayscale(1) contrast(1.05);
 }
-html[data-skin='mono-dev'] img[src*='/artwork'] {
+html:is([data-skin='mono-dev'], [data-skin='light']) img[src*='/artwork'] {
 	filter: var(--rb-artwork-filter);
 	transition: filter 120ms ease-out;
 }
-html[data-skin='mono-dev'] img[src*='/artwork']:hover {
+html:is([data-skin='mono-dev'], [data-skin='light']) img[src*='/artwork']:hover {
 	filter: none;
 }
-/* section 2: shape overrides (no token exists for these) */
-html[data-skin='mono-dev'] .perf-root :is(button, .rb-knob, .rb-fader-thumb, .slot, .round, .pad) {
+/* section 2: shape overrides (no token exists for these). The Light skin
+ * shares them: it is Gothic flipped. */
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root :is(button, .rb-knob, .rb-fader-thumb, .slot, .round, .pad) {
 	border-radius: 0;
 }
-html[data-skin='mono-dev'] .perf-root :is(.round, .rb-knob) {
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root :is(.round, .rb-knob) {
 	background: var(--rb-panel);
 	box-shadow: none;
 }
-html[data-skin='mono-dev'] .perf-root .round {
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root .round {
 	border-color: var(--rb-text-dim);
 }
-html[data-skin='mono-dev'] .perf-root .rb-lit-button.lit {
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root .rb-lit-button.lit {
 	color: var(--rb-bg);
 	box-shadow: none;
 }
-html[data-skin='mono-dev'] .perf-root .rb-fader-track {
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root .rb-fader-track {
 	background: var(--rb-bg);
 }
-html[data-skin='mono-dev'] .perf-root .rb-fader-thumb {
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root .rb-fader-thumb {
 	background: var(--rb-panel-raised);
 }
-html[data-skin='mono-dev'] .perf-root .readout .bpm {
+html:is([data-skin='mono-dev'], [data-skin='light']) .perf-root .readout .bpm {
 	font-size: 22px;
 	font-weight: 500;
 	color: #bdbdbd;
@@ -263,69 +310,133 @@ html[data-skin='mono-dev'] .perf-root .readout .bpm {
 }
 
 /* -------- skin: light --------
- * Warm light chrome, the third stop on the top-bar skin button. Chrome tokens
- * come from the maintainer's claude.ai "Performance Light Pass" (LIGHT palette); the
- * 3Band wave bands and master fill/ink keep the light theme's values because
- * that design predates #4219. Defines every token mono-dev defines, so no
- * dark value leaks through (tests/unit/skin-cycle-light.test.mjs). Like
- * mono-dev it wins over either theme. color-scheme is !important because
+ * Gothic flipped (the maintainer, Wed 7 Oct 2026: "make light theme essentially the
+ * flip of the gothic skin"): the same grayscale chrome, mono face, square
+ * corners and red-for-errors-only, on near-white. Each value mirrors its
+ * Gothic token at about the same contrast against the ground (Gothic
+ * --rb-text-dim on its raised chrome is 5.5:1, so is this one), not a raw
+ * 255-minus-channel flip, which would put dim text under AA. The waveforms
+ * are Gothic's mono blocks on the light theme's mono hues (ui-skin.ts
+ * SKIN_WAVE_LOOK, wave-palette.ts). The jog platter stays a dark object as in
+ * every skin, so its readout keeps light ink. Defines every token mono-dev
+ * defines, so no dark value leaks through (tests/unit/skin-cycle-light.test.mjs).
+ * Like mono-dev it wins over either theme. color-scheme is !important because
  * prefs.svelte.ts writes the theme's color-scheme as an inline style. */
 html[data-skin='light'] {
 	color-scheme: light !important;
+	--rb-artwork-filter: grayscale(1) contrast(1.05);
 }
 html[data-skin='light'] .perf-root {
-	--rb-bg: #f7f3eb;
-	--rb-panel: #fffdf8;
-	--rb-panel-raised: #eee8dd;
-	--rb-waverow-secondary: #fffdf8;
-	--rb-border: #b8b0a3;
-	--rb-text: #27241f;
-	--rb-text-dim: #5d574e;
-	--rb-accent: #175ea8;
-	--rb-accent-glow: rgba(23, 94, 168, 0.35);
-	--rb-green: #1d7035;
-	--rb-orange: #a44b11;
+	--rb-bg: #f5f5f5;
+	--rb-panel: #f1f1f1;
+	--rb-panel-raised: #ebebeb;
+	--rb-waverow-secondary: #ededed;
+	--rb-border: #d0d0d0;
+	--rb-text: #292929;
+	--rb-text-dim: #5e5e5e;
+	--rb-accent: #292929;
+	--rb-accent-glow: transparent;
+	--rb-focus-outline: 1px solid var(--rb-accent); /* as Gothic: no glow, so knob focus is an outline */
+	--rb-green: #171717;
+	--rb-orange: #5c5c5c;
+	/* Waveform bands: the light Rekordbox hues, which an explicit Rekordbox
+	 * choice (no data-wave-palette attribute) shows. Auto resolves to mono
+	 * (ui-skin.ts), and the palette blocks right after this one repaint the
+	 * mono and legacy choices in their light hues. */
 	--rb-wave-low: #1d4fa3;
 	--rb-wave-mid: #9a5a00;
 	--rb-wave-high: #4a4f57;
 	--rb-wave-mono: #2166b1;
-	--rb-wave-vocal: #1f6fb0;
-	--rb-red: #ad2420;
-	--rb-yellow: #927000;
-	--rb-select: #d6e5f5;
-	--rb-master: #856500;
-	--rb-master-ink: #fffdf8;
-	--rb-master-text: #7a5c00;
-	--rb-font: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', Roboto,
-		sans-serif;
-	--rb-fs-browser: 11px;
-	--rb-fs-label: 10px;
-	--rb-waverow-h: 43px;
-	--rb-status-dot-filter: none;
-	--rb-rail-spotify: #1d7035;
-	--rb-rail-spotify-arc: transparent;
-	--rb-rail-files: #2166b1;
-	--rb-rail-beatport: #6b3fb0;
-	--rb-rail-record: #ad2420;
-	--rb-knob-warn: var(--rb-orange);
-	--rb-knob-alarm: var(--rb-red);
-	--rb-key-compat-border: initial;
-	--rb-artwork-filter: none;
-	--rb-issue-square: initial;
-	--rb-issue-square-ink: initial;
-	--rb-quality-filter: none;
-	--rb-bpm-mismatch-ring: initial;
-	--rb-stem-vocal: initial;
-	--rb-stem-instrumental: initial;
-	--rb-stem-drums: initial;
-	--rb-stem-bass: initial;
-	--rb-stem-other: initial;
+	--rb-wave-vocal: #2a76c0;
+	--rb-red: #b3261e;
+	--rb-yellow: #4f4f4f;
+	--rb-select: #dcdcdc;
+	--rb-master: #303030;
+	--rb-master-ink: #f5f5f5;
+	--rb-master-text: #0d0d0d;
+	--rb-font: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+	--rb-fs-browser: 10.5px;
+	--rb-fs-label: 9.5px;
+	--rb-waverow-h: 56px;
+	--rb-status-dot-filter: grayscale(1);
+	--rb-rail-spotify: currentColor;
+	--rb-rail-spotify-arc: var(--rb-panel);
+	--rb-rail-files: currentColor;
+	--rb-rail-beatport: currentColor;
+	--rb-rail-record: currentColor;
+	--rb-knob-warn: #4a4a4a;
+	--rb-knob-alarm: #0d0d0d;
+	--rb-key-compat-border: #121212;
+	--rb-artwork-filter: grayscale(1) contrast(1.05);
+	--rb-issue-square: #292929;
+	--rb-issue-square-ink: #f5f5f5;
+	--rb-quality-filter: grayscale(1);
+	--rb-bpm-mismatch-ring: transparent;
+	--rb-stem-vocal: #4f6a80;
+	--rb-stem-instrumental: #566b49;
+	--rb-stem-drums: #7a5f45;
+	--rb-stem-bass: #625a7a;
+	--rb-stem-other: #3f6b63;
+	/* Light-only hooks. Each one has a fallback at its use site that equals
+	 * the value Default and Gothic render, so those skins do not change.
+	 * - jog: the jog platter is a dark literal in every skin (JogDial.svelte),
+	 *   so its readout keeps light ink rather than following --rb-text.
+	 * - round-face: CUE and Play; section 2 below paints them flat panel, as
+	 *   Gothic does.
+	 * - well: the sunken fields (search, voice command, loop readout, strip
+	 *   waveform, feedback reply) and the hover/explainer popovers. Gothic's
+	 *   are darker than its panel, so here they are lighter: white.
+	 * - strip-pos: the strip playhead was white, invisible on a light well.
+	 * - text-muted: AppPostureChip's idle button fell back to #aaa.
+	 * - key-lightness: Camelot swatch text (camelot-color.ts) is drawn at
+	 *   55-62% lightness for dark rows; 22-24% clears 4.5:1 on every light
+	 *   row (page, loaded, selected) for all 24 keys.
+	 * - knob: the mixer knobs (mixer/Knob.svelte) were near-black discs;
+	 *   here a white ring and light cap under the dark indicator, and a dark
+	 *   amber MIDI takeover ring (the #f2b84b one was 1.4:1 on the cap). */
+	--rb-jog-text: #c8cdd2;
+	--rb-jog-text-dim: #9aa0a6;
+	--rb-round-face: var(--rb-panel);
+	--rb-well: #ffffff;
+	--rb-strip-pos: #121212;
+	--rb-strip-pos-glow: rgba(0, 0, 0, 0.35);
+	--rb-text-muted: #5e5e5e;
+	--rb-key-lightness-major: 24%;
+	--rb-key-lightness-minor: 22%;
+	--rb-knob-ring: #ffffff;
+	--rb-knob-cap: #e2e2e2;
+	--rb-knob-cap-edge: #8a8a8a;
+	--rb-knob-indicator-white: #121212;
+	--rb-knob-takeover: #8a5a00;
+	--rb-knob-stem-tint: 15%; /* a stem knob's cap takes 15% of its accent (42% elsewhere), so the dark accent indicator keeps 3:1 on it */
 }
-/* section 2: deck ground and dividers are component-local dark literals
- * (performance/+page.svelte); light equivalents from the design's
- * LIGHT_SURFACES map. Other hardcoded dark wells are PR follow-ups. */
+/* The Light skin honors an explicit waveform palette: these out-rank the
+ * skin block above and the theme's palette blocks (one more attribute, or
+ * equal and later), so Legacy and Mono draw their light hues on either
+ * theme. Mirrors wave-palette.ts's light scheme. */
+html[data-skin='light'][data-wave-palette='mono'] .perf-root {
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #4a4a4a;
+	--rb-wave-high: #2a2a2a;
+	--rb-wave-mono: #3a3a3a;
+	--rb-wave-vocal: #3f6f9f;
+}
+html[data-skin='light'][data-wave-palette='legacy'] .perf-root {
+	--rb-wave-low: #a44b11;
+	--rb-wave-mid: #2166b1;
+	--rb-wave-high: #3a4653;
+}
+/* Gothic's section 2 shape overrides apply here too (see the mono-dev
+ * section 2 above). Only the BPM ink differs: Gothic's #bdbdbd mirrored,
+ * declared later so it wins at equal specificity. */
+html[data-skin='light'] .perf-root .readout .bpm {
+	color: #3d3d3d;
+}
+/* Deck ground and dividers are component-local dark literals
+ * (performance/+page.svelte); Gothic leaves them near-black, so here they
+ * are the near-white between --rb-bg and --rb-panel. */
 html[data-skin='light'] .perf-root :is(.deck-area, .deck-col) {
-	background: #efe9dd;
+	background: #f3f3f3;
 }
 html[data-skin='light'] .perf-root .deck-col:first-child {
 	border-right-color: var(--rb-border);

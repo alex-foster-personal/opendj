@@ -1,7 +1,7 @@
 name: Stable evidence
 
 # OPS-18. Merge-append each completed CI / Full CI / E2E / macOS Packaging
-# run's conclusion onto ops/stable/<head_sha>.json on the runner.
+# run's conclusion onto (private path)/<head_sha>.json on the runner.
 #
 # One scheduled pass, not one job per completion (RUN-COUNT round 2, issue
 # #2196). The Actions queue is per job: a workflow_run job that fired on every
@@ -15,15 +15,16 @@ name: Stable evidence
 # is one cadence of delay on the evidence file; release.sh gates on that file
 # from a human's terminal, and workflow_dispatch below is the catch-up before
 # a release. Rejected alternatives and the measurement are in
-# docs/decisions/ADR-NEW-stable-evidence-one-scheduled-pass.md.
+# (private path).
 #
 # The pass runs this branch's code against run METADATA only; it never
 # executes a recorded sha (it may be an untrusted PR).
 
 on:
   schedule:
-    # Offset from other */15 bookkeeping passes so the two passes never queue together.
-    - cron: "7-59/15 * * * *"
+    # Hourly at :07 (RUN-COUNT round 6, (private path)).
+    # A release that cannot wait runs `gh workflow run stable-evidence.yml` first.
+    - cron: "7 * * * *"
     # Daily reconcile pass: the plain pass plus every re-run of a run created up to
     # RECONCILE_HORIZON_DAYS back (see the append step).
     - cron: "41 4 * * *"
@@ -63,7 +64,7 @@ jobs:
     timeout-minutes: ${{ (github.event.schedule == '41 4 * * *' || inputs.reconcile) && 30 || 10 }}
     env:
       # At least two cadences, so a late or failed pass loses nothing.
-      OVERLAP_MINUTES: "30"
+      OVERLAP_MINUTES: "120"
       # The listing filters on created_at; a Full CI run has taken 100 minutes
       # before a cancel (Fri 11 Sep 2026), so a run created this long before
       # the mark and completed after it is still listed.

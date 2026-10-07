@@ -120,7 +120,10 @@ export default {
 		'webui-port-config.ts',
 		'scripts/**/*.{js,ts,mjs}',
 		// Keyframe catalogue for ControlExplainer demos; consumed by unit tests, not runtime UI.
-		'src/lib/rb/explainer-demo-keyframes.ts'
+		'src/lib/rb/explainer-demo-keyframes.ts',
+		// W28 right-click permutation harness: renders (private path)/*.md for
+		// tests/unit/context-menu-registry.test.mjs; never shipped in the UI.
+		'src/lib/context-menu/permutations.ts'
 	],
 	project: ['src/**/*.{js,ts,svelte}', 'tests/**/*.{js,ts,mjs}', 'scripts/**/*.{js,ts,mjs}'],
 	ignoreBinaries: ['uv'],

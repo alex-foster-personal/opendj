@@ -13,7 +13,11 @@
 [importlinter]
 root_packages =
     apps
+    scripts
 include_external_packages = True
+; An import under `if TYPE_CHECKING:` is never executed, so it cannot start a
+; runtime cycle; the module that passes the real object in carries the edge.
+exclude_type_checking_imports = True
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:shared-is-the-stable-core]
@@ -69,7 +73,7 @@ exhaustive = true
 ; domain package imports back into it you get a cycle, and the domain package can
 ; no longer be exercised, tested, or shipped without the server. Above it sit the
 ; entry points that compose the web UI themselves: the engine shell, the CLI and
-; the fleet MCP server (docs/decisions/ADR-NEW-exhaustive-import-layers.md).
+; the fleet MCP server ((private path)).
 ;
 ; Until Thu 1 Oct 2026 this was a `forbidden` contract whose SOURCE list was written
 ; in August, so engine_core, opendj_cli, fleet_mcp, lyrics and sync_hub imported the
@@ -77,25 +81,41 @@ exhaustive = true
 ; package missing from the layers.
 ;
 ; DEBT. Never add a line: add the inversion instead.
-;   apps.smartlists -> apps.webui via playlist_writeback (measured Sun 17 Aug 2026;
-;     the stem_artifacts cycles were inverted Mon 14 Sep 2026)
-;   measured Thu 1 Oct 2026, hidden by the old source list:
-;   apps.lyrics -> apps.webui (1), apps.sync_hub -> apps.webui (1)
-;   apps.webui, apps.cloud and apps.adapters -> apps.engine_core (7): engine_core
-;     mixes the shell (app.py) with low-level services (jobs.store, store.schema,
-;     setup, host_info). Moving those services down out of engine_core clears all 7.
+;   apps.webui -> apps.engine_core (3): engine_core mixes the shell (app.py) with
+;     low-level services (setup, host_info). Moving those down out of engine_core
+;     clears them.
+;   Cleared by SMARTEST-CI round 12 (#3830), measured with lint-imports Tue 6 Oct 2026:
+;   smartlists -> webui (playlist_writeback moved to apps.smartlists), lyrics -> webui,
+;   sync_hub -> webui, and cloud, adapters and webui.server.rb_vendor_pkg ->
+;   engine_core (inverted, or annotation-only under exclude_type_checking_imports).
 ignore_imports =
-    apps.smartlists.djay_writer -> apps.webui.server.playlist_writeback
-    apps.smartlists.rb_writer -> apps.webui.server.playlist_writeback
-    apps.lyrics.library_verdicts -> apps.webui.server.stem_artifacts
-    apps.sync_hub.hub_deploy -> apps.webui.server.request_guard
     apps.webui.server.preflight_checks -> apps.engine_core.setup.detect
     apps.webui.server.preflight_checks -> apps.engine_core.setup.record
-    apps.webui.server.rb_vendor_pkg.track_rows -> apps.engine_core.jobs.store
     apps.webui.server.routes.settings -> apps.engine_core.host_info
-    apps.cloud.hydration -> apps.engine_core.jobs.store
-    apps.adapters.rekordbox.paths -> apps.engine_core.jobs.store
-    apps.adapters.rekordbox.reversal -> apps.engine_core.store.schema
+
+; ---------------------------------------------------------------------------
+[importlinter:contract:apps-never-imports-scripts]
+name = apps never imports scripts
+type = forbidden
+source_modules =
+    apps
+forbidden_modules =
+    scripts
+; scripts/ is the CLI and operations layer over apps/. An app package that
+; imports it pulls the whole tree behind one import (the scripts package reaches
+; every domain package), which is what held the 31-scope import cycle together
+; until round 12. tests/scripts/test_apps_scripts_import_audit.py guards the
+; function-body form of the same edge with the same single exception.
+;
+; DEBT (measured Tue 22 Sep 2026): apps.analysis_bench.controls and
+; scorers.beatgrid_lane read the beatgrid report from scripts/beatbench, which
+; imports apps.analysis_bench back at 19 sites; the pair is one unit split
+; across two trees and is not resolved by a move. Fix by homing
+; scripts/beatbench/report.py under apps/analysis_bench/, then delete the
+; lines below.
+ignore_imports =
+    apps.analysis_bench.controls -> scripts.beatbench.report
+    apps.analysis_bench.scorers.beatgrid_lane -> scripts.beatbench.report
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:production-code-never-imports-tests]

@@ -105,7 +105,7 @@
 		width: 130px;
 		height: 18px;
 		padding: 0 6px;
-		background: #0a0c0f;
+		background: var(--rb-well, #0a0c0f);
 		border: 1px solid var(--rb-border);
 		border-radius: 9px;
 		color: var(--rb-text);

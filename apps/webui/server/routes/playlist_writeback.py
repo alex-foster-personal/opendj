@@ -9,10 +9,7 @@ from pydantic import BaseModel, Field
 
 from apps.shared.events import publish
 from apps.shared.rekordbox_writeback import require_writeback_enabled
-
-from ..backend import StateBackend
-from ..deps import get_read_state, get_write_state
-from ..playlist_writeback import (
+from apps.smartlists.playlist_writeback import (
     VENDORS,
     WritebackConflict,
     WritebackService,
@@ -21,6 +18,9 @@ from ..playlist_writeback import (
     bind_default_writer_factory,
     default_writer_factory,
 )
+
+from ..backend import StateBackend
+from ..deps import get_read_state, get_write_state
 
 router = APIRouter(prefix="/playlists", tags=["playlist-writeback"])
 VendorLiteral = Literal["rekordbox", "djay"]
@@ -100,7 +100,7 @@ class WritebackRollbackIn(BaseModel):
     target_path: str
     target_id: str
     # uuid4().hex and nothing else: this value is joined into a path under
-    # data/writeback-backups, so an unconstrained string containing ``../``
+    # (private path), so an unconstrained string containing ``../``
     # reads a file of the caller's choosing. Refused as 422 before the handler
     # runs; writeback_backup._require_backup_id re-checks at the join itself.
     backup_id: str = Field(pattern=r"^[0-9a-f]{32}$")
@@ -190,7 +190,7 @@ def apply_writeback(
         require_writeback_enabled("http.playlists.writeback.apply")
     playlist = backend.get_playlist(playlist_id)
     try:
-        from apps.webui.server.playlist_writeback import WritebackTarget
+        from apps.smartlists.playlist_writeback import WritebackTarget
 
         result = service.apply(
             vendor=body.vendor,

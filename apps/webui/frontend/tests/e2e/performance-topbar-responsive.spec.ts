@@ -98,13 +98,16 @@ test('compact 800x600 performance top bar shows Stage, compact lyric cue, and co
 	const lyrButton = page.locator('button.topbar-slot-lyr');
 	const compactChip = page.locator('.lyrics-compact-chip');
 
+	// LYR-12: Stage is inside LYR's hover menu, so hover LYR first.
+	await lyrButton.hover();
 	await expect(stageButton).toBeVisible();
 	await expect(stageButton).toBeDisabled();
+	await expect(page.getByTestId('lyr-menu-stage-status')).toHaveText('Stage - load a track onto a deck first');
 	await expect(lyrButton).toHaveAttribute('aria-pressed', 'true');
 	await expect(compactChip).toBeVisible();
 
 	await expect
-		.poll(async () => (await _hitTarget(page, 'button.topbar-slot-stage')).hit, {
+		.poll(async () => (await _hitTarget(page, 'button.lyr-menu-stage')).hit, {
 			message: '800x600 Stage control must be hittable at its own center'
 		})
 		.toBe(true);

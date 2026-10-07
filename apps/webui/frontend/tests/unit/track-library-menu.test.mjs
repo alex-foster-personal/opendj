@@ -32,7 +32,11 @@ test('menu item carries run and forwards selected ids', () => {
 test('TrackContextMenu and BrowserPanel wire remove-from-library helpers', () => {
 	const menu = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(menu, /removeFromLibraryMenuItem\(targetIds, onremovefromlibrary\)/);
+	// W28: the registry decides visibility; the host binds the id to the handler.
+	assert.match(
+		menu,
+		/'remove-library': onremovefromlibrary \? \(\) => onremovefromlibrary\(targetIds\) : undefined/
+	);
 	assert.match(panel, /onremovefromlibrary=\{\(ids\) => void removeFromLibraryUi\(ids\)\}/);
 	assert.match(panel, /removeFromLibraryConfirmMessage/);
 	assert.match(panel, /removeFromLibraryToastMessage/);

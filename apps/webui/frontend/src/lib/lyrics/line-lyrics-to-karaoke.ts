@@ -36,6 +36,7 @@ export function karaokeTrackFromLineLyrics(lineLyrics: TrackLyrics): KaraokeTrac
 		});
 	}
 	return {
+		available: true,
 		words,
 		lines,
 		verdict: {

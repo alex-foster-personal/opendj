@@ -30,6 +30,9 @@
 	}
 </script>
 
+<!-- The read-only marker wraps the header AND its child rows: they render as
+     siblings, so a marker on the header alone leaves every child unmarked. -->
+<div class="subtree" data-menu-target="tree-readonly">
 <div
 	class="row folder"
 	data-testid="playlist-recently-deleted"
@@ -80,8 +83,12 @@
 		{/each}
 	{/if}
 {/if}
+</div>
 
 <style>
+	.subtree {
+		display: contents;
+	}
 	.row {
 		display: flex;
 		align-items: center;

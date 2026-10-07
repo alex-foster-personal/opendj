@@ -89,6 +89,105 @@ def imported_packages(text: str, where: str) -> set[str]:
     return {".".join(module.split(".")[:2]) for module in imported_modules(text, where)}
 
 
+_TYPING_MODULES = ("typing", "typing_extensions")
+
+
+def _names_bound_otherwise(tree: ast.AST) -> set[str]:
+    """Every name bound by anything but an import from `typing`: an assignment or loop
+    target, a parameter, a def or class, or an import from any other module."""
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+            bound.add(node.id)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+        elif isinstance(
+            node, ast.ExceptHandler | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        ) and node.name:
+            bound.add(node.name)
+        elif isinstance(node, ast.ImportFrom) and node.module not in _TYPING_MODULES:
+            bound.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            bound.update(
+                alias.asname or alias.name.partition(".")[0]
+                for alias in node.names
+                if alias.name not in _TYPING_MODULES
+            )
+    return bound
+
+
+def _type_checking_only(tree: ast.AST) -> set[int]:
+    """The ids of every node under an `if TYPE_CHECKING:` body. Round 12.
+
+    An import that only exists for an annotation is not something a test can fail through:
+    `TYPE_CHECKING` is False at runtime, the name is never bound, and the caller that passes
+    the real object in is the module carrying the runtime edge (its own imports are read).
+    import-linter has the same knob, `exclude_type_checking_imports`. Two of the seven edges
+    holding the scope cycle together (`cloud` and `adapters` to `engine_core`) were this shape.
+
+    Only the typing sentinel qualifies: a bare name must be imported from `typing` (or
+    `typing_extensions`) in this module, and an attribute must hang off one of those modules
+    or an alias of them. `if feature.TYPE_CHECKING:` and a local `TYPE_CHECKING = True` are
+    runtime flags whose imports execute, so they stay edges (Codex on #3830). Scope is not
+    tracked: a name bound any other way anywhere in the module (assignment, loop target,
+    parameter, def, another import) stops being the sentinel everywhere, which errs toward
+    keeping an edge (Sol on #3830).
+    """
+    sentinel_names: set[str] = set()
+    typing_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in _TYPING_MODULES:
+            sentinel_names.update(
+                alias.asname or alias.name for alias in node.names if alias.name == "TYPE_CHECKING"
+            )
+        elif isinstance(node, ast.Import):
+            typing_aliases.update(
+                alias.asname or alias.name for alias in node.names if alias.name in _TYPING_MODULES
+            )
+    rebound = _names_bound_otherwise(tree)
+    sentinel_names -= rebound
+    typing_aliases -= rebound
+    hidden: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        is_flag = (isinstance(test, ast.Name) and test.id in sentinel_names) or (
+            isinstance(test, ast.Attribute)
+            and test.attr == "TYPE_CHECKING"
+            and isinstance(test.value, ast.Name)
+            and test.value.id in typing_aliases
+        )
+        if is_flag:
+            hidden.update(id(inner) for stmt in node.body for inner in ast.walk(stmt))
+    return hidden
+
+
+def _imported_names(text: str, where: str) -> set[str]:
+    """Every dotted name a module imports, in FULL, outside `if TYPE_CHECKING:` blocks."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise PlanError(f"cannot parse {where}: {exc}") from None
+    hidden = _type_checking_only(tree)
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if id(node) in hidden:
+            continue
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            base = _relative_base(where, node.level) if node.level else ""
+            module = f"{base}.{node.module}" if base and node.module else (base or node.module)
+            if not module:
+                continue
+            # `from apps import engine_core` names the package in the ALIAS, not the module.
+            found.update(f"{module}.{alias.name}" for alias in node.names)
+            found.add(module)
+    return {part for part in found if "." in part}
+
+
 def imported_modules(text: str, where: str, top_packages: tuple[str, ...] = _TOP_PACKAGES) -> set[str]:
     """Every dotted module name under `top_packages` (default `apps`, `scripts`, `ops`) a
     module imports, read with the AST and returned in FULL. The seam selector also passes
@@ -103,24 +202,18 @@ def imported_modules(text: str, where: str, top_packages: tuple[str, ...] = _TOP
     A file that does not parse RAISES rather than returning an empty set: no imports found
     and could not look are the same value, and the second one must never narrow a plan.
     """
-    try:
-        tree = ast.parse(text)
-    except SyntaxError as exc:
-        raise PlanError(f"cannot parse {where}: {exc}") from None
-    found: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                found.add(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            base = _relative_base(where, node.level) if node.level else ""
-            module = f"{base}.{node.module}" if base and node.module else (base or node.module)
-            if not module:
-                continue
-            # `from apps import engine_core` names the package in the ALIAS, not the module.
-            found.update(f"{module}.{alias.name}" for alias in node.names)
-            found.add(module)
-    return {part for part in found if part.split(".")[0] in top_packages and "." in part}
+    return {p for p in _imported_names(text, where) if p.split(".")[0] in top_packages}
+
+
+def imported_test_helpers(text: str, where: str) -> set[str]:
+    """The `tests.*` modules a pytest input imports, in full. Round 12.
+
+    The other direction of the same reader: who CONSUMES a support module. A global helper
+    imported only by test modules that run in every plan carries no scope, because the scopes
+    it imports are exercised in every plan already; `helper_carried_scopes` asks this to tell
+    that helper apart from one a scope-owned suite or another helper reaches.
+    """
+    return {p for p in _imported_names(text, where) if p.split(".")[0] == "tests"}
 
 
 def mentioned_strings(text: str, where: str) -> set[str]:

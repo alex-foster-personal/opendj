@@ -88,6 +88,32 @@ test('shift-click range across duplicate copies selects all three orders', () =>
 	assert.deepEqual(pane.selected_ids, ['dup', 'other']);
 });
 
+test('cmd-click names tracks from the rows shown, not the pane playlist rows', () => {
+	// A whole-collection search shows its own rows over the same pane: the
+	// selection must name the search hits, which bulk edit and the context menu
+	// read, not whatever playlist row shares the order.
+	const pane = makePane([
+		{ stable_id: 'playlist-1', order: 1 },
+		{ stable_id: 'playlist-2', order: 2 }
+	]);
+	const shown = [
+		{ stable_id: 'hit-1', order: 1 },
+		{ stable_id: 'hit-2', order: 2 }
+	];
+	selection.applySelect(pane, 'hit-1', false, false, shown, 1);
+	selection.applySelect(pane, 'hit-2', true, false, shown, 2);
+	assert.deepEqual(pane.selected_ids, ['hit-1', 'hit-2']);
+	assert.deepEqual(pane.selected_orders, [1, 2]);
+});
+
+test('cmd-click with no shown rows passed still reads the pane rows', () => {
+	// Control: the ordinary playlist path is unchanged.
+	const pane = makePane(dupRows);
+	selection.applySelect(pane, 'other', false, false, [], 2);
+	selection.applySelect(pane, 'dup', true, false, [], 3);
+	assert.deepEqual(pane.selected_ids, ['other', 'dup']);
+});
+
 test('master highlight uses first matching order only', () => {
 	assert.equal(selection.masterHighlightOrder(dupRows, 'dup'), 1);
 	const masterOrder = selection.masterHighlightOrder(dupRows, 'dup');

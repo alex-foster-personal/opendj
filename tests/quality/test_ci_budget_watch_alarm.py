@@ -487,30 +487,19 @@ def test_the_alert_step_names_the_hosted_state() -> None:
 #
 # The reduce lives entirely inside a --jq expression, invisible to the title/month
 # tests above (they always start from an issue with no history, so `existing` is
-# empty and the reduce never runs). This exercises it directly against a comment
-# history that mixes a WARN comment in among BLIND ones, which is the case the
-# reduce exists to get right: a human or a measured month breaks the streak, an
-# unbroken run of BLIND markers does not.
+# empty and the reduce never runs). This runs the shipped expression, read out of
+# the step, through real jq against a comment history that mixes a WARN comment
+# in among BLIND ones, which is the case the reduce exists to get right: a human
+# or a measured month breaks the streak, an unbroken run of BLIND markers does
+# not. No stand-in `gh`: the expression itself is the production code under test.
 
-_GH_STUB_WITH_HISTORY = """#!/usr/bin/env bash
-set -euo pipefail
-case "$1 $2" in
-  "issue list")
-    printf '%s' "$EXISTING_ISSUE"
-    ;;
-  "issue view")
-    # args end with: ... --json comments --jq '<expr>' -- take the last one.
-    jq "${!#}" "$COMMENTS_JSON"
-    ;;
-  "issue comment")
-    cp "$5" "$COMMENT_OUT"
-    ;;
-  *)
-    echo "unhandled mock gh invocation: $*" >&2
-    exit 1
-    ;;
-esac
-"""
+_STREAK_REDUCE_RE = re.compile(r"--json comments --jq '(?P<expr>.*?)'\)", re.DOTALL)
+
+
+def _streak_reduce_expression() -> str:
+    match = _STREAK_REDUCE_RE.search(_step(_workflow(), ALERT_STEP)["run"])
+    assert match, "the streak reduce moved; this test reads it from the shipped alert step"
+    return match.group("expr")
 
 
 @pytest.mark.skipif(
@@ -527,31 +516,55 @@ def test_the_streak_count_breaks_on_a_non_blind_comment(tmp_path: Path) -> None:
         {"body": "<!-- ci-budget-watch:blind -->third blind report, newest"},
     ]
     comments_json = tmp_path / "comments.json"
-    comments_json.write_text(json.dumps({"comments": comments}))
-    comment_out = tmp_path / "comment.md"
+    comments_json.write_text(json.dumps({"comments": comments}), encoding="utf-8", newline="\n")
 
-    script = _step(_workflow(), ALERT_STEP)["run"]
-    gh_stub = tmp_path / "gh"
-    gh_stub.write_text(_GH_STUB_WITH_HISTORY)
-    gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PATH": f"{tmp_path}:{os.environ['PATH']}",
-        "EXISTING_ISSUE": "692",
-        "COMMENTS_JSON": str(comments_json),
-        "COMMENT_OUT": str(comment_out),
-        "GH_TOKEN": "x",
-        "LEDGER_OUTCOME": "failure",
-        "STATE": "",
-        "PCT": "",
-        "USED": "",
-        "LIMIT": "",
-        "MONTH": "2026-07",
-        "MONTH_INPUT": "",
-    }
-    subprocess.run(["bash", "-c", script], check=True, cwd=tmp_path, env=env, timeout=30)
+    jq = shutil.which("jq")
+    assert jq is not None
+    prior = subprocess.run(
+        [jq, _streak_reduce_expression(), str(comments_json)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
 
-    body = comment_out.read_text()
     # Newest-first: third (blind, count=1), second (blind, count=2), WARN (stop).
     # The oldest blind comment sits behind the WARN one and must not be counted.
-    assert "3 consecutive blind report(s)" in body, body
+    assert prior == "2", prior
+    script = _step(_workflow(), ALERT_STEP)["run"]
+    assert "streak=$((prior + 1))" in script, "this run's own report must count as one more"
+    assert "${streak} consecutive blind report(s)" in script
+
+
+# ----- the reused month issue: retitled, then commented --------------------------
+
+
+def _reused_issue_branch() -> str:
+    """The shipped bash that runs when the month already has an open issue."""
+    script = _step(_workflow(), ALERT_STEP)["run"]
+    opener = 'if [[ -n "$existing" ]]; then'
+    assert script.count(opener) == 2, "expected the streak lookup and the reuse branch"
+    return script.rsplit(opener, 1)[1].split("\nelse\n", 1)[0]
+
+
+def test_a_reused_month_issue_is_retitled_before_the_reading_is_posted() -> None:
+    """Found live Mon 5 Oct 2026: #4569 stayed titled "CI budget BLIND: 2026-10
+    cannot measure spend" under six HOSTED readings (147% to 227% of the
+    allowance), because a reused issue only ever received a comment. The title
+    is the headline anyone scanning issues reads, so the reuse branch must set it
+    to this run's state, and must do so before posting the reading."""
+    branch = _reused_issue_branch()
+    edit = 'gh issue edit "$existing" --title "$title"'
+    comment = 'gh issue comment "$existing" --body-file "$body_file"'
+    assert edit in branch, f"the reused issue is never retitled:\n{branch}"
+    assert comment in branch, f"the reading is no longer posted:\n{branch}"
+    assert branch.index(edit) < branch.index(comment), "retitle before commenting"
+
+
+def test_every_alerting_state_sets_the_title_the_reuse_branch_reads() -> None:
+    """Both state branches must assign `title`; under `set -u` an unassigned one
+    would fail the step instead of retitling."""
+    script = _step(_workflow(), ALERT_STEP)["run"]
+    assert 'title="CI budget BLIND: ${MONTH} cannot measure spend (${streak} blind report(s) on this issue)"' in script
+    assert 'title="CI budget ${STATE}: ${MONTH} at ${PCT%.*}% of included minutes"' in script
+    assert script.startswith("set -euo pipefail"), "the step must fail fast on a failed gh call"

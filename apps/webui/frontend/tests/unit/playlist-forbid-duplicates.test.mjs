@@ -78,8 +78,15 @@ test('TreeContextMenu wires forbid-duplicates checkbox', () => {
 		new URL('../../src/lib/components/rb/browser/TreeContextMenu.svelte', import.meta.url),
 		'utf8'
 	);
-	assert.match(src, /id: 'forbid-duplicates'/);
-	assert.match(src, /Forbid duplicates/);
+	// W28: the item and its checked state come from the registry.
+	const registry = readFileSync(
+		new URL('../../src/lib/context-menu/registry.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(registry, /id: 'forbid-duplicates'/);
+	assert.match(registry, /Forbid duplicates/);
+	assert.match(src, /forbidDuplicates: node\.forbid_duplicates === true/);
+	assert.match(src, /'forbid-duplicates': \(\) => onforbidduplicates\?\.\(node\)/);
 });
 
 test('ContextMenu supports menuitemcheckbox via checked', () => {

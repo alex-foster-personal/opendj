@@ -40,6 +40,8 @@ const ENTER_ATTRS = new Set(['onpointerenter', 'onmouseenter']);
  */
 const CARD_HOSTS = new Set([
 	'lib/components/rb/TopBar.svelte#ap-wrap',
+	// LYR-12: LYR's hover menu (its explainer plus the Stage button).
+	'lib/components/rb/TopBar.svelte#lyr-wrap',
 	'lib/components/rb/AnalysisSourceToggle.svelte#src-wrap',
 	'lib/components/rb/RefreshAnalysisButton.svelte#wrap',
 	'lib/components/rb/PerfMeters.svelte#perf-meters-root',

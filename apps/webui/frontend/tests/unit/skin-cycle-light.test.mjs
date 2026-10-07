@@ -123,6 +123,7 @@ test('if the light skin misses a token mono-dev or the base palette defines then
 
 test('if the light skin text or indicator pairs fail contrast then readouts are illegible', () => {
 	const tokens = cc.parseColorTokens(THEME, "html[data-skin='light'] .perf-root");
-	assert.equal(tokens['rb-bg'], '#f7f3eb', 'light ground from the claude.ai Light Pass');
+	// CHROME-21: Gothic flipped, a neutral near-white ground (no warm cast).
+	assert.equal(tokens['rb-bg'], '#f5f5f5', 'light ground is Gothic flipped');
 	assert.deepEqual(cc.validateScheme(tokens), []);
 });

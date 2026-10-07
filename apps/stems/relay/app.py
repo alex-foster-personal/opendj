@@ -24,10 +24,11 @@ The client already treats a lost separation as a failed track and re-runs it,
 so the failure mode is a re-separation, not a corrupt bundle. Swap
 ``_Separations`` and ``RateCap`` for a shared store when this outgrows that.
 
-Run it:
+Run it (the Modal backend is supplied by the entrypoint in ``scripts/``; this
+module's factory refuses to assemble without one):
     MDT_STEMS_RELAY_GOOGLE_CLIENT_ID=... \\
     MDT_STEMS_RELAY_ALLOWLIST=tester@example.com,other@example.com \\
-    uv run --with modal uvicorn apps.stems.relay.app:build_app --factory
+    uv run --with modal uvicorn --factory scripts.stems_relay_app:build_relay_app
 
 -Claude
 """
@@ -134,44 +135,10 @@ class _Separations:
         return row
 
 
-# The Modal call, isolated behind one callable so the relay can be assembled
-# and tested without importing modal at all. The default is the real thing.
+# The separation call, isolated behind one callable so the relay can be assembled
+# and tested without importing modal at all. The real one is injected by the
+# entrypoint, scripts/stems_relay_app.py.
 SeparationBackend = Callable[[bytes, str, str, str], dict[str, Any]]
-
-
-def modal_backend(
-    audio_bytes: bytes, stable_id: str, source_name: str, tier_key: str
-) -> dict[str, Any]:
-    """Separate one track on Modal, with THIS process's credential.
-
-    The import is function-local because ``modal`` is not a repo dependency
-    and the relay is deployed with ``uv run --with modal``; importing it at
-    module scope would make the whole module unimportable anywhere else,
-    including in the tests that check the gates.
-    """
-    import scripts.modal_vocal_farm as farm
-    from apps.stems.tiers import get_tier
-
-    preset = farm._resolve_preset(get_tier(tier_key).preset_tag, False)
-    with farm.app.run():
-        result = farm.separate_track.remote(
-            audio_bytes,
-            stable_id,
-            source_name,
-            preset.model,
-            preset.overlap,
-            preset.shifts,
-            "local",  # return the stem bytes to this process
-            source_name,
-            preset.stamp(),
-            "",
-            farm.DEFAULT_STEM_CODEC,
-        )
-    if result.get("error"):
-        raise RuntimeError(result["error"])
-    result["preset"] = preset.stamp()
-    result["model"] = {"name": preset.model, "version": farm.DEMUCS_VERSION}
-    return result
 
 
 def resolve_caller(
@@ -448,9 +415,17 @@ def build_app(
     """Assemble the relay. Every gate is required; none can be turned off.
 
     The keyword arguments exist so tests can inject a verifier and a backend,
-    NOT so a deployment can omit them: leaving them unset resolves the real
-    ones from the environment and raises if the environment is incomplete.
+    NOT so a deployment can omit them: a verifier left unset resolves the real
+    one from the environment and raises if the environment is incomplete. The
+    backend has no default here at all: the Modal call lives in
+    ``scripts/stems_relay_app.py``, the entrypoint a deployment launches, so
+    this package never imports ``scripts`` (round 12 of the SMARTEST-CI counter).
     """
+    if backend is None:
+        raise RuntimeError(
+            "the stems relay needs a separation backend; launch it through "
+            "scripts.stems_relay_app, which supplies the Modal one"
+        )
     resolved_allowlist = allowlist if allowlist is not None else load_allowlist()
     resolved_verifier = verifier or GoogleTokenInfoVerifier(
         os.environ.get(CLIENT_ID_ENV, "")
@@ -461,7 +436,7 @@ def build_app(
             verifier=resolved_verifier,
             allowlist=resolved_allowlist,
             rate_cap=rate_cap or RateCap(),
-            backend=backend or modal_backend,
+            backend=backend,
             pool=ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SEPARATIONS),
             store=_Separations(),
         )
@@ -483,5 +458,4 @@ __all__ = [
     "SeparationBackend",
     "build_app",
     "build_router",
-    "modal_backend",
 ]

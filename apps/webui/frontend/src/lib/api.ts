@@ -354,6 +354,14 @@ export async function listSyncSnapshots(
 	);
 }
 
+type SyncSnapshotCreateBody = components['schemas']['SyncSnapshotIn'];
+
+/** PAIR-02's durable LV1 snapshots (`/api/v1/pairings/sync-snapshots`, POST).
+ * Append-only: every Capture adds one, and Reload sync replays the newest. */
+export async function createSyncSnapshot(body: SyncSnapshotCreateBody): Promise<SyncSnapshot> {
+	return unwrap(api.POST('/api/v1/pairings/sync-snapshots', { body }));
+}
+
 /** PAIR-02's durable LV2 alignment marks (`/api/v1/pairings/alignments`, POST). */
 export async function createAlignment(body: AlignmentCreateBody): Promise<Alignment> {
 	return unwrap(api.POST('/api/v1/pairings/alignments', { body }));

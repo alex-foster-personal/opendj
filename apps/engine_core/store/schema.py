@@ -79,6 +79,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cache
 
+from apps.adapters.rekordbox.sidecar_schema import (
+    VENDOR_SIDECAR_DDL,
+    VENDOR_SIDECAR_TABLES,
+    ensure_vendor_sidecar_tables,
+)
 from apps.analysis.queue_stale import STALE_TABLES_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
 from apps.shared.pairings.schema_sql import (
@@ -279,7 +284,7 @@ _STATE_CORE: tuple[str, ...] = (
 # ==========================================================================
 # DOMAIN: sync infrastructure (CLOUDSYNC hub sync, legacy v6)
 # Legacy source: apps/shared/state/schema.py  (_V6, amended per
-# specs/design_decision_08.md: per-machine track_locations identity, spoke
+# (private path): per-machine track_locations identity, spoke
 # local_changelog). hub_changelog and local_changelog keep INTEGER
 # AUTOINCREMENT keys because both are machine-local by contract (ADR 04
 # sync set) and never cross machines.
@@ -705,7 +710,7 @@ _LYRICS: tuple[str, ...] = (
 # ==========================================================================
 # DOMAIN: feedback -- one synced row per in-app feedback comment pin
 # Legacy source: apps/shared/state/migrations_v12.py (_V12, FBSYNC-01,
-# docs/decisions/ADR-0013-feedback-pin-cloudsync.md). Reproduced verbatim
+# (private path)). Reproduced verbatim
 # apart from ``IF NOT EXISTS``, for the adoption reason the lyrics domain
 # above spells out.
 # ==========================================================================
@@ -945,7 +950,7 @@ _SETS: tuple[str, ...] = (
 # ==========================================================================
 # DOMAIN: daemon settings (key/value)
 # Legacy source: apps/voice/settings.py (_SCHEMA, its own
-# data/voice/settings.sqlite file)
+# (private path) file)
 # ==========================================================================
 
 _SETTINGS: tuple[str, ...] = (
@@ -961,7 +966,7 @@ _SETTINGS: tuple[str, ...] = (
 # ==========================================================================
 # DOMAIN: dedup + tag unification
 # Legacy source: apps/dedup/schema.py (SCHEMA_SQL / ensure_schema, its own
-# data/dedup/phase7.sqlite fallback file)
+# (private path) fallback file)
 # ==========================================================================
 
 _DEDUP: tuple[str, ...] = (
@@ -1389,40 +1394,9 @@ _ADOPTION_BACKFILL: tuple[str, ...] = (
 )
 
 
-# ==========================================================================
-# VENDOR SIDECAR -- declared here so the DDL has one home, but NOT part of
-# the state-DB ladder: legacy creates these inside the rekordbox vendor DB
-# (master.db), not state.db.
-# Legacy source: apps/webui/server/rb_vendor.py (_ensure_reversal_tables)
-# ==========================================================================
-
-VENDOR_SIDECAR_DDL: tuple[str, ...] = (
-    "CREATE TABLE IF NOT EXISTS rb_hot_cue_reversal ("
-    "ID TEXT PRIMARY KEY, ContentID TEXT NOT NULL, Kind INTEGER NOT NULL, "
-    "PreimageJson TEXT, PostRevision TEXT NOT NULL, CreatedAt TEXT NOT NULL, "
-    "ConsumedAt TEXT)",
-    "CREATE TABLE IF NOT EXISTS rb_hot_cue_slot_revision ("
-    "ContentID TEXT NOT NULL, Kind INTEGER NOT NULL, Generation INTEGER NOT NULL, "
-    "PRIMARY KEY (ContentID, Kind))",
-)
-
-VENDOR_SIDECAR_TABLES: tuple[str, ...] = (
-    "rb_hot_cue_reversal",
-    "rb_hot_cue_slot_revision",
-)
-
-
-def ensure_vendor_sidecar_tables(conn: sqlite3.Connection) -> None:
-    """Create the rekordbox-side hot-cue reversal tables. Idempotent.
-
-    ``conn`` must be the VENDOR database (rekordbox ``master.db``), never the
-    engine state DB -- these rows are keyed by rekordbox ContentID and only
-    mean anything next to the vendor tables they reverse.
-    """
-    for stmt in VENDOR_SIDECAR_DDL:
-        conn.execute(stmt)
-
-
+# The vendor sidecar DDL lives with the adapter that owns rekordbox master.db
+# (apps.adapters.rekordbox.sidecar_schema, round 12); re-exported here so the
+# store package keeps one import surface.
 # --- runner ---------------------------------------------------------------
 
 
@@ -1651,7 +1625,7 @@ def _track_locations_has_v6_shape(conn: sqlite3.Connection) -> bool:
     """True when track_locations carries the v6 rebuild's shape.
 
     Legacy v6 REBUILDS the table: integer autoincrement id becomes
-    location_id TEXT, and machine_id joins per specs/design_decision_08.md.
+    location_id TEXT, and machine_id joins per (private path).
     Adoption only creates missing objects, so a pre-v6 shape must be refused,
     exactly like the v2/v3 rebuilds above.
     """

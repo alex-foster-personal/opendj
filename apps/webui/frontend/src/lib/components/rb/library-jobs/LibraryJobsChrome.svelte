@@ -106,7 +106,10 @@
 	.rb-pending-chip {
 		display: inline-flex;
 		align-items: center;
-		height: 16px;
+		/* 13px, not 16px: centered in the 17px bottom bar, a 16px chip sat
+		   0.5px under the bar's border-top and the two lines read as one 2px
+		   line. 13px leaves 2px of panel above and below (UIBORDER-02). */
+		height: 13px;
 		padding: 0 6px;
 		border: 1px solid #e8973e;
 		background: #2a2218;

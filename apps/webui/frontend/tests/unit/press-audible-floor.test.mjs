@@ -600,7 +600,9 @@ test('a Beat Sync follower start carries the press that caused it', () => {
 		body.indexOf('async play(deck: DeckId, pressT0Ms?: number'),
 		body.indexOf('async pause(deck: DeckId, pressT0Ms?: number)')
 	);
-	const followerStarts = playBody.match(/await _synchronizeFollowers\([^)]*\[deck\], \{[\s\S]*?\}\);/g) ?? [];
+	// PLAY-27: every follower start now goes through the one joinPhase helper in play().
+	const followerStarts = playBody.match(/_synchronizeFollowers\([^)]*\[deck\], \{[\s\S]*?\}\)/g) ?? [];
+	assert.doesNotMatch(playBody, /await _synchronizeFollowers\(/, 'every join in play() must route through joinPhase');
 	assert.ok(followerStarts.length > 0, 'play() must still have a Beat Sync follower branch');
 	for (const call of followerStarts) {
 		assert.ok(

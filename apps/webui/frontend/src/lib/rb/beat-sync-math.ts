@@ -1352,6 +1352,8 @@ export interface PlannedFollower<D extends number> {
 export interface FailedFollower<D extends number> {
 	deck: D;
 	message: string;
+	/** PLAY-27: the red notice for this deck; the planner's reason when absent. */
+	notice?: string;
 }
 
 /**
@@ -1391,17 +1393,14 @@ export function beatSyncOutcomeNotices<D extends number>(
 			}))
 		});
 	}
-	if (planFailed.length > 0) {
-		const skipped = planFailed.map((f) => f.deck).join(',');
+	// PLAY-27: one red notice per follower that could not lock, in the same
+	// words as a single refused follower; that deck plays on unsynced.
+	for (const f of planFailed) {
 		notices.push({
-			message: `Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
+			message: f.notice ?? `Beat Sync cannot lock deck ${f.deck}: ${f.message}; playing unsynced`,
 			kind: 'error',
-			groupKey: `beat-sync-followers:${master}`,
-			events: planFailed.map((f) => ({
-				kind: 'beat-sync-skip' as const,
-				detail: f.message,
-				deck: f.deck
-			}))
+			groupKey: `beat-sync-unlocked:${master}:${f.deck}`,
+			events: [{ kind: 'beat-sync-skip' as const, detail: f.message, deck: f.deck }]
 		});
 	}
 	return notices;

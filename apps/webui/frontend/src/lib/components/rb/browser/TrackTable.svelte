@@ -336,8 +336,9 @@
 	// GRIDFLAG-02: the beatgrid verdicts on the rows are stored server-side.
 	// Ask once per page session for them to be brought up to date; the engine
 	// skips every unchanged grid and announces any change on library.changed.
+	// Library mode starts no worker (LIBWS-03), and the scan is one.
 	$effect(() => {
-		void ensureGridQualityScan();
+		if (!libraryMode) void ensureGridQualityScan();
 	});
 
 	/** GRIDFLAG-04: hide or restore one row's beatgrid flag (a persisted user
@@ -358,6 +359,7 @@
 
 	let {
 		provider,
+		libraryMode = false,
 		selectedIds,
 		selectedOrders,
 		loadedIds,
@@ -486,7 +488,7 @@
 		 * is coming to release it, so the caller must release it itself. */
 		onloadconfirmcancelled?: (deck: DeckId, reservation: number) => void;
 		/** Preview strip click: 0..1 ratio along the track. */
-		onpreviewseek?: (row: BrowserRow, ratio: number) => void;
+		onpreviewseek?: ((row: BrowserRow, ratio: number) => void) | undefined;
 		onrate: (row: BrowserRow, next: number) => void;
 		onrowvisible: (row: BrowserRow) => void;
 		/** Remove this row's membership position from the playlist. */
@@ -523,6 +525,8 @@
 		bodyOverlay?: Snippet;
 		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
 		compatibleReferenceKey?: string | null;
+		/** LIBWS-03: mounted in the Library workspace, which has no decks. */
+		libraryMode?: boolean;
 	} = $props();
 
 	const keyCompatRef = $derived(
@@ -721,6 +725,11 @@
 			fromKeyboard: boolean;
 		}
 	): void {
+		// LIBWS-03: no deck to confirm in Library mode; the load path says why.
+		if (libraryMode) {
+			onloadrow(row, null);
+			return;
+		}
 		const picked = onpickdoubledeck?.(row, {
 			shift: gesture.shift,
 			replace: gesture.replace

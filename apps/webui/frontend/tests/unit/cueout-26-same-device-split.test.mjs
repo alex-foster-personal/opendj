@@ -3,7 +3,7 @@
 // [if] MAIN and CUE are genuinely different devices [then] two-output routing is kept with no split, [else stop]
 // [if] the shell says an output is muted by the jack [then] it is never auto-picked and an explicit MAIN pick of it is refused, [else stop]
 // [if] the shell releases a MAIN pin [then] the page clears the pin, says why, and re-plans, [else stop]
-// [if] split cue runs because of one shared output [then] the TopBar shows "Split cue: master L / cue R (same device ...)", [else stop]
+// [if] split cue runs because of one shared output [then] the TopBar shows a badge whose tooltip says "Split cue: master L / cue R (same device ...)" (CUEOUT-28 made the visible text compact), [else stop]
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

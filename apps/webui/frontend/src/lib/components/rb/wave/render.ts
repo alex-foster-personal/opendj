@@ -503,6 +503,28 @@ function _buildBandImage(
 	return canvas;
 }
 
+/** The deck row's band shading for a whole waveform across `w` px, with no
+ * cache, overlays or playhead: the Settings waveform preview paints through
+ * this (W15, Tue 6 Oct 2026), so the thumbnail and the deck share ONE
+ * shading path for every design x palette and cannot drift. `topPx` is the
+ * empty band above the bands; the deck row reserves MARKER_BAND_PX there for
+ * cue markers, a thumbnail passes 0. Blocks use the deck default for a
+ * rekordbox-analysed waveform: true-peak curve, default variant, mirrored. */
+export function drawWaveBands(
+	ctx: CanvasRenderingContext2D,
+	waveform: AnlzWaveform,
+	w: number,
+	h: number,
+	palette: BandPalette,
+	design: WaveformDesign,
+	topPx: number = MARKER_BAND_PX
+): void {
+	_drawBands(ctx, waveform, w, 1, w, h, palette, design, undefined, topPx);
+}
+
+/** The palette entries the band painters read. */
+export type BandPalette = Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>;
+
 /** Build the transparent full-track band image once, never per animation frame. */
 function _drawBands(
 	ctx: CanvasRenderingContext2D,
@@ -511,15 +533,16 @@ function _drawBands(
 	durS: number,
 	w: number,
 	h: number,
-	palette: WavePalette,
+	palette: BandPalette,
 	design: WaveformDesign,
-	blocks: BlocksSpec = { curve: 'true-peak', variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true }
+	blocks: BlocksSpec = { curve: 'true-peak', variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true },
+	topPx: number = MARKER_BAND_PX
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
 	if (n === 0) return;
-	const centerY = MARKER_BAND_PX + (h - MARKER_BAND_PX) / 2;
-	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
+	const centerY = topPx + (h - topPx) / 2;
+	const halfH = (h - topPx) / 2 - 1;
 	const mono = design === 'mono' || waveform.kind === 'mono';
 	const line = design === 'line';
 	const norms = bandNormsFor(waveform);
@@ -536,7 +559,7 @@ function _drawBands(
 		const heights = blockHeights(bands, w, divisors, blocks.variant, blocksPerBeat, blocks.curve);
 		const shares = mono ? null : blockBandShares(bands, w, divisors);
 		if (blocks.mirrored) paintStackedBlocks(ctx, heights, shares, centerY, halfH, palette, true);
-		else paintStackedBlocks(ctx, heights, shares, h, h - MARKER_BAND_PX - 1, palette, false);
+		else paintStackedBlocks(ctx, heights, shares, h, h - topPx - 1, palette, false);
 		return;
 	}
 
@@ -594,7 +617,10 @@ function _drawBands(
 	if (line) {
 		ctx.strokeStyle = palette.mono;
 		ctx.lineWidth = 1.5;
-		ctx.stroke(lowPath);
+		// linePath, not lowPath: the line loop never adds to lowPath, so the
+		// deck's 'line' design stroked an empty path and drew nothing (found
+		// by the W15 preview parity test, Tue 6 Oct 2026).
+		ctx.stroke(linePath);
 		return;
 	}
 	if (mono) {

@@ -115,12 +115,13 @@ test('if follower sync skips repeat while dragging then they use the same counte
 	// the message and its grouping key as data. Both ends are checked, because
 	// a key that is set but never passed to pushToast groups nothing.
 	const math = readFileSync(`${root}/src/lib/rb/beat-sync-math.ts`, 'utf8');
+	// PLAY-27: one red notice per unlocked follower, grouped per master and deck.
 	const skippedNotice = math.slice(
-		math.indexOf('`Beat Sync skipped deck(s)'),
-		math.indexOf('events: planFailed.map')
+		math.indexOf('for (const f of planFailed) {'),
+		math.indexOf("events: [{ kind: 'beat-sync-skip'")
 	);
-	assert.ok(skippedNotice.length > 0, 'the skipped-follower notice must still exist');
-	assert.match(skippedNotice, /`beat-sync-followers:\$\{master\}`/);
+	assert.ok(skippedNotice.length > 0, 'the unlocked-follower notice must still exist');
+	assert.match(skippedNotice, /`beat-sync-unlocked:\$\{master\}:\$\{f\.deck\}`/);
 
 	const engine = readFileSync(`${root}/src/lib/rb/audio-engine.svelte.ts`, 'utf8');
 	assert.match(

@@ -28,6 +28,7 @@ import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-t
 import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
+import { artworkUrl } from './artwork-url';
 import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
 import { beginStemWork } from './stem-decode-policy';
 import type { StemFetchProgress } from './stem-types';
@@ -998,12 +999,8 @@ export async function restoreHotCue(
 	);
 }
 
-/** URL for GET /tracks/{sid}/artwork - use directly as <img src>. The
- * backend 404s ARTWORK_NOT_FOUND; consumers render the gray placeholder
- * slate on img error, never a fabricated image. */
-export function artworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
-	return `${RB_API_BASE}${trackApiPath(stable_id, `/artwork?size=${size}`)}`;
-}
+/** URL for GET /tracks/{sid}/artwork: see artwork-url.ts, its leaf home. */
+export { artworkUrl };
 
 /** Artwork for a loaded deck: the same chain as {@link artworkUrl}, and when
  * the track has no local artwork (rekordbox, embedded picture, folder image)

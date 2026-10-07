@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from scripts.server_owner_guard import process_start_time
+from tests.support.process_identity import process_start_time
 
 GONE_WITHIN_S = 5.0
 

@@ -98,7 +98,7 @@ function engineHealth() {
 	return {
 		status: 'ok',
 		state_db: {
-			path: 'data/state/state.db',
+			path: '(private path)',
 			tracks: 1,
 			playlists: 1,
 			pairings: 0,
@@ -236,6 +236,64 @@ test('a malformed frame is dropped and reported, never spread into the list', as
 	assert.ok(
 		errors.some((line) => line.includes('no string id')),
 		'a frame with no id must be reported, not silently appended'
+	);
+});
+
+// ------------------------------------------- hydrate racing live frames
+
+/** A fetch whose response the test releases, so a frame can land mid-GET. */
+function deferredFetch() {
+	let release;
+	const gate = new Promise((resolve) => (release = resolve));
+	return {
+		fetch: async () => {
+			const rows = await gate;
+			return jsonResponse(rows);
+		},
+		release: (rows) => release(rows)
+	};
+}
+
+test('a frame that lands while a hydrate GET is in flight is not rolled back by its older snapshot', async () => {
+	const fake = makeFakeBus();
+	globalThis.fetch = async () => jsonResponse([job({ id: 'import', status: 'running', progress: 0.5 })]);
+	store.attach(fake.bus, immediateBootScheduler());
+	await new Promise((resolve) => setImmediate(resolve));
+
+	const slow = deferredFetch();
+	globalThis.fetch = slow.fetch;
+	const pending = store.hydrate();
+	fake.deliver(job({ id: 'import', status: 'succeeded', progress: 1 }));
+	// The server answered before the job finished.
+	slow.release([job({ id: 'import', status: 'running', progress: 0.9 })]);
+	await pending;
+
+	assert.equal(store.jobs.length, 1);
+	assert.equal(store.jobs[0].status, 'succeeded', 'the newer frame must survive the older snapshot');
+});
+
+test('a hydrate still repairs rows no frame touched during its GET', async () => {
+	const fake = makeFakeBus();
+	globalThis.fetch = async () => jsonResponse([]);
+	store.attach(fake.bus, immediateBootScheduler());
+	await new Promise((resolve) => setImmediate(resolve));
+	// Delivered BEFORE the GET starts: the snapshot is newer and must win.
+	fake.deliver(job({ id: 'stale', status: 'running', progress: 0.2 }));
+
+	const slow = deferredFetch();
+	globalThis.fetch = slow.fetch;
+	const pending = store.hydrate();
+	fake.deliver(job({ id: 'new-mid-flight', status: 'queued', progress: 0, created_at: '2026-08-19T12:00:00.000Z' }));
+	slow.release([job({ id: 'stale', status: 'failed', progress: 0.2 })]);
+	await pending;
+
+	assert.deepEqual(
+		store.jobs.map((row) => [row.id, row.status]),
+		[
+			['new-mid-flight', 'queued'],
+			['stale', 'failed']
+		],
+		'the snapshot updates untouched rows, and a job first seen mid-GET is kept'
 	);
 });
 

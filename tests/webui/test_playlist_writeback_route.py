@@ -10,14 +10,14 @@ from contextlib import nullcontext
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.webui.server.app import create_app
-from apps.webui.server.backend import InMemoryBackend
-from apps.webui.server.playlist_writeback import (
+from apps.smartlists.playlist_writeback import (
     VendorPlaylist,
     WritebackBackup,
     WritebackConflict,
     WritebackService,
 )
+from apps.webui.server.app import create_app
+from apps.webui.server.backend import InMemoryBackend
 from apps.webui.server.routes.playlist_writeback import get_writeback_service
 
 # This module exercises live-write MECHANICS against tmp fixtures, so it runs
@@ -25,7 +25,7 @@ from apps.webui.server.routes.playlist_writeback import get_writeback_service
 # It never touches a real rekordbox target.
 pytestmark = [pytest.mark.rekordbox_writeback, pytest.mark.rb_parity]
 # Backup ids are uuid4().hex and get joined into a path under
-# data/writeback-backups, so the format is pattern-bound at the route now: a
+# (private path), so the format is pattern-bound at the route now: a
 # short label like "b1" is refused as 422 before the handler runs.
 BACKUP_ID = "b" * 32
 

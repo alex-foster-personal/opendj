@@ -189,6 +189,11 @@ export function isTrackifyRoutePath(pathname: string): boolean {
 	return pathname === '/music-player' || pathname.startsWith('/music-player/');
 }
 
+/** LIBWS-01: the Library workspace (Crate Desk) owns the whole window at `/`. */
+export function isLibraryWorkspaceRoutePath(pathname: string): boolean {
+	return pathname === '/';
+}
+
 export function parsePerformanceAudioActivationPolicy(
 	value: string | undefined
 ): PerformanceAudioActivationPolicy {

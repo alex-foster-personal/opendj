@@ -19,6 +19,7 @@ from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.asr_hallucination import servable_lyrics
 from apps.shared import audio_quality
 from apps.shared.events import publish
+from apps.shared.non_music import is_non_music
 from apps.shared.paths import STATE_DB
 from apps.shared.state import db as state_db
 from apps.shared.state import deleted_tracks
@@ -308,6 +309,13 @@ def _track_to_out(
     )
 
 
+#: LIBM-178: the listings hide rekordbox Sampler content unless asked; nothing is deleted.
+INCLUDE_NON_MUSIC_DOC = (
+    "When true, include non-music rows (rekordbox Sampler files and sample genres, "
+    "apps.shared.non_music). Default hides them and counts them in non_music_hidden."
+)
+
+
 @router.get("", response_model=TracksPage)
 def list_tracks(
     request: Request,
@@ -330,6 +338,7 @@ def list_tracks(
         False,
         description="When true, include rows with tracks.deleted_at set. Default hides them.",
     ),
+    include_non_music: bool = Query(False, description=INCLUDE_NON_MUSIC_DOC),
     cursor: str | None = None,
     limit: int = Query(200, ge=1, le=1000),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
@@ -346,22 +355,24 @@ def list_tracks(
         show_deleted=show_deleted,
     )
     page = backend.list_tracks(flt)
-    items = _listing_items(request, page.items, available)
+    items, non_music_hidden = _listing_items(request, page.items, available, include_non_music)
     # The page is validated ONCE, as a whole, and returned already rendered
     # (LIBM-137). Before, each row was built as a TrackOut, dumped, rebuilt as a
     # TrackListItemOut, and then FastAPI validated and encoded the whole page a
     # third time: 290 ms of a 590 ms page of 500 rows. ``response_model`` on the
     # decorator still documents the shape; a returned Response is sent as is.
-    page_out = TracksPage.model_validate({"items": items, "next_cursor": page.next_cursor})
+    page_out = TracksPage.model_validate(
+        {"items": items, "next_cursor": page.next_cursor, "non_music_hidden": non_music_hidden}
+    )
     return Response(
         content=page_out.model_dump_json(by_alias=True), media_type="application/json"
     )
 
 
 def _listing_items(
-    request: Request, tracks: list[Track], available: AvailableFilter
-) -> list[TrackListItemOut]:
-    """One listing row per track, in order: the shared body of /tracks and /tracks/index."""
+    request: Request, tracks: list[Track], available: AvailableFilter, include_non_music: bool
+) -> tuple[list[TrackListItemOut], int]:
+    """One listing row per music track, in order, and how many non-music rows were hidden."""
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)
     rows = rb_vendor.build_track_rows(
@@ -373,8 +384,12 @@ def _listing_items(
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
+    non_music_hidden = 0
     for track, row in zip(tracks, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
+            continue
+        if not include_non_music and is_non_music(track, row.get("genre")):
+            non_music_hidden += 1
             continue
         base = _track_to_out(
             track,
@@ -420,10 +435,12 @@ def _listing_items(
                 genre_guess=row.get("genre_guess"),
             )
         )
-    return items
+    return items, non_music_hidden
 
 
-def _index_rows(request: Request, tracks: list[Track]) -> list[dict[str, Any]]:
+def _index_rows(
+    request: Request, tracks: list[Track], include_non_music: bool = True
+) -> tuple[list[dict[str, Any]], int]:
     """One library index row per track, in order, as plain data (LIBM-172).
 
     Only the fields :class:`TrackIndexItemOut` serializes, read as a ``GET /tracks``
@@ -431,6 +448,9 @@ def _index_rows(request: Request, tracks: list[Track]) -> list[dict[str, Any]]:
     route validates every row ONCE, in one call, and serializes once: building a
     ``TrackOut``, dumping it and validating a listing row again, per row, was the
     largest pure-Python cost of the index after the disk reads.
+
+    Also returns how many non-music rows were left out (LIBM-178), none when
+    ``include_non_music``.
     """
     rows = rb_vendor.build_track_rows(
         tracks,
@@ -438,6 +458,11 @@ def _index_rows(request: Request, tracks: list[Track]) -> list[dict[str, Any]]:
         data_dir=get_library_data_dir(request),
         with_row_assets=False,
     )
+    kept = [
+        (track, row)
+        for track, row in zip(tracks, rows, strict=True)
+        if include_non_music or not is_non_music(track, row.get("genre"))
+    ]
     return [
         {
             "stable_id": track.stable_id,
@@ -475,32 +500,39 @@ def _index_rows(request: Request, tracks: list[Track]) -> list[dict[str, Any]]:
             "genre_reason": row.get("genre_reason"),
             "genre_guess": row.get("genre_guess"),
         }
-        for track, row in zip(tracks, rows, strict=True)
-    ]
+        for track, row in kept
+    ], len(tracks) - len(kept)
 
 
 #: Tracks read per backend call while the index is assembled (the backend's own cap).
 INDEX_READ_PAGE = 1000
 
 
-def track_index_body(request: Request, backend: StateBackend) -> bytes:
+def track_index_body(
+    request: Request, backend: StateBackend, include_non_music: bool = False
+) -> bytes:
     """The ``GET /tracks/index`` JSON body: plain rows, validated and serialized once.
 
     ``revision`` is read BEFORE the rows. ``TrackIndexOut`` validates the whole list in
     one call and its serializer writes the body, so field order and number formatting
-    are the model's (the golden test in tests/webui/test_track_index_body.py holds the
+    are the model's (the golden test in (private path) holds the
     bytes to the per-row model path this replaced).
     """
     revision = backend.library_revision()
     rows: list[dict[str, Any]] = []
+    non_music_hidden = 0
     cursor: str | None = None
     while True:
         page = backend.list_tracks(TrackFilter(cursor=cursor, limit=INDEX_READ_PAGE))
-        rows.extend(_index_rows(request, page.items))
+        page_rows, page_hidden = _index_rows(request, page.items, include_non_music)
+        rows.extend(page_rows)
+        non_music_hidden += page_hidden
         if page.next_cursor is None:
             break
         cursor = page.next_cursor
-    index = TrackIndexOut.model_validate({"revision": revision, "items": rows})
+    index = TrackIndexOut.model_validate(
+        {"revision": revision, "items": rows, "non_music_hidden": non_music_hidden}
+    )
     return index.model_dump_json(by_alias=True).encode()
 
 
@@ -511,6 +543,7 @@ def get_track_index(
     accept_encoding: str | None = Header(None),
     if_none_match: str | None = Header(None),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    include_non_music: bool = Query(False, description=INCLUDE_NON_MUSIC_DOC),
 ) -> Response:
     """Every library row in ONE response: the browser's local library index (LIBM-171).
 
@@ -523,8 +556,12 @@ def get_track_index(
     change made while they were read shows as a newer revision on the next
     ``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it
     answers 304, gzip when accepted.
+
+    Non-music rows (rekordbox Sampler content, LIBM-178) are left out and counted in
+    ``non_music_hidden`` unless ``include_non_music=true``. AutoPlay draws its
+    candidates from the view the browser resolves off this index, so it never sees one.
     """
-    body = track_index_body(request, backend)
+    body = track_index_body(request, backend, include_non_music)
     etag = f'"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
     headers = {"ETag": etag, "Cache-Control": "no-cache", "Vary": "Accept-Encoding"}
     # PERF-DRAIN-02: the launch's index is out, so the ahead drain's boot grace may end.

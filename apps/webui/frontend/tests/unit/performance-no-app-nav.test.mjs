@@ -28,6 +28,7 @@ const LAYOUT = source('routes/+layout.svelte');
 const TOP_BAR = source('lib/components/rb/TopBar.svelte');
 const APP_MODE = source('lib/rb/app-mode.ts');
 const SIDEBAR_NAV = source('lib/shell/sidebar-nav.ts');
+const LIBRARY_TOP_BAR = source('lib/components/library/LibraryTopBar.svelte');
 
 /** Every page the removed strip linked to, by route. */
 const FORMER_STRIP_ROUTES = ['/', '/reconcile', '/dedup', '/smartlists', '/admin'];
@@ -71,6 +72,21 @@ test('the app-shell sidebar still links every page the strip used to carry, and 
 	assert.ok(list.includes("href: '/progress-tree'"), 'sidebar must link the ledger');
 	// Negative control: the same probe reports a route the sidebar never had.
 	assert.equal(list.includes("href: '/no-such-route'"), false);
+});
+
+test('the full-bleed Crate Desk at / carries the sidebar links in its top bar (LIBWS-01)', () => {
+	// / is full-bleed (no app-shell sidebar), so the strip's destinations stay
+	// reachable from Library mode only through this menu.
+	// The links are the layout's own list (same developer-page rule), handed
+	// over as shell-nav context rather than recomputed from prefs here.
+	assert.match(LAYOUT, /setContext<ShellNav>\(SHELL_NAV_CONTEXT, \{\s*get links\(\) \{\s*return navLinks;/);
+	assert.match(LIBRARY_TOP_BAR, /const shellNav = getContext<ShellNav>\(SHELL_NAV_CONTEXT\)/);
+	assert.match(LIBRARY_TOP_BAR, /const pageLinks = \$derived\(shellNav\.links\)/);
+	assert.doesNotMatch(LIBRARY_TOP_BAR, /prefs\.svelte/);
+	assert.match(LIBRARY_TOP_BAR, /\{#each pageLinks as link \(link\.href\)\}/);
+	assert.match(LIBRARY_TOP_BAR, /href=\{link\.href\}/);
+	// Negative control: the probe does not match a list the bar never renders.
+	assert.doesNotMatch(LIBRARY_TOP_BAR, /\{#each navLinks as link/);
 });
 
 test('each former strip destination still has a route file', () => {

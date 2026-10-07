@@ -5,7 +5,10 @@
  * numeric readouts, and the text WebKit shows as a native macOS tooltip).
  * This layer draws that same string in our own tooltip. While it is showing,
  * the live `title` is parked on `data-tip` so WKWebView does not draw a
- * second, native tooltip on top. Pointer leave puts `title` back.
+ * second, native tooltip on top. Every titled ANCESTOR is parked too: with
+ * only the nearest title gone, the browser falls back to the next one up and
+ * still draws a native tooltip (the deck stems chips inside the titled stems
+ * row, Tue 6 Oct 2026). Pointer leave puts every `title` back.
  *
  * `apps/webui/frontend/src/lib/audio-engine/rust-inert.ts` watches `title`
  * and writes its own string back. It treats `data-tip-parked` as a temporary
@@ -47,6 +50,8 @@ const DESCRIBED_BACKUP_ATTR = 'data-tip-describedby';
 let installed = false;
 let tipEl: HTMLDivElement | null = null;
 let active: HTMLElement | null = null;
+/** Titled ancestors of `active` that this layer parked, restored on clear. */
+let parkedAncestors: HTMLElement[] = [];
 
 function _element(node: EventTarget | null): HTMLElement | null {
 	if (node instanceof HTMLElement) return node;
@@ -159,10 +164,29 @@ function _show(host: HTMLElement, text: string, visible: boolean): void {
 	if (visible) _place(host, tip);
 }
 
+/**
+ * Park the live `title` of every ancestor of `host`, so no title is left in
+ * the hovered chain for the native tooltip to fall back to. Ancestors are not
+ * described by the tip (their help is not what is shown), and one already
+ * parked by someone else is left to its owner.
+ */
+function _parkAncestors(host: HTMLElement): void {
+	for (let n = host.parentElement; n !== null; n = n.parentElement) {
+		if (n.hasAttribute(TIP_PARKED_ATTR)) continue;
+		const live = n.getAttribute('title');
+		if (live === null || live.length === 0) continue;
+		n.setAttribute(TIP_DATA_ATTR, live);
+		n.setAttribute(TIP_PARKED_ATTR, '');
+		n.removeAttribute('title');
+		parkedAncestors.push(n);
+	}
+}
+
 function _activate(host: HTMLElement, showBox: boolean): void {
 	const text = parkHoverTitle(host);
 	if (text === null) return;
 	active = host;
+	_parkAncestors(host);
 	// Inside a rich explainer the popover is the visible tooltip. The same
 	// string still sits in this node, clipped, so aria-describedby has a target.
 	_show(host, text, showBox);
@@ -170,9 +194,12 @@ function _activate(host: HTMLElement, showBox: boolean): void {
 
 function _clear(): void {
 	const prev = active;
+	const ancestors = parkedAncestors;
 	active = null;
+	parkedAncestors = [];
 	_hide();
 	if (prev !== null) restoreHoverTitle(prev);
+	for (const el of ancestors) restoreHoverTitle(el);
 }
 
 function _onOver(event: Event): void {

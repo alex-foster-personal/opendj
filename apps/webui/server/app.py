@@ -23,6 +23,7 @@ from fastapi import FastAPI
 from apps.feature_flags import FlagStore
 from apps.sets.share import SetShareConfig
 from apps.sets.share_page import router as set_share_page_router
+from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S
 
 from . import (
     ahead_analysis,
@@ -90,6 +91,7 @@ def create_app(  # noqa: PLR0913
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
     stem_hydration: bool = False,
+    audio_access_timeout_s: float = AUDIO_ACCESS_TIMEOUT_S,
 ) -> FastAPI:
     """Build a configured FastAPI app.
 
@@ -123,6 +125,13 @@ def create_app(  # noqa: PLR0913
     point that never passes through ``apps.engine_core.app.create_app``).
     Pass an explicit ``FlagStore`` to pin the flags a test resolves against;
     the default reads ``apps.shared.paths.DATA_DIR``.
+
+    ``audio_access_timeout_s`` is how long ``GET /tracks/{id}/audio`` gives
+    its subprocess open probe (#2770) before answering 503
+    ``AUDIO_ACCESS_BLOCKED``. Every daemon keeps the product default,
+    :data:`apps.shared.bounded_file_open.AUDIO_ACCESS_TIMEOUT_S`; a test that
+    needs a 200 on a loaded CI runner passes a longer one here (W45) instead
+    of patching the constant.
     """
 
     port, frontend_port = _resolve_ports(port, frontend_port)
@@ -165,6 +174,9 @@ def create_app(  # noqa: PLR0913
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     app.state.coverage_drain_armed = auto_coverage_drain
     app.state.ahead_analysis_armed = auto_ahead_analysis
+    if audio_access_timeout_s <= 0:
+        raise ValueError(f"audio_access_timeout_s must be > 0, got {audio_access_timeout_s}")
+    app.state.audio_access_timeout_s = audio_access_timeout_s
     _install_exception_handlers(app)
     install_request_guard(
         app,

@@ -1,4 +1,4 @@
-/** Requirements: PERF-UI-01, LIBUX-13. */
+/** Requirements: PERF-UI-01, LIBUX-13, CHROME-20. */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -20,19 +20,21 @@ test('compact musical columns fit displayed key and BPM text without widening de
 		'src/lib/rb/library-column-widths.ts'
 	);
 	// Real WebKit measurement: a rendered 10B needs 29.23px and 124 needs 33px
-	// after the table cell's existing horizontal padding.
-	assert.deepEqual(compactMusicalWidths([]), { key: 30, bpm: 33 });
+	// after the table cell's existing horizontal padding. Inter (Chromium on
+	// Linux/Windows) needs 19.09px for "12B" and 21.41px for "124" inside the
+	// 6+6px padding, so the floors are 32 and 36 (nit sweep N6: "1...").
+	assert.deepEqual(compactMusicalWidths([]), { key: 32, bpm: 36 });
 	assert.deepEqual(compactMusicalWidths([{ key: '8A', bpm: 120 }, { key: '12B', bpm: 128.4 }]), {
-		key: 30,
-		bpm: 33
+		key: 32,
+		bpm: 36
 	});
 	assert.deepEqual(compactMusicalWidths([{ key: 'unparsed-key', bpm: 12345 }]), {
 		key: COL_DEFAULTS.key,
 		bpm: COL_DEFAULTS.bpm
 	});
 	assert.deepEqual(
-		autoMusicalWidths({ key: 31, bpm: 39 }, { key: 30, bpm: 33 }, new Set(['key'])),
-		{ key: 31, bpm: 33 }
+		autoMusicalWidths({ key: 31, bpm: 39 }, { key: 32, bpm: 36 }, new Set(['key'])),
+		{ key: 31, bpm: 36 }
 	);
 });
 

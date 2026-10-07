@@ -30,7 +30,10 @@ before(async () => {
 	m = await loadTypeScriptModule('tests/unit/fixtures/rust-mode-entry.ts');
 });
 
+let toasts = [];
 beforeEach(() => {
+	toasts = [];
+	m.link.toast = (message, kind) => toasts.push({ message, kind }); // the page toast performance-ipc hands over
 	sent = [];
 	positions = {};
 	m.installRustEngineClientForTest({
@@ -175,6 +178,8 @@ test('a follower that cannot reach the new master tempo says so; the others stil
 	assert.ok(sent.some((c) => c.type === 'tempo' && c.deck === 2), 'deck 2 re-joined');
 	assert.equal(sent.some((c) => c.deck === 3), false, 'nothing unreachable was sent to deck 3');
 	assert.match(m.deckStates[3].sync_error ?? '', /no phase-capable/);
+	assert.deepEqual(toasts.map((t) => t.kind), ['error'], 'PLAY-27: the partial failure raises the same red notice as Web Audio');
+	assert.match(toasts[0].message, /^Beat Sync cannot lock deck 3: .*; playing unsynced$/);
 	assert.equal(m.phaseLocksForTest()[3], undefined, 'deck 3 is not shown as locked');
 	assert.equal(m.phaseLocksForTest()[2]?.masterTempo, 1.03);
 });

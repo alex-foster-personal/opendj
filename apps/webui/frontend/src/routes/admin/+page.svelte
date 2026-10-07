@@ -2,7 +2,7 @@
 	/**
 	 * /admin - operator panel. Two data sections on the KPI tab: the demucs
 	 * farm KPI ledger (the durable home for what used to be the standalone
-	 * scripts/bench/kpi_chart.html), and the code-quality ratchet the merge
+	 * (private path)), and the code-quality ratchet the merge
 	 * gate already enforces on every commit. Both are read-only views of a
 	 * file the repo already maintains for its own reasons; this page is just
 	 * where a human (or a hiring lead evaluating the engineering practice)
@@ -205,7 +205,7 @@
 
 			{error}
 
-			The daemon serves this ledger from scripts/bench/kpi_ledger.json. Check that the API is up on
+			The daemon serves this ledger from (private path). Check that the API is up on
 			:8585 and that the file parses.
 		</div>
 	{:else if !ledger}
@@ -235,7 +235,7 @@
 
 			{perfError}
 
-			The daemon serves these cards from docs/perf/kpi-ledger.json and docs/perf/kpi-cards.json via
+			The daemon serves these cards from (private path) and (private path) via
 			GET /api/v1/bench/perf-kpi.
 		</div>
 	{:else if !perf}
@@ -254,7 +254,7 @@
 			UNMEASURED.
 		</p>
 		{#if perf.undeclared.length > 0}
-			<p class="warn" title="Declare these in docs/perf/kpi-cards.json with a label, direction and title.">
+			<p class="warn" title="Declare these in (private path) with a label, direction and title.">
 				UNDECLARED: {perf.undeclared.join(', ')} - recorded in the ledger but not shown, because no card
 				says which way is better.
 			</p>
@@ -293,8 +293,10 @@
 	:global(:root) {
 		--kpi-ok: #4ecb8c;
 	}
-	:global(html[data-theme='light']) {
-		--kpi-ok: #2e9e63;
+	:global(html:is([data-theme='light'], [data-skin='light'])) {
+		/* #2e9e63 was 3.0:1 on the light panels under small text; the light
+		 * shell's --success clears AA. */
+		--kpi-ok: var(--success);
 	}
 
 	.admin-tabs {

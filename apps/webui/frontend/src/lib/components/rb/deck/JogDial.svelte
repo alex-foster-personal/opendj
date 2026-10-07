@@ -6,6 +6,7 @@
 	import { DECK_IDS, deckEffectiveBpm, deckStates } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
+	import { formatPitchRange, formatTempoPct, splitBpmText } from '$lib/rb/tempo-format';
 	import {
 		JOG_WHEEL_FACE_RADIUS,
 		PHASE_MARK_INNER_RADIUS,
@@ -88,6 +89,8 @@
 		})
 	);
 	const bpmText: string = $derived(liveBpm === null ? '--.--' : liveBpm.toFixed(2));
+	// DECKUX-41: the "." and decimals draw at half size so the readout takes less room.
+	const bpmParts = $derived(splitBpmText(bpmText));
 
 	/** Null while locked (or with no valid comparison to make); a numeric
 	 * title otherwise so the tint always explains itself (house rule:
@@ -113,10 +116,11 @@
 	const offTempoTitle: string | null = $derived(
 		deck.is_master || !deck.audible ? null : _offTempoTitle(liveBpm, masterBpm)
 	);
-	const pitchText: string = $derived(`${((deck.pitch - 1) * 100).toFixed(1)}%`);
+	// DECKUX-41: the shared formatter, the same one DeckHeader uses.
+	const pitchText: string = $derived(formatTempoPct(deck.pitch));
 	// Range readout is REAL from the engine's per-deck pitchRanges store;
 	// 100 renders as WIDE per SCREENSHOT-SPEC 3.
-	const rangeText: string = $derived(pitchRange === 100 ? 'WIDE' : `+-${pitchRange}`);
+	const rangeText: string = $derived(formatPitchRange(pitchRange));
 	// The position every rotating part of the dial is drawn from (phase marks,
 	// progress trail): the shared per-deck playhead clock (ANIM-CLOCK-01), so the
 	// marks turn smoothly and in phase with the strip; reported to the probe.
@@ -360,7 +364,9 @@
 					/>
 				{/if}
 			{/if}
-			<text x="50" y="47" class="bpm">{bpmText}</text>
+			<text x="50" y="47" class="bpm"
+				>{bpmParts.whole}<tspan class="bpm-fraction">{bpmParts.fraction}</tspan></text
+			>
 			<text x="50" y="61" class="pitch">{pitchText}</text>
 			<text x="50" y="72" class="range">{rangeText}</text>
 		</svg>
@@ -495,17 +501,24 @@
 		stroke: var(--rb-red, #d0342c);
 		stroke-width: 3.5px;
 	}
+	/* The stopped face is a dark literal in every skin, so its text reads the
+	 * jog hooks first: Light sets them to light ink (theme.css) because its
+	 * --rb-text is dark. Other skins leave them unset and keep --rb-text. */
 	.dial .bpm {
-		fill: var(--rb-text);
+		fill: var(--rb-jog-text, var(--rb-text));
 		font-size: 15px;
 		font-weight: 700;
 	}
+	/* DECKUX-41: half the 15px BPM size for the "." and decimals. */
+	.dial .bpm-fraction {
+		font-size: 7.5px;
+	}
 	.dial .pitch {
-		fill: var(--rb-text);
+		fill: var(--rb-jog-text, var(--rb-text));
 		font-size: 9px;
 	}
 	.dial .range {
-		fill: var(--rb-text-dim);
+		fill: var(--rb-jog-text-dim, var(--rb-text-dim));
 		font-size: 8px;
 	}
 	/* Pin 67a4ce88805f: an audible deck's wheel flips to an off-white face

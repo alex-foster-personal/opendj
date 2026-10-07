@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
-	import { sameDeviceSplitText } from '$lib/player/main-cue-collision';
+	import { SAME_DEVICE_SPLIT_BADGE_TEXT, sameDeviceSplitTooltip } from '$lib/player/main-cue-collision';
 
 	const label = $derived.by(() => {
 		const hp = mixerState.headphones;
@@ -18,20 +18,24 @@
 </script>
 
 {#if label !== null}
+	<!-- CUEOUT-28: a compact badge; the full sentence is the hover tooltip. -->
 	<div
 		class="split-badge"
 		role="status"
 		data-testid="same-device-split-badge"
-		title="MAIN and HEADPHONE CUE are the same physical output, so the room mix plays mono on the left channel and the cue mono on the right. Pick a different MAIN output to get two separate outputs again."
+		title={sameDeviceSplitTooltip(label)}
+		aria-label={sameDeviceSplitTooltip(label)}
 	>
-		{sameDeviceSplitText(label)}
+		{SAME_DEVICE_SPLIT_BADGE_TEXT}
 	</div>
 {/if}
 
 <style>
 	.split-badge {
-		padding: 2px 8px;
-		font-size: 11px;
+		padding: 1px 5px;
+		font-size: 10px;
+		letter-spacing: 0.04em;
+		white-space: nowrap;
 		font-weight: 700;
 		line-height: 1.2;
 		color: var(--rb-text, #fff);

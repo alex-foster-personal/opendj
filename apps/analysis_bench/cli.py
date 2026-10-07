@@ -31,7 +31,9 @@ from typing import Any
 from apps.analysis_bench import bundles, lanes, rounds, stores
 from apps.analysis_bench.scorers import get_scorer
 
-BUNDLE_ROOT = Path("data/bench")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+BUNDLE_ROOT = Path("(private path)")
 
 
 def _bundle_dir(lane: str, version: str, override: str | None) -> Path:
@@ -54,26 +56,45 @@ def _cmd_lanes(_args: argparse.Namespace) -> int:
     return 0
 
 
+_KEY_BUILDER_PATH_FLAGS = ("rekordbox", "mik_windows", "mik_macos", "audio_root", "copy_manifest")
+_KEY_BUILDER_VALUE_FLAGS = ("seed", "sample_size")
+
+
+def _key_builder_argv(args: argparse.Namespace) -> list[str]:
+    """The builder's arguments. Paths resolve against the caller's cwd here, because the
+    child runs in the repo root and would read a relative path from there."""
+    forwarded: list[str] = ["build", "--version", args.version]
+    if args.dir:
+        forwarded.extend(["--out", str(Path(args.dir).resolve())])
+    for flag in (*_KEY_BUILDER_PATH_FLAGS, *_KEY_BUILDER_VALUE_FLAGS):
+        value = getattr(args, flag, None)
+        if value is None:
+            continue
+        text = str(Path(value).resolve()) if flag in _KEY_BUILDER_PATH_FLAGS else str(value)
+        forwarded.extend([f"--{flag.replace('_', '-')}", text])
+    if getattr(args, "allow_tiny", False):
+        forwarded.append("--allow-tiny")
+    return forwarded
+
+
+def _run_key_builder(args: argparse.Namespace, lane: lanes.Lane) -> int:
+    # The builder is a script (it reads vendor dbs and decodes audio) and the lane
+    # registry names it by PATH. Run it the way the registry says, as a process:
+    # importing it from here made an app package depend on `scripts`, whose
+    # import closure is the whole tree (SMARTEST-CI round 12).
+    if lane.fixture_builder is None:
+        raise SystemExit(f"[bench] lane {lane.name} names no fixture builder")
+    builder = ["-m", lane.fixture_builder.removesuffix(".py").replace("/", ".")]
+    return subprocess.run(
+        [sys.executable, *builder, *_key_builder_argv(args)], cwd=REPO_ROOT, check=False
+    ).returncode
+
+
 def _cmd_fixtures(args: argparse.Namespace) -> int:
     lane = lanes.get_lane(args.lane)
     if args.action == "build":
         if lane.name == "key":
-            from scripts.build_key_bundle import main as build_key_bundle
-
-            forwarded: list[str] = ["build", "--version", args.version]
-            if args.dir:
-                forwarded.extend(["--out", args.dir])
-            for flag in (
-                "rekordbox", "mik_windows", "mik_macos", "audio_root",
-                "copy_manifest", "seed", "sample_size",
-            ):
-                value = getattr(args, flag, None)
-                if value is None or value is False:
-                    continue
-                forwarded.extend([f"--{flag.replace('_', '-')}", str(value)])
-            if getattr(args, "allow_tiny", False):
-                forwarded.append("--allow-tiny")
-            return int(build_key_bundle(forwarded))
+            return _run_key_builder(args, lane)
         raise SystemExit(
             f"[bench] this harness does not build {lane.name} fixtures itself; its builder is:\n"
             f"    {lane.fixture_builder}\n"
@@ -286,7 +307,7 @@ def _parser() -> argparse.ArgumentParser:
     fixtures.add_argument("--lane", required=True)
     fixtures.add_argument("--version", default="v1")
     fixtures.add_argument("--dir", help="staged directory, for `seal`")
-    fixtures.add_argument("--bundle-dir", help="default data/bench/<lane>/<version>")
+    fixtures.add_argument("--bundle-dir", help="default (private path)/<lane>/<version>")
     fixtures.add_argument("--dest", help="where `pull` writes, default the bundle dir")
     fixtures.add_argument("--store", help=f"default ${stores.STORE_ENV}")
     fixtures.add_argument("--expect-bundle-id", help="refuse a pull that is not this bundle")

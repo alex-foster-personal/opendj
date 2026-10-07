@@ -1,7 +1,7 @@
 """Hot-cue reversal tokens and slot generations (the CAS undo ledger).
 
 Moved from ``apps/webui/server/rb_vendor.py`` C10 (source lines 1919-2030) per
-``.planning/t3b-decomposition-map.md`` section 2 row 11.
+``(private path)`` section 2 row 11.
 
 D2 (map section 3): ``_ensure_reversal_tables`` was **deleted** rather than
 moved. ``apps/engine_core/store/schema.py`` already carried byte-identical DDL
@@ -13,10 +13,9 @@ drift test is deleted alongside the copy it was watching -- with one home
 there is nothing left to drift.
 
 Wave 4 (S8) moved this module out of ``apps/webui/server/rb_vendor_pkg/``. The
-``apps.engine_core.store.schema`` import below is the edge that closed the
-``engine_core <-> webui`` package cycle while this module lived under
-``apps.webui``; raised from ``apps.adapters`` it closes no loop. The body is
-unchanged.
+DDL then moved again, from ``apps.engine_core.store.schema`` to the sibling
+``sidecar_schema`` module here (round 12 of the SMARTEST-CI counter), so an
+adapter no longer imports the engine. The body is unchanged.
 """
 from __future__ import annotations
 
@@ -28,9 +27,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from apps.engine_core.store.schema import ensure_vendor_sidecar_tables
-
 from .cues import _rb_timestamp
+from .sidecar_schema import ensure_vendor_sidecar_tables
 
 _SLOT_REVISION_TABLE = "rb_hot_cue_slot_revision"
 

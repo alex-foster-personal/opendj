@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { PlaylistNode } from '$lib/rb/library-types';
-	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
+	import { bindMenuItems, type BoundMenuItem } from '$lib/context-menu/bind';
+	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
+	import { reportMenuLoadFailure } from './track-context-menu';
 
 	let {
 		oncreate,
@@ -33,65 +36,49 @@
 		smartlist?: { id: string; name: string } | undefined;
 	} | null>(null);
 
+	/**
+	 * Items come from the W28 registry ((private path)*.md,
+	 * smartlist.md); this component binds ids to the tree's handlers. The
+	 * "Playlists" header is its own target, so it no longer shows dead
+	 * Rename/Delete/Duplicate rows, and a folder node never offers the
+	 * playlist-only Duplicate and Forbid duplicates.
+	 */
+	$effect(preloadMenuRegistry);
+
 	function items(
+		{ menuFor }: NonNullable<ReturnType<typeof menuRegistry>>,
 		kind: 'playlist' | 'folder' | 'smartlist',
 		node?: PlaylistNode,
 		smartlist?: { id: string; name: string }
-	): ContextMenuItem[] {
-		const isSmartlist = kind === 'smartlist';
-		// Unbuilt rows (New folder, Export, Import from Spotify, Pin offline,
-		// Sort by..., and the inert Forbid duplicates placeholder on
-		// non-playlists) are HIDDEN for V1 rather than shown inert (JIK, Thu 1
-		// Oct 2026): no folder-create, export, Spotify, offline-pin or tree-sort
-		// API exists to wire them to.
-		return [
-			{ id: 'new-playlist', label: 'New playlist', run: oncreate },
-			{ id: 'new-smartlist', label: 'New smartlist', run: oncreatesmartlist },
-			{
-				id: 'rename',
-				label: 'Rename',
-				run:
-					isSmartlist && smartlist !== undefined
-						? () => onrenamesmartlist?.(smartlist)
-						: !isSmartlist && node !== undefined
-							? () => onrename?.(node)
-							: undefined
-			},
-			{
-				id: 'delete',
-				label: 'Delete',
-				run:
-					isSmartlist && smartlist !== undefined
-						? () => ondeletesmartlist?.(smartlist)
-						: node === undefined
-							? undefined
-							: () => deleteNode?.(node)
-			},
-			{
-				id: 'duplicate',
-				label: 'Duplicate',
-				run:
-					isSmartlist && smartlist !== undefined
-						? () => onduplicatesmartlist?.(smartlist)
-						: kind === 'playlist' && node !== undefined
-							? () => onduplicate?.(node)
-							: undefined
-			},
-			...(kind === 'playlist' && node !== undefined
-				? [
-						{
-							id: 'forbid-duplicates',
-							label: 'Forbid duplicates',
-							checked: node.forbid_duplicates === true,
-							run: () => onforbidduplicates?.(node)
-						}
-					]
-				: []),
-			{ id: 'reveal', label: 'Reveal in tree', run: kind === 'playlist' && node !== undefined ? () => onselect(node) : undefined }
-		];
+	): BoundMenuItem[] {
+		const news = { 'new-playlist': oncreate, 'new-smartlist': oncreatesmartlist };
+		if (kind === 'smartlist' && smartlist !== undefined) {
+			return bindMenuItems(menuFor({ kind: 'smartlist' }, {}), {
+				...news,
+				rename: () => onrenamesmartlist?.(smartlist),
+				delete: () => ondeletesmartlist?.(smartlist),
+				duplicate: () => onduplicatesmartlist?.(smartlist)
+			});
+		}
+		if (node === undefined) return bindMenuItems(menuFor({ kind: 'playlists-root' }, {}), news);
+		const nodeRunners = {
+			...news,
+			rename: () => onrename?.(node),
+			delete: () => deleteNode?.(node)
+		};
+		if (node.kind === 'folder') {
+			return bindMenuItems(menuFor({ kind: 'playlist-folder' }, {}), nodeRunners);
+		}
+		return bindMenuItems(menuFor({ kind: 'playlist' }, { forbidDuplicates: node.forbid_duplicates === true }), {
+			...nodeRunners,
+			duplicate: () => onduplicate?.(node),
+			'forbid-duplicates': () => onforbidduplicates?.(node),
+			reveal: () => onselect(node)
+		});
 	}
 
 	export function open(event: MouseEvent, kind: 'playlist' | 'folder', node?: PlaylistNode): void {
+		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		event.stopPropagation();
 		menu = { x: event.clientX, y: event.clientY, kind, node };
@@ -101,6 +88,7 @@
 		event: MouseEvent,
 		sl: { id: string; name: string }
 	): void {
+		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		event.stopPropagation();
 		menu = { x: event.clientX, y: event.clientY, kind: 'smartlist', smartlist: sl };
@@ -108,6 +96,7 @@
 
 	export function openFromKeyboard(event: KeyboardEvent, kind: 'playlist' | 'folder', node?: PlaylistNode): void {
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		menu = { x: rect.left + 8, y: rect.top + 8, kind, node };
@@ -118,15 +107,16 @@
 		sl: { id: string; name: string }
 	): void {
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		menu = { x: rect.left + 8, y: rect.top + 8, kind: 'smartlist', smartlist: sl };
 	}
 </script>
 
-{#if menu !== null}
+{#if menu !== null && menuRegistry() !== null}
 	<ContextMenu
-		items={items(menu.kind, menu.node, menu.smartlist)}
+		items={items(menuRegistry()!, menu.kind, menu.node, menu.smartlist)}
 		x={menu.x}
 		y={menu.y}
 		onclose={() => (menu = null)}

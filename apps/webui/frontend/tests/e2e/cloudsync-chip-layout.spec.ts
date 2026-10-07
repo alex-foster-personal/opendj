@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test';
 
 import { spendBootLanding } from './support/boot-landing';
 
+// `/` is Library mode's full-window Crate Desk (LIBWS-01), which has no app
+// shell; /pairings is a plain app-shell route that still mounts this header.
+const APP_SHELL_ROUTE = '/pairings';
+
 // The chip under test lives in the APP-SHELL header, and both tests open `/`
 // cold: without this the PERFMODE-11 landing redirect can detach the chip
 // mid-click. support/boot-landing.ts has the full account.
@@ -13,7 +17,7 @@ test.beforeEach(async ({ page }) => {
 // [if] the CloudSync chip is healthy on first load [then] it is not in error state and keeps its quick-actions title, [else stop]
 test('at 900px the CloudSync chip is a single-line quick-actions trigger', async ({ page }) => {
 	await page.setViewportSize({ width: 900, height: 700 });
-	await page.goto('/');
+	await page.goto(APP_SHELL_ROUTE);
 
 	const chip = page.getByRole('button', { name: 'CloudSync status' });
 	await expect(chip).toBeVisible();
@@ -37,7 +41,7 @@ test('at 900px the CloudSync chip is a single-line quick-actions trigger', async
 
 test('at 1280px the CloudSync chip shows the full label in one line', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.goto('/');
+	await page.goto(APP_SHELL_ROUTE);
 
 	const chip = page.getByRole('button', { name: 'CloudSync status' });
 	await expect(chip).toBeVisible();

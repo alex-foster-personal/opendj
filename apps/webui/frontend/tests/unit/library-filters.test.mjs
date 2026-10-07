@@ -8,9 +8,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // Regression lines:
 // - if rowIsRemix passes is_remix null (synthetic rows) then the Remixes
 //   filter shows tracks that never earned the claim -- broken
-// - if rowHasVocalLyrics passes n_lines exactly 5 then '>5 lines' lied -- broken
-// - if rowHasVocalLyrics passes rows with no lyric data then unprocessed
-//   tracks masquerade as vocal tracks -- broken
+// - if rowHasVocalLyrics passes 5 lines then a one-line hook counts as vocals -- broken
+// - if rowHasVocalLyrics passes rows with no vocal or lyric evidence then
+//   unanalyzed tracks masquerade as vocal tracks -- broken
+// - if rowHasVocalLyrics reads only lyrics.n_lines then tracks with vocal
+//   regions or a 'vocal' verdict vanish (VOCALS-FILTER-01) -- broken
 // - if the prefs default either filter ON then fresh sessions hide most of
 //   the library with no visible cause -- broken
 // - if 'remixes_filter'/'vocals_filter' leave ALLOWED_SETTING_KEYS then
@@ -47,14 +49,62 @@ test('rowIsRemix passes only an explicit wire true', async () => {
 	assert.equal(c.rowIsRemix(_row({ is_remix: null })), false, 'synthetic rows must not pass');
 });
 
-test('rowHasVocalLyrics demands MORE than 5 real lines', async () => {
+// VOCALS-FILTER-01 (the maintainer, Tue 6 Oct 2026: "filtering by vocals shows very few
+// songs on all tracks - check for bug"): the checkbox means "has vocals".
+const _REGION = { start_s: 1, end_s: 9, intensity: 3 };
+const _lyrics = (effective, n_lines) => ({ effective, n_lines });
+const VOCALS_CASES = [
+	// [label, vocals, lyrics, verdict]
+	['rekordbox regions', { status: 'rekordbox', fps: 150, regions: [_REGION] }, null, 'yes'],
+	['demucs regions', { status: 'demucs', fps: 10, regions: [_REGION] }, null, 'yes'],
+	['rekordbox, zero regions', { status: 'rekordbox', fps: 150, regions: [] }, null, 'no'],
+	['demucs, none found', { status: 'demucs', fps: 10, regions: [] }, null, 'no'],
+	['no_vocals', { status: 'no_vocals', fps: 150, regions: [] }, null, 'no'],
+	['not analyzed, no lyric data', { status: 'not_analyzed' }, null, 'unknown'],
+	['not analyzed, 12 cached lines', { status: 'not_analyzed' }, _lyrics('unknown', 12), 'yes'],
+	['not analyzed, exactly 6 lines', { status: 'not_analyzed' }, _lyrics('unknown', 6), 'yes'],
+	['not analyzed, 5 lines (a hook)', { status: 'not_analyzed' }, _lyrics('unknown', 5), 'unknown'],
+	['not analyzed, vocal verdict', { status: 'not_analyzed' }, _lyrics('vocal', null), 'yes'],
+	['not analyzed, sparse verdict', { status: 'not_analyzed' }, _lyrics('sparse', null), 'unknown'],
+	['not analyzed, no-lyrics verdict', { status: 'not_analyzed' }, _lyrics('no-lyrics', null), 'no'],
+	['no_vocals but 20 lines of lyrics', { status: 'no_vocals', fps: 150, regions: [] }, _lyrics('unknown', 20), 'yes'],
+	// Sol P1 on 4c6107765: a no-lyrics verdict outranks the track's own line count...
+	['no-lyrics verdict over 12 lines', { status: 'not_analyzed' }, _lyrics('no-lyrics', 12), 'no'],
+	// ...but not real vocal regions.
+	['no-lyrics verdict, rekordbox regions', { status: 'rekordbox', fps: 150, regions: [_REGION] }, _lyrics('no-lyrics', 12), 'yes']
+];
+
+test('VOCALS-FILTER-01: each vocals/lyrics status gets the expected verdict', async () => {
+	const f = await loadTypeScriptModule('src/lib/components/rb/browser/vocals-filter.ts');
 	const c = await _loadContract();
 	assert.equal(c.VOCALS_FILTER_MIN_LINES, 6);
-	const withLines = (n) => _row({ lyrics: { n_lines: n } });
-	assert.equal(c.rowHasVocalLyrics(withLines(6)), true);
-	assert.equal(c.rowHasVocalLyrics(withLines(5)), false, '5 lines is not >5');
-	assert.equal(c.rowHasVocalLyrics(withLines(null)), false, 'no alignment yet');
-	assert.equal(c.rowHasVocalLyrics(_row({ lyrics: null })), false, 'no lyric data yet');
+	for (const [label, vocals, lyrics, verdict] of VOCALS_CASES) {
+		const row = _row({ vocals, lyrics });
+		assert.equal(f.rowVocalsVerdict(row), verdict, label);
+		assert.equal(c.rowHasVocalLyrics(row), verdict === 'yes', `filter: ${label}`);
+	}
+});
+
+test('VOCALS-FILTER-01 mutation: the old n_lines-only rule fails the fixture', () => {
+	// The pre-fix predicate, verbatim in behavior: lyrics.n_lines >= 6 or nothing.
+	const oldRule = (row) => row.lyrics !== null && row.lyrics.n_lines !== null && row.lyrics.n_lines >= 6;
+	const wrong = VOCALS_CASES.filter(([, vocals, lyrics, verdict]) => oldRule(_row({ vocals, lyrics })) !== (verdict === 'yes'));
+	assert.deepEqual(
+		wrong.map(([label]) => label),
+		['rekordbox regions', 'demucs regions', 'not analyzed, vocal verdict', 'no-lyrics verdict over 12 lines'],
+		'the fixture must catch a revert to the n_lines-only rule'
+	);
+});
+
+test('VOCALS-FILTER-01: the tooltip states the rule and the counts', async () => {
+	const c = await _loadContract();
+	const rows = VOCALS_CASES.map(([, vocals, lyrics]) => _row({ vocals, lyrics }));
+	const counts = c.vocalsFilterCounts(rows);
+	assert.deepEqual(counts, { matching: 7, without: 5, unknown: 3 });
+	const title = c.vocalsFilterTitle(counts);
+	assert.match(title, /vocal regions from rekordbox or stem detection/);
+	assert.match(title, /at least 6 lines of lyrics/);
+	assert.match(title, /7 with vocals, 5 without, 3 not analyzed yet/);
 });
 
 test('CAT-07 (pin c7da76c16aae): rowIsLocallyAvailable keeps only local-audio rows', async () => {

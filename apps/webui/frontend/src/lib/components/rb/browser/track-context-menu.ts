@@ -16,19 +16,32 @@ import { isUsbTrackId } from '$lib/rb/track-source';
 import { pushToast } from '$lib/stores.svelte';
 
 export const REVEAL_TRACK_TITLE = 'POST /api/v1/tracks/{stable_id}:reveal';
-export const COPY_PATH_TITLE = 'GET /api/v1/tracks/{stable_id}';
-export const REANALYZE_TITLE =
-	'POST /api/v1/analysis/backfill/enqueue (`python -m apps.analysis.queue_cli enqueue --lane beatgrid --backend own_beatgrid.backfill`)';
+
+/**
+ * The right-click menu's registry chunk failed to load (W28, CTXMENU-07).
+ * Reload is the honest remedy: Chromium caches a failed module fetch for the
+ * life of the page, so a second import() rejects without refetching.
+ */
+export const MENU_LOAD_FAILED = 'Right-click menu failed to load. Reload Open DJ to try again.';
+
+export function reportMenuLoadFailure(cause: unknown): void {
+	pushToast(
+		MENU_LOAD_FAILED,
+		'error',
+		undefined,
+		cause,
+		{ surface: 'context-menu registry chunk' },
+		undefined,
+		undefined,
+		{ headline: MENU_LOAD_FAILED, feature: 'Right-click menu' }
+	);
+}
 
 export type ToastFn = (
 	message: string,
 	kind: 'info' | 'warn' | 'error',
 	duration?: number
 ) => void;
-
-export function loadDeckTitle(deck: number, stableId: string): string {
-	return `opendj load ${deck} ${stableId}`;
-}
 
 /**
  * The menu a row may show. A stick row (Play from USB) is read only and has

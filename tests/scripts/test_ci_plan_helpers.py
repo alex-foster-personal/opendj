@@ -23,11 +23,11 @@ from scripts.ci_plan import (
     PlanError,
     Scope,
     Verdict,
-    helper_carried_scopes,
     observed_dependents,
     plan,
     read_config,
 )
+from scripts.ci_plan_carry import helper_carried_scopes
 from scripts.ci_plan_sources import pytest_inputs
 from scripts.ci_plan_sources import (
     test_modules as discover_test_modules,
@@ -335,3 +335,53 @@ def test_an_import_of_a_nested_scope_is_attributed_to_the_nested_scope(tmp_path:
         ),
     )
     assert observed_dependents(config, pytest_inputs(root), root=tmp_path) == {"front": ("a",)}
+
+
+# ----- round 12: a helper's consumers decide whether it carries -----
+
+
+def _root_helper_tree(tmp_path: Path, consumer: str) -> tuple[Config, Path]:
+    """A root helper importing scope `engine`, consumed by ONE module at `consumer`."""
+    root = tmp_path / "tests"
+    (root / "library").mkdir(parents=True)
+    (root / "rig.py").write_text("from apps.engine_core import thing\n")
+    (root / consumer).parent.mkdir(parents=True, exist_ok=True)
+    (root / consumer).write_text("from tests.rig import thing\n")
+    return _config(), root
+
+
+def test_a_root_helper_consumed_only_by_always_run_tests_carries_nothing(tmp_path: Path) -> None:
+    """Every plan runs `tests/test_root.py`, and that module is what exercises the helper's
+    import of `engine`, so a change to `engine` is already covered without going FULL."""
+    config, _ = _root_helper_tree(tmp_path, "test_root.py")
+    assert helper_carried_scopes(config, tmp_path) == frozenset()
+
+
+def test_a_root_helper_consumed_by_a_scope_owned_suite_still_carries(tmp_path: Path) -> None:
+    """`tests/library/` is NOT in every plan, so the suite that reaches the helper can be
+    left out when `engine` changes. The widest attribution stays."""
+    config, _ = _root_helper_tree(tmp_path, "library/test_use.py")
+    assert helper_carried_scopes(config, tmp_path) == frozenset({"engine"})
+
+
+def test_a_root_helper_nobody_imports_still_carries(tmp_path: Path) -> None:
+    """No importer is not the same as no consumer: `pytest_plugins` and fixture names reach
+    a helper without an import statement, and unplaceable stays widest."""
+    config, root = _root_helper_tree(tmp_path, "test_root.py")
+    (root / "test_root.py").write_text("")
+    assert helper_carried_scopes(config, tmp_path) == frozenset({"engine"})
+
+
+def test_a_root_helper_consumed_by_another_helper_still_carries(tmp_path: Path) -> None:
+    config, _root = _root_helper_tree(tmp_path, "other_rig.py")
+    assert helper_carried_scopes(config, tmp_path) == frozenset({"engine"})
+
+
+def test_a_conftest_carries_even_when_only_root_tests_sit_beside_it(tmp_path: Path) -> None:
+    """A `conftest.py` is loaded by pytest, not imported, so its consumers are every module
+    under its directory whether or not any of them names it."""
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "conftest.py").write_text("from apps.engine_core import thing\n")
+    (root / "test_root.py").write_text("from tests.conftest import thing\n")
+    assert helper_carried_scopes(_config(), tmp_path) == frozenset({"engine"})

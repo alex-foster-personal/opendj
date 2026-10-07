@@ -60,7 +60,7 @@
 	);
 </script>
 
-<div class="source-toolbar" data-testid="library-source-tabs">
+<div class="source-toolbar" data-testid="library-source-tabs" data-menu-target="library-source">
 	<div class="view-tabs" role="tablist" aria-label="library sources">
 		{#each tabs as tab (tab.id)}
 			<button
@@ -181,23 +181,32 @@
 	.vt:last-child {
 		border-right: none;
 	}
+	/* The accent underline REPLACES the toolbar's bottom border under the
+	 * active tab (margin -1px lays it over that line) rather than stacking a
+	 * second 1px line on it (UIBORDER-02). */
 	.vt.active {
 		color: var(--rb-text);
 		background: var(--rb-panel-raised);
 		border-bottom: 1px solid var(--rb-accent);
+		margin-bottom: -1px;
 	}
 	.trailing-actions {
 		display: flex;
 		flex: none;
 		align-items: center;
 		gap: 2px;
-		padding: 0 4px;
+		/* 2px top and bottom around the 18px buttons keeps the bar at the
+		 * 22px it had when the buttons filled it. */
+		padding: 2px 4px;
 		border-left: 1px solid var(--rb-border);
 		background: var(--rb-panel);
 	}
+	/* 18px tall, not the bar's full 22px: a full-height button's top and
+	 * bottom borders sat on the panel's top border and the toolbar's bottom
+	 * border, two 2px lines (UIBORDER-02). */
 	.icon-btn {
 		width: 22px;
-		height: 22px;
+		height: 18px;
 		padding: 0;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);

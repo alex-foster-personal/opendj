@@ -21,10 +21,15 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-ALLOWLIST_PREFIXES: tuple[str, ...] = (
-    "apps/analysis_bench/",
-    "apps/stems/relay/",
-)
+# Narrowed in round 12 of the SMARTEST-CI counter from two packages to one file:
+# the bench CLI now runs the key-bundle builder as the process the lane
+# registry names, and the relay's Modal backend moved up to
+# scripts/stems_relay_app.py. What remains is controls.py
+# reading the beatgrid report from scripts/beatbench, which imports
+# apps.analysis_bench back at 19 sites; that pair is one unit split across two
+# trees and is not resolved by a move. A new entry here is a new app-to-scripts
+# edge.
+ALLOWLIST_PREFIXES: tuple[str, ...] = ("apps/analysis_bench/controls.py",)
 
 __all__ = [
     "ALLOWLIST_PREFIXES",

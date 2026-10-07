@@ -24,11 +24,14 @@ let catalog;
 let skin;
 let palette;
 let paint;
+let sample;
 before(async () => {
 	catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 	skin = await loadTypeScriptModule('src/lib/rb/ui-skin.ts');
 	palette = await loadTypeScriptModule('src/lib/rb/wave-palette.ts');
+	globalThis.Path2D = RecordingPath;
 	paint = await loadTypeScriptModule('src/lib/settings/waveform-preview-paint.ts');
+	sample = (await loadTypeScriptModule('src/lib/settings/waveform-preview-sample.ts')).previewSampleWaveform();
 });
 
 function _rgb(color) {
@@ -48,14 +51,29 @@ function _visibleAgainstBackground(color) {
 	return a > 0.2 && Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) >= MIN_COLOR_DISTANCE;
 }
 
+/** Path2D stand-in: the preview paints through the deck row's band painter (W15), which builds paths. */
+class RecordingPath {
+	constructor() {
+		this.area = 0;
+		this.segments = 0;
+	}
+	rect(_x, _y, w, h) {
+		this.area += Math.max(0, w) * Math.max(0, h);
+	}
+	moveTo() {}
+	lineTo() {
+		this.segments += 1;
+	}
+}
+
 /** A 2D context that records the ink each draw call lays down. */
 function recordingContext() {
 	const ink = { area: 0, strokeSegments: 0, colors: new Set() };
-	let pathSegments = 0;
 	const ctx = {
 		fillStyle: '',
 		strokeStyle: '',
 		lineWidth: 1,
+		globalAlpha: 1,
 		clearRect() {},
 		fillRect(_x, _y, w, h) {
 			if (_visibleAgainstBackground(ctx.fillStyle)) {
@@ -63,15 +81,14 @@ function recordingContext() {
 				if (w > 0 && h > 0) ink.colors.add(ctx.fillStyle);
 			}
 		},
-		beginPath() {
-			pathSegments = 0;
+		fill(path) {
+			if (ctx.globalAlpha > 0.2 && _visibleAgainstBackground(ctx.fillStyle) && path.area > 0) {
+				ink.area += path.area;
+				ink.colors.add(ctx.fillStyle);
+			}
 		},
-		moveTo() {},
-		lineTo() {
-			pathSegments += 1;
-		},
-		stroke() {
-			if (ctx.lineWidth > 0 && _visibleAgainstBackground(ctx.strokeStyle)) ink.strokeSegments += pathSegments;
+		stroke(path) {
+			if (ctx.lineWidth > 0 && _visibleAgainstBackground(ctx.strokeStyle)) ink.strokeSegments += path.segments;
 		}
 	};
 	return { ctx, ink };
@@ -100,9 +117,9 @@ test('CHROME-16 if any option value of a preview row paints an empty or invisibl
 				const palettePref = PREF_SET_BY_ROW[def.id] === 'palette' ? value : 'auto';
 				const design = skin.effectiveWaveformDesign(designPref, skinId);
 				const choice = skin.effectiveWavePalette(palettePref, skinId);
-				const colors = palette.resolveStripBandColors('dark', choice);
+				const colors = palette.resolveWaveBandColors('dark', choice);
 				const { ctx, ink } = recordingContext();
-				paint.paintWaveformPreview(ctx, W, H, design, colors);
+				paint.paintWaveformPreview(ctx, W, H, design, colors, sample);
 				const label = `${def.id}=${value} skin=${skinId} -> ${design}/${choice}`;
 				const visible = ink.area >= MIN_INK_SHARE * W * H || ink.strokeSegments >= 40;
 				assert.ok(visible, `${label}: preview painted no visible marks (ink area ${ink.area}, stroke segments ${ink.strokeSegments})`);
@@ -117,8 +134,8 @@ test('CHROME-16 if any option value of a preview row paints an empty or invisibl
 
 test('CHROME-16 if a design has no painter branch then the preview falls through silently instead of failing', () => {
 	const { ctx } = recordingContext();
-	const colors = palette.resolveStripBandColors('dark', 'rekordbox');
-	assert.throws(() => paint.paintWaveformPreview(ctx, W, H, 'spiral', colors), /no painter for design spiral/);
+	const colors = palette.resolveWaveBandColors('dark', 'rekordbox');
+	assert.throws(() => paint.paintWaveformPreview(ctx, W, H, 'spiral', colors, sample), /no painter for design spiral/);
 });
 
 test('CHROME-16 if SettingsOverlay lazy-imports the preview again then a pending or failed chunk renders nothing', () => {

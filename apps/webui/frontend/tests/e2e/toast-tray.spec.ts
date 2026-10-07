@@ -13,6 +13,8 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
 const STORE = '/src/lib/stores.svelte.ts';
 
 async function raise(page: Page, message: string, kind = 'info', dismissMs = 60_000): Promise<string> {
@@ -161,10 +163,16 @@ async function raiseAndSampleExit(
 }
 
 test.beforeEach(async ({ page }) => {
+	// The tray is global. A cold open of `/` redirects into /performance, whose
+	// deck boot raises its own toasts (Deck N QUANTIZE / BEAT SYNC needs a beat
+	// grid). With a 3-toast cap those evict the oldest toast, which on a loaded
+	// host was this spec's own toast mid-test. Spending the landing keeps the
+	// page on the library shell so the tray holds only toasts the test raises.
 	// The dev server here has no daemon behind it, so the app shell can still be
 	// laying out when the first assertion runs. Waiting for the tray container
 	// (which the layout always renders, empty or not) is the precondition that
 	// actually means "the app is up", where a body visibility check is not.
+	await spendBootLanding(page);
 	await page.goto('/');
 	await page.locator('.toast-stack').waitFor({ state: 'attached' });
 });
@@ -202,6 +210,10 @@ test('the x dismisses that toast and leaves the others', async ({ page }) => {
 // only moves past the delay AFTER the pointer is over the toast. Every
 // expectation is made while time stands still, so a retrying assertion can
 // neither be rescued nor sunk by time passing during its own polling.
+//
+// A second cause failed the toHaveCount(1) after hover plus runFor (CI run
+// 37620689059): ambient deck-boot toasts evicted this toast under the
+// 3-slot tray cap. beforeEach now spends the boot landing so `/` stays put.
 //
 // - if the hover hold is removed, the advance past the delay fires the timer
 //   and the "still there" assertion fails -> broken.

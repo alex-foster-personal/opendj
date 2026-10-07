@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts import server_owner_guard
+from tests.support import process_identity
 from tests.support.process_probes import GONE_WITHIN_S, alive, server_argv, wait_for
 
 pytestmark = pytest.mark.requirement("DEVOPS-17")
@@ -202,3 +204,13 @@ def test_a_signal_just_after_the_spawn_does_not_leak_the_child(tmp_path: Path) -
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(guard.pid, signal.SIGKILL)
+
+
+def test_the_helpers_process_identity_is_the_guards():
+    """The helpers keep their own copy so a global helper does not import `scripts`; a
+    copy that drifts would compare pids by a different identity than the guard's."""
+    for pid in (os.getpid(), os.getppid()):
+        assert process_identity.process_start_time(pid) is not None
+        assert process_identity.process_start_time(pid) == server_owner_guard.process_start_time(pid)
+    assert process_identity.process_start_time(2**22 + 1) is None
+    assert server_owner_guard.process_start_time(2**22 + 1) is None

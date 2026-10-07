@@ -66,7 +66,7 @@ import {
 	type AnalysisSource,
 	type AnalysisSourceFeature
 } from '$lib/rb/analysis-source.svelte';
-import { createPairing } from '$lib/api';
+import { capturePairing } from '$lib/rb/pairing-capture';
 import { hasTrustedBeatGrid } from '$lib/player/grid-features';
 import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat, type ArmAtPosition } from '$lib/rb/beat-sync-math';
 import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
@@ -2625,10 +2625,18 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const from = _pairingSnapshot.decks.find((deck) => deck.deck_id === command.from_deck);
 		const to = _pairingSnapshot.decks.find((deck) => deck.deck_id === command.to_deck);
 		if (from === undefined || to === undefined) throw new Error('selected decks are not in the pairing snapshot');
-		await createPairing({
-			from_stable_id: from.stable_id, to_stable_id: to.stable_id,
-			snapshot: { ..._pairingSnapshot, decks: [from, to] }
-		});
+		const frozen = _pairingSnapshot;
+		// W19: the pairing row is write-once (PAIR-04), so a recapture of a
+		// saved pair changed nothing. Every Capture also appends the sync
+		// snapshot Reload sync replays: the frozen positions, live tempo and master.
+		const live = (deck: typeof from) => {
+			const state = getDeckState(deck.deck_id);
+			return { stable_id: deck.stable_id, position_ms: deck.position_ms, tempo_ratio: state.pitch, is_master: state.is_master };
+		};
+		await capturePairing(
+			{ from_stable_id: from.stable_id, to_stable_id: to.stable_id, snapshot: { ...frozen, decks: [from, to] } },
+			live(from), live(to), frozen.beat_sync_max
+		);
 	} else if (command.type === 'feedback_mark') {
 		throw new Error('feedback_mark must be captured at the dispatch boundary');
 	} else if (command.type === 'playlist_undo') {
@@ -3535,6 +3543,6 @@ export function installPerformanceBrowserIpc(): () => void {
  * Re-exported for Trackify (PERFMODE-15): performance-ipc.svelte.ts is
  * already a stores.svelte importer, so routing pushToast through here keeps
  * the frontend.max_fan_in count on stores.svelte from growing when a new
- * consumer needs it (.planning/debt/1141.md precedent).
+ * consumer needs it ((private path) precedent).
  */
 export { pushToast } from '$lib/stores.svelte';

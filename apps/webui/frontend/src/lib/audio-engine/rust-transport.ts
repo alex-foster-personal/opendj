@@ -6,7 +6,7 @@
  * ratio, a seek, a play. Loaded only with the mode (see `rust-mode.svelte.ts`).
  */
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
-import { effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
+import { BeatSyncPhaseLockError, effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert, unlockedFollowerNotice } from '$lib/player/grid-features';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import {
 	assertPausedMasterSelectionAllowed,
@@ -143,13 +143,22 @@ async function _join(
 		st.stable_id === followerId && masterState.stable_id === masterId &&
 		loadFences[follower] !== Infinity && loadFences[master] !== Infinity;
 	const fv = _view(follower);
-	const join = planRustFollowerJoin(_view(master, options.masterAtSec), fv, {
+	let join: ReturnType<typeof planRustFollowerJoin>;
+	try {
+		join = planRustFollowerJoin(_view(master, options.masterAtSec), fv, {
 		leadSec: SYNC_LEAD_SEC,
 		mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode),
 		pitchRangePct: pitchRanges[follower],
 		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec }),
 		...(options.anchorOnBeat === undefined ? {} : { anchorOnBeat: options.anchorOnBeat })
-	});
+		});
+	} catch (e) {
+		// PLAY-27: a plan refusal is typed, so the caller can play on unsynced;
+		// the loading and superseded aborts above and below stay plain and loud.
+		const message = e instanceof Error ? e.message : String(e);
+		const notice = unlockedFollowerNotice(follower, st, masterState, pitchRanges[follower], message);
+		throw new BeatSyncPhaseLockError(`Beat Sync: no followers could phase-lock (deck ${follower}: ${message})`, [{ deck: follower, message, notice }]);
+	}
 	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
 	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
 		cmds.push({ type: 'seek', deck: follower, position_ms: join.positionMs, quantize: false });
@@ -332,6 +341,7 @@ async function _reanchor(
 			return _join(master, f, { reanchor: true, masterAtSec }).catch((e: unknown) => {
 				if (state.load_generation === generation && state.stable_id === stableId) {
 					state.sync_error = e instanceof Error ? e.message : String(e);
+					if (e instanceof BeatSyncPhaseLockError) _notifyUnlocked(e); // PLAY-27: same red notice as Web Audio
 				}
 			});
 		})
@@ -344,6 +354,14 @@ function _lockedFollowers(master: DeckId): DeckId[] {
 	);
 }
 
+/** PLAY-27: the red notice for every follower that plays on unsynced. */
+function _notifyUnlocked(e: BeatSyncPhaseLockError): void {
+	for (const f of e.failed) {
+		console.info(`[beat-sync] ${f.notice}`);
+		notify(f.notice, 'error');
+	}
+}
+
 async function _play(deck: DeckId): Promise<void> {
 	const st = loadedDeck(deck, 'play');
 	const generation = st.load_generation;
@@ -353,17 +371,22 @@ async function _play(deck: DeckId): Promise<void> {
 	if (syncClock !== null && syncClock !== deck && syncActive) {
 		try {
 			await _join(syncClock, deck, { play: true });
+			return;
 		} catch (e) {
 			const detail = e instanceof Error ? e.message : String(e);
-			if (st.load_generation === generation && st.stable_id === stableId) {
-				st.sync_error = detail;
+			if (!(e instanceof BeatSyncPhaseLockError)) {
+				if (st.load_generation === generation && st.stable_id === stableId) {
+					st.sync_error = detail;
+				}
+				throw new Error(
+					`Beat Sync: deck ${deck} could not phase-lock to deck ${syncClock} (${detail})`,
+					{ cause: e }
+				);
 			}
-			throw new Error(
-				`Beat Sync: deck ${deck} could not phase-lock to deck ${syncClock} (${detail})`,
-				{ cause: e }
-			);
+			// PLAY-27: the planner refused; play on unsynced, say so in red.
+			console.info(`[beat-sync] deck ${deck} starts unsynced: ${detail}`);
+			_notifyUnlocked(e);
 		}
-		return;
 	}
 	await send({ type: 'play', deck, playing: true });
 	_setPlaying(deck, true);
@@ -372,7 +395,10 @@ async function _play(deck: DeckId): Promise<void> {
 		electIfAuto();
 		const elected = _syncMaster();
 		if (elected !== null && elected !== deck && syncActive) {
-			await _join(elected, deck, { reanchor: true });
+			await _join(elected, deck, { reanchor: true }).catch((e: unknown) => {
+				if (!(e instanceof BeatSyncPhaseLockError)) throw e;
+				_notifyUnlocked(e); // PLAY-27: already playing on plain transport
+			});
 		}
 	}
 }

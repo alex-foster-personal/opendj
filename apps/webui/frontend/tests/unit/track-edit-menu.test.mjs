@@ -53,7 +53,11 @@ test('TrackContextMenu spreads the helper and BrowserPanel passes the toolbar op
 	const menu = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
 	const contextMenu = readFileSync(`${SRC}/lib/components/rb/ContextMenu.svelte`, 'utf8');
-	assert.match(menu, /trackEditMenuItems\(targetIds\.length, onopeneditmodal\)/);
+	// W28: labels come from the registry; the host binds each id to its modal.
+	assert.match(menu, /onopeneditmodal \? \(\) => onopeneditmodal\(kind\) : undefined/);
+	for (const kind of ['bulk-edit', 'find-replace', 'mytag']) {
+		assert.ok(menu.includes(`editModal('${kind}')`), `${kind} is bound to its modal`);
+	}
 	assert.match(panel, /onopeneditmodal=\{\(kind\) => void openEditModal\(kind\)\}/);
 	assert.match(contextMenu, /item\.title \?\? \(unavailable \? plannedTitle\('context-menu-unavailable'\) : item\.label\)/);
 });

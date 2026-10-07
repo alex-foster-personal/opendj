@@ -107,7 +107,23 @@ export function mainOutputFaultText(fault: MainOutputFault): string {
 	throw new Error(`Unhandled main output fault: ${String(_exhaustive)}`);
 }
 
-/** The visible line while CUEOUT-26 runs the cue as split cue on one output. */
+/** The full sentence while CUEOUT-26 runs the cue as split cue on one output:
+ * the toast, the perf event, and the badge's hover tooltip. */
 export function sameDeviceSplitText(label: string): string {
 	return `Split cue: master L / cue R (same device: ${label})`;
+}
+
+/** CUEOUT-28 (the maintainer, Tue 6 Oct 2026: "weird helper text in the menubar"): the
+ * TopBar badge shows only this compact text; the full sentence moves to its
+ * hover tooltip, see sameDeviceSplitTooltip. */
+export const SAME_DEVICE_SPLIT_BADGE_TEXT = 'SPLIT L/R';
+
+/** CUEOUT-28: hover text for the compact badge. It keeps every word the badge
+ * used to show, plus what to do about it. */
+export function sameDeviceSplitTooltip(label: string): string {
+	return (
+		`${sameDeviceSplitText(label)}. MAIN and HEADPHONE CUE are the same physical output, ` +
+		'so the room mix plays mono on the left channel and the cue mono on the right. ' +
+		'Pick a different MAIN output to get two separate outputs again.'
+	);
 }

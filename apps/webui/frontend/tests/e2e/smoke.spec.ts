@@ -34,21 +34,36 @@ for (const path of ['/', '/pairings', '/queues']) {
 		if (updateResponse.status() === 502) {
 			expect(await updateResponse.json()).toMatchObject({ error: 'update_check_failed' });
 		}
+		// The USB panel's 503 is a DESIGNED refusal (setup-entry-points.spec.ts
+		// has the full account): the browser that `/` mounts since LIBWS-01
+		// polls GET /api/v1/usb/volumes, which answers 503 on any host that is
+		// not macOS. Pinned to that one endpoint and status, and to exactly as
+		// many anonymous 503 console lines as those responses explain.
+		const usbRefusals = failedResponses.filter((failure) =>
+			/^503 .*\/api\/v1\/usb\/volumes$/.test(failure)
+		);
 		const unexpectedResponses = failedResponses.filter(
-			(failure) => failure !== `502 ${updateResponse.url()}`
+			(failure) => failure !== `502 ${updateResponse.url()}` && !usbRefusals.includes(failure)
 		);
 		expect(unexpectedResponses).toEqual([]);
 		expect(failedRequests).toEqual([]);
 		const expectedUpdateConsoleError = updateResponse.status() === 502;
+		const USB_503 = 'Failed to load resource: the server responded with a status of 503 (Service Unavailable)';
+		let usbConsoleAllowance = usbRefusals.length;
 		expect(
-			errors.filter(
-				(error) =>
+			errors.filter((error) => {
+				if (error === USB_503 && usbConsoleAllowance > 0) {
+					usbConsoleAllowance -= 1;
+					return false;
+				}
+				return (
 					!error.includes('favicon') &&
 					!(
 						expectedUpdateConsoleError &&
 						error === 'Failed to load resource: the server responded with a status of 502 (Bad Gateway)'
 					)
-			)
+				);
+			})
 		).toEqual([]);
 	});
 }

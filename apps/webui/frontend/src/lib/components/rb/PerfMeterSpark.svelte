@@ -7,8 +7,9 @@
 
 	interface Props {
 		values: Array<number | null>;
-		label: string;
-		title: string;
+		/** Omitted when the chart sits beside its own named row (PERF-UI-12). */
+		label?: string;
+		title?: string;
 	}
 
 	let { values, label, title }: Props = $props();
@@ -16,8 +17,10 @@
 	const geometry = $derived(sparkPoints(values));
 </script>
 
-<div class="perf-spark" {title}>
-	<span class="perf-spark-label">{label}</span>
+<div class="perf-spark" title={title || undefined}>
+	{#if label}
+		<span class="perf-spark-label">{label}</span>
+	{/if}
 	<svg class="perf-spark-svg" viewBox="0 0 120 32" aria-hidden="true">
 		{#each geometry.segments as segment (segment.points)}
 			<polyline

@@ -58,7 +58,12 @@
  * prefs.svelte.ts on every route). Same warm family as theme.css's light
  * .perf-root block. Every text/surface pair below is AA (4.5:1) and every
  * indicator 3:1; tests/unit/shell-theme-contrast.test.mjs measures both
- * themes, so a value edited here that breaks a pair fails a test. */
+ * themes, so a value edited here that breaks a pair fails a test.
+ * The Light SKIN selects it too: chrome outside .perf-root's tokens (the
+ * footer build stamp, sync chip, JOBS label, Settings) reads these shell
+ * tokens, and with the dark shell under a light skin they drew near-white
+ * or orange text on the light panels (1.2-2.5:1). */
+html[data-skin='light'],
 html[data-theme='light'] {
   --bg: #f7f3eb;
   --fg: #27241f;
@@ -78,6 +83,23 @@ html[data-theme='light'] {
   --info: #1f6b85;
   --on-info: #fffdf8;
   color-scheme: light;
+}
+
+/* The Light skin is Gothic flipped (theme.css), so its shell drops the warm
+ * family above for neutral grays; the state colors (danger, warning,
+ * success, info) and the link accent stay as above. Same AA rule and test. */
+html[data-skin='light'] {
+  --bg: #f5f5f5;
+  --fg: #1f1f1f;
+  --muted: #5e5e5e;
+  --border: #d0d0d0;
+  --surface: #f1f1f1;
+  --surface-raised: #ebebeb;
+  --surface-raised-hover: #e2e2e2;
+  --row-hover: #ececec;
+  --on-accent: #f5f5f5;
+  --on-danger: #f5f5f5;
+  --on-info: #f5f5f5;
 }
 
 * {

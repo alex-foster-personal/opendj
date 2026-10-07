@@ -46,14 +46,24 @@ def test_module_level_scripts_import_is_not_flagged(tmp_path: Path) -> None:
     assert findings_in_file(sample, rel_path="apps/sample/top.py") == []
 
 
-def test_allowlisted_analysis_bench_is_skipped(tmp_path: Path) -> None:
-    sample = tmp_path / "apps" / "analysis_bench" / "cli.py"
-    sample.parent.mkdir(parents=True)
-    sample.write_text(
-        "def run():\n    from scripts.build_key_bundle import main\n",
-        encoding="utf-8",
-    )
-    assert audit_apps_tree(tmp_path) == []
+def test_the_paid_off_allowlist_entries_are_flagged_again(tmp_path: Path) -> None:
+    """Round 12 narrowed the allowlist to one file; the two package-wide entries it
+    carried must not creep back."""
+    for rel, text in (
+        (
+            "apps/analysis_bench/cli.py",
+            "def run():\n    from scripts.build_key_bundle import main\n",
+        ),
+        ("apps/stems/relay/app.py", "def run():\n    import scripts.modal_vocal_farm as farm\n"),
+    ):
+        sample = tmp_path / rel
+        sample.parent.mkdir(parents=True, exist_ok=True)
+        sample.write_text(text, encoding="utf-8")
+    assert ALLOWLIST_PREFIXES == ("apps/analysis_bench/controls.py",)
+    assert sorted(f.path for f in audit_apps_tree(tmp_path)) == [
+        "apps/analysis_bench/cli.py",
+        "apps/stems/relay/app.py",
+    ]
 
 
 def test_current_tree_only_allowlisted_paths_have_function_body_scripts_imports() -> None:

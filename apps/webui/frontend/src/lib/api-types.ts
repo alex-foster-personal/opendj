@@ -1139,7 +1139,7 @@ export interface paths {
         };
         /**
          * Get Lyrics Kpi Ledger
-         * @description The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).
+         * @description The lyrics KPI ledger verbatim (``(private path)``).
          *
          *     Read-only here: appending a snapshot is a CLI act
          *     (``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.
@@ -5869,6 +5869,10 @@ export interface paths {
          *     change made while they were read shows as a newer revision on the next
          *     ``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it
          *     answers 304, gzip when accepted.
+         *
+         *     Non-music rows (rekordbox Sampler content, LIBM-178) are left out and counted in
+         *     ``non_music_hidden`` unless ``include_non_music=true``. AutoPlay draws its
+         *     candidates from the view the browser resolves off this index, so it never sees one.
          */
         get: operations["get_track_index"];
         put?: never;
@@ -5970,7 +5974,7 @@ export interface paths {
          *
          *     The ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),
          *     ``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection
-         *     from data/state/vocal-cache, merged when PVDI is absent), and
+         *     from (private path), merged when PVDI is absent), and
          *     ``not_analyzed`` (NEITHER source exists).
          */
         get: operations["get_track_anlz_api_v1_tracks__stable_id__anlz_get"];
@@ -8318,7 +8322,7 @@ export interface components {
          *
          *     tier says WHERE the node's iterative build loop can run (cloud/hybrid/
          *     local); reason is a one-line justification grounded in what the node
-         *     touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+         *     touches. See (private path).
          */
         BuildableIn: {
             /** Reason */
@@ -11020,15 +11024,21 @@ export interface components {
         };
         /**
          * KaraokeTrackOut
-         * @description The words payload. ``verdict`` is ALWAYS set: see the 404 rule.
+         * @description The words payload, including an explicit known-but-wordless state.
          */
         KaraokeTrackOut: {
+            /**
+             * Available
+             * @description true when this track has word-level lyrics available
+             */
+            available: boolean;
             /**
              * Lines
              * @description present only when requested with ?include=lines
              */
             lines?: components["schemas"]["KaraokeLineOut"][] | null;
-            verdict: components["schemas"]["CoverageVerdictOut"];
+            /** @description coverage verdict, omitted when the known track has no word lyrics */
+            verdict?: components["schemas"]["CoverageVerdictOut"] | null;
             /** Words */
             words: components["schemas"]["KaraokeWordOut"][];
         };
@@ -15919,6 +15929,11 @@ export interface components {
         TrackIndexOut: {
             /** Items */
             items: components["schemas"]["TrackIndexItemOut"][];
+            /**
+             * Non Music Hidden
+             * @default 0
+             */
+            non_music_hidden: number;
             /** Revision */
             revision: string;
         };
@@ -16378,6 +16393,11 @@ export interface components {
             items: components["schemas"]["TrackListItemOut"][];
             /** Next Cursor */
             next_cursor?: string | null;
+            /**
+             * Non Music Hidden
+             * @default 0
+             */
+            non_music_hidden: number;
         };
         /** UiPrefsOut */
         UiPrefsOut: {
@@ -27705,6 +27725,8 @@ export interface operations {
                 available?: "all" | "true" | "false";
                 /** @description When true, include rows with tracks.deleted_at set. Default hides them. */
                 show_deleted?: boolean;
+                /** @description When true, include non-music rows (rekordbox Sampler files and sample genres, apps.shared.non_music). Default hides them and counts them in non_music_hidden. */
+                include_non_music?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -27756,7 +27778,10 @@ export interface operations {
     };
     get_track_index: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description When true, include non-music rows (rekordbox Sampler files and sample genres, apps.shared.non_music). Default hides them and counts them in non_music_hidden. */
+                include_non_music?: boolean;
+            };
             header?: {
                 "accept-encoding"?: string | null;
                 "if-none-match"?: string | null;

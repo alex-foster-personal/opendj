@@ -50,7 +50,6 @@ const TOPBAR_BANNED_GLYPHS = [
  * Fri 2 Oct 2026 on f88353f5. Grandfathered per file AND per glyph: fixing
  * one means deleting its entry, never widening it. */
 const KNOWN_DEBT = new Map([
-	['src/lib/components/TrackRow.svelte', ['★', '☆']],
 	['src/lib/components/rb/browser/LibrarySourceTabs.svelte', ['☰']],
 	['src/lib/components/rb/browser/PlaylistTree.svelte', ['✎']],
 	['src/lib/components/rb/browser/RatingStars.svelte', ['★', '☆']],

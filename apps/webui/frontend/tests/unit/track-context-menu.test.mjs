@@ -304,10 +304,4 @@ test('runRevealTracks posts once per id and toasts successes', async () => {
 
 test('title constants match agent-native tooltips', () => {
 	assert.equal(mod.REVEAL_TRACK_TITLE, 'POST /api/v1/tracks/{stable_id}:reveal');
-	assert.equal(mod.COPY_PATH_TITLE, 'GET /api/v1/tracks/{stable_id}');
-	assert.equal(
-		mod.REANALYZE_TITLE,
-		'POST /api/v1/analysis/backfill/enqueue (`python -m apps.analysis.queue_cli enqueue --lane beatgrid --backend own_beatgrid.backfill`)'
-	);
-	assert.equal(mod.loadDeckTitle(1, 'sid-123'), 'opendj load 1 sid-123');
 });

@@ -28,8 +28,10 @@ test('menu builder passes the selection of N ids to run', async () => {
 	const src = readFileSync(`${SRC}/lib/components/rb/browser/TrackContextMenu.svelte`, 'utf8');
 	assert.match(src, /onstemsdonext \? \(\) => onstemsdonext\(targetIds\)/);
 	assert.match(src, /onlyricsdonext \? \(\) => onlyricsdonext\(targetIds\)/);
-	assert.match(src, /Stems: do next/);
-	assert.match(src, /Lyrics: do next/);
+	// W28: the labels live in the registry, which the host resolves.
+	const registry = readFileSync(`${SRC}/lib/context-menu/registry.ts`, 'utf8');
+	assert.match(registry, /Stems: do next/);
+	assert.match(registry, /Lyrics: do next/);
 	assert.match(src, /targetIds: menuTargetIds\(row, selectedOrders, selectedIds\)/);
 	// ...and targetIds IS the selection of N ids when the clicked row is in it.
 	const { menuTargetIds } = await loadTypeScriptModule('src/lib/components/rb/browser/track-context-menu.ts');

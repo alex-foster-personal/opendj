@@ -131,6 +131,9 @@ function _bandCounts(lines: readonly LyricsLine[]): Record<LyricLineBand, number
 //------------------------------------------------------------------ adapter
 
 export function adaptLyricTrack(meta: TrackMeta, api: ApiLyricTrack): LyricsTrack {
+	if (api.verdict === null || api.verdict === undefined) {
+		throw new Error('word lyric payload has words but no verdict');
+	}
 	const words = _timedWords(api);
 	_validate(words, api.words.length);
 	const lines = _buildLines(api, words);

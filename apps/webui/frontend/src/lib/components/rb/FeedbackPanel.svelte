@@ -269,7 +269,7 @@
 		display: flex;
 		flex-direction: column;
 		max-height: 46vh;
-		background: #0a0c0f;
+		background: var(--rb-well, #0a0c0f);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
@@ -393,7 +393,7 @@
 		gap: 5px;
 		width: 220px;
 		padding: 8px 9px;
-		background: #0a0c0f;
+		background: var(--rb-well, #0a0c0f);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
 		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);

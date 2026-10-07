@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, setContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
@@ -43,13 +43,19 @@
 	import { SETUP_HOST_ROUTE, SETUP_ROUTE } from '$lib/setup/run-setup';
 	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
-	import { isPerformanceRoutePath, isTrackifyRoutePath } from '$lib/rb/performance-preset';
-	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		isLibraryWorkspaceRoutePath,
+		isPerformanceRoutePath,
+		isTrackifyRoutePath
+	} from '$lib/rb/performance-preset';
+	import { setAppMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		headerPlaylistCountTitle,
 		headerTrackCountTitle,
 		isCurrentNavLink,
-		sidebarNavLinks
+		SHELL_NAV_CONTEXT,
+		sidebarNavLinks,
+		type ShellNav
 	} from '$lib/shell/sidebar-nav';
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
@@ -88,13 +94,22 @@
 	/** Why the Progress link goes nowhere useful, or null when it works. */
 	const ledgerRefusal = $derived(progressRefusal());
 	const navLinks = $derived(sidebarNavLinks(uiPrefs.show_dev_ui));
+	setContext<ShellNav>(SHELL_NAV_CONTEXT, {
+		get links() {
+			return navLinks;
+		},
+		selectMode: setAppMode
+	});
 
 	// /performance is a pixel-faithful full-window rekordbox clone; it must
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
 	// option (a). Toasts stay global as the app-wide error surface.
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 	const isTrackify = $derived(isTrackifyRoutePath($page.url.pathname));
-	const isFullBleedRoute = $derived(isPerformance || isTrackify);
+	// LIBWS-01: Library mode's Crate Desk is full-window too, on the same
+	// browser chrome as Gig.
+	const isLibraryWorkspace = $derived(isLibraryWorkspaceRoutePath($page.url.pathname));
+	const isFullBleedRoute = $derived(isPerformance || isTrackify || isLibraryWorkspace);
 
 	const setupOpen = $derived(setupOverlay.open);
 	// The wizard component also draws the "Setup incomplete" note, which lives
@@ -328,7 +343,8 @@
 
 {#if isFullBleedRoute}
 	<!-- Nothing but the route: the way out of /performance is the top bar's
-	     mode picker (Library), and the app-shell sidebar from there. -->
+	     mode picker (Library). Library mode's Crate Desk at / is full-bleed
+	     too (LIBWS-01), so its top bar's Pages menu carries the sidebar links. -->
 	{@render children()}
 {:else}
 <div class="app-shell">

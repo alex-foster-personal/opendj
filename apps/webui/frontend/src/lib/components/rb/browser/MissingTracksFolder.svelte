@@ -31,6 +31,7 @@
 </script>
 
 <div
+	data-menu-target="tree-readonly"
 	class="row"
 	class:selected
 	data-testid="playlist-missing-tracks"

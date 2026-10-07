@@ -170,8 +170,8 @@ class DjayPlaylistWriter:
 
     def list_playlists(self):
         """Enumerate native djay playlist UUIDs for explicit target choice."""
+        from apps.smartlists.playlist_writeback import VendorPlaylist
         from apps.sync.playlist_tsaf import parse_playlist_blob
-        from apps.webui.server.playlist_writeback import VendorPlaylist
 
         con = self._open_djay()
         try:
@@ -356,13 +356,13 @@ class DjayPlaylistWriter:
         expected_mapping_revision: str, source_transaction: Callable[[], ContextManager[None]],
     ):
         """Hold one SQLite write lock for CAS, online backup, and mutation."""
+        from apps.smartlists.playlist_writeback import WritebackBackup, WritebackConflict
         from apps.smartlists.writeback_backup import (
             exclusive_target_lock,
             online_backup,
             write_reversal,
         )
         from apps.sync.playlist_apply import PlaylistApplyError, _apply_single_op
-        from apps.webui.server.playlist_writeback import WritebackBackup, WritebackConflict
 
         self._assert_safe_to_write()
         with source_transaction():
@@ -427,8 +427,8 @@ class DjayPlaylistWriter:
 
     def backup_target(self):
         """Back up exactly ``djay_db_path`` before a writeback transaction."""
+        from apps.smartlists.playlist_writeback import WritebackBackup
         from apps.smartlists.writeback_backup import online_backup
-        from apps.webui.server.playlist_writeback import WritebackBackup
 
         if not self.djay_db_path.exists():
             raise RuntimeError(f"djay: target disappeared before backup: {self.djay_db_path}")
@@ -436,9 +436,9 @@ class DjayPlaylistWriter:
             return WritebackBackup(online_backup(source, "djay"))
 
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str:
+        from apps.smartlists.playlist_writeback import WritebackConflict
         from apps.smartlists.writeback_backup import exclusive_target_lock, read_reversal
         from apps.sync.playlist_apply import PlaylistApplyError, _apply_single_op
-        from apps.webui.server.playlist_writeback import WritebackConflict
         self._assert_safe_to_write()
         with exclusive_target_lock(self.djay_db_path):
             con = self._open_djay()

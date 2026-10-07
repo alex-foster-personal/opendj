@@ -67,6 +67,7 @@
 		type PerfCardEvent,
 		type PerfCardState
 	} from '$lib/rb/perf-readout-card';
+	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import PerfMeterSpark from './PerfMeterSpark.svelte';
 
 	const CHART_CAP = 60;
@@ -138,9 +139,19 @@
 		})
 	);
 
-	const hzChart = $derived(chartHistory.map((s) => s.hz));
-	const cacheChart = $derived(chartHistory.map((s) => s.cacheMB));
-	const memoryChart = $derived(chartHistory.map((s) => s.memoryMB));
+	// PERF-UI-12: each row draws its own history beside its value. These are
+	// read only inside the open card, so a closed card computes none of them.
+	const rowCharts = $derived<Record<string, Array<number | null>>>({
+		hz: chartHistory.map((s) => s.hz),
+		cache: chartHistory.map((s) => s.cacheN),
+		memory: chartHistory.map((s) => s.memoryMB)
+	});
+	const rowLevels = $derived<Record<string, 'ok' | 'warn' | 'crit'>>({
+		hz: hzDisplayLevel,
+		cache: 'ok',
+		waveform: waveformStutterWarn ? 'warn' : 'ok',
+		memory: memoryLevel
+	});
 
 	function _updateMemory(): void {
 		const readout = memoryReadout({
@@ -291,10 +302,13 @@
 		let intervalMs = perfMeterSampleIntervalMs(_kernelAndChurn());
 		let timer: ReturnType<typeof setInterval> | null = null;
 
+		// The closed-card tick also records one history point (no process
+		// fetch), so hovering the card shows a chart straight away. Measured
+		// cost: see PERF-UI-12 in REQUIREMENTS.md.
 		const start = (): void => {
 			if (timer !== null) return;
-			untrack(_updateMemory);
-			timer = setInterval(() => untrack(_updateMemory), intervalMs);
+			untrack(_sampleTick);
+			timer = setInterval(() => untrack(_sampleTick), intervalMs);
 		};
 
 		const stop = (): void => {
@@ -355,13 +369,30 @@
 		>{memoryText}</span>
 	</button>
 
+	<!-- PERF-UI-11: fixed and placed from the readouts' rect, because the top
+	     bar clips its overflow and an absolute card showed at most 4.5px of 600px. -->
 	{#if cardOpen}
-		<div id="perf-meters-panel" class="perf-meters-panel" data-hover-card="" role="region" aria-label="Performance readout details">
+		<div id="perf-meters-panel"
+			class="perf-meters-panel"
+			data-hover-card=""
+			role="region"
+			aria-label="Performance readout details"
+			use:triggerFloatingAction={{ getTrigger: () => rootEl, preferred: 'below', gap: 4 }}
+		>
 			<dl class="perf-readout-rows">
 				{#each readoutRows as row (row.key)}
 					<div class="perf-readout-row" data-readout={row.key}>
 						<dt class="perf-readout-name">{row.name}</dt>
-						<dd class="perf-readout-value">{row.value}</dd>
+						<dd
+							class="perf-readout-value"
+							class:warn={rowLevels[row.key] === 'warn'}
+							class:crit={rowLevels[row.key] === 'crit'}
+						>{row.value}</dd>
+						<dd class="perf-readout-chart">
+							{#if rowCharts[row.key] !== undefined}
+								<PerfMeterSpark values={rowCharts[row.key]} />
+							{/if}
+						</dd>
 						<dd class="perf-readout-explainer">{row.explainer}</dd>
 						<dd class="perf-readout-detail">{row.detail}</dd>
 					</div>
@@ -373,11 +404,6 @@
 					: 'Click the readouts to pin this card and see the history and resets.'}
 			</p>
 		{#if monitorOpen}
-			<div class="perf-meters-charts">
-				<PerfMeterSpark values={hzChart} label="Hz" title="Presentation publish rate over recent samples." />
-				<PerfMeterSpark values={cacheChart} label="Cache MB" title="Prefetch + ANLZ cache footprint over recent samples." />
-				<PerfMeterSpark values={memoryChart} label="Memory MB" title="JS heap + decoded PCM over recent samples." />
-			</div>
 			<ul class="perf-meters-breakdown">
 				{#each breakdown as line (line.key)}
 					<li class="perf-breakdown-row" title={line.title}>
@@ -395,7 +421,7 @@
 			</ul>
 			<p
 				class="perf-meters-chrome-tm-hint"
-				title="Chromium sessions only. Capture renderer vs GPU vs Browser per docs/perf/performance-register.md. Packaged WKWebView has no Chrome Task Manager."
+				title="Chromium sessions only. Capture renderer vs GPU vs Browser per (private path). Packaged WKWebView has no Chrome Task Manager."
 			>
 				For Chromium dev sessions, use Chrome Task Manager (Shift+Esc) to capture
 				tab-renderer CPU and memory; see the performance register.
@@ -444,12 +470,19 @@
 	.perf-meter.crit {
 		color: #e05555;
 	}
+	/* Fixed, not absolute: .rb-topbar has overflow: hidden, which clipped the
+	   card to the bar's height. triggerFloatingAction sets left/top below the
+	   readouts and keeps the card inside the viewport. max-height leaves room
+	   for the top bar, so a pinned card taller than the window scrolls below
+	   the readouts instead of being clamped up over them. */
 	.perf-meters-panel {
-		position: absolute;
-		top: 100%;
+		position: fixed;
+		top: 0;
 		left: 0;
 		z-index: 200;
-		margin-top: 4px;
+		max-height: calc(100vh - var(--rb-topbar-h, 28px) - 12px);
+		overflow-y: auto;
+		box-sizing: border-box;
 		padding: 8px;
 		min-width: 320px;
 		max-width: min(420px, calc(100vw - 32px));
@@ -464,24 +497,58 @@
 		gap: 6px;
 		font-size: 11px;
 	}
+	/* PERF-UI-12: value in a thin bordered left column so the numbers are
+	   easy to spot, then the name, then that readout's own chart. */
 	.perf-readout-row {
 		display: grid;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: 3.6em 1fr auto;
 		column-gap: 8px;
+		align-items: start;
 	}
+	/* dt stays first for valid <dl>; the grid puts the value on the left. */
 	.perf-readout-name {
+		grid-column: 2;
+		grid-row: 1;
 		color: var(--rb-text, #ddd);
 		font-weight: 600;
 	}
 	.perf-readout-value {
+		grid-column: 1;
+		grid-row: 1;
 		margin: 0;
+		padding: 1px 4px;
+		border: 1px solid var(--rb-border, #444);
+		border-radius: 3px;
+		font-weight: 600;
 		font-variant-numeric: tabular-nums;
-		text-align: right;
+		text-align: center;
 		color: var(--rb-text, #ddd);
 	}
+	.perf-readout-value.warn {
+		color: #e89a3c;
+		border-color: #e89a3c;
+	}
+	.perf-readout-value.crit {
+		color: #e05555;
+		border-color: #e05555;
+	}
+	/* A small chart on the name line, so the explainer below keeps its width. */
+	.perf-readout-chart {
+		margin: 0;
+		grid-row: 1;
+		grid-column: 3;
+	}
+	.perf-readout-chart :global(.perf-spark) {
+		min-width: 0;
+	}
+	.perf-readout-chart :global(.perf-spark-svg) {
+		width: 75px;
+		height: 20px;
+	}
+	/* Text starts in the name column; the value column stays blank below. */
 	.perf-readout-explainer,
 	.perf-readout-detail {
-		grid-column: 1 / -1;
+		grid-column: 2 / -1;
 		margin: 1px 0 0;
 		color: var(--rb-text-dim);
 		line-height: 1.35;
@@ -494,11 +561,6 @@
 		margin: 4px 0 8px;
 		font-size: 10px;
 		color: var(--rb-text-dim);
-	}
-	.perf-meters-charts {
-		display: flex;
-		gap: 8px;
-		margin-bottom: 8px;
 	}
 	.perf-meters-breakdown {
 		list-style: none;

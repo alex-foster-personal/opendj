@@ -9,12 +9,16 @@
 	let {
 		source,
 		onspotify,
-		oncollection
+		oncollection,
+		recordable = true
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
 		/** Flips the tree back from a non-collection source (Spotify). */
 		oncollection?: () => void;
+		/** False in Library mode: no REC, and no status read that could attach
+		 * the master-mix tap (an audio graph) to an owned recording. */
+		recordable?: boolean;
 	} = $props();
 
 	// UX-RAIL-01: the rail's top-left entry goes back to the whole collection
@@ -47,7 +51,7 @@
 	let stopping = false;
 
 	onMount(() => {
-		void refreshRecorderStatus();
+		if (recordable) void refreshRecorderStatus();
 	});
 
 	// SET-11: while the capture is starting or waiting on the macOS microphone
@@ -55,7 +59,7 @@
 	// while it records, so an input that stops mid-set unlights REC.
 	$effect(() => {
 		const after = rail.poll;
-		if (after === null) return;
+		if (after === null || !recordable) return;
 		const timer = setTimeout(() => void refreshRecorderStatus(), after);
 		return () => clearTimeout(timer);
 	});
@@ -144,6 +148,7 @@
 	{source}
 	{onspotify}
 	oncollection={showWholeCollection}
+	{recordable}
 	recording={rail.recording}
 	recordingBusy={recorderBusy}
 	recordingWaiting={rail.waiting}

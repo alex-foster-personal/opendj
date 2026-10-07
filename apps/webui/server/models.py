@@ -236,6 +236,8 @@ class LyricsUnavailableOut(BaseModel):
 class TracksPage(BaseModel):
     items: list[TrackListItemOut]
     next_cursor: str | None = None
+    #: LIBM-178: non-music rows left out of THIS page (0 with include_non_music=true).
+    non_music_hidden: int = 0
 
 
 class TrackIndexItemOut(TrackListItemOut):
@@ -278,6 +280,8 @@ class TrackIndexOut(BaseModel):
 
     revision: str
     items: list[TrackIndexItemOut]
+    #: LIBM-178: non-music rows left out of the index (0 with include_non_music=true).
+    non_music_hidden: int = 0
 
 
 class RowAssetOut(BaseModel):

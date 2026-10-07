@@ -25,10 +25,14 @@ test.describe('preflight boot gate', () => {
 		// paint the test can observe, matching the "well under 300ms" ask.
 		await expect(page.locator('[data-preflight-mode="boot"]')).toHaveCount(0);
 
-		// The real app shell is what's on screen instead.
-		await expect(page.getByRole('heading', { name: 'Open DJ' })).toBeVisible();
-		// exact: a 'Library wheel' link now sits beside it in the nav.
-		await expect(page.getByRole('link', { name: 'Library', exact: true })).toBeVisible();
+		// The real app is what's on screen instead. "/" is now Library mode's
+		// full-bleed Crate Desk (LIBWS-01), with no app-shell heading or sidebar
+		// to look for, and a v1 cold open moves on to Gig (PERFMODE-11, as
+		// gig-boot-landing.spec.ts asserts). So wait for the settled app: Gig's
+		// route with its performance API up, and still no gate.
+		await expect(page).toHaveURL(/\/performance/, { timeout: 30_000 });
+		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+		await expect(page.locator('[data-preflight-mode="boot"]')).toHaveCount(0);
 	});
 
 	test('a library with nothing imported auto-opens setup instead of trapping the user', async ({

@@ -113,7 +113,6 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 	await expect(page.getByTestId('playlist-set-tabs')).toBeAttached();
 
 	const hidden = [
-		['Stage', page.locator('.topbar-slot-stage')],
 		['voice command', page.locator('input[aria-label="text command entry"]')],
 		['LINK', page.locator('.link-btn')],
 		['PAD', page.locator('.topbar-slot-pad')],
@@ -148,6 +147,20 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 	for (const [name, locator] of hidden) {
 		await expect(locator, `${name} must come back in MORE`).toBeVisible();
 	}
+
+	// LYR-12: Stage lives in the LYR hover menu now. LESS hides its row there;
+	// MORE shows it. The menu itself (LYR's explainer) opens in both.
+	const lyr = page.locator('button.topbar-slot-lyr');
+	const stage = page.getByTestId('lyr-menu-stage');
+	await setLayout(page, 'LESS');
+	await lyr.hover();
+	await expect(page.getByTestId('lyr-menu')).toBeVisible();
+	await expect(stage, 'Stage must be hidden in LESS').toBeHidden();
+	await expect(stage, 'Stage must stay MOUNTED in the LESS menu').toHaveCount(1);
+	await page.mouse.move(0, 400);
+	await setLayout(page, 'MORE');
+	await lyr.hover();
+	await expect(stage, 'Stage must come back in MORE').toBeVisible();
 });
 
 test('the routes behind LESS-hidden controls keep working while they are hidden', async ({ page }) => {

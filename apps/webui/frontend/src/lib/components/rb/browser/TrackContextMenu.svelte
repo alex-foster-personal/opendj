@@ -1,29 +1,19 @@
 <script lang="ts">
-	import ContextMenu, { type ContextMenuItem } from '../ContextMenu.svelte';
-	import {
-		ADD_TO_PLAYLIST_EMPTY_TITLE,
-		ADD_TO_PLAYLIST_TITLE,
-		addToPlaylistMenuItem
-	} from './add-to-playlist-menu';
+	import ContextMenu from '../ContextMenu.svelte';
+	import { bindMenuItems, type BoundMenuItem, type MenuRunners } from '$lib/context-menu/bind';
+	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
+	import { isUsbTrackId } from '$lib/rb/track-source';
 	import type { BrowserRow } from './pane-contract.svelte';
 	import {
-		COPY_PATH_TITLE,
-		loadDeckTitle,
 		menuItemsForTrack,
 		menuTargetIds,
-		REANALYZE_TITLE,
+		reportMenuLoadFailure,
 		runCopyPaths,
 		runReanalyze,
-		runRevealTracks,
-		REVEAL_TRACK_TITLE
+		runRevealTracks
 	} from './track-context-menu';
-	import {
-		trackEditMenuItems,
-		type TrackEditModalKind
-	} from './track-edit-menu';
-	import { removeFromLibraryMenuItem } from './track-library-menu';
-	import { showInPlaylistsMenuItem } from './track-playlists-menu';
-	import { relocateMenuItem } from './track-relocate-menu';
+	import type { TrackEditModalKind } from './track-edit-menu';
+	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 
 	type DeckId = 1 | 2 | 3 | 4;
 	const DECKS: DeckId[] = [1, 2, 3, 4];
@@ -80,7 +70,10 @@
 		};
 	}
 
+	$effect(preloadMenuRegistry);
+
 	export function open(event: MouseEvent, row: BrowserRow): void {
+		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		event.stopPropagation();
 		openMenu(event.clientX, event.clientY, row, new Set(selectedOrders));
@@ -88,79 +81,63 @@
 
 	export function openFromKeyboard(event: KeyboardEvent, row: BrowserRow): void {
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+		loadMenuRegistry(reportMenuLoadFailure);
 		event.preventDefault();
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		openMenu(rect.left + 8, rect.top + 8, row, new Set(selectedOrders));
 	}
 
+	/**
+	 * What shows, and whether it is enabled, comes from the W28 registry
+	 * (`$lib/context-menu/registry.ts`, golden matrix in
+	 * (private path)). This component only gathers the row's
+	 * context and binds each item id to its runner. An item whose runner the
+	 * host did not pass renders disabled with a reason rather than vanishing.
+	 */
 	function trackMenuItems(
+		{ menuFor, trackAudioOf }: NonNullable<ReturnType<typeof menuRegistry>>,
 		row: BrowserRow,
 		targetIds: string[],
 		menuX: number,
 		menuY: number
-	): ContextMenuItem[] {
-		const addItem = addToPlaylistMenuItem(targetIds, onaddtoplaylist);
-		// Unbuilt rows with no handler and no feature behind them (a bare "Edit"
-		// label, Stems - open, Mark offline, Cloud-only) are HIDDEN for V1 rather
-		// than shown inert (JIK, Thu 1 Oct 2026). Rows whose `run` is undefined
-		// only in context (Remove from playlist outside a playlist, Stems/Lyrics
-		// when the host passes no handler) stay, since the feature is real.
-		return menuItemsForTrack(row.stable_id, [
-			...DECKS.map((deck) => ({
-				id: `load-${deck}`,
-				label: `Load to deck ${deck}`,
-				testId: `context-menu-load-deck-${deck}`,
-				title: loadDeckTitle(deck, row.stable_id),
-				run: () => onloadrow(row, deck)
-			})),
+	): BoundMenuItem[] {
+		const resolved = menuFor(
+			{ kind: 'track', count: targetIds.length },
 			{
-				...addItem,
-				title: addItem.run ? ADD_TO_PLAYLIST_TITLE : ADD_TO_PLAYLIST_EMPTY_TITLE
-			},
-			...trackEditMenuItems(targetIds.length, onopeneditmodal),
-			relocateMenuItem(() => onrelocate(row, menuX, menuY)),
-			{
-				id: 'finder',
-				label: 'Show in Finder',
-				title: REVEAL_TRACK_TITLE,
-				run: () => runRevealTracks(targetIds)
-			},
-			showInPlaylistsMenuItem(() => onshowinplaylists(row, menuX, menuY)),
-			{
-				id: 'copy-path',
-				label: 'Copy path',
-				title: COPY_PATH_TITLE,
-				run: () => runCopyPaths(targetIds)
-			},
-			{
-				id: 'analyze',
-				label: 'Re-analyze',
-				title: REANALYZE_TITLE,
-				run: () => runReanalyze(targetIds)
-			},
-			{
-				id: 'stems-generate',
-				label: 'Stems: do next',
-				run: onstemsdonext ? () => onstemsdonext(targetIds) : undefined
-			},
-			{
-				id: 'lyrics',
-				label: 'Lyrics: do next',
-				run: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined
-			},
-			{
-				id: 'remove-playlist',
-				label: 'Remove from playlist',
-				run: removable ? () => onremoverow?.(row) : undefined
-			},
-			removeFromLibraryMenuItem(targetIds, onremovefromlibrary)
-		]);
+				selection: targetIds.length > 1 ? 'many' : 'one',
+				source: isUsbTrackId(row.stable_id) ? 'usb' : removable ? 'playlist' : 'collection',
+				audio: trackAudioOf(row),
+				stems: row.stems?.status === 'ready' ? 'ready' : 'none',
+				// LIBWS-03: the registry drops deck loads and worker starters here.
+				workspace: libraryWorkspace.active ? 'library' : 'performance'
+			}
+		);
+		const editModal = (kind: TrackEditModalKind): (() => void) | undefined =>
+			onopeneditmodal ? () => onopeneditmodal(kind) : undefined;
+		const runners: MenuRunners = {
+			...Object.fromEntries(DECKS.map((deck) => [`load-${deck}`, () => onloadrow(row, deck)])),
+			'add-playlist': onaddtoplaylist ? () => onaddtoplaylist(targetIds) : undefined,
+			'bulk-edit': editModal('bulk-edit'),
+			'find-replace': editModal('find-replace'),
+			mytag: editModal('mytag'),
+			relocate: () => onrelocate(row, menuX, menuY),
+			finder: () => runRevealTracks(targetIds),
+			'show-in-playlists': () => onshowinplaylists(row, menuX, menuY),
+			'copy-path': () => runCopyPaths(targetIds),
+			analyze: () => runReanalyze(targetIds),
+			'stems-generate': onstemsdonext ? () => onstemsdonext(targetIds) : undefined,
+			lyrics: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined,
+			'remove-playlist': onremoverow ? () => onremoverow(row) : undefined,
+			'remove-library': onremovefromlibrary ? () => onremovefromlibrary(targetIds) : undefined
+		};
+		// The stick allowlist stays as a second, independent guard.
+		return menuItemsForTrack(row.stable_id, bindMenuItems(resolved, runners));
 	}
 </script>
 
-{#if menu !== null}
+{#if menu !== null && menuRegistry() !== null}
 	<ContextMenu
-		items={trackMenuItems(menu.row, menu.targetIds, menu.x, menu.y)}
+		items={trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.x, menu.y)}
 		x={menu.x}
 		y={menu.y}
 		onclose={() => (menu = null)}

@@ -98,7 +98,7 @@
 	.tidal {
 		fill: #fff;
 	}
-	:global(html[data-theme='light']) .tidal {
+	:global(html:is([data-theme='light'], [data-skin='light'])) .tidal {
 		fill: #000;
 	}
 </style>

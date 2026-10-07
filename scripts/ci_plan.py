@@ -1,6 +1,6 @@
 """Turn a pull request's diff into a pytest plan: SKIP_PYTEST, SCOPED or FULL.
 
-SMARTEST-CI round 5 (`specs/ci-fail-fast.md`). This REPORTS a plan; nothing acts on it.
+SMARTEST-CI round 5 (`(private path)`). This REPORTS a plan; nothing acts on it.
 Selection becomes a gate only once the miss audit has produced a recall number, which it has
 not, so the only safe way to be wrong here is to over-select, and every rule below that
 cannot decide answers FULL.
@@ -39,9 +39,7 @@ from scripts.ci_plan_sources import (
     PlanError,
     _read_source,
     imported_modules,
-    is_test_module,
     mentioned_strings,
-    pytest_inputs,
 )
 
 REPO = Path(__file__).resolve().parent.parent
@@ -71,7 +69,7 @@ class Scope:
     tests: tuple[str, ...]
     # Scopes whose TESTS import this scope's sources, so a change here can break them.
     # DERIVED, never hand-written: `observed_dependents` recomputes it from the imports and
-    # `tests/scripts/test_ci_plan.py` fails when the two disagree, so a new import across a
+    # `(private path)` fails when the two disagree, so a new import across a
     # scope boundary forces this file to move rather than silently narrowing the selection.
     dependents: tuple[str, ...] = ()
     # Strings a pytest input MENTIONS when it consumes this scope's sources. The import
@@ -466,31 +464,6 @@ def _consumed_scopes(text: str, where: str, config: Config) -> list[Scope]:
         if any(needle in literal for needle in scope.mentions for literal in literals):
             consumed[scope.name] = scope
     return [consumed[name] for name in sorted(consumed)]
-
-
-def helper_carried_scopes(config: Config, root: Path = REPO) -> frozenset[str]:
-    """Scopes whose change must run EVERYTHING, because a GLOBAL pytest helper imports them.
-
-    A helper matched by `always` is not a test and does not run; it is imported by suites
-    across the tree, including scope-owned suites that are not always run. Its imports are
-    therefore a dependency of those suites, and its consumers cannot be resolved from its own
-    text, so the attribution is the widest honest one.
-
-    Closed over the source graph for the same reason `observed_dependents` is: a helper that
-    imports scope A also depends on everything A imports.
-    """
-    reaches = _source_reachability(config, root)
-    owner_of = _test_owner_index(config)
-    carried: set[str] = set()
-    for file in pytest_inputs(root / "tests"):
-        relative = (file.relative_to(root) if file.is_absolute() else file).as_posix()
-        if owner_of(relative) is not None or not matches(relative, config.always):
-            continue
-        if is_test_module(relative):
-            continue
-        for scope in _consumed_scopes(_read_source(file, relative), relative, config):
-            carried |= reaches[scope.name]
-    return frozenset(carried)
 
 
 def _source_reachability(config: Config, root: Path = REPO) -> dict[str, frozenset[str]]:

@@ -3619,7 +3619,7 @@
       },
       "BuildableIn": {
         "additionalProperties": false,
-        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
+        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See (private path).",
         "properties": {
           "reason": {
             "title": "Reason",
@@ -10914,8 +10914,13 @@
         "type": "object"
       },
       "KaraokeTrackOut": {
-        "description": "The words payload. ``verdict`` is ALWAYS set: see the 404 rule.",
+        "description": "The words payload, including an explicit known-but-wordless state.",
         "properties": {
+          "available": {
+            "description": "true when this track has word-level lyrics available",
+            "title": "Available",
+            "type": "boolean"
+          },
           "lines": {
             "anyOf": [
               {
@@ -10932,7 +10937,15 @@
             "title": "Lines"
           },
           "verdict": {
-            "$ref": "#/components/schemas/CoverageVerdictOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CoverageVerdictOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "coverage verdict, omitted when the known track has no word lyrics"
           },
           "words": {
             "items": {
@@ -10943,8 +10956,8 @@
           }
         },
         "required": [
-          "verdict",
-          "words"
+          "words",
+          "available"
         ],
         "title": "KaraokeTrackOut",
         "type": "object"
@@ -23504,6 +23517,11 @@
             "title": "Items",
             "type": "array"
           },
+          "non_music_hidden": {
+            "default": 0,
+            "title": "Non Music Hidden",
+            "type": "integer"
+          },
           "revision": {
             "title": "Revision",
             "type": "string"
@@ -25038,6 +25056,11 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "non_music_hidden": {
+            "default": 0,
+            "title": "Non Music Hidden",
+            "type": "integer"
           }
         },
         "required": [
@@ -30073,7 +30096,7 @@
     },
     "/api/v1/bench/lyrics-kpi": {
       "get": {
-        "description": "The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
+        "description": "The lyrics KPI ledger verbatim (``(private path)``).\n\nRead-only here: appending a snapshot is a CLI act\n(``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.\nA missing key raises rather than defaulting - a KPI panel drawing invented\nnumbers is worse than a panel that fails.",
         "operationId": "get_lyrics_kpi_ledger_api_v1_bench_lyrics_kpi_get",
         "responses": {
           "200": {
@@ -42116,6 +42139,18 @@
             }
           },
           {
+            "description": "When true, include non-music rows (rekordbox Sampler files and sample genres, apps.shared.non_music). Default hides them and counts them in non_music_hidden.",
+            "in": "query",
+            "name": "include_non_music",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "When true, include non-music rows (rekordbox Sampler files and sample genres, apps.shared.non_music). Default hides them and counts them in non_music_hidden.",
+              "title": "Include Non Music",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -42200,9 +42235,21 @@
     },
     "/api/v1/tracks/index": {
       "get": {
-        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\nthe fields no library view reads off an index row and the per-row disk reads\n(preview strip, vocals, cover verdict, stems: LIBM-172), which the browser asks\n``POST /library/row-assets`` for, rows in view only. The browser holds this once\nand resolves All Tracks from it, the way rekordbox, Serato and Traktor hold their\nlibrary in memory. ``revision`` is the library revision read BEFORE the rows, so a\nchange made while they were read shows as a newer revision on the next\n``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it\nanswers 304, gzip when accepted.",
+        "description": "Every library row in ONE response: the browser's local library index (LIBM-171).\n\nThe same rows, in the same order, as walking ``GET /tracks`` to the end, minus\nthe fields no library view reads off an index row and the per-row disk reads\n(preview strip, vocals, cover verdict, stems: LIBM-172), which the browser asks\n``POST /library/row-assets`` for, rows in view only. The browser holds this once\nand resolves All Tracks from it, the way rekordbox, Serato and Traktor hold their\nlibrary in memory. ``revision`` is the library revision read BEFORE the rows, so a\nchange made while they were read shows as a newer revision on the next\n``GET /tracks/revision``. The ETag is a hash of the body: ``If-None-Match`` with it\nanswers 304, gzip when accepted.\n\nNon-music rows (rekordbox Sampler content, LIBM-178) are left out and counted in\n``non_music_hidden`` unless ``include_non_music=true``. AutoPlay draws its\ncandidates from the view the browser resolves off this index, so it never sees one.",
         "operationId": "get_track_index",
         "parameters": [
+          {
+            "description": "When true, include non-music rows (rekordbox Sampler files and sample genres, apps.shared.non_music). Default hides them and counts them in non_music_hidden.",
+            "in": "query",
+            "name": "include_non_music",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "When true, include non-music rows (rekordbox Sampler files and sample genres, apps.shared.non_music). Default hides them and counts them in non_music_hidden.",
+              "title": "Include Non Music",
+              "type": "boolean"
+            }
+          },
           {
             "in": "header",
             "name": "accept-encoding",
@@ -42444,7 +42491,7 @@
     },
     "/api/v1/tracks/{stable_id}/anlz": {
       "get": {
-        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.\n\nThe ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),\n``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection\nfrom data/state/vocal-cache, merged when PVDI is absent), and\n``not_analyzed`` (NEITHER source exists).",
+        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.\n\nThe ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),\n``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection\nfrom (private path), merged when PVDI is absent), and\n``not_analyzed`` (NEITHER source exists).",
         "operationId": "get_track_anlz_api_v1_tracks__stable_id__anlz_get",
         "parameters": [
           {

@@ -13,6 +13,8 @@ use tungstenite::{Message, WebSocket};
 
 const BIN: &str = env!("CARGO_BIN_EXE_odj-audio");
 const TOKEN: &str = "test-token-0123456789abcdef0123456789";
+/// How long a line under test may take to arrive, on a loaded runner.
+const WAIT: Duration = Duration::from_secs(10);
 
 type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
@@ -70,10 +72,14 @@ fn say(ws: &mut Socket, v: Value) {
     ws.send(Message::text(v.to_string())).unwrap();
 }
 
-/// Read until `want` matches, failing after `limit` messages.
-fn until(ws: &mut Socket, limit: usize, mut want: impl FnMut(&Value) -> bool) -> Vec<Value> {
+/// Read until `want` matches, failing once `WAIT` has passed. The engine
+/// pushes a state snapshot about every 33 ms, so a limit on the number of
+/// messages is a wall-clock budget in disguise: a slow runner fills it with
+/// states before the line under test arrives. The wait is bounded by time.
+fn until(ws: &mut Socket, mut want: impl FnMut(&Value) -> bool) -> Vec<Value> {
+    let deadline = Instant::now() + WAIT;
     let mut seen = Vec::new();
-    for _ in 0..limit {
+    while Instant::now() < deadline {
         let v = next(ws);
         let hit = want(&v);
         seen.push(v);
@@ -81,7 +87,9 @@ fn until(ws: &mut Socket, limit: usize, mut want: impl FnMut(&Value) -> bool) ->
             return seen;
         }
     }
-    panic!("no match in {limit} messages: {seen:?}");
+    let states = seen.iter().filter(|v| v["type"] == "state").count();
+    let rest: Vec<&Value> = seen.iter().filter(|v| v["type"] != "state").collect();
+    panic!("no match in {WAIT:?}: {} messages, {states} of them state; the rest: {rest:?}", seen.len());
 }
 
 fn refused_with(url: &str, status: u16) {
@@ -108,8 +116,8 @@ fn sockets_and_stdio_share_one_mailbox() {
     assert_eq!(hello["protocol"], 1);
     assert_eq!(hello["clock"], "wall");
     assert!(hello.get("ws").is_none(), "only the supervisor needs the URL");
-    // A new client is sent state straight away.
-    until(&mut a, 5, |v| v["type"] == "state");
+    // A new client is sent state straight away (and every ~33 ms after).
+    until(&mut a, |v| v["type"] == "state");
 
     let mut b = connect(&e.url);
     assert_eq!(next(&mut b)["type"], "hello");
@@ -117,9 +125,9 @@ fn sockets_and_stdio_share_one_mailbox() {
     // A command from socket A: its result goes to A only, and every client,
     // stdio included, sees the state it produced.
     say(&mut a, json!({"id": "a1", "cmd": {"type": "crossfader", "value": 0.25}}));
-    let seen = until(&mut a, 100, |v| v["type"] == "result" && v["id"] == "a1");
+    let seen = until(&mut a, |v| v["type"] == "result" && v["id"] == "a1");
     assert_eq!(seen.last().unwrap()["ok"], true);
-    until(&mut b, 100, |v| v["type"] == "state" && v["mixer"]["crossfader"] == 0.25);
+    until(&mut b, |v| v["type"] == "state" && v["mixer"]["crossfader"] == 0.25);
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let v = e.stdout.recv_timeout(deadline - Instant::now()).unwrap();
@@ -139,12 +147,12 @@ fn sockets_and_stdio_share_one_mailbox() {
             break;
         }
     }
-    let seen = until(&mut b, 100, |v| v["type"] == "state" && v["mixer"]["master_volume"] == 0.5);
+    let seen = until(&mut b, |v| v["type"] == "state" && v["mixer"]["master_volume"] == 0.5);
     assert!(seen.iter().all(|v| v["id"] != "s1" && v["id"] != "a1"), "socket B got another client's result");
 
     // Refusals name their reason over the socket exactly as on stdio.
     say(&mut b, json!({"id": "b1", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true}}));
-    let r = until(&mut b, 100, |v| v["id"] == "b1").pop().unwrap();
+    let r = until(&mut b, |v| v["id"] == "b1").pop().unwrap();
     assert_eq!(r["error"]["code"], "not_implemented");
     // Several lines in one frame are several commands.
     let two = format!(
@@ -156,25 +164,25 @@ fn sockets_and_stdio_share_one_mailbox() {
     // Results can come back out of order: a line that fails to parse is
     // answered at once, a valid one after the audio thread applies it.
     let mut got = 0;
-    let seen = until(&mut b, 100, |v| {
+    let seen = until(&mut b, |v| {
         got += (v["id"] == "b2" || v["id"] == "b3") as u32;
         got == 2
     });
     assert!(seen.iter().any(|v| v["id"] == "b2" && v["ok"] == true));
     assert!(seen.iter().any(|v| v["id"] == "b3" && v["error"]["code"] == "invalid"));
     b.send(Message::binary(vec![1u8, 2, 3])).unwrap();
-    let r = until(&mut b, 100, |v| v["type"] == "result" && v["ok"] == false).pop().unwrap();
+    let r = until(&mut b, |v| v["type"] == "result" && v["ok"] == false).pop().unwrap();
     assert_eq!(r["error"]["code"], "invalid");
 
     // Only the supervisor may stop the engine.
     say(&mut a, json!({"id": "a2", "cmd": {"type": "engine_shutdown"}}));
-    let r = until(&mut a, 100, |v| v["id"] == "a2").pop().unwrap();
+    let r = until(&mut a, |v| v["id"] == "a2").pop().unwrap();
     assert_eq!(r["error"]["code"], "unsupported");
 
     // A socket client leaving changes nothing for the others.
     drop(a);
     say(&mut b, json!({"id": "b4", "cmd": {"type": "engine_state"}}));
-    assert_eq!(until(&mut b, 100, |v| v["id"] == "b4").pop().unwrap()["ok"], true);
+    assert_eq!(until(&mut b, |v| v["id"] == "b4").pop().unwrap()["ok"], true);
 
     // Stdin EOF: the engine exits, sockets and all.
     drop(e.stdin.take());
@@ -226,19 +234,23 @@ fn midi_page_lines_reach_every_client_and_the_result_only_its_sender() {
         &mut a,
         json!({"id": "hot", "cmd": {"type": "midi_inject", "port": "DDJ-FLX4", "bytes": [0x99, 0x03, 0x7f]}}),
     );
-    let seen = until(&mut a, 8, |v| v["id"] == "hot");
+    let seen = until(&mut a, |v| v["id"] == "hot");
     assert!(seen.contains(&action), "sender: {seen:?}");
     assert_eq!(seen.last().unwrap()["ok"], true);
-    until(&mut b, 8, |v| *v == action);
-    let from_stdio: Vec<Value> = (0..8)
-        .map_while(|_| e.stdout.recv_timeout(Duration::from_secs(10)).ok())
-        .take_while(|v| *v != action)
-        .collect();
-    assert!(from_stdio.iter().all(|v| v["id"] != "hot"), "stdio: {from_stdio:?}");
+    until(&mut b, |v| *v == action);
+    // stdio is a client like any other: it gets the page line, never the result.
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let v = e.stdout.recv_timeout(deadline.saturating_duration_since(Instant::now())).expect("stdio got the page line");
+        assert_ne!(v["id"], "hot", "stdio got a's result");
+        if v == action {
+            break;
+        }
+    }
 
     // Control: the result is the sender's alone. b's next reply is its own.
     say(&mut b, json!({"id": "b1", "cmd": {"type": "crossfader", "value": 0.5}}));
-    let seen = until(&mut b, 8, |v| v["id"] == "b1");
+    let seen = until(&mut b, |v| v["id"] == "b1");
     assert!(seen.iter().all(|v| v["id"] != "hot"), "b saw a's result: {seen:?}");
     drop(e.stdin.take());
     let _ = e.child.wait();

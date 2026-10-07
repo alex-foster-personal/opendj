@@ -236,3 +236,74 @@ test('alignHotcues reports how many pairs landed when a POST fails partway throu
 	assert.equal(caught.paired, 1, 'the A slot landed before the B slot failed');
 	assert.equal(calls, 2, 'the C slot must not be attempted after a failure - earlier POSTs are already durable');
 });
+
+// -------------------------------------------------------- W19 recordSyncSnapshot
+
+// requirement: PAIR-07
+// [if] Capture runs on a pair [then] it records one LV1 sync snapshot with the
+// frozen positions, live tempo and the elected master, which Reload sync then
+// replays [else stop].
+test('W19 syncSnapshotBody maps the from deck to side a, the elected master, and BeatSyncMax to bar', () => {
+	const a = { stable_id: 'track-a', position_ms: 30000, tempo_ratio: 1.02, is_master: false };
+	const b = { stable_id: 'track-b', position_ms: 45000, tempo_ratio: 0.98, is_master: true };
+	assert.deepEqual(pairingCapture.syncSnapshotBody(a, b, true), {
+		stable_a: 'track-a',
+		stable_b: 'track-b',
+		master_side: 'b',
+		sync_mode: 'bar',
+		a_tempo_ratio: 1.02,
+		b_tempo_ratio: 0.98,
+		a_position_ms: 30000,
+		b_position_ms: 45000
+	});
+	// No elected master between the two: the from deck leads. Time mode is 'beat'.
+	const body = pairingCapture.syncSnapshotBody({ ...a, is_master: false }, { ...b, is_master: false }, false);
+	assert.equal(body.master_side, 'a');
+	assert.equal(body.sync_mode, 'beat');
+	assert.equal(body.a_position_ms, 30000, 'the frozen position is sent as captured');
+	// An invalid position fails loudly rather than being clamped into a snapshot
+	// that does not represent the Capture (the route refuses negatives too).
+	assert.throws(() => pairingCapture.syncSnapshotBody({ ...a, position_ms: -12 }, b, false), RangeError);
+	assert.throws(() => pairingCapture.syncSnapshotBody(a, { ...b, position_ms: Number.NaN }, false), RangeError);
+	assert.doesNotThrow(() => pairingCapture.syncSnapshotBody({ ...a, position_ms: 0 }, b, false), 'zero is a valid position');
+});
+
+test('W19 capturePairing with an invalid position writes nothing, not even the pairing row', async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return jsonResponse({}, { status: 201 });
+	};
+	const caught = await pairingCapture
+		.capturePairing(
+			{ stable_a: 'track-a', stable_b: 'track-b' },
+			{ stable_id: 'track-a', position_ms: -5, tempo_ratio: 1, is_master: true },
+			{ stable_id: 'track-b', position_ms: 2000, tempo_ratio: 1, is_master: false },
+			false
+		)
+		.then(
+			() => null,
+			(error) => error
+		);
+	assert.ok(caught instanceof RangeError, 'Capture fails visibly');
+	assert.equal(calls, 0, 'the write-once pairing row must not be created before the snapshot is validated');
+});
+
+test('W19 recordSyncSnapshot POSTs the body to /api/v1/pairings/sync-snapshots', async () => {
+	const seen = [];
+	globalThis.fetch = async (request) => {
+		seen.push({ method: request.method, url: request.url, body: await request.clone().json() });
+		return jsonResponse(snapshotRow({ id: 'snap-new' }), { status: 201 });
+	};
+	const row = await pairingCapture.recordSyncSnapshot(
+		{ stable_id: 'track-a', position_ms: 1000, tempo_ratio: 1, is_master: true },
+		{ stable_id: 'track-b', position_ms: 2000, tempo_ratio: 1.01, is_master: false },
+		false
+	);
+	assert.equal(row.id, 'snap-new');
+	assert.equal(seen.length, 1);
+	assert.equal(seen[0].method, 'POST');
+	assert.equal(new URL(seen[0].url).pathname, '/api/v1/pairings/sync-snapshots');
+	assert.equal(seen[0].body.master_side, 'a');
+	assert.equal(seen[0].body.b_tempo_ratio, 1.01);
+});

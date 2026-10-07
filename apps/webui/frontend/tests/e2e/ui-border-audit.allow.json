@@ -1,0 +1,146 @@
+{
+	"$comment": "Intentional or not-yet-fixed border findings for tests/e2e/ui-border-audit.spec.ts (UIBORDER-01). Key: kind, side/otherSide, selector, other. Each entry needs a count (how many distinct element pairs it covers; more fails them all) and a reason; optional skins limits it to 'default' or 'mono-dev'.",
+	"entries": [
+		{
+			"kind": "double",
+			"side": "bottom",
+			"otherSide": "top",
+			"selector": "div.deck-area > section.rb-mixer.rb-panel",
+			"other": "div.perf-root > section[data-testid=\"browser-panel\"]",
+			"count": 1,
+			"reason": "Mixer bottom border + .rb-browser border-top (BrowserPanel.svelte) make a 2px line at the deck/library split. BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "bottom",
+			"otherSide": "top",
+			"selector": "div.deck-col > section.rb-deck.rb-panel",
+			"other": "div.perf-root > section[data-testid=\"browser-panel\"]",
+			"count": 2,
+			"reason": "Deck inset ring + .rb-browser border-top (BrowserPanel.svelte) make a 2px line at the deck/library split. BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
+			"other": "div.header-controls-cluster > button.rb-lit-button.master-dd",
+			"count": 1,
+			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
+			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
+			"count": 1,
+			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
+			"other": "span.explainer > label.rb-search",
+			"count": 1,
+			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "section[data-testid=\"browser-panel\"] > div.bottom-bar",
+			"other": "div.tray-right-cluster > button.tray-midi",
+			"count": 2,
+			"reason": "A tray button's top border sits on the bottom bar's top border (BrowserPanel.svelte / browser-panel-tray.css). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix. Count 2: the same tray also mounts on the library page's Crate Desk (#5729)."
+		},
+		{
+			"kind": "clipped",
+			"side": "bottom",
+			"otherSide": "bottom",
+			"selector": "div.tray-right-cluster > button.tray-midi",
+			"other": "div > div.perf-root",
+			"count": 1,
+			"skins": [
+				"default"
+			],
+			"reason": "The 18px tray row runs 0.5px past the window bottom in the Default skin, so the tray button's bottom border is cut (BrowserPanel.svelte / browser-panel-tray.css). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "section[data-testid=\"browser-panel\"] > div.bottom-bar",
+			"other": "div.tray-right-cluster > button.tray-preview",
+			"count": 2,
+			"reason": "A tray button's top border sits on the bottom bar's top border (BrowserPanel.svelte / browser-panel-tray.css). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix. Count 2: the same tray also mounts on the library page's Crate Desk (#5729)."
+		},
+		{
+			"kind": "clipped",
+			"side": "bottom",
+			"otherSide": "bottom",
+			"selector": "div.tray-right-cluster > button.tray-preview",
+			"other": "div > div.perf-root",
+			"count": 1,
+			"skins": [
+				"default"
+			],
+			"reason": "The 18px tray row runs 0.5px past the window bottom in the Default skin, so the tray button's bottom border is cut (BrowserPanel.svelte / browser-panel-tray.css). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "left",
+			"otherSide": "left",
+			"selector": "div.deck-area > div.deck-col",
+			"other": "div.deck-col > section.rb-deck.rb-panel",
+			"count": 2,
+			"reason": "The deck column's inner rule (+page.svelte .deck-col, kept on purpose by LIBUX-30 and pinned by tests/unit/boot-background.test.mjs) sits beside the deck's own inset ring on the mixer side: a 2px line. Not a clear fix: removing either side changes the overlay-mode separator contract or every deck state ring. Reported on issue #5638 for a decision."
+		},
+		{
+			"kind": "double",
+			"side": "right",
+			"otherSide": "right",
+			"selector": "div.deck-area > div.deck-col",
+			"other": "div.deck-col > section.rb-deck.rb-panel",
+			"count": 2,
+			"reason": "The deck column's inner rule (+page.svelte .deck-col, kept on purpose by LIBUX-30 and pinned by tests/unit/boot-background.test.mjs) sits beside the deck's own inset ring on the mixer side: a 2px line. Not a clear fix: removing either side changes the overlay-mode separator contract or every deck state ring. Reported on issue #5638 for a decision."
+		},
+		{
+			"kind": "double",
+			"side": "bottom",
+			"otherSide": "bottom",
+			"selector": "div.list-panel > div.pane-header",
+			"other": "div.header-controls-cluster > button.rb-lit-button.master-dd",
+			"count": 1,
+			"reason": "A browser header control's bottom border sits on the pane header's bottom border where BrowserPanel.svelte mounts full-window in the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "bottom",
+			"otherSide": "bottom",
+			"selector": "div.list-panel > div.pane-header",
+			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
+			"count": 1,
+			"reason": "A browser header control's bottom border sits on the pane header's bottom border where BrowserPanel.svelte mounts full-window in the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "div.desk > section[data-testid=\"browser-panel\"]",
+			"other": "div.header-controls-cluster > button.rb-lit-button.master-dd",
+			"count": 1,
+			"reason": "A browser header control's top border sits on .rb-browser's top border, as on /performance, here inside the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "div.desk > section[data-testid=\"browser-panel\"]",
+			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
+			"count": 1,
+			"reason": "A browser header control's top border sits on .rb-browser's top border, as on /performance, here inside the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
+		}
+	]
+}

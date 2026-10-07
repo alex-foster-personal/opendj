@@ -44,6 +44,10 @@ const TEST_BUDGET_MS = 90_000;
 
 /** See setup-entry-points.spec.ts: the root layout installs `__mdtPerfLog`
  * from the same onMount that arms everything this suite waits on. */
+// `/` is Library mode's full-window Crate Desk (LIBWS-01), with no app shell;
+// /pairings is a plain app-shell route.
+const APP_SHELL_ROUTE = '/pairings';
+
 async function gotoShellReady(page: Page, path: string): Promise<void> {
 	await page.goto(path);
 	await page.waitForFunction(
@@ -90,7 +94,7 @@ test.describe('lazy root-layout chunks fail visibly', () => {
 			aborted.push(route.request().url());
 			return route.abort();
 		});
-		await gotoShellReady(page, '/');
+		await gotoShellReady(page, APP_SHELL_ROUTE);
 
 		// The shell loads behind the boot window (SHELL_RELEASE_BOUND_MS), so
 		// this waits on the real scheduler, not on a sleep. The slot is marked

@@ -1,0 +1,12 @@
+{
+  "description": "Trust anchor for the REVIEW-13 author-marker captures. Each file is a verbatim commit message from this repo, read with git log -1 --format=%B. Tests verify these checksums BEFORE parsing (pattern follows (private path)).",
+  "captured": "Wed 7 Oct 2026",
+  "regenerate": "git log -1 --format=%B <sha> > <file>, then recompute this entry. Never hand-edit a message to make a test pass.",
+  "files": {
+    "13a22177a.msg": {
+      "sha256": "6ee666ecd52b512bd439c98a4a4fec43b6900da78bd89c22296ea7b1807ff664",
+      "bytes": 2256,
+      "source": "commit 13a22177ad8b61f721e26d486f65c9472cc268df on PR #5731 (a git cherry-pick -x of 89814bcb187935a003880672c37ba544dd879b55)"
+    }
+  }
+}

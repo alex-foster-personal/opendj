@@ -11,7 +11,10 @@ test.describe('CAT-05a track detail page', () => {
 
 	test('renders provenance + rating control', async ({ page }) => {
 		await page.goto('/');
-		await page.locator('table.library tbody tr').first().click();
+		// LIBWS-01: the Crate Desk inspector links to the full track page.
+		await page.locator('[data-testid="track-row"]').first().locator('td.c-title').click();
+		await page.getByRole('link', { name: 'Open full track page' }).click();
+		await expect(page).toHaveURL(/\/track\//);
 		await expect(page.locator('h2')).toBeVisible();
 		await expect(page.getByRole('radio', { name: /^Set rating [1-5]$/ })).toHaveCount(5);
 	});

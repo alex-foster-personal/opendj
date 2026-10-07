@@ -12,14 +12,14 @@ reorder the sources, queue offline work, purge a provider, read the KPI
 ledger - so the whole flow is drivable with curl and testable without a
 browser.
 
-**404 is the honest missing state.** There is no ``on_missing=null``
-parameter: a track with no verdict row, or a verdict row whose words this
-machine cannot produce, is a 404 whose detail says WHICH of those it is. A
-200 carrying an empty envelope would make "nothing to show" and "something is
-wrong" the same response.
+**Known tracks without word lyrics are explicit empties.** An unknown track id
+is still a 404. A known track with no verdict row returns a 200 empty envelope,
+so an expected absence does not look like a missing resource. A verdict row
+whose words this machine cannot produce remains a 404 whose detail says WHICH
+failure it is.
 
 **Connections.** Reads use :func:`get_lyrics_read_conn`, which resolves
-``request.app.state.state_db_path`` with NO ``data/state/state.db`` default:
+``request.app.state.state_db_path`` with NO ``(private path)`` default:
 a daemon built without that attribute must raise AttributeError, not read (or
 create) a DB relative to whatever directory it was started from.
 ``lyric_verdict`` is a SYNCED table, so the two endpoints that write rows
@@ -90,7 +90,7 @@ NO_SINGLE_TRACK_HYDRATE: str = (
 def _state_db_path(request: Request) -> Path:
     """The configured state DB. NO default, deliberately.
 
-    ``data/state/state.db`` as a fallback is relative, so a daemon started
+    ``(private path)`` as a fallback is relative, so a daemon started
     from the wrong directory would quietly serve (and write) a different
     library's verdicts. Reading the attribute directly means a misconfigured
     app raises AttributeError on the first request instead.
@@ -218,6 +218,14 @@ def _titles_by_stable_id(
     return out
 
 
+def _track_exists(conn: sqlite3.Connection, stable_id: str) -> bool:
+    """Return whether the requested, non-deleted track is in this library."""
+    return conn.execute(
+        "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+        (stable_id,),
+    ).fetchone() is not None
+
+
 #-----------------------------------------------------------------------------
 # words
 #-----------------------------------------------------------------------------
@@ -236,11 +244,13 @@ def get_track_karaoke_words(
             status_code=422,
             detail=f"unknown include {include!r}; the only supported value is 'lines'",
         )
+    if not _track_exists(conn, stable_id):
+        raise HTTPException(
+            status_code=404, detail=f"track {stable_id!r} not found"
+        )
     verdict = store.get_verdict(conn, stable_id)
     if verdict is None:
-        raise HTTPException(
-            status_code=404, detail=f"no karaoke lyric data for track {stable_id!r}"
-        )
+        return KaraokeTrackOut(words=[], lines=[], available=False)
     data_dir = _data_dir(request)
     cache = karaoke_cache.cache_path(data_dir, stable_id)
     s3, cfg = artifacts.asset_clients_for_mode(writing=False)
@@ -272,6 +282,7 @@ def get_track_karaoke_words(
             for word in words.words
         ],
         lines=lines_out,
+        available=True,
     )
 
 
@@ -493,7 +504,7 @@ def post_lyrics_verdicts_backfill(
 
 @router.get("/bench/lyrics-kpi", response_model=LyricsKpiOut)
 def get_lyrics_kpi_ledger() -> LyricsKpiOut:
-    """The lyrics KPI ledger verbatim (``scripts/bench/lyrics_kpi_ledger.json``).
+    """The lyrics KPI ledger verbatim (``(private path)``).
 
     Read-only here: appending a snapshot is a CLI act
     (``scripts/bench/lyrics_kpi_append.py``) so the ledger keeps one writer.

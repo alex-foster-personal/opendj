@@ -45,11 +45,11 @@ function uniqueStableIds(slice: readonly RowRef[]): string[] {
 	return ids;
 }
 
-function rebuildSelectedIds(pane: SelectionPane): string[] {
+function rebuildSelectedIds(pane: SelectionPane, rows: readonly RowRef[] = pane.rows): string[] {
 	const seen = new Set<string>();
 	const ids: string[] = [];
 	for (const ord of pane.selected_orders) {
-		const row = pane.rows.find((r) => r.order === ord);
+		const row = rows.find((r) => r.order === ord);
 		if (row !== undefined && !seen.has(row.stable_id)) {
 			seen.add(row.stable_id);
 			ids.push(row.stable_id);
@@ -96,9 +96,11 @@ export function applySelect(
 				pane.selected_orders = [...pane.selected_orders, resolvedOrder];
 			}
 			pane.selected_order = resolvedOrder;
-			pane.selected_ids =
-				pane.rows.length > 0 ? rebuildSelectedIds(pane) : pane.selected_ids;
-			if (pane.rows.length === 0) {
+			// The rows the click came from name the tracks: a pane showing rows
+			// other than its own (a whole-collection search) passes them in.
+			const shown = ordered.length > 0 ? ordered : pane.rows;
+			pane.selected_ids = shown.length > 0 ? rebuildSelectedIds(pane, shown) : pane.selected_ids;
+			if (shown.length === 0) {
 				pane.selected_ids = pane.selected_ids.includes(stable_id)
 					? pane.selected_ids.filter((id) => id !== stable_id)
 					: [...pane.selected_ids, stable_id];

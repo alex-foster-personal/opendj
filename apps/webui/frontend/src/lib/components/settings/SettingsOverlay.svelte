@@ -534,11 +534,6 @@
 														<option value={opt.value}>{opt.label}</option>
 													{/each}
 												</select>
-												{#if def.preview === 'waveform'}
-													<!-- Static, not a lazy import: a pending or failed chunk rendered NOTHING, silently,
-													     and on a cold /performance load the dev server took over 8 s to serve it (Mon 5 Oct 2026). -->
-													<WaveformDesignPreview />
-												{/if}
 											{:else if def.control.kind === 'multi_bool'}
 												<div class="so-multi" role="group" aria-label={def.label}>
 													{#each def.control.keys as key (key.id)}
@@ -596,6 +591,12 @@
 											{/if}
 										</div>
 									</div>
+									{#if def.preview === 'waveform'}
+										<!-- Static, not a lazy import: a pending or failed chunk rendered NOTHING, silently,
+										     and on a cold /performance load the dev server took over 8 s to serve it (Mon 5 Oct 2026).
+										     Full card width, below the label and control (the maintainer, Tue 6 Oct 2026). -->
+										<WaveformDesignPreview />
+									{/if}
 									<p class="so-detail">{def.detail}</p>
 								</li>
 							{/each}

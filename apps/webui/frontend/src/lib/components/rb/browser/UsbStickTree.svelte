@@ -91,7 +91,7 @@
 	{/each}
 {/snippet}
 
-<div class="usb-stick-tree" role="tree" aria-label="{volume.name} playlists" data-testid="usb-stick-tree">
+<div class="usb-stick-tree" role="tree" aria-label="{volume.name} playlists" data-testid="usb-stick-tree" data-menu-target="tree-readonly">
 	{#if view === undefined || view.status === 'loading'}
 		<div class="row rb-inert" style="padding-left: 18px" data-testid="usb-stick-loading">
 			<span class="name dim">reading stick...</span>
