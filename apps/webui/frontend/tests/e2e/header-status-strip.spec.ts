@@ -9,8 +9,11 @@ const APP_SHELL_ROUTE = '/pairings';
 // Each test here opens `/` cold and reads the APP-SHELL header, which the
 // PERFMODE-11 landing redirect replaces with the performance top bar mid-load;
 // support/boot-landing.ts has the full account.
-/** Since #5366 the track readout carries the playable count beside it. */
-const STRIP_TEXT = /\d+ tracks \(\d+ playable\) · \d+ playlists · lock: .+ · bind: .+/;
+/** Since #5366 the track readout carries the playable count beside it. The
+ *  separators carry their own spaces (`{' · '}`), and textContent adds the
+ *  whitespace between flex items around them, so the gaps are `\s+`; the
+ *  `.sep` checks below are what prove each separator keeps its spaces. */
+const STRIP_TEXT = /\d+ tracks \(\d+ playable\)\s+·\s+\d+ playlists\s+·\s+lock: .+\s+·\s+bind: .+/;
 
 test.beforeEach(async ({ page }) => {
 	await spendBootLanding(page);
@@ -24,6 +27,12 @@ test('at 1280px the header status strip separates every readout with middle dots
 	await expect(strip).toBeVisible();
 	await expect(strip).toHaveText(STRIP_TEXT);
 	await expect(strip).not.toHaveText(/playlistslock/i);
+	// toHaveText reads textContent, which also holds the whitespace BETWEEN the
+	// flex items, so it passed while every separator rendered as a bare "·".
+	// Read the separators themselves (Wed 7 Oct 2026).
+	const sepTexts = await strip.locator('.sep').evaluateAll((els) => els.map((el) => el.textContent));
+	expect(sepTexts.length).toBeGreaterThanOrEqual(3);
+	for (const text of sepTexts) expect(text).toBe(' · ');
 
 	const tracks = strip.locator('.readout-numeric').nth(0);
 	const playlists = strip.locator('.readout-numeric').nth(1);

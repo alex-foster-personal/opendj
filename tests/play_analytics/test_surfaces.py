@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -46,6 +47,37 @@ def test_http_surfaces_schema_failure(analytics_db: Path) -> None:
 
     assert response.status_code == 503
     assert "does not exist" in response.json()["detail"]
+
+
+# The web UI turns exactly this 503 into its "No sets recorded yet" empty
+# state (UX-COPY-02, NO_EVENT_STORE_DETAIL in
+# apps/webui/frontend/src/routes/play-analytics/analytics-api.ts), so the
+# prefix is a wire contract, not wording.
+NO_EVENT_STORE_DETAIL = "event store does not exist:"
+
+
+def test_a_missing_store_answers_the_prefix_the_ui_keys_on(analytics_db: Path) -> None:
+    app = FastAPI()
+    app.include_router(create_router(db_path=analytics_db.with_name("missing.db")))
+
+    with TestClient(app) as client:
+        response = client.get("/api/play-analytics")
+
+    assert response.status_code == 503
+    assert response.json()["detail"].startswith(NO_EVENT_STORE_DETAIL)
+
+
+def test_control_a_store_without_its_tables_is_not_read_as_missing(tmp_path: Path) -> None:
+    empty_store = tmp_path / "sets.db"
+    sqlite3.connect(empty_store).close()
+    app = FastAPI()
+    app.include_router(create_router(db_path=empty_store))
+
+    with TestClient(app) as client:
+        response = client.get("/api/play-analytics")
+
+    assert response.status_code == 503
+    assert not response.json()["detail"].startswith(NO_EVENT_STORE_DETAIL)
 
 
 def test_cli_json_matches_query_contract(analytics_db: Path, capsys) -> None:

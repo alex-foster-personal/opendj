@@ -528,7 +528,7 @@
 		padding: 0 3px;
 	}
 	.badge-plus {
-		color: var(--rb-text);
+		color: var(--rb-on-accent, #fff);
 		background: var(--rb-accent);
 		font-weight: 600;
 	}

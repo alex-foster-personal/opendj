@@ -6,6 +6,16 @@ analyzer:
   sample_rate_hz: 44100
   mono: true
 
+# Analysis process-pool concurrency (NATIVE-32). Measured Wed 7 Oct 2026:
+# beat_this workers on short tracks use about 650 MB RSS each; four of them
+# on a 16 GB Mac during first import swapped badly. 650 MB is the floor.
+# RAM width uses the greater of this floor and the admitted batch's
+# predicted per-worker peak, then
+# min(floor(available_mb / that budget), cpu_count, duration_band).
+# An available budget that cannot fit one worker is an explicit error.
+concurrency:
+  per_worker_budget_mb: 650
+
 energy:
   # RMS-dBFS upper bounds -> 1..10 energy bins.  Genre-sensitive.
   rms_dbfs_bins:

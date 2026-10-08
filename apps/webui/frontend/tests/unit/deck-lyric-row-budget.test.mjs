@@ -2,12 +2,24 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-test('deckLyricRowBudget maps cue-flex height to 1-3 rows', async () => {
-	const { deckLyricRowBudget } = await loadTypeScriptModule(
-		'src/lib/rb/lyrics/deck-lyric-row-budget.ts'
-	);
+const MOD = 'src/lib/rb/lyrics/deck-lyric-row-budget.ts';
+
+test('deckLyricRowBudget gives two lyric rows only when the pads keep their minimum', async () => {
+	const { deckLyricRowBudget, PAD_BANK_MIN_PX, LYRIC_TWO_ROW_PX } = await loadTypeScriptModule(MOD);
+	const edge = PAD_BANK_MIN_PX + LYRIC_TWO_ROW_PX;
 	assert.equal(deckLyricRowBudget(0), 1);
-	assert.equal(deckLyricRowBudget(40), 1);
-	assert.equal(deckLyricRowBudget(55), 2);
-	assert.equal(deckLyricRowBudget(80), 3);
+	assert.equal(deckLyricRowBudget(Number.NaN), 1);
+	assert.equal(deckLyricRowBudget(edge - 1), 1, 'one px short of pads + two rows: compact');
+	assert.equal(deckLyricRowBudget(edge), 2);
+	// The canonical 4-deck layout measures a 117px cue column.
+	assert.equal(deckLyricRowBudget(117), 2);
+	// Never more than two: a third row would come out of the pads (LYR-14).
+	assert.equal(deckLyricRowBudget(400), 2);
+});
+
+test('deckLyricStripPx sizes the strip for one or two rows', async () => {
+	const { deckLyricStripPx, LYRIC_ONE_ROW_PX, LYRIC_TWO_ROW_PX } = await loadTypeScriptModule(MOD);
+	assert.equal(deckLyricStripPx(2), LYRIC_TWO_ROW_PX);
+	assert.equal(deckLyricStripPx(1), LYRIC_ONE_ROW_PX);
+	assert.ok(LYRIC_ONE_ROW_PX < LYRIC_TWO_ROW_PX);
 });

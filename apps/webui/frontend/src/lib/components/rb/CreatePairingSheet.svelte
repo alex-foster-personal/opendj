@@ -300,7 +300,7 @@
 	.primary {
 		background: var(--rb-accent, #3d7dd9);
 		border-color: var(--rb-accent, #3d7dd9);
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 	}
 	footer button:disabled {
 		opacity: 0.45;

@@ -274,3 +274,97 @@ export async function joinPhaseOrStartUnsynced(
 	}
 }
 
+
+// ----- PLAY-28: a master handover to a gridless deck mixes without Beat Sync -----
+/*
+ * Wed 7 Oct 2026 16:11:29Z, silver, packaged build 2411a8f23, Beat Sync Max on:
+ * "auto-play: deck 1 master handover refused: Beat Sync: deck 1 requires a
+ * valid real PQTZ beat grid: RangeError: beat grid must contain at least 2
+ * beats, got 0". AutoPlay had started the incoming gridless track (PLAY-25),
+ * then asked for master; `setDeckMaster` tried to re-lock the outgoing deck to
+ * a master with no grid, the plain grid error was not a PLAY-27 plan refusal,
+ * the master was reverted, and AutoPlay (which only arms off the master) never
+ * queued another track: the set ran out into silence.
+ *
+ * rekordbox / Serato behaviour: a track with no grid can still be master; the
+ * mix simply happens without Beat Sync. So the handover stands, the followers
+ * play on at their own tempo, and the DJ is told so, honestly, once.
+ *
+ * Requirements (mini-PRD):
+ *   ✔︎ A gridless new master stands and its followers play on unsynced.
+ *     [if] setDeckMaster targets a playing deck with no trusted grid while a
+ *       synced deck plays [then] the master moves and nothing throws
+ *       [⛔️ if "master handover refused" comes back]
+ *   ✔︎ A gridded new master still re-locks its followers.
+ *     [if] the new master has a trusted grid [then] the normal sync runs
+ *       [⛔️ if a valid grid is ignored and the mix silently goes unsynced]
+ *   ✔︎ The fallback is visible, never silent.
+ *     [if] the handover mixes without Beat Sync [then] a warn toast and a
+ *       `beat-sync-gridless-master` perf event name the deck
+ *       [⛔️ if the fallback happens with no notice]
+ *   ✔︎ Later tempo and seek stay on free transport.
+ *     [if] Beat Sync Max is on and the master has no trusted grid [then] a
+ *       later pitch change or waveform seek does not call the beat-grid sync
+ *       path [⛔️ if requireBeatGrid comes back until Beat Sync is turned off]
+ *   ✔︎ A stale follower sync error does not outlive the fallback.
+ *     [if] a follower had a sync_error [then] the unsynced mix clears it
+ *       [⛔️ if the UI still shows that error]
+ */
+
+/** Perf-event kind recorded when a master handover mixes without Beat Sync. */
+export const GRIDLESS_MASTER_PERF_KIND = 'beat-sync-gridless-master';
+
+/** The notice the DJ sees when a gridless deck takes master over synced decks. */
+export function gridlessMasterNotice(deck: number): string {
+	return `Deck ${deck} has no beat grid: mixed without Beat Sync`;
+}
+
+/**
+ * PLAY-28: must this master handover mix without Beat Sync?
+ *
+ * True only when there is someone to sync (`followerCount > 0`) AND the new
+ * master has no trusted grid to sync them to. A gridded master always syncs.
+ */
+export function handoverMixesWithoutBeatSync(
+	master: Pick<DeckState, 'anlz'>,
+	followerCount: number
+): boolean {
+	return followerCount > 0 && !deckHasTrustedBeatGrid(master);
+}
+
+/**
+ * The master later Beat Sync ownership and seek planning may use.
+ *
+ * A gridless master is still the master. It cannot drive a phase lock.
+ * Callers that would pass the raw master into tempo ownership or seek
+ * planning pass this instead and get null, so those controls take free
+ * transport instead of `requireBeatGrid`. Playing is the caller's check:
+ * a paused gridded master still owns tempo.
+ */
+export function beatSyncClockMaster<Id extends number>(
+	master: Id | null,
+	masterDeck: Pick<DeckState, 'anlz'> | null
+): Id | null {
+	if (master === null || masterDeck === null || !deckHasTrustedBeatGrid(masterDeck)) return null;
+	return master;
+}
+
+/** PLAY-28: a gridless master stands; its would-be followers play on at their own tempo, and the DJ is told once. */
+export function mixWithoutBeatSync(
+	master: DeckState['deck_id'],
+	followers: readonly DeckState['deck_id'][],
+	pushToast: (message: string, kind: 'warn') => void,
+	recordPerfEvent: (
+		kind: string,
+		detail: string,
+		deck: DeckState['deck_id'],
+		level: 'warn'
+	) => void,
+	clearSyncError: (deck: DeckState['deck_id']) => void
+): void {
+	for (const deck of followers) clearSyncError(deck);
+	const notice = gridlessMasterNotice(master);
+	console.info(`[beat-sync] ${notice} (decks ${followers.join(',')} play unsynced)`);
+	pushToast(notice, 'warn');
+	recordPerfEvent(GRIDLESS_MASTER_PERF_KIND, `${notice}; decks [${followers.join(',')}] play unsynced`, master, 'warn');
+}

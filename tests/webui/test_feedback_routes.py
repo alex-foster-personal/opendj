@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.shared.app_version import APP_VERSION
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 
@@ -158,7 +159,8 @@ def test_comment_roundtrip_and_bounds(fb: TestClient) -> None:
         "viewport_width": 1280,
         "viewport_height": 800,
         "machine": "test-host",
-        "release_version": "0.1.0",
+        # create_app() defaults to the one app version (INSTALL-37).
+        "release_version": APP_VERSION,
         "user_email": None,
         "ui_config": None,
     }

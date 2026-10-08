@@ -2961,8 +2961,13 @@
 		font-size: 0.85em;
 		text-transform: lowercase;
 	}
-	.key-status {
-		opacity: 0.85;
+	.key-status,
+	.bpm-status {
+		/* Parent cells are --rb-text-dim. That gray, times 0.85 opacity, missed
+		   WCAG AA on the tinted key/BPM cells (contrast audit, 3.28:1 to 4.33:1).
+		   The status word uses primary text so "missing" stays readable. */
+		color: var(--rb-text);
+		opacity: 1;
 	}
 	/* Existing heat washes remain secondary. IOPIN-11's border is the
 	 * actionable master-relative verdict and uses the nearest raw/half/double

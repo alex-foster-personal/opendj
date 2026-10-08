@@ -23,7 +23,8 @@ States:
 ==================  =========================================================
 state               meaning
 ==================  =========================================================
-``present``         ``file_path`` resolves to an existing file right now
+``present``         ``file_path`` resolves to an existing file right now,
+                    or a ``path-map.json`` target for that stored path exists
 ``absent``          an absolute path that does not resolve, on a mounted
                     volume. The file is genuinely gone (the dead
                     ``/Users/old`` home is 6,153 of these)
@@ -44,13 +45,18 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
+from apps.shared.platform_paths import PathMap, load_path_map
 from apps.shared.state.availability_write import (
     AvailabilityReport,
     AvailabilityRow,
     guard_present_drop,
 )
 from apps.shared.state.events import FakeEventBus
-from apps.shared.state.locations import ID_BIND_BATCH, list_location_paths
+from apps.shared.state.locations import (
+    ID_BIND_BATCH,
+    list_location_paths,
+    mapped_audio_path_if_materialised,
+)
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_common import immediate_transaction
 
@@ -85,16 +91,23 @@ def classify_path(
     *,
     mounted: set[str] | None = None,
     volumes_root: str = VOLUMES_ROOT,
+    path_map: PathMap | None = None,
 ) -> tuple[str, str | None]:
     """Classify one ``tracks.file_path``. Returns ``(state, checked_path)``.
 
-    Pure apart from the ``os.path.exists`` probe, so it is unit-testable
-    against a tmp_path without touching the real library. ``volumes_root``
-    defaults to the real production contract (:data:`VOLUMES_ROOT`,
-    ``/Volumes``); a caller that needs a fully isolated volume-root tree for
-    a test passes an explicit override here (or through :func:`probe_batch`/
-    :func:`probe`) rather than monkeypatching the module constant, which
-    would silently stop exercising the real ``/Volumes`` prefix contract.
+    Pure apart from the ``os.path.exists`` probe and the shared mapped-path
+    residency check, so it is unit-testable against a tmp_path without
+    touching the real library. ``volumes_root`` defaults to the real
+    production contract (:data:`VOLUMES_ROOT`, ``/Volumes``); a caller that
+    needs a fully isolated volume-root tree for a test passes an explicit
+    override here (or through :func:`probe_batch`/ :func:`probe`) rather
+    than monkeypatching the module constant, which would silently stop
+    exercising the real ``/Volumes`` prefix contract.
+
+    ``path_map`` is the same rewrite deck load uses. When the stored path is
+    missing but the mapped target exists, the state is ``present`` and
+    ``checked_path`` is the mapped path. ``awaiting_volume`` is decided from
+    the raw stored path.
     """
     if file_path is None or not file_path.strip():
         return "absent", None
@@ -103,6 +116,9 @@ def classify_path(
         return "streaming", path
     if os.path.exists(path):
         return "present", path
+    mapped = mapped_audio_path_if_materialised(path, path_map=path_map)
+    if mapped is not None:
+        return "present", str(mapped)
     if path.startswith(volumes_root + "/"):
         remainder = path[len(volumes_root) + 1 :]
         volume = remainder.split("/", 1)[0]
@@ -119,13 +135,16 @@ def _classify_track_row(
     *,
     mounted: set[str],
     volumes_root: str = VOLUMES_ROOT,
+    path_map: PathMap | None = None,
 ) -> AvailabilityRow:
-    state, checked = classify_path(file_path, mounted=mounted, volumes_root=volumes_root)
+    state, checked = classify_path(
+        file_path, mounted=mounted, volumes_root=volumes_root, path_map=path_map
+    )
     if state != "present":
         awaiting: tuple[str, str | None] | None = None
         for alt in alt_paths.get(stable_id, []):
             alt_state, alt_checked = classify_path(
-                alt, mounted=mounted, volumes_root=volumes_root
+                alt, mounted=mounted, volumes_root=volumes_root, path_map=path_map
             )
             if alt_state == "present":
                 state, checked = alt_state, alt_checked
@@ -143,6 +162,7 @@ def probe_batch(
     stable_ids: list[str],
     *,
     volumes_root: str = VOLUMES_ROOT,
+    path_map: PathMap | None = None,
 ) -> list[AvailabilityRow]:
     """Classify a batch of live tracks. Read-only; does not write.
 
@@ -165,6 +185,8 @@ def probe_batch(
     """
     if not stable_ids:
         return []
+    if path_map is None:
+        path_map = load_path_map()
     mounted = _mounted_volumes(volumes_root)
     tracks: list[tuple[str, str | None]] = []
     for start in range(0, len(stable_ids), ID_BIND_BATCH):
@@ -178,17 +200,30 @@ def probe_batch(
             )
         )
     tracks.sort(key=lambda row: row[0])
-    alt_paths = list_location_paths(conn, [stable_id for stable_id, _ in tracks])
+    alt_paths = list_location_paths(
+        conn,
+        [stable_id for stable_id, _ in tracks],
+        live_only=True,
+        kinds=("local",),
+    )
     return [
         _classify_track_row(
-            stable_id, file_path, alt_paths, mounted=mounted, volumes_root=volumes_root
+            stable_id,
+            file_path,
+            alt_paths,
+            mounted=mounted,
+            volumes_root=volumes_root,
+            path_map=path_map,
         )
         for stable_id, file_path in tracks
     ]
 
 
 def probe(
-    conn: sqlite3.Connection, *, volumes_root: str = VOLUMES_ROOT
+    conn: sqlite3.Connection,
+    *,
+    volumes_root: str = VOLUMES_ROOT,
+    path_map: PathMap | None = None,
 ) -> list[AvailabilityRow]:
     """Classify every ``tracks`` row. Read-only; does not write.
 
@@ -197,9 +232,12 @@ def probe(
     that the audio endpoint's shared location picker
     (:func:`apps.shared.state.locations.pick_playable`) already treats as
     playable through this machine. When the legacy path does not resolve,
-    fall back to this machine's alternate locations before calling the
-    track absent or awaiting_volume, so a genuinely playable track is not
-    excluded from the safe-default availability views.
+    fall back to this machine's live local alternate locations
+    (``kind='local'`` and ``deleted_at`` is null) before calling the track
+    absent or awaiting_volume, so a genuinely playable track is not excluded
+    from the safe-default availability views. A soft-deleted location, and a
+    ``kind='remote'`` row even when it stores a file_path, is not a path the
+    deck will open, including when a path map would materialize its target.
     """
     stable_ids = [
         row[0]
@@ -207,7 +245,9 @@ def probe(
             "SELECT stable_id FROM tracks WHERE deleted_at IS NULL ORDER BY stable_id"
         )
     ]
-    return probe_batch(conn, stable_ids, volumes_root=volumes_root)
+    return probe_batch(
+        conn, stable_ids, volumes_root=volumes_root, path_map=path_map
+    )
 
 
 def write(

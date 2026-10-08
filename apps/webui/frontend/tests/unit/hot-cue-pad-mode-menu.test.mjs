@@ -10,12 +10,12 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { resolve } from 'node:path';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const hotCueBank = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/deck/HotCueBank.svelte', import.meta.url)),
+const deckSvelte = readFileSync(
+	fileURLToPath(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url)),
 	'utf8'
 );
-// The dropdown lives in its own component so HotCueBank stays under the
-// 600-line review threshold; HotCueBank renders it once per deck.
+// The dropdown lives in its own component; since LYR-14 Deck.svelte renders
+// it once per deck in the left grid column, under grid adjust/shift.
 const padModeMenu = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/deck/PadModeMenu.svelte', import.meta.url)),
 	'utf8'
@@ -44,9 +44,9 @@ test.after(async () => {
 	await vite.close();
 });
 
-test('the hot cue bank renders the pad-mode menu for its own deck', () => {
-	const markup = hotCueBank.slice(hotCueBank.lastIndexOf('</script>'));
-	assert.match(markup, /<PadModeMenu deckId=\{deck\.deck_id\} \/>/);
+test('the deck renders the pad-mode menu for its own deck', () => {
+	const markup = deckSvelte.slice(deckSvelte.lastIndexOf('</script>'));
+	assert.match(markup, /<PadModeMenu \{deckId\} stacked \/>/);
 });
 
 test('hot cue menu lists every catalog pad mode', () => {

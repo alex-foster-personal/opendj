@@ -9,6 +9,8 @@ import anyio
 from anyio import to_thread
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from apps.shared.app_version import APP_VERSION
+
 from .. import rb_vendor
 from ..auth import GoogleOAuthConfig
 from ..backend import StateBackend
@@ -98,7 +100,7 @@ async def health(
     # the two endpoints cannot report two different files under one name.
     db_path = resolve_state_db_path(request)
     bind_host = getattr(request.app.state, "bind_host", "127.0.0.1")
-    version = getattr(request.app.state, "version", "0.1.0")
+    version = getattr(request.app.state, "version", APP_VERSION)
 
     lock_fn: Callable[[], Any] | None = getattr(
         request.app.state, "lock_status_fn", None

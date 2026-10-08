@@ -62,6 +62,8 @@ def old_index_body(request: Request, backend: StateBackend) -> bytes:
                 artwork_available=row["artwork_available"],
             ).model_dump()
             base["play_count"] = int(row.get("play_count") or 0)
+            base["bpm"] = row["bpm"]
+            base["key"] = row["key"]
             items.append(
                 TrackIndexItemOut(
                     **base,
@@ -81,10 +83,16 @@ def old_index_body(request: Request, backend: StateBackend) -> bytes:
                     energy=row["energy"],
                     energy_source=row["energy_source"],
                     energy_reason=row["energy_reason"],
+                    key_status=row["key_status"],
+                    key_reason=row.get("key_reason"),
+                    bpm_status=row["bpm_status"],
+                    bpm_reason=row.get("bpm_reason"),
                     bpm_source=row.get("bpm_source"),
                     bpm_method=row.get("bpm_method"),
                     bpm_confidence=row.get("bpm_confidence"),
                     bpm_confidence_error=row.get("bpm_confidence_error"),
+                    loudness_status=row["loudness_status"],
+                    loudness_reason=row.get("loudness_reason"),
                     lyrics=row.get("lyrics"),
                     grid_quality=row["grid_quality"],
                     is_remix=bool(row.get("is_remix")),

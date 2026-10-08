@@ -169,9 +169,15 @@ test('the first check-in waits for the boot window instead of joining the burst'
 	assert.equal(posted[0].url, `${API_BASE}/api/v1/telemetry/heartbeat`);
 });
 
-test('APP_VERSION stays in step with the package it ships from', () => {
-	const pkg = JSON.parse(
-		readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+test('APP_VERSION is the build-time app version, never a literal of its own', () => {
+	// N12 (Wed 7 Oct 2026): this was a '0.1.0' literal held in step with the
+	// webui package.json, so a public 1.0.0-alpha.1 build reported 0.1.0.
+	const source = readFileSync(
+		new URL('../../src/lib/rb/usage-heartbeat.ts', import.meta.url),
+		'utf8'
 	);
-	assert.equal(heartbeat.APP_VERSION, pkg.version);
+	assert.match(source, /APP_VERSION: string =[\s\S]*?import\.meta\.env\.VITE_APP_VERSION \?\? 'unknown'/);
+	assert.doesNotMatch(source, /APP_VERSION[^=]*= '\d/, 'no hard-coded version literal');
+	// The unit loader runs no vite build, so the define is absent here.
+	assert.equal(heartbeat.APP_VERSION, 'unknown');
 });

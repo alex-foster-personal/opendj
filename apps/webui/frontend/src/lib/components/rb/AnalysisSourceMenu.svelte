@@ -132,7 +132,7 @@
 	}
 	.src-seg button.active {
 		background: var(--rb-accent);
-		color: #0a0c0f;
+		color: var(--rb-on-accent, #fff);
 	}
 	.src-seg button:disabled {
 		opacity: 0.35;

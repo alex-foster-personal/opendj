@@ -8,12 +8,12 @@
  * a factory the reactive singleton in prefs.svelte.ts calls into.
  *
  * Agent parity is GET/PUT /api/v1/ui-prefs (disk-backed in
- * data/state/ui-prefs.json). The settings overlay is a second consumer of
+ * (private path)). The settings overlay is a second consumer of
  * the same setters, not the external agent path.
  */
 
 interface LibraryFilterPrefs {
-	/** Keep only tracks appropriate as next (Camelot + BPM window). Tab toggles it. */
+	/** Keep only tracks appropriate as next (Camelot + BPM window). */
 	next_only_filter: boolean;
 	/** Keep only rows whose title claims a remix / bootleg / rework / VIP. */
 	remixes_filter: boolean;
@@ -66,7 +66,6 @@ export function validateLibraryFilterPrefFields(
 
 interface LibraryFilterSetters {
 	setNextOnlyFilter(next: boolean): void;
-	toggleNextOnlyFilter(): void;
 	setRemixesFilter(next: boolean): void;
 	setVocalsFilter(next: boolean): void;
 	setAvailableOfflineFilter(next: boolean): void;
@@ -90,7 +89,6 @@ export function makeLibraryFilterSetters(
 	}
 	return {
 		setNextOnlyFilter: (next) => _write('next_only_filter', next),
-		toggleNextOnlyFilter: () => _write('next_only_filter', !state.next_only_filter),
 		setRemixesFilter: (next) => _write('remixes_filter', next),
 		setVocalsFilter: (next) => _write('vocals_filter', next),
 		setAvailableOfflineFilter: (next) => _write('available_offline_filter', next)

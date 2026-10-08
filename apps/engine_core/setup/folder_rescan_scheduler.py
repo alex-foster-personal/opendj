@@ -36,6 +36,7 @@ from typing import Any, Literal
 
 from apps.engine_core.setup import detect
 from apps.engine_core.setup import record as setup_record
+from apps.shared.shutdown_bound import STOP_STEPS_DEADLINE_S
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest.folder_rescan import FolderRescanReport, reconcile_folders
 from apps.shared.state.writer import StateWriter
@@ -48,7 +49,7 @@ log = logging.getLogger(__name__)
 class FolderRescanCfg:
     #: Seconds between completed rounds when the last one found no changes.
     #: A stat-only walk plus one hash comparison (measured cost: see
-    #: docs/perf/performance-register.md) is cheap enough to run once a
+    #: (private path)) is cheap enough to run once a
     #: minute indefinitely -- this IS the "bounded, documented interval" the
     #: issue's acceptance criteria ask for.
     INTERVAL_S: float = 60.0
@@ -156,13 +157,24 @@ class FolderRescanScheduler:
         self._task = asyncio.create_task(self._loop(), name="folder-rescan-scheduler")
         self._task.add_done_callback(_log_loop_death)
 
-    async def stop(self) -> None:
-        """Stop waking and wait for an in-flight round."""
+    async def stop(self, within_s: float | None = None) -> None:
+        """Stop waking and wait for an in-flight round.
+
+        ``within_s`` bounds that wait (W43, the engine's quit): a round still
+        in flight then is logged and left to end with the process.
+        """
         if self._task is None or self._stopping is None:
             return
         self._stopping.set()
         try:
-            await self._task
+            done, _ = await asyncio.wait({self._task}, timeout=within_s)
+            if done:
+                await self._task
+            else:
+                log.warning(
+                    "folder rescan: round still in flight %.1fs after stop; not waiting",
+                    within_s,
+                )
         finally:
             self._task = None
 
@@ -265,7 +277,7 @@ async def folder_rescan_lifespan(data_dir: Path) -> AsyncIterator[FolderRescanSc
     try:
         yield scheduler
     finally:
-        await scheduler.stop()
+        await scheduler.stop(within_s=STOP_STEPS_DEADLINE_S)
 
 
 __all__ = [

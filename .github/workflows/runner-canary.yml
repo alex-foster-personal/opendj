@@ -1,6 +1,6 @@
 # Runner canary: the pytest fast-lane shards on third-party hosted runners.
 #
-# Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config, free tiers and
+# Decision record: (private path). Config, free tiers and
 # their sources: ci/runner-canary.json. Measurement: scripts/runner_canary_report.py.
 #
 # WHERE IT RUNS. Each vendor runs in exactly one repository, its `target_repo` in
@@ -13,12 +13,12 @@
 # a copy) every job is SKIPPED. Inside the allowlist the gate itself refuses a repository
 # that is no vendor's target, and puts in the matrix only enabled vendors whose target is
 # THIS repository, refusing the run if an enabled vendor targets the other one.
-# tests/scripts/test_runner_canary_workflow.py pins the guard against the config.
+# (private path) pins the guard against the config.
 #
 # WHAT IT RUNS. The `test` job of ci.yml (`pytest fast lane (shard N of 5)`), step for
 # step. ci.yml is not touched: extracting the job into a reusable workflow would rename
 # every required shard check to `<caller> / <callee>`, so this file carries a copy and
-# tests/scripts/test_runner_canary_workflow.py fails the moment the two drift. The
+# (private path) fails the moment the two drift. The
 # declared differences are exactly: runs-on (the vendor label), timeout-minutes (30),
 # the shard's own wall budget (MDT_PYTEST_TIMEOUT_S, sized under the 30-minute cap),
 # and the three trailing CI-only upload steps (durations and CI Insights), whose
@@ -124,7 +124,7 @@ jobs:
       # already skips them (tests/fixtures/conftest.py, root conftest.py).
       MDT_ALLOW_MISSING_FIXTURES: "1"
     # A copy of ci.yml's `test` job. The rationale comments for each step live there;
-    # tests/scripts/test_runner_canary_workflow.py pins the copy to it.
+    # (private path) pins the copy to it.
     steps:
       - name: Reclaim workspace ownership before checkout
         timeout-minutes: 1
@@ -190,7 +190,7 @@ jobs:
       # CANARY_ONLY_PNPM_STEP_NAME): ci.yml's `test` job carries no pnpm setup at all,
       # because the self-hosted pool provisions it once per host outside this workflow.
       # A vendor VM is a cold ephemeral image with no such preinstall, so round 0 read
-      # "pnpm is not on PATH" from scripts/quality_gate.py / tests/test_quality_gate.py
+      # "pnpm is not on PATH" from scripts/quality_gate.py / (private path)
       # on every vendor (6 failures per shard set). Corepack alone, no new third-party
       # action: these vendor images already carry a hosted-runner-equivalent Node, the
       # same assumption scripts/cloud_agent_setup.sh makes before activating corepack.
@@ -329,7 +329,7 @@ jobs:
           # The JOB cap is the outer backstop and must clear this budget by the
           # SUM OF THE PRE-PYTEST STEPS' OWN BOUNDS, which is what stops a hang
           # in checkout or provisioning from reaching the cap instead. Those
-          # bounds live on each step; tests/scripts/test_ci_shard_matrix.py pins
+          # bounds live on each step; (private path) pins
           # the budget, their sum and the cap against each other.
           #
           # --kill-after: a suite that ignores TERM still dies rather than
@@ -341,11 +341,11 @@ jobs:
           # the whole shard to this budget (the fast tier's step documents
           # the incident). 900 s clears every recorded test in the ledger by
           # a wide margin (the slowest committed duration is ~400 s), so
-          # it only fires on a hang. tests/scripts/test_ci_shard_matrix.py
+          # it only fires on a hang. (private path)
           # pins it under the budget.
           # The selection below runs INSIDE this budget (pytest gets what is
           # left of it), so the job-cap arithmetic pinned in
-          # tests/scripts/test_ci_shard_matrix.py is unchanged by it.
+          # (private path) is unchanged by it.
           MDT_PYTEST_TIMEOUT_S=1440
           started=$(date +%s)
           # The lane's ignores, ONE list: the full lane passes it to pytest,
@@ -361,6 +361,7 @@ jobs:
             --ignore=tests/quality/test_frontend_typing_directives.py
             --ignore=tests/quality/test_mypy_cache.py
             --ignore=tests/perf/test_library_playlist_switch_bench.py
+            --ignore=tests/health_lights/test_ahead_analysis_live_engine.py
           )
           # Mode: full | affected | empty, one line on stdout. A selector
           # that cannot answer (crash, hang, nonsense) means FULL, loudly:

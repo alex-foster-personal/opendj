@@ -131,7 +131,9 @@ def _assert_bounded_graceful_shutdown(calls: list[dict[str, Any]]) -> None:
 def test_server_bounds_graceful_shutdown_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The webui daemon's uvicorn.run gets the same bounded shutdown apps.engine_core uses.
+    """The webui daemon's uvicorn.run gets the shared bounded shutdown window.
+
+    (The engine has its own, shorter window since INSTALL-36.)
 
     [if] apps.webui.server boots [then] uvicorn.run gets timeout_graceful_shutdown, [else stop].
     """

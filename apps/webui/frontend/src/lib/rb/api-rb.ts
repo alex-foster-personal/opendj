@@ -685,10 +685,17 @@ export type TrackListItemWire = Track & {
 	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
 	genre_guess?: GenreGuess | null;
 	duration_ms?: number | null;
+	/** STANDALONE-03: same status/reason fields playlist rows carry. */
+	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	key_reason?: string | null;
+	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	bpm_reason?: string | null;
 	bpm_source?: string | null;
 	bpm_method?: string | null;
 	bpm_confidence?: number | null;
 	bpm_confidence_error?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	loudness_reason?: string | null;
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;

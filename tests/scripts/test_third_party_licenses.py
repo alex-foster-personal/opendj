@@ -287,13 +287,13 @@ def test_vendored_source_scan_attaches_epl_text_for_the_committed_pdb_parser() -
     pdb = [c for c in components if "rekordbox_pdb" in c.name]
     assert len(pdb) == 1, f"expected one rekordbox_pdb component, got { [c.name for c in components] }"
     (component,) = pdb
-    assert component.license == "EPL-1.0"
+    assert component.license == "EPL-2.0"
     text = "\n".join(body for _, body in component.license_texts)
-    assert "Eclipse Public License - v 1.0" in text
-    assert "Agreement Steward" in text
+    assert "Eclipse Public License - v 2.0" in text
+    assert "Secondary Licenses" in text
     rendered = render_licenses(components)
     assert "rekordbox_pdb" in rendered
-    assert "Eclipse Public License - v 1.0" in rendered
+    assert "Eclipse Public License - v 2.0" in rendered
 
 
 def test_supplement_includes_a_valid_vendored_source_from_the_fake_repo(tmp_path: Path) -> None:

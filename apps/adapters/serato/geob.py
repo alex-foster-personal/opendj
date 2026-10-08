@@ -26,9 +26,14 @@ round-trip them intact per open-dj §9.
 from __future__ import annotations
 
 import base64
+import binascii
 import struct
 from dataclasses import dataclass, field
 from typing import Literal
+
+# Serato pads a Markers2 frame with NULs to at least this many bytes
+# (serato-tags docs/serato_markers2.md; Mixxx markers2.cpp dumpID3).
+_MARKERS2_MIN_SIZE = 470
 
 # ============================================================= Markers2 ===
 
@@ -73,29 +78,50 @@ def _read_null_terminated(buf: bytes, offset: int) -> tuple[str, int]:
     return buf[offset:end].decode("latin-1"), end - offset + 1
 
 
+def _decode_markers2_base64(encoded: bytes) -> bytes:
+    """Decode the base64 body of a ``Serato Markers2`` frame the way Serato
+    writes it: NUL padding after the text, a linefeed every 72 characters, no
+    ``=`` padding, and sometimes one character past a multiple of four, which
+    serato-tags documents fixing by appending ``A``."""
+    text = encoded.split(b"\x00", 1)[0].replace(b"\n", b"").replace(b"\r", b"")
+    text = text.rstrip(b"=")
+    if len(text) % 4 == 1:
+        text += b"A"
+    text += b"=" * (-len(text) % 4)
+    return base64.b64decode(text, validate=True)
+
+
+def _markers2_entries(geob_payload: bytes) -> bytes | None:
+    """The decoded entry list of a Markers2 frame, after both ``01 01``
+    headers, or None when the frame is not one this codec can read."""
+    if geob_payload[:2] != b"\x01\x01":
+        return None
+    try:
+        body = _decode_markers2_base64(geob_payload[2:])
+    except (ValueError, binascii.Error):
+        return None
+    return body[2:] if body.startswith(b"\x01\x01") else body
+
+
 def parse_markers2(geob_payload: bytes) -> Markers2:
     """Decode a ``Serato Markers2`` GEOB payload.
 
-    Layout (from public docs):
+    Layout (serato-tags ``docs/serato_markers2.md``, checked against Mixxx's
+    ``markers2.cpp`` and real Serato frames):
 
-        0x01                     -- version byte
-        0x01                     -- sub-version
-        <base64-encoded body>    -- the remainder, possibly padded
+        0x01 0x01                -- frame header
+        <base64-encoded body>    -- linefeed every 72 chars, then NUL padding
 
-    The decoded body is a sequence of ``\\0``-terminated name + uint32 length
-    + payload. Known names: ``CUE``, ``LOOP``, ``COLOR``, ``BPMLOCK``.
+    The decoded body repeats the ``01 01`` header, then holds a sequence of
+    ``\\0``-terminated name + uint32 length + payload entries, then one NUL.
+    Known names: ``CUE``, ``LOOP``, ``COLOR``, ``BPMLOCK``.
     """
     if not geob_payload:
         return Markers2()
-    if geob_payload[0] != 0x01 or geob_payload[1:2] != b"\x01":
-        # Unrecognised version -- preserve as unknown (single empty sub-tag
-        # with name "" and the raw bytes as payload).
-        return Markers2(unknown_tags=(("__raw__", bytes(geob_payload)),))
-    # Strip newlines inserted by Serato every 72 chars in the base64 body.
-    b64_body = geob_payload[2:].replace(b"\n", b"").replace(b"\r", b"")
-    try:
-        body = base64.b64decode(b64_body, validate=False)
-    except Exception:
+    body = _markers2_entries(geob_payload)
+    if body is None:
+        # Unrecognised version or undecodable base64 -- preserve as unknown
+        # (single sub-tag named "__raw__" carrying the whole frame).
         return Markers2(unknown_tags=(("__raw__", bytes(geob_payload)),))
 
     cues: list[Markers2Cue] = []
@@ -108,6 +134,8 @@ def parse_markers2(geob_payload: bytes) -> Markers2:
     while pos < len(body):
         name, name_len = _read_null_terminated(body, pos)
         pos += name_len
+        if not name:
+            break  # the single NUL that ends the entry list
         if pos + 4 > len(body):
             break
         (length,) = struct.unpack_from(">I", body, pos)
@@ -118,11 +146,11 @@ def parse_markers2(geob_payload: bytes) -> Markers2:
         pos += length
 
         if name == "CUE" and len(payload) >= 13:
-            # reserved (1) + index (1) + position (4) + reserved (1) + color (4) + reserved (2) + name C-string
+            # reserved (1) + index (1) + position (4) + reserved (1) + RGB (3) + reserved (2) + UTF-8 name C-string
             idx = payload[1]
             (position,) = struct.unpack_from(">I", payload, 2)
-            color = int.from_bytes(payload[7:11], "big") & 0xFFFFFF
-            tail_name = payload[13:].split(b"\x00", 1)[0].decode("latin-1", "replace")
+            color = int.from_bytes(payload[7:10], "big")
+            tail_name = payload[12:].split(b"\x00", 1)[0].decode("utf-8", "replace")
             cues.append(
                 Markers2Cue(
                     index=idx,
@@ -138,7 +166,7 @@ def parse_markers2(geob_payload: bytes) -> Markers2:
             (end,) = struct.unpack_from(">I", payload, 6)
             color = int.from_bytes(payload[14:18], "big") & 0xFFFFFF
             locked = payload[19] == 0x01
-            tail_name = payload[21:].split(b"\x00", 1)[0].decode("latin-1", "replace")
+            tail_name = payload[20:].split(b"\x00", 1)[0].decode("utf-8", "replace")
             loops.append(
                 Markers2Loop(
                     index=idx,
@@ -166,19 +194,19 @@ def parse_markers2(geob_payload: bytes) -> Markers2:
 
 
 def _encode_cue(cue: Markers2Cue) -> bytes:
-    body = bytearray(13)
+    body = bytearray(12)
     body[0] = 0
     body[1] = cue.index & 0xFF
     struct.pack_into(">I", body, 2, cue.position_ms & 0xFFFFFFFF)
     body[6] = 0
-    body[7:11] = (cue.color_rgb & 0xFFFFFFFF).to_bytes(4, "big")
-    body[11:13] = b"\x00\x00"
-    body += cue.name.encode("latin-1", "replace") + b"\x00"
+    body[7:10] = (cue.color_rgb & 0xFFFFFF).to_bytes(3, "big")
+    body[10:12] = b"\x00\x00"
+    body += cue.name.encode("utf-8") + b"\x00"
     return bytes(body)
 
 
 def _encode_loop(loop: Markers2Loop) -> bytes:
-    body = bytearray(21)
+    body = bytearray(20)
     body[0] = 0
     body[1] = loop.index & 0xFF
     struct.pack_into(">I", body, 2, loop.start_ms & 0xFFFFFFFF)
@@ -188,8 +216,7 @@ def _encode_loop(loop: Markers2Loop) -> bytes:
     body[14:18] = (loop.color_rgb & 0xFFFFFFFF).to_bytes(4, "big")
     body[18] = 0
     body[19] = 0x01 if loop.locked else 0x00
-    body[20] = 0
-    body += loop.name.encode("latin-1", "replace") + b"\x00"
+    body += loop.name.encode("utf-8") + b"\x00"
     return bytes(body)
 
 
@@ -239,8 +266,10 @@ def encode_markers2(markers: Markers2) -> bytes:
             continue
         _append(name, raw)
 
-    b64 = base64.b64encode(bytes(body))
-    return b"\x01\x01" + b64
+    body.append(0)
+    b64 = base64.b64encode(b"\x01\x01" + bytes(body)).rstrip(b"=")
+    lines = b"\n".join(b64[i : i + 72] for i in range(0, len(b64), 72))
+    return (b"\x01\x01" + lines).ljust(_MARKERS2_MIN_SIZE, b"\x00")
 
 
 # ============================================================ BeatGrid ===

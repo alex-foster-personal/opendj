@@ -1,7 +1,7 @@
 """Enrich-on-open: what the library still lacks, and what to ask the user.
 
 Opening the app on a library that is not fully enriched shows one card
-(`specs/state-inventories/library-enrichment.md`). The lanes split by consent:
+(`(private path)`). The lanes split by consent:
 
 * Automatic, never asked: file tags, Preview strips, loudness, waveform,
   BPM/beatgrid and key (the ahead-of-time drain) and lyrics (the coverage
@@ -22,7 +22,11 @@ Requirements (mini-PRD):
   ✔︎ stems are asked once, and a "never" sticks
     [if] stems are pending and no decision is stored [then] stems is asked
     [if] the stored decision is "never" [then] stems is not asked, and the card says so
-    [if] stems have no source on this host [then] stems is not asked, and the reason is shown
+    [if] stems have no source on this host [then] stems is not asked, the reason is shown, and the card shows
+  ✔︎ failed separations are never silent (ENRICH-04)
+    [if] stems failed with nothing pending [then] the line is "failed", not "done", and show is true
+    [if] a source refusal filed the missing stems as terminal [then] the line is "no_source" with that count
+    [if] nothing is pending, failed or refused [then] the line is "done" and does not raise the card
   ✔︎ the card's numbers are the coverage API's numbers (ENRICH-02)
     [if] the coverage reading names absent rows by folder [then] the summary carries them unchanged
     [if] the drain reports usable values and drain states [then] ``analysis`` carries them unchanged
@@ -109,23 +113,54 @@ def _lyrics_left(coverage: Mapping[str, Any] | None) -> bool:
 def stems_ask(
     coverage: Mapping[str, Any] | None, decisions: Mapping[str, str]
 ) -> dict[str, Any]:
-    """The stems line of the card: asked, declined, impossible, or nothing to do.
+    """The stems line of the card: asked, declined, impossible, failed, or nothing to do.
+
+    ``failed`` counts separations that failed ``MAX_ATTEMPTS`` times and left
+    pending (ENRICH-04): over songs when the song view is there, else rows.
+
+    ``missing`` (``no_source`` only) counts stems this computer cannot make:
+    with a source refusal the coverage reading files every missing bundle not
+    in R2 under ``terminal``, never ``pending``, so pending alone would read
+    "done" on a library with no stems at all (ENRICH-04). Songs when the song
+    view is there, else rows. Without a refusal, ``terminal`` holds only the
+    ledger's own "nothing to separate" verdicts and is finished work.
+
+    The line is ``done`` only when nothing is pending, failed or refused.
 
     With a song view (ENRICH-03) it also carries ``separated`` (songs with a
     real stem bundle, here or in R2) and ``not_yet`` (songs still pending)."""
     if coverage is None:
-        return {"state": "unknown", "pending": None, "reason": "stems coverage could not be read"}
+        return {"state": "unknown", "pending": None, "failed": None, "reason": "stems coverage could not be read"}
     pending = int(coverage["pending"].get("stems", 0))
     refusal = coverage.get("stems_source_refusal")
     songs = (coverage.get("songs") or {}).get("steps", {}).get("stems")
     extra = {} if songs is None else {"separated": songs["done"], "not_yet": songs["pending"]}
-    if pending == 0:
-        return {"state": "done", "pending": 0, "reason": None, **extra}
+    failed = int(coverage["failed"].get("stems", 0) if songs is None else songs.get("failed", 0))
+    terminal = int(coverage["terminal"].get("stems", 0) if songs is None else songs.get("terminal", 0))
+    missing = terminal if refusal else 0
+    if pending == 0 and failed == 0 and missing == 0:
+        return {"state": "done", "pending": 0, "failed": 0, "reason": None, **extra}
     if refusal:
-        return {"state": "no_source", "pending": pending, "reason": str(refusal), **extra}
+        return {
+            "state": "no_source", "pending": pending, "failed": failed, "missing": missing,
+            "reason": str(refusal), **extra,
+        }
+    if pending == 0:
+        # Nothing left to ask about, only failures to report. A stored "never" still wins.
+        if decisions.get("stems") == "never":
+            return {"state": "user_declined", "pending": 0, "failed": failed, "reason": None, **extra}
+        return {"state": "failed", "pending": 0, "failed": failed, "reason": None, **extra}
     if decisions.get("stems") == "never":
-        return {"state": "user_declined", "pending": pending, "reason": None, **extra}
-    return {"state": "ask", "pending": pending, "reason": None, **extra}
+        return {"state": "user_declined", "pending": pending, "failed": failed, "reason": None, **extra}
+    return {"state": "ask", "pending": pending, "failed": failed, "reason": None, **extra}
+
+
+def _stems_left(stems: Mapping[str, Any], decisions: Mapping[str, str]) -> bool:
+    """ENRICH-04: the stems line raises the card when it asks, cannot be made
+    here, or failed; a stored "never" keeps every one of them quiet."""
+    if decisions.get("stems") == "never":
+        return False
+    return stems["state"] in ("ask", "no_source", "failed") or bool(stems.get("failed"))
 
 
 def build_summary(
@@ -140,7 +175,7 @@ def build_summary(
     show = (
         _analysis_left(analysis)
         or _lyrics_left(coverage)
-        or stems["state"] == "ask"
+        or _stems_left(stems, decisions)
         or analysis_error is not None
         or coverage_error is not None
     )

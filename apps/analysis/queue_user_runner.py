@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from apps.analysis import queue_store, queue_user
-from apps.analysis.queue_user_lanes import SKIP_UP_TO_DATE, USER_BATCH_IDS
+from apps.analysis.queue_user_lanes import SKIP_NO_LYRICS_FOUND, SKIP_UP_TO_DATE, USER_BATCH_IDS
 from apps.lyrics.asr_source import LyricsAsrFetchError
 from apps.lyrics.service import FetchResult, LyricsFetchService
 from apps.shared.events import publish
@@ -94,16 +94,22 @@ def run_claimed(
     """Finish one claimed item. Returns the terminal state written."""
     batch_id = USER_BATCH_IDS[item.lane]
     runner_id = item.runner_id or ""
-    if queue_user.artifact_is_fresh(
+    if item.lane == "lyrics":
+        skip_reason = queue_user.lyrics_skip_reason(item.stable_id, data_dir=data_dir)
+    elif queue_user.artifact_is_fresh(
         item.lane, item.stable_id, stems_root=stems_root, data_dir=data_dir
     ):
+        skip_reason = SKIP_UP_TO_DATE
+    else:
+        skip_reason = None
+    if skip_reason:
         moved = queue_store.finish_item(
             conn,
             batch_id=batch_id,
             stable_id=item.stable_id,
             lane=item.lane,
             state=queue_store.ITEM_SKIPPED,
-            reason=SKIP_UP_TO_DATE,
+            reason=skip_reason,
             claimed_by=runner_id,
         )
         conn.commit()
@@ -177,7 +183,14 @@ def _default_stems(stable_id: str) -> None:
 def _finish_lyrics(lyrics_fn: ExecuteFn, stable_id: str) -> tuple[str, str | None]:
     result = lyrics_fn(stable_id)
     if isinstance(result, FetchResult):
-        return queue_store.ITEM_DONE, result.outcome
+        # ``no_source`` and ``instrumental`` (empty or hallucination-only
+        # transcript) are "no lines", not a fresh cache.
+        reason = (
+            SKIP_NO_LYRICS_FOUND
+            if result.outcome in ("no_source", "instrumental")
+            else result.outcome
+        )
+        return queue_store.ITEM_DONE, reason
     return queue_store.ITEM_DONE, None
 
 

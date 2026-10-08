@@ -35,6 +35,13 @@ import time
 
 import psutil
 
+# psutil create_time and the wall clock we fall back to at spawn are both
+# taken within milliseconds of the fork, so 2s is a generous identity window
+# that still fails a pid recycled minutes later. One window, shared by the
+# job reaper and CLI shutdown: the web UI must not import apps.engine_core
+# to read it (.importlinter, webui-is-the-top-layer).
+CREATE_TIME_TOLERANCE_S: float = 2.0
+
 # Polling cadence for the cheap "is the pgid still allocated" syscall.
 _POLL_S: float = 0.02
 

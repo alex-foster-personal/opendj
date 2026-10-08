@@ -836,6 +836,282 @@ test('checkFolderRow refuses an empty path without issuing a request', async () 
 	assert.match(wizard.error, /Type a folder path/);
 });
 
+// ------------------------------------------- SETUP-29: a chosen folder checks itself
+
+/** Let the fire-and-forget check a chooser started run to completion. */
+async function settleFolderChecks() {
+	for (let turn = 0; turn < 20 && wizard.busy; turn += 1) {
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+	assert.equal(wizard.busy, false, 'a folder check never settled');
+}
+
+/** Answer detect/folder per path, each on a promise the test releases. */
+function routeDeferredFolderScans(paths) {
+	const gates = {};
+	for (const path of paths) {
+		let release;
+		const answered = new Promise((resolve) => (release = resolve));
+		gates[path] = { release, answered };
+	}
+	routeFetch({
+		'/api/v1/setup/detect/folder': async (_request, url) => {
+			const path = url.searchParams.get('path');
+			return await gates[path].answered;
+		}
+	});
+	return gates;
+}
+
+// REQ: SETUP-29
+test('choosing a folder checks it without the button being pressed', async () => {
+	routeFetch({ '/api/v1/setup/detect/folder': folderScan() });
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/Music');
+	await settleFolderChecks();
+
+	assert.equal(requests.length, 1);
+	const url = new URL(requests[0].url);
+	assert.equal(url.pathname, '/api/v1/setup/detect/folder');
+	assert.equal(url.searchParams.get('path'), '/Users/dj/Music');
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/Music');
+	assert.equal(wizard.folderRows[0].scan.audio_files, 12);
+});
+
+// REQ: SETUP-29
+test('choosing a different folder checks again and replaces the verdict', async () => {
+	routeFetch({
+		'/api/v1/setup/detect/folder': (_request, url) =>
+			jsonResponse(
+				folderScan({
+					path: url.searchParams.get('path'),
+					audio_files: url.searchParams.get('path') === '/Users/dj/Other' ? 3 : 12
+				})
+			)
+	});
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/Music');
+	await settleFolderChecks();
+	wizard.chooseFolderForRow('row-1', '/Users/dj/Other');
+	// the old verdict is gone the moment the folder changes, not when B answers
+	assert.equal(wizard.folderRows[0].scan, null);
+	await settleFolderChecks();
+
+	assert.equal(requests.length, 2);
+	assert.equal(wizard.folderRows[0].scan.path, '/Users/dj/Other');
+	assert.equal(wizard.folderRows[0].scan.audio_files, 3);
+});
+
+// REQ: SETUP-29
+test('a chosen folder whose check fails shows the same error the button shows', async () => {
+	routeFetch({
+		'/api/v1/setup/detect/folder': () => jsonResponse({ detail: 'folder scan refused' }, 500)
+	});
+	wizard.folderRows = [folderRow('/Users/dj/Music')];
+	await wizard.checkFolderRow('row-1');
+	const fromButton = wizard.error;
+	assert.notEqual(fromButton, null);
+
+	wizard._resetForTests();
+	wizard.folderRows = [folderRow('')];
+	wizard.chooseFolderForRow('row-1', '/Users/dj/Music');
+	await settleFolderChecks();
+
+	assert.equal(wizard.error, fromButton);
+	assert.equal(wizard.folderRows[0].scan, null);
+});
+
+// REQ: SETUP-29
+test('committing a typed path checks it; a blank or already-checked one asks nothing', async () => {
+	routeFetch({ '/api/v1/setup/detect/folder': folderScan() });
+
+	wizard.folderRows = [folderRow('   ')];
+	wizard.commitFolderRow('row-1');
+	await settleFolderChecks();
+	assert.equal(requests.length, 0);
+	assert.equal(wizard.error, null, 'leaving an empty field is not an error');
+
+	wizard.folderRows = [folderRow('/Users/dj/Music/')];
+	wizard.commitFolderRow('row-1');
+	await settleFolderChecks();
+	assert.equal(requests.length, 1);
+	assert.equal(wizard.folderRows[0].scan.audio_files, 12);
+
+	// the scan now describes the path, so another commit is not another scan
+	wizard.commitFolderRow('row-1');
+	await settleFolderChecks();
+	assert.equal(requests.length, 1);
+
+	// control: the button is still a manual re-check of the same path
+	await wizard.checkFolderRow('row-1');
+	assert.equal(requests.length, 2);
+});
+
+// REQ: SETUP-29
+test('Enter commits and submits at once, and that is ONE scan', async () => {
+	routeFetch({ '/api/v1/setup/detect/folder': folderScan() });
+	wizard.folderRows = [folderRow('/Users/dj/Music')];
+
+	wizard.commitFolderRow('row-1');
+	const fromButton = wizard.checkFolderRow('row-1');
+	await fromButton;
+	await settleFolderChecks();
+
+	assert.equal(requests.length, 1);
+	assert.equal(wizard.folderRows[0].scan.audio_files, 12);
+});
+
+// REQ: SETUP-29
+test('a late answer for folder A never lands on a row that moved on to B', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A', '/Users/dj/B']);
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	wizard.chooseFolderForRow('row-1', '/Users/dj/B');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(requests.length, 2);
+
+	gates['/Users/dj/B'].release(jsonResponse(folderScan({ path: '/Users/dj/B', audio_files: 7 })));
+	await settleFolderChecks();
+	assert.equal(wizard.folderRows[0].scan.path, '/Users/dj/B');
+
+	gates['/Users/dj/A'].release(jsonResponse(folderScan({ path: '/Users/dj/A', audio_files: 99 })));
+	await new Promise((resolve) => setTimeout(resolve, 5));
+
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/B');
+	assert.equal(wizard.folderRows[0].scan.path, '/Users/dj/B');
+	assert.equal(wizard.folderRows[0].scan.audio_files, 7);
+	assert.equal(wizard.busy, false);
+});
+
+// REQ: SETUP-29
+test('a late FAILURE for folder A never paints an error over the verdict for B', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A', '/Users/dj/B']);
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	wizard.chooseFolderForRow('row-1', '/Users/dj/B');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	gates['/Users/dj/B'].release(jsonResponse(folderScan({ path: '/Users/dj/B' })));
+	await settleFolderChecks();
+	gates['/Users/dj/A'].release(jsonResponse({ detail: 'folder A scan refused' }, 500));
+	await new Promise((resolve) => setTimeout(resolve, 5));
+
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.folderRows[0].scan.path, '/Users/dj/B');
+});
+
+// REQ: SETUP-29
+test('the wizard stays busy until the NEWEST check answers, not the first to return', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A', '/Users/dj/B']);
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	wizard.chooseFolderForRow('row-1', '/Users/dj/B');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	gates['/Users/dj/A'].release(jsonResponse(folderScan({ path: '/Users/dj/A' })));
+	await new Promise((resolve) => setTimeout(resolve, 5));
+	assert.equal(wizard.busy, true, 'B is still in flight');
+	assert.equal(wizard.folderRows[0].scan, null);
+
+	gates['/Users/dj/B'].release(jsonResponse(folderScan({ path: '/Users/dj/B' })));
+	await settleFolderChecks();
+	assert.equal(wizard.folderRows[0].scan.path, '/Users/dj/B');
+});
+
+// REQ: SETUP-29
+test('an answer never overwrites a path retyped while the check was in flight', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A']);
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	// bind:value edits the path in place; nothing is committed yet
+	wizard.folderRows[0].path = '/Users/dj/A-live';
+	gates['/Users/dj/A'].release(jsonResponse(folderScan({ path: '/Users/dj/A' })));
+	await settleFolderChecks();
+
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/A-live');
+	assert.equal(wizard.folderRows[0].scan, null);
+});
+
+// REQ: SETUP-29
+test('an earlier check of the SAME folder never lands as the newer one (A, B, A again)', async () => {
+	const pending = [];
+	routeFetch({
+		'/api/v1/setup/detect/folder': async (_request, url) => {
+			let release;
+			const answered = new Promise((resolve) => (release = resolve));
+			pending.push({ path: url.searchParams.get('path'), release });
+			return await answered;
+		}
+	});
+	const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	wizard.chooseFolderForRow('row-1', '/Users/dj/B');
+	await tick();
+	pending[1].release(jsonResponse(folderScan({ path: '/Users/dj/B', audio_files: 7 })));
+	await settleFolderChecks();
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	await tick();
+	assert.deepEqual(
+		pending.map((entry) => entry.path),
+		['/Users/dj/A', '/Users/dj/B', '/Users/dj/A']
+	);
+
+	// the FIRST A check answers late: same path, but not the newest check
+	pending[0].release(jsonResponse(folderScan({ path: '/Users/dj/A', audio_files: 99 })));
+	await tick();
+	assert.equal(wizard.folderRows[0].scan, null, 'the stale A answer landed');
+	assert.equal(wizard.busy, true, 'the second A check is still in flight');
+
+	pending[2].release(jsonResponse(folderScan({ path: '/Users/dj/A', audio_files: 5 })));
+	await settleFolderChecks();
+	assert.equal(wizard.folderRows[0].scan.audio_files, 5);
+});
+
+// REQ: SETUP-29
+test('a failure for a path the row no longer holds paints no error', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A']);
+	wizard.folderRows = [folderRow('')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	// retyped while A is in flight; B is not committed, so A is still newest
+	wizard.folderRows[0].path = '/Users/dj/B';
+	gates['/Users/dj/A'].release(jsonResponse({ detail: 'folder A scan refused' }, 500));
+	await settleFolderChecks();
+
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.errorDiagnostic, null);
+	assert.equal(wizard.folderRows[0].path, '/Users/dj/B');
+});
+
+// REQ: SETUP-29
+test('a discarded answer leaves an error from something else on screen', async () => {
+	const gates = routeDeferredFolderScans(['/Users/dj/A']);
+	wizard.folderRows = [folderRow(''), folderRow('', null, 'row-2')];
+
+	wizard.chooseFolderForRow('row-1', '/Users/dj/A');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	wizard.folderRows[0].path = '/Users/dj/A-live';
+	await wizard.checkFolderRow('row-2');
+	const otherError = wizard.error;
+	assert.notEqual(otherError, null, 'control: the blank row refusal is showing');
+
+	gates['/Users/dj/A'].release(jsonResponse(folderScan({ path: '/Users/dj/A' })));
+	await settleFolderChecks();
+
+	assert.equal(wizard.folderRows[0].scan, null);
+	assert.equal(wizard.error, otherError);
+});
+
 test('beginFolderImport refuses before requesting when nothing was scanned', async () => {
 	routeFetch({});
 	await wizard.beginFolderImport();

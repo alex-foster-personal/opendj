@@ -33,6 +33,46 @@ def _timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def _unfinished_runs_anomaly(campaign_runs: list[dict[str, Any]]) -> str:
+    """Describe in-window runs not yet completed, or return "" when none remain.
+
+    Every in-window run is campaign spend, the baseline push's own CI / docs
+    runs included (issue #498: the window opens before that push). A run still
+    queued or in progress is unpriced, so coverage cannot be complete while one
+    remains, even once every PR workflow has finished.
+    """
+    pending = [
+        f"{row.get('workflowName')} run {row.get('databaseId')} "
+        f"({row.get('event') or 'unknown event'} on {row.get('headBranch') or 'unknown branch'}, "
+        f"{row.get('status') or 'unknown status'})"
+        for row in campaign_runs
+        if row.get("status") != "completed"
+    ]
+    if not pending:
+        return ""
+    return "Coverage incomplete: campaign runs not yet completed or priced: " + ", ".join(pending)
+
+
+def _missing_baseline_anomaly(campaign: dict[str, Any], campaign_runs: list[dict[str, Any]]) -> str:
+    """Name expected workflows with no in-window push run on the base branch.
+
+    The baseline push triggers every expected workflow, and its runs are
+    campaign spend (issue #498). When GitHub has not created or returned one
+    of them, no row exists to report as unfinished, so its absence must hold
+    coverage incomplete on its own (Codex P2 on PR #3943).
+    """
+    base = campaign["base_branch"]
+    seen = {
+        row.get("workflowName")
+        for row in campaign_runs
+        if row.get("event") == "push" and row.get("headBranch") == base
+    }
+    missing = [name for name in campaign["expected_workflows"] if name not in seen]
+    if not missing:
+        return ""
+    return f"Coverage incomplete: baseline push on {base} has no run for: " + ", ".join(missing)
+
+
 def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  # noqa: C901
     """Collect workflow and cost evidence for every submitted campaign PR."""
     prs = campaign.get("prs") or []
@@ -108,7 +148,12 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
         row for row in campaign_runs
         if row.get("workflowName") in campaign["expected_workflows"] and row.get("status") == "completed"
     ]
-    complete = direct_complete
+    unfinished = _unfinished_runs_anomaly(campaign_runs)
+    missing_baseline = _missing_baseline_anomaly(campaign, campaign_runs)
+    anomalies.extend(
+        gap for gap in (unfinished if direct_complete else "", missing_baseline) if gap
+    )
+    complete = direct_complete and not unfinished and not missing_baseline
     run_rows = []
     for run in sorted(campaign_runs, key=lambda row: row.get("createdAt") or ""):
         priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})
@@ -131,7 +176,7 @@ def render_campaign_report(result: dict[str, Any]) -> str:
         f"- Source: `{result['source_repository']}@{result['source_ref']}`",
         f"- Disposable target: `{result['target_repository']}`",
         f"- Complete: **{str(result['complete']).lower()}**",
-        f"- Estimated gross campaign cost, including baseline and guard runs: **${result['estimated_gross_cost_usd']:.3f}**",
+        f"- Estimated gross campaign cost, including baseline runs: **${result['estimated_gross_cost_usd']:.3f}**",
         f"- Completed monitored runs: **{result.get('monitored_runs_completed', 0)}**",
         "| PR | Workflow | Status | Result | Estimated cost |",
         "| --- | --- | --- | --- | ---: |",

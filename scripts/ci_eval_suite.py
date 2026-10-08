@@ -17,7 +17,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +183,20 @@ def plan_command(args: argparse.Namespace) -> int:
     return 0
 
 
+# GitHub stamps a run's createdAt in whole seconds on its own clock, so an
+# exact local timestamp (sub-second, possibly a little ahead of GitHub) can
+# sort AFTER the baseline push's own runs and drop them from the window.
+# Floor to the second and back off by this margin. The target is a freshly
+# created private mirror, so no run of anything else can predate the push.
+CAMPAIGN_WINDOW_SKEW_MARGIN = timedelta(seconds=60)
+
+
+def campaign_window_start(now: datetime | None = None) -> str:
+    """Return the inclusive ``prepared_at`` stamp for a campaign window."""
+    moment = now if now is not None else datetime.now(UTC)
+    return (moment - CAMPAIGN_WINDOW_SKEW_MARGIN).replace(microsecond=0).isoformat()
+
+
 def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     campaign = load_manifest(args.manifest)
     require_live_confirmation(args, campaign)
@@ -239,6 +253,12 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
             ["gh", "repo", "view", target, "--json", "sshUrl", "--jq", ".sshUrl"]
         ).stdout.strip()
         runner.run(["git", "remote", "add", "origin", ssh_url], cwd=checkout)
+        # collect_campaign keeps runs with createdAt >= prepared_at. Stamp
+        # the window before the baseline push so that push's own CI / docs
+        # runs are attributed instead of falling outside by timestamp accident.
+        if not campaign.get("prepared_at"):
+            campaign["prepared_at"] = campaign_window_start()
+            write_json(args.manifest, campaign)
         runner.run(
             ["git", "push", "-u", "origin", f"HEAD:refs/heads/{campaign['base_branch']}"],
             cwd=checkout,
@@ -248,7 +268,8 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
         )
 
     campaign["state"] = "prepared"
-    campaign["prepared_at"] = datetime.now(UTC).isoformat()
+    if not campaign.get("prepared_at"):
+        campaign["prepared_at"] = campaign_window_start()
     write_json(args.manifest, campaign)
     print(f"Prepared private mirror {target} at {checkout}")
     return 0

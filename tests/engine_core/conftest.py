@@ -14,6 +14,12 @@ import pytest
 
 from apps.engine_core import log_disk
 from apps.engine_core.build_info import BuildIdentity, BuildInfoOut
+
+# engine_core imports this webui module directly (the stems finish observer),
+# and nothing under tests.webui.conftest reaches it, so import it here: CI's
+# PR test selection must run the engine_core tests when it changes
+# ((private path)).
+from apps.webui.server import coverage_stems_jobs  # noqa: F401
 from tests.webui.conftest import (  # noqa: F401  (re-exported as fixtures)
     client,
     seed_backend,

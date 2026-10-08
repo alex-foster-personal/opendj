@@ -21,3 +21,24 @@ export function releaseBody(response: Response): void {
 		console.warn(`releaseBody: cancelling an unread ${response.status} body failed`, error);
 	});
 }
+
+/**
+ * Release a small keepalive beacon by reading its body.
+ *
+ * `releaseBody` cancels the stream. On a keepalive POST whose load has not
+ * finished, Chromium reports that cancel as net::ERR_ABORTED, and the root
+ * smoke gate counts the failure. Heartbeat and client-samples are those two
+ * calls (cd56a0639c). Reading the body still closes the stream, so the
+ * WKWebView leak stays closed, and the load is allowed to finish.
+ */
+export function releaseBeaconBody(response: Response): void {
+	if (response.body === null || response.bodyUsed || response.body.locked) return;
+	void response.arrayBuffer().catch((error: unknown) => {
+		// Same observable path as releaseBody. A missed beacon is still a
+		// stale client, not an exception thrown into the page.
+		console.warn(
+			`releaseBeaconBody: reading an unread ${response.status} body failed`,
+			error
+		);
+	});
+}

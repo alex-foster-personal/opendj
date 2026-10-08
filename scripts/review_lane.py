@@ -35,8 +35,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from scripts.review_gh import TriageError, _gh
-from scripts.review_pr_diff import pr_diff
+from scripts.review_gh import TriageError, _gh, _paginated_json_list
+from scripts.review_pr_diff import pr_diff, pr_diff_at
 from scripts.review_prompt import ALL_FENCES, RUN_ID_PLACEHOLDER, Fence
 
 REPO = "private_owner/music-dj-tools"
@@ -258,6 +258,41 @@ def diff_of(pr: str) -> str:
     return pr_diff(REPO, pr)
 
 
+_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def review_head(pr: str, at_sha: str | None, dry_run: bool) -> str:
+    """The head a lane reviews: the pinned live head, or a replayed EARLIER one.
+
+    `at_sha` replays a historical head (seeded-defect checks, re-running a
+    missed review). Its marker would certify a head nobody pushed last, so it
+    is refused unless the run posts nothing.
+    """
+    if at_sha is None:
+        return pinned_head(pr)
+    elif not dry_run:  # noqa: RET505 - the three states stay explicit.
+        raise TriageError("--at-sha replays an earlier head and may only print: add --dry-run")
+    elif not _FULL_SHA.match(at_sha):
+        raise TriageError(f"--at-sha must be a full 40-hex SHA, got {at_sha!r}")
+    elif at_sha not in pr_commit_shas(pr):
+        raise TriageError(f"--at-sha {at_sha} is not a commit of PR #{pr}")
+    return at_sha
+
+
+def pr_commit_shas(pr: str) -> frozenset[str]:
+    """Every commit SHA GitHub lists for the PR (its commits endpoint caps at 250)."""
+    return frozenset(str(c["sha"]) for c in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/commits"))
+
+
+def pr_title_and_body(pr: str) -> tuple[str, str]:
+    """What the author claims the PR does: the rubric's intent check reads both."""
+    view = json.loads(_gh(["pr", "view", pr, "--repo", REPO, "--json", "title,body"]))
+    title, body = view.get("title"), view.get("body")
+    if not isinstance(title, str) or not title or not isinstance(body, str):
+        raise TriageError(f"PR #{pr} reported no usable title and body: {view}")
+    return title, body
+
+
 # Machine-written data that CI validates mechanically rather than by reading.
 # .test_durations is pytest-split's timing table: tests/scripts/
 # test_ci_shard_matrix.py checks it is JSON with >= 3000 non-negative numbers.
@@ -282,7 +317,7 @@ GENERATED_DATA_PATHS: frozenset[str] = frozenset(
 )
 
 
-# Files generated only BETWEEN markers. docs/perf/performance-register.md renders its flag
+# Files generated only BETWEEN markers. (private path) renders its flag
 # table from docs/perf/register.d/ fragments, and `python -m scripts.perf_register --check`
 # pins that block byte for byte, but the aspect register and prose around it are
 # hand-written and no check reads them. So its section is dropped only when EVERY changed
@@ -313,7 +348,7 @@ def _is_perf_flag_table_line(text: str) -> bool:
 
 
 GENERATED_BLOCK_PATHS: dict[str, GeneratedBlock] = {
-    "docs/perf/performance-register.md": GeneratedBlock(
+    "(private path)": GeneratedBlock(
         begin_prefix="<!-- BEGIN GENERATED: rows from docs/perf/register.d/",
         end="<!-- END GENERATED -->",
         is_generated_line=_is_perf_flag_table_line,
@@ -428,8 +463,10 @@ def _changed_line_is_placed_inside(hunk: list[str], index: int, block: Generated
     return (above is not None and above.startswith(block.begin_prefix)) or below == block.end
 
 
-def reviewable_diff(pr: str) -> tuple[str, list[str]]:
-    filtered, skipped = split_generated_data(diff_of(pr))
+def reviewable_diff(pr: str, at_sha: str | None) -> tuple[str, list[str]]:
+    """The diff a reviewer reads: the live head's, or `at_sha`'s for a replay."""
+    raw = diff_of(pr) if at_sha is None else pr_diff_at(REPO, pr, at_sha)
+    filtered, skipped = split_generated_data(raw)
     return filtered, sorted(skipped)
 
 

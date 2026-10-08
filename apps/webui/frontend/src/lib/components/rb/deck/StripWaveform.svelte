@@ -353,6 +353,7 @@
 	.play-hint:hover {
 		background: var(--rb-accent);
 		border-color: var(--rb-accent);
+		color: var(--rb-on-accent, #fff);
 	}
 	.strip {
 		position: relative;

@@ -25,6 +25,7 @@ Requirements (mini-PRD):
     [if] a failure is retried before its backoff elapses [then ⛔️] refused
     [if] attempts reach MAX_ATTEMPTS on one signature [then] never retried
     [if] the audio signature changes [then] attempts restart from 1
+    [if] a failure is recorded terminal [then] it counts as failed at once
   ✔︎ ✅ 🎯 the ledger is durable and fail-fast
     [if] the file is absent [then] the ledger is empty, not an error
     [if] the file is malformed or names an unknown step [then ⛔️] raise
@@ -47,6 +48,19 @@ MAX_ATTEMPTS: int = 3
 BACKOFF_BASE_S: float = 60.0
 
 Key = tuple[str, str]
+
+# One lock per ledger FILE, not per store object: the drain, the terminal-mark
+# route and the stems job finish observer each build their own OutcomeStore
+# over the same path, and a per-object lock let one read-modify-write drop
+# another's entry.
+_PATH_LOCKS: dict[str, threading.Lock] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(path: Path) -> threading.Lock:
+    key = os.path.abspath(path)
+    with _PATH_LOCKS_GUARD:
+        return _PATH_LOCKS.setdefault(key, threading.Lock())
 
 
 @dataclass(frozen=True)
@@ -110,7 +124,7 @@ class OutcomeStore:
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._lock = threading.Lock()
+        self._lock = _path_lock(path)
 
     def load(self) -> dict[Key, Outcome]:
         if not self.path.is_file():
@@ -121,17 +135,54 @@ class OutcomeStore:
         return {(o.step, o.stable_id): o for o in map(_parse, payload["entries"])}
 
     def record_failure(
-        self, step: str, stable_id: str, signature: str, reason: str, *, now: float
+        self,
+        step: str,
+        stable_id: str,
+        signature: str,
+        reason: str,
+        *,
+        now: float,
+        terminal: bool = False,
     ) -> Outcome:
+        """One more failure. ``terminal`` records it as final at once.
+
+        ``terminal`` is for a run nothing retries on its own: a user-started
+        stems job (stems has no drain job). Its failure is the user's answer,
+        so it is stored at :data:`MAX_ATTEMPTS` and counts as failed now,
+        rather than sitting in a backoff no drain will ever wake from.
+        """
+        return self.record_failures(
+            step, [(stable_id, signature)], reason, now=now, terminal=terminal
+        )[0]
+
+    def record_failures(
+        self,
+        step: str,
+        targets: list[tuple[str, str]],
+        reason: str,
+        *,
+        now: float,
+        terminal: bool = False,
+    ) -> list[Outcome]:
+        """:meth:`record_failure` for many ``(stable_id, signature)`` at once,
+        in ONE read and ONE write: a per-track rewrite of the whole file made a
+        1,000-track failed job cost about 13 s (measured Wed 7 Oct 2026)."""
+        _step(step)
         with self._lock:
             entries = self.load()
-            prior = entries.get((_step(step), stable_id))
-            same = prior is not None and prior.kind == "failed" and prior.signature == signature
-            attempts = prior.attempts + 1 if same and prior is not None else 1
-            outcome = Outcome(step, stable_id, "failed", reason, attempts, signature, now)
-            entries[(step, stable_id)] = outcome
-            self._write(entries)
-            return outcome
+            recorded: list[Outcome] = []
+            for stable_id, signature in targets:
+                prior = entries.get((step, stable_id))
+                same = prior is not None and prior.kind == "failed" and prior.signature == signature
+                attempts = prior.attempts + 1 if same and prior is not None else 1
+                if terminal:
+                    attempts = max(attempts, MAX_ATTEMPTS)
+                outcome = Outcome(step, stable_id, "failed", reason, attempts, signature, now)
+                entries[(step, stable_id)] = outcome
+                recorded.append(outcome)
+            if recorded:
+                self._write(entries)
+            return recorded
 
     def record_no_source(
         self, step: str, stable_id: str, signature: str, reason: str, *, now: float

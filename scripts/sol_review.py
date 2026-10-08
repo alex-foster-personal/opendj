@@ -53,6 +53,12 @@ Requirements (mini-PRD):
     [if a finding with a bad line number is dropped silently then broken]
   / Never bill the OpenAI API.
     [if OPENAI_API_KEY reaches the codex child environment then broken]
+  / Run at the pinned CFG.MODEL and CFG.EFFORT, and refuse a run whose codex
+    header names anything else; never inherit the seat default (REVIEW-21).
+    [if the codex argv lacks -m CFG.MODEL or the effort override then broken]
+    [if a header naming another model or effort is accepted then broken]
+  / Log input, cached and output tokens separately, or UNKNOWN with a reason.
+    [if the log line can read "tokens=1,068" for a 38k-token input then broken]
 
 Usage:
     python -m scripts.sol_review <PR> [--seat auto|local|<ssh-host>]
@@ -62,21 +68,24 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import socket
 import subprocess
 import sys
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar
 
 try:
-    from scripts.review_gh import TriageError, _gh, _paginated_json_list
+    from scripts.review_gh import TriageError, _paginated_json_list
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.sol_review") from None
     raise
-from scripts.codex_home import CodexHomeUnavailable, select_codex_home
+from scripts.codex_home import CANDIDATE_HOMES, CodexHomeUnavailable, select_codex_home
 from scripts.review_lane import (
     BADGE_COLORS,
     REPO,
@@ -84,8 +93,9 @@ from scripts.review_lane import (
     anchorable_lines,
     first_group,
     parse_findings,
-    pinned_head,
     post_review,
+    pr_title_and_body,
+    review_head,
     reviewable_diff,
     split_by_anchor,
     unreviewed_note,
@@ -102,6 +112,18 @@ class CFG:
     #: `~/.codex`; anything else is an ssh host whose own `~/.codex` is a
     #: SEPARATE subscription seat with a separate quota window. Both are
     #: subscription seats: failing over between them never reaches the API.
+    #: The model and reasoning effort every review runs at, passed explicitly so
+    #: neither the seat's config.toml nor codex's own default decides how
+    #: hard a review looks (REVIEW-21). Measured Thu 8 Oct 2026: with neither
+    #: pinned, PR #5968 was reviewed by the seat default gpt-5.6-luna at medium
+    #: in 15 s with 516 reasoning tokens, and missed a real artist name and
+    #: three wrong weekdays the diff plainly carried. gpt-5.6-sol is the
+    #: seat's Sol-family model at the price tier this lane was built for; high
+    #: is the effort the Claude lane already runs at. An unavailable model is a
+    #: codex 400 and a non-zero exit, so the run fails (exit 3) rather than
+    #: falling back; `_require_pinned_config` also checks codex's own header.
+    MODEL: str = "gpt-5.6-sol"
+    EFFORT: str = "high"
     SEATS: tuple[str, ...] = ("local", "nucbox-wsl")
     #: Hostnames on which a named seat executes directly. This inspectable
     #: registry avoids treating a remote nucbox seat as local on another host.
@@ -126,6 +148,8 @@ class CFG:
 
 
 _MODEL_LINE = re.compile(r"^model:\s*(\S+)", re.MULTILINE)
+_EFFORT_LINE = re.compile(r"^reasoning effort:\s*(\S+)", re.MULTILINE)
+_SESSION_LINE = re.compile(r"^session id:\s*([0-9a-f-]{36})", re.MULTILINE)
 _TOKENS_LINE = re.compile(r"tokens used[:\s]+([\d,]+)", re.IGNORECASE)
 #: codex's own wording, e.g. "try again at Sep 10th, 2026 8:59 PM".
 _RESET_AT = re.compile(r"try again at ([^.\n]+)", re.IGNORECASE)
@@ -156,6 +180,10 @@ def _codex_argv() -> list[str]:
         "--sandbox",
         "read-only",
         "--skip-git-repo-check",
+        "-m",
+        CFG.MODEL,
+        "-c",
+        f"model_reasoning_effort={CFG.EFFORT}",
     ]
 
 
@@ -246,6 +274,106 @@ def _seat_is_spent(output: str) -> bool:
 def _codex_errors(output: str) -> str:
     """codex's own `ERROR:` lines: the only text that may describe a refusal."""
     return "\n".join(line for line in output.splitlines() if line.startswith("ERROR:"))
+
+
+def require_pinned_config(output: str) -> str:
+    """The model codex says it ran, refused unless it is the pinned model at the
+    pinned effort. codex prints both in its session header before the prompt
+    echo, so the FIRST match is codex's own, never a line of the diff."""
+    ran = {"model": first_group(_MODEL_LINE, output), "effort": first_group(_EFFORT_LINE, output)}
+    pinned = {"model": CFG.MODEL, "effort": CFG.EFFORT}
+    if ran != pinned:
+        raise TriageError(
+            f"codex ran {ran}, but this lane pins {pinned}. A review at a configuration "
+            "nobody chose is not posted; fix the seat or the pin."
+        )
+    return ran["model"]
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """codex's per-turn token record, read from the session rollout it writes.
+
+    `tokens used` on stdout is NOT the input size: it is uncached input plus
+    output (PR #5968's Sol run printed 1,068 for 38,155 input tokens, 37,632 of
+    them cached, plus 545 output), which read as "the model never saw the diff".
+    """
+
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    reasoning_output_tokens: int
+
+    def line(self) -> str:
+        return (
+            f"input={self.input_tokens} cached={self.cached_input_tokens} "
+            f"output={self.output_tokens} reasoning={self.reasoning_output_tokens}"
+        )
+
+
+def token_usage_from_rollout(rollout: str) -> TokenUsage:
+    """The last `token_count` total in a codex session rollout (JSONL)."""
+    totals = [
+        info["total_token_usage"]
+        for line in rollout.splitlines()
+        if line.strip()
+        for event in [json.loads(line)]
+        if (event.get("payload") or {}).get("type") == "token_count"
+        for info in [(event.get("payload") or {}).get("info")]
+        if info and info.get("total_token_usage")
+    ]
+    if not totals:
+        raise TriageError("the session rollout holds no token_count record")
+    last = totals[-1]
+    return TokenUsage(
+        input_tokens=int(last["input_tokens"]),
+        cached_input_tokens=int(last["cached_input_tokens"]),
+        output_tokens=int(last["output_tokens"]),
+        reasoning_output_tokens=int(last["reasoning_output_tokens"]),
+    )
+
+
+def _read_rollout(seat: str, session_id: str) -> str:
+    """The session rollout codex wrote for `session_id`, on the seat that ran it."""
+    pattern = f"sessions/*/*/*/rollout-*-{session_id}.jsonl"
+    if _is_local_seat(seat):
+        found = [p for home in CANDIDATE_HOMES for p in Path(home).glob(pattern)]
+        if len(found) != 1:
+            raise TriageError(f"expected one rollout for session {session_id}, found {len(found)}")
+        return found[0].read_text()
+    elif seat:  # noqa: RET505 - local and remote seat kinds stay explicit.
+        # Exactly one match, as on the local branch: a glob that matched two
+        # rollouts would concatenate them and report the wrong turn's tokens.
+        remote = (
+            f'set -- "${{CODEX_HOME:-$HOME/.codex}}"/{pattern}; '
+            'if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then echo "expected one rollout, found $#" >&2; exit 3; fi; '
+            'cat "$1"'
+        )
+        proc = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=15", seat, remote],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise TriageError(f"reading the rollout on {seat} failed: {proc.stderr.strip()[-300:]}")
+        return proc.stdout
+    raise TriageError("seat must name a configured local alias or an SSH host")
+
+
+def token_breakdown(seat: str, output: str) -> str:
+    """Input, cached and output tokens for the log line, or UNKNOWN with the reason.
+
+    A log line, not a gate: a rollout that cannot be read is reported as
+    UNKNOWN and never as a number."""
+    session_id = first_group(_SESSION_LINE, output)
+    if session_id == "unknown":
+        return "UNKNOWN (codex printed no session id)"
+    try:
+        return token_usage_from_rollout(_read_rollout(seat, session_id)).line()
+    except (TriageError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
+        return f"UNKNOWN ({exc})"
 
 
 def reported_tokens(output: str) -> str:
@@ -365,16 +493,16 @@ def summary_body(
 # ----- CLI ----------------------------------------------------------------
 
 
-def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
-    sha = pinned_head(pr)
-    print(f"[sol-review] PR #{pr} pinned at {sha}")
-    if not force and _existing_sol_review(pr, sha):
+def run(pr: str, seat: str, dry_run: bool, force: bool, at_sha: str | None) -> int:
+    sha = review_head(pr, at_sha, dry_run)
+    print(f"[sol-review] PR #{pr} pinned at {sha}" + (" (replayed earlier head)" if at_sha else ""))
+    if at_sha is None and not force and _existing_sol_review(pr, sha):
         print(
             f"[sol-review] a Sol review already exists for {sha}; nothing to do (--force to redo)"
         )
         return 0
-    title = _gh(["pr", "view", pr, "--repo", REPO, "--json", "title", "-q", ".title"]).strip()
-    diff, unreviewed = reviewable_diff(pr)
+    title, body = pr_title_and_body(pr)
+    diff, unreviewed = reviewable_diff(pr, at_sha)
     skipped = frozenset(unreviewed)
     if unreviewed:
         print(f"[sol-review] not reviewed, generated data: {', '.join(unreviewed)}")
@@ -403,11 +531,16 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
             fence=SOL_FENCE,
             withheld=unreviewed,
         ),
+        body=body,
     )
-    output, used, model = review_with_codex(prompt, seat)
+    output, used, _ = review_with_codex(prompt, seat)
+    model = require_pinned_config(output)
     findings = parse_findings(output, run_id, SOL_FENCE, CFG.MAX_FINDINGS)
-    tokens = reported_tokens(output)
-    print(f"[sol-review] seat={used} model={model} tokens={tokens} findings={len(findings)}")
+    print(
+        f"[sol-review] seat={used} model={model} effort={CFG.EFFORT} "
+        f"tokens: {token_breakdown(used, output)} (codex total line: {reported_tokens(output)}) "
+        f"findings={len(findings)}"
+    )
     for finding in findings:
         anchor = f"{finding.path}:{finding.line}" if finding.line else finding.path
         print(f"  {finding.verdict} {finding.severity} {anchor} -- {finding.title}")
@@ -431,9 +564,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--dry-run", action="store_true", help="review and print, post nothing")
     parser.add_argument("--force", action="store_true", help="re-review a head already covered")
+    parser.add_argument("--at-sha", help="replay an EARLIER full head SHA; requires --dry-run")
     args = parser.parse_args(argv)
     try:
-        return run(args.pr, args.seat, args.dry_run, args.force)
+        return run(args.pr, args.seat, args.dry_run, args.force, args.at_sha)
     except TriageError as exc:
         print(f"[sol-review] FAILED: {exc}", file=sys.stderr)
         return 3

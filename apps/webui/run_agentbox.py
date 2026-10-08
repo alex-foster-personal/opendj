@@ -1,7 +1,8 @@
 """Restart the agentbox web UI behind tailscale serve and probe it.
 
-On hostname ``agentbox`` this is local. On a Mac, ``just run-agentbox``
-BatchMode-SSHs to the tailnet alias ``agentbox`` and runs ``--local`` there.
+On the agentbox host this is local. On a Mac, ``just run-agentbox``
+BatchMode-SSHs to the agentbox ssh alias and runs ``--local`` there. Both are
+the one name ``MDT_AGENTBOX_HOST`` (default ``agentbox``, issue #5639).
 It does not bind, serve, or rewrite Tailscale config on the caller.
 """
 
@@ -49,7 +50,33 @@ LOG_DIR = Path.home() / ".local/share/music-dj-tools/webui"
 SCRATCH_DIR = PROJECT_ROOT / ".tmp"
 EPHEMERAL_LOG_DIR = Path(tempfile.gettempdir()) / "music-dj-tools"
 FRONTEND_DIR = PROJECT_ROOT / "apps" / "webui" / "frontend"
-AGENTBOX_HOSTNAME = "agentbox"
+#: The one variable naming the agentbox machine (issue #5639, .env.sample): its
+#: hostname, its bare ssh alias and its short MagicDNS name, which this
+#: deployment keeps identical. Unset or blank keeps the stage-1 default; a later
+#: stage removes the default once every machine sets it (ADR-0317).
+AGENTBOX_HOST_ENV = "MDT_AGENTBOX_HOST"
+DEFAULT_AGENTBOX_HOST = "agentbox"
+#: One DNS label. The name is compared with ``hostname`` output, used as an ssh
+#: destination and interpolated into the constant remote command, so nothing
+#: else is accepted.
+_HOST_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+def agentbox_host(*, environ: Mapping[str, str] | None = None) -> str:
+    """MDT_AGENTBOX_HOST, else the stage-1 default; a value that is not one DNS
+    label is refused, naming the variable."""
+    effective = os.environ if environ is None else environ
+    value = (effective.get(AGENTBOX_HOST_ENV) or "").strip()
+    if not value:
+        return DEFAULT_AGENTBOX_HOST
+    if not _HOST_LABEL_RE.fullmatch(value):
+        raise PortConfigError(
+            f"{AGENTBOX_HOST_ENV}={value!r} is not a bare hostname (one DNS label)"
+        )
+    return value
+
+
+AGENTBOX_HOSTNAME = agentbox_host()
 #: Env naming this deployment's agentbox SSH destinations, comma separated, in
 #: addition to the bare ssh alias. The MagicDNS name embeds a TAILNET label,
 #: which is deployment-specific, so it is CONFIGURED rather than spelled in the
@@ -63,7 +90,7 @@ AGENTBOX_HOSTNAME = "agentbox"
 #: membership of this allowlist stands between a typo and a library copied to
 #: somebody else's machine.
 AGENTBOX_SSH_HOSTS_ENV = "MDT_AGENTBOX_SSH_HOSTS"
-SSH_HOST = "agentbox"
+SSH_HOST = AGENTBOX_HOSTNAME
 REMOTE_REPO = "/root/music-dj-tools"
 SSH_CONNECT_TIMEOUT = "8"
 CLIENT_LOG_NAMES = frozenset({"webui-client-errors", "webui-visitors"})
@@ -715,7 +742,7 @@ def allowed_ssh_hosts(*, environ: Mapping[str, str] | None = None) -> frozenset[
     effective = os.environ if environ is None else environ
     raw = effective.get(AGENTBOX_SSH_HOSTS_ENV, "")
     extra = {part.strip() for part in raw.split(",") if part.strip()}
-    return frozenset({AGENTBOX_HOSTNAME}) | extra
+    return frozenset({agentbox_host(environ=effective)}) | extra
 
 
 def allowed_ssh_host(host: str, *, environ: Mapping[str, str] | None = None) -> bool:
@@ -800,6 +827,28 @@ def run_via_ssh(
     return 0
 
 
+def agentbox_check_command(
+    host: str, serve_ip: str, stem_track: str | None = None
+) -> list[str]:
+    """The browser check's argv. ``--short-host`` is the agentbox host name, the
+    HTTP alias the check proves redirects alongside the MagicDNS ``host``."""
+    command = [
+        "pnpm",
+        "exec",
+        "node",
+        "scripts/agentbox-check.mjs",
+        "--host",
+        host,
+        "--ip",
+        serve_ip,
+        "--short-host",
+        AGENTBOX_HOSTNAME,
+    ]
+    if stem_track is not None:
+        command.extend(["--stem-track", _validated_stem_track(stem_track)])
+    return command
+
+
 def check_agentbox(stem_track: str | None = None) -> int:
     """Prove HTTP aliases, TLS, browser JS, AudioWorklet, IPC, API and telemetry."""
     hosts = resolve_allowed_hosts()
@@ -810,20 +859,8 @@ def check_agentbox(stem_track: str | None = None) -> int:
         host=host,
         frontend_port=resolve_ports().frontend,
     )
-    command = [
-            "pnpm",
-            "exec",
-            "node",
-            "scripts/agentbox-check.mjs",
-            "--host",
-            host,
-            "--ip",
-            serve_ip,
-        ]
-    if stem_track is not None:
-        command.extend(["--stem-track", _validated_stem_track(stem_track)])
     result = subprocess.run(
-        command,
+        agentbox_check_command(host, serve_ip, stem_track),
         cwd=FRONTEND_DIR,
         check=False,
         capture_output=True,
@@ -914,7 +951,7 @@ def run_agentbox() -> int:
     expected_redirect = f"{secure_origin}/performance"
     _wait_redirect(
         f"http://127.0.0.1:{HTTP_REDIRECT_PORT}/performance",
-        host="agentbox",
+        host=AGENTBOX_HOSTNAME,
         expected_location=expected_redirect,
         seconds=10.0,
         label="loopback HTTP redirect",
@@ -934,12 +971,12 @@ def run_agentbox() -> int:
     print(f"[OK] serve {serve_target} -> {serve_url} via {serve_ip}")
     _wait_redirect(
         f"http://{serve_ip}/performance",
-        host="agentbox",
+        host=AGENTBOX_HOSTNAME,
         expected_location=expected_redirect,
         seconds=10.0,
         label="tailscale short-host HTTP redirect",
     )
-    print(f"[OK] http://agentbox/performance -> {expected_redirect}")
+    print(f"[OK] http://{AGENTBOX_HOSTNAME}/performance -> {expected_redirect}")
     check_agentbox()
     return 0
 

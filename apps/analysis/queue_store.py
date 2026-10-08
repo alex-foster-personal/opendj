@@ -1,7 +1,7 @@
 """Persistence for the native-analysis v1 backfill queue.
 
-Spec `specs/native-analysis-v1.md` section 3 ("Queue") and section 4, lane
-brief `specs/native-analysis-v1-lanes/nav1-queue.md`. Requirement NATIVE-10.
+Spec `(private path)` section 3 ("Queue") and section 4, lane
+brief `(private path)`. Requirement NATIVE-10.
 
 The queue is PERSISTED, not derived. :mod:`apps.analysis.backlog` is the
 derived queue and stays that way: it answers "which unmapped tracks have no
@@ -298,6 +298,20 @@ def set_batch_state(
         "UPDATE analysis_queue_batch SET state = ?, updated_at = ? "
         "WHERE batch_id = ?",
         (state, _now_iso(), batch_id),
+    )
+
+
+def requeue_batch_unless_cancelled(conn: sqlite3.Connection, batch_id: str) -> None:
+    """Return a batch to queued unless a cancel has already committed.
+
+    One UPDATE, so a cancel that landed first is not overwritten. An
+    unconditional write back to queued would resurrect work the user
+    cancelled while startup was failing.
+    """
+    conn.execute(
+        "UPDATE analysis_queue_batch SET state = ?, updated_at = ? "
+        "WHERE batch_id = ? AND state != ?",
+        (BATCH_QUEUED, _now_iso(), batch_id, BATCH_CANCELLED),
     )
 
 

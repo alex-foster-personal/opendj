@@ -46,13 +46,17 @@ from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
 from apps.shared.state import deleted_tracks
-from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state import provenance as state_provenance
 from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
+    path_collision_key,
+)
+from apps.shared.state.ingest.path_identity import (
+    live_inferred_by_path_key,
+    resolve_inferred_stable_id,
 )
 from apps.shared.state.writer import StateWriter
 from apps.shared.stem_outputs import is_stem_output
@@ -234,15 +238,17 @@ def _write_tracks(
 ) -> None:
     """One row per file, with a tier-3 collision guard.
 
-    A tier-3 id is ``sha1(abs_path|mtime)``, so two distinct files cannot
-    collide in practice -- but the guard is kept because the rekordbox
-    adapter needs it and a folder importer that quietly overwrote a row
-    would be far harder to notice than one that reports a skip.
+    A new path still mints ``sha1(path_collision_key(abs_path)|mtime)``.
+    A live inferred row at that path is reused (LIBM-180) so an mtime
+    move cannot mint a second identity. The ``seen`` guard stays because
+    the rekordbox adapter needs the same shape and a quiet overwrite
+    would be harder to notice than a reported skip.
     """
     total = len(files)
     seen: set[str] = set()
+    existing_by_key = live_inferred_by_path_key(writer.raw_conn)
     for index, entry in enumerate(files, start=1):
-        identified = _identify(entry, report)
+        identified = _identify(entry, report, existing_by_key)
         if identified is None:
             continue
         stable_id, tier, duration_ms, metadata = identified
@@ -250,6 +256,7 @@ def _write_tracks(
             report.tracks_skipped += 1
             continue
         seen.add(stable_id)
+        existing_by_key.setdefault(path_collision_key(str(entry.path)), stable_id)
 
         audio_hash = hashing.sha256_audio_payload(entry.path)
         removed = deleted_tracks.find_deleted_match(
@@ -296,9 +303,11 @@ def _write_tracks(
 
 
 def _identify(
-    entry: audio_files.AudioFile, report: FolderIngestReport
+    entry: audio_files.AudioFile,
+    report: FolderIngestReport,
+    existing_by_key: dict[str, str],
 ) -> tuple[str, str, int | None, audio_files.AudioMetadata | None] | None:
-    """Read the tags and mint the id, or count the file as skipped."""
+    """Read the tags and resolve the id, or count the file as skipped."""
     if is_stem_output(entry.path):
         report.files_skipped_stem_output += 1
         return None
@@ -316,13 +325,8 @@ def _identify(
         else None
     )
     try:
-        stable_id, tier = state_ids.stable_id(
-            isrc=None,
-            fingerprint=None,
-            duration_ms=duration_ms,
-            size_bytes=entry.size_bytes,
-            abs_path=str(entry.path),
-            mtime=entry.mtime,
+        stable_id, tier = resolve_inferred_stable_id(
+            str(entry.path), entry.mtime, existing_by_key
         )
     except ValueError:
         report.tracks_skipped += 1

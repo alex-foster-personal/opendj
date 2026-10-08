@@ -164,7 +164,7 @@
 	}
 	.add-track-results button:hover {
 		background: var(--rb-accent);
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 	}
 	.add-track-results .title {
 		flex: 1;
@@ -178,6 +178,6 @@
 		color: var(--rb-text-dim);
 	}
 	.add-track-results button:hover .artist {
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 	}
 </style>

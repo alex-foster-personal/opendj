@@ -1,7 +1,7 @@
 """apps.webui.server.routes.vocals: HTTP trigger + status (issue #1038).
 
 Hermetic: builds a throwaway state.db + master.plain.db, exactly the
-tests/vocals/test_cli_queue.py shape, so the route's classify()-based
+(private path) shape, so the route's classify()-based
 refusal path is exercised for real. The route functions are called
 directly (they are plain functions, not bound to the ASGI stack), which
 keeps the test independent of the full ``create_app()`` machinery that
@@ -13,7 +13,7 @@ Regression one-liners:
   - if a claimed from-stems track's vocal-cache entry isn't GET-visible then broken
   - if a track with no local ANLZ .DAT isn't refused missing_analysis then broken
   - if refusing a track still writes a vocal-cache entry then broken
-  - if a stable_id with no rekordbox mapping isn't refused unmapped then broken
+  - if a stable_id that is no live track isn't refused unknown_track then broken
   - if a todo track with no stem bundle isn't refused missing_stems under from-stems then broken
   - if an already-cached track isn't refused cached_demucs then broken
   - if stable_ids and playlist_id are both given or both omitted then broken
@@ -133,9 +133,6 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "INSERT INTO djmdContent VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, 0)",
             (vendor_id, f"title-{sid}", length, folder, adp),
         )
-    state.execute(
-        "INSERT INTO tracks (stable_id, title) VALUES ('local-only', 'local only')"
-    )
     state.commit()
     state.close()
     master.commit()
@@ -260,14 +257,6 @@ def test_missing_analysis_refuses_and_writes_nothing(client: TestClient, data_di
     assert not vcache.cache_path(data_dir, "noanlz").exists()
 
 
-def test_unmapped_stable_id_is_refused(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/vocals/analyze", json={"stable_ids": ["ghost"], "mode": "from-stems"}
-    )
-    assert response.status_code == 202, response.text
-    assert response.json() == {"claimed": [], "refused": {"ghost": "unmapped"}}
-
-
 def test_todo_track_with_no_stem_bundle_refuses_missing_stems(client: TestClient) -> None:
     response = client.post(
         "/api/v1/vocals/analyze", json={"stable_ids": ["nostem"], "mode": "from-stems"}
@@ -321,14 +310,6 @@ def test_exactly_one_of_stable_ids_or_playlist_id_required() -> None:
 
 
 # ----- GET /vocals/{stable_id}/status -----------------------------------------
-
-
-def test_status_not_analyzed_when_unmapped(client: TestClient) -> None:
-    response = client.get("/api/v1/vocals/local-only/status")
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "stable_id": "local-only", "status": "not_analyzed", "fps": None, "regions": []
-    }
 
 
 def test_status_reports_demucs_after_from_stems_write(

@@ -18,5 +18,6 @@ USER_BACKENDS: dict[str, str] = {
 }
 
 SKIP_UP_TO_DATE: str = "up_to_date"
+SKIP_NO_LYRICS_FOUND: str = "no_lyrics_found"
 SKIP_DETAIL: str = "skipped: up to date"
 MAX_ENQUEUE_IDS: int = 5000

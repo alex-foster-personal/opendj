@@ -16,6 +16,7 @@ TYPE_CHECKING import back into ingest.py would be a cycle wearing a hat.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import threading
@@ -175,12 +176,16 @@ def _run_cli(job: _RefreshJob, argv: list[str]) -> None:
     # and the job log - the only record a user or a test has of what ran -
     # stops saying which CLI it was.
     _log(job, "$ " + " ".join([*argv[1:3], *argv[3:][-6:]]))
+    # Own session, so stop_all can signal the group. A pool worker forked
+    # after the child snapshot inherits this stdout pipe; if it survives,
+    # the read below never sees EOF and the step outlives shutdown.
     proc = subprocess.Popen(
         argv,
         cwd=PROJECT_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        start_new_session=os.name != "nt",
     )
     # Registered so the engine's shutdown can stop it and its pool workers;
     # see ingest_cli_procs.

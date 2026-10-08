@@ -7,7 +7,7 @@
 // features. Everything a user sees is served by the engine over HTTP.
 //
 // Port of apps/desktop/src-tauri/src/main.rs. Behaviors are numbered P1-P19 in
-// .planning/phases/20-electron-desktop-shell/20-CONTEXT.md.
+// (private path).
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -19,6 +19,7 @@ import {
 	app,
 	dialog,
 	ipcMain,
+	nativeImage,
 	net,
 	protocol,
 	screen,
@@ -115,7 +116,23 @@ function failVisibly(error: unknown): never {
 	throw error;
 }
 
+/** Tauri mark with the dark half painted white, so this shell is not the Tauri app. */
+function shellIconPath(): string {
+	return path.join(__dirname, '..', 'assets', 'icon.png');
+}
+
+function applyShellMark(): void {
+	const icon = nativeImage.createFromPath(shellIconPath());
+	if (icon.isEmpty()) {
+		appendShellLog('WARN', `shell icon missing at ${shellIconPath()}`);
+		return;
+	}
+	if (process.platform === 'darwin' && app.dock !== undefined) app.dock.setIcon(icon);
+	appendShellLog('shell', 'dock icon: tauri mark, lower half white');
+}
+
 function main(): void {
+	app.setName('Open DJ');
 	// P19/D10: a CDP port only for unpackaged builds; packaged builds also have
 	// the inspect fuses off, so this surface cannot ship.
 	const cdpPort = process.env.OPENDJ_REMOTE_DEBUGGING_PORT;
@@ -282,6 +299,7 @@ function main(): void {
 			failVisibly(error);
 		}
 		appendShellLog('INFO', `electron shell ${app.getVersion()} (electron ${process.versions.electron}) data dir ${dataDir}`);
+		applyShellMark();
 
 		// The bootstrap page, served like tauri://localhost was.
 		const setupRoot = setupDir();
@@ -378,6 +396,7 @@ function main(): void {
 			width: size.width,
 			height: size.height,
 			title: productName,
+			icon: shellIconPath(),
 			backgroundColor: '#000000',
 			webPreferences: {
 				preload: path.join(__dirname, 'preload.js'),

@@ -277,6 +277,17 @@ def test_row_payload_stays_inside_its_byte_budget(probe) -> None:
     assert 500 < per_row <= ROW_BYTES_BUDGET, f"{per_row:.0f} bytes per row"
 
 
+def test_stock_missing_reason_is_not_repeated_on_the_wire(probe) -> None:
+    """[if] a missing lane uses its stock reason [then] JSON omits it, [else stop]."""
+    row = _rows(probe["warm_first"])[0]
+    assert row["bpm_status"] == "missing"
+    assert row["key_status"] == "missing"
+    assert row["loudness_status"] == "missing"
+    assert "bpm_reason" not in row
+    assert "key_reason" not in row
+    assert "loudness_reason" not in row
+
+
 def test_changes_on_disk_show_on_the_next_page(probe) -> None:
     """[if] the row cache outlives a change to the files behind it [then] fail, [else stop]."""
     before, after = _rows(probe["head_before"]), _rows(probe["head_after"])

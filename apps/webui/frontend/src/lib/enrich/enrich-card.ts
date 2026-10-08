@@ -1,7 +1,7 @@
 /**
  * Enrich-on-open card policy (ENRICH-01, ENRICH-02, ENRICH-03). Pure: the component fetches
  * GET /api/v1/enrich/summary and renders exactly the lines this returns, so
- * every state in specs/state-inventories/library-enrichment.md is unit-testable here.
+ * every state in (private path) is unit-testable here.
  *
  * Counts are SONGS when the summary carries the backend's song view
  * (apps/webui/server/enrich_songs.py): rows for one file, and copies of one
@@ -19,7 +19,7 @@
  *   duds        files that cannot be read: one neutral note, never a failure
  *
  * Tracks whose files are not on this Mac get their own lines, never a
- * percentage (docs/library-availability.md, the denominator house rule).
+ * percentage ((private path), the denominator house rule).
  */
 
 export type DrainState = {
@@ -72,8 +72,13 @@ export type LaneCounts = {
 export type SongsSummary = { songs: number; files: number; rows: number; key: string; red_fail_share?: number };
 
 export type StemsLine = {
-	state: 'ask' | 'done' | 'no_source' | 'user_declined' | 'unknown';
+	/** `failed`: nothing left to ask about, but separations failed (ENRICH-04). */
+	state: 'ask' | 'done' | 'failed' | 'no_source' | 'user_declined' | 'unknown';
 	pending: number | null;
+	/** ENRICH-04: separations that failed every attempt; songs when the song view is known. */
+	failed?: number | null;
+	/** ENRICH-04, `no_source` only: stems this computer cannot make (songs when known). */
+	missing?: number;
 	reason: string | null;
 	/** ENRICH-03: songs with a real stem bundle, and songs still without one. */
 	separated?: number;
@@ -394,15 +399,47 @@ export function absentLines(summary: EnrichSummary): CardLine[] {
 	return lines;
 }
 
+/** ENRICH-04: failed separations, the count the backend reports (0 when absent). */
+const stemsFailed = (stems: StemsLine): number => stems.failed ?? 0;
+
+/** Plural-aware "N songs" / "N tracks" for the stems row. */
+const countOf = (count: number, have: boolean): string =>
+	`${n(count)} ${have ? (count === 1 ? 'song' : 'songs') : count === 1 ? 'track' : 'tracks'}`;
+
+/**
+ * No stems source on this computer. With `missing` (ENRICH-04) the count of
+ * stems that cannot be made here is named; without it (an older payload) the
+ * pending-only wording stands.
+ */
+function noSourceText(stems: StemsLine, have: boolean, failed: number): string {
+	const failedTail = failed > 0 ? `, ${n(failed)} failed` : '';
+	if (stems.missing === undefined || stems.missing === 0) {
+		const counted = have ? `Stems: ${n(stems.separated ?? 0)} separated, ${n(stems.not_yet ?? 0)} not yet${failedTail}` : null;
+		return `${counted ?? `Stems: ${n(stems.pending ?? 0)} tracks have none${failedTail}`}, and this computer cannot make them (${stems.reason})`;
+	}
+	const notYet = have ? (stems.not_yet ?? 0) : (stems.pending ?? 0);
+	const parts = [
+		...(have ? [`${n(stems.separated ?? 0)} separated`] : []),
+		...(notYet > 0 ? [`${n(notYet)} not yet`] : []),
+		...(failed > 0 ? [`${n(failed)} failed`] : []),
+		`${countOf(stems.missing, have)} can't be made on this computer (${stems.reason})`
+	];
+	return `Stems: ${parts.join(', ')}`;
+}
+
 /** What the stems row says, or null when there is nothing to say. Lyrics-style when songs are known. */
 export function stemsText(stems: StemsLine): string | null {
 	const have = stems.separated !== undefined && stems.not_yet !== undefined;
-	const counted = have ? `Stems: ${n(stems.separated ?? 0)} separated, ${n(stems.not_yet ?? 0)} not yet` : null;
+	const failed = stemsFailed(stems);
+	const failedTail = failed > 0 ? `, ${n(failed)} failed` : '';
+	const counted = have ? `Stems: ${n(stems.separated ?? 0)} separated, ${n(stems.not_yet ?? 0)} not yet${failedTail}` : null;
 	switch (stems.state) {
 		case 'ask':
-			return counted ? `${counted}. Separate them?` : `${n(stems.pending ?? 0)} tracks have no stems yet. Separate them?`;
+			return counted ? `${counted}. Separate them?` : `${n(stems.pending ?? 0)} tracks have no stems yet${failedTail}. Separate them?`;
 		case 'no_source':
-			return `${counted ?? `Stems: ${n(stems.pending ?? 0)} tracks have none`}, and this computer cannot make them (${stems.reason})`;
+			return noSourceText(stems, have, failed);
+		case 'failed':
+			return counted ?? `Stems: ${n(failed)} ${failed === 1 ? 'track' : 'tracks'} failed to separate`;
 		case 'user_declined':
 			return null;
 		case 'unknown':
@@ -414,6 +451,28 @@ export function stemsText(stems: StemsLine): string | null {
 			throw new Error(`Unhandled stems state: ${exhaustive}`);
 		}
 	}
+}
+
+/** The stems row's tone: failures read red, the question reads as work in progress. */
+export function stemsTone(stems: StemsLine): CardLine['tone'] {
+	if (stems.state === 'failed') return 'failed';
+	return stems.state === 'ask' ? 'working' : 'unavailable';
+}
+
+/** Hover text for the stems row's counts (house rule: every number carries a title). */
+export function stemsTitle(stems: StemsLine): string | null {
+	const failed = stemsFailed(stems);
+	const lines: string[] = [];
+	if (stems.state === 'no_source' && (stems.missing ?? 0) > 0) {
+		lines.push(
+			`${n(stems.missing ?? 0)} without stems: no stems source on this computer can make them (${stems.reason}). ` +
+				'Set up the stems farm or allow on-device separation to make them.'
+		);
+	}
+	if (failed > 0) {
+		lines.push(`${n(failed)} failed: separations that failed every attempt on the same file and are not retried automatically.`);
+	}
+	return lines.length > 0 ? lines.join('\n') : null;
 }
 
 /** True when the card should offer Retry: some automatic lane is red or cannot run. */
@@ -433,6 +492,10 @@ export function offersRetry(summary: EnrichSummary): boolean {
 export function needsAttention(summary: EnrichSummary | null, loadError: string | null, actionError: string | null): boolean {
 	if (loadError || actionError || summary === null) return true;
 	if (summary.stems.state === 'ask' || summary.stems.state === 'unknown') return true;
+	// ENRICH-04: failed separations need the user's eyes, unless they said never.
+	if (stemsFailed(summary.stems) > 0 && summary.stems.state !== 'user_declined' && summary.decisions.stems !== 'never') return true;
+	// A stems lane this computer cannot make stays collapsed: no answer here can change it, and the
+	// collapsed line names it (collapsedLine), the same as background progress.
 	const lines = [...analysisLines(summary), lyricsLine(summary)];
 	return lines.some((line) => line !== null && (line.tone === 'failed' || line.tone === 'unavailable'));
 }
@@ -447,14 +510,30 @@ export function collapsedLine(summary: EnrichSummary): { text: string; title: st
 		const c = summary.analysis?.lanes[line.lane];
 		return c?.usable || c?.usable_songs ? VALUE_LABELS[line.lane] : LANE_LABELS[line.lane];
 	});
+	// ENRICH-04: a stems lane this computer cannot make is collapsed, never hidden behind "nothing
+	// left" or behind lanes still running.
+	const noSource =
+		summary.stems.state === 'no_source' && (summary.stems.missing ?? 0) > 0 && summary.decisions.stems !== 'never';
+	const noSourceTitle = noSource ? (stemsTitle(summary.stems) ?? 'No stems source on this computer') : '';
 	if (labels.length === 0) {
+		if (noSource) {
+			return {
+				text: `Library: ${n(summary.stems.missing ?? 0)} without stems, none can be made here`,
+				title: noSourceTitle
+			};
+		}
 		return { text: 'Library: nothing left running', title: 'No analysis lane is still running in the background' };
 	}
 	const drains = running.map((line) => summary.analysis?.drain?.[line.lane]?.state);
 	const allPaused = drains.every((state) => state === 'paused_playing');
 	const lanes = `${labels.length} ${labels.length === 1 ? 'lane' : 'lanes'}`;
-	return {
-		text: allPaused ? `Library: ${lanes} paused while a deck is playing` : `Library: ${lanes} still running`,
-		title: `${allPaused ? 'Paused while a deck is playing' : 'Running in the background'}: ${labels.join(', ')}. More shows the counts.`
-	};
+	const text = allPaused ? `Library: ${lanes} paused while a deck is playing` : `Library: ${lanes} still running`;
+	const title = `${allPaused ? 'Paused while a deck is playing' : 'Running in the background'}: ${labels.join(', ')}. Click for the counts.`;
+	if (noSource) {
+		return {
+			text: `${text}; ${n(summary.stems.missing ?? 0)} without stems, none can be made here`,
+			title: `${title} ${noSourceTitle}`
+		};
+	}
+	return { text, title };
 }

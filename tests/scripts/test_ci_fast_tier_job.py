@@ -1,6 +1,6 @@
 """The ci.yml `fast` job runs the whole fast tier first, on a pool of its own, and can cancel.
 
-SMARTEST-CI round 6a (specs/ci-fail-fast.md). This pins the job's SHAPE, the part a
+SMARTEST-CI round 6a ((private path)). This pins the job's SHAPE, the part a
 reviewer cannot see from a green run: which pool it asks for, that it may cancel the run,
 that a thin selection or a thin ledger fails loud, and that the sharded lane is unchanged
 except for the ledger guard.
@@ -120,7 +120,7 @@ def test_fast_job_is_a_signal_not_a_gate_in_round_6a() -> None:
     """
     # Pull requests only: the six-hour `tier: fast` control dispatch on main
     # (main-control.yml) has nothing but this job, so there a red leg must
-    # fail the run (tests/quality/test_main_control_workflow.py pins that half).
+    # fail the run ((private path) pins that half).
     assert _jobs()["fast"]["continue-on-error"] == "${{ github.event_name == 'pull_request' }}"
 
 
@@ -179,7 +179,7 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
     fast = _pytest_step(_jobs()["fast"])
     ignores = lambda run: sorted(tok for tok in run.split() if tok.startswith("--ignore="))  # noqa: E731
     assert ignores(fast) == ignores(shard)
-    assert len(ignores(fast)) == 8  # + the playlist-switch bench, hosted by e2e.yml extended
+    assert len(ignores(fast)) == 9  # + playlist-switch bench (e2e.yml extended) and NATIVE-25 live-engine (fail-closed when loudness is unavailable; must not collect on the fast lane)
 
 
 def test_shard_job_gains_only_the_ledger_guard() -> None:

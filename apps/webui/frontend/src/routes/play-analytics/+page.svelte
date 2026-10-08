@@ -4,12 +4,13 @@
 	 * All controls serialize to GET /api/play-analytics for agent parity.
 	 */
 	import { onMount } from 'svelte';
-	import { fetchPlayAnalytics } from './analytics-api';
+	import { NoEventStoreError, fetchPlayAnalytics } from './analytics-api';
 	import { type PlayAnalyticsResponse, type ShareState } from './types';
 
 	const LIMIT = 50;
 	let data = $state<PlayAnalyticsResponse | null>(null);
 	let error = $state<string | null>(null);
+	let noSetsYet = $state(false);
 	let loading = $state(true);
 	let shareState = $state<ShareState | ''>('');
 	let requestRevision = 0;
@@ -23,10 +24,12 @@
 			if (revision === requestRevision) {
 				data = response;
 				error = null;
+				noSetsYet = false;
 			}
 		} catch (caught) {
 			if (revision === requestRevision) {
-				error = caught instanceof Error ? caught.message : String(caught);
+				noSetsYet = caught instanceof NoEventStoreError;
+				error = noSetsYet ? null : caught instanceof Error ? caught.message : String(caught);
 			}
 		} finally {
 			if (revision === requestRevision) loading = false;
@@ -90,6 +93,12 @@
 
 	{#if error}
 		<div class="error" role="alert">Play analytics unavailable: {error}</div>
+	{/if}
+
+	{#if noSetsYet}
+		<p class="empty" data-testid="play-analytics-no-sets">
+			No sets recorded yet. Play analytics fills in once you record a set in <a href="/sets">Sessions / REC</a>.
+		</p>
 	{/if}
 
 	{#if data}

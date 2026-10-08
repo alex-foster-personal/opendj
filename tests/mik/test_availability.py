@@ -4,12 +4,14 @@
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 from apps.mik import availability as avail
+from apps.shared.platform_paths import load_path_map
 from apps.shared.state.locations import upsert_location
 
 pytestmark = pytest.mark.requirement("INFRA-01")
@@ -28,6 +30,181 @@ def test_absent_when_the_path_does_not_resolve(tmp_path: Path) -> None:
     assert state == "absent"
     assert checked is not None
     assert checked.endswith("gone.mp3")
+
+
+def _write_path_map(data_dir: Path, from_prefix: Path, to_prefix: Path) -> Path:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "entries": [{"from": str(from_prefix), "to": str(to_prefix)}],
+    }
+    map_path = data_dir / "path-map.json"
+    map_path.write_text(json.dumps(payload), encoding="utf-8")
+    return data_dir
+
+
+def test_present_when_raw_path_missing_but_path_map_target_exists(
+    tmp_path: Path,
+) -> None:
+    stored_root = tmp_path / "stored" / "crate"
+    mapped_root = tmp_path / "actual" / "crate"
+    mapped_root.mkdir(parents=True)
+    mapped_audio = mapped_root / "track.mp3"
+    mapped_audio.write_bytes(b"\x00")
+    raw = str(stored_root / "track.mp3")
+    data_dir = _write_path_map(tmp_path / "data", stored_root, mapped_root)
+    path_map = load_path_map(data_dir)
+    state, checked = avail.classify_path(raw, path_map=path_map)
+    assert state == "present"
+    assert checked == str(mapped_audio)
+
+
+def test_probe_batch_stores_present_when_raw_path_missing_but_path_map_target_exists(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    stored_root = tmp_path / "stored" / "crate"
+    mapped_root = tmp_path / "actual" / "crate"
+    mapped_root.mkdir(parents=True)
+    mapped_audio = mapped_root / "track.mp3"
+    mapped_audio.write_bytes(b"\x00")
+    raw = str(stored_root / "track.mp3")
+    data_dir = _write_path_map(tmp_path / "data", stored_root, mapped_root)
+    path_map = load_path_map(data_dir)
+    stable_id = "a" * 40
+    add_track(stable_id, file_path=raw)
+    rows = avail.probe_batch(state_conn, [stable_id], path_map=path_map)
+    assert len(rows) == 1
+    assert rows[0].state == "present"
+    assert rows[0].checked_path == str(mapped_audio)
+    avail.write(state_conn, rows)
+    stored = state_conn.execute(
+        "SELECT state, checked_path FROM track_availability WHERE stable_id = ?",
+        (stable_id,),
+    ).fetchone()
+    assert stored == ("present", str(mapped_audio))
+
+
+def test_deleted_location_path_map_target_does_not_count_as_present(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    """A tombstoned location is not a path the deck will open.
+
+    [if] the stored path is missing and the only mapped file belongs to a
+    soft-deleted track_locations row [then] the probe stays absent.
+    [if] the same mapped file belongs to a live location [then] the probe
+    marks that track present.
+    """
+    stored_root = tmp_path / "stored" / "crate"
+    mapped_root = tmp_path / "actual" / "crate"
+    mapped_root.mkdir(parents=True)
+    mapped_audio = mapped_root / "tomb.mp3"
+    mapped_audio.write_bytes(b"\x00")
+    raw = str(stored_root / "tomb.mp3")
+    assert not Path(raw).exists()
+    data_dir = _write_path_map(tmp_path / "data", stored_root, mapped_root)
+    path_map = load_path_map(data_dir)
+
+    deleted_id = "d" * 40
+    add_track(deleted_id, file_path="/nope/primary.mp3")
+    upsert_location(state_conn, stable_id=deleted_id, kind="local", file_path=raw)
+    state_conn.execute(
+        "UPDATE track_locations SET deleted_at = ? WHERE stable_id = ?",
+        ("2026-10-07T00:00:00+00:00", deleted_id),
+    )
+    deleted_rows = avail.probe_batch(state_conn, [deleted_id], path_map=path_map)
+    assert len(deleted_rows) == 1
+    assert deleted_rows[0].state == "absent"
+    assert deleted_rows[0].checked_path == "/nope/primary.mp3"
+
+    live_id = "e" * 40
+    add_track(live_id, file_path="/nope/other.mp3")
+    upsert_location(state_conn, stable_id=live_id, kind="local", file_path=raw)
+    live_rows = avail.probe_batch(state_conn, [live_id], path_map=path_map)
+    assert len(live_rows) == 1
+    assert live_rows[0].state == "present"
+    assert live_rows[0].checked_path == str(mapped_audio)
+
+
+def test_remote_location_path_map_target_does_not_count_as_present(
+    state_conn: sqlite3.Connection, add_track, tmp_path: Path
+) -> None:
+    """Deck load ignores kind=remote rows, so the probe must too.
+
+    [if] the legacy path is missing and the only mapped file belongs to a
+    same-machine kind=remote track_locations row [then] the probe stays absent.
+    [if] that remote row's file_path exists on disk [then] the probe still
+    stays absent.
+    """
+    stored_root = tmp_path / "stored" / "crate"
+    mapped_root = tmp_path / "actual" / "crate"
+    mapped_root.mkdir(parents=True)
+    mapped_audio = mapped_root / "remote.mp3"
+    mapped_audio.write_bytes(b"\x00")
+    raw = str(stored_root / "remote.mp3")
+    assert not Path(raw).exists()
+    data_dir = _write_path_map(tmp_path / "data", stored_root, mapped_root)
+    path_map = load_path_map(data_dir)
+
+    mapped_id = "f" * 40
+    add_track(mapped_id, file_path="/nope/remote-primary.mp3")
+    upsert_location(
+        state_conn,
+        stable_id=mapped_id,
+        kind="remote",
+        file_path=raw,
+        remote_url="https://example.invalid/remote-mapped",
+    )
+    mapped_rows = avail.probe_batch(state_conn, [mapped_id], path_map=path_map)
+    assert len(mapped_rows) == 1
+    assert mapped_rows[0].state == "absent"
+    assert mapped_rows[0].checked_path == "/nope/remote-primary.mp3"
+
+    on_disk = tmp_path / "on-disk-remote.mp3"
+    on_disk.write_bytes(b"\x00")
+    disk_id = "g" * 40
+    add_track(disk_id, file_path="/nope/remote-disk.mp3")
+    upsert_location(
+        state_conn,
+        stable_id=disk_id,
+        kind="remote",
+        file_path=str(on_disk),
+        remote_url="https://example.invalid/remote-disk",
+    )
+    disk_rows = avail.probe_batch(state_conn, [disk_id], path_map=path_map)
+    assert len(disk_rows) == 1
+    assert disk_rows[0].state == "absent"
+    assert disk_rows[0].checked_path == "/nope/remote-disk.mp3"
+
+
+def test_absent_when_raw_path_and_path_map_target_are_both_missing(
+    tmp_path: Path,
+) -> None:
+    stored_root = tmp_path / "stored" / "crate"
+    mapped_root = tmp_path / "actual" / "crate"
+    mapped_root.mkdir(parents=True)
+    raw = str(stored_root / "gone.mp3")
+    data_dir = _write_path_map(tmp_path / "data", stored_root, mapped_root)
+    path_map = load_path_map(data_dir)
+    state, checked = avail.classify_path(raw, path_map=path_map)
+    assert state == "absent"
+    assert checked == raw
+
+
+def test_present_raw_path_is_unchanged_when_a_path_map_entry_exists(
+    tmp_path: Path,
+) -> None:
+    stored_root = tmp_path / "stored" / "crate"
+    mapped_root = tmp_path / "actual" / "crate"
+    stored_root.mkdir(parents=True)
+    mapped_root.mkdir(parents=True)
+    raw_audio = stored_root / "track.mp3"
+    mapped_audio = mapped_root / "track.mp3"
+    raw_audio.write_bytes(b"\x00")
+    mapped_audio.write_bytes(b"\x00")
+    data_dir = _write_path_map(tmp_path / "data", stored_root, mapped_root)
+    path_map = load_path_map(data_dir)
+    state, checked = avail.classify_path(str(raw_audio), path_map=path_map)
+    assert state == "present"
+    assert checked == str(raw_audio)
 
 
 def test_unmounted_volume_is_awaiting_volume_not_absent() -> None:

@@ -99,6 +99,34 @@ export function validatePlayAnalyticsResponse(raw: unknown): PlayAnalyticsRespon
 	};
 }
 
+/**
+ * No sets have been recorded on this machine yet, so the event store file was
+ * never created. That is the normal state of a new library, not a fault: the
+ * page shows an empty state instead of the server's 503 detail and path.
+ * Every other 503 (a missing table, a corrupt row) still fails loudly.
+ */
+export class NoEventStoreError extends Error {
+	constructor() {
+		super('play-analytics: no sets recorded yet (event store not created)');
+		this.name = 'NoEventStoreError';
+	}
+}
+
+/** The server's AnalyticsSchemaError text for a store file that does not exist. */
+/** The prefix `apps/play_analytics/query.py` puts on a missing store's 503
+ *  detail; `tests/play_analytics/test_surfaces.py` holds the server to it. */
+export const NO_EVENT_STORE_DETAIL = 'event store does not exist:';
+
+export function isNoEventStore(status: number, bodyText: string): boolean {
+	if (status !== 503) return false;
+	try {
+		const detail = (JSON.parse(bodyText) as { detail?: unknown }).detail;
+		return typeof detail === 'string' && detail.startsWith(NO_EVENT_STORE_DETAIL);
+	} catch {
+		return false;
+	}
+}
+
 export async function fetchPlayAnalytics(
 	shareState: ShareState | null,
 	limit: number
@@ -117,6 +145,7 @@ export async function fetchPlayAnalytics(
 	} catch (error) {
 		if (error instanceof ApiError) {
 			const bodyText = await error.response.text();
+			if (isNoEventStore(error.status, bodyText)) throw new NoEventStoreError();
 			throw new Error(
 				`GET /api/play-analytics failed: ${error.status} ${bodyText.slice(0, 300)}`
 			);

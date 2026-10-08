@@ -16,8 +16,13 @@ have to compute on demand:
 2. Phase 2, only once phase 1 is empty: the own_* lanes. Tracks with no
    current record (backend + producer version) are enqueued into the v1
    queue and drained through ``apps.analysis.queue_cli`` (the same runner and
-   admission rule the CLI uses), lowest priority, in ``LANE_ORDER``: the cheap
-   visible lanes before the ~10 s a track ones.
+   admission rule the CLI uses), lowest priority, TRACK-MAJOR: the chunk is
+   the lane missing for the earliest track (bumped first), so the first
+   tracks get every lane before later tracks start any. ``LANE_ORDER`` only
+   orders lanes WITHIN a track (cheap and visible first, key after beatgrid,
+   which it depends on). Lane-major order (every track's loudness before any
+   beatgrid) left a 1274-track import with no BPM or key after 85 min
+   (demon-llama, Wed 7 Oct 2026).
 
 Both phases yield while a deck plays or a track was loaded moments ago, using
 the coverage drain's own ``DeckGate``. A lane the HOST cannot produce (every
@@ -46,8 +51,12 @@ Requirements (mini-PRD):
   ✔︎ lane children run in background QoS on macOS (PERF-DRAIN-01)
     [if] the host is darwin [then] the queue child starts under taskpolicy -b
     [if] taskpolicy is missing on darwin [then] the lane fails with a named error
-  ✔︎ cheap lanes before expensive ones
-    [if] loudness/waveform are missing anywhere [then] beatgrid/key wait
+  ✔︎ tracks finish, not lanes (NATIVE-21, Wed 7 Oct 2026)
+    [if] the first tracks lack beatgrid/key [then] they get them before later tracks get loudness
+    [if] one track lacks several lanes [then] they run in ``LANE_ORDER`` for it
+    [if] a track is bumped [then] all its missing lanes run before older work
+    [if] the earliest track is ready for key while a later one still lacks beatgrid [then] the key chunk omits the later one
+    [if] beatgrid is unavailable [then] key skips tracks that still lack it
   ✔︎ a host-level failure is named once
     [if] every track of a chunk fails one known host way [then] the lane is unavailable
   ✔︎ one track never closes a lane (NATIVE-21)
@@ -80,6 +89,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.process_priority import background_argv, lowered_priority
+from apps.shared.shutdown_bound import SpawnAfterQuit
 from apps.webui.server import enrich_songs, enrich_sources
 from apps.webui.server.ahead_analysis_duds import FILENAME as DUDS_FILENAME
 from apps.webui.server.ahead_analysis_duds import DudLedger, is_dud
@@ -130,6 +140,12 @@ LANE_ORDER: tuple[tuple[str, str], ...] = (
     ("beatgrid", "own_beatgrid.backfill"),
     ("key", "own_key.backfill"),
 )
+#: Predecessors a track must already have before it may join that lane's chunk.
+#: Key segmentation reads the beatgrid. Loudness and waveform order work inside
+#: one track; they are not a gate on beatgrid or on each other.
+LANE_REQUIRES: dict[str, tuple[str, ...]] = {
+    "key": ("beatgrid",),
+}
 STRIP_LANE: str = "strip"
 TAGS_LANE: str = "tags"
 
@@ -172,21 +188,47 @@ def strip_targets(
 
 
 def next_lane_work(
+    present: Sequence[str],
     missing_by_lane: Mapping[str, Sequence[str]],
     failed_by_lane: Mapping[str, Iterable[str]],
     unavailable: Mapping[str, str],
     bumped: Sequence[str],
     limit: int = LANE_CHUNK,
 ) -> tuple[str, list[str]] | None:
-    """The first lane in ``LANE_ORDER`` with attemptable work, and its chunk."""
-    for lane, _backend in LANE_ORDER:
+    """The lane missing for the EARLIEST track (bumped first), and its chunk.
+
+    Track-major: ties on that track go to ``LANE_ORDER``, so one track runs
+    loudness, waveform, beatgrid, key in turn, and a library-wide backlog in
+    a cheap lane never starves the lanes a DJ reads (BPM, key). A chunk
+    includes only tracks whose ``LANE_REQUIRES`` predecessors are already
+    current, or have terminally failed for that track. A track that still
+    lacks beatgrid stays out, including when that lane is unavailable.
+    Unavailable is not a terminal failure. A failed beatgrid does not strand key.
+    """
+    rank = {sid: i for i, sid in enumerate(front_first(present, bumped))}
+    missing_sets = {name: set(ids) for name, ids in missing_by_lane.items()}
+    failed_sets = {name: set(ids) for name, ids in failed_by_lane.items()}
+    best: tuple[int, int, str, list[str]] | None = None
+    for lane_pos, (lane, _backend) in enumerate(LANE_ORDER):
         if lane in unavailable:
             continue
         skip = set(failed_by_lane.get(lane, ()))
-        todo = [sid for sid in front_first(missing_by_lane.get(lane, ()), bumped) if sid not in skip]
-        if todo:
-            return lane, todo[:limit]
-    return None
+        blocked = [
+            missing_sets[need] - failed_sets.get(need, set())
+            for need in LANE_REQUIRES.get(lane, ())
+            if need in missing_sets
+        ]
+        todo: list[str] = []
+        for sid in front_first(missing_by_lane.get(lane, ()), bumped):
+            if sid in skip or any(sid in need for need in blocked):
+                continue
+            todo.append(sid)
+        if not todo:
+            continue
+        key = (rank.get(todo[0], len(rank)), lane_pos)
+        if best is None or key < best[:2]:
+            best = (*key, lane, todo)
+    return None if best is None else (best[2], best[3][:limit])
 
 
 #: Host-level causes worth naming verbatim when ffmpeg buries them in stderr.
@@ -437,11 +479,12 @@ class AheadDrain:
             self._lane_failed[lane].update(current)
             for sid in changed:
                 self._lane_failed[lane].pop(sid, None)
-            if lane in self._status.unavailable:
-                continue
+            # Unavailable lanes are not scheduled. Their missing set is still
+            # read so key does not run for a track whose beatgrid is neither
+            # current nor a terminal per-track failure.
             done = self._lane_done(lane, backend)
             missing[lane] = [sid for sid in present if sid not in done]
-        return next_lane_work(missing, self._lane_failed, self._status.unavailable, bumped)
+        return next_lane_work(present, missing, self._lane_failed, self._status.unavailable, bumped)
 
     def _tag_targets(self, present: list[str], bumped: list[str]) -> list[str]:
         blank = self._src.blank_tags_fn()
@@ -494,6 +537,8 @@ class AheadDrain:
                                  "errors": {sid: e for sid, e in results if e}}
 
     def _run_lane(self, lane: str, backend: str, chunk: list[str]) -> None:
+        if self._halt.is_set():
+            return
         errors = self._src.run_lane_fn(lane, backend, chunk)
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
@@ -531,7 +576,7 @@ class AheadDrain:
     def _run_singly(self, lane: str, backend: str, chunk: list[str]) -> dict[str, str]:
         errors: dict[str, str] = {}
         for sid in chunk:
-            if self._src.playing_fn():
+            if self._halt.is_set() or self._src.playing_fn():
                 break
             errors.update(self._src.run_lane_fn(lane, backend, [sid]))
             self._status.lane_batches += 1
@@ -636,9 +681,18 @@ class AheadDrain:
         self._thread = threading.Thread(target=self._loop, name=THREAD_NAME, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def halt(self) -> None:
+        """Start no more analysis runs; returns at once (W43, INSTALL-36).
+
+        The quit's SIGTERM ends the running queue CLI at once. Unhalted, the
+        drain read that exit as a chunk failure and forked a fresh CLI per
+        track, which nothing then signals, so it outlived the engine.
+        """
         self._halt.set()
         self._wake.set()
+
+    def stop(self) -> None:
+        self.halt()
         if self._thread is not None:
             self._thread.join(timeout=STOP_JOIN_S)
         self._thread = None
@@ -699,6 +753,8 @@ def run_lane_via_queue(
     def run(lane: str, backend: str, ids: list[str]) -> dict[str, str]:
         try:
             return run_bounded(lane, backend, ids)
+        except SpawnAfterQuit:
+            return {}  # the engine is quitting: the tracks are not at fault
         except subprocess.TimeoutExpired as exc:
             # A wedged run fails ITS tracks (and the drain reruns them one by
             # one), never the tick: subprocess.run has already killed it.

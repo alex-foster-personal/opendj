@@ -12,7 +12,7 @@
 	 * the same typed command path used by browser IPC and presets.
 	 */
 	import { page } from '$app/stores';
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import { DECK_IDS, engine, getDeckState, isMasterMuted, mixerState } from '$lib/rb/audio-engine.svelte';
 	import { masterMuteReason } from '$lib/player/master-mute.svelte';
@@ -110,6 +110,9 @@
 	} from '$lib/rb/app-mode';
 	import { modeIconClass } from '$lib/rb/app-mode-icons';
 	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
+
+	/** ENRICH-01: the route's enrich pill, rendered in flow in this row (a snippet, so this file adds no import). */
+	const { enrich }: { enrich?: Snippet } = $props();
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -569,6 +572,13 @@
 			</button>
 		</ControlExplainer>
 	</div>
+
+	<!-- ENRICH-01: the enrich pill (passed in by the route as `enrich`), IN
+	     FLOW so it takes its own room and can never sit over a control
+	     (issue #5748: the old fixed bottom-right card covered the library
+	     toolbar, headers and deck 4). Its expanded card floats below it only
+	     after a click. -->
+	{@render enrich?.()}
 
 	<!-- center-left: LINK, given clear room from the left icon cluster so it
 	     reads as centre-left rather than butted against the left group

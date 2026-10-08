@@ -106,6 +106,8 @@ export default {
 		// Same shape: the Beat Sync phase-lock workload, run directly against a live
 		// engine's real beatgrids (read-only).
 		'tests/live/phase-lock-jitter-workload.mjs',
+		// Direct real-runtime keyboard acceptance for focused controls (#5761).
+		'tests/live/performance-focused-controls.mjs',
 		// Same shape: the stem-load-under-playback scorer, imported into an open
 		// /performance page by a person or an agent (PERF-STEMDEC-04 rounds).
 		'tests/live/stem-load-under-playback-scorer.js',

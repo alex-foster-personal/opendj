@@ -15853,8 +15853,12 @@ export interface components {
             bpm_confidence_error?: string | null;
             /** Bpm Method */
             bpm_method?: string | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
             /** Bpm Source */
             bpm_source?: string | null;
+            /** Bpm Status */
+            bpm_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Duration Ms */
             duration_ms?: number | null;
@@ -15902,6 +15906,14 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key?: string | null;
+            /** Key Reason */
+            key_reason?: string | null;
+            /** Key Status */
+            key_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
+            /** Loudness Reason */
+            loudness_reason?: string | null;
+            /** Loudness Status */
+            loudness_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Notes */
             notes?: string | null;
@@ -15991,8 +16003,12 @@ export interface components {
             bpm_confidence_error?: string | null;
             /** Bpm Method */
             bpm_method?: string | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
             /** Bpm Source */
             bpm_source?: string | null;
+            /** Bpm Status */
+            bpm_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;
@@ -16042,8 +16058,16 @@ export interface components {
             is_streaming: boolean;
             /** Key */
             key?: string | null;
+            /** Key Reason */
+            key_reason?: string | null;
+            /** Key Status */
+            key_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             /** Last Played At */
             last_played_at?: string | null;
+            /** Loudness Reason */
+            loudness_reason?: string | null;
+            /** Loudness Status */
+            loudness_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
@@ -20447,7 +20471,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description AGENT-21: no performance page claimed the order within the claim deadline (ORDER_CLAIM_DEADLINE_S); body reason is no_leader */
+            /** @description The order got no result. Body reason no_leader (AGENT-21): no performance page claimed it within the claim deadline (ORDER_CLAIM_DEADLINE_S). Body reason engine_quitting (INSTALL-36): the engine began quitting while the order was still waiting for a page. */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -480,7 +480,10 @@
 		letter-spacing: 0.02em;
 	}
 	.when {
-		opacity: 0.72;
+		/* opacity 0.72 on --muted composites under AA: default #747d88 on
+		   #14171d is 4.29:1, light #878787 on #f1f1f1 is 3.17:1. Shell
+		   foreground already clears 4.5:1 on every skin (about 14:1). */
+		color: var(--fg);
 	}
 	/* The dark amber is 1.7:1 on the light shell; there it takes the light
 	   shell's --warning (app.css), which clears AA. */

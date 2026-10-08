@@ -1,7 +1,7 @@
 """Drain a persisted backfill batch across a spawned worker pool.
 
-Spec `specs/native-analysis-v1.md` sections 3 and 4; lane brief
-`specs/native-analysis-v1-lanes/nav1-queue.md` item 4. Requirement NATIVE-10.
+Spec `(private path)` sections 3 and 4; lane brief
+`(private path)` item 4. Requirement NATIVE-10.
 
 The one invariant everything else here exists to protect:
 
@@ -20,11 +20,18 @@ reads as done with no record behind it (a torn record: partial write visible
 as complete). That is what makes the process-restart arm of the resume test
 a real test rather than a same-process one wearing a costume.
 
-Concurrency comes from the batch row, which the admission rule wrote. This
-module never picks a worker count of its own, and a batch whose plan says
-zero workers runs nothing rather than defaulting to one.
+Concurrency comes from the batch row, which the admission rule wrote. At
+pool startup this module RE-CHECKS host capacity (NATIVE-32). Final width
+is min(current RAM, current CPU, the remaining items' duration band), using
+the stored band only when no remaining duration is usable. The admission
+worker count is not that band: it may already be an earlier RAM or CPU
+limit. Startup may shrink or widen the plan, logs the chosen number and
+why, and raises when not even one worker fits. That refusal clears the
+batch lease so a later run can retry. A batch whose plan says zero workers
+runs nothing rather than defaulting to one.
 
 -Claude
+-Cursor
 """
 from __future__ import annotations
 
@@ -42,13 +49,18 @@ from .backends.base import AnalyzerBackend, TrackVanished
 from .jit_warmup import warm_backend_jit
 from .lane_enums import LaneContractError
 from .pool import analyze_one, spawn_pool
-from .queue import CascadeOutcome, QueueError, enqueue
+from .queue import CascadeOutcome, QueueError, enqueue, runnable_sizing_inputs
 from .queue_effects import cascade_if_canonical
 from .record import AnalysisRecord, RecordContractError
 from .store import upsert_record
 from .worker_diagnostics import (
     pool_death_message,
     worker_exit_signals,
+)
+from .worker_sizing import (
+    HostCapacity,
+    InsufficientMemoryError,
+    size_workers_for_host,
 )
 
 log = logging.getLogger("apps.analysis.queue_runner")
@@ -438,6 +450,85 @@ def _drain_pool(ctx: _RunContext, pool: ProcessPoolExecutor) -> None:
         raise
 
 
+def _startup_workers(
+    conn: sqlite3.Connection,
+    batch_id: str,
+    *,
+    planned: int,
+    band: str,
+    host: HostCapacity | None = None,
+    per_worker_budget_mb: float | None = None,
+) -> int:
+    """Re-check host capacity at pool startup against the duration band.
+
+    The duration cap is the remaining items' band, or the stored band when
+    no remaining duration is usable. It is not the admission worker count.
+    Final width is min(current RAM, current CPU, that cap), so a freer host
+    may widen and a tighter host may shrink. Logs the chosen number and why.
+    Raises when even one worker will not fit.
+    """
+    from .admission import duration_band_cap
+
+    batch = queue_store.get_batch(conn, batch_id)
+    if batch is None:
+        raise QueueError(f"no such batch {batch_id!r}")
+    # Same item set as resume: deferred and cancelled items count, because a
+    # resume can hand them to this pool while it is still draining.
+    inputs = runnable_sizing_inputs(conn, batch)
+    predicted: float | None
+    if inputs is not None:
+        cap, band_name, predicted = inputs
+    else:
+        predicted = None
+        try:
+            cap, band_name = duration_band_cap([], band)
+        except ValueError as exc:
+            raise QueueError(str(exc)) from exc
+    try:
+        sizing = size_workers_for_host(
+            duration_cap=cap,
+            host=host,
+            per_worker_budget_mb=per_worker_budget_mb,
+            predicted_peak_mb=predicted,
+        )
+    except InsufficientMemoryError as exc:
+        raise QueueError(str(exc)) from exc
+    if sizing.workers != planned:
+        movement = "shrinks to" if sizing.workers < planned else "widens to"
+        log.info(
+            "analysis pool startup: planned %d worker(s) for batch %s; "
+            "host capacity %s %d (%s)",
+            planned,
+            batch_id,
+            movement,
+            sizing.workers,
+            sizing.reason,
+        )
+    else:
+        log.info(
+            "analysis pool startup: %s (batch %s, planned %d)",
+            sizing.reason,
+            batch_id,
+            planned,
+        )
+    if sizing.workers != planned or band_name != band:
+        queue_store.set_batch_workers(
+            conn, batch_id, workers=sizing.workers, band=band_name
+        )
+    return sizing.workers
+
+
+def _abandon_failed_startup(conn: sqlite3.Connection, batch_id: str) -> None:
+    """Drop a failed startup's lease without undoing a committed cancel.
+
+    ``release_running_items`` only touches rows still marked running, so
+    items a cancel already moved to cancelled stay cancelled.
+    """
+    queue_store.release_running_items(conn, batch_id)
+    queue_store.requeue_batch_unless_cancelled(conn, batch_id)
+    queue_store.clear_batch_runner(conn, batch_id)
+
+
 def run_batch(
     conn: sqlite3.Connection,
     batch_id: str,
@@ -446,12 +537,16 @@ def run_batch(
     runner_id: str | None = None,
     on_item: Callable[[queue_store.QueueItem, str], None] | None = None,
     cascade_resolver: Callable[..., Sequence[object]] | None = None,
+    host: HostCapacity | None = None,
 ) -> RunSummary:
     """Drain ``batch_id`` until it is empty or cancelled.
 
     ``backend_cls`` is the CLASS, not a name: a spawned worker imports it by
     reference rather than re-reading a registry only the parent populated
     (the reason :func:`apps.analysis.pool.run_pool` does the same).
+
+    ``host`` is an optional NATIVE-32 test seam; production leaves it unset
+    so startup re-reads live available memory and CPU.
     """
     queue_store.ensure_queue_tables(conn)
     batch = queue_store.get_batch(conn, batch_id)
@@ -475,16 +570,34 @@ def run_batch(
         queue_store.clear_batch_runner(conn, batch_id)
         return summary
 
-    version = _effective_version(backend_cls)
-    backend_name = backend_cls.name
-    owned_cache = ensure_owned_numba_cache_dir()
-    warm_backend_jit(
-        backend_cls,
-        backend_name=backend_name,
-        purge_stale=owned_cache is not None,
-    )
-
-    pool = spawn_pool(batch.workers)
+    try:
+        version = _effective_version(backend_cls)
+        backend_name = backend_cls.name
+        owned_cache = ensure_owned_numba_cache_dir()
+        warm_backend_jit(
+            backend_cls,
+            backend_name=backend_name,
+            purge_stale=owned_cache is not None,
+        )
+        # Size AFTER warm-up: first-run JIT compilation can hold resident
+        # memory, so capacity read before it would overstate what the pool
+        # can use. Nothing that allocates sits between this read and the pool.
+        workers = _startup_workers(
+            conn,
+            batch_id,
+            planned=batch.workers,
+            band=batch.band,
+            host=host,
+        )
+        summary.workers = workers
+        pool = spawn_pool(workers)
+    except Exception:
+        # take_batch_runner already marked this batch running under this
+        # pid. A memory refusal, a cache or JIT failure, or pool creation
+        # must drop that lease, or a later process cannot retry until this
+        # one exits. A cancel that committed first stays cancelled.
+        _abandon_failed_startup(conn, batch_id)
+        raise
     ctx = _RunContext(
         conn=conn,
         batch_id=batch_id,
@@ -492,7 +605,7 @@ def run_batch(
         backend_name=backend_name,
         version=version,
         runner_id=rid,
-        workers=batch.workers,
+        workers=workers,
         summary=summary,
         on_item=on_item,
     )

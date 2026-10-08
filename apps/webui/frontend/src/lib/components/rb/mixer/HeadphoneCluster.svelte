@@ -12,6 +12,8 @@
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertForState, headphoneMixAccent, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { pickThenMirror, type DevicePick } from './device-select-mirror';
 	import { levelBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
@@ -35,9 +37,9 @@
 		ondelay: (value: number) => void;
 		onrefresh: () => void;
 		onacquire: () => void;
-		onselect: (deviceId: string) => void;
-		onmaster: (deviceId: string) => void;
-		oninput: (deviceId: string) => void;
+		onselect: DevicePick;
+		onmaster: DevicePick;
+		oninput: DevicePick;
 		onmode: (mode: HeadphoneOutputMode) => void;
 		/** CUEOUT-14: open the mic calibration modal. */
 		oncalibrate: () => void;
@@ -66,12 +68,23 @@
 		})
 	);
 
+	// IOPIN-17: the mode is named by how many outputs it uses. "MAIN" names
+	// only the room output (the MASTER / MAIN pick), never a mode.
 	const modeLabel = $derived(
 		headphoneState.output_mode === 'practice'
-			? 'practice'
+			? 'one output'
 			: headphoneState.output_mode === 'two_outputs'
 				? 'two outputs'
-				: 'split cable'
+				: headphoneState.split_reason === 'same_device'
+					? 'split L/R (shared output)'
+					: 'split L/R'
+	);
+	// IOPIN-16: in a same-device split there is no separate CUE sink; the CUE
+	// pick says where the cue went instead of a bare placeholder.
+	const cuePlaceholder = $derived(
+		headphoneState.split_reason === 'same_device' && headphoneState.output_mode === 'split_cable'
+			? `right ear of MAIN (split L/R)`
+			: 'choose headphones'
 	);
 
 	const selectedLabel = $derived(
@@ -98,17 +111,17 @@
 	const mixBullets = [
 		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
 		'Single-click the knob to step toward the other extreme.',
-		'MAIN (practice): master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
+		'One output: master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
 		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.'
 	];
 	const mainBullets = [
-		'1) Press MAIN for laptop or a single output (practice mode).',
+		'1) Press ONE OUTPUT for a laptop or any single output (practice).',
 		'2) Turn CUE on for each channel you want in the headphone blend.',
 		'3) With no HEADPHONE CUE device picked, MIX left adds more cue into the speaker mix; master stays full.',
 		'4) Picking HEADPHONE CUE in I/O switches to two outputs: room on MASTER/MAIN, cue on the phones.'
 	];
 	const splitBullets = [
-		'1) Press SPLIT for a DJ splitter cable: mono master on LEFT, mono cue on RIGHT.',
+		'1) Press SPLIT L/R for a DJ splitter cable: mono master on LEFT, mono cue on RIGHT.',
 		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
 		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
@@ -274,19 +287,22 @@
 			<section class="hp-section" aria-label="Output routing">
 				<h3>Routing <ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" showDelayMs={60}><span class="hp-mode" data-output-mode={headphoneState.output_mode}>{modeLabel}</span></ControlExplainer></h3>
 				<div class="hp-mode-choices">
-					<ControlExplainer title="MAIN" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}><button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>MAIN / practice</button></ControlExplainer>
+					<ControlExplainer title="ONE OUTPUT" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}><button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>One output</button></ControlExplainer>
 					<button type="button" aria-label="Two outputs output mode" aria-pressed={headphoneState.output_mode === 'two_outputs'} onclick={() => onmode('two_outputs')}>Two outputs</button>
-					<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right; use a DJ splitter cable" onclick={() => onmode('split_cable')}>SPLIT cable</button></ControlExplainer>
+					<ControlExplainer title="SPLIT L/R" bullets={splitBullets} demo="headphone-split" showDelayMs={60}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right on one output: a DJ splitter cable, or MAIN and CUE on the same device" onclick={() => onmode('split_cable')}>Split L/R</button></ControlExplainer>
 				</div>
 				<p class="hp-context">{modeBullets[headphoneState.output_mode === 'practice' ? 0 : headphoneState.output_mode === 'two_outputs' ? 1 : 2]}</p>
 				{#if audioOutputStatus.fallback !== null}<p class="hp-warn" role="status" data-djio-fallback-notice title={djioFallbackTitle(audioOutputStatus.fallback)}>{audioOutputStatus.fallback.message}</p>{/if}
-				{#if headphoneState.output_mode === 'split_cable'}
+				{#if headphoneState.output_mode === 'split_cable' && headphoneState.split_reason === 'same_device'}
+					<p class="hp-context" role="status" data-split-same-device>MAIN and HEADPHONE CUE are the same output, so the room mix plays mono on the left and the cue mono on the right. Pick a different MAIN to get two outputs.</p>
+				{:else if headphoneState.output_mode === 'split_cable'}
 					<ControlExplainer title="SPLIT warning" bullets={splitBullets} showDelayMs={60}><p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Future routing options">
 				<div class="hp-future"><button type="button" disabled>BOOTH / MONITOR</button><span>Coming soon</span></div>
 				<div class="hp-future"><button type="button" disabled>Advanced channel assignment</button><span>Coming soon</span></div>
+				<div class="hp-future"><button type="button" disabled title={plannedTitle('remote-control')}>Remote control</button><span>Coming soon</span></div>
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
 				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
@@ -345,9 +361,9 @@
 					aria-label="master output device"
 					value={headphoneState.selected_master_output_device_id ?? ''}
 					disabled={!headphoneState.supported || !access.output_pinning}
-					onchange={(event) => onmaster(event.currentTarget.value)}
+					onchange={(event) => pickThenMirror(event.currentTarget, onmaster, () => headphoneState.selected_master_output_device_id)}
 				>
-					<option value="" disabled>choose master</option>
+					<option value="" disabled>choose MAIN</option>
 					{#each headphoneState.outputs as output (output.id)}
 						<option value={output.id}>{output.label || output.id}</option>
 					{/each}
@@ -361,9 +377,9 @@
 					aria-label="headphone output device"
 					value={headphoneState.selected_output_device_id ?? ''}
 					disabled={!headphoneState.supported || !access.output_pinning}
-					onchange={(event) => onselect(event.currentTarget.value)}
+					onchange={(event) => pickThenMirror(event.currentTarget, onselect, () => headphoneState.selected_output_device_id)}
 				>
-					<option value="" disabled>HP out</option>
+					<option value="" disabled>{cuePlaceholder}</option>
 					{#each headphoneState.outputs as output (output.id)}
 						<option value={output.id}>{output.label || output.id}</option>
 					{/each}
@@ -378,7 +394,7 @@
 				<select
 					aria-label="audio input device"
 					value={headphoneState.selected_input_device_id ?? ''}
-					onchange={(event) => oninput(event.currentTarget.value)}
+					onchange={(event) => pickThenMirror(event.currentTarget, oninput, () => headphoneState.selected_input_device_id)}
 				>
 					<option value="" disabled>choose input</option>
 					{#each headphoneState.inputs as input (input.id)}

@@ -15,7 +15,12 @@ from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
-ENGINE_VERSION: str = "0.1.0"
+from apps.shared.app_version import APP_VERSION
+
+# The engine reports the app version, not a number of its own (see
+# apps/shared/app_version.py). Nothing compares it; the updater compares
+# build_info.app_version.
+ENGINE_VERSION: str = APP_VERSION
 
 DATA_DIR_ENV: str = "MDT_DATA_DIR"
 STATE_BACKEND_ENV: str = "MUSIC_DJ_STATE_BACKEND"

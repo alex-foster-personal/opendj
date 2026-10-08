@@ -201,15 +201,16 @@ test('the alert glows red and pulses, and reduced motion keeps the glow without 
 
 // ---- layout ----
 
-test('MAIN comes before SPLIT in the panel routing choices; practice mode is still offered', () => {
+test('ONE OUTPUT comes before SPLIT L/R in the panel routing choices; practice mode is still offered', () => {
 	const panel = ioPanel();
 	const start = panel.indexOf('<div class="hp-mode-choices"');
 	assert.ok(start > 0, '.hp-mode-choices must sit inside the I/O panel');
 	const choices = panel.slice(start, panel.indexOf('</div>', start));
-	const main = choices.indexOf('title="MAIN"');
-	const split = choices.indexOf('title="SPLIT"');
-	assert.ok(main > 0 && split > main, 'MAIN then SPLIT inside .hp-mode-choices');
-	assert.match(choices, /onclick=\{\(\) => onmode\('practice'\)\}>MAIN \/ practice</);
+	const main = choices.indexOf('title="ONE OUTPUT"');
+	const split = choices.indexOf('title="SPLIT L/R"');
+	assert.ok(main > 0 && split > main, 'ONE OUTPUT then SPLIT L/R inside .hp-mode-choices');
+	// IOPIN-17: the mode never says MAIN; MAIN names only the room output pick.
+	assert.match(choices, /onclick=\{\(\) => onmode\('practice'\)\}>One output</);
 });
 
 // ---- pin d529a7e80a4e: rescan explainer lives in the I/O menu ----

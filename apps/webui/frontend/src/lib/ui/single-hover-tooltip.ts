@@ -13,6 +13,13 @@
  * `apps/webui/frontend/src/lib/audio-engine/rust-inert.ts` watches `title`
  * and writes its own string back. It treats `data-tip-parked` as a temporary
  * park and does not record the missing attribute as the control's title.
+ *
+ * A component can rewrite `title` while it is parked (the skin button names
+ * the new skin the moment it is clicked). That newer string wins: it moves
+ * onto `data-tip`, the open tip shows it, and leave restores it. Writing the
+ * old parked string back would leave the title stale for good, because Svelte
+ * never rewrites an attribute whose value it believes is unchanged (Wed 7 Oct
+ * 2026: the Default skin's button kept saying "Skin: Gothic").
  */
 import { placeFloating } from '$lib/ui/clamp-to-viewport';
 
@@ -52,6 +59,8 @@ let tipEl: HTMLDivElement | null = null;
 let active: HTMLElement | null = null;
 /** Titled ancestors of `active` that this layer parked, restored on clear. */
 let parkedAncestors: HTMLElement[] = [];
+/** One `title` watcher per element this layer parked (see the header note). */
+const titleWatchers = new Map<HTMLElement, MutationObserver>();
 
 function _element(node: EventTarget | null): HTMLElement | null {
 	if (node instanceof HTMLElement) return node;
@@ -132,9 +141,39 @@ export function parkHoverTitle(el: HTMLElement): string | null {
 		el.setAttribute(TIP_DATA_ATTR, text);
 		el.setAttribute(TIP_PARKED_ATTR, '');
 		if (el.hasAttribute('title')) el.removeAttribute('title');
+		_watchTitle(el);
 	}
 	_linkDescription(el);
 	return text;
+}
+
+/**
+ * Re-park a `title` the component wrote while `el` was parked. The new string
+ * replaces the parked one, so the open tip and the restore both use it.
+ */
+function _adoptNewTitle(el: HTMLElement): void {
+	if (!el.hasAttribute(TIP_PARKED_ATTR)) return;
+	const live = el.getAttribute('title');
+	if (live === null) return;
+	el.removeAttribute('title');
+	if (live.length === 0) return;
+	el.setAttribute(TIP_DATA_ATTR, live);
+	if (el === active && tipEl !== null && !tipEl.hidden) {
+		tipEl.textContent = live;
+		if (!tipEl.classList.contains('single-hover-tip-sr')) _place(el, tipEl);
+	}
+}
+
+function _watchTitle(el: HTMLElement): void {
+	if (typeof MutationObserver === 'undefined' || titleWatchers.has(el)) return;
+	const watcher = new MutationObserver(() => _adoptNewTitle(el));
+	watcher.observe(el, { attributes: true, attributeFilter: ['title'] });
+	titleWatchers.set(el, watcher);
+}
+
+function _unwatchTitle(el: HTMLElement): void {
+	titleWatchers.get(el)?.disconnect();
+	titleWatchers.delete(el);
 }
 
 /** Put the parked help back on `title` and drop the custom description. */
@@ -143,11 +182,15 @@ export function restoreHoverTitle(el: HTMLElement): void {
 		_unlinkDescription(el);
 		return;
 	}
-	const text = el.getAttribute(TIP_DATA_ATTR);
+	_unwatchTitle(el);
+	// A live title here was written after the park and is newer than the
+	// parked one; keep it rather than putting the old string back over it.
+	const live = el.getAttribute('title');
+	const text = live !== null && live.length > 0 ? live : el.getAttribute(TIP_DATA_ATTR);
 	el.removeAttribute(TIP_PARKED_ATTR);
 	el.removeAttribute(TIP_DATA_ATTR);
 	_unlinkDescription(el);
-	if (text !== null) el.setAttribute('title', text);
+	if (text !== null && text !== live) el.setAttribute('title', text);
 }
 
 function _hide(): void {
@@ -178,6 +221,7 @@ function _parkAncestors(host: HTMLElement): void {
 		n.setAttribute(TIP_DATA_ATTR, live);
 		n.setAttribute(TIP_PARKED_ATTR, '');
 		n.removeAttribute('title');
+		_watchTitle(n);
 		parkedAncestors.push(n);
 	}
 }

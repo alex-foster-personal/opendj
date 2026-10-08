@@ -1,0 +1,50 @@
+{
+  "schema": "opendj-acceptance-fixture/v1",
+  "about": "Installed-app acceptance fixture (OPS-54..57, OPS-60). Synthesized by make_fixture.sh with ffmpeg only; no third-party audio. A folder import reads tags only and has no playlist format, so import_playlists is 0 and the playlist below is written through the app's own API and read back. The analysis block is the known-answer set for the analysis check.",
+  "tracks": [
+    {"file": "library/01-acceptance-pulse.mp3", "title": "Acceptance Pulse", "duration_ms": 20000, "sha256": "8aea790e0ac1e255d65677ed532853d40b254deade4b45623ad97f7e597645ad"},
+    {"file": "library/02-acceptance-drift.mp3", "title": "Acceptance Drift", "duration_ms": 20000, "sha256": "f96fda8764596c9ede4320d3c5aac73948635c0acb53b65b7d09a8f46a90be1e"},
+    {"file": "library/03-acceptance-voice.mp3", "title": "Acceptance Voice", "duration_ms": 30000, "sha256": "9f53907acf940a8f358ada57634c3eb6313edb8e52198ce1d907f34aeb88f68f"},
+    {"file": "library/04-acceptance-kick-124.mp3", "title": "Acceptance Kick 124", "duration_ms": 60000, "sha256": "b431404aaf1a8a8e313a135ceff9e9c25b5c31da2829da2f9035160172fd3d2f"},
+    {"file": "library/05-acceptance-a-minor.mp3", "title": "Acceptance A Minor", "duration_ms": 45000, "sha256": "4053df6310e2453f215f9c9e43cc9e84169f521f8c3b305032090aef23952ebd"},
+    {"file": "library/06-acceptance-click-90.mp3", "title": "Acceptance Click 90", "duration_ms": 60000, "sha256": "2ca1227bb390d029aeb65070597904268780e139b119a93899d12ca0ede5a873"},
+    {"file": "library/07-acceptance-corrupt-carrier.mp3", "title": "Acceptance Corrupt", "duration_ms": 2000, "sha256": "582165f0598d1429128216c4e0af25449ea2f27a7a745c3e75fb72da3407a613"}
+  ],
+  "expected": {"tracks": 7, "import_playlists": 0},
+  "playlist": {"name": "Acceptance Set", "titles": ["Acceptance Pulse", "Acceptance Voice"]},
+  "deck_track": "Acceptance Pulse",
+  "stems_lyrics_track": "Acceptance Voice",
+  "lyrics_words": ["acceptance", "voice", "build"],
+  "analysis": {
+    "first_downbeat_tolerance_s": 0.05,
+    "octave_policy": "Half-time and double-time are not accepted answers. tests/parity/test_bpm.py classifies an octave as a disagreement, not a match. tests/analysis_beatgrid/test_bpm.py (choose_octave) keeps the model's own level when that level sits inside [70, 180]; 90 and 124 are inside that band, so 45/180 and 62/248 do not pass.",
+    "relative_key_policy": "Relative-key confusion is not accepted. tests/parity/test_key.py reports a relative major/minor pair as a disagreement, not an exact match. (private path) scores a relative pair below an exact match (weighted score 0.3, KSEA 0). A minor is Camelot 8A (apps/analysis_key/canon.py). C major / 8B does not pass.",
+    "subjects": [
+      {
+        "title": "Acceptance Kick 124",
+        "about": "Click/kick at exactly 124 BPM, 4/4, 60 s. Every beat is a decaying 55 Hz burst; the first beat of each bar is a louder 48 Hz burst, so the downbeat is at t=0.",
+        "bpm_min": 123.5,
+        "bpm_max": 124.5,
+        "first_downbeat_s": 0.0
+      },
+      {
+        "title": "Acceptance A Minor",
+        "about": "Sustained A minor triad, sines A3=220 Hz, C4=261.6256 Hz, E4=329.6276 Hz, 45 s. Expected key is A minor, stored by this app as Camelot 8A.",
+        "key_accept": ["8A", "Am", "Amin", "A minor", "A min", "1m"]
+      },
+      {
+        "title": "Acceptance Click 90",
+        "about": "Click track at exactly 90 BPM, 4/4, 60 s. A 2 kHz click on every beat; the first beat of each bar is a louder 1.5 kHz click, so the downbeat is at t=0.",
+        "bpm_min": 89.5,
+        "bpm_max": 90.5,
+        "first_downbeat_s": 0.0
+      }
+    ],
+    "negative": {
+      "title": "Acceptance Corrupt",
+      "file": "corrupt/99-acceptance-truncated.mp3",
+      "sha256": "e7cd35c58abce42afd09944eee94b53de8378b636f3bc7a20ca186127bfc68f7",
+      "about": "The first 4096 bytes of the playable carrier. Folder import rejects a truncated mp3 (apps/shared/audio_playable.py: file too small for the duration the tag claims), so the carrier is what the folder import writes. The analysis check then replaces that track's bytes, inside the isolated HOME only, with this file, and requires a visible per-track error rather than a stored result."
+    }
+  }
+}

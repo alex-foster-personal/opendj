@@ -1,6 +1,7 @@
 <script lang="ts">
-	// HOT CUE pad-mode dropdown below the hot-cue bank (CHROME-11, issue
-	// #3886). Lists the modes a hardware controller's performance-pad
+	// HOT CUE pad-mode dropdown (CHROME-11, issue #3886). Deck.svelte mounts
+	// it `stacked` in the left grid column under grid adjust/shift, where the
+	// label wraps to two lines, HOT over CUE (LYR-14). Lists the modes a hardware controller's performance-pad
 	// selector normally exposes. Only Hot Cue is built; every other entry is
 	// labeled not-built-yet and renders inert with a tooltip, per the
 	// house rule for controls with no real backing.
@@ -17,7 +18,7 @@
 
 	const NOT_BUILT_TIP = plannedTitle('pad-mode-unbuilt');
 
-	let { deckId }: { deckId: DeckId } = $props();
+	let { deckId, stacked = false }: { deckId: DeckId; stacked?: boolean } = $props();
 
 	let open = $state(false);
 	let wrapEl: HTMLSpanElement | undefined = $state();
@@ -43,6 +44,7 @@
 	<button
 		bind:this={triggerEl}
 		class="rb-lit-button dropdown"
+		class:stacked
 		aria-label={`hot cue menu deck ${deckId}`}
 		title="Pad mode menu - lists the pad modes a controller's performance-pad selector offers; modes marked not-built-yet do nothing yet"
 		aria-expanded={open}
@@ -128,5 +130,21 @@
 	.pad-menu-item.rb-inert {
 		opacity: 0.55;
 		cursor: default;
+	}
+	/* LYR-14: two lines in the narrow grid column. width: min-content wraps
+	   the label at its space, so the text stays "HOT CUE" for readers and
+	   tests while it draws as HOT over CUE, caret under it. */
+	.dropdown.stacked {
+		height: auto;
+		width: min-content;
+		padding: 2px 3px 3px;
+		line-height: 1.05;
+		font-size: 8.5px;
+		letter-spacing: 0.04em;
+		text-align: center;
+	}
+	.dropdown.stacked::after {
+		display: block;
+		margin: 2px auto 0;
 	}
 </style>

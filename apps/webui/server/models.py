@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from .models_grid_quality import GridQualityRowOut
@@ -149,6 +149,52 @@ class CloudTransferOut(BaseModel):
         return self
 
 
+
+_STANDARD_MISSING_REASON = {
+    "key_status": "key not analyzed",
+    "bpm_status": "bpm not analyzed",
+    "loudness_status": "loudness_lufs not analyzed",
+}
+# The served value that proves an omitted status was ``ok``. Loudness has no
+# value on the listing wire, so nothing could prove it and its status stays.
+_LANE_VALUE_KEY = {"key_status": "key", "bpm_status": "bpm"}
+
+
+def _lane_has_value(value: Any) -> bool:
+    """Same predicate as ``laneHasValue`` in the browser's browser-row-wire.ts.
+
+    The two must agree: the server omits ``ok`` exactly where the client will
+    rebuild it, so an empty string counts as no value on both sides.
+    """
+    return value is not None and value != ""
+
+
+def compact_listing_analysis_wire(data: dict[str, Any]) -> dict[str, Any]:
+    """Omit listing bytes the client already reconstructs.
+
+    Measured on the LIBM-137 500-row fixture (Thu 8 Oct 2026): serving
+    key/bpm/loudness status plus reason added 185 bytes per row and the page
+    landed at 1955 bytes per row, over the 1900 budget. The three stock
+    missing reasons were 111 of those bytes. An ``ok`` status is omitted only
+    when the lane's non-empty value is on the same row, because the value is what lets
+    the client tell "ok, compacted" from "the server dropped the field". An
+    ``ok`` with no value, and every loudness status, stays on the wire. A
+    reason that is not the stock sentence (an unmapped lane's "no own analysis
+    record") stays on the wire.
+    """
+    for status_key, standard in _STANDARD_MISSING_REASON.items():
+        reason_key = status_key.replace("_status", "_reason")
+        status = data.get(status_key)
+        reason = data.get(reason_key)
+        if reason is None or (status == "missing" and reason == standard):
+            data.pop(reason_key, None)
+        value_key = _LANE_VALUE_KEY.get(status_key)
+        value_proves_ok = value_key is not None and _lane_has_value(data.get(value_key))
+        if status is None or (status == "ok" and value_proves_ok):
+            data.pop(status_key, None)
+    return data
+
+
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
 
@@ -201,6 +247,27 @@ class TrackListItemOut(TrackOut):
     bpm_method: str | None = None
     bpm_confidence: float | None = None
     bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
+    # STANDALONE-03: empty analysis cells must state why. Same status/reason
+    # fields TrackRowOut already carries for playlists; All Tracks used to drop
+    # them when assembling TrackListItemOut, so the browser defaulted absent
+    # bpm_status to "ok" and rendered a blank cell with no reason.
+    # None is "not on the JSON". The route still passes the computed status;
+    # compact_listing_analysis_wire drops the stock missing sentence, and an
+    # ok status only where the served value proves it.
+    key_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
+    key_reason: str | None = None
+    bpm_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
+    bpm_reason: str | None = None
+    loudness_status: Literal["ok", "failed", "missing", "available-not-selected"] | None = None
+    loudness_reason: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _compact_analysis_status(self, handler):
+        data = handler(self)
+        if isinstance(data, dict):
+            return compact_listing_analysis_wire(data)
+        return data
+
     lyrics: LyricsRowSummaryOut | None = None
     grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False

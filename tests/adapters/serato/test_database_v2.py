@@ -91,3 +91,64 @@ def test_two_consecutive_writes_produce_identical_bytes(tmp_path) -> None:
     db.write(a)
     db.write(b)
     assert a.read_bytes() == b.read_bytes()
+
+
+# ---- Serato's own layout, built byte by byte from the format notes ----------
+# Mixxx seratofeature.cpp (parseTrack, parseCrateTrackPath) and serato-tags:
+# a 4-byte ASCII tag, a 4-byte big-endian length, then the payload; every
+# string is UTF-16-BE; a crate wraps each track's ``ptrk`` in an ``otrk``.
+# These bytes are written here by hand, not by this codec's writer, so a
+# misreading the writer shares cannot pass.
+
+
+def _tlv(tag: str, payload: bytes) -> bytes:
+    return tag.encode("ascii") + len(payload).to_bytes(4, "big") + payload
+
+
+def _u16(text: str) -> bytes:
+    return text.encode("utf-16-be")
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_database_v2_as_serato_writes_it_gives_bpm_type_and_cjk_title() -> None:
+    """[if] Serato's database V2 stores tbpm and ttyp as UTF-16-BE [then] the BPM, type and a CJK title read back, [else stop]."""
+    track = _tlv(
+        "otrk",
+        _tlv("pfil", _u16("Music/Invented/a.mp3"))
+        + _tlv("tsng", _u16("日本"))
+        + _tlv("tbpm", _u16("128.00"))
+        + _tlv("ttyp", _u16("mp3")),
+    )
+    db = DatabaseV2.read(_tlv("vrsn", _u16("2.0/Serato Scratch LIVE Database")) + track)
+    (row,) = db.tracks
+    assert (row.file_path, row.title, row.bpm, row.file_type) == (
+        "Music/Invented/a.mp3", "日本", "128.00", "mp3",
+    )
+    # The legacy ASCII spelling this codec used to write still reads.
+    legacy = DatabaseV2.read(_tlv("otrk", _tlv("pfil", _u16("a.mp3")) + _tlv("tbpm", b"90.5")))
+    assert legacy.tracks[0].bpm == "90.5"
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_a_crate_as_serato_writes_it_lists_its_tracks_in_order(tmp_path) -> None:
+    """[if] a Serato crate nests each ptrk inside an otrk [then] every path reads back in crate order, [else stop]."""
+    crate = tmp_path / "Invented.crate"
+    crate.write_bytes(
+        _tlv("vrsn", _u16("1.0/Serato ScratchLive Crate"))
+        + _tlv("otrk", _tlv("ptrk", _u16("Music/Invented/b.mp3")))
+        + _tlv("otrk", _tlv("ptrk", _u16("Music/Invented/a.mp3")))
+    )
+    assert Subcrate.read(crate).track_paths == ("Music/Invented/b.mp3", "Music/Invented/a.mp3")
+    # And what this codec writes now is that same nested layout.
+    rewritten = tmp_path / "Rewritten.crate"
+    Subcrate(name="Rewritten", track_paths=("x.mp3",)).write(rewritten)
+    assert rewritten.read_bytes() == _tlv("otrk", _tlv("ptrk", _u16("x.mp3")))
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_a_crate_track_without_a_path_stops_the_read(tmp_path) -> None:
+    """[if] a crate otrk holds no ptrk [then] the read stops instead of dropping the track, [else stop]."""
+    crate = tmp_path / "Broken.crate"
+    crate.write_bytes(_tlv("otrk", _tlv("xxxx", b"")))
+    with pytest.raises(ValueError, match="no ptrk"):
+        Subcrate.read(crate)

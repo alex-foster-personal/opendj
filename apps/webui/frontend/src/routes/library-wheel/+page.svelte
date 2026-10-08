@@ -65,7 +65,7 @@
 <section class="wheel-page">
 	<header>
 		<div>
-			<p class="eyebrow">LIBUX-06</p>
+			<p class="eyebrow">LIBRARY</p>
 			<h2>Library wheel</h2>
 			<p class="subtitle">A radial explorer of the real library, grouped by genre family.</p>
 		</div>

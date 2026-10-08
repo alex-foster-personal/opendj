@@ -241,3 +241,41 @@ def test_traktor_playlist_membership_roundtrip(tmp_path) -> None:
         f"playlist members {pl_members} not in track set {track_ids_back}"
     )
     assert pl_members == expected_ids
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_hotcue_pads_and_memory_cues_round_trip(tmp_path) -> None:
+    """[if] a cue sits on pad 5 or on no pad [then] it round-trips as that pad or a memory cue, [else stop]."""
+    lib = OpenDjLibrary(
+        version="0.1",
+        tracks=(
+            Track(
+                track_id="ignored",
+                file_path="/Music/fixture/03.mp3",
+                cues=(
+                    CuePoint(index=5, position_ms=1000, type="hot"),
+                    CuePoint(index=0, position_ms=2000, type="memory"),
+                ),
+            ),
+        ),
+    )
+    nml = tmp_path / "collection.nml"
+    TraktorAdapter().write(lib, nml)
+    back, _ = TraktorAdapter().read(nml)
+    cues = {(c.type, c.index, c.position_ms) for c in back.tracks[0].cues}
+    assert ("hot", 5, 1000) in cues
+    assert any(t == "memory" and pos == 2000 for t, _, pos in cues)
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_play_count_and_comment_are_read(tmp_path) -> None:
+    """[if] INFO carries PLAYCOUNT and COMMENT [then] both are read, [else stop]."""
+    nml = tmp_path / "collection.nml"
+    nml.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?><NML VERSION="19"><COLLECTION ENTRIES="1">'
+        '<ENTRY TITLE="Invented"><LOCATION DIR="/:Music/:" FILE="a.mp3" VOLUME=""/>'
+        '<INFO PLAYCOUNT="12" COMMENT=" warm up "/></ENTRY></COLLECTION></NML>'
+    )
+    lib, _ = TraktorAdapter().read(nml)
+    assert lib.tracks[0].play_count == 12
+    assert lib.tracks[0].extensions["x_comment"] == "warm up"

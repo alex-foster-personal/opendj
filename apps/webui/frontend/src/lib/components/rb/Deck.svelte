@@ -64,7 +64,8 @@
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
 	import DeckLyricLine from './deck/DeckLyricLine.svelte';
-	import { deckLyricRowBudget } from '$lib/rb/lyrics/deck-lyric-row-budget';
+	import { deckLyricRowBudget, deckLyricStripPx } from '$lib/rb/lyrics/deck-lyric-row-budget';
+	import PadModeMenu from './deck/PadModeMenu.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
@@ -177,6 +178,7 @@
 	let cueFlexEl: HTMLDivElement | null = $state(null);
 	let cueFlexHeightPx = $state(0);
 	const deckLyricRows = $derived(deckLyricRowBudget(cueFlexHeightPx));
+	const deckLyricStripHeight = $derived(deckLyricStripPx(deckLyricRows));
 
 	$effect(() => {
 		const el = cueFlexEl;
@@ -454,7 +456,9 @@
 		class="main-row"
 		class:mirror-main-row={(deckId === 2 || deckId === 4) ? uiPrefs.deck_right_mirror : uiPrefs.deck_left_mirror}
 	>
-		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
+		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3), then the
+		     HOT CUE pad-mode menu as a two-line button (LYR-14), which frees the row
+		     under the pads for the lyric strip. -->
 		<div class="grid-adjust">
 			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-adjust')} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
 				<span class="ticks">&#9475;&#9475;&#9475;</span>
@@ -462,10 +466,12 @@
 			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-shift')} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
 				<span class="ticks">&#9478;&#9478;&#9478;</span>
 			</button>
+			<PadModeMenu {deckId} stacked />
 		</div>
 
-		<!-- The cue host and 2x4 bank absorb spare width to preserve control
-		     alignment; the cue rows stay vertically bounded. -->
+		<!-- The cue column absorbs spare width to preserve control alignment.
+		     LYR-14: the 2x4 bank sits on top and the lyric strip runs under it
+		     at the bank's full width, so a lyric line reads left to right. -->
 		<div class="cue-flex" bind:this={cueFlexEl}>
 			<HotCueBank
 				{deck}
@@ -477,7 +483,7 @@
 				onRestore={hotCueActions.restoreHotCueAt}
 			/>
 			{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null}
-				<div class="deck-lyric-host">
+				<div class="deck-lyric-host" style:height={`${deckLyricStripHeight}px`}>
 					<DeckLyricLine
 						track={deckLyrics.track}
 						entryState={deckLyricEntry?.state ?? 'loading'}
@@ -678,23 +684,43 @@
 		min-width: 0;
 		align-self: stretch;
 		display: flex;
-		flex-direction: row;
-		align-items: stretch;
-		gap: 6px;
+		flex-direction: column;
+		gap: 3px;
+		position: relative;
 	}
-	/* HotCueBank's root carries width: 100%, which as a flex item here is a
-	   100% flex-basis: it took the whole row and left .deck-lyric-host 0px wide
-	   (present, loaded, invisible; #3984 pin 3c204b5727aa). Zero both bases and
-	   split the spare width 3:2 so the lyric rows sit beside the pads. With no
-	   lyric host the bank still grows to fill the row alone. */
+	/* LYR-14: HotCueBank's UNDO button (shown after a save, rename or
+	   delete) would otherwise stack under the pads and starve the lyric
+	   strip to ~12px. Float it at the column's bottom-right corner instead,
+	   and narrow the lyric strip by its width while it is up, so neither
+	   control covers the other and the strip keeps its rows. */
+	.cue-flex > :global(.cue-area > .undo) {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		width: var(--deck-undo-w, 56px);
+		z-index: 1;
+	}
+	.cue-flex:has(> :global(.cue-area > .undo)) > .deck-lyric-host {
+		padding-right: calc(var(--deck-undo-w, 56px) + 4px);
+	}
+	/* LYR-14: the bank takes the column's full width and never shrinks below
+	   its pads, so no pad border is clipped (ui-border-audit). HotCueBank's
+	   root carries align-self: flex-start, which in this column would shrink
+	   it to its content width, so stretch it here. The lyric strip is the
+	   side that gives: when the column is a pixel short of pads plus strip,
+	   the strip shrinks and its line fit re-measures. */
 	.cue-flex > :global(.cue-area) {
-		flex: 3 1 0;
+		flex: 1 0 auto;
+		min-height: 0;
 		width: auto;
+		align-self: stretch;
 	}
 	.deck-lyric-host {
-		flex: 2 1 0;
+		flex: 0 1 auto;
+		min-height: 0;
 		min-width: 0;
 		display: flex;
-		align-items: center;
+		align-items: stretch;
+		overflow: hidden;
 	}
 </style>

@@ -8,7 +8,8 @@
 	// 1.3). Empty slot click = SAVE the current playhead there (djmdCue
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
 	// (beyond H) is unverified and never exposed (PARITY-TODO.md). The HOT CUE
-	// pad-mode dropdown below-left lives in PadModeMenu.svelte (CHROME-11).
+	// pad-mode dropdown (PadModeMenu.svelte, CHROME-11) is mounted by Deck.svelte
+	// in the left grid column, not here (LYR-14).
 	//
 	// A locally imported track has no djmdContent row for djmdCue to key
 	// off, so SAVE has nowhere to write (PARITY-TODO v1 blocker, issue
@@ -30,7 +31,6 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
-	import PadModeMenu from './PadModeMenu.svelte';
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
@@ -397,7 +397,6 @@
 			</div>
 		{/each}
 	</div>
-	<PadModeMenu deckId={deck.deck_id} />
 	{#if undo !== null}
 		<!-- Undo is frequently the control a DJ clicks to LEAVE the open cue-name
 		input, and that click's mousedown blurs the input, which starts the

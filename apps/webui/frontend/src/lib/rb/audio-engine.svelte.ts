@@ -174,10 +174,13 @@ import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
 	BeatSyncPhaseLockError,
+	beatSyncClockMaster,
 	canPhaseLockTo,
 	deckHasRealBeatGrid,
 	deckHasTrustedBeatGrid,
 	effectiveBeatSync,
+	handoverMixesWithoutBeatSync,
+	mixWithoutBeatSync as _mixWithoutBeatSync,
 	effectiveQuantize,
 	gridFeatureInertTip,
 	gridFeaturesInert,
@@ -990,51 +993,6 @@ function _applyCrossfader(): void {
 	}
 }
 
-export interface DeckControlSettings {
-	tempoRatio: number;
-	masterTempoEnabled: boolean;
-	keyShiftSemitones: number;
-}
-
-export interface PausedDeckControlUpdate {
-	tempoRatio?: number;
-	masterTempoEnabled?: boolean;
-	keyShiftSemitones?: number;
-}
-
-/** Paused controls are the desired DSP settings for the next schedule. Keep
- * them separate from DeckState's output-presented read model. */
-export function applyPausedDeckControlSettings(
-	current: DeckControlSettings,
-	update: PausedDeckControlUpdate
-): DeckControlSettings {
-	if (!Number.isFinite(current.tempoRatio) || current.tempoRatio <= 0) {
-		throw new RangeError(`control tempo ratio must be finite and positive, got ${current.tempoRatio}`);
-	}
-	if (typeof current.masterTempoEnabled !== 'boolean') {
-		throw new TypeError('control Master Tempo must be boolean');
-	}
-	_assertKeyShift(current.keyShiftSemitones);
-	if (
-		update.tempoRatio !== undefined &&
-		(!Number.isFinite(update.tempoRatio) || update.tempoRatio <= 0)
-	) {
-		throw new RangeError(`updated tempo ratio must be finite and positive, got ${update.tempoRatio}`);
-	}
-	if (
-		update.masterTempoEnabled !== undefined &&
-		typeof update.masterTempoEnabled !== 'boolean'
-	) {
-		throw new TypeError('updated Master Tempo must be boolean');
-	}
-	if (update.keyShiftSemitones !== undefined) _assertKeyShift(update.keyShiftSemitones);
-	return {
-		tempoRatio: update.tempoRatio ?? current.tempoRatio,
-		masterTempoEnabled: update.masterTempoEnabled ?? current.masterTempoEnabled,
-		keyShiftSemitones: update.keyShiftSemitones ?? current.keyShiftSemitones
-	};
-}
-
 /** Listener-facing KEY SYNC plan for UI, agents and the follow pass, from the
  * exact control and presented-audio sources, never a possibly stale deck field. */
 export interface KeySyncPreview {
@@ -1120,7 +1078,10 @@ import {
 	type TransportMutationActivity,
 	planKeyShiftMutation,
 	type KeyShiftMutationPlan,
-	filterParamsFromKnob
+	filterParamsFromKnob,
+	applyPausedDeckControlSettings,
+	type DeckControlSettings,
+	type PausedDeckControlUpdate
 } from './audio-engine-guards';
 import {
 	AUTOMATIC_HANDOFF_REASONS,
@@ -1143,7 +1104,10 @@ export {
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity,
 	planKeyShiftMutation,
-	type KeyShiftMutationPlan
+	type KeyShiftMutationPlan,
+	applyPausedDeckControlSettings,
+	type DeckControlSettings,
+	type PausedDeckControlUpdate
 };
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
@@ -1251,6 +1215,16 @@ function _syncMaster(): DeckId | null {
 	return _syncClockMaster();
 }
 
+/** Playing master that can phase-lock. A gridless one is none, so later tempo and seek stay on free transport. */
+function _beatSyncMaster(): DeckId | null {
+	const master = _syncClockMaster();
+	return master === null ? null : beatSyncClockMaster(master, deckStates[master]);
+}
+
+function _clearSyncError(deck: DeckId): void {
+	deckStates[deck].sync_error = null;
+}
+
 function _electionInput(): MasterElectionInput {
 	return {
 		crossfader: mixerState.crossfader,
@@ -1282,6 +1256,7 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 		void _automaticRejoinRunner(async () => {
 			if (_masterDeck !== next || !deckStates[next].playing) return;
 			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
+			if (handoverMixesWithoutBeatSync(deckStates[next], followers.length)) return _mixWithoutBeatSync(next, followers, pushToast, recordPerfEvent, _clearSyncError); // PLAY-28
 			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers), quietPlanRefusal: true });
 		}).catch((e: unknown) => e instanceof BeatSyncPhaseLockError ? _toastUnlocked(e) : pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error')); // PLAY-27
 	}
@@ -1337,9 +1312,10 @@ function _maybeHandoffOnAir(): void {
  * command that planned them. Deliberately reads `_masterDeck` and the deck's
  * BEAT SYNC flag at the moment of the call: a captured copy is exactly the bug
  * this guards (issue #1134). Effective, not raw, so a lit-but-inert BEAT SYNC
- * on a gridless deck does not count as sync ownership either. */
+ * on a gridless deck, or a gridless master, does not count as sync ownership. */
 function _syncOwnsFollowerTempo(deck: DeckId): boolean {
-	return syncMayWriteTempo(deck, effectiveBeatSync(deckStates[deck]), _masterDeck);
+	const master = _masterDeck;
+	return syncMayWriteTempo(deck, effectiveBeatSync(deckStates[deck]), master === null ? null : beatSyncClockMaster(master, deckStates[master]));
 }
 
 function _reanchorRampPending(rt: _DeckRuntime): boolean {
@@ -2657,7 +2633,7 @@ async function _synchronizeFollowers(
 const _toastUnlocked = (e: BeatSyncPhaseLockError): void => { for (const f of e.failed) { console.info(`[beat-sync] ${f.notice}`); pushToast(f.notice, 'error'); } }; // PLAY-27: red, the pitch bound stays hard
 const _resyncTracking = createBeatgridResyncTracking(); // pending/gridless tracking; cleared per deck below, unload() and dispose() - see beatgrid-resync.ts
 const _beatgridResyncPorts: BeatgridResyncPorts = {
-	deckIds: DECK_IDS, syncMaster: _syncMaster, playing: (deck) => deckStates[deck].playing,
+	deckIds: DECK_IDS, syncMaster: _beatSyncMaster, playing: (deck) => deckStates[deck].playing,
 	beatSyncEnabled: (deck) => deckStates[deck].beat_sync_enabled, setBeatSyncEnabled: (deck, enabled) => (deckStates[deck].beat_sync_enabled = enabled),
 	hasRealBeatGrid: (deck) => deckHasRealBeatGrid(deckStates[deck]), hasSyncError: (deck) => deckStates[deck].sync_error !== null,
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
@@ -3467,7 +3443,7 @@ class RbAudioEngine implements AudioEngine {
 			const when = _ctx === null ? 0 : _futureScheduleTime(deck); // phase at the effective time
 			const grid = !rt.desiredActive ? null : jumpBeats != null ? (st.anlz?.beatgrid.beats ?? null) : skipGridQuantize ? null : seekBeats; // never throws on a gridless deck
 			const landing = (at: number): number => phaseKeepingLandingSec(grid, _projectPositionAt(deck, at), jumpBeats ?? null, targetMs / 1000, durMs / 1000);
-			const activeMaster = _syncMaster();
+			const activeMaster = _beatSyncMaster();
 			const syncPlan = planSeekSync({
 				deck,
 				transportActive: rt.desiredActive,
@@ -3640,16 +3616,17 @@ class RbAudioEngine implements AudioEngine {
 				`setTempoRatio: ratio ${ratio} outside the selected +-${rangePct}% range on deck ${deck}`
 			);
 		}
-		const activeMaster = _syncMaster();
+		const activeMaster = _beatSyncMaster();
 		// Effective, not raw: refusing a pitch move because a lit-but-inert
 		// BEAT SYNC "owns" the tempo would strand a gridless deck's fader.
+		// A gridless master is not a clock either, so this follower is free.
 		if (st.playing && effectiveBeatSync(st) && activeMaster !== null && activeMaster !== deck) {
 			throw new Error(`setTempoRatio: disable Beat Sync before changing follower deck ${deck}`);
 		}
 		if (st.playing) {
 			if (_ctx === null) throw new Error('setTempoRatio: audio graph not initialised');
 			const followers =
-				_masterDeck === deck
+				activeMaster === deck
 					? DECK_IDS.filter(
 							(candidate) =>
 								candidate !== deck &&
@@ -3940,6 +3917,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		if (!_rt[deck].desiredActive) return Promise.resolve();
 		const master = _syncClockMaster();
+		if (master !== null && beatSyncClockMaster(master, deckStates[master]) === null) return Promise.resolve();
 		if (master === null) {
 			if (_masterMode === 'locked' && _ownedMaster() !== null) {
 				return Promise.resolve();
@@ -4132,7 +4110,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		const st = deckStates[deck];
 		st.sync_mode = mode;
-		const master = _syncMaster();
+		const master = _beatSyncMaster();
 		if (
 			!syncChangeRequiresReschedule(
 				deck,
@@ -4176,13 +4154,19 @@ class RbAudioEngine implements AudioEngine {
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
 			effectiveBeatSync(deckStates[candidate])
 		);
+		const gridlessHandover = handoverMixesWithoutBeatSync(st, followers.length);
+		if (gridlessHandover && !st.playing && !_rt[deck].desiredActive) return;
 		if (previousMaster !== deck) _bumpReanchorOperation(deck);
 		_assignMaster(deck, 'manual');
-		try {
-			await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers), quietPlanRefusal: true });
-		} catch (error) {
-			if (!(error instanceof BeatSyncPhaseLockError)) { _assignMaster(previousMaster); _masterMode = previousMode; throw error; }
-			_toastUnlocked(error); // PLAY-27: the new master stands; unlockable followers play on unsynced
+		if (gridlessHandover) {
+			_mixWithoutBeatSync(deck, followers, pushToast, recordPerfEvent, _clearSyncError); // PLAY-28: a gridless master stands too
+		} else {
+			try {
+				await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers), quietPlanRefusal: true });
+			} catch (error) {
+				if (!(error instanceof BeatSyncPhaseLockError)) { _assignMaster(previousMaster); _masterMode = previousMode; throw error; }
+				_toastUnlocked(error); // PLAY-27: the new master stands; unlockable followers play on unsynced
+			}
 		}
 		if (options?.lock === true) {
 			_masterMode = 'locked';

@@ -15,6 +15,15 @@ Deliberately a thin facade, no new job store:
     existing stems-derive path (``mode: "from-stems"``, CPU only). A
     track outside ``todo`` is refused with that same category, not
     silently skipped.
+  * A track rekordbox does not hold (a folder import, or any track on an
+    install with no decrypted rekordbox copy) is keyed by the app's own
+    stable id and needs only its audio file: it is never refused for a
+    missing rekordbox mapping or ANLZ file, and a missing
+    ``master.plain.db`` is never an error. Only a path that is truly
+    absent means "no rekordbox": one that exists but cannot be read (a
+    directory, a dangling link, an empty or corrupt file) is a broken
+    install and answers 503 ``MASTER_DB_UNREADABLE``, because falling back
+    would skip the ANLZ and PVDI checks of every rekordbox-held track.
   * ``GET /vocals/{stable_id}/status`` reuses the exact vocal-cache
     reader ``/anlz`` already serves through
     ``rb_vendor.vocals_for_content`` (``rb_assets.py``'s ``vocals`` field),
@@ -27,21 +36,38 @@ Requirements (mini-PRD):
     [if] a track has no local ANLZ .DAT [then ⛔️] refused missing_analysis,
     nothing enqueued
     [if] neither stable_ids nor playlist_id is given, or both are [then ⛔️] 422
+    [if] there is no master.plain.db [then] 202 with a per-track answer,
+    never a 500
+    [if] master.plain.db exists but is not a readable database [then ⛔️]
+    503 MASTER_DB_UNREADABLE, nothing claimed
+    [if] a folder-imported track has a stem bundle [then] claimed and cached
+    [if] a folder-imported track has no stem bundle [then ⛔️] refused
+    missing_stems (it needs stems first)
   ✔︎ ✅ GET /vocals/{stable_id}/status: the same four vocals states /anlz serves.
+    [if] a folder-imported track has a valid vocal-cache entry [then] demucs
 """
 from __future__ import annotations
 
+import sqlite3
+import stat
+from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
+from apps.adapters.rekordbox import config as rb_config
+from apps.adapters.rekordbox.errors import unavailable
 from apps.shared.paths import DATA_DIR
+from apps.shared.platform_paths import load_path_map
+from apps.shared.state import locations as state_locations
 from apps.stems.artifacts import StemArtifactError, StemBundleNotFoundError
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 from apps.vocals.cli import (
+    CATEGORY_CACHED,
+    CATEGORY_MISSING,
     CATEGORY_TODO,
     WORKER_TIMEOUT_S,
     Ctx,
@@ -49,9 +75,13 @@ from apps.vocals.cli import (
     VocalTrack,
     _claim_track,
     _managed_track_claim,
+    _open_ro,
     _process_one,
     classify,
-    load_tracks,
+    load_state_tracks,
+    master_content_rows,
+    rekordbox_mappings,
+    tracks_from_rows,
 )
 
 from .. import rb_vendor
@@ -63,7 +93,7 @@ router = APIRouter(prefix="/vocals", tags=["vocals"])
 # Refusal categories not already covered by apps.vocals.cli's CATEGORY_*
 # constants: those classify a track by its EXISTING analysis state, these
 # by what THIS request could not do with it.
-CATEGORY_UNMAPPED: str = "unmapped"
+CATEGORY_UNKNOWN_TRACK: str = "unknown_track"
 CATEGORY_MISSING_STEMS: str = "missing_stems"
 CATEGORY_IN_PROGRESS: str = "in_progress"
 
@@ -121,6 +151,144 @@ def _unique_stable_ids(stable_ids: list[str]) -> list[str]:
     return unique
 
 
+def _master_db_unreadable(path: Path, why: str) -> HTTPException:
+    return unavailable(
+        "MASTER_DB_UNREADABLE",
+        f"the rekordbox copy at {path} exists but cannot be read ({why}); "
+        "refusing to treat this library as having no rekordbox",
+    )
+
+
+def _vocal_cache_entry_unusable(path: Path, why: str) -> ValueError:
+    """Same shape ``apps.vocals.cache`` raises for a corrupt entry: a
+    ``ValueError`` naming the entry. A broken cache is a bug, not a miss."""
+    return ValueError(f"vocal-cache entry {path} is not a readable regular file ({why})")
+
+
+def _regular_file_present(path: Path, broken: Callable[[Path, str], Exception]) -> bool:
+    """THE absence probe of this module, one ``lstat``.
+
+    False only for ``FileNotFoundError``: nothing is at ``path``. True only
+    for a regular file (through links). Everything else is something there
+    that is broken, and raises ``broken(path, why)`` rather than read as
+    absent: a directory, a dangling link, a parent the engine may not enter
+    (``PermissionError``), and a parent that is itself a file
+    (``NotADirectoryError``: the data dir is damaged, which says nothing
+    about what the user has).
+
+    The pathlib type predicates are not used on purpose: they swallow a
+    different set of ``OSError`` on each Python version, so the same locked
+    directory is a bare 500 on one and "absent" on another.
+    """
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise broken(path, f"{type(exc).__name__}: {exc}") from exc
+    if stat.S_ISLNK(mode):
+        try:
+            mode = path.stat().st_mode
+        except OSError as exc:  # dangling, looping, or into a place we may not enter
+            raise broken(path, f"link target unusable, {type(exc).__name__}: {exc}") from exc
+    if not stat.S_ISREG(mode):
+        raise broken(path, "not a regular file")
+    return True
+
+
+def _rekordbox_copy_present(path: Path) -> bool:
+    """Does this machine have a rekordbox copy: absent is a normal library
+    with no rekordbox, broken is the typed 503."""
+    return _regular_file_present(path, _master_db_unreadable)
+
+
+def _vocal_cache_entry_present(data_dir: Path, stable_id: str) -> bool:
+    """Is there a vocal-cache entry: absent is "not analyzed yet", broken raises.
+
+    Probes the entry under its OWN name. ``vcache.cache_path`` follows links,
+    so a dangling link would come back as its missing target and read as
+    absent; it is still called first, for its confinement check.
+    """
+    own_name = vcache.cache_dir(data_dir) / f"{stable_id}.json"
+    try:
+        vcache.cache_path(data_dir, stable_id)
+    except OSError as exc:
+        raise _vocal_cache_entry_unusable(own_name, f"{type(exc).__name__}: {exc}") from exc
+    return _regular_file_present(own_name, _vocal_cache_entry_unusable)
+
+
+def _rekordbox_tracks(ctx: Ctx) -> dict[str, VocalTrack]:
+    """Tracks rekordbox holds, by stable id: none on an install with no
+    decrypted rekordbox copy, which is a normal library and not an error.
+
+    "No rekordbox" is decided ONCE, by the probe on the first line. Once it
+    has seen a copy, every later failure to read it in this request is the
+    typed 503, including the copy vanishing before the open: reclassifying
+    to absent there would send every rekordbox-held track down the stable-id
+    path past its ANLZ and PVDI checks.
+    """
+    if not _rekordbox_copy_present(ctx.master_db):
+        return {}
+    # state.db work stays OUTSIDE the translation below: its failure keeps its
+    # own error, and is never reported under the rekordbox copy's name.
+    by_vendor = rekordbox_mappings(ctx, None)
+    try:
+        # Only operations on ctx.master_db in here. Read it for real first:
+        # no row is fetched when state.db maps no track to rekordbox, so an
+        # empty or corrupt file would otherwise pass as a healthy copy that
+        # happens to hold nothing.
+        master = _open_ro(ctx.master_db, "MASTER_DB")
+        try:
+            master.execute("SELECT 1 FROM djmdContent LIMIT 1").fetchone()
+        finally:
+            master.close()
+        rows = master_content_rows(ctx, list(by_vendor))
+    except (OSError, sqlite3.Error) as exc:
+        raise _master_db_unreadable(ctx.master_db, f"{type(exc).__name__}: {exc}") from exc
+    return {t.stable_id: t for t in tracks_from_rows(ctx, by_vendor, rows)}
+
+
+def _classify_own(ctx: Ctx, tracks: list[VocalTrack]) -> None:
+    """Categories for tracks rekordbox does not hold. No ANLZ or PVDI can
+    exist for them, so only the audio file and the vocal-cache decide."""
+    for tr in tracks:
+        if not tr.audio_on_disk:
+            tr.category = CATEGORY_MISSING
+        elif (
+            _vocal_cache_entry_present(ctx.data_dir, tr.stable_id)
+            and vcache.load_valid_entry(
+                vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
+            )
+            is not None
+        ):
+            tr.category = CATEGORY_CACHED
+        else:
+            tr.category = CATEGORY_TODO
+
+
+def _own_vocals(stable_id: str) -> dict[str, Any]:
+    """The ``vocals`` field for a track rekordbox does not hold: its
+    vocal-cache entry, valid against the audio the library plays, else
+    ``not_analyzed``. A cache path that is there but broken raises."""
+    ctx = Ctx(data_dir=DATA_DIR)
+    if not _vocal_cache_entry_present(ctx.data_dir, stable_id):
+        return {"status": "not_analyzed"}
+    entry_path = vcache.cache_path(ctx.data_dir, stable_id)
+    state = _open_ro(ctx.state_db, "STATE_DB")
+    try:
+        audio = state_locations.local_audio_path(
+            state, stable_id, path_map=load_path_map(ctx.data_dir)
+        )
+    finally:
+        state.close()
+    if audio is None:
+        return {"status": "not_analyzed"}
+    entry = vcache.load_valid_entry(entry_path, audio)
+    if entry is None:
+        return {"status": "not_analyzed"}
+    return vcache.anlz_vocals_of(entry)
+
+
 def _process_claimed_track(ctx: Ctx, track: VocalTrack, claim: TrackClaim) -> None:
     """Run a claimed Demucs job after its HTTP response has been sent."""
     with _managed_track_claim(claim):
@@ -136,19 +304,24 @@ def analyze_vocals(
 ) -> VocalsAnalyzeOut:
     stable_ids = _unique_stable_ids(_resolve_stable_ids(body, backend))
     ctx = Ctx(data_dir=DATA_DIR)
-    by_id = {t.stable_id: t for t in load_tracks(ctx, None)}
+    rekordbox_by_id = _rekordbox_tracks(ctx)
+    own_ids = [sid for sid in stable_ids if sid not in rekordbox_by_id]
+    own_by_id = (
+        {t.stable_id: t for t in load_state_tracks(ctx, own_ids)} if own_ids else {}
+    )
 
     claimed: list[str] = []
     refused: dict[str, str] = {}
     candidates: list[VocalTrack] = []
     for sid in stable_ids:
-        tr = by_id.get(sid)
+        tr = rekordbox_by_id.get(sid) or own_by_id.get(sid)
         if tr is None:
-            refused[sid] = CATEGORY_UNMAPPED
+            refused[sid] = CATEGORY_UNKNOWN_TRACK
             continue
         candidates.append(tr)
 
-    classify(ctx, candidates)
+    classify(ctx, [tr for tr in candidates if tr.stable_id in rekordbox_by_id])
+    _classify_own(ctx, [tr for tr in candidates if tr.stable_id not in rekordbox_by_id])
     for tr in candidates:
         if tr.category != CATEGORY_TODO:
             refused[tr.stable_id] = tr.category
@@ -190,17 +363,30 @@ def get_vocal_status(
     stable_id: str,
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> VocalsStatusOut:
+    # Decided once, up front, by a probe that touches the rekordbox copy and
+    # nothing else: a broken copy is the typed 503 here, so nothing below has
+    # to guess whether an error came from the copy or from state.db.
+    rekordbox_present = _rekordbox_copy_present(rb_config.MASTER_PLAIN_DB)
     try:
         content = rb_vendor.resolve_content(stable_id)
     except HTTPException as exc:
         detail: dict[str, str] = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+        code = detail.get("code")
+        no_mapping = code == "VENDOR_MAPPING_NOT_FOUND"
+        # Only the probe above decides "no rekordbox". If it saw a copy and
+        # the adapter now calls it unavailable, that is re-raised, not a
+        # fallback.
+        no_rekordbox = code == "MASTER_DB_UNAVAILABLE" and not rekordbox_present
+        if not (no_mapping or no_rekordbox):
             raise
-        # No rekordbox mapping: no PVDI is possible and the local-import
-        # demucs merge is a separate, not-yet-shipped gap (PARITY-TODO "Merge
-        # the demucs vocal-cache into empty_anlz_payload"), same as /anlz.
-        return VocalsStatusOut(stable_id=stable_id, status="not_analyzed")
-    vocals = rb_vendor.vocals_for_content(content)
+        # Rekordbox does not hold this track (a folder import, or no
+        # rekordbox on this machine): no PVDI is possible, so the vocal-cache
+        # keyed by the app's own stable id is the only source. /anlz does not
+        # merge it for such a track yet (PARITY-TODO "Merge the demucs
+        # vocal-cache into empty_anlz_payload").
+        vocals = _own_vocals(stable_id)
+    else:
+        vocals = rb_vendor.vocals_for_content(content)
     return VocalsStatusOut(
         stable_id=stable_id,
         status=vocals["status"],
@@ -212,7 +398,7 @@ def get_vocal_status(
 __all__ = [
     "CATEGORY_IN_PROGRESS",
     "CATEGORY_MISSING_STEMS",
-    "CATEGORY_UNMAPPED",
+    "CATEGORY_UNKNOWN_TRACK",
     "VocalsAnalyzeIn",
     "VocalsAnalyzeOut",
     "VocalsRegionOut",

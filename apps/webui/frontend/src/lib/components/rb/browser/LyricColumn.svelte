@@ -9,9 +9,9 @@
 	import {
 		LYRIC_NO_DATA_TITLE,
 		LYRIC_QUALITY_TITLE,
-		lyricSyncQualityPct,
-		lyricVerdictMark,
-		lyricVerdictTitle
+		lyricCellMark,
+		lyricCellTitle,
+		lyricSyncQualityPct
 	} from './lyric-column';
 	import LyricVerdictMark from './LyricVerdictMark.svelte';
 	import {
@@ -86,8 +86,8 @@
 		<span class="lyr-dash" title={LYRIC_NO_DATA_TITLE}>-</span>
 	{:else}
 		{@const pct = lyricSyncQualityPct(row.lyrics.pct_witness_red)}
-		<span class="lyr-glyph" title={lyricVerdictTitle(row.lyrics)}
-			><LyricVerdictMark mark={lyricVerdictMark(row.lyrics.effective)} /></span
+		<span class="lyr-glyph" title={lyricCellTitle(row.lyrics, row.stems)}
+			><LyricVerdictMark mark={lyricCellMark(row.lyrics)} /></span
 		>
 		{#if pct !== null}
 			<span class="lyr-pct" title={LYRIC_QUALITY_TITLE}>{pct}%</span>
@@ -99,6 +99,7 @@
 	<LyricTip
 		stableId={row.stable_id}
 		summary={row.lyrics}
+		stems={row.stems}
 		{anchor}
 		onpointerenter={_cancelClose}
 		onpointerleave={_scheduleClose}

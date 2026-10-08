@@ -117,13 +117,13 @@ def test_removed_file_is_tombstoned_next_cycle(state_conn, tmp_path: Path) -> No
     assert [path for _sid, path in _live_tracks(state_conn)] == [str(root / "keep.wav")]
 
 
-def test_content_change_at_same_path_tombstones_the_old_row_and_writes_one_new_row(
+def test_content_change_at_same_path_keeps_the_same_stable_id(
     state_conn, tmp_path: Path
 ) -> None:
-    """A tier-3 id is sha1(path|mtime): a changed mtime mints a new id at the
-    SAME file_path, so a naive upsert-by-id would leave the stale row live
-    alongside the new one. This is the corruption class ADR-0121 exists to
-    close off."""
+    """LIBM-180: an mtime move at one path reuses the live inferred id.
+    Two live rows at one path was the #5578 / #5988 failure; minting a
+    replacement id after a tag write or backup restore was how they grew.
+    """
     root = tmp_path / "music"
     audio_path = root / "a.wav"
     _write_wav(audio_path)
@@ -137,10 +137,10 @@ def test_content_change_at_same_path_tombstones_the_old_row_and_writes_one_new_r
 
     live = _live_tracks(state_conn)
     assert len(live) == 1, "a content change must never leave two live rows at one path"
-    assert live[0][0] != old_id
+    assert live[0][0] == old_id
     assert live[0][1] == str(audio_path)
-    assert second.tracks_removed == 1
-    assert second.tracks_added == 1
+    assert second.tracks_removed == 0
+    assert second.tracks_added == 0
 
 
 # ----- unreadable root: fail loudly, cheaply --------------------------------

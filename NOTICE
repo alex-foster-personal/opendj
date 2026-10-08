@@ -57,11 +57,12 @@ Bundled outside the language package managers:
     Its license text is bundled with the font files.
 * CPJKU/beat_this model weights: see "Beat detection model shipped in the
   desktop app" below.
-* rekordbox_pdb.py, vendored crate-digger Kaitai-generated parser (EPL-1.0)
+* rekordbox_pdb.py, vendored crate-digger Kaitai-generated parser (EPL-2.0)
     apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py
     https://github.com/Deep-Symmetry/crate-digger
     Attribution: Henry Betts, Fabian Lesniak, James Elliott / Deep Symmetry.
-    The EPL-1.0 text ships in THIRD-PARTY-LICENSES.txt.
+    Upstream also names MPL-2.0 and LGPL-3.0 as Secondary Licenses.
+    The EPL-2.0 text ships in THIRD-PARTY-LICENSES.txt.
 
 Optional components that are NOT in the app:
 
@@ -106,16 +107,17 @@ Rekordbox master.db (v6 / v7)
     master.db, XML export, ANLZ analysis files, and MySettings.
 
 Rekordbox USB export (export.pdb / ANLZ)
-* Deep-Symmetry/crate-digger (Eclipse Public License 1.0)
+* Deep-Symmetry/crate-digger (Eclipse Public License 2.0; MPL-2.0 or
+  LGPL-3.0 as Secondary Licenses)
     https://github.com/Deep-Symmetry/crate-digger
     Kaitai Struct .ksy specifications for export.pdb and ANLZ; the
     canonical machine-readable format definitions we validate against.
     A Kaitai-generated parser derived from its rekordbox_pdb.ksy IS
     redistributed (apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py,
-    EPL-1.0, attribution Henry Betts, Fabian Lesniak, James Elliott /
+    EPL-2.0, attribution Henry Betts, Fabian Lesniak, James Elliott /
     Deep Symmetry; source at https://github.com/Deep-Symmetry/crate-digger).
-    The EPL-1.0 text is in THIRD-PARTY-LICENSES.txt.
-* Holzhaus/rekordcrate (MIT)
+    The EPL-2.0 text is in THIRD-PARTY-LICENSES.txt.
+* Holzhaus/rekordcrate (Mozilla Public License 2.0)
     https://github.com/Holzhaus/rekordcrate
     Rust library for Rekordbox USB export; reference for the USB write
     path.
@@ -123,7 +125,7 @@ Rekordbox USB export (export.pdb / ANLZ)
     https://github.com/Deep-Symmetry/dysentery
     Pioneer ProDJ Link protocol reverse engineering; canonical analysis
     docs at djl-analysis.deepsymmetry.org.
-* flesniak/python-prodj-link (GPL-3.0)
+* flesniak/python-prodj-link (Apache-2.0)
     https://github.com/flesniak/python-prodj-link
     Python ProDJ Link implementation; credited by crate-digger as an
     early PDB format contributor.
@@ -137,10 +139,11 @@ Serato crates and tags
     Rust Serato tag parser and writer; complements our Serato write path.
 
 Traktor NML
-* wolkenarchitekt/traktor-nml-utils (MIT)
+* wolkenarchitekt/traktor-nml-utils (GPL-3.0)
     https://github.com/wolkenarchitekt/traktor-nml-utils
-    Traktor NML XML parser (Python); reference schema for our Traktor
-    import and export path.
+    Traktor NML XML parser (Python); reference schema only. Our Traktor
+    adapter (apps/adapters/traktor) is our own stdlib code and does not
+    use it.
 
 Engine DJ (Denon)
 * xsco/libdjinterop (LGPL-3.0)
@@ -150,13 +153,13 @@ Engine DJ (Denon)
     end.
 
 CDJ network protocol (live link)
-* Deep-Symmetry/beat-link (Eclipse Public License 1.0)
+* Deep-Symmetry/beat-link (Eclipse Public License 2.0)
     https://github.com/Deep-Symmetry/beat-link
     Java library for Pioneer ProDJ Link, waveform streaming, and live
     CDJ sync.
 
 djay Pro MediaLibrary.db
-* yapstudios/YapDatabase (MIT)
+* yapstudios/YapDatabase (BSD)
     https://github.com/yapstudios/YapDatabase
     Objective-C key-value store over SQLite used internally by djay Pro;
     understanding its layout unlocks djay library access.

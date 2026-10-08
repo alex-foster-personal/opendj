@@ -187,15 +187,14 @@
 	const nativeFolderPicker = canUseNativeFolderPicker();
 
 	/** Open the OS-native directory picker in the desktop shell; browser tabs keep
-	 * the text field as the only path and this handler is never called there. */
+	 * the text field as the only path and this handler is never called there.
+	 * The chosen folder is checked at once (SETUP-29). */
 	async function chooseFolder(rowId: string): Promise<void> {
 		if (!canUseNativeFolderPicker()) return;
 		try {
 			const selected = await pickFolder('Choose a folder');
 			if (typeof selected === 'string') {
-				setupWizard.folderRows = setupWizard.folderRows.map((row) =>
-					row.id === rowId ? { ...row, path: selected, scan: null } : row
-				);
+				setupWizard.chooseFolderForRow(rowId, selected);
 			}
 		} catch {
 			// A failed plugin load or cancelled dialog must not clear a typed path.
@@ -366,6 +365,40 @@
 		title={backWhy ?? `Go back to ${STEP_TITLES[route[Math.max(position - 2, 0)]]}`}
 	>
 		Back
+	</button>
+{/snippet}
+
+{#snippet detectEscapeButtons()}
+	<!-- Shared by the two detect panels (nothing chosen yet, and a rekordbox
+	     result). Look again and Choose a folder are never disabled; Continue
+	     without importing waits only while the wizard is busy. -->
+	<button
+		type="button"
+		class="secondary"
+		onclick={() => setupWizard.redetect()}
+		title={ESCAPE_ACTIONS[0].title}
+		data-agent-endpoint={escapeAgentEndpoint('redetect')}
+	>
+		{ESCAPE_ACTIONS[0].label}
+	</button>
+	<button
+		type="button"
+		class="secondary"
+		onclick={() => setupWizard.useSource('folder')}
+		title={ESCAPE_ACTIONS[1].title}
+		data-agent-endpoint={escapeAgentEndpoint('folder')}
+	>
+		{ESCAPE_ACTIONS[1].label}
+	</button>
+	<button
+		type="button"
+		class="secondary"
+		onclick={() => void dismissAndClose()}
+		disabled={setupWizard.busy}
+		title={ESCAPE_ACTIONS[2].title}
+		data-agent-endpoint={escapeAgentEndpoint('dismiss')}
+	>
+		{ESCAPE_ACTIONS[2].label}
 	</button>
 {/snippet}
 
@@ -569,34 +602,7 @@
 							</p>
 							<div class="actions">
 								{@render backButton()}
-								<button
-									type="button"
-									class="secondary"
-									onclick={() => setupWizard.redetect()}
-									title={ESCAPE_ACTIONS[0].title}
-									data-agent-endpoint={escapeAgentEndpoint('redetect')}
-								>
-									{ESCAPE_ACTIONS[0].label}
-								</button>
-								<button
-									type="button"
-									class="secondary"
-									onclick={() => setupWizard.useSource('folder')}
-									title={ESCAPE_ACTIONS[1].title}
-									data-agent-endpoint={escapeAgentEndpoint('folder')}
-								>
-									{ESCAPE_ACTIONS[1].label}
-								</button>
-								<button
-									type="button"
-									class="secondary"
-									onclick={() => void dismissAndClose()}
-									disabled={setupWizard.busy}
-									title={ESCAPE_ACTIONS[2].title}
-									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
-								>
-									{ESCAPE_ACTIONS[2].label}
-								</button>
+								{@render detectEscapeButtons()}
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
@@ -666,6 +672,7 @@
 													type="text"
 													placeholder="/Users/you/Music"
 													bind:value={row.path}
+													onchange={() => setupWizard.commitFolderRow(row.id)}
 													aria-label="Folder to import"
 												/>
 												<button
@@ -701,7 +708,7 @@
 													onclick={() => setupWizard.checkFolderRow(row.id)}
 													disabled={setupWizard.busy || refusal !== null}
 													title={refusal ??
-														'Look inside this folder without importing it'}
+														'Look inside this folder again without importing it'}
 												>
 													Check this folder
 												</button>
@@ -870,34 +877,7 @@
 							     result that leaves this step with nothing to press. -->
 							<div class="actions">
 								{@render backButton()}
-								<button
-									type="button"
-									class="secondary"
-									onclick={() => setupWizard.redetect()}
-									title={ESCAPE_ACTIONS[0].title}
-									data-agent-endpoint={escapeAgentEndpoint('redetect')}
-								>
-									{ESCAPE_ACTIONS[0].label}
-								</button>
-								<button
-									type="button"
-									class="secondary"
-									onclick={() => setupWizard.useSource('folder')}
-									title={ESCAPE_ACTIONS[1].title}
-									data-agent-endpoint={escapeAgentEndpoint('folder')}
-								>
-									{ESCAPE_ACTIONS[1].label}
-								</button>
-								<button
-									type="button"
-									class="secondary"
-									onclick={() => void dismissAndClose()}
-									disabled={setupWizard.busy}
-									title={ESCAPE_ACTIONS[2].title}
-									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
-								>
-									{ESCAPE_ACTIONS[2].label}
-								</button>
+								{@render detectEscapeButtons()}
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}

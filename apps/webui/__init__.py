@@ -10,5 +10,8 @@ Requirement coverage: CAT-05, CAT-05a (UI surfaces), CAT-05b (auth posture).
 """
 from __future__ import annotations
 
-__version__ = "0.1.0"
+from apps.shared.app_version import APP_VERSION
+
+# The app version from tauri.conf.json (apps/shared/app_version.py).
+__version__ = APP_VERSION
 __all__ = ["__version__"]

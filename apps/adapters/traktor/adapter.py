@@ -142,6 +142,8 @@ class TraktorAdapter:
         info = entry.get_subchild("INFO")
         rating = None
         playtime = None
+        play_count = 0
+        comment = ""
         if info is not None:
             rating = traktor_rating_to_stars(info.get("RANKING"))
             playtime_s = info.get("PLAYTIME")
@@ -150,8 +152,15 @@ class TraktorAdapter:
                     playtime = round(float(playtime_s) * 1000)
                 except ValueError:
                     playtime = None
+            try:
+                play_count = max(0, int(info.get("PLAYCOUNT") or 0))
+            except ValueError:
+                play_count = 0
+            comment = (info.get("COMMENT") or "").strip()
         cues = tuple(self._read_cues(entry, track_id, report))
         extensions: dict[str, object] = {}
+        if comment:
+            extensions["x_comment"] = comment
         if self.options.preserve_extended_data:
             ext_el = entry.get_subchild("EXTENDEDDATA")
             if ext_el is not None and ext_el.text:
@@ -170,6 +179,7 @@ class TraktorAdapter:
             key_camelot=key,
             rating=rating,
             duration_ms=playtime,
+            play_count=play_count,
             cues=cues,
             extensions=extensions,
         )
@@ -180,6 +190,21 @@ class TraktorAdapter:
         cues: list[CuePoint] = []
         for i, cue_el in enumerate(entry.element.findall("CUE_V2")):
             cue_type = traktor_cue_type_to_opendj(cue_el.get("TYPE"))
+            # @HOTCUE is the pad slot (0-7), or -1 for a cue that sits on no
+            # pad. A plain cue (TYPE 0) on no pad is what other apps call a
+            # memory cue. Collections written without @HOTCUE keep the old
+            # reading: list order as the index, TYPE 0 as a hot cue.
+            index = i
+            hotcue_attr = cue_el.get("HOTCUE")
+            if hotcue_attr is not None:
+                try:
+                    hotcue = int(hotcue_attr)
+                except ValueError:
+                    hotcue = None
+                if hotcue is not None and hotcue >= 0:
+                    index = hotcue
+                elif hotcue == -1 and cue_type == "hot":
+                    cue_type = "memory"
             start_ms = 0
             try:
                 start_ms = round(float(cue_el.get("START", "0")))
@@ -195,7 +220,7 @@ class TraktorAdapter:
                     length_ms = None
             cues.append(
                 CuePoint(
-                    index=i,
+                    index=index,
                     position_ms=start_ms,
                     type=cue_type,
                     name=cue_el.get("NAME", ""),
@@ -248,6 +273,7 @@ class TraktorAdapter:
             }
             if cue.length_ms is not None:
                 attrs["LEN"] = str(cue.length_ms)
+            attrs.update(_hotcue_attr(cue))
             ET.SubElement(entry.element, "CUE_V2", attrs)
             if cue.color_rgb is not None and cue.color_rgb != cue_color_from_type(cue.type):
                 report.warn(
@@ -284,8 +310,11 @@ class TraktorAdapter:
                 primary = e.find("PRIMARYKEY")
                 if primary is None:
                     continue
-                key = primary.get("KEY", "")
-                # Traktor playlist keys are paths; reuse our stable-id helper.
+                # Traktor writes the key as VOLUME + DIR + FILE with its
+                # "/:" directory separators ("Macintosh HD/:Users/:a/:x.mp3"),
+                # while the entry's id hashes the decoded location. Decode the
+                # same way, or every real playlist resolves to no tracks.
+                key = primary.get("KEY", "").replace("/:", "/")
                 track_ids.append(_stable_track_id(key))
             playlists.append(
                 Playlist(name=node.get("NAME", "unnamed"), track_ids=tuple(track_ids))
@@ -324,6 +353,15 @@ class TraktorAdapter:
                 ET.SubElement(
                     entry_el, "PRIMARYKEY", {"KEY": key, "TYPE": "TRACK"}
                 )
+
+
+def _hotcue_attr(cue: CuePoint) -> dict[str, str]:
+    """``@HOTCUE`` for a cue: its pad 0-7, or -1 for a memory cue."""
+    if cue.type == "memory":
+        return {"HOTCUE": "-1"}
+    if cue.type in ("hot", "loop") and 0 <= cue.index <= 7:
+        return {"HOTCUE": str(cue.index)}
+    return {}
 
 
 def _split_location(file_path: str) -> tuple[str, str, str]:

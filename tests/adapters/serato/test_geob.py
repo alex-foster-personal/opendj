@@ -141,3 +141,63 @@ def test_beatgrid_variable_tempo_roundtrip() -> None:
     encoded = encode_beatgrid(grid)
     decoded = parse_beatgrid(encoded)
     assert decoded == grid
+
+
+# ---- Markers2 as Serato writes it, built byte by byte ----------------------
+# serato-tags docs/serato_markers2.md and Mixxx markers2.cpp: the frame is
+# 01 01 + base64 (no '=' padding, a linefeed every 72 chars) + NUL padding to
+# 470 bytes; the decoded body repeats 01 01, then NUL-terminated entry names
+# with a uint32 length, then one NUL. CUE: 00, index, uint32 ms, 00, RGB,
+# 00 00, UTF-8 name. LOOP: 00, index, start, end, ff ff ff ff, 00, RGB, 00,
+# locked, UTF-8 name. Built here by hand, not by encode_markers2.
+
+
+def _entry(name: str, payload: bytes) -> bytes:
+    return name.encode("ascii") + b"\x00" + len(payload).to_bytes(4, "big") + payload
+
+
+def _serato_frame(body: bytes, *, extra_char: bool = False) -> bytes:
+    import base64
+
+    text = base64.b64encode(b"\x01\x01" + body + b"\x00").rstrip(b"=")
+    if extra_char:
+        # serato-tags: Serato may write one character past a multiple of 4.
+        text += b"A" * ((1 - len(text)) % 4)
+    lines = b"\n".join(text[i : i + 72] for i in range(0, len(text), 72))
+    return (b"\x01\x01" + lines).ljust(470, b"\x00")
+
+
+_CUE = _entry(
+    "CUE",
+    b"\x00\x02" + (61_250).to_bytes(4, "big") + b"\x00" + b"\xcc\x88\x00" + b"\x00\x00"
+    + "Drop é".encode() + b"\x00",
+)
+_LOOP = _entry(
+    "LOOP",
+    b"\x00\x01" + (1_000).to_bytes(4, "big") + (3_086).to_bytes(4, "big") + b"\xff" * 4
+    + b"\x00" + b"\x27\xaa\xe1" + b"\x00" + b"\x01" + b"Build\x00",
+)
+_COLOR = _entry("COLOR", b"\x00\x99\xff\x99")
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+@pytest.mark.parametrize("extra_char", [False, True])
+def test_markers2_as_serato_writes_it_gives_cues_loops_and_color(extra_char: bool) -> None:
+    """[if] a Markers2 frame is laid out the way Serato writes it [then] every cue, loop, color and name reads back, [else stop]."""
+    frame = _serato_frame(_COLOR + _CUE + _LOOP, extra_char=extra_char)
+    parsed = parse_markers2(frame)
+    assert parsed.cues == (
+        Markers2Cue(index=2, position_ms=61_250, color_rgb=0xCC8800, name="Drop é", kind="hot"),
+    )
+    assert parsed.loops == (
+        Markers2Loop(index=1, start_ms=1_000, end_ms=3_086, color_rgb=0x27AAE1, name="Build", locked=True),
+    )
+    assert parsed.track_color_rgb == 0x99FF99
+    assert parsed.unknown_tags == ()
+
+
+@pytest.mark.requirement("DJIMPORT-01")
+def test_markers2_written_by_this_codec_is_laid_out_as_serato_writes_it() -> None:
+    """[if] this codec writes a cue [then] the bytes match the hand-built Serato frame, [else stop]."""
+    cue = Markers2Cue(index=2, position_ms=61_250, color_rgb=0xCC8800, name="Drop é", kind="hot")
+    assert encode_markers2(Markers2(cues=(cue,))) == _serato_frame(_CUE)

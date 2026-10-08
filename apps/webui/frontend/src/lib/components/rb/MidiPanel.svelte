@@ -351,7 +351,7 @@
 		background: var(--rb-accent);
 		border: 1px solid var(--rb-accent);
 		border-radius: 2px;
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 		font-family: var(--rb-font);
 		font-size: var(--rb-fs-label);
 		padding: 3px 10px;

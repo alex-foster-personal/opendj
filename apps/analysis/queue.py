@@ -1,7 +1,7 @@
 """The background analysis backfill queue: enqueue, progress, cancel, resume.
 
-Spec `specs/native-analysis-v1.md` section 3 ("Queue") and section 4; lane
-brief `specs/native-analysis-v1-lanes/nav1-queue.md`; requirement NATIVE-10.
+Spec `(private path)` section 3 ("Queue") and section 4; lane
+brief `(private path)`; requirement NATIVE-10.
 
 This module is the POLICY half. :mod:`apps.analysis.queue_store` owns the
 rows and the state machine; :mod:`apps.analysis.queue_runner` owns the
@@ -52,6 +52,7 @@ from .depends_on import declared_dependency, dependency_identity, dependency_mat
 from .lane_enums import LANES
 from .lanes import parse_own_backend
 from .record import AnalysisRecord
+from .worker_sizing import HostCapacity, size_workers_for_host
 
 #: Static lane-level edge list: ``dependent -> lanes it depends on``.
 #: Registered independently of any record, which is what lets a lane with no
@@ -141,6 +142,8 @@ def enqueue(
     *,
     note: str | None = None,
     model: admission.MemoryModel | None = None,
+    host: HostCapacity | None = None,
+    per_worker_budget_mb: float | None = None,
 ) -> EnqueueResult:
     """Admit, plan and persist a batch.
 
@@ -148,6 +151,10 @@ def enqueue(
     backend. One batch is one producer's work, so budgeting the batch under
     one model is correct; mixing backends in a batch would make the band a
     meaningless average, so it is refused rather than averaged.
+
+    ``host`` and ``per_worker_budget_mb`` are optional test seams for
+    NATIVE-32 host-aware concurrency; production leaves them unset so
+    :func:`admission.admit` reads live capacity and config.
     """
     if not candidates:
         raise QueueError("enqueue called with no candidates; nothing to plan")
@@ -163,7 +170,12 @@ def enqueue(
             raise QueueError(f"unknown lane {cand.lane!r}; lanes are {LANES}")
     backend = next(iter(backends))
     chosen = model if model is not None else admission.memory_model_for(backend)
-    plan = admission.admit(candidates, model=chosen)
+    plan = admission.admit(
+        candidates,
+        model=chosen,
+        host=host,
+        per_worker_budget_mb=per_worker_budget_mb,
+    )
 
     batch_id = queue_store.new_batch_id()
     queue_store.ensure_queue_tables(conn)
@@ -285,35 +297,84 @@ def cancel(conn: sqlite3.Connection, batch_id: str) -> int:
     return cancelled
 
 
-def resume(conn: sqlite3.Connection, batch_id: str) -> int:
+#: Every state from which an item can still run in this batch: claimable
+#: now, in flight, or returned to pending by a resume. A resume is not held
+#: off by a live runner, so a draining pool can meet any of them.
+RUNNABLE_ITEM_STATES: tuple[str, ...] = (
+    queue_store.ITEM_PENDING,
+    queue_store.ITEM_RUNNING,
+    queue_store.ITEM_CANCELLED,
+    queue_store.ITEM_DEFERRED,
+)
+
+
+def runnable_sizing_inputs(
+    conn: sqlite3.Connection, batch: queue_store.QueueBatch
+) -> tuple[int, str, float] | None:
+    """Duration cap, band and heaviest peak over every item that can still run.
+
+    None when no such item exists. Shared by resume and pool startup so the
+    two cannot size from different item sets. Raises QueueError for a mixed
+    usable/unusable duration set or an unusable stored model or peak.
+    """
+    remaining = queue_store.list_items(
+        conn, batch.batch_id, states=RUNNABLE_ITEM_STATES, limit=None
+    )
+    if not remaining:
+        return None
+    try:
+        cap, band = admission.duration_band_cap(
+            [item.duration_s for item in remaining], batch.band
+        )
+        predicted = admission.runnable_budget_peak_mb(
+            [(item.predicted_peak_mb, item.duration_s) for item in remaining],
+            batch.memory_model,
+        )
+    except ValueError as exc:
+        raise QueueError(str(exc)) from exc
+    return cap, band, predicted
+
+
+def resume(
+    conn: sqlite3.Connection,
+    batch_id: str,
+    *,
+    host: HostCapacity | None = None,
+    per_worker_budget_mb: float | None = None,
+) -> int:
     """Put a cancelled or abandoned batch back in the queue.
 
     Returns how many items became runnable again. Re-plans the batch's
     concurrency from what is LEFT: a batch whose one long track already
     finished should not stay at one worker for its remaining club edits.
+    Final width is the duration band capped by available RAM and CPU
+    (NATIVE-32). RAM uses the greater of the configured floor and the
+    remaining items' predicted peak.
+
+    The plan is computed from EVERY item the resume will make runnable and
+    before anything is written. A mix of usable and unusable durations
+    raises and leaves the batch untouched: sizing from the usable rows alone
+    could widen past the stored band, and pool startup would then refuse the
+    batch this call had just reported as resumed.
     """
     queue_store.ensure_queue_tables(conn)
     batch = queue_store.get_batch(conn, batch_id)
     if batch is None:
         raise QueueError(f"no such batch {batch_id!r}")
+    inputs = runnable_sizing_inputs(conn, batch)
+    if inputs is not None:
+        cap, band, predicted = inputs
+        workers = size_workers_for_host(
+            duration_cap=cap,
+            host=host,
+            per_worker_budget_mb=per_worker_budget_mb,
+            predicted_peak_mb=predicted,
+        ).workers
+    else:
+        workers, band = 0, admission.BAND_EMPTY
     revived = queue_store.revive_cancelled_items(conn, batch_id)
     released = queue_store.release_running_items(conn, batch_id)
-    remaining = queue_store.list_items(
-        conn, batch_id, states=(queue_store.ITEM_PENDING,), limit=None
-    )
-    durations = [i.duration_s for i in remaining if i.duration_s]
-    if durations:
-        longest = max(durations)
-        queue_store.set_batch_workers(
-            conn,
-            batch_id,
-            workers=admission.workers_for_longest(longest),
-            band=admission.band_for_longest(longest),
-        )
-    else:
-        queue_store.set_batch_workers(
-            conn, batch_id, workers=0, band=admission.BAND_EMPTY
-        )
+    queue_store.set_batch_workers(conn, batch_id, workers=workers, band=band)
     queue_store.set_batch_state(conn, batch_id, queue_store.BATCH_QUEUED)
     return revived + released
 

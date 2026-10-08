@@ -125,7 +125,12 @@ class LyricsFetchService:
             servable = servable_lyrics(cached)
             if servable is None:
                 # LYRICS-12: a hallucination-only ASR cache is an instrumental.
-                return FetchResult(outcome="instrumental")
+                # Record the verdict so the lane does not run this cache again.
+                return self._record_instrumental(
+                    track,
+                    vocals_sha256=vocals_sha256_for_track(self.data_dir, track.stable_id),
+                    language_iso3=None,
+                )
             return FetchResult(outcome="cached", lyrics=servable)
         synced = self.provider.fetch_synced(track)
         if synced is not None:
@@ -237,6 +242,29 @@ class LyricsFetchService:
             ),
         )
         return FetchResult(outcome="cached", lyrics=lyrics)
+
+    def _record_instrumental(
+        self,
+        track: Track,
+        *,
+        vocals_sha256: str | None,
+        language_iso3: str | None,
+    ) -> FetchResult:
+        """Store an instrumental verdict. The lyrics cache file is not rewritten."""
+        write_verdict(
+            self.data_dir,
+            FetchVerdict(
+                stable_id=track.stable_id,
+                outcome="instrumental",
+                source=None,
+                vocals_sha256=vocals_sha256,
+                hub_code=None,
+                hub_message=None,
+                language_iso3=language_iso3,
+                recorded_at=utc_now_iso(),
+            ),
+        )
+        return FetchResult(outcome="instrumental")
 
     def fetch_stable_id(self, stable_id: str) -> Lyrics:
         return self.fetch(load_track(self.data_dir / "state" / "state.db", stable_id))

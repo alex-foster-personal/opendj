@@ -28,17 +28,11 @@ full_triggers:
   - "tests/fixtures/**"
   - "tests/helpers/**"
   - "apps/shared/**"
-  # CI INPUTS that are not source. `ci.yml`'s own path filter RE-INCLUDES
-  # `.planning/REQUIREMENTS.md` after excluding `.planning/**`, which is that workflow
-  # saying the path is an input rather than documentation: `reqs.json` is generated from it
-  # and gated against it, and three commits that drifted the ledger skipped the PR gate and
-  # surfaced on main. `reqs.json` and `ci/trunk-merge-queue.json` are read by tests the
-  # same way.
-  # Without these the planner said SKIP_PYTEST for 6 of the last 60 merges that `ci.yml`
-  # RAN, and `(private path)` now reads the re-inclusion list from the
-  # workflow so a new one cannot be missed here.
-  - ".planning/REQUIREMENTS.md"
-  - "reqs.json"
+  # CI INPUTS that are not source. `ci/trunk-merge-queue.json` and the rest of `ci/` are
+  # read by tests the way the planner's own config is. `.planning/REQUIREMENTS.md` and
+  # `reqs.json` used to be here too; round 17 moved them to the `requirements` scope below
+  # (ADR-NEW-requirements-scope): `ci.yml` still RUNS for them (its re-inclusion list), the
+  # reqs drift gate runs on that, and pytest runs the suites that read them.
   - "ci/**"
   # The perf KPI ledger, cards and map, re-included by `ci.yml` for the same reason: suites
   # in perf, webui and lyrics read the real files (PR #4473, Wed 30 Sep 2026).
@@ -239,6 +233,18 @@ scopes:
     tests: []
     mentions: ["apps/webui/frontend", "frontend"]
     dependents: ["agentic_testing", "analysis_beatgrid", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "standalone", "stems", "vocals", "webui"]
+  - name: requirements
+    # Round 17. The requirements ledger and the JSON generated from it. On the 60 merges up
+    # to d5eb4022c1 it was the ONLY full trigger for 26, so SCOPED goes 9 -> 35 of 60.
+    # `ci.yml` re-includes the ledger, which makes it a
+    # CI input: the `contracts` job's reqs drift gate keys off `ci.yml`'s scope job, not this
+    # plan, so it still runs. Consumers are found by mention (43 test modules spell one of
+    # these names; no conftest or global helper does). Longest prefix: this owns the ledger
+    # inside `prose`'s `.planning/`.
+    sources: [".planning/REQUIREMENTS.md", "reqs.json"]
+    tests: []
+    mentions: ["REQUIREMENTS.md", "reqs.json"]
+    dependents: ["analysis_key", "perf", "quality", "scripts"]
   - name: prose
     # Documentation trees. Round 5 measured that prose is NOT harmless here (24 files named
     # by literal path inside tests, six modules that glob for it), so an unclaimed prose path

@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 
+import { appVersionFromTauriConf } from './vite-app-version';
 import { claimAndCheckWebuiDevConfig, resolveAllowedHosts } from './webui-port-config';
 import { codecParserTrimPlugin } from './vite-codec-parser-trim';
 import { holdFullReloadPlugin } from './vite-hold-full-reload';
@@ -33,7 +34,8 @@ export default defineConfig(({ command, mode }) => {
 	return {
 		envDir: REPOSITORY_ROOT,
 		define: {
-			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen)
+			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen),
+			'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersionFromTauriConf(REPOSITORY_ROOT))
 		},
 		plugins: [sveltekit(), holdFullReloadPlugin(), codecParserTrimPlugin()],
 		build: {

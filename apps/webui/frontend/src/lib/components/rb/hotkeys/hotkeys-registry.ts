@@ -23,7 +23,7 @@
  *     - install-hotkeys-overlay.ts imports HOTKEYS_OVERLAY_HOLD_KEY ('/')
  *       and HOTKEYS_OVERLAY_TOGGLE_KEY ('?') for the overlay's own gestures.
  *   DISPLAY-ONLY TRANSCRIPTION (handler logic stays put):
- *     - performance-hotkeys.ts (Space, Tab, +/-, ), m) -- transport/loop/pin
+ *     - performance-hotkeys.ts (Space, +/-, ), m) -- transport/loop/pin
  *       state machine, latency-stamped Space, loop-target tracking.
  *     - technically-working-hotkeys.ts (Ctrl+R, Opt, Cmd+E) -- hold-vs-press
  *       plus pointer-edge hover, routed through performance IPC.
@@ -91,12 +91,6 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		id: 'performance-space',
 		chord: 'Space',
 		description: 'Stop a playing library preview; otherwise toggle play/pause on the most recent deck',
-		group: 'Performance'
-	},
-	{
-		id: 'performance-tab',
-		chord: 'Tab',
-		description: 'Toggle library next-only filter (Camelot + BPM window)',
 		group: 'Performance'
 	},
 	{

@@ -4,12 +4,17 @@ The packaged app has no decrypted rekordbox copy, so a from-stems run that
 opened ``master.plain.db`` failed every library refresh with
 ``MASTER_DB missing on disk``.
 
-[if] there is no master.plain.db [then] from-stems still finds each mapped track's audio, [else stop].
+[if] there is no master.plain.db [then] from-stems still finds each live track's audio, [else stop].
+
+A folder-imported track has no rekordbox mapping at all; from-stems keys on
+the app's own stable id, so it is covered exactly like a mapped one
+(VOCALS-03).
 
 Regression one-liners:
   - if from-stems needs master.plain.db then broken
-  - if a rekordbox-mapped track's state.db audio path is not what from-stems sees then broken
-  - if an unmapped or deleted track enters from-stems then broken
+  - if a live track's state.db audio path is not what from-stems sees then broken
+  - if a track with no rekordbox mapping is left out of from-stems then broken
+  - if a deleted track enters from-stems then broken
   - if a data dir's path-map.json is ignored then a remapped library skips every track
 """
 
@@ -61,16 +66,30 @@ def _state(data_dir: Path, tmp_path: Path) -> dict[str, Path]:
 
 
 def test_state_tracks_come_from_state_db_alone(tmp_path: Path) -> None:
-    """[if] there is no master.plain.db [then] mapped live tracks still resolve to their audio, [else stop]."""
+    """[if] there is no master.plain.db [then] live tracks, mapped or not, still resolve to their audio, [else stop]."""
     data_dir = tmp_path / "data"
     audio = _state(data_dir, tmp_path)
     assert not (data_dir / "master.plain.db").exists()
 
     tracks = cli.load_state_tracks(cli.Ctx(data_dir=data_dir))
 
-    assert [t.stable_id for t in tracks] == ["mapped"]
-    assert tracks[0].audio_path == audio["mapped"]
-    assert tracks[0].audio_on_disk is True
+    assert [t.stable_id for t in tracks] == ["mapped", "unmapped"]
+    assert [t.audio_path for t in tracks] == [audio["mapped"], audio["unmapped"]]
+    assert all(t.audio_on_disk for t in tracks)
+
+
+@pytest.mark.requirement("VOCALS-03")
+def test_state_tracks_can_be_narrowed_to_requested_ids(tmp_path: Path) -> None:
+    """[if] ids are given [then] only those live tracks load, a deleted or unknown id loads nothing, [else stop]."""
+    data_dir = tmp_path / "data"
+    audio = _state(data_dir, tmp_path)
+
+    tracks = cli.load_state_tracks(
+        cli.Ctx(data_dir=data_dir), ["unmapped", "deleted", "ghost"]
+    )
+
+    assert [t.stable_id for t in tracks] == ["unmapped"]
+    assert tracks[0].audio_path == audio["unmapped"]
 
 
 def test_state_tracks_apply_the_data_dirs_path_map(tmp_path: Path) -> None:
@@ -89,7 +108,7 @@ def test_state_tracks_apply_the_data_dirs_path_map(tmp_path: Path) -> None:
         json.dumps({"entries": [{"from": "/Volumes/Gone", "to": str(tmp_path)}]})
     )
 
-    tracks = cli.load_state_tracks(cli.Ctx(data_dir=data_dir))
+    tracks = cli.load_state_tracks(cli.Ctx(data_dir=data_dir), ["mapped"])
 
     assert tracks[0].audio_path == audio["mapped"]
 
@@ -121,7 +140,7 @@ def _write_bundle(stems: Path, stable_id: str) -> None:
 def test_from_stems_runs_without_master_db(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """[if] from-stems runs where no master.plain.db exists [then] it plans the mapped bundle and exits 0, [else stop]."""
+    """[if] from-stems runs where no master.plain.db exists [then] it plans every live bundle, mapped or not, and exits 0, [else stop]."""
     data_dir = tmp_path / "data"
     _state(data_dir, tmp_path)
     stems = data_dir / "state" / "stems"
@@ -130,7 +149,9 @@ def test_from_stems_runs_without_master_db(
 
     code = cli.main(["from-stems", "--data-dir", str(data_dir), "--dry-run"])
 
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
     assert code == 0
-    assert "from-stems: 1 track(s)" in out
-    assert "1. mapped 'Mapped'" in out
+    assert "from-stems: 2 track(s)" in captured.out
+    assert "1. mapped 'Mapped'" in captured.out
+    assert "2. unmapped 'Unmapped'" in captured.out
+    assert "[SKIP unknown-track] deleted" in captured.err

@@ -80,6 +80,12 @@ tauri-plugin-wdio-webdriver = "1"
 name = "opendj-desktop"
 path = "src/main.rs"
 
+# Electron does not link CoreAudio. This binary is what
+# payload/bin/odj-output-probe runs; it calls output_health.rs in place.
+[[bin]]
+name = "odj-output-probe"
+path = "src/bin/odj-output-probe.rs"
+
 [profile.dev]
 opt-level = 0
 debug = true

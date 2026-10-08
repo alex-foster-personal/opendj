@@ -49,6 +49,12 @@
  *     ensureLoaded() [then ⛔️] broken: the retry loops (Get started stays
  *     disabled) or repaints the old answer over the failure (Mac check of
  *     2f449f863, Fri 2 Oct 2026)
+ *   ✔︎ 🎯 a chosen folder is checked without a second click (SETUP-29):
+ *     chooseFolderForRow() after the picker, commitFolderRow() when a typed
+ *     path is committed. Both run checkFolderRow(), the button's own check.
+ *     [if] a picked folder shows no verdict until the button is pressed [then ⛔️] broken
+ *     [if] a stale answer for folder A lands on a row now holding B [then ⛔️] broken
+ *     [if] committing an already-checked path issues a second scan [then ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -70,6 +76,7 @@ import {
 	type SetupStatus,
 } from './setup-api';
 import {
+	currentFolderScan,
 	importableFolderPathsFromRows,
 	newFolderRow,
 	type FolderRow,
@@ -122,6 +129,12 @@ class SetupWizard {
 	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
 	folderCandidates = $state<FolderCandidates['candidates']>([]);
 	folderCandidatesState = $state<'idle' | 'loading' | 'answered' | 'failed'>('idle');
+	/** Row id -> that row's NEWEST in-flight check: a token unique to the one
+	 * invocation plus the normalized path it asked about. The path alone is
+	 * not an identity (A, then B, then A again is two different A checks).
+	 * Plain (not $state): nothing renders it; it only decides which answer
+	 * may land and when `busy` clears. */
+	private _folderChecksInFlight = new Map<string, { token: symbol; path: string }>();
 	/** Job id for which setup status was re-read after success. */
 	statusRefreshJobId = $state<string | null>(null);
 	/** Last refreshStatusAfterImport failure for the current job, if any. */
@@ -351,19 +364,55 @@ class SetupWizard {
 			return;
 		}
 		const normalized = normalizeSetupFolderPath(trimmed);
+		// The same path is already being checked for this row (Enter fires a
+		// commit and then the form's submit button): one scan answers both.
+		if (this._folderChecksInFlight.get(id)?.path === normalized) return;
+		const token = Symbol(normalized);
+		this._folderChecksInFlight.set(id, { token, path: normalized });
+		// Only the row's NEWEST check may land, and only while the row still
+		// holds the path it asked about: an answer for folder A that arrives
+		// after the row moved on (a newer check, a retyped path, a removed row)
+		// is dropped whole -- verdict, error and the clearing of any other error.
+		const isNewest = (): boolean => this._folderChecksInFlight.get(id)?.token === token;
+		const mayLand = (): boolean =>
+			isNewest() &&
+			this.folderRows.some(
+				(entry) => entry.id === id && normalizeSetupFolderPath(entry.path) === normalized
+			);
 		this.busy = true;
 		try {
 			const scan = await scanFolder(normalized);
+			if (!mayLand()) return;
 			this.folderRows = this.folderRows.map((entry) =>
 				entry.id === id ? { ...entry, path: normalized, scan } : entry
 			);
 			this.error = null;
 			this.errorDiagnostic = null;
 		} catch (exc) {
+			if (!mayLand()) return;
 			this._fail(errorMessage(exc));
 		} finally {
-			this.busy = false;
+			if (isNewest()) this._folderChecksInFlight.delete(id);
+			this.busy = this._folderChecksInFlight.size > 0;
 		}
+	}
+
+	/** Put a chosen folder (native picker, suggestion chip) on a row and check
+	 * it at once, so choosing is the whole gesture (SETUP-29). */
+	chooseFolderForRow(id: string, path: string): void {
+		this.folderRows = this.folderRows.map((row) =>
+			row.id === id ? { ...row, path, scan: null } : row
+		);
+		void this.checkFolderRow(id);
+	}
+
+	/** A typed path was committed (change, blur or Enter): check it unless it
+	 * is blank or its scan already describes it. Never called per keystroke. */
+	commitFolderRow(id: string): void {
+		const row = this.folderRows.find((entry) => entry.id === id);
+		if (row === undefined || row.path.trim() === '') return;
+		if (currentFolderScan(row) !== null) return;
+		void this.checkFolderRow(id);
 	}
 
 	/** Fill the first empty row, or the last row when every row has a path. */
@@ -371,10 +420,7 @@ class SetupWizard {
 		const empty = this.folderRows.find((row) => row.path.trim() === '');
 		const target = empty ?? this.folderRows[this.folderRows.length - 1];
 		if (target === undefined) return;
-		this.folderRows = this.folderRows.map((row) =>
-			row.id === target.id ? { ...row, path, scan: null } : row
-		);
-		void this.checkFolderRow(target.id);
+		this.chooseFolderForRow(target.id, path);
 	}
 
 	/** Enqueue the folder import, advancing only once the server accepted it. */
@@ -590,6 +636,7 @@ class SetupWizard {
 		this.readTimeoutMs = SETUP_READ_TIMEOUT_MS;
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
+		this._folderChecksInFlight.clear();
 		this._clearStatusRefresh();
 	}
 }

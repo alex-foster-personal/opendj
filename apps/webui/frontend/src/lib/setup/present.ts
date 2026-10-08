@@ -15,7 +15,7 @@ type Permissions = components['schemas']['PermissionsOut'];
 /** Label for the collapsed agent diagnostics block. Spelled once for tests. */
 export const AGENT_DETAILS_LABEL = 'Details for agents';
 
-/** Home roots on macOS, Linux and Windows: `/Users/<name>`, `/home/<name>`,
+/** Home roots on macOS, Linux and Windows: `/Users/<name>`, `/home/user>`,
  * `C:\Users\<name>`. The segment after the root is the account name and is
  * never shown. */
 const HOME_ROOT = /^(?:\/(?:Users|home)\/[^/]+|[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][^\\/]+)(?=$|[\\/])/;
@@ -196,7 +196,7 @@ export function humanAdvanceRefusal(
 			return 'The same folder is listed twice. Remove one before importing.';
 		}
 		if (rawRefusal === 'no folder has been checked yet') {
-			return 'Choose a folder and press Check this folder first.';
+			return 'Choose a folder first.';
 		}
 		if (rawRefusal === 'macOS is blocking that folder; grant access and check again') {
 			return 'macOS is blocking that folder. Grant access and check it again.';

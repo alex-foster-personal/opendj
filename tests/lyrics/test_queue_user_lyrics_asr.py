@@ -106,7 +106,7 @@ def test_instrumental_is_done_and_fresh(tmp_path: Path) -> None:
     assert outcome == "ran"
     settled = queue_user.list_lane(conn, "lyrics", include_settled=True)
     assert settled[0].state == queue_store.ITEM_DONE
-    assert settled[0].reason == "instrumental"
+    assert settled[0].reason == "no_lyrics_found"
     assert queue_user.artifact_is_fresh(
         "lyrics", stable_id, stems_root=tmp_path / "stems", data_dir=tmp_path
     )

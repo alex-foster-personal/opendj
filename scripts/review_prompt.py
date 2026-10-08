@@ -22,6 +22,13 @@ Requirements (mini-PRD):
     [if an echoed example block can be read as findings then broken]
   / A diff too large to send is truncated and SAID to be truncated.
     [if a partial review reports as a whole one then broken]
+  / The repo-specific blocking rules (OSSPUB-01 real identities, a weekday that
+    contradicts its date, a diff that does not do what the PR claims) are stated
+    as BLOCKING and may never be waved through as nits (REVIEW-20).
+    [if the rubric omits any of the three then broken]
+    [if the rubric lets a blocking-rule hit be downgraded to a nit then broken]
+  / The PR body reaches the reviewer, so the intent check has the claims to test.
+    [if the body is dropped from the prompt then broken]
 """
 
 from __future__ import annotations
@@ -73,6 +80,28 @@ Repository conventions that make a finding BLOCKING here:
 - Data loss, a destructive operation without a bound on what being wrong
   costs, or a security hole.
 - A timestamp labeled UTC that is not UTC.
+- A real identity in the tracked tree. This repository is public. Two classes:
+  (a) OSSPUB-01: a real home directory path, a personal mailbox, a tailnet
+  hostname or a CGNAT address; (b) a real artist, track or album name in a
+  fixture, example or test, where invented names are the rule (issue #5734).
+  A provenance note, comment, changelog or test name that QUOTES the real name
+  it replaced reintroduces it just as surely. Out of scope: the maintainer's
+  first name in an attribution or dated decision, the fleet's machine
+  nicknames, and the repository's documented placeholder home paths.
+- A date whose weekday contradicts it, for example "Wed 8 Oct 2026" when
+  8 Oct 2026 is a Thursday. Dates here always carry a weekday as a checksum,
+  so work out the weekday for every dated line the diff adds before you
+  accept it.
+- The diff does not do what the PR title and body say it does: a claimed fix
+  that leaves the defect, a claimed scrub or rename that leaves instances
+  behind, or a stated scope the diff exceeds or falls short of. Read the title
+  and body below and check the diff against each claim.
+
+A hit on any rule above is a finding at P1 or higher, however small the edit
+or however cosmetic it looks. It is never "just a nit", never "incomplete but
+not a correctness bug", and never "style". If you notice one and are tempted
+to downgrade it, report it instead.
+
 Style-only nits, matters of taste, and speculation about code you cannot see
 are NOT blocking and usually not worth a finding at all.
 
@@ -85,12 +114,18 @@ tiers a data-loss bug as P2.
 Report at most {max_findings} findings, best first. Report ZERO findings if the
 diff is clean; an empty list is a legitimate and useful review.
 
+Use no tools for this review: do not run commands, read files or search. The
+diff below is the whole subject, and a tool call ends the run with no review
+at all. Work out weekdays and every other check in your own reasoning.
+
 Every finding must name a file path exactly as it appears in the diff, and a
 line number on the NEW side of the diff (a line the diff shows as added or as
 context). If you cannot tie a finding to a line, set "line" to null.
 
 PR #{pr}, head {sha}
 Title: {title}
+Body (what the author claims this diff does):
+{body}
 
 Reply with NOTHING but this block, no prose before or after. Set "run" to
 exactly {run_id} -- that literal string, not the placeholder shown here:
@@ -130,6 +165,8 @@ def build_prompt(
     title: str,
     diff: str,
     config: ReviewPromptConfig,
+    *,
+    body: str,
 ) -> tuple[str, bool]:
     """The prompt, and whether the diff had to be truncated to fit.
 
@@ -145,7 +182,7 @@ def build_prompt(
     Sol's, parsed by neither.
     """
     truncated = len(diff.encode()) > config.max_diff_bytes
-    body = (
+    sent_diff = (
         diff.encode()[: config.max_diff_bytes].decode(errors="ignore")
         if truncated
         else diff
@@ -162,13 +199,14 @@ def build_prompt(
             pr=pr,
             sha=sha,
             title=title,
+            body=body.strip() or "(the PR body is empty)",
             open=config.fence.open,
             close=config.fence.close,
             run_id=config.run_id,
             placeholder=RUN_ID_PLACEHOLDER,
             truncation=note,
             withheld=withheld_line,
-            diff=body,
+            diff=sent_diff,
         ),
         truncated,
     )

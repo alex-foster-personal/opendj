@@ -45,6 +45,10 @@ export const PENCIL_PATH = 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z M14.5 5.5
 /** Lyrics column vocal verdict (a single note). */
 export const MUSIC_NOTE_PATH = 'M9 18V5l11-2v13 M9 18a3 3 0 1 1-6 0a3 3 0 0 1 6 0z M20 16a3 3 0 1 1-6 0a3 3 0 0 1 6 0z';
 
+/** Lyrics column "lyrics found, not yet checked" mark: a lyric sheet of three
+ * ragged text lines, drawn beside a small pending dot (LYR-13). */
+export const LYRIC_SHEET_PATH = 'M3 6h11 M3 12h18 M3 18h13';
+
 /** Undo / redo (curved arrows), 24x24 viewBox, stroked. */
 export const UNDO_PATH = 'M9 14 4 9l5-5 M4 9h10.5a5.5 5.5 0 0 1 0 11H11';
 

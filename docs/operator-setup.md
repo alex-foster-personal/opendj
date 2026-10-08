@@ -36,8 +36,9 @@ Aggregate ERROR/WARN records from every server-readable sink for the last hour (
 - Python 3.11+. CI pins Python to 3.11 because `tflite-runtime` (pulled transitively by `openwakeword`) has no wheel for 3.12+ at the time of writing. Local dev on 3.14 also works for non-voice features (`docs/install-notes.md` documents the 3.14 dev path).
 - Homebrew.
 - Doppler CLI + access to the `construct` / `dev_af` project (only needed for commands that touch secrets; see Spotify and Cloud sections).
-- Install uv, then create the environment from the lockfile (see the Install section of the
-  repository `README.md` for the full path, including the frontend):
+- Install uv, then create the environment from the lockfile (see the Development setup
+  section of [`docs/developer-guide.md`](developer-guide.md) for the full path, including the
+  frontend):
 
 ```bash
 uv sync --frozen --extra dev --python 3.11.15
@@ -82,7 +83,7 @@ doppler secrets set SPOTIFY_CLIENT_ID=... SPOTIFY_CLIENT_SECRET=... \
 doppler run -- python -m apps.spotify ...
 ```
 
-- Cache directory: `data/spotify/cache/` (24 h TTL; gitignored).
+- Cache directory: `(private path)/` (24 h TTL; gitignored).
 
 ## Feature: USB sync (Phase 10)
 
@@ -126,7 +127,7 @@ Host-install steps:
 
 1. Wake-word model. The repo expects `apps/voice/models/hey_booth.onnx` (override with `$VOICE_WAKE_MODEL_PATH`).
    - Quickest smoke: use a prebuilt openWakeWord model that ships with the wheel (e.g. `alexa_v0.1.onnx`). Good for plumbing validation; not suitable for live DJ use because the wake phrase will not be "hey booth".
-   - Real use: train a "hey booth" model via the 1-hour Colab notebook referenced in `.planning/phases/14-voice-commands/14-RESEARCH.md` / `docs/voice-feasibility.md` section 1.2, then drop the `.onnx` into `apps/voice/models/`.
+   - Real use: train a "hey booth" model via the 1-hour Colab notebook referenced in `(private path)` / `(private path)` section 1.2, then drop the `.onnx` into `apps/voice/models/`.
    - Licence: Apache-2.0 (openWakeWord library and any model you train).
 2. whisper.cpp. Either path works:
    - Path A (Homebrew, Sonoma+): `brew install whisper-cpp`. Confirm the CoreML encoder with `whisper-server --help | grep -i coreml`; if absent, use Path B.
@@ -165,7 +166,7 @@ python -m apps.voice run                    # full daemon, read-only intents
 python -m apps.voice run --enable-destructive   # live mode with SAVE_CUE + RATE_TRACK
 ```
 
-Hardware note: a close-talk headset (Shure WH20, AKG C520, or similar) is strongly recommended for live use. The built-in MacBook mic is the #1 reliability risk per `docs/voice-feasibility.md` section 10.1.
+Hardware note: a close-talk headset (Shure WH20, AKG C520, or similar) is strongly recommended for live use. The built-in MacBook mic is the #1 reliability risk per `(private path)` section 10.1.
 
 Secrets (only if you swap the default backends):
 
@@ -271,4 +272,4 @@ real "app still running" condition.
 
 ## Credits
 
-See `docs/prior-art-and-communities.md` for the open-source prior-art this project builds on (pyrekordbox, rekordcrate, openWakeWord, whisper.cpp, BlackHole, and others).
+See `(private path)` for the open-source prior-art this project builds on (pyrekordbox, rekordcrate, openWakeWord, whisper.cpp, BlackHole, and others).

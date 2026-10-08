@@ -352,8 +352,10 @@
 		<span class="deck-num" title={deckNumTitle}>{deckId}</span>
 
 		<div class="meta" class:empty={deck.stable_id === null}>
-			<span class="title">{deck.title ?? 'No track loaded'}</span>
-			<span class="artist">{deck.artist ?? ''}</span>
+			<!-- The title and artist ellipsize in a narrow deck; the hover title is
+			     the only way to read a long one in full (public-launch sweep, Wed 7 Oct 2026). -->
+			<span class="title" title={deck.title ?? undefined}>{deck.title ?? 'No track loaded'}</span>
+			<span class="artist" title={deck.artist || undefined}>{deck.artist ?? ''}</span>
 			{#if deck.stable_id !== null}
 				<span class="deck-rating-row">
 					<RatingStars rating={deck.rating} onrate={(n) => void rateDeckTrack(deckId, n)} />

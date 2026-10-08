@@ -64,7 +64,7 @@
 		cursor: pointer;
 	}
 	.cell.lit {
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 		background: var(--rb-accent);
 		box-shadow: 0 0 4px var(--rb-accent-glow);
 	}

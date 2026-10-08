@@ -33,7 +33,9 @@
  *   the page after the POST settled, puts the idle status back and the run
  *   stops being followed [then] stop (Codex P2 4130868861). The GET's real
  *   answer is only delayed by page.route (route.fetch, then fulfill with that
- *   same response), never rewritten.
+ *   same response), never rewritten. Later status answers are fetched the
+ *   same way and held until a further GET is sent while they are parked,
+ *   then released in arrival order; the done toast is read right after that.
  * [if] a running status of a run, answered before that run's end reached the
  *   page and delivered after it (two polls in flight at once), is applied: the
  *   run is followed again and its end toasts a second time [then] stop (Codex
@@ -46,7 +48,7 @@
  *   second timer [then] stop.
  */
 // requirement: CHROME-10
-import { expect, test, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import { expect, test, type APIRequestContext, type APIResponse, type Page, type Route } from '@playwright/test';
 
 const STATUS = '/api/v1/ingest/refresh/status';
 const CONFIG = '/api/v1/ingest/config';
@@ -441,6 +443,9 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		// its real answer kept; the POST is held until that answer exists, so the
 		// engine really answered the GET before the run started. The answer is
 		// delivered to the page, unchanged, only after the POST has settled.
+		// Every later status GET is fetched for real at once too and parked, so
+		// the page cannot learn that the run ended until this test releases
+		// those answers. The signal is a further GET sent while they are parked.
 		const post = await holdRefreshPost(page);
 		let gotStale = (): void => {};
 		const staleReady = new Promise<void>((r) => (gotStale = r));
@@ -450,19 +455,40 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		const staleDelivered = new Promise<void>((r) => (fulfilled = r));
 		let staleBody: { running?: boolean } = {};
 		let first = true;
-		await page.route(
-			(url) => url.pathname === STATUS,
-			async (route) => {
-				if (!first) return route.continue();
-				first = false;
-				const response = await route.fetch();
-				staleBody = (await response.json()) as { running?: boolean };
-				gotStale();
-				await delivered;
-				await route.fulfill({ response });
-				fulfilled();
+		let released = false;
+		let draining = false;
+		const parked: { route: Route; response: APIResponse }[] = [];
+		// One drain at a time, in arrival order. A poll that lands mid-release
+		// stays behind the answers already parked.
+		const drain = async (): Promise<void> => {
+			if (draining) return;
+			draining = true;
+			try {
+				while (parked.length > 0) {
+					const item = parked.shift()!;
+					await item.route.fulfill({ response: item.response });
+				}
+			} finally {
+				draining = false;
 			}
-		);
+			if (parked.length > 0) await drain();
+		};
+		const statusMatcher = (url: URL): boolean => url.pathname === STATUS;
+		await page.route(statusMatcher, async (route) => {
+			if (!first) {
+				const response = await route.fetch();
+				parked.push({ route, response });
+				if (released) await drain();
+				return;
+			}
+			first = false;
+			const response = await route.fetch();
+			staleBody = (await response.json()) as { running?: boolean };
+			gotStale();
+			await delivered;
+			await route.fulfill({ response });
+			fulfilled();
+		});
 		await btn.press('Enter');
 		await staleReady;
 		expect(staleBody.running, 'the held answer is the pre-start idle one').toBe(false);
@@ -475,15 +501,33 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		// Dismissed with the run going: only the run keeps the polling alive now.
 		await btn.press('Escape');
 		await expect(page.getByTestId('refresh-analysis-pop')).toBeHidden();
+		// fulfill() returning is only network-complete. Playwright's finished()
+		// is the body arriving, then one page macrotask lets _poll's own
+		// continuation run. The running class is the production signal: an
+		// applied idle snapshot drops it and clears the timer. Count requests
+		// only after that.
+		const staleOnPage = page.waitForResponse(
+			(r) => r.request().method() === 'GET' && new URL(r.url()).pathname === STATUS
+		);
 		deliver();
 		await staleDelivered;
-		// Still followed: the page polls again after the stale answer landed. Had
-		// it put the idle status back, the dismissed popover's timer would have
-		// stopped right there and nothing would poll. (A done toast alone cannot
-		// tell: the stale snapshot of the previous run can raise one too.)
+		await (await staleOnPage).finished();
+		await page.evaluate(() => new Promise<void>((r) => setTimeout(r, 0)));
+		await expect(btn).toHaveClass(/running/);
 		const afterStale = wire.status.length;
+		const parkedAfterStale = parked.length;
 		await expect.poll(() => wire.status.length, { timeout: 5_000 }).toBeGreaterThan(afterStale);
+		// The GET is counted when it is sent, which is before route.fetch returns.
+		await expect.poll(() => parked.length, { timeout: 5_000 }).toBeGreaterThan(parkedAfterStale);
+		expect(parked.length, 'a later poll was parked').toBeGreaterThan(parkedAfterStale);
+		await expect(btn).toHaveClass(/running/);
+		released = true;
+		await drain();
+		// The engine's own end raises the done toast once its answer is released
+		// (or, if the run is still going, once a later real poll delivers it).
+		// Read the toast at once: it dismisses itself after 5 s.
 		await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+		await page.unroute(statusMatcher);
 		await expectPollingStops(page, request, wire);
 	});
 

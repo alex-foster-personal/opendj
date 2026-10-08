@@ -6,10 +6,10 @@ import EnrichCardView from './EnrichCardView.svelte';
 
 /**
  * One story per state of the enrich-on-open card (ENRICH-01). The state
- * inventory is specs/state-inventories/library-enrichment.md; each story here
+ * inventory is (private path); each story here
  * is the evidence for one of its cells, and
  * `node scripts/capture-ui-contracts.mjs` turns the stories into the images
- * under specs/ui-contracts/enrich-on-open/states/.
+ * under (private path)/.
  *
  * Nothing is a mocked network call: EnrichCardView is pure props, and the
  * args have the exact shape of GET /api/v1/enrich/summary. Counts are those
@@ -62,7 +62,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Background progress only, as it first opens: one line, clear of the track table. */
+/** Background progress only, as it first opens: the top-bar pill, in flow, covering nothing. */
 export const Collapsed: Story = {
 	args: {
 		expanded: false,
@@ -70,6 +70,15 @@ export const Collapsed: Story = {
 			{ beatgrid: { done: 351, missing: 923 }, key: { done: 44, missing: 1230 } },
 			{ coverage: lyrics(243, 603, 428) }
 		)
+	}
+};
+
+/** The stems question needs the user: the pill is flagged, never auto-expanded over the app (#5748). */
+export const CollapsedNeedsYou: Story = {
+	args: {
+		expanded: false,
+		attention: true,
+		summary: summary({ key: { done: 44, missing: 1230 } }, { stems: { state: 'ask', pending: 1222, reason: null } })
 	}
 };
 
@@ -130,12 +139,35 @@ export const StemsAsked: Story = {
 	}
 };
 
-/** No stems source on this computer: said, never asked. */
+/**
+ * No stems source on this computer: said with the count that cannot be made, never asked.
+ * ENRICH-04: the coverage reading files those stems as terminal, so pending is 0 and `missing` carries them.
+ */
 export const StemsNoSource: Story = {
 	args: {
 		summary: summary(
 			{ key: { done: 44, missing: 1230 } },
-			{ stems: { state: 'no_source', pending: 1150, reason: 'no stems farm is configured' } }
+			{
+				stems: {
+					state: 'no_source',
+					pending: 0,
+					failed: 0,
+					missing: 1150,
+					reason: 'no stems farm is configured',
+					separated: 62,
+					not_yet: 0
+				}
+			}
+		)
+	}
+};
+
+/** ENRICH-04: separations failed every attempt and nothing is left to ask: a red count, never silent. */
+export const StemsFailed: Story = {
+	args: {
+		summary: summary(
+			{},
+			{ stems: { state: 'failed', pending: 0, failed: 37, reason: null, separated: 1113, not_yet: 0 } }
 		)
 	}
 };

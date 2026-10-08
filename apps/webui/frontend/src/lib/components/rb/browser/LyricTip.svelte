@@ -12,9 +12,11 @@
 	import {
 		groupLinesIntoParagraphs,
 		LYRIC_QUALITY_TITLE,
+		lyricCellMark,
+		lyricCellState,
+		lyricCellTitle,
 		lyricSyncQualityPct,
-		lyricVerdictMark,
-		lyricVerdictTitle
+		type LyricStemStatus
 	} from './lyric-column';
 	import LyricVerdictMark from './LyricVerdictMark.svelte';
 	import { placeFloating } from '$lib/ui/clamp-to-viewport';
@@ -22,6 +24,7 @@
 	let {
 		stableId,
 		summary,
+		stems,
 		anchor,
 		onpointerenter,
 		onpointerleave
@@ -29,6 +32,9 @@
 		stableId: string;
 		/** Row summary from the listing hydrate; null = pipeline never ran. */
 		summary: LyricsRowSummary | null;
+		/** Row stem summary; null until the listing delivers row assets. Feeds
+		 * the unchecked-lyrics reason (LYR-13). */
+		stems: LyricStemStatus | null;
 		/** Viewport-space rect of the hovered cell (getBoundingClientRect). */
 		anchor: { x: number; top: number; bottom: number };
 		/** Keep-open plumbing: TrackTable cancels/schedules its close timer
@@ -101,12 +107,14 @@
 		<p class="lt-state">no lyric data yet - pipeline has not processed this track</p>
 	{:else}
 		<div class="lt-head">
-			<span class="lt-verdict" title={lyricVerdictTitle(summary)}>
-				<LyricVerdictMark mark={lyricVerdictMark(summary.effective)} />
-				{summary.effective}{summary.override !== null ? ' (override)' : ''}
+			<span class="lt-verdict" title={lyricCellTitle(summary, stems)}>
+				<LyricVerdictMark mark={lyricCellMark(summary)} />
+				{lyricCellState(summary) === 'unchecked' ? 'lyrics, not yet checked' : summary.effective}{summary.override !== null ? ' (override)' : ''}
 			</span>
 		</div>
-		{#if !summary.has_words}
+		{#if lyricCellState(summary) === 'unchecked' && !summary.has_words}
+			<p class="lt-state">{lyricCellTitle(summary, stems)}</p>
+		{:else if !summary.has_words}
 			<p class="lt-state">
 				no word-level alignment for this track - the verdict comes from stem vocal coverage alone
 			</p>

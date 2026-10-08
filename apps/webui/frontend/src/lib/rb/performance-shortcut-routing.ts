@@ -4,7 +4,6 @@ import { isNativeInteractiveTarget } from './performance-hotkeys-target';
 
 export type PerformanceShortcutAction =
 	| { kind: 'space'; quantize: boolean }
-	| { kind: 'tab' }
 	| { kind: 'm' }
 	| { kind: 'loop-resize'; factor: 0.5 | 2 }
 	| { kind: 'loop-exit' };
@@ -26,7 +25,6 @@ export interface PerformanceShortcutKeydownEvent extends PerformanceShortcutKeyE
 
 export interface PerformanceShortcutHandlers {
 	toggleRecentPlay: (pressT0Ms: number, quantize: boolean) => void;
-	toggleNextOnlyFilter: () => void;
 	resizeLast: (factor: 0.5 | 2) => void;
 	exitLast: () => void;
 	armPinPlacement: () => void;
@@ -37,7 +35,9 @@ export function resolvePerformanceShortcutAction(
 	e: PerformanceShortcutKeyEvent
 ): PerformanceShortcutAction | null {
 	if (e.code === 'Space' || e.key === ' ') {
+		// Focused controls own Space activation; page chrome keeps transport.
 		if (isTextEntryTarget(e.target)) return null;
+		if (isNativeInteractiveTarget(e.target)) return null;
 		if (e.metaKey || e.ctrlKey) {
 			if (e.altKey) return null;
 			return { kind: 'space', quantize: true };
@@ -58,16 +58,8 @@ export function resolvePerformanceShortcutAction(
 			: null;
 	}
 	if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return null;
-	// Tab is the browser's own focus-traversal key: unlike Space/M/loop-resize
-	// (which A11Y-01 deliberately fires over buttons, sliders and rows), a
-	// native-interactive target still needs Tab to MOVE focus. Stealing it
-	// there traps keyboard users on the first control they land on (review
-	// r3549, P1 BLOCKING). Page chrome with no native keyboard behavior of
-	// its own keeps the next-only-filter binding.
-	if (e.key === 'Tab') {
-		if (isNativeInteractiveTarget(e.target)) return null;
-		return { kind: 'tab' };
-	}
+	// Tab always traverses focus, including from body and inert page chrome.
+	if (e.key === 'Tab') return null;
 	if (e.key === '+' || e.key === '=') return { kind: 'loop-resize', factor: 2 };
 	if (e.key === '-' || e.key === '_') return { kind: 'loop-resize', factor: 0.5 };
 	if (e.key === ')') return { kind: 'loop-exit' };
@@ -87,9 +79,6 @@ export function handlePerformanceShortcutKeydown(
 	switch (action.kind) {
 		case 'space':
 			handlers.toggleRecentPlay(e.timeStamp, action.quantize);
-			break;
-		case 'tab':
-			handlers.toggleNextOnlyFilter();
 			break;
 		case 'loop-resize':
 			handlers.resizeLast(action.factor);

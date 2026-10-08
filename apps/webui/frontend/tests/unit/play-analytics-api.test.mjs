@@ -102,3 +102,24 @@ test('fetchPlayAnalytics propagates validator failures without daemon-unreachabl
 		return true;
 	});
 });
+
+// The 503 bodies below are the real route's payloads, captured from
+// GET /api/play-analytics on a fresh library (Wed 7 Oct 2026 public-launch
+// sweep) and from a store missing its table. The server half is held to the
+// same prefix by tests/play_analytics/test_surfaces.py, and the page half runs
+// against the real engine in tests/e2e/play-analytics-empty.spec.ts.
+const MISSING_STORE_BODY = JSON.stringify({
+	detail: 'event store does not exist: /Users/dev/data/sets/sets.db'
+});
+const MISSING_TABLE_BODY = JSON.stringify({ detail: "required table 'sets' is missing" });
+
+test('a missing event store (no sets recorded yet) is recognized from the real 503 body', () => {
+	assert.equal(analyticsApi.isNoEventStore(503, MISSING_STORE_BODY), true);
+	assert.ok(MISSING_STORE_BODY.includes(analyticsApi.NO_EVENT_STORE_DETAIL));
+});
+
+test('control: a broken event store or another status is never read as "no sets yet"', () => {
+	assert.equal(analyticsApi.isNoEventStore(503, MISSING_TABLE_BODY), false);
+	assert.equal(analyticsApi.isNoEventStore(500, MISSING_STORE_BODY), false);
+	assert.equal(analyticsApi.isNoEventStore(503, 'not json'), false);
+});

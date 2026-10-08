@@ -14,7 +14,7 @@ Design constraints honoured here:
     under ``INGEST_INBOX`` (``~/Music/Manual Library/_ingest/<batch>/`` when
     ``MDT_DATA_DIR`` is unset; ``<data_dir>/Manual Library/_ingest/<batch>/``
     when it is set) and RB import stays a human step (see
-    .agents/skills/ingest-new-tracks).
+    (private path)).
   * The refresh job shells out to the existing CLIs (apps.analysis.run,
     apps.stems trickle, apps.vocals from-stems) rather than reimplementing
     them - one code path per pipeline, real data only.
@@ -363,11 +363,22 @@ def unmapped_backlog(*, limit: int | None = None) -> backlog.Backlog:
         conn.close()
 
 
+# Why a step is skipped in the unmapped scope when the reason is NOT a missing
+# rekordbox id. Vocals are derived from a stem bundle and keyed by the app's
+# own stable id, so telling a user with no rekordbox to import one is false.
+_UNMAPPED_SKIP_REASONS: dict[str, str] = {
+    "vocals": "derived from a stem bundle, so a track needs stems first; "
+              "the coverage drain fills vocals once its stems exist",
+}
+
+
 def _log_id_keyed_skips(job: _RefreshJob, steps: list[str], scope: str) -> None:
     """Say which steps this scope cannot run, and why. Never silently."""
     for skipped in steps:
-        _log(job, f"{skipped}: skipped for {scope} scope - needs the "
-                  "Rekordbox import first (id-keyed)")
+        reason = (
+            _UNMAPPED_SKIP_REASONS.get(skipped) if scope == UNMAPPED_SCOPE else None
+        ) or "needs the Rekordbox import first (id-keyed)"
+        _log(job, f"{skipped}: skipped for {scope} scope - {reason}")
 
 
 def _batch_targets(

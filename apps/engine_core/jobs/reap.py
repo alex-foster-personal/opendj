@@ -42,6 +42,7 @@ from dataclasses import dataclass
 import psutil
 
 from apps.shared.process_groups import (
+    CREATE_TIME_TOLERANCE_S,
     WorkerCleanupError,
     group_has_live_member,
     group_members,
@@ -60,11 +61,6 @@ WORKER_TERMINATE_GRACE_S: float = 10.0
 # instead of a kill. Capped at half the grace so a caller passing a small one
 # still gets a ladder rather than an immediate SIGKILL.
 WORKER_KILL_CONFIRM_S: float = 2.0
-
-# psutil create_time and the wall clock we fall back to at spawn are both
-# taken within milliseconds of the fork, so 2s is a generous identity window
-# that still fails a pid recycled minutes later.
-CREATE_TIME_TOLERANCE_S: float = 2.0
 
 
 @dataclass(frozen=True)

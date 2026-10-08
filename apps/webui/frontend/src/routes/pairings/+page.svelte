@@ -122,8 +122,8 @@
 
 <h2>Pairings</h2>
 <form onsubmit={(e) => { e.preventDefault(); create(); }}>
-	<input placeholder="From stable_id" bind:value={fromId} />
-	<input placeholder="To stable_id" bind:value={toId} />
+	<input placeholder="From track ID" aria-label="From track ID" title="The track ID shown in the track's page address (/track/ID)" bind:value={fromId} />
+	<input placeholder="To track ID" aria-label="To track ID" title="The track ID shown in the track's page address (/track/ID)" bind:value={toId} />
 	<input placeholder="Notes (optional, max 1000)" bind:value={notes} maxlength="1000" />
 	<button class="primary" type="submit">Add pairing</button>
 </form>

@@ -51,6 +51,13 @@ ORDER_WAIT_HEADER = "x-opendj-order-wait-ms"
 ORDER_CLAIM_DEADLINE_S = 15.0
 #: AGENT-21: the 503 body's reason when no leader claimed an order in time.
 NO_LEADER_REASON = "no_leader"
+#: Body reason of the 503 an order gets when the engine quits before a page
+#: answers it (W43, INSTALL-36).
+ENGINE_QUITTING_REASON = "engine_quitting"
+
+
+class OrderBrokerClosed(RuntimeError):
+    """The engine is quitting: no page will claim or answer this order."""
 
 
 @dataclass
@@ -61,23 +68,63 @@ class _PendingOrder:
     claimed_event: asyncio.Event | None = None
 
 
+def _fail_closed(pending: _PendingOrder) -> None:
+    """Answer an unanswered order with :class:`OrderBrokerClosed` and wake its POST."""
+    if not pending.result.done():
+        pending.result.set_exception(OrderBrokerClosed("the engine is quitting"))
+    if pending.claimed_event is not None:
+        pending.claimed_event.set()
+
+
+def _engine_quitting() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "reason": ENGINE_QUITTING_REASON,
+            "detail": "the engine is quitting, so no performance page will run this order",
+        },
+    )
+
+
 class _OrderBroker:
     def __init__(self) -> None:
         self.pending: dict[str, _PendingOrder] = {}
         self._waiters: set[asyncio.Future[None]] = set()
+        self.closed = False
+
+    def close(self) -> None:
+        """W43: the engine is quitting, so every held long poll answers now.
+
+        Left alone, a page's ``wait_ms=20000`` poll holds uvicorn for its whole
+        graceful window and is then cancelled, which the page sees as a 500.
+        Released here, it answers like a hold that ran out: no order.
+        """
+        self.closed = True
+        for waiter in self._waiters:
+            if not waiter.done():
+                waiter.set_result(None)
+        # An order still waiting for a page gets a terminal answer now, rather
+        # than being claimed mid-teardown by a poll that can no longer post
+        # its result back (the POST would then hang until it was cancelled).
+        for pending in self.pending.values():
+            _fail_closed(pending)
 
     def submit(self, order: dict[str, Any]) -> tuple[str, asyncio.Future[dict[str, Any]]]:
         order_id = uuid4().hex
         result: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self.pending[order_id] = _PendingOrder(
-            order=order, result=result, claimed_event=asyncio.Event()
-        )
+        pending = _PendingOrder(order=order, result=result, claimed_event=asyncio.Event())
+        self.pending[order_id] = pending
+        if self.closed:
+            _fail_closed(pending)
+            return order_id, result
         for waiter in self._waiters:
             if not waiter.done():
                 waiter.set_result(None)
         return order_id, result
 
     def claim(self) -> tuple[str, dict[str, Any]] | None:
+        if self.closed:
+            return None
         for order_id, pending in self.pending.items():
             if not pending.claimed:
                 pending.claimed = True
@@ -108,7 +155,7 @@ class _OrderBroker:
         closed mid-hold must not swallow an order it can never execute.
         """
         claimed = self.claim()
-        if claimed is not None or wait_s <= 0:
+        if claimed is not None or wait_s <= 0 or self.closed:
             return claimed
         waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         self._waiters.add(waiter)
@@ -140,14 +187,23 @@ class _OrderBroker:
         return sum(1 for p in self.pending.values() if p.claimed and not p.result.done())
 
 
-def _broker(request: Request) -> _OrderBroker:
-    broker = getattr(request.app.state, "agent_command_broker", None)
+def _app_broker(app: Any) -> _OrderBroker:
+    broker = getattr(app.state, "agent_command_broker", None)
     if broker is None:
         broker = _OrderBroker()
-        request.app.state.agent_command_broker = broker
+        app.state.agent_command_broker = broker
     if not isinstance(broker, _OrderBroker):
         raise TypeError("app.state.agent_command_broker has an invalid type")
     return broker
+
+
+def _broker(request: Request) -> _OrderBroker:
+    return _app_broker(request.app)
+
+
+def close_order_broker(app: Any) -> None:
+    """W43: release every held ``/commands/next`` long poll; the engine is quitting."""
+    _app_broker(app).close()
 
 
 @dataclass
@@ -217,6 +273,11 @@ async def submit_single_command(request: Request, command: dict[str, Any]) -> di
     order_id, result = broker.submit(order)
     try:
         return await result
+    except OrderBrokerClosed as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"reason": ENGINE_QUITTING_REASON, "detail": str(error)},
+        ) from error
     finally:
         broker.discard(order_id)
 
@@ -349,8 +410,11 @@ def _master_mute_from_order(body: dict[str, Any]) -> bool | None:
     responses={
         503: {
             "description": (
-                "AGENT-21: no performance page claimed the order within the claim "
-                "deadline (ORDER_CLAIM_DEADLINE_S); body reason is no_leader"
+                "The order got no result. Body reason no_leader (AGENT-21): no "
+                "performance page claimed it within the claim deadline "
+                "(ORDER_CLAIM_DEADLINE_S). Body reason engine_quitting "
+                "(INSTALL-36): the engine began quitting while the order was "
+                "still waiting for a page."
             )
         }
     },
@@ -385,6 +449,8 @@ async def post_command(request: Request, body: dict[str, Any]) -> dict[str, Any]
                 },
             )
         return await result
+    except OrderBrokerClosed:
+        return _engine_quitting()
     finally:
         broker.discard(order_id)
 

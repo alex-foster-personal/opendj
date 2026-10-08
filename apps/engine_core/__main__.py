@@ -38,10 +38,22 @@ from apps.feature_flags.profiles import (
     profile_path,
 )
 from apps.shared.google_oauth_client import apply_bundled_oauth
+from apps.shared.shutdown_bound import (
+    QUIT_DEADLINE_S,
+    arm_quit_watchdog,
+    install_spawn_guard,
+    reap_descendants,
+)
 from apps.shared.sync_bind_guard import SyncBindRefused, assert_sync_bind_allowed
-from apps.shared.uvicorn_shutdown import GRACEFUL_SHUTDOWN_S
+from apps.shared.uvicorn_shutdown import EarlyShutdownServer
 
 EXIT_OK: int = 0
+#: Seconds uvicorn waits for open requests once the engine is quitting
+#: (W43). Shorter than the dev webui daemon's shared ``GRACEFUL_SHUTDOWN_S``
+#: (apps/shared/uvicorn_shutdown.py): a quit must end inside
+#: ``QUIT_DEADLINE_S``, and the long polls that used to hold this window are
+#: now released before it starts, so what is left is an ordinary request.
+GRACEFUL_SHUTDOWN_S: int = 1
 EXIT_LOCKED: int = 1
 EXIT_REFUSED: int = 2
 HUB_MACHINE_NAME_ENV: str = "MDT_HUB_MACHINE_NAME"
@@ -261,6 +273,7 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
         from apps.engine_core.app import create_app
         from apps.engine_core.warning_log import configure_warning_log
         from apps.shared.telemetry import TelemetryConfigError, init_telemetry
+        from apps.webui.server.routes.commands import close_order_broker
 
         warning_log = os.environ.get("OPENDJ_ENGINE_WARN_LOG")
         warning_boot_id = os.environ.get("OPENDJ_ENGINE_LOG_BOOT_ID")
@@ -310,22 +323,51 @@ def _serve(cfg: EngineConfig, *, log_level: str, machine_name: str | None) -> in
             f"data_dir={cfg.data_dir} http://{cfg.host}:{cfg.port}",
             flush=True,
         )
-        uvicorn.run(
-            app,
-            host=cfg.host,
-            port=cfg.port,
-            log_level=log_level,
-            log_config=None,
-            workers=1,
-            # Bounded, so the lifespan shutdown (which stops the job runner
-            # and reaps its worker groups) always gets to run. Unbounded,
-            # uvicorn waits for every open request first, and a long-lived
-            # stream never finishes: the shell's SIGKILL then lands first
-            # and the job workers, which lead their own sessions, outlive
-            # the app. The shell's grace for all of this is SHUTDOWN_GRACE
-            # in apps/desktop/src-tauri/src/engine.rs.
-            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+        def _begin_shutdown() -> None:
+            # W43: end the page's long poll so uvicorn's graceful wait is not
+            # held by it. The watchdog is already armed, by the signal itself.
+            close_order_broker(app)
+
+        def _reap_late_forks() -> None:
+            # W43: anything still alive here was forked after the quit's
+            # SIGTERM reached the group (a drain retry, a job claim), so
+            # nothing has signaled it, and it would outlive the engine for
+            # the shell to SIGKILL. The real engine quitting mid-analysis
+            # left a queue CLI alive at exit this way.
+            reaped = reap_descendants()
+            if reaped:
+                logging.getLogger(__name__).warning(
+                    "[shutdown] reaped %d process(es) forked during the quit: %s",
+                    len(reaped), ", ".join(reaped),
+                )
+
+        # W43: once the quit's signal arms the watchdog, no process starts.
+        install_spawn_guard()
+        server = EarlyShutdownServer(
+            uvicorn.Config(
+                app,
+                host=cfg.host,
+                port=cfg.port,
+                log_level=log_level,
+                log_config=None,
+                workers=1,
+                # Bounded, so the lifespan shutdown (which stops the job runner
+                # and reaps its worker groups) always gets to run. Unbounded,
+                # uvicorn waits for every open request first, and a long-lived
+                # stream never finishes: the shell's SIGKILL then lands first
+                # and the job workers, which lead their own sessions, outlive
+                # the app. The shell's grace for all of this is SHUTDOWN_GRACE
+                # in apps/desktop/src-tauri/src/engine.rs.
+                timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
+            ),
+            on_shutdown_begin=_begin_shutdown,
+            # Armed in the SIGTERM handler, not on the event loop: a loop
+            # blocked by synchronous work never reaches shutdown(), and the
+            # backstop is what still bounds that quit.
+            on_exit_signal=lambda: arm_quit_watchdog(QUIT_DEADLINE_S),
+            on_shutdown_end=_reap_late_forks,
         )
+        server.run()
     finally:
         lock.release()
     return EXIT_OK

@@ -4,7 +4,7 @@ Fills the PVDI gap (61% of the library lacks rekordbox 7 vocal analysis,
 SPIKE-B1) by trickling tracks through the standalone demucs worker
 (``scripts/vocal_region_worker.py``, PEP 723, run via ``uv run`` so
 torch/demucs never enter the repo venv) and writing
-``data/state/vocal-cache/{stable_id}.json`` per the apps.vocals.cache
+``(private path)/{stable_id}.json`` per the apps.vocals.cache
 contract. The webui /anlz endpoint consults that cache when PVDI is
 absent (status "demucs").
 
@@ -34,7 +34,7 @@ Requirements (mini-PRD):
     [if] cache valid and no --force [then] no worker run, prints cached
     [if] no local ANLZ .DAT exists [then ⛔️] reject before cache or worker
   ✔︎ ✅ from-stems: CPU-only backfill of vocal-cache from existing
-    ``data/state/stems/<id>/`` bundles (no demucs). Requires explicit
+    ``(private path)/<id>/`` bundles (no demucs). Requires explicit
     --dry-run or --live (no silent default). Skips valid cache unless --force.
     [if] neither --dry-run nor --live [then ⛔️] argparse rejects
     [if] stems present and cache missing [then] --live writes regions
@@ -235,9 +235,12 @@ def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
 # ----- track loading -------------------------------------------------------------
 
 
-def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
-    """All rekordbox-mapped tracks (optionally one playlist's members)."""
-    path_map = load_path_map(ctx.data_dir)
+def rekordbox_mappings(ctx: Ctx, playlist: str | None) -> dict[str, tuple[str, str]]:
+    """vendor_id -> (stable_id, title) for live rekordbox-mapped tracks.
+
+    Reads state.db ONLY, so a caller can tell a state.db failure apart from
+    a failure of the rekordbox copy (:func:`master_content_rows`).
+    """
     state = _open_ro(ctx.state_db, "STATE_DB")
     try:
         if playlist is not None:
@@ -284,13 +287,17 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
     if playlist is not None:
         mappings = [m for m in mappings if m[0] in member_ids]
 
-    by_vendor: dict[str, tuple[str, str]] = {
-        str(vid): (sid, title) for sid, vid, title in mappings
-    }
+    return {str(vid): (sid, title) for sid, vid, title in mappings}
+
+
+def master_content_rows(
+    ctx: Ctx, vendor_ids: list[str]
+) -> list[tuple[str, str, int, str | None, str | None]]:
+    """Live djmdContent rows for ``vendor_ids``. Reads master.plain.db ONLY."""
     master = _open_ro(ctx.master_db, "MASTER_DB")
     rows: list[tuple[str, str, int, str | None, str | None]] = []
     try:
-        for chunk in _chunks(list(by_vendor), _SQL_CHUNK):
+        for chunk in _chunks(vendor_ids, _SQL_CHUNK):
             marks = ",".join("?" * len(chunk))
             rows.extend(
                 master.execute(
@@ -302,7 +309,16 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
             )
     finally:
         master.close()
+    return rows
 
+
+def tracks_from_rows(
+    ctx: Ctx,
+    by_vendor: dict[str, tuple[str, str]],
+    rows: list[tuple[str, str, int, str | None, str | None]],
+) -> list[VocalTrack]:
+    """Join the two halves into tracks, resolving each audio path."""
+    path_map = load_path_map(ctx.data_dir)
     tracks: list[VocalTrack] = []
     for vendor_id, title, length_s, folder_path, adp in rows:
         stable_id, state_title = by_vendor[str(vendor_id)]
@@ -327,24 +343,37 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
     return tracks
 
 
-def load_state_tracks(ctx: Ctx) -> list[VocalTrack]:
-    """Rekordbox-mapped tracks with their local audio, read from state.db only.
+def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
+    """All rekordbox-mapped tracks (optionally one playlist's members)."""
+    by_vendor = rekordbox_mappings(ctx, playlist)
+    return tracks_from_rows(ctx, by_vendor, master_content_rows(ctx, list(by_vendor)))
 
-    from-stems needs only an id and an audio file, so it must not depend on
-    the decrypted rekordbox copy (``master.plain.db``): the packaged app has
-    no such file, and requiring it failed every library refresh. Same track
-    set as :func:`load_tracks` (live, rekordbox-mapped), with audio resolved
-    the way the library listing resolves it.
+
+def load_state_tracks(
+    ctx: Ctx, stable_ids: Iterable[str] | None = None
+) -> list[VocalTrack]:
+    """Every live track (or just ``stable_ids``) with its local audio, read
+    from state.db only.
+
+    from-stems needs only the app's own stable id and an audio file, so it
+    depends on neither the decrypted rekordbox copy (``master.plain.db``: the
+    packaged app has no such file, and requiring it failed every library
+    refresh) nor a rekordbox vendor mapping (a folder-imported track has
+    none, and requiring one left a library with no rekordbox without vocals
+    forever). Audio is resolved the way the library listing resolves it.
     """
     state = _open_ro(ctx.state_db, "STATE_DB")
     try:
-        rows = state.execute(
-            "SELECT t.stable_id, COALESCE(t.title, '') "
-            "FROM tracks t "
-            "JOIN track_vendor_ids v "
-            "  ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox' "
-            "WHERE t.deleted_at IS NULL"
-        ).fetchall()
+        select = "SELECT stable_id, COALESCE(title, '') FROM tracks WHERE deleted_at IS NULL"
+        if stable_ids is None:
+            rows = state.execute(select).fetchall()
+        else:
+            rows = []
+            for chunk in _chunks(list(stable_ids), _SQL_CHUNK):
+                marks = ",".join("?" * len(chunk))
+                rows.extend(
+                    state.execute(f"{select} AND stable_id IN ({marks})", chunk).fetchall()
+                )
         ids = [str(sid) for sid, _title in rows]
         audio = state_locations.bulk_local_audio_paths(
             state, ids, path_map=load_path_map(ctx.data_dir)
@@ -1201,7 +1230,7 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
         tr = by_id.get(sid)
         if tr is None:
             print(
-                f"[SKIP unmapped] {sid}: no rekordbox mapping in {ctx.state_db}",
+                f"[SKIP unknown-track] {sid}: no live track in {ctx.state_db}",
                 file=sys.stderr,
             )
             continue

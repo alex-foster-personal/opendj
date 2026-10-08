@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.shared.shutdown_bound import STOP_STEPS_DEADLINE_S
 from apps.shared.state import machine_identity
 from apps.shared.sync_runtime_gates import (
     DEFER_REASON_GIG,
@@ -222,13 +223,24 @@ class CloudSyncScheduler:
         self._task = asyncio.create_task(self._loop(), name="cloudsync-scheduler")
         self._task.add_done_callback(_log_loop_death)
 
-    async def stop(self) -> None:
-        """Stop waking, wait for an in-flight round, and clear the heartbeat."""
+    async def stop(self, within_s: float | None = None) -> None:
+        """Stop waking, wait for an in-flight round, and clear the heartbeat.
+
+        ``within_s`` bounds that wait (W43, the engine's quit): a round still
+        in flight then is logged and left to end with the process.
+        """
         if self._task is None or self._stopping is None:
             return
         self._stopping.set()
         try:
-            await self._task
+            done, _ = await asyncio.wait({self._task}, timeout=within_s)
+            if done:
+                await self._task
+            else:
+                log.warning(
+                    "cloudsync scheduler: round still in flight %.1fs after stop; not waiting",
+                    within_s,
+                )
         finally:
             self._task = None
             sync_heartbeat.clear(self._data_dir)
@@ -330,7 +342,7 @@ async def scheduler_lifespan(
     try:
         yield scheduler
     finally:
-        await scheduler.stop()
+        await scheduler.stop(within_s=STOP_STEPS_DEADLINE_S)
 
 
 __all__ = [

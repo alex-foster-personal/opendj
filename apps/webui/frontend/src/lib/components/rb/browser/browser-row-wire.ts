@@ -161,6 +161,48 @@ export function applySettledAvailability(row: {
 	});
 }
 
+type LaneStatus = 'ok' | 'failed' | 'missing' | 'available-not-selected';
+
+const STOCK_MISSING_REASON = {
+	key: 'key not analyzed',
+	bpm: 'bpm not analyzed',
+	loudness: 'loudness_lufs not analyzed'
+} as const;
+
+type Lane = keyof typeof STOCK_MISSING_REASON;
+
+/** Same predicate as `_lane_has_value` in the server's models.py: the server
+ * omits "ok" exactly where this returns true, so the two must agree. */
+function laneHasValue(value: unknown): boolean {
+	return value !== null && value !== undefined && value !== '';
+}
+
+/** Status for a listing lane. The listing leaves an "ok" status off the wire
+ * only beside the value that proves it, so an absent status is "ok" only when
+ * `value` is present. An absent status with no value (an older or drifted
+ * payload, or loudness, which has no value on this wire) is reported as
+ * failed with a reason, never as a silent ordinary blank. */
+export function listingLaneStatus(status: LaneStatus | undefined, value: unknown): LaneStatus {
+	if (status !== undefined) return status;
+	else if (laneHasValue(value)) return 'ok';
+	else return 'failed';
+}
+
+/** Reason for a listing lane. A stock missing sentence is left off the wire. */
+export function listingLaneReason(
+	status: LaneStatus | undefined,
+	reason: string | null | undefined,
+	lane: Lane,
+	value: unknown
+): string | null {
+	if (typeof reason === 'string' && reason.length > 0) return reason;
+	if (status === 'missing') return STOCK_MISSING_REASON[lane];
+	else if (status === undefined && !laneHasValue(value)) {
+		return `server sent no ${lane} status for an empty value`;
+	}
+	return null;
+}
+
 export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
 	const availability = wireAvailability(wire);
 	if (
@@ -190,16 +232,16 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		energy: wire.energy,
 		energy_source: wire.energy_source,
 		energy_reason: wire.energy_reason,
-		key_status: wire.key_status ?? 'ok',
-		key_reason: wire.key_reason ?? null,
-		bpm_status: wire.bpm_status ?? 'ok',
-		bpm_reason: wire.bpm_reason ?? null,
+		key_status: listingLaneStatus(wire.key_status, wire.key),
+		key_reason: listingLaneReason(wire.key_status, wire.key_reason, 'key', wire.key),
+		bpm_status: listingLaneStatus(wire.bpm_status, wire.bpm),
+		bpm_reason: listingLaneReason(wire.bpm_status, wire.bpm_reason, 'bpm', wire.bpm),
 		bpm_source: wire.bpm_source ?? null,
 		bpm_method: wire.bpm_method ?? null,
 		bpm_confidence: wire.bpm_confidence ?? null,
 		bpm_confidence_error: wire.bpm_confidence_error ?? null,
-		loudness_status: wire.loudness_status ?? 'ok',
-		loudness_reason: wire.loudness_reason ?? null,
+		loudness_status: listingLaneStatus(wire.loudness_status, null),
+		loudness_reason: listingLaneReason(wire.loudness_status, wire.loudness_reason, 'loudness', null),
 		...availability,
 		file_availability: nameStreamingAvailability(
 			availability.file_availability,
@@ -278,10 +320,19 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		energy: track.energy,
 		energy_source: track.energy_source,
 		energy_reason: track.energy_reason,
+		// STANDALONE-03: copy lane status/reason. Defaulting an absent status
+		// to "ok" hid empty All Tracks cells with no reason, so an absent
+		// status reads as "ok" only beside a served value (listingLaneStatus).
+		key_status: listingLaneStatus(track.key_status, track.key),
+		key_reason: listingLaneReason(track.key_status, track.key_reason, 'key', track.key),
+		bpm_status: listingLaneStatus(track.bpm_status, track.bpm),
+		bpm_reason: listingLaneReason(track.bpm_status, track.bpm_reason, 'bpm', track.bpm),
 		bpm_source: track.bpm_source ?? null,
 		bpm_method: track.bpm_method ?? null,
 		bpm_confidence: track.bpm_confidence ?? null,
 		bpm_confidence_error: track.bpm_confidence_error ?? null,
+		loudness_status: listingLaneStatus(track.loudness_status, null),
+		loudness_reason: listingLaneReason(track.loudness_status, track.loudness_reason, 'loudness', null),
 		...availability,
 		file_path: typeof track.file_path === 'string' ? track.file_path : null,
 		file_availability: nameStreamingAvailability(

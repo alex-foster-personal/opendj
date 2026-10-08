@@ -23,6 +23,7 @@ from fastapi import FastAPI
 from apps.feature_flags import FlagStore
 from apps.sets.share import SetShareConfig
 from apps.sets.share_page import router as set_share_page_router
+from apps.shared.app_version import APP_VERSION
 from apps.shared.bounded_file_open import AUDIO_ACCESS_TIMEOUT_S
 
 from . import (
@@ -62,6 +63,13 @@ log = logging.getLogger(__name__)
 
 FRONTEND_BUILD_DIR: Path = frontend_build_dir()
 
+#: The OpenAPI document's own ``info.version``: the version of the HTTP
+#: contract in ``apps/webui/openapi.json``, which changes when the contract
+#: does. It is not the app version (``version`` below, from tauri.conf.json):
+#: tying the two together would make every release bump rewrite the committed
+#: schema and trip the contract-drift gate.
+OPENAPI_DOCUMENT_VERSION: str = "0.1.0"
+
 
 def create_app(  # noqa: PLR0913
     *,
@@ -71,7 +79,7 @@ def create_app(  # noqa: PLR0913
     lock_status_fn: Callable[[], Any] | None = None,
     syncthing_status_fn: Callable[[], Any] | None = None,
     state_db_path: str = "(private path)",
-    version: str = "0.1.0",
+    version: str = APP_VERSION,
     port: int | None = None,
     frontend_port: int | None = None,
     enable_cors: bool = True,
@@ -137,7 +145,7 @@ def create_app(  # noqa: PLR0913
     port, frontend_port = _resolve_ports(port, frontend_port)
     app = FastAPI(
         title="music-dj-tools webui",
-        version=version,
+        version=OPENAPI_DOCUMENT_VERSION,
         lifespan=_lifespan_context,
         description=(
             "Local-first web UI for music-dj-tools. Binds to 127.0.0.1 by "

@@ -12,7 +12,7 @@
  * reported stale, which is exactly the truth we want on the other side.
  */
 
-import { releaseBody } from '$lib/api/release-body';
+import { releaseBeaconBody } from '$lib/api/release-body';
 import { API_BASE } from '$lib/api/base';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 
@@ -22,10 +22,14 @@ export type UsageSurface = 'desktop-shell' | 'browser';
  *  request never makes a live client read as closed. */
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
-/** The webui package version this bundle ships from. Held in step with
- *  package.json by tests/unit/usage-heartbeat.test.mjs, which fails if the
- *  package is bumped and this constant is not. */
-export const APP_VERSION = '0.1.0';
+/** The app version this bundle ships from: tauri.conf.json `version`, which
+ *  vite.config.ts defines at build time (vite-app-version.ts). 'unknown' only
+ *  where no vite build ran: the unit-test loaders bundle with esbuild, where
+ *  `import.meta.env` itself is absent. */
+export const APP_VERSION: string =
+	typeof import.meta.env === 'undefined'
+		? 'unknown'
+		: (import.meta.env.VITE_APP_VERSION ?? 'unknown');
 
 const HEARTBEAT_PATH = '/api/v1/telemetry/heartbeat';
 
@@ -86,7 +90,7 @@ export function startUsageHeartbeat(scheduler: BootScheduler = bootScheduler): (
 				app_version: APP_VERSION
 			})
 		})
-			.then(releaseBody)
+			.then(releaseBeaconBody)
 			.catch(() => {
 			// An engine that is down is a fact for the other side to observe,
 			// never an error thrown into the application path.

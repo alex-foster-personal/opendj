@@ -17,6 +17,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const PANEL_MODULE = /FeedbackPanel/;
+const FAILED_TITLE = /the panel failed to load .*reload the page to retry/;
 
 async function openPerformanceWithFeedback(page: Page) {
 	await page.goto('/performance');
@@ -53,9 +54,15 @@ test('a panel chunk that fails to load closes the panel and says so on the chevr
 	await page.route(PANEL_MODULE, (route) => route.abort('failed'));
 	const chevron = await openPerformanceWithFeedback(page);
 	await chevron.click();
-	await expect(chevron).toHaveAttribute('title', /the panel failed to load .*reload the page to retry/, {
-		timeout: 10_000
-	});
+	// The pointer still rests on the chevron, so the hover tooltip holds its
+	// title. The rewrite lands on the open tip (`data-tip`), not on a native
+	// `title` that would draw a second tooltip (UX-FLOAT-03)...
+	await expect(chevron).toHaveAttribute('data-tip', FAILED_TITLE, { timeout: 10_000 });
+	await expect(chevron).not.toHaveAttribute('title');
+	// ...and leaving restores the NEW text, never the one parked on hover.
+	await page.mouse.move(0, 0);
+	await expect(chevron).toHaveAttribute('title', FAILED_TITLE);
+	await expect(chevron).not.toHaveAttribute('data-tip-parked');
 	await expect(chevron).toHaveAttribute('aria-expanded', 'false');
 	await expect(page.getByRole('dialog', { name: 'Review todos' })).toHaveCount(0);
 });

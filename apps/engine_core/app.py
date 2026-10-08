@@ -57,6 +57,7 @@ from apps.engine_core.host_info import add_host_info_route
 from apps.engine_core.jobs.api import router as jobs_router
 from apps.engine_core.jobs.runner import (
     JobRunner,
+    register_finish_observer,
     register_progress_observer,
     register_reconcile,
     register_worker,
@@ -78,6 +79,12 @@ from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
+from apps.shared.shutdown_bound import (
+    begin_stop_window,
+    remaining_s,
+    reset_stop_window,
+    run_stop_steps,
+)
 from apps.shared.state import db as state_db
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.stems import job as stems_job
@@ -91,6 +98,7 @@ from apps.webui.server import (
     ahead_analysis,
     analysis_autostart,
     coverage_drain,
+    coverage_stems_jobs,
     library_jobs_autostart,
 )
 from apps.webui.server.app import _SpaStaticFiles
@@ -259,6 +267,10 @@ def _register_job_kinds() -> None:
     register_worker(stems_job.JOB_KIND, stems_job.build_argv)
     register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
     register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
+    # ENRICH-04: a failed run reaches coverage.failed.stems, not only the jobs store.
+    register_finish_observer(
+        stems_job.JOB_KIND, coverage_stems_jobs.record_stems_job_failure
+    )
     register_progress_observer(SETUP_IMPORT_KIND, on_setup_import_progress)
     register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
     register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
@@ -457,6 +469,7 @@ def _wrap_lifespan(
 
     @asynccontextmanager
     async def _lifespan(instance: FastAPI) -> AsyncIterator[None]:
+        reset_stop_window(instance.state)
         hub.bind(asyncio.get_running_loop())
         events.set_hub(hub)
         restore_hub_publish = attach_library_changed_probe(availability_worker, hub)
@@ -513,11 +526,36 @@ def _wrap_lifespan(
                     # be orphaned. runner.stop() runs again in the outer
                     # finally: a no-op after this one, and still the stop
                     # for a startup that failed before the yield.
-                    await asyncio.to_thread(ingest_cli_procs.stop_all)
-                    await runner.stop()
-                    # Off the event loop: stop() waits for the process.
-                    await asyncio.to_thread(audio_engine.stop)
-                    availability_worker.stop()
+                    #
+                    # Both together (W43): the runner's stop is what ends the
+                    # supervisor's claiming and forking, so it must not wait
+                    # behind a CLI wait of up to STOP_ALL_MAX_S. While it did,
+                    # a worker could fork after the quit watchdog's reap.
+                    await asyncio.gather(
+                        asyncio.to_thread(ingest_cli_procs.stop_all),
+                        runner.stop(),
+                    )
+                    # W43: every service from here on shares ONE stop window,
+                    # opened once on the app, so the nested context exits
+                    # below and the legacy lifespan's own stops cannot each
+                    # take a full window in turn. The schedulers are stopped
+                    # here, alongside the engine's threads, rather than
+                    # waiting for their context exits; those are then no-ops.
+                    # The quit watchdog reaps whatever outlives the window.
+                    deadline = begin_stop_window(instance.state)
+                    await asyncio.gather(
+                        asyncio.to_thread(
+                            run_stop_steps,
+                            "engine lifespan",
+                            [
+                                ("audio-engine", audio_engine.stop),
+                                ("library-availability", availability_worker.stop),
+                            ],
+                            deadline=deadline,
+                        ),
+                        folder_rescan.stop(within_s=remaining_s(deadline)),
+                        *([] if sched is None else [sched.stop(within_s=remaining_s(deadline))]),
+                    )
         finally:
             if heartbeat is not None:
                 heartbeat.cancel()

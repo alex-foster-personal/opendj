@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "capture": {
+    "kind": "webui-track-list",
+    "source": "GET /api/v1/tracks?limit=50 from python -m apps.webui.server --prod over the lyrics-words e2e fixture library",
+    "captured_on": "2026-10-07",
+    "scenario": "Two-track library built by tests/e2e/support/lyrics_words_fixture.py, then python -m apps.lyrics index over the same data dir. Track A carries a vocal verdict and aligned words; track B carries 3 cached lyric lines, no lyric_verdict row and no stems, so the listing reports effective unknown with n_lines 3 (VOCALS-FILTER-01), the openair shape behind LYR-13.",
+    "immutable": "Do not regenerate or rewrite this capture to make a test pass. Re-capture and independently review any source change."
+  },
+  "files": {
+    "lyric-column-unchecked-captured.json": {
+      "bytes": 5483,
+      "sha256": "eebcd60f84cc4962371ebb0e2f15690fbf4c96c4d6dd0ca5348565317065566a"
+    }
+  }
+}

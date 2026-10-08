@@ -19,9 +19,9 @@ export const rescanBullets = [
 ];
 
 export const modeBullets = [
-	'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
-	'two outputs: pin MASTER/MAIN for the room and HEADPHONE CUE for phones; cue does not bleed into the room.',
-	'split cable (SPLIT): one stereo jack; left = master, right = cue. Requires a DJ splitter, not a Y cable.'
+	'One output (practice): everything plays on MAIN; turn channel CUE on and use MIX to blend cue over the full master.',
+	'Two outputs: MASTER / MAIN for the room and HEADPHONE CUE for the phones; cue never reaches the room.',
+	'Split L/R: one stereo output; left = master, right = cue. Needs a DJ splitter cable (not a Y cable), and runs by itself when MAIN and CUE are the same device.'
 ];
 
 export const inputPickBullets = [

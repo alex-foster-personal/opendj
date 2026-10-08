@@ -27,7 +27,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
-const { releaseBody } = await loadTypeScriptModule('src/lib/api/release-body.ts');
+const { releaseBody, releaseBeaconBody } = await loadTypeScriptModule('src/lib/api/release-body.ts');
 const { createTabLeadership } = await loadTypeScriptModule('src/lib/rb/tab-leadership.ts');
 const { createLeasedMirrorPublisher, MIRROR_PATH, LEASE_PATH } = await loadTypeScriptModule(
 	'src/lib/rb/leased-mirror-publisher.ts'
@@ -239,4 +239,28 @@ test('control: releaseBody leaves a body its reader already holds alone', async 
 	releaseBody(open.response);
 	await flush();
 	assert.equal(open.released, true, 'an unread body is cancelled');
+});
+
+test('releaseBeaconBody reads a keepalive beacon body instead of cancelling it', async () => {
+	// [if] heartbeat or client-samples still cancel an unfinished keepalive
+	// body [then] Chromium reports net::ERR_ABORTED and smoke fails [else stop].
+	let cancelled = false;
+	let pulled = false;
+	const stream = new ReadableStream({
+		pull(controller) {
+			pulled = true;
+			controller.enqueue(new TextEncoder().encode('{}'));
+			controller.close();
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	const response = new Response(stream, { status: 202 });
+	releaseBeaconBody(response);
+	// undici reads the body on a timer tick, not on setImmediate.
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	assert.equal(cancelled, false);
+	assert.equal(pulled, true);
+	assert.equal(response.bodyUsed, true);
 });

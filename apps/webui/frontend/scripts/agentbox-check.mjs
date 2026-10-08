@@ -18,11 +18,15 @@ function argumentsFrom(argv) {
 	return result;
 }
 
-function assertInputs(host, ip) {
+function assertInputs(host, ip, shortHost) {
 	if (!/^[a-z0-9.-]+$/.test(host) || !host.endsWith('.ts.net')) {
 		throw new Error(`refusing non-MagicDNS host ${JSON.stringify(host)}`);
 	}
 	if (net.isIP(ip) !== 4) throw new Error(`expected a Tailscale IPv4 address, got ${ip}`);
+	// The agentbox short name, MDT_AGENTBOX_HOST, passed by apps/webui/run_agentbox.py.
+	if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(shortHost ?? '')) {
+		throw new Error(`expected --short-host <one DNS label>, got ${JSON.stringify(shortHost)}`);
+	}
 }
 
 function httpRedirect(ip, requestHost, path) {
@@ -53,11 +57,12 @@ async function main() {
 	const args = argumentsFrom(process.argv.slice(2));
 	const host = args.host;
 	const ip = args.ip;
-	assertInputs(host, ip);
+	const shortHost = args['short-host'];
+	assertInputs(host, ip, shortHost);
 	const path = '/performance';
 	const secureUrl = `https://${host}${path}`;
 	const redirects = {};
-	for (const requestHost of ['agentbox', host]) {
+	for (const requestHost of [shortHost, host]) {
 		const response = await httpRedirect(ip, requestHost, path);
 		if (response.status !== 307 || response.location !== secureUrl) {
 			throw new Error(

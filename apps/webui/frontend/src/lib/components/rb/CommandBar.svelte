@@ -397,7 +397,7 @@
 	.cmdk-vocals.active {
 		background: var(--rb-accent, #3aa0ff);
 		border-color: var(--rb-accent, #3aa0ff);
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 	}
 	.cmdk-vocals {
 		height: 24px;

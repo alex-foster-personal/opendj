@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -148,6 +149,198 @@ def _score_candidate_inline(
     return composite, bpm_relaxed
 
 
+# (score, stable_id, occurrence, track, bpm_relaxed), the sort key first.
+_Scored = tuple[float, str, int, TrackFeature, bool]
+
+
+def _advance(
+    state: _BeamState,
+    *,
+    prev: TrackFeature,
+    scored: _Scored,
+    slot_idx: int,
+    target_energy_slot: float,
+    pin_role: PinRole,
+    record_unmet: bool,
+) -> _BeamState:
+    """Extend `state` by one scored candidate, building its trace.
+
+    `record_unmet` is False for a pinned slot, which keeps the parent's unmet
+    constraints unchanged; free slots record bpm_window and camelot_hardcut.
+    """
+    score, _sid, occurrence, cand, relaxed = scored
+    dist = _camelot_dist_or_none(prev.key_camelot, cand.key_camelot)
+    delta = _bpm_delta_pct(prev.bpm, cand.bpm)
+    trace = StepTrace(
+        position=slot_idx,
+        stable_id=cand.stable_id,
+        score=score,
+        camelot_distance=dist,
+        bpm_delta_pct=delta,
+        target_energy=target_energy_slot,
+        actual_energy=float(cand.energy) if cand.energy is not None else 0.0,
+        transition_hint=_infer_hint(prev, cand, relaxed),
+        pin_role=pin_role,
+    )
+    unmet = list(state.unmet)
+    if record_unmet and relaxed:
+        unmet.append(
+            UnmetConstraint(
+                kind="bpm_window",
+                position=slot_idx,
+                detail={
+                    "delta_pct": delta if delta is not None else 0.0,
+                    "stable_id": cand.stable_id,
+                },
+            )
+        )
+    if record_unmet and dist is not None and dist >= CAMELOT_STEP_BUDGET_HARDCUT:
+        unmet.append(
+            UnmetConstraint(
+                kind="camelot_hardcut",
+                position=slot_idx,
+                detail={"distance": float(dist), "stable_id": cand.stable_id},
+            )
+        )
+    return _BeamState(
+        occurrence_order=(*state.occurrence_order, occurrence),
+        score_sum=state.score_sum + score,
+        traces=(*state.traces, trace),
+        unmet=tuple(unmet),
+        recent_artists=(*state.recent_artists, cand.artist),
+    )
+
+
+def _expand_free_slot(
+    state: _BeamState,
+    *,
+    tracks: list[TrackFeature],
+    slot_idx: int,
+    target_energy_slot: float,
+    beam_width: int,
+    excluded: set[int] | frozenset[int] = frozenset(),
+    role_by_occurrence: Mapping[int, PinRole] | None = None,
+) -> list[_BeamState]:
+    """Score every unchosen, unexcluded track and keep the top `beam_width`.
+
+    Returns `[state]` unchanged when no candidate is left.
+    """
+    roles = role_by_occurrence or {}
+    chosen = set(state.occurrence_order) | excluded
+    prev = tracks[state.occurrence_order[-1]]
+    recent_set = set(state.recent_artists[-ARTIST_REPEAT_COOLDOWN:])
+    scored: list[_Scored] = []
+    for occurrence, cand in enumerate(tracks):
+        if occurrence in chosen:
+            continue
+        score, relaxed = _score_candidate_inline(
+            prev=prev,
+            cand=cand,
+            target_energy_slot=target_energy_slot,
+            recent_artists_set=recent_set,
+        )
+        scored.append((score, cand.stable_id, occurrence, cand, relaxed))
+    if not scored:
+        return [state]
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [
+        _advance(
+            state,
+            prev=prev,
+            scored=entry,
+            slot_idx=slot_idx,
+            target_energy_slot=target_energy_slot,
+            pin_role=roles.get(entry[2]),
+            record_unmet=True,
+        )
+        for entry in scored[:beam_width]
+    ]
+
+
+def _advance_reserved_slot(
+    state: _BeamState,
+    *,
+    tracks: list[TrackFeature],
+    occurrence: int,
+    pin_role: PinRole,
+    slot_idx: int,
+    target_energy_slot: float,
+) -> _BeamState | None:
+    """Place the pinned `occurrence` at `slot_idx`, or None if already used."""
+    if occurrence in state.occurrence_order:
+        return None
+    prev = tracks[state.occurrence_order[-1]]
+    cand = tracks[occurrence]
+    score, relaxed = _score_candidate_inline(
+        prev=prev,
+        cand=cand,
+        target_energy_slot=target_energy_slot,
+        recent_artists_set=set(state.recent_artists[-ARTIST_REPEAT_COOLDOWN:]),
+    )
+    return _advance(
+        state,
+        prev=prev,
+        scored=(score, cand.stable_id, occurrence, cand, relaxed),
+        slot_idx=slot_idx,
+        target_energy_slot=target_energy_slot,
+        pin_role=pin_role,
+        record_unmet=False,
+    )
+
+
+def _initial_beam(
+    tracks: list[TrackFeature],
+    goal: SetGoal,
+    start_occurrence: int,
+    pin_role: PinRole = None,
+) -> _BeamState:
+    start = tracks[start_occurrence]
+    start_trace = StepTrace(
+        position=0,
+        stable_id=start.stable_id,
+        score=1.0,
+        camelot_distance=None,
+        bpm_delta_pct=None,
+        target_energy=target_energy_at(goal, 0.0),
+        actual_energy=float(start.energy) if start.energy is not None else 0.0,
+        transition_hint="start",
+        pin_role=pin_role,
+    )
+    return _BeamState(
+        occurrence_order=(start_occurrence,),
+        score_sum=1.0,
+        traces=(start_trace,),
+        unmet=(),
+        recent_artists=(start.artist,),
+    )
+
+
+def _prune(next_beams: list[_BeamState], beam_width: int) -> list[_BeamState]:
+    next_beams.sort(key=lambda s: (-s.score_sum, s.occurrence_order))
+    return next_beams[:beam_width]
+
+
+def _best_beam(beams: list[_BeamState]) -> _BeamState:
+    top_score = max(x.score_sum for x in beams)
+    return min(
+        [b for b in beams if b.score_sum == top_score],
+        key=lambda s: s.occurrence_order,
+    )
+
+
+def _result(
+    order: list[str], best: _BeamState, t0: float
+) -> SolveResult:
+    solve_ms = (time.perf_counter() - t0) * 1000.0
+    return SolveResult(
+        order=order,
+        per_step_scores=[t.score for t in best.traces],
+        per_step_trace=list(best.traces),
+        constraints_unmet=list(best.unmet),
+        solve_ms=solve_ms,
+    )
+
+
 def _best_start_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
     target_energy = float(goal.floor_energy)
     open_key = goal.open_on_key
@@ -206,117 +399,28 @@ def _suggest_order_unpinned(
         return SolveResult([], [], [], [], 0.0)
 
     start_occurrence = _best_start_occurrence(tracks, goal)
-    start = tracks[start_occurrence]
-    start_trace = StepTrace(
-        position=0,
-        stable_id=start.stable_id,
-        score=1.0,
-        camelot_distance=None,
-        bpm_delta_pct=None,
-        target_energy=target_energy_at(goal, 0.0),
-        actual_energy=float(start.energy) if start.energy is not None else 0.0,
-        transition_hint="start",
-    )
-    init_beam = _BeamState(
-        occurrence_order=(start_occurrence,),
-        score_sum=1.0,
-        traces=(start_trace,),
-        unmet=(),
-        recent_artists=(start.artist,),
-    )
-    beams: list[_BeamState] = [init_beam]
+    beams: list[_BeamState] = [_initial_beam(tracks, goal, start_occurrence)]
 
-    total = len(tracks)
-
-    for slot_idx in range(1, total):
+    for slot_idx in range(1, len(tracks)):
         target_energy_slot = target_energy_at(goal, slot_idx * AVG_TRACK_MINUTES)
         next_beams: list[_BeamState] = []
         for state in beams:
-            chosen = set(state.occurrence_order)
-            prev = tracks[state.occurrence_order[-1]]
-            recent_set = set(state.recent_artists[-ARTIST_REPEAT_COOLDOWN:])
-            scored: list[tuple[float, str, int, TrackFeature, bool]] = []
-            for occurrence, cand in enumerate(tracks):
-                if occurrence in chosen:
-                    continue
-                score, relaxed = _score_candidate_inline(
-                    prev=prev,
-                    cand=cand,
+            next_beams.extend(
+                _expand_free_slot(
+                    state,
+                    tracks=tracks,
+                    slot_idx=slot_idx,
                     target_energy_slot=target_energy_slot,
-                    recent_artists_set=recent_set,
+                    beam_width=beam_width,
                 )
-                scored.append((score, cand.stable_id, occurrence, cand, relaxed))
-            if not scored:
-                next_beams.append(state)
-                continue
-            scored.sort(key=lambda x: (-x[0], x[1]))
-            for score, _sid, occurrence, cand, relaxed in scored[:beam_width]:
-                dist = _camelot_dist_or_none(prev.key_camelot, cand.key_camelot)
-                delta = _bpm_delta_pct(prev.bpm, cand.bpm)
-                hint = _infer_hint(prev, cand, relaxed)
-                trace = StepTrace(
-                    position=slot_idx,
-                    stable_id=cand.stable_id,
-                    score=score,
-                    camelot_distance=dist,
-                    bpm_delta_pct=delta,
-                    target_energy=target_energy_slot,
-                    actual_energy=(
-                        float(cand.energy) if cand.energy is not None else 0.0
-                    ),
-                    transition_hint=hint,
-                )
-                unmet = list(state.unmet)
-                if relaxed:
-                    unmet.append(
-                        UnmetConstraint(
-                            kind="bpm_window",
-                            position=slot_idx,
-                            detail={
-                                "delta_pct": delta if delta is not None else 0.0,
-                                "stable_id": cand.stable_id,
-                            },
-                        )
-                    )
-                if dist is not None and dist >= CAMELOT_STEP_BUDGET_HARDCUT:
-                    unmet.append(
-                        UnmetConstraint(
-                            kind="camelot_hardcut",
-                            position=slot_idx,
-                            detail={
-                                "distance": float(dist),
-                                "stable_id": cand.stable_id,
-                            },
-                        )
-                    )
-                next_beams.append(
-                    _BeamState(
-                        occurrence_order=state.occurrence_order + (occurrence,),
-                        score_sum=state.score_sum + score,
-                        traces=state.traces + (trace,),
-                        unmet=tuple(unmet),
-                        recent_artists=state.recent_artists + (cand.artist,),
-                    )
-                )
-        next_beams.sort(key=lambda s: (-s.score_sum, s.occurrence_order))
-        beams = next_beams[:beam_width]
+            )
+        beams = _prune(next_beams, beam_width)
         if not beams:
             break
 
-    top_score = max(x.score_sum for x in beams)
-    best = min(
-        [b for b in beams if b.score_sum == top_score],
-        key=lambda s: s.occurrence_order,
-    )
-
-    solve_ms = (time.perf_counter() - t0) * 1000.0
-    return SolveResult(
-        order=[tracks[occurrence].stable_id for occurrence in best.occurrence_order],
-        per_step_scores=[t.score for t in best.traces],
-        per_step_trace=list(best.traces),
-        constraints_unmet=list(best.unmet),
-        solve_ms=solve_ms,
-    )
+    best = _best_beam(beams)
+    order = [tracks[occurrence].stable_id for occurrence in best.occurrence_order]
+    return _result(order, best, t0)
 
 
 def _suggest_order_pinned(
@@ -330,7 +434,6 @@ def _suggest_order_pinned(
     del seed
     from .pinning import (
         PinUnsatisfiableError,
-        assign_peak_pin_slots,
         plan_reservations,
         start_occurrence_for_pinned,
     )
@@ -349,27 +452,11 @@ def _suggest_order_pinned(
     if 0 in reservations and reservations[0].occurrence != start_occurrence:
         raise PinUnsatisfiableError("opener_unsatisfiable")
 
-    start = tracks[start_occurrence]
-    start_role = role_by_occurrence.get(start_occurrence)
-    start_trace = StepTrace(
-        position=0,
-        stable_id=start.stable_id,
-        score=1.0,
-        camelot_distance=None,
-        bpm_delta_pct=None,
-        target_energy=target_energy_at(goal, 0.0),
-        actual_energy=float(start.energy) if start.energy is not None else 0.0,
-        transition_hint="start",
-        pin_role=start_role,
-    )
-    init_beam = _BeamState(
-        occurrence_order=(start_occurrence,),
-        score_sum=1.0,
-        traces=(start_trace,),
-        unmet=(),
-        recent_artists=(start.artist,),
-    )
-    beams: list[_BeamState] = [init_beam]
+    beams: list[_BeamState] = [
+        _initial_beam(
+            tracks, goal, start_occurrence, role_by_occurrence.get(start_occurrence)
+        )
+    ]
     total = len(tracks)
 
     for slot_idx in range(1, total):
@@ -377,129 +464,46 @@ def _suggest_order_pinned(
         fixed = reservations.get(slot_idx)
         next_beams: list[_BeamState] = []
         for state in beams:
-            if fixed is not None:
-                if fixed.occurrence in state.occurrence_order:
-                    continue
-                prev = tracks[state.occurrence_order[-1]]
-                cand = tracks[fixed.occurrence]
-                score, relaxed = _score_candidate_inline(
-                    prev=prev,
-                    cand=cand,
-                    target_energy_slot=target_energy_slot,
-                    recent_artists_set=set(
-                        state.recent_artists[-ARTIST_REPEAT_COOLDOWN:]
-                    ),
-                )
-                dist = _camelot_dist_or_none(prev.key_camelot, cand.key_camelot)
-                delta = _bpm_delta_pct(prev.bpm, cand.bpm)
-                hint = _infer_hint(prev, cand, relaxed)
-                trace = StepTrace(
-                    position=slot_idx,
-                    stable_id=cand.stable_id,
-                    score=score,
-                    camelot_distance=dist,
-                    bpm_delta_pct=delta,
-                    target_energy=target_energy_slot,
-                    actual_energy=(
-                        float(cand.energy) if cand.energy is not None else 0.0
-                    ),
-                    transition_hint=hint,
-                    pin_role=fixed.role,
-                )
-                next_beams.append(
-                    _BeamState(
-                        occurrence_order=state.occurrence_order
-                        + (fixed.occurrence,),
-                        score_sum=state.score_sum + score,
-                        traces=state.traces + (trace,),
-                        unmet=state.unmet,
-                        recent_artists=state.recent_artists + (cand.artist,),
+            if fixed is None:
+                next_beams.extend(
+                    _expand_free_slot(
+                        state,
+                        tracks=tracks,
+                        slot_idx=slot_idx,
+                        target_energy_slot=target_energy_slot,
+                        beam_width=beam_width,
+                        excluded=reserved_occurrences,
+                        role_by_occurrence=role_by_occurrence,
                     )
                 )
                 continue
-
-            chosen = set(state.occurrence_order) | reserved_occurrences
-            prev = tracks[state.occurrence_order[-1]]
-            recent_set = set(state.recent_artists[-ARTIST_REPEAT_COOLDOWN:])
-            scored: list[tuple[float, str, int, TrackFeature, bool]] = []
-            for occurrence, cand in enumerate(tracks):
-                if occurrence in chosen:
-                    continue
-                score, relaxed = _score_candidate_inline(
-                    prev=prev,
-                    cand=cand,
-                    target_energy_slot=target_energy_slot,
-                    recent_artists_set=recent_set,
-                )
-                scored.append((score, cand.stable_id, occurrence, cand, relaxed))
-            if not scored:
-                next_beams.append(state)
-                continue
-            scored.sort(key=lambda x: (-x[0], x[1]))
-            for score, _sid, occurrence, cand, relaxed in scored[:beam_width]:
-                dist = _camelot_dist_or_none(prev.key_camelot, cand.key_camelot)
-                delta = _bpm_delta_pct(prev.bpm, cand.bpm)
-                hint = _infer_hint(prev, cand, relaxed)
-                trace = StepTrace(
-                    position=slot_idx,
-                    stable_id=cand.stable_id,
-                    score=score,
-                    camelot_distance=dist,
-                    bpm_delta_pct=delta,
-                    target_energy=target_energy_slot,
-                    actual_energy=(
-                        float(cand.energy) if cand.energy is not None else 0.0
-                    ),
-                    transition_hint=hint,
-                    pin_role=role_by_occurrence.get(occurrence),
-                )
-                unmet = list(state.unmet)
-                if relaxed:
-                    unmet.append(
-                        UnmetConstraint(
-                            kind="bpm_window",
-                            position=slot_idx,
-                            detail={
-                                "delta_pct": delta if delta is not None else 0.0,
-                                "stable_id": cand.stable_id,
-                            },
-                        )
-                    )
-                if dist is not None and dist >= CAMELOT_STEP_BUDGET_HARDCUT:
-                    unmet.append(
-                        UnmetConstraint(
-                            kind="camelot_hardcut",
-                            position=slot_idx,
-                            detail={
-                                "distance": float(dist),
-                                "stable_id": cand.stable_id,
-                            },
-                        )
-                    )
-                next_beams.append(
-                    _BeamState(
-                        occurrence_order=state.occurrence_order + (occurrence,),
-                        score_sum=state.score_sum + score,
-                        traces=state.traces + (trace,),
-                        unmet=tuple(unmet),
-                        recent_artists=state.recent_artists + (cand.artist,),
-                    )
-                )
-        next_beams.sort(key=lambda s: (-s.score_sum, s.occurrence_order))
-        beams = next_beams[:beam_width]
+            placed = _advance_reserved_slot(
+                state,
+                tracks=tracks,
+                occurrence=fixed.occurrence,
+                pin_role=fixed.role,
+                slot_idx=slot_idx,
+                target_energy_slot=target_energy_slot,
+            )
+            if placed is not None:
+                next_beams.append(placed)
+        beams = _prune(next_beams, beam_width)
         if not beams:
             break
 
     if not beams:
         raise PinUnsatisfiableError("opener_unsatisfiable")
 
-    top_score = max(x.score_sum for x in beams)
-    best = min(
-        [b for b in beams if b.score_sum == top_score],
-        key=lambda s: s.occurrence_order,
-    )
-
+    best = _best_beam(beams)
     order = [tracks[occurrence].stable_id for occurrence in best.occurrence_order]
+    _check_pins_honored(goal, order, total)
+    return _result(order, best, t0)
+
+
+def _check_pins_honored(goal: SetGoal, order: list[str], total: int) -> None:
+    """Raise PinUnsatisfiableError when `order` breaks a SET-04 pin."""
+    from .pinning import PinUnsatisfiableError, assign_peak_pin_slots
+
     if goal.opener_pins and order[0] not in goal.opener_pins:
         raise PinUnsatisfiableError("opener_unsatisfiable")
     if goal.closer_pin is not None and order[-1] != goal.closer_pin:
@@ -508,12 +512,3 @@ def _suggest_order_pinned(
     for slot, stable_id in enumerate(order):
         if stable_id in goal.peak_pins and slot not in peak_slots:
             raise PinUnsatisfiableError("peak_window_too_small")
-
-    solve_ms = (time.perf_counter() - t0) * 1000.0
-    return SolveResult(
-        order=order,
-        per_step_scores=[t.score for t in best.traces],
-        per_step_trace=list(best.traces),
-        constraints_unmet=list(best.unmet),
-        solve_ms=solve_ms,
-    )

@@ -28,6 +28,7 @@ from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+from apps.shared.shutdown_bound import StopStep, run_stop_steps, stop_window_deadline
 from apps.shared.state.db import StateStoreBusyError
 from apps.sync_hub import hosted_config as sync_hub_hosted_config
 from apps.sync_hub import hub_wal_keeper
@@ -350,28 +351,34 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         # workers. First, before the thread joins below (CloudSync waits up
         # to 30 s), so they cannot push it past the shell's grace.
         ingest_cli_procs.stop_all()
-        from . import path_availability_refresh
+        from . import path_availability_refresh, state_maintenance
 
-        path_availability_refresh.stop()
-        from . import state_maintenance
-
-        state_maintenance.stop()
+        # W43: all at once under one deadline, not one after another. Each
+        # joins its thread (5 s for most, 30 s for CloudSync), so in series
+        # a quit waited on their sum; these are daemon threads, and one
+        # still busy at the deadline is logged and ends with the process.
+        steps: list[StopStep] = [
+            ("path-availability-refresh", path_availability_refresh.stop),
+            ("state-maintenance", state_maintenance.stop),
+        ]
         if cloudsync_scheduler is not None:
-            cloudsync_scheduler.stop()
-        drain = getattr(app.state, "coverage_drain", None)
-        if drain is not None:
-            drain.stop()
-        ahead = getattr(app.state, "ahead_analysis", None)
-        if ahead is not None:
-            ahead.stop()
+            steps.append(("cloudsync-scheduler", cloudsync_scheduler.stop))
+        for name, attr in (
+            ("coverage-drain", "coverage_drain"),
+            ("ahead-analysis", "ahead_analysis"),
+            ("library-jobs-watcher", "library_jobs_watcher"),
+        ):
+            service = getattr(app.state, attr, None)
+            if service is not None:
+                steps.append((name, service.stop))
         if stem_cache_enforcer is not None:
-            stem_cache_enforcer.stop()
-        jobs_w = getattr(app.state, "library_jobs_watcher", None)
-        if jobs_w is not None:
-            jobs_w.stop()
+            steps.append(("stem-cache-enforcer", stem_cache_enforcer.stop))
         if lyric_watcher is not None:
-            lyric_watcher.stop()
-        watcher.stop()
+            steps.append(("lyric-index", lyric_watcher.stop))
+        steps.append(("analysis-watcher", watcher.stop))
+        # Inside the engine, this shares the window its lifespan opened (one
+        # deadline for every nested group); standalone, it opens its own.
+        run_stop_steps("webui lifespan", steps, deadline=stop_window_deadline(app.state))
         # playlist_write builds its PlaylistStore lazily from
         # app.state.state_db_path; release its sqlite handle on shutdown.
         playlist_write_routes.close_store(app)

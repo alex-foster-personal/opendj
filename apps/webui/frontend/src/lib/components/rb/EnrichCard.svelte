@@ -1,6 +1,7 @@
 <!--
-	ENRICH-01: the enrich-on-open card. One fixed card, bottom right, that says
-	what the library still lacks and asks the one opt-in question (stems).
+	ENRICH-01: the enrich-on-open card. One pill in the top bar, in flow so it
+	covers nothing (issue #5748), that says what the library still lacks; a
+	click expands the card below it, which asks the one opt-in question (stems).
 
 	Every word comes from `$lib/enrich/enrich-card` (pure, unit tested) and
 	every pixel from EnrichCardView.svelte (props only, one story per state);
@@ -11,7 +12,9 @@
 	  Separate  POST /api/v1/jobs (via StemsPrompt)
 	  Never     PUT  /api/v1/enrich/decisions/stems  (enrich_cli decide)
 	  Hide      session only, re-shown on the next open
-	  More/Less view only; the card opens expanded exactly when needsAttention()
+	  More/Less view only; the card NEVER opens itself: needsAttention() flags
+	            the pill ("needs you"), and only a click expands it. Esc and a
+	            click outside close it.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -30,10 +33,10 @@
 	let hidden = $state(readHidden());
 	let asking = $state(false);
 	let busy = $state(false);
-	/** null until the user presses More or Less; until then the policy decides. */
-	let expandedChoice = $state<boolean | null>(null);
+	/** Only the user expands the card; the policy flags the pill instead. */
+	let expanded = $state(false);
 
-	const expanded = $derived(expandedChoice ?? (asking || needsAttention(summary, loadError, actionError)));
+	const attention = $derived(needsAttention(summary, loadError, actionError));
 
 	const visible = $derived(!hidden && (loadError !== null || (summary?.show ?? false)));
 
@@ -104,7 +107,9 @@
 		{busy}
 		{asking}
 		{expanded}
-		ontoggle={() => (expandedChoice = !expanded)}
+		{attention}
+		ontoggle={() => (expanded = !expanded)}
+		onclose={() => (expanded = false)}
 		onhide={hide}
 		onretry={retry}
 		onask={() => (asking = true)}

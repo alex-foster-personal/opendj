@@ -67,6 +67,12 @@ class SubscriptionLane:
     slug: str
     provider: str
     model: str
+    #: Reasoning effort passed to `sb run --effort`, never left to the broker's
+    #: per-provider default (REVIEW-21).
+    effort: str
+    #: Model ids the broker may REPORT for `model`. A report outside this set
+    #: is a run at a model nobody pinned, and is refused.
+    reported_models: frozenset[str]
     fence: Fence
 
     @property
@@ -110,8 +116,26 @@ class SubscriptionLane:
         )
 
 
-GROK_LANE = SubscriptionLane(GROK, "grok", "grok", "grok-4.6", GROK_FENCE)
-CURSOR_LANE = SubscriptionLane(CURSOR, "cursor", "cursor", "composer-2.5", CURSOR_FENCE)
+#: Pinned per lane (REVIEW-21). Measured Thu 8 Oct 2026: the Grok lane passed no
+#: effort, so the broker's `default_effort: low` applied, and on PR #5968 grok-4.6
+#: noticed a real artist name left in a fixture and talked itself out of
+#: reporting it. grok-4.7 at high is the tier the maintainer named for harder work
+#: (Wed 7 Oct 2026); the broker reports it as grok-4.7-build. Composer has one
+#: model and takes the broker's effort knob; high matches the bulk of its
+#: recorded runs. An unavailable model is a broker refusal, so the lane exits 3.
+GROK_MODEL = "grok-4.7"
+GROK_EFFORT = "high"
+GROK_REPORTED_MODELS: frozenset[str] = frozenset({"grok-4.7-build"})
+CURSOR_MODEL = "composer-2.5"
+CURSOR_EFFORT = "high"
+CURSOR_REPORTED_MODELS: frozenset[str] = frozenset({"composer-2.5"})
+
+GROK_LANE = SubscriptionLane(
+    GROK, "grok", "grok", GROK_MODEL, GROK_EFFORT, GROK_REPORTED_MODELS, GROK_FENCE
+)
+CURSOR_LANE = SubscriptionLane(
+    CURSOR, "cursor", "cursor", CURSOR_MODEL, CURSOR_EFFORT, CURSOR_REPORTED_MODELS, CURSOR_FENCE
+)
 
 #: Chain order: Grok before Cursor, per the maintainer's decision.
 SUBSCRIPTION_LANES: tuple[SubscriptionLane, ...] = (GROK_LANE, CURSOR_LANE)

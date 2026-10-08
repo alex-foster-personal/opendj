@@ -954,7 +954,7 @@ test('the injected resync ports wire the real engine sync primitives, not stand-
 	assert.ok(end > start, 'end of _beatgridResyncPorts object literal not found');
 	const body = source.slice(start, end);
 	for (const port of [
-		'syncMaster: _syncMaster',
+		'syncMaster: _beatSyncMaster',
 		'synchronizeFollowers: _synchronizeFollowers',
 		'requiresReschedule: syncChangeRequiresReschedule',
 		'deckHasRealBeatGrid(deckStates[deck])',
@@ -968,6 +968,7 @@ test('the injected resync ports wire the real engine sync primitives, not stand-
 				'master/grid state is not a fix'
 		);
 	}
+	assert.equal(body.includes('syncMaster: _syncMaster'), false, 'beatgrid reconciliation must read the filtered master, not the raw gridless clock');
 });
 
 test('the mid-flight anlz_available refetch bypasses the HTTP cache instead of possibly replaying the empty response it may have cached', async () => {

@@ -223,7 +223,7 @@ export function transportNeedsScheduledMutation(
  * side's wet gain is nonzero - the other side is silenced rather than left in
  * series at its gentlest cutoff, which would still audibly color the signal
  * (issue #990 follow-up). Sweeps are exponential in Hz, i.e. linear in
- * octaves (L2 in docs/research/filter-taper-laws.md), so equal knob motion
+ * octaves (L2 in (private path)), so equal knob motion
  * covers equal perceived distance anywhere in the travel.
  */
 export function filterParamsFromKnob(value: number): {
@@ -281,5 +281,50 @@ export function planKeyShiftMutation(
 		kind: 'immediate',
 		active: false,
 		publishedKeyShiftSemitones: requestedKeyShiftSemitones
+	};
+}
+
+export interface DeckControlSettings {
+	tempoRatio: number;
+	masterTempoEnabled: boolean;
+	keyShiftSemitones: number;
+}
+
+export interface PausedDeckControlUpdate {
+	tempoRatio?: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
+}
+
+/** Paused controls are the desired DSP settings for the next schedule. Keep
+ * them separate from DeckState's output-presented read model. */
+export function applyPausedDeckControlSettings(
+	current: DeckControlSettings,
+	update: PausedDeckControlUpdate
+): DeckControlSettings {
+	if (!Number.isFinite(current.tempoRatio) || current.tempoRatio <= 0) {
+		throw new RangeError(`control tempo ratio must be finite and positive, got ${current.tempoRatio}`);
+	}
+	if (typeof current.masterTempoEnabled !== 'boolean') {
+		throw new TypeError('control Master Tempo must be boolean');
+	}
+	_assertKeyShift(current.keyShiftSemitones);
+	if (
+		update.tempoRatio !== undefined &&
+		(!Number.isFinite(update.tempoRatio) || update.tempoRatio <= 0)
+	) {
+		throw new RangeError(`updated tempo ratio must be finite and positive, got ${update.tempoRatio}`);
+	}
+	if (
+		update.masterTempoEnabled !== undefined &&
+		typeof update.masterTempoEnabled !== 'boolean'
+	) {
+		throw new TypeError('updated Master Tempo must be boolean');
+	}
+	if (update.keyShiftSemitones !== undefined) _assertKeyShift(update.keyShiftSemitones);
+	return {
+		tempoRatio: update.tempoRatio ?? current.tempoRatio,
+		masterTempoEnabled: update.masterTempoEnabled ?? current.masterTempoEnabled,
+		keyShiftSemitones: update.keyShiftSemitones ?? current.keyShiftSemitones
 	};
 }

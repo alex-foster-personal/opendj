@@ -241,6 +241,25 @@ def _batched(items: Sequence[str], size: int) -> Iterator[Sequence[str]]:
 ResidencyPredicate = Callable[[Path], bool]
 
 
+def mapped_audio_path_if_materialised(
+    raw: str,
+    *,
+    path_map: PathMap | None = None,
+    residency: ResidencyPredicate = fs_residency.is_materialised,
+) -> Path | None:
+    """The path deck load would open for ``raw``, if those bytes are on disk.
+
+    Applies :func:`platform_paths.resolve_asset_path` (path-map.json, native
+    path, share root) then the residency gate. Shared by
+    :func:`_materialise_raw_audio_path` and the availability probe so the two
+    cannot drift.
+    """
+    mapped = platform_paths.resolve_asset_path(raw, path_map=path_map)
+    if mapped.resolved is None or not residency(mapped.resolved):
+        return None
+    return mapped.resolved
+
+
 def _materialise_raw_audio_path(
     raw: str | None,
     *,
@@ -249,10 +268,9 @@ def _materialise_raw_audio_path(
 ) -> Path | None:
     if not raw or raw.startswith(platform_paths.STREAMING_PREFIXES):
         return None
-    mapped = platform_paths.resolve_asset_path(raw, path_map=path_map)
-    if mapped.resolved is None or not residency(mapped.resolved):
-        return None
-    return mapped.resolved
+    return mapped_audio_path_if_materialised(
+        raw, path_map=path_map, residency=residency
+    )
 
 
 #: Candidate order for a machine's local location rows: a row probed
@@ -438,24 +456,48 @@ def list_location_paths(
     stable_ids: Sequence[str],
     *,
     machine_id: str | None = None,
+    live_only: bool = False,
+    kinds: Sequence[str] | None = None,
 ) -> dict[str, list[str]]:
     """file_path values per stable_id, for bulk availability on THIS machine.
 
     Filtered by ``machine_id`` (default: local) because an unfiltered read
     would report a file that lives on another machine as present here, which
     is exactly the overcount ADR 08 consequence 1 warns about.
+
+    ``live_only`` drops soft-deleted rows when ``deleted_at`` exists. The
+    availability probe passes it so a tombstoned location cannot classify a
+    track present. Callers that still want every same-machine path, including
+    tombstones, leave it false.
+
+    ``kinds`` limits rows to those kinds (``local`` / ``remote``). None keeps
+    every kind. The availability probe passes ``("local",)`` because deck
+    load will not open a ``kind='remote'`` row, even when that row carries a
+    file_path whose path-map target exists.
     """
     out: dict[str, list[str]] = {sid: [] for sid in stable_ids}
     if not stable_ids or not locations_table_ready(conn):
         return out
+    if kinds is not None and len(kinds) == 0:
+        return out
     owner = machine_id or _sync_stamp.local_machine_id(conn)
+    deleted_sql = ""
+    if live_only:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(track_locations)")}
+        if "deleted_at" in columns:
+            deleted_sql = " AND deleted_at IS NULL"
+    kind_sql = ""
+    kind_args: tuple[str, ...] = ()
+    if kinds is not None:
+        kind_sql = " AND kind IN (" + ",".join("?" * len(kinds)) + ")"
+        kind_args = tuple(kinds)
     for batch in _batched(stable_ids, ID_BIND_BATCH):
         placeholders = ",".join("?" * len(batch))
         rows = conn.execute(
             f"SELECT stable_id, file_path FROM track_locations "
             f"WHERE stable_id IN ({placeholders}) AND machine_id = ? "
-            f"AND file_path IS NOT NULL",
-            (*batch, owner),
+            f"AND file_path IS NOT NULL{deleted_sql}{kind_sql}",
+            (*batch, owner, *kind_args),
         ).fetchall()
         for stable_id, file_path in rows:
             if file_path:

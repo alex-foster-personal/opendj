@@ -137,16 +137,16 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
 	}
 
-	function selectHeadphoneOutput(device_id: string): void {
-		void runPerformanceCommandFromUi({ type: 'headphone_output_select', device_id });
+	function selectHeadphoneOutput(device_id: string): Promise<unknown> {
+		return runPerformanceCommandFromUi({ type: 'headphone_output_select', device_id });
 	}
 
-	function selectMasterOutput(device_id: string): void {
-		void runPerformanceCommandFromUi({ type: 'headphone_master_select', device_id });
+	function selectMasterOutput(device_id: string): Promise<unknown> {
+		return runPerformanceCommandFromUi({ type: 'headphone_master_select', device_id });
 	}
 
-	function selectAudioInput(device_id: string): void {
-		void runPerformanceCommandFromUi({ type: 'headphone_input_select', device_id });
+	function selectAudioInput(device_id: string): Promise<unknown> {
+		return runPerformanceCommandFromUi({ type: 'headphone_input_select', device_id });
 	}
 
 	// IOPIN-14: list the devices at mount and again whenever the I/O view opens.
@@ -298,7 +298,7 @@
 	}
 	.deck-layout-btn.active {
 		background: var(--rb-accent, #3d7bfd);
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 	}
 	.strips {
 		flex: 1;

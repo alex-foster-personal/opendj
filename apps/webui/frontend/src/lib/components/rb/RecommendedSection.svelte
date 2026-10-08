@@ -240,7 +240,7 @@
 		padding: 0 4px;
 		border-radius: 2px;
 		background: var(--rb-accent, #3d7dd9);
-		color: #fff;
+		color: var(--rb-on-accent, #fff);
 		flex: none;
 	}
 	.rec-paired-row .title {

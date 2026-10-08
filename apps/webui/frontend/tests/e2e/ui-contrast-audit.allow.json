@@ -1,0 +1,780 @@
+{
+  "findings": [
+    {
+      "el": "rb-topbar > button.bsm-toggle.topbar-slot-bsm.on",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"BeatSyncMax\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional: the state is a persisted ui pref (beat_sync_max, level_calibration) that other e2e specs sharing the data dir toggle, so it renders only on some runs.",
+      "optional": true
+    },
+    {
+      "el": "lyr-wrap > button.bsm-toggle.topbar-slot-lyr.on",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"LYR\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "ap-wrap > button.bsm-toggle.on",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"AutoPlay\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
+      "optional": true
+    },
+    {
+      "el": "ap-wrap > button.bsm-toggle",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main: the AutoPlay toggle without .on, for runs where AutoPlay is off. Under forced hover it takes the same #2f6fd6 accent on #1a1e25 (3.47:1, needs 4.5:1) as the ap-next-btn entry. TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
+      "optional": true
+    },
+    {
+      "el": "ap-wrap > button.bsm-toggle.ap-next-btn.on",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \">|\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
+      "optional": true
+    },
+    {
+      "el": "ap-wrap > button.bsm-toggle.ap-next-btn",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by W34 CI run 37527961989 (Tue 6 Oct 2026): default \">|\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1) under forced hover, the same accent-on-panel color as the .on entry above. TopBar.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): AutoPlay on/off and next-queued state vary with fixture timing (CI runs 37527961989 and 37533391962 each saw a different combination).",
+      "optional": true
+    },
+    {
+      "el": "rb-deck > span.load-latency",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"1.2s to load\" #737981 on #1e2027 = 3.71:1 (needs 4.5:1). Deck.svelte. Listed in the W34 findings table on #5638 for triage. Optional (no stale check): its text and fade color depend on how fast the fixture deck loads.",
+      "optional": true
+    },
+    {
+      "el": "hp-btn > span",
+      "skins": [
+        "default",
+        "mono-dev"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"SET\" #d0342c on #1a1e25 = 3.35:1 (needs 4.5:1). HeadphoneCluster.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "row > span.count",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"2\" #838990 on #1d3f73 = 2.96:1 (needs 4.5:1). PlaylistTree.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "tr > td.c-time",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): the track table's muted time column on a tinted row (loaded, paired, first or hovered). Worst default \"01:00\" #838990 on #433f29 = 3.0:1 (needs 4.5:1); a paired row measured 3.97:1 in CI run 37558009259. TrackTable.svelte (hotspot). Rows carry only state classes, so the audit labels the row `tr` (rendered-contrast.ts). Listed in the W34 findings table on #5638 for triage. Light skin (#5812 palette): hovered TrackTable row, \"01:00\" #5e5e5e on #cccccc = 4.04:1 (needs 4.5:1)."
+    },
+    {
+      "el": "explainer > span.stem-tags.empty",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"-\" #9d947e on #dcd0b1 = 1.96:1 (needs 4.5:1). StemTags.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "c-lyrics > span.lyr-dash",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"-\" #838990 on #433f29 = 3.0:1 (needs 4.5:1). LyricColumn.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage. Light skin (#5812 palette): hovered TrackTable row, \"-\" #5e5e5e on #cccccc = 4.04:1 (needs 4.5:1)."
+    },
+    {
+      "el": "strip > span.head",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"NEXT\" #2f6fd6 on #14171d = 3.73:1 (needs 4.5:1). SuggestNextStrip.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "knob > span.label",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"TRIM\" #838990 on #21242c = 4.37:1 (needs 4.5:1). Knob.svelte. Listed in the W34 findings table on #5638 for triage. Optional: it depends on deck load state (stems, lyrics, analysis) at audit time, and CI on d48e76455 rendered it in only some skins.",
+      "optional": true
+    },
+    {
+      "el": "strip > button.stem-label",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"STEM\" #838990 on #21242c = 4.37:1 (needs 4.5:1). ChannelStrip.svelte. Listed in the W34 findings table on #5638 for triage. Optional: it depends on deck load state (stems, lyrics, analysis) at audit time, and CI on d48e76455 rendered it in only some skins.",
+      "optional": true
+    },
+    {
+      "el": "cal-controls > button.cal-btn",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"R\" #838990 on #21242c = 4.37:1 (needs 4.5:1). ChannelStrip.svelte. Listed in the W34 findings table on #5638 for triage. Optional: the state is a persisted ui pref (beat_sync_max, level_calibration) that other e2e specs sharing the data dir toggle, so it renders only on some runs.",
+      "optional": true
+    },
+    {
+      "el": "row > button.pl-action",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"+\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). PlaylistTree.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "row > button.pl-action.dim",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"\u00d7\" #2f6fd6 on #1a1e25 = 3.47:1 (needs 4.5:1). PlaylistTree.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "c-title > span.title-text",
+      "skins": [
+        "default",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"webkit-fixture-a-128bpm\" #1d7035 on #dcd0b1 = 4.0:1 (needs 4.5:1). TrackTable.svelte (hotspot). Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "library-panels-collapse-bar > button.panels-chevron",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"\u203a\" #2f6fd6 on #14171d = 3.73:1 (needs 4.5:1). BrowserPanel.svelte (hotspot). Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "rb-topbar > span.free-badge",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"Free\" #14171d on #927000 = 3.88:1 (needs 4.5:1). TopBar.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "summary > span.lane",
+      "skins": [
+        "light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"?\" #ffb43a on #fffdf8 = 1.74:1 (needs 4.5:1). BuildIdentity.svelte (dev build chip). Listed in the W34 findings table on #5638 for triage. Optional (no stale check): the dev build chip changes class with git and fetch state.",
+      "optional": true
+    },
+    {
+      "el": "summary > span.sha",
+      "skins": [
+        "light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"reading...\" #9aa4b2 on #fffdf8 = 2.48:1 (needs 4.5:1). BuildIdentity.svelte (dev build chip). Listed in the W34 findings table on #5638 for triage. Optional (no stale check): the dev build chip changes class with git and fetch state. Surfaces widened after CI run 37527961989: the build chip reads \"reading...\", a SHA or DIRTY depending on whether the dev build identity has loaded, so which span shows on which surface varies run to run.",
+      "optional": true
+    },
+    {
+      "el": "art-btn > span.art-eject",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"\u23cf\" #ffffff on #fffdf8 = 1.02:1 (needs 3:1). DeckHeader.svelte. Listed in the W34 findings table on #5638 for triage."
+    },
+    {
+      "el": "q-badge > span.q-label",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"S\" #4a4f57 on #b6bbb9 = 4.23:1 (needs 4.5:1). QualityBadge.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage. The theme-light pass shows the same pair (#4a4f57 on #b6bbb9 = 4.23:1) once it is driven through the real theme pref (Codex P2 on #5727): the hovered TrackTable row is the backdrop, and TrackTable is a single-owner hotspot, so the fix is left to its owner."
+    },
+    {
+      "el": "tray-right-cluster > button.tray-midi",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"MIDI\" #27241f on #222a38 = 1.07:1 (needs 4.5:1). BrowserPanel.svelte tray (hotspot). Listed in the W34 findings table on #5638 for triage. At rest (opacity 0.45, measured once faint text stopped counting as inactive, Codex on #5727): default #464a51 on #14171d = 2.02:1, every skin."
+    },
+    {
+      "el": "summary > span.sha.dirty",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"81cd6fe1 DIRTY\" #e0b341 on #fffdf8 = 1.93:1 (needs 4.5:1). BuildIdentity.svelte (dev build chip). Listed in the W34 findings table on #5638 for triage. Optional (no stale check): the dev build chip changes class with git and fetch state. Surfaces widened after CI run 37527961989: the build chip reads \"reading...\", a SHA or DIRTY depending on whether the dev build identity has loaded, so which span shows on which surface varies run to run.",
+      "optional": true
+    },
+    {
+      "el": "gutter > span.deck-num.empty",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-more"
+      ],
+      "reason": "New on main via #5685 (DECKUX-40, merged Tue 6 Oct 2026), caught by this audit after the W34 branch merged main: an empty deck's gutter number is drawn in var(--rb-border) on purpose (the maintainer: \"Empty state should be less messy - just show nothing\"), worst mono-dev \"3\" #2a2a2a on #282828 = 1.03:1 (needs 3:1). WaveGutter.svelte. It is a placeholder for an unloaded deck, not content; listed on #5638 for a design call on whether it should meet 3:1."
+    },
+    {
+      "el": "stems > span.status.busy",
+      "skins": [
+        "light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Light \"CHECKING STEMS\" #4aa3ff on #fffdf8 = 2.59:1 (needs 4.5:1), StemRow.svelte. Light defines no --rb-blue, so the #4aa3ff fallback paints on the cream panel. Optional: it renders only while a deck's stems are still loading, so a run that finishes loading first never sees it. Found by the W34 audit on CI (Wed 7 Oct 2026); reported on #5638, fix belongs to the owning component, not this measure-only PR.",
+      "optional": true
+    },
+    {
+      "el": "rb-deck > span.secondary-load",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Light \"STEMS\" badge #4aa3ff on #eee8dd = 2.16:1 (needs 4.5:1), SecondaryLoadBadge.svelte. Light defines no --rb-blue, so the #4aa3ff fallback paints on the cream panel. Optional: it renders only while a deck's stems are still loading, so a run that finishes loading first never sees it. Found by the W34 audit on CI (Wed 7 Oct 2026); reported on #5638, fix belongs to the owning component, not this measure-only PR.",
+      "optional": true
+    },
+    {
+      "el": "toast > button.toast-dismiss",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Toast dismiss \"x\" on hover is #ffffff on --danger #ff5a5a = 3.06:1 (needs 4.5:1), ToastStack.svelte .toast-dismiss:hover, same in every skin. Optional: it renders only when a toast is up during the hover pass, which depends on unrelated background errors. Found by the W34 audit on CI (Wed 7 Oct 2026); reported on #5638, the fix belongs to ToastStack's owner, not this measure-only PR.",
+      "optional": true
+    },
+    {
+      "el": "rb-topbar > span.dim-label.topbar-slot-pad",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"PAD\" #575b62 on #14171d = 2.64:1 (needs 4.5:1). TopBar.svelte .dim-label opacity 0.6. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "slot > span.letter",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"A\" #9e988e on #eee8dd = 2.34:1 (needs 4.5:1). HotCueBank.svelte empty hot-cue slot letter, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "mode-toggle > span.mode-glyph",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"\u25af\u25af\" #5e646b on #1a1e25 = 2.78:1 (needs 4.5:1). LoopCluster.svelte inactive loop-mode glyph, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "explainer > button.hp-btn.midi-btn.st-grey",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"MIDI\" #595e65 on #1a1e25 = 2.56:1 (needs 4.5:1). HeadphoneCluster.svelte .midi-btn.st-grey opacity 0.6 (no MIDI device). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "deck-btns > button.deck-target.loaded-target",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst light \"1\" #efeeec on #bfbab1 = 1.67:1 (needs 4.5:1). deck target button hover state, reached only once hover-rule owners are forced. Reported on #5638; the fix belongs to the owning component, not this measure-only PR. Optional: which deck button carries loaded-target depends on load order.",
+      "optional": true
+    },
+    {
+      "el": "header-body > span.deck-num",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"2\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "clocks > span.elapsed",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"00:00.0\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "dkl-row > span.dkl-tag",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"NO LYRIC DATA\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR. Optional: it depends on deck load state (stems, lyrics, analysis) at audit time, and CI on d48e76455 rendered it in only some skins.",
+      "optional": true
+    },
+    {
+      "el": "loop-cluster > span.column-label",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"LOOP\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "beat-jump > span.column-label",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"JUMP\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "stems > span.mute",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"MUTE\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "stems > span.status",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-less"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"NO STEMS\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR. Optional: it depends on deck load state (stems, lyrics, analysis) at audit time, and CI on d48e76455 rendered it in only some skins.",
+      "optional": true
+    },
+    {
+      "el": "meta > span.title",
+      "skins": [
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "optional": true,
+      "reason": "Optional because it depends on deck state: the empty-deck title shows on the hover surface in some runs and not others (present in PR CI at 2a5813ebb, absent in the merge-queue run of the same tree, Wed 7 Oct 2026). Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"No track loaded\" #5d574e on #9c9995 = 2.53:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
+    },
+    {
+      "el": "deck-btns > button.deck-target",
+      "skins": [
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover"
+      ],
+      "reason": "Pre-existing on main, surfaced when the audit added the light theme, form-control values and placeholders, and CSS-generated labels (Codex review on #5727, Wed 7 Oct 2026): worst theme-light \"2\" #f4f1eb on #e6dfd2 = 1.17:1 (needs 4.5:1). Reported on #5638; the fix belongs to the owning component, not this measure-only PR. Light skin on hover: #f7f5f0 on #7e8082 = 3.65:1, measured once faded fills composite as a group."
+    },
+    {
+      "el": "slot > span.proposal-label",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Pre-existing on main, found by the CI audit on e5df32c2a (Wed 7 Oct 2026): the auto hot-cue proposal caption (\"proposed intro\") in HotCueProposalLabel.svelte sits in a .slot.proposal at opacity 0.8 with dimmed text, worst light #a6a29b on #f6f1e9 = 2.27:1 (needs 4.5:1). Optional: proposals arrive from analysis asynchronously, so a run that audits before they land never sees one. Reported on #5638; the fix belongs to the owning component.",
+      "optional": true
+    },
+    {
+      "el": "enrich-card > p.enrich-line.failed",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "Enrichment status line in its failed state, #d0342c red on the dark card: default 3.6:1, Gothic 3.87:1 (needs 4.5:1). Found by the W34 audit (Wed 7 Oct 2026) once decks are audited after they finish loading; reported on #5638, the fix belongs to the owning component, not this measure-only PR. Optional: it renders only when the fixture's waveform enrichment fails on that run.",
+      "optional": true
+    },
+    {
+      "el": "row > span.count",
+      "skins": [
+        "default"
+      ],
+      "surfaces": [
+        "library"
+      ],
+      "reason": "Playlist row count #838990 on the selected row's #1d3f73 = 2.96:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
+      "optional": true
+    },
+    {
+      "el": "explainer > span.stem-tags.empty",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "library"
+      ],
+      "reason": "Empty stem-tags dash, worst light 2.09:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there."
+    },
+    {
+      "el": "chip > span.chip-label-full",
+      "skins": [
+        "light"
+      ],
+      "surfaces": [
+        "library"
+      ],
+      "reason": "Light 'sync: off' chip #9aa4b2 on #fffdf8 = 2.48:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
+      "optional": true
+    },
+    {
+      "el": "summary > span.lane",
+      "skins": [
+        "light"
+      ],
+      "surfaces": [
+        "library"
+      ],
+      "reason": "Build-info lane glyph #ffb43a on #fffdf8 = 1.74:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
+      "optional": true
+    },
+    {
+      "el": "summary > span.sha",
+      "skins": [
+        "light"
+      ],
+      "surfaces": [
+        "library"
+      ],
+      "reason": "Build-info sha 'reading...' #9aa4b2 on #fffdf8 = 2.48:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
+      "optional": true
+    },
+    {
+      "el": "rb-topbar > span.dim-label.topbar-slot-pad",
+      "skins": [
+        "mono-dev"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more",
+        "performance-hover"
+      ],
+      "reason": "Gothic PAD label #5a5a5a on #0e0e0e = 2.78:1. Seen on CI at 7882c43e9 (Wed 7 Oct 2026) but not locally. Optional: it renders only in some topbar and deck-count states.",
+      "optional": true
+    },
+    {
+      "el": "gutter > span.deck-num.empty",
+      "skins": [
+        "mono-dev"
+      ],
+      "surfaces": [
+        "performance-less",
+        "performance-more",
+        "performance-hover"
+      ],
+      "reason": "Gothic empty deck number #2a2a2a on #121212 = 1.31:1. Seen on CI at 7882c43e9 (Wed 7 Oct 2026) but not locally. Optional: it renders only in some topbar and deck-count states.",
+      "optional": true
+    }
+  ],
+  "unmeasured": [
+    {
+      "el": "explainer > button.round.cue",
+      "skins": [
+        "default",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "TransportCluster.svelte CUE button paints its label over a gradient, which this audit cannot composite; Gothic replaces the gradient with a flat fill and is measured."
+    },
+    {
+      "el": "dial > text.bpm",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
+    },
+    {
+      "el": "dial > text.pitch",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
+    },
+    {
+      "el": "dial > text.range",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
+    },
+    {
+      "el": "bpm > tspan.bpm-fraction",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "JogDial.svelte SVG text: it paints with `fill` over the dial's own shapes, not over a CSS background, so this instrument cannot measure it. Named here so the gap is explicit rather than passed silently (Codex on #5727, Wed 7 Oct 2026)."
+    },
+    {
+      "el": "strip > span.no-anlz",
+      "skins": [
+        "default",
+        "mono-dev",
+        "light",
+        "theme-light"
+      ],
+      "surfaces": [
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "StripWaveform.svelte paints the NO OWN GRID label over the waveform <canvas>, a replaced element with no CSS color to composite. Before Codex's image-backdrop finding on #5727 it was measured against the panel behind the canvas (light 2.77:1)."
+    },
+    {
+      "el": "q-badge > span.q-label",
+      "skins": [
+        "mono-dev",
+        "light"
+      ],
+      "surfaces": [
+        "library",
+        "performance-hover",
+        "performance-less",
+        "performance-more"
+      ],
+      "reason": "QualityBadge.svelte applies filter: var(--rb-quality-filter), which mono-dev resolves to grayscale(1), so the painted colors are not the computed pair this audit reads (Codex on #5727, Wed 7 Oct 2026). Reported unmeasured rather than certified from pre-filter colors; the other skins have no filter and are measured. Since #5812 the Light skin applies the same grayscale artwork/quality filter, so the Light pass reports it too."
+    }
+  ]
+}

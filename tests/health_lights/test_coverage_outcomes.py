@@ -67,3 +67,34 @@ def test_clear_failures_leaves_no_source_alone(store: co.OutcomeStore) -> None:
 def test_an_unknown_step_is_refused(store: co.OutcomeStore) -> None:
     with pytest.raises(ValueError, match="unknown step"):
         store.record_failure("frobnicate", "a", "sig", "boom", now=1.0)
+
+
+@pytest.mark.requirement("ENRICH-04")
+def test_a_terminal_failure_counts_as_failed_at_once(store: co.OutcomeStore) -> None:
+    """A user-started stems run nothing retries: its first failure is final."""
+    outcome = store.record_failure("stems", "a", "sig", "boom", now=1000.0, terminal=True)
+    assert outcome.attempts == co.MAX_ATTEMPTS
+    assert co.is_failed_terminal(outcome, "sig") is True
+    # Control: the drain's default is unchanged, one attempt and a backoff.
+    drained = store.record_failure("lyrics", "a", "sig", "boom", now=1000.0)
+    assert drained.attempts == 1
+    assert co.is_failed_terminal(drained, "sig") is False
+
+
+@pytest.mark.requirement("ENRICH-04")
+def test_record_failures_writes_many_in_one_pass(store: co.OutcomeStore) -> None:
+    store.record_failure("stems", "a", "sig-a", "earlier", now=1.0)
+    recorded = store.record_failures(
+        "stems", [("a", "sig-a"), ("b", "sig-b")], "boom", now=2.0, terminal=True
+    )
+    assert [(o.stable_id, o.attempts) for o in recorded] == [("a", co.MAX_ATTEMPTS), ("b", co.MAX_ATTEMPTS)]
+    assert set(store.load()) == {("stems", "a"), ("stems", "b")}
+    assert store.record_failures("stems", [], "boom", now=3.0) == []
+
+
+def test_two_stores_over_one_file_share_one_lock(tmp_path: Path) -> None:
+    """The drain, the terminal route and the stems finish observer each build
+    their own store; a per-object lock let their read-modify-writes interleave."""
+    path = tmp_path / "state" / "coverage-outcomes.json"
+    assert co.OutcomeStore(path)._lock is co.OutcomeStore(path)._lock
+    assert co.OutcomeStore(path)._lock is not co.OutcomeStore(tmp_path / "other.json")._lock

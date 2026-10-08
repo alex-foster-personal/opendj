@@ -625,7 +625,25 @@ test('the folder picker guards on a desktop shell and opens a directory dialog',
 	assert.match(bridge, /electron\.pickFolder\(\{ title \}\)/);
 	assert.match(
 		overlay,
-		/if \(typeof selected === 'string'\) \{\s*\n\s*setupWizard\.folderRows = setupWizard\.folderRows\.map/
+		/if \(typeof selected === 'string'\) \{\s*\n\s*setupWizard\.chooseFolderForRow\(rowId, selected\);/
+	);
+});
+
+// REQ: SETUP-29
+test('a chosen folder is checked without pressing Check this folder', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	const input = overlay.match(/<input\s(?:(?!\/>)[\s\S])*aria-label="Folder to import"\s*\/>/)?.[0] ?? '';
+	assert.notEqual(input, '', 'the folder path input was not found');
+	// a typed path is checked when it is COMMITTED (change covers blur and Enter)
+	assert.match(input, /onchange=\{\(\) => setupWizard\.commitFolderRow\(row\.id\)\}/);
+	// never per keystroke
+	assert.doesNotMatch(input, /oninput|onkeyup|onkeydown|onkeypress/);
+	// the picker hands its result to the store method that checks it
+	assert.match(overlay, /setupWizard\.chooseFolderForRow\(rowId, selected\)/);
+	// control: the button is still there as the manual re-check
+	assert.match(
+		overlay,
+		/type="submit"\s*\n\s*onclick=\{\(\) => setupWizard\.checkFolderRow\(row\.id\)\}[\s\S]{0,400}?Check this folder/
 	);
 });
 

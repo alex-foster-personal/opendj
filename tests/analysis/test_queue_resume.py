@@ -1,6 +1,6 @@
 """Cancel and resume the backfill queue, in one process and across a kill.
 
-Lane brief `specs/native-analysis-v1-lanes/nav1-queue.md` item 4, requirement
+Lane brief `(private path)` item 4, requirement
 NATIVE-10 ("[if] a backfill is cancelled and restarted [then] it resumes and
 re-runs idempotently, reporting progress throughout").
 
@@ -59,10 +59,12 @@ from apps.analysis import admission, queue_store
 from apps.analysis import queue as queue_api
 from apps.analysis.queue_runner import (
     BackendUnavailable,
+    _abandon_failed_startup,
     _commit_record,
     run_batch,
 )
 from apps.analysis.store import open_conn
+from apps.analysis.worker_sizing import HostCapacity
 
 from .queue_probe_backends import (
     PROBE_DB_ENV,
@@ -75,6 +77,9 @@ from .queue_probe_backends import (
 pytestmark = pytest.mark.requirement("NATIVE-10")
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+#: Room enough that duration-band worker counts are not host-capped (NATIVE-32).
+AMPLE_HOST: HostCapacity = HostCapacity(available_mb=16_000.0, cpu_count=8)
 
 
 def _candidates(n: int, tmp_path: Path, *, minutes: float = 3.0) -> list:
@@ -118,7 +123,7 @@ def test_same_process_cancel_then_resume_completes_every_item_exactly_once(
 ) -> None:
     db = tmp_path / "state.db"
     conn = open_conn(db)
-    result = queue_api.enqueue(conn, _candidates(4, tmp_path))
+    result = queue_api.enqueue(conn, _candidates(4, tmp_path), host=AMPLE_HOST)
     assert result.admitted == 4
     assert result.workers == 4
 
@@ -136,11 +141,11 @@ def test_same_process_cancel_then_resume_completes_every_item_exactly_once(
     # negative control for the resume below: if run_batch were happy to run a
     # cancelled batch, "resume works" would prove nothing.
     with pytest.raises(queue_api.QueueError, match="cancelled"):
-        run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1)
+        run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1, host=AMPLE_HOST)
 
-    revived = queue_api.resume(conn, result.batch_id)
+    revived = queue_api.resume(conn, result.batch_id, host=AMPLE_HOST)
     assert revived == 4
-    summary = run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1)
+    summary = run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1, host=AMPLE_HOST)
     assert summary.completed == 4
     assert summary.failed == 0
     assert _marker_counts(probe_dir) == {f"sid_{i}": 1 for i in range(4)}
@@ -267,7 +272,9 @@ def test_killed_runner_resumes_in_a_fresh_process_exactly_once(tmp_path: Path) -
     conn = open_conn(db)
     # One worker and a slow backend so the kill lands with work still
     # pending AND one item in flight, which is the state arm (b) is about.
-    result = queue_api.enqueue(conn, _candidates(6, tmp_path, minutes=50.0))
+    result = queue_api.enqueue(
+        conn, _candidates(6, tmp_path, minutes=50.0), host=AMPLE_HOST
+    )
     assert result.workers == 1, "a >45 min batch must run at one worker"
     conn.close()
 
@@ -434,4 +441,301 @@ def test_a_backend_wide_outage_stops_the_batch_and_keeps_it_retryable(
     assert summary.completed == 4
     assert summary.failed == 0
     assert _marker_counts(probe_dir)["sid_0"] >= 1
+    conn.close()
+
+
+def test_startup_memory_refusal_clears_the_batch_lease(
+    tmp_path: Path, probe_dir: Path
+) -> None:
+    """A host that cannot fit one worker must leave the batch retryable.
+
+    [if] pool startup refuses for memory [then] the batch lease is cleared, [else stop].
+    """
+    db = tmp_path / "state.db"
+    conn = open_conn(db)
+    result = queue_api.enqueue(conn, _candidates(2, tmp_path), host=AMPLE_HOST)
+    with pytest.raises(queue_api.QueueError, match="cannot fit even one"):
+        run_batch(
+            conn,
+            result.batch_id,
+            backend_cls=BeatgridProbeV1,
+            host=HostCapacity(available_mb=100.0, cpu_count=8),
+        )
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_QUEUED
+    row = conn.execute(
+        "SELECT active_runner_id, active_runner_pid FROM analysis_queue_batch "
+        "WHERE batch_id = ?",
+        (result.batch_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] is None
+    assert row[1] is None
+    summary = run_batch(
+        conn,
+        result.batch_id,
+        backend_cls=BeatgridProbeV1,
+        host=AMPLE_HOST,
+    )
+    assert summary.completed == 2
+    conn.close()
+
+
+def test_resume_recomputes_a_missing_peak_instead_of_the_flat_floor(
+    tmp_path: Path,
+) -> None:
+    """A nulled long-track peak must not be sized at the 650 MB floor.
+
+    [if] a resumed track has no stored peak [then] RAM width uses the recomputed peak, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    result = queue_api.enqueue(
+        conn,
+        _candidates(1, tmp_path, minutes=19.0),
+        host=AMPLE_HOST,
+    )
+    conn.execute(
+        "UPDATE analysis_queue_item SET predicted_peak_mb = NULL WHERE batch_id = ?",
+        (result.batch_id,),
+    )
+    queue_api.resume(
+        conn,
+        result.batch_id,
+        host=HostCapacity(available_mb=3000.0, cpu_count=8),
+        per_worker_budget_mb=650.0,
+    )
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.workers == 1
+    conn.close()
+
+
+def test_resume_recomputes_a_non_finite_peak_instead_of_the_flat_floor(
+    tmp_path: Path,
+) -> None:
+    """An infinite stored peak must not be sized at the 650 MB floor.
+
+    [if] a resumed peak is not finite [then] RAM width uses the recomputed peak, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    result = queue_api.enqueue(
+        conn,
+        _candidates(1, tmp_path, minutes=19.0),
+        host=AMPLE_HOST,
+    )
+    conn.execute(
+        "UPDATE analysis_queue_item SET predicted_peak_mb = ? WHERE batch_id = ?",
+        (float("inf"), result.batch_id),
+    )
+    queue_api.resume(
+        conn,
+        result.batch_id,
+        host=HostCapacity(available_mb=3000.0, cpu_count=8),
+        per_worker_budget_mb=650.0,
+    )
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.workers == 1
+    conn.close()
+
+
+def test_resume_rejects_a_mixed_duration_set_before_touching_the_batch(
+    tmp_path: Path,
+) -> None:
+    """A short known row beside an unknown one must not widen the batch.
+
+    [if] a resumed batch mixes usable and unusable durations [then] resume raises and changes nothing, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    candidates = _candidates(1, tmp_path, minutes=50.0) + _candidates(
+        2, tmp_path, minutes=3.0
+    )[1:]
+    result = queue_api.enqueue(conn, candidates, host=AMPLE_HOST)
+    planned = queue_store.get_batch(conn, result.batch_id)
+    assert planned is not None
+    assert planned.band == admission.BAND_OVER_45_MIN
+    queue_api.cancel(conn, result.batch_id)
+    conn.execute(
+        "UPDATE analysis_queue_item SET duration_s = NULL "
+        "WHERE batch_id = ? AND stable_id = ?",
+        (result.batch_id, "sid_0"),
+    )
+    with pytest.raises(queue_api.QueueError, match="1 unusable of 2"):
+        queue_api.resume(conn, result.batch_id, host=AMPLE_HOST)
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_CANCELLED
+    assert (batch.workers, batch.band) == (planned.workers, planned.band)
+    states = {
+        item.state
+        for item in queue_store.list_items(conn, result.batch_id, limit=None)
+    }
+    assert states == {queue_store.ITEM_CANCELLED}
+    conn.close()
+
+
+def test_resume_rejects_blank_model_provenance_when_every_peak_is_usable(
+    tmp_path: Path,
+) -> None:
+    """Valid stored peaks do not excuse a model with no provenance.
+
+    [if] a resumed batch's stored model has blank provenance [then] resume raises even with usable peaks, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    result = queue_api.enqueue(conn, _candidates(2, tmp_path), host=AMPLE_HOST)
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    # Positive control: the untouched stored model resumes cleanly.
+    queue_api.resume(conn, result.batch_id, host=AMPLE_HOST)
+    conn.execute(
+        "UPDATE analysis_queue_batch SET memory_model = ? WHERE batch_id = ?",
+        (json.dumps({**batch.memory_model, "source": " "}), result.batch_id),
+    )
+    with pytest.raises(queue_api.QueueError, match="field source"):
+        queue_api.resume(conn, result.batch_id, host=AMPLE_HOST)
+    conn.close()
+
+
+def test_pool_width_follows_capacity_read_after_jit_warm_up(
+    tmp_path: Path, probe_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Memory that warm-up consumes must narrow the pool that follows it.
+
+    [if] available memory drops during JIT warm-up [then] the pool is sized from the later reading, [else stop].
+    """
+    from apps.analysis import queue_runner, worker_sizing
+
+    conn = open_conn(tmp_path / "state.db")
+    result = queue_api.enqueue(conn, _candidates(4, tmp_path), host=AMPLE_HOST)
+    planned = queue_store.get_batch(conn, result.batch_id)
+    assert planned is not None
+    assert planned.workers > 1, "control: the plan must be wider than one worker"
+
+    available_mb = {"now": AMPLE_HOST.available_mb}
+    reads: list[float] = []
+
+    def _read() -> HostCapacity:
+        reads.append(available_mb["now"])
+        return HostCapacity(available_mb=available_mb["now"], cpu_count=8)
+
+    def _warm_up_that_eats_memory(*_args: object, **_kwargs: object) -> None:
+        available_mb["now"] = 700.0
+
+    widths: list[int] = []
+    real_pool_factory = queue_runner.spawn_pool
+
+    def _recording_pool_factory(workers: int) -> object:
+        widths.append(workers)
+        return real_pool_factory(workers)
+
+    monkeypatch.setattr(worker_sizing, "read_host_capacity", _read)
+    monkeypatch.setattr(queue_runner, "warm_backend_jit", _warm_up_that_eats_memory)
+    monkeypatch.setattr(queue_runner, "spawn_pool", _recording_pool_factory)
+
+    summary = run_batch(conn, result.batch_id, backend_cls=BeatgridProbeV1)
+    assert reads and reads[-1] == 700.0, "control: capacity was read after warm-up"
+    assert widths == [1]
+    assert summary.workers == 1
+    assert summary.completed == 4
+    conn.close()
+
+
+@pytest.mark.parametrize(
+    "parked_state", [queue_store.ITEM_DEFERRED, queue_store.ITEM_CANCELLED]
+)
+def test_startup_sizes_for_a_long_item_a_resume_could_hand_back(
+    tmp_path: Path, probe_dir: Path, parked_state: str
+) -> None:
+    """A long parked item must hold the pool to its band, not the short item's.
+
+    [if] a short pending item sits beside a long deferred or cancelled one [then] startup sizes for the long one, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    candidates = _candidates(1, tmp_path, minutes=50.0) + _candidates(
+        2, tmp_path, minutes=3.0
+    )[1:]
+    result = queue_api.enqueue(conn, candidates, host=AMPLE_HOST)
+    # Control: the short item alone would be planned wider than one worker.
+    assert admission.duration_band_cap([3.0 * 60.0])[0] > 1
+    conn.execute(
+        "UPDATE analysis_queue_item SET state = ? "
+        "WHERE batch_id = ? AND stable_id = ?",
+        (parked_state, result.batch_id, "sid_0"),
+    )
+    summary = run_batch(
+        conn, result.batch_id, backend_cls=BeatgridProbeV1, host=AMPLE_HOST
+    )
+    assert summary.workers == 1
+    assert summary.completed == 1
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert (batch.workers, batch.band) == (1, admission.BAND_OVER_45_MIN)
+    parked = [
+        item.state
+        for item in queue_store.list_items(conn, result.batch_id, limit=None)
+        if item.stable_id == "sid_0"
+    ]
+    assert parked == [parked_state]
+    conn.close()
+
+
+def test_startup_failure_does_not_uncancel_a_batch(tmp_path: Path) -> None:
+    """A cancel that wins during startup must stay cancelled.
+
+    [if] a cancel commits before startup failure returns [then] the batch stays cancelled, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    result = queue_api.enqueue(conn, _candidates(1, tmp_path), host=AMPLE_HOST)
+    queue_store.take_batch_runner(
+        conn, result.batch_id, runner_id="startup", runner_pid=os.getpid()
+    )
+    queue_api.cancel(conn, result.batch_id)
+    _abandon_failed_startup(conn, result.batch_id)
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_CANCELLED
+    row = conn.execute(
+        "SELECT active_runner_id, active_runner_pid FROM analysis_queue_batch "
+        "WHERE batch_id = ?",
+        (result.batch_id,),
+    ).fetchone()
+    assert row == (None, None)
+    items = queue_store.list_items(conn, result.batch_id, limit=None)
+    assert items
+    assert all(item.state == queue_store.ITEM_CANCELLED for item in items)
+    conn.close()
+
+
+class _CacheRootBoom(BeatgridProbeV1):
+    """Same probe, but cache-root lookup fails after the lease is taken."""
+
+    @classmethod
+    def jit_cache_roots(cls) -> tuple[Path, ...]:
+        raise RuntimeError("jit cache roots failed")
+
+
+def test_pool_spawn_failure_clears_the_startup_lease(tmp_path: Path) -> None:
+    """A failure after sizing, before the pool drains, must drop the lease.
+
+    [if] pool creation fails after the lease is taken [then] the batch is queued again, [else stop].
+    """
+    conn = open_conn(tmp_path / "state.db")
+    result = queue_api.enqueue(conn, _candidates(1, tmp_path), host=AMPLE_HOST)
+    with pytest.raises(RuntimeError, match="jit cache roots failed"):
+        run_batch(
+            conn,
+            result.batch_id,
+            backend_cls=_CacheRootBoom,
+            host=AMPLE_HOST,
+        )
+    batch = queue_store.get_batch(conn, result.batch_id)
+    assert batch is not None
+    assert batch.state == queue_store.BATCH_QUEUED
+    row = conn.execute(
+        "SELECT active_runner_id, active_runner_pid FROM analysis_queue_batch "
+        "WHERE batch_id = ?",
+        (result.batch_id,),
+    ).fetchone()
+    assert row == (None, None)
     conn.close()

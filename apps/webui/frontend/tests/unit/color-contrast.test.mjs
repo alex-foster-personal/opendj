@@ -15,7 +15,8 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -145,6 +146,159 @@ test("the shipped LIGHT scheme passes every stated threshold", () => {
   const tokens = cc.parseColorTokens(THEME_CSS, "html[data-theme='light'] .perf-root");
   const violations = cc.validateScheme(tokens, cc.PAIRINGS);
   assert.deepEqual(violations, [], cc.describeViolations(violations));
+});
+
+// ----- PAIR-08: skins and text on the accent fill ----------------------------
+// the maintainer, Tue 6 Oct 2026: "capture should be dark font ofc - contrast rules
+// should have aguht [caught] it". Two gaps let a white label ship on Gothic's pale
+// accent: the validator only measured the two base schemes, never a skin
+// layered over them, and a component's hardcoded `color: #fff` on
+// `--rb-accent` was never a token pairing at all.
+const SKIN_SELECTORS = {
+  "mono-dev (Gothic)": "html[data-skin='mono-dev'] .perf-root",
+  "light": "html[data-skin='light'] .perf-root",
+};
+
+for (const [skin, sel] of Object.entries(SKIN_SELECTORS)) {
+  test(`PAIR-08 the shipped ${skin} skin, layered over the base scheme, passes every threshold`, () => {
+    const tokens = { ...cc.parseColorTokens(THEME_CSS, ".perf-root"), ...cc.parseColorTokens(THEME_CSS, sel) };
+    // Presence first: the on-accent pairing must be declared and measured.
+    assert.ok(
+      cc.PAIRINGS.some((p) => p.fg === "rb-on-accent" && p.bg === "rb-accent" && p.level === "body"),
+      "no body pairing pins rb-on-accent on rb-accent",
+    );
+    assert.match(tokens["rb-on-accent"] ?? "", /^#[0-9a-f]{6}$/i, `${skin} lacks rb-on-accent`);
+    const violations = cc.validateScheme(tokens, cc.PAIRINGS);
+    assert.deepEqual(violations, [], cc.describeViolations(violations));
+  });
+}
+
+test("PAIR-08 mutation: white text on Gothic's pale accent is reported", () => {
+  const tokens = {
+    ...cc.parseColorTokens(THEME_CSS, ".perf-root"),
+    ...cc.parseColorTokens(THEME_CSS, SKIN_SELECTORS["mono-dev (Gothic)"]),
+    "rb-on-accent": "#ffffff",
+  };
+  const violations = cc.validateScheme(tokens, cc.PAIRINGS);
+  assert.ok(
+    violations.some((v) => v.pairing.fg === "rb-on-accent" && v.ratio < 4.5),
+    cc.describeViolations(violations) || "white on #d6d6d6 (1.45:1) was not reported",
+  );
+});
+
+// Every CSS rule that paints an --rb-accent fill AND sets a text colour must
+// take that colour from --rb-on-accent, the token the pairing above measures
+// per skin. A literal there (#fff, a dark hex, --rb-text) is unmeasured.
+const SRC_ROOT = fileURLToPath(new URL("../../src", import.meta.url));
+// TrackTable.svelte is a single-owner hotspot this lane may not edit
+// (orders board #5638); its one hit is named here so it stays visible.
+const ACCENT_TEXT_ALLOWLIST = new Set(["lib/components/rb/browser/TrackTable.svelte .load-confirm-yes:hover"]);
+
+// A state rule (`.x:hover { background: var(--rb-accent) }`) often sets no
+// colour of its own and paints the colour its base rule (`.x`) declares, so a
+// fill rule with no colour is resolved through its base selector before it
+// can count as text-free (Codex on #5727: StripWaveform's .play-hint).
+const STATE_PSEUDO = /(?::(?:hover|active|focus|focus-visible|focus-within))+$/;
+
+function accentFillTextOffenders(css, file) {
+  const out = [];
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selector: m[1].trim().split("\n").pop().trim(),
+    body: m[2],
+  }));
+  const colorOf = (body) => body.match(/(?:^|[;\s])color\s*:\s*([^;]+)/)?.[1].trim();
+  const baseColor = new Map();
+  for (const r of rules) {
+    const c = colorOf(r.body);
+    if (c) for (const part of r.selector.split(",")) baseColor.set(part.trim(), c);
+  }
+  for (const r of rules) {
+    if (!/(?:^|[;\s])background(?:-color)?\s*:\s*var\(--rb-accent\b(?!-)/.test(r.body)) continue;
+    let color = colorOf(r.body);
+    if (!color) {
+      for (const part of r.selector.split(",")) {
+        const base = part.trim().replace(STATE_PSEUDO, "");
+        if (base !== part.trim() && baseColor.has(base)) color = baseColor.get(base);
+      }
+    }
+    if (color && !/^var\(--rb-on-accent\b/.test(color)) out.push(`${file} ${r.selector}`);
+    // A descendant rule (`.x:hover .artist { color: #fff }`) repaints text
+    // inside the fill and wins over the inherited on-accent color (Codex on
+    // #5727, AddTrackSearch's hovered artist), so it is held to the same rule.
+    // A descendant declared on the BASE selector (`.x .artist`, no :hover)
+    // also paints inside the hovered fill unless a state rule for the same
+    // descendant (`.x:hover .artist`) overrides it with --rb-on-accent.
+    // Matching is textual: a descendant styled through a different ancestor
+    // (`.list .artist` for an .artist inside `.list button:hover`) is not
+    // seen here; resolving DOM nesting is the rendered audit's job.
+    const onAccent = (c) => /^var\(--rb-on-accent\b/.test(c);
+    const stateColor = new Map();
+    for (const d of rules) {
+      const dc = colorOf(d.body);
+      if (dc) for (const q of d.selector.split(",")) stateColor.set(q.trim(), dc);
+    }
+    for (const part of r.selector.split(",").map((p) => p.trim())) {
+      const base = part.replace(STATE_PSEUDO, "");
+      for (const d of rules) {
+        const dc = colorOf(d.body);
+        if (!dc || onAccent(dc)) continue;
+        for (const q of d.selector.split(",").map((x) => x.trim())) {
+          if (q.startsWith(`${part} `)) out.push(`${file} ${d.selector}`);
+          else if (base !== part && q.startsWith(`${base} `)) {
+            const override = stateColor.get(`${part} ${q.slice(base.length + 1)}`);
+            if (!override || !onAccent(override)) out.push(`${file} ${d.selector}`);
+          }
+        }
+      }
+    }
+  }
+  return [...new Set(out)];
+}
+
+test("PAIR-08 every rule with text on an --rb-accent fill uses --rb-on-accent", () => {
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+    );
+  const files = walk(SRC_ROOT).filter((f) => /\.(svelte|css)$/.test(f));
+  // Presence control: the scan must see the rules it guards.
+  const seen = [];
+  const offenders = [];
+  for (const f of files) {
+    const rel = relative(SRC_ROOT, f).split(sep).join("/");
+    const css = readFileSync(f, "utf8");
+    if (/background:\s*var\(--rb-accent/.test(css)) seen.push(rel);
+    for (const hit of accentFillTextOffenders(css, rel)) if (!ACCENT_TEXT_ALLOWLIST.has(hit)) offenders.push(hit);
+  }
+  assert.ok(seen.includes("lib/components/rb/CreatePairingSheet.svelte"), `scan missed CreatePairingSheet (${seen.length} files seen)`);
+  assert.deepEqual(offenders, [], `text on an accent fill not taken from --rb-on-accent:\n${offenders.join("\n")}`);
+});
+
+test("PAIR-08 mutation: the pre-fix Capture rule is an offender, the fixed one is not", () => {
+  const before = ".primary {\n\tbackground: var(--rb-accent, #3d7dd9);\n\tcolor: #fff;\n}";
+  const after = ".primary {\n\tbackground: var(--rb-accent, #3d7dd9);\n\tcolor: var(--rb-on-accent, #fff);\n}";
+  const fill = ".bar {\n\tbackground: var(--rb-accent);\n}";
+  assert.deepEqual(accentFillTextOffenders(before, "x"), ["x .primary"]);
+  assert.deepEqual(accentFillTextOffenders(after, "x"), []);
+  assert.deepEqual(accentFillTextOffenders(fill, "x"), [], "a text-free fill is not an offender");
+  // The colour comes from the base rule (StripWaveform's .play-hint shape).
+  const hoverOnly = ".hint {\n\tcolor: #fff;\n}\n.hint:hover {\n\tbackground: var(--rb-accent);\n}";
+  const hoverFixed = ".hint {\n\tcolor: #fff;\n}\n.hint:hover {\n\tbackground: var(--rb-accent);\n\tcolor: var(--rb-on-accent);\n}";
+  assert.deepEqual(accentFillTextOffenders(hoverOnly, "x"), ["x .hint:hover"]);
+  assert.deepEqual(accentFillTextOffenders(hoverFixed, "x"), []);
+  // A descendant of the fill that sets its own color (AddTrackSearch's shape).
+  const desc = ".r:hover {\n\tbackground: var(--rb-accent);\n\tcolor: var(--rb-on-accent);\n}\n.r:hover .artist {\n\tcolor: #fff;\n}";
+  const descFixed = desc.replace("color: #fff", "color: var(--rb-on-accent, #fff)");
+  assert.deepEqual(accentFillTextOffenders(desc, "x"), ["x .r:hover .artist"]);
+  assert.deepEqual(accentFillTextOffenders(descFixed, "x"), []);
+  // A base-selector descendant still paints inside the hovered fill (Codex on
+  // #5727), unless a state rule for the same descendant overrides it.
+  const baseDesc = ".r:hover {\n\tbackground: var(--rb-accent);\n}\n.r .artist {\n\tcolor: #fff;\n}";
+  const baseOverridden = `${baseDesc}\n.r:hover .artist {\n\tcolor: var(--rb-on-accent);\n}`;
+  const unrelated = ".r:hover {\n\tbackground: var(--rb-accent);\n}\n.other .artist {\n\tcolor: #fff;\n}";
+  assert.deepEqual(accentFillTextOffenders(baseDesc, "x"), ["x .r .artist"]);
+  assert.deepEqual(accentFillTextOffenders(baseOverridden, "x"), []);
+  assert.deepEqual(accentFillTextOffenders(unrelated, "x"), [], "text outside the fill is not an offender");
 });
 
 test("PAIRINGS covers every colour token theme.css declares, except a named decorative exemption", () => {

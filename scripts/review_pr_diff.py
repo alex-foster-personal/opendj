@@ -24,6 +24,7 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -63,6 +64,24 @@ def pr_diff(repo: str, pr: str, repo_root: Path = REPO_ROOT) -> str:
             raise
     head, merge_base = _diff_endpoints(repo, pr)
     return checkout_diff(merge_base, head, repo_root)
+
+
+def pr_diff_at(repo: str, pr: str, sha: str, repo_root: Path = REPO_ROOT) -> str:
+    """The PR's diff as it stood at an EARLIER head `sha`, read from the checkout.
+
+    For dry-run replays only (a lane's `--at-sha`): GitHub serves the diff of
+    the current head alone. The merge base is the compare API's, for the reason
+    `_diff_endpoints` gives, and the commit must already be in the checkout.
+    """
+    view = json.loads(_gh(["pr", "view", pr, "--repo", repo, "--json", "baseRefOid"]))
+    base = view.get("baseRefOid")
+    if not base:
+        raise TriageError(f"PR #{pr} reported no base commit: {view}")
+    compare = f"repos/{repo}/compare/{base}...{sha}"
+    merge_base = _gh(["api", compare, "--jq", ".merge_base_commit.sha"]).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", merge_base):
+        raise TriageError(f"compare API returned no merge base for {compare}: {merge_base!r}")
+    return checkout_diff(merge_base, sha, repo_root)
 
 
 def _diff_endpoints(repo: str, pr: str) -> tuple[str, str]:

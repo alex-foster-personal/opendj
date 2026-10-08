@@ -31,6 +31,7 @@ from apps.engine_core.jobs.reap import (
     reap,
 )
 from apps.engine_core.jobs.store import JobConflict, JobNotFound, JobStore
+from apps.shared.shutdown_bound import quit_started
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ ReconcileHook = Callable[[dict[str, Any]], str]
 # (job row, the whole parsed progress line) -> None. See
 # register_progress_observer.
 ProgressObserver = Callable[[dict[str, Any], dict[str, Any]], None]
+# (terminal job row) -> None. See register_finish_observer.
+FinishObserver = Callable[[dict[str, Any]], None]
 
 RECONCILE_RESULTS: frozenset[str] = frozenset(
     {"succeeded", "failed", "cancelled", "unknown"}
@@ -50,6 +53,7 @@ RECONCILE_RESULTS: frozenset[str] = frozenset(
 _WORKERS: dict[str, WorkerArgv] = {}
 _RECONCILERS: dict[str, ReconcileHook] = {}
 _OBSERVERS: dict[str, ProgressObserver] = {}
+_FINISH_OBSERVERS: dict[str, FinishObserver] = {}
 
 _TAIL_LINES: int = 20
 
@@ -122,6 +126,7 @@ def unregister_worker(kind: str) -> None:
     _WORKERS.pop(kind, None)
     _RECONCILERS.pop(kind, None)
     _OBSERVERS.pop(kind, None)
+    _FINISH_OBSERVERS.pop(kind, None)
 
 
 def register_progress_observer(kind: str, hook: ProgressObserver) -> None:
@@ -158,6 +163,43 @@ def observe_progress(job: dict[str, Any], line: dict[str, Any]) -> None:
             "progress observer for kind %r raised on job %s",
             job["kind"],
             job["id"],
+        )
+
+
+def register_finish_observer(kind: str, hook: FinishObserver) -> None:
+    """Let a kind react, in the engine process, to the end of its own run.
+
+    The jobs store is the job's record, but not every reader looks there: a
+    failed stems run has to reach the coverage ledger too, or the enrich card
+    reads "nothing failed" about a separation the user asked for and lost.
+
+    Fires once, with the terminal row, after the run's OWN verdict is written:
+    ``succeeded``, or ``failed`` (nonzero exit, a malformed progress line, a
+    run that raised). It does NOT fire for ``cancelled`` or ``unknown``: a
+    cancel is the caller's verdict, not the work's, and an unknown outcome is
+    by definition one nothing should act on. The hook decides what each
+    status means for it.
+
+    Runs in a worker thread (``asyncio.to_thread``), because a kind's
+    bookkeeping may do file IO and the runner's loop also serves the API.
+    Same contract as a progress observer otherwise: one that raises is logged
+    and swallowed, and the terminal status already written stands.
+    """
+    _FINISH_OBSERVERS[kind] = hook
+
+
+def observe_finish(job: dict[str, Any]) -> None:
+    hook = _FINISH_OBSERVERS.get(job["kind"])
+    if hook is None:
+        return
+    try:
+        hook(job)
+    except Exception:  # a side channel must never fail the job
+        log.exception(
+            "finish observer for kind %r raised on job %s (status %s)",
+            job["kind"],
+            job["id"],
+            job.get("status"),
         )
 
 
@@ -257,6 +299,10 @@ class JobRunner:
         self.spawn_settle_s = spawn_settle_s
         self._running: dict[str, _Worker] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        # Finish observers, owned apart from _tasks: the job's slot is free
+        # once its worker settles, but the observer's thread is not done
+        # until it is, and stop() must outlast it (see _observe).
+        self._observers: set[asyncio.Task[None]] = set()
         self._supervisor: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -297,6 +343,12 @@ class JobRunner:
         ]
         if waiting:
             await asyncio.gather(*waiting, return_exceptions=True)
+        # Last, because a run gathered just above may have started one. Joined,
+        # never cancelled: cancelling the to_thread wrapper does not stop its
+        # thread, so a "settled" runner could still be writing the coverage
+        # ledger while the engine hands its state to a successor.
+        if self._observers:
+            await asyncio.gather(*self._observers, return_exceptions=True)
 
     async def _settle_spawn_window(self) -> set[str]:
         """Wait for every claimed job to finish forking, so none is skipped.
@@ -475,7 +527,9 @@ class JobRunner:
         while True:
             try:
                 free = self.max_concurrent - self._in_flight()
-                if free > 0:
+                # W43: claim nothing once quitting, so a queued job stays
+                # queued for the next boot instead of failing at its fork.
+                if free > 0 and not quit_started():
                     # No await between sizing the drain, claiming against it
                     # and _spawn recording the slots: on one event loop that
                     # makes the reservation atomic with the claim it pays for.
@@ -522,14 +576,35 @@ class JobRunner:
 
     async def _guarded_run(self, job: dict[str, Any]) -> None:
         job_id = job["id"]
+        finished: dict[str, Any] | None = None
         try:
-            await self._run(job)
+            finished = await self._run(job)
         except _ERRORS as exc:
-            self._record_failure(job_id, f"{type(exc).__name__}: {exc}")
+            finished = self._record_failure(job_id, f"{type(exc).__name__}: {exc}")
         finally:
             self._running.pop(job_id, None)
+        # After the worker is gone, outside _run's abandon guard: the verdict
+        # is already on the row, so nothing an observer does can reach the
+        # worker or the status.
+        if finished is not None and finished["kind"] in _FINISH_OBSERVERS:
+            self._observe(finished)
 
-    def _record_failure(self, job_id: str, error: str) -> None:
+    def _observe(self, finished: dict[str, Any]) -> None:
+        """Run a kind's finish observer as its own task, owned by this runner.
+
+        Not awaited inside the job's task: that kept the job in ``_tasks``
+        with no worker in ``_running``, which is exactly what shutdown's
+        spawn-window settle reads as a fork, so a slow observer was cancelled
+        as one. Cancelling the ``to_thread`` wrapper does not stop the thread,
+        and stop() then returned with the observer still writing. Held in
+        ``_observers`` instead, the slot frees when the worker settles and
+        stop() joins the observer before the engine lets go of its state.
+        """
+        task = asyncio.create_task(asyncio.to_thread(observe_finish, finished))
+        self._observers.add(task)
+        task.add_done_callback(self._observers.discard)
+
+    def _record_failure(self, job_id: str, error: str) -> dict[str, Any] | None:
         """Last-chance terminal write for a run that blew up.
 
         If even THIS write fails there is nowhere left to put the outcome, so
@@ -538,7 +613,7 @@ class JobRunner:
         it would leave a row 'running' with no worker and no explanation.
         """
         try:
-            self.store.finish(job_id, "failed", error=error)
+            return self.store.finish(job_id, "failed", error=error)
         except JobConflict as exc:
             # Already terminal: cancel() or _run got there first, and their
             # verdict is the true one. Not an error, but worth a trace.
@@ -557,8 +632,9 @@ class JobRunner:
                 exc,
                 error,
             )
+        return None
 
-    async def _run(self, job: dict[str, Any]) -> None:
+    async def _run(self, job: dict[str, Any]) -> dict[str, Any] | None:
         """Spawn the worker, then never return while its tree is still alive.
 
         Everything after the spawn is guarded: a store write failing here is a
@@ -576,6 +652,9 @@ class JobRunner:
         An await slipped into that window widens the one stretch in which an
         engine death orphans a worker beyond anything's reach -- see
         store.SPAWN_WINDOW_ERROR for what the next boot has to say about it.
+
+        Returns the terminal row the run wrote, or None when cancel() owns the
+        verdict (see :func:`register_finish_observer`).
         """
         job_id = job["id"]
         argv = worker_argv(job["kind"], job["payload"])
@@ -590,7 +669,7 @@ class JobRunner:
         self._running[job_id] = worker
         try:
             self.store.record_worker(job_id, pid=proc.pid, identity=identity)
-            await self._drive_worker(job_id, worker)
+            return await self._drive_worker(job_id, worker)
         except BaseException:
             await self._abandon(job_id, worker)
             raise
@@ -604,7 +683,9 @@ class JobRunner:
             "job %s abandoned its worker; reaped the group: %s", job_id, outcome
         )
 
-    async def _drive_worker(self, job_id: str, worker: _Worker) -> None:
+    async def _drive_worker(
+        self, job_id: str, worker: _Worker
+    ) -> dict[str, Any] | None:
         """Read the worker to its end. The identity is ALREADY persisted here:
         _run writes it before this is entered, so the spawn window stays as
         narrow as it can be no matter what is added to the top of this."""
@@ -624,22 +705,21 @@ class JobRunner:
             outcome = await asyncio.to_thread(reap, identity)
             await proc.wait()
             if worker.cancelled:
-                return
-            self.store.finish(
+                return None
+            return self.store.finish(
                 job_id,
                 "failed",
                 error=_error_blob(malformed, stdout_tail, worker.stderr_tail)
                 + f" {outcome}",
             )
-            return
 
         returncode = await proc.wait()
         if worker.cancelled:
             # cancel() owns the terminal write; it is still confirming the
             # group is dead and must not race us to a status.
-            return
+            return None
         if returncode != 0:
-            self.store.finish(
+            return self.store.finish(
                 job_id,
                 "failed",
                 error=_error_blob(
@@ -648,9 +728,8 @@ class JobRunner:
                     worker.stderr_tail,
                 ),
             )
-            return
         self.store.set_progress(job_id, 1.0, "done")
-        self.store.finish(job_id, "succeeded")
+        return self.store.finish(job_id, "succeeded")
 
     async def _pump(
         self,
@@ -880,6 +959,7 @@ __all__ = [
     "ORPHANED_WORKER_ERROR",
     "PROGRESS_WRITE_INTERVAL_S",
     "RECONCILE_RESULTS",
+    "FinishObserver",
     "JobRunner",
     "ProgressObserver",
     "ReconcileHook",
@@ -887,8 +967,10 @@ __all__ = [
     "WorkerArgv",
     "WorkerProtocolError",
     "known_kinds",
+    "observe_finish",
     "observe_progress",
     "reconcile",
+    "register_finish_observer",
     "register_progress_observer",
     "register_reconcile",
     "register_worker",

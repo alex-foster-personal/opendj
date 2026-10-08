@@ -403,6 +403,12 @@ def _listing_items(
         # the vendor row's, so it replaces the dumped field instead of being
         # passed twice.
         base["play_count"] = int(row.get("play_count") or 0)
+        # Lane display triples come from build_track_rows (STANDALONE-03), not
+        # from TrackOut: the state-layer Track carries provenance, but the
+        # listing previously dropped bpm_status/key_status/loudness_status here
+        # and the browser then treated an absent status as "ok".
+        base["bpm"] = row["bpm"]
+        base["key"] = row["key"]
         items.append(
             TrackListItemOut(
                 **base,
@@ -422,10 +428,16 @@ def _listing_items(
                 energy=row["energy"],
                 energy_source=row["energy_source"],
                 energy_reason=row["energy_reason"],
+                key_status=row["key_status"],
+                key_reason=row.get("key_reason"),
+                bpm_status=row["bpm_status"],
+                bpm_reason=row.get("bpm_reason"),
                 bpm_source=row.get("bpm_source"),
                 bpm_method=row.get("bpm_method"),
                 bpm_confidence=row.get("bpm_confidence"),
                 bpm_confidence_error=row.get("bpm_confidence_error"),
+                loudness_status=row["loudness_status"],
+                loudness_reason=row.get("loudness_reason"),
                 lyrics=row.get("lyrics"),
                 grid_quality=row["grid_quality"],
                 is_remix=bool(row.get("is_remix")),
@@ -470,8 +482,8 @@ def _index_rows(
             "artist": track.artist,
             "album": track.album,
             "duration_ms": track.duration_ms,
-            "bpm": track.bpm,
-            "key": track.key,
+            "bpm": row["bpm"],
+            "key": row["key"],
             "rating": track.rating,
             "notes": track.notes,
             "file_path": track.file_path,
@@ -488,10 +500,16 @@ def _index_rows(
             "energy": row["energy"],
             "energy_source": row["energy_source"],
             "energy_reason": row["energy_reason"],
+            "key_status": row["key_status"],
+            "key_reason": row.get("key_reason"),
+            "bpm_status": row["bpm_status"],
+            "bpm_reason": row.get("bpm_reason"),
             "bpm_source": row.get("bpm_source"),
             "bpm_method": row.get("bpm_method"),
             "bpm_confidence": row.get("bpm_confidence"),
             "bpm_confidence_error": row.get("bpm_confidence_error"),
+            "loudness_status": row["loudness_status"],
+            "loudness_reason": row.get("loudness_reason"),
             "lyrics": row.get("lyrics"),
             "grid_quality": row["grid_quality"],
             "is_remix": bool(row.get("is_remix")),

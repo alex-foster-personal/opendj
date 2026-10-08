@@ -28,8 +28,13 @@ test('tracks and playlists are numeric readouts with hover titles', () => {
 
 test('every health readout is joined by a literal middle-dot separator', () => {
 	/** if .status-strip can neither wrap nor ellipsis then readouts concatenate then broken */
-	const sepMatches = LAYOUT.match(/class="sep"[^>]*> · </g) ?? [];
+	// The spaces live in an expression: Svelte 5 trims whitespace at the start
+	// and end of an element's text, so `<span class="sep"> · </span>` rendered
+	// as a bare "·" and the strip read "(3 playable)·3 playlists·lock: free"
+	// (public-launch sweep, Wed 7 Oct 2026).
+	const sepMatches = LAYOUT.match(/class="sep"[^>]*>\{' · '\}</g) ?? [];
 	assert.ok(sepMatches.length >= 4, `expected at least 4 · separators, got ${sepMatches.length}`);
+	assert.doesNotMatch(LAYOUT, /class="sep"[^>]*> · </, 'a bare-text separator loses its spaces');
 });
 
 test('the status strip wraps or ellipsizes on overflow', () => {
@@ -62,6 +67,11 @@ test('the status strip never labels syncthing as sync:', () => {
 	const syncthingIf = LAYOUT.match(/\{#if health\.data\.syncthing\}[\s\S]*?\{\/if\}/);
 	assert.ok(syncthingIf, 'syncthing block must exist');
 	assert.match(syncthingIf[0], /class="sep"/, 'syncthing block must include a separator');
-	const sepMatches = LAYOUT.match(/class="sep"[^>]*> · </g) ?? [];
+	// The spaces live in an expression: Svelte 5 trims whitespace at the start
+	// and end of an element's text, so `<span class="sep"> · </span>` rendered
+	// as a bare "·" and the strip read "(3 playable)·3 playlists·lock: free"
+	// (public-launch sweep, Wed 7 Oct 2026).
+	const sepMatches = LAYOUT.match(/class="sep"[^>]*>\{' · '\}</g) ?? [];
 	assert.ok(sepMatches.length >= 4, `expected at least 4 · separators, got ${sepMatches.length}`);
+	assert.doesNotMatch(LAYOUT, /class="sep"[^>]*> · </, 'a bare-text separator loses its spaces');
 });

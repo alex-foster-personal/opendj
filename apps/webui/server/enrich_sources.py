@@ -13,11 +13,13 @@ coverage snapshot so the card, ``GET /ahead-analysis/coverage``,
   serves by default (``apps.analysis.selection.DEFAULT_SOURCE``); Open DJ is
   credited only for tracks no library source covers.
 * ``lane_drain_states``: why each own_* lane is or is not moving right now:
-  running, paused while a deck plays, waiting for an earlier lane (the drain
-  finishes a lane for EVERY track before starting the next), stalled, or done.
+  running, paused while a deck plays, waiting for a pre-lane phase (tags or
+  strip), stalled, or done. Lanes never wait on each other: the drain is
+  track-major (``ahead_analysis.next_lane_work``), so every lane with
+  missing work is running.
 
 Every count's denominator is ``present`` (tracks whose audio is on this Mac),
-per the house rule in ``docs/library-availability.md``.
+per the house rule in ``(private path)``.
 
 Requirements (mini-PRD):
   ✔︎ a value from any source counts as ready
@@ -62,10 +64,19 @@ def usable_counts(
     return {"denominator": "present", "total": total, "ready": ready, "none": total - ready, "by_source": ranked}
 
 
+def _all_failed_reason(counts: Mapping[str, Any]) -> str:
+    reasons: Mapping[str, int] = counts.get("failed_reasons") or {}
+    top = max(reasons.items(), key=lambda item: item[1])[0] if reasons else "no reason recorded"
+    return f"every run failed ({counts['failed']} tracks), most often: {top}"
+
+
 def _lane_state(state: str, counts: Mapping[str, Any], ahead: str | None) -> dict[str, str | None]:
     if counts.get("unavailable"):
         return {"state": "unavailable", "waiting_on": None, "reason": str(counts["unavailable"])}
     if not counts.get("missing"):
+        if counts.get("failed") and not counts.get("done"):
+            # #5866: nothing left to try is not done when nothing succeeded.
+            return {"state": "unavailable", "waiting_on": None, "reason": _all_failed_reason(counts)}
         return {"state": "done", "waiting_on": None, "reason": None}
     if state == "paused_playing":
         return {"state": "paused_playing", "waiting_on": None, "reason": None}
@@ -90,8 +101,6 @@ def lane_drain_states(
         if counts is None:
             continue
         out[lane] = _lane_state(state, counts, ahead)
-        if ahead is None and counts.get("missing") and not counts.get("unavailable"):
-            ahead = lane
     return out
 
 

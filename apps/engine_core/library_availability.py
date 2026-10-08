@@ -7,23 +7,30 @@ candidates from the database.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import os
 import sqlite3
 import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 from apps.mik import availability as avail
+from apps.shared.platform_paths import SHARE_ROOT, PathMap, load_path_map
 from apps.shared.scan_mass_missing import MassMissingError
 from apps.shared.state import db as state_db
+from apps.shared.state.machine_identity import get_or_create_machine_id
 from apps.shared.state.availability_write import (
     AvailabilityRow,
     guard_round_present_drop,
     present_count,
 )
+from apps.shared.state.locations import ID_BIND_BATCH
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +81,157 @@ WHERE t.deleted_at IS NULL
 ORDER BY t.stable_id
 LIMIT ?
 """
+
+# Bump when classification changes in a way the incremental scan would not
+# notice on its own. The scan only revisits unknown, stale, and
+# awaiting_volume rows, so a persisted `absent` row stays absent until this
+# generation or the loaded path map changes.
+_AVAILABILITY_RESOLVER_GENERATION = 2
+# Lives in state.db. A sidecar (state/availability-resolver.json) does not:
+# restore workflows replace only state.db and would keep a matching sidecar
+# over rows classified by an older resolver.
+_RESOLVER_MARKER_PREFIX = "availability-resolver:"
+# This is an invalidation marker, not a sync timestamp. The supported
+# tracks.updated_at floor is year one (sync_stamp.FLOOR_STAMP), so neither
+# 1970 nor that floor itself makes every row stale under strict `>`.
+# Empty TEXT is non-NULL and sorts before every supported track timestamp.
+_STALE_CHECKED_AT = ""
+
+
+class _PathMapUnreadable(Exception):
+    """path-map.json could not be read during a drain.
+
+    The drain stays queued and retries. This must not escape to ``_run_loop``,
+    which would park the worker in ``failed`` and suppress later wakes.
+    """
+
+
+def _load_path_map(data_dir: Path) -> PathMap:
+    """Read path-map.json; raise ``_PathMapUnreadable`` on OSError/ValueError."""
+    try:
+        return load_path_map(data_dir)
+    except (OSError, ValueError) as exc:
+        raise _PathMapUnreadable(str(exc)) from exc
+
+
+def _resolver_env_fingerprint() -> dict[str, str]:
+    """Resolver inputs that change targets without a path-map edit.
+
+    ``resolve_library_path`` sends ``/PIONEER/...`` through ``SHARE_ROOT``
+    and, when ``MDT_LIBRARY_MODE`` is remote, refuses a native ``/Users/...``
+    path. A restart that changes the mode, ``MDT_CRATE_ROOT``, or the share
+    root this process imported must not keep settled rows.
+    """
+    return {
+        "crate_root": os.environ.get("MDT_CRATE_ROOT", "").strip(),
+        "library_mode": os.environ.get("MDT_LIBRARY_MODE", "").strip().lower(),
+        "share_root": str(SHARE_ROOT),
+    }
+
+
+def _resolver_fingerprint_from_map(data_dir: Path, path_map: PathMap) -> str:
+    """Fingerprint for an already-read map. Includes this machine's id."""
+    env_inputs = _resolver_env_fingerprint()
+    payload = {
+        "crate_root": env_inputs["crate_root"],
+        "entries": [{"from": src, "to": dst} for src, dst in path_map.entries],
+        "generation": _AVAILABILITY_RESOLVER_GENERATION,
+        "library_mode": env_inputs["library_mode"],
+        "machine_id": get_or_create_machine_id(data_dir),
+        "share_root": env_inputs["share_root"],
+    }
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _resolver_fingerprint(data_dir: Path) -> str:
+    """Stable id of this machine, the path map, the resolver generation, and
+    the mode, crate root, and share root the resolver is using.
+
+    Machine id lives outside state.db. A restored database must not keep
+    another machine's present or absent verdicts just because the path map
+    matches, including the common case of an empty map. Mode and crate root
+    are the same kind of input: they change ``/PIONEER`` and remote
+    ``/Users`` targets while the map file stays byte-identical.
+    """
+    return _resolver_fingerprint_from_map(data_dir, _load_path_map(data_dir))
+
+
+def _resolver_marker(fingerprint: str) -> str:
+    return f"{_RESOLVER_MARKER_PREFIX}{fingerprint}"
+
+
+def _stored_resolver_fingerprint(conn: sqlite3.Connection) -> str | None:
+    """The fingerprint stored in this database, or None when it must be reset.
+
+    Zero or several markers both mean "not bound to this file". A restored
+    state.db brings its own marker (or none); a leftover sidecar is ignored.
+    """
+    present = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        ("schema_meta_markers",),
+    ).fetchone()
+    if present is None:
+        raise RuntimeError(
+            "schema_meta_markers is missing; cannot bind the availability "
+            "resolver stamp to state.db"
+        )
+    rows = conn.execute(
+        "SELECT marker FROM schema_meta_markers WHERE marker LIKE ?",
+        (_RESOLVER_MARKER_PREFIX + "%",),
+    ).fetchall()
+    if len(rows) != 1:
+        return None
+    marker = str(rows[0][0])
+    if not marker.startswith(_RESOLVER_MARKER_PREFIX):
+        return None
+    fingerprint = marker[len(_RESOLVER_MARKER_PREFIX) :]
+    if not fingerprint:
+        return None
+    return fingerprint
+
+
+def _stale_availability_except(
+    conn: sqlite3.Connection, preserve_ids: tuple[str, ...]
+) -> int:
+    """Stale every availability row whose id is not in ``preserve_ids``.
+
+    One ``NOT IN`` of the whole preserve list binds two timestamps plus one
+    variable per id. A first empty-map round can preserve ``MAX_ROUND_IDS``
+    (2000) ids, and SQLite builds capped at 999 variables raise "too many
+    SQL variables". Chunking that ``NOT IN`` is not the same statement: an
+    earlier chunk would stale ids that belong in a later chunk. Select the
+    complement, then update it in ``IN`` chunks of ``ID_BIND_BATCH - 2`` so
+    each statement binds the two timestamps plus that chunk and nothing more.
+    """
+    chunk_len = ID_BIND_BATCH - 2
+    if chunk_len < 1:
+        raise RuntimeError(
+            f"ID_BIND_BATCH ({ID_BIND_BATCH}) cannot fit two timestamps "
+            "plus one stable_id"
+        )
+    preserve = set(preserve_ids)
+    to_stale = [
+        stable_id
+        for (stable_id,) in conn.execute(
+            "SELECT stable_id FROM track_availability "
+            "WHERE checked_at != ? ORDER BY stable_id",
+            (_STALE_CHECKED_AT,),
+        )
+        if stable_id not in preserve
+    ]
+    changed = 0
+    for start in range(0, len(to_stale), chunk_len):
+        chunk = to_stale[start : start + chunk_len]
+        placeholders = ",".join("?" * len(chunk))
+        before = conn.total_changes
+        conn.execute(
+            "UPDATE track_availability SET checked_at = ? "
+            f"WHERE checked_at != ? AND stable_id IN ({placeholders})",
+            (_STALE_CHECKED_AT, _STALE_CHECKED_AT, *chunk),
+        )
+        changed += conn.total_changes - before
+    return changed
 
 
 @dataclass
@@ -148,6 +306,15 @@ class LibraryAvailabilityWorker:
         #: not recomputed every round -- see `_drain_once`'s LIBM-41
         #: follow-up note (round-6 Sol finding, cumulative loss guard).
         self._sweep_baseline_present: int | None = None
+        #: A path-map stamp reset that could not commit. No row is pending
+        #: until that reset lands, so the idle loop must treat this as
+        #: queued work or the sweep never retries it.
+        self._resolver_invalidate_due = False
+        #: Fingerprint of the path map whose stamp matched or committed.
+        #: None until then, so an unseen map is not treated as current.
+        #: The idle tick compares a fresh file read with this and does not
+        #: open state.db to decide.
+        self._observed_resolver_fingerprint: str | None = None
         self._on_batch_committed = on_batch_committed
         #: Defaults to the real production ``/Volumes`` contract
         #: (`apps.mik.availability.VOLUMES_ROOT`). A caller that needs a
@@ -457,9 +624,9 @@ class LibraryAvailabilityWorker:
         with self._lock:
             self._priority_ids.extendleft(reversed(stable_ids))
 
-    def _run_capped_round(self, conn: sqlite3.Connection) -> tuple[int, bool]:
+    def _run_capped_round(self, conn: sqlite3.Connection) -> tuple[int, bool, list[str]]:
         """Collect, guard, and write one capped round. Returns
-        ``(batches_committed, refused)``.
+        ``(batches_committed, refused, written_ids)``.
 
         Refusal sets ``phase``/``last_error`` itself (the caller only needs
         to know to stop); every other path leaves phase-setting to the
@@ -472,7 +639,7 @@ class LibraryAvailabilityWorker:
             # write was attempted that could still fail, so the source
             # flip / cursor reset is safe to commit immediately.
             self._commit_round_cursor(round_cursor)
-            return 0, False
+            return 0, False, []
 
         # The mass-missing baseline for the whole SWEEP (not just this
         # round): captured once, the first time a round in this sweep has
@@ -484,7 +651,8 @@ class LibraryAvailabilityWorker:
         # while cumulatively wiping out far more of the library than that
         # (round-6 Sol finding, BLOCKING P1). Reset to None when a sweep
         # completes (`_drain_once`'s tail) or a full probe resets the
-        # world (`_run_full_probe`).
+        # world (`_run_full_probe`). The deferred empty-map stamp stales
+        # rows inside this same sweep, so it must not clear the baseline.
         if self._sweep_baseline_present is None:
             with self._lock:
                 self._sweep_baseline_present = present_count(conn)
@@ -495,8 +663,12 @@ class LibraryAvailabilityWorker:
         # them is written, so a refusal can never leave earlier batches'
         # downgrades already committed.
         try:
+            path_map = _load_path_map(self._data_dir)
             round_rows = avail.probe_batch(
-                conn, candidate_ids, volumes_root=self._volumes_root
+                conn,
+                candidate_ids,
+                volumes_root=self._volumes_root,
+                path_map=path_map,
             )
             guard_round_present_drop(
                 conn,
@@ -515,7 +687,7 @@ class LibraryAvailabilityWorker:
             with self._lock:
                 self._status.phase = "refused"
                 self._status.last_error = str(exc)
-            return 0, True
+            return 0, True, []
         except Exception:
             conn.rollback()
             self._requeue_priority_ids(round_cursor.priority_taken)
@@ -523,6 +695,7 @@ class LibraryAvailabilityWorker:
 
         batches_committed = 0
         round_completed = True
+        written_ids: list[str] = []
         for start in range(0, len(round_rows), self._batch_size):
             if self._stop.is_set():
                 round_completed = False
@@ -539,6 +712,7 @@ class LibraryAvailabilityWorker:
                     raise
                 raise
             batches_committed += 1
+            written_ids.extend(row.stable_id for row in chunk)
             self._refresh_status_counts(conn)
             if self._on_batch_committed is not None:
                 self._on_batch_committed(self.status())
@@ -558,7 +732,7 @@ class LibraryAvailabilityWorker:
             # idempotent re-probe next round, never a skip.
             self._requeue_priority_ids(round_cursor.priority_taken)
 
-        return batches_committed, False
+        return batches_committed, False, written_ids
 
     def _commit_batch(
         self,
@@ -597,7 +771,10 @@ class LibraryAvailabilityWorker:
         return report.changed
 
     def _run_full_probe(self, conn: sqlite3.Connection, req: _FullProbeRequest) -> bool:
-        rows = avail.probe(conn, volumes_root=self._volumes_root)
+        path_map = _load_path_map(self._data_dir)
+        rows = avail.probe(
+            conn, volumes_root=self._volumes_root, path_map=path_map
+        )
         avail.commit_availability_batch(
             conn,
             rows,
@@ -615,20 +792,71 @@ class LibraryAvailabilityWorker:
         # "gave up or shutting down", and a full probe has no other result.
         return True
 
+    def _idle_poll_should_wake(
+        self,
+        *,
+        phase: str,
+        fingerprint_changed: bool,
+        queued_request: bool,
+    ) -> bool:
+        """Decide whether an idle poll should set the wake event.
+
+        A refusing drain already stored the bad fingerprint on
+        ``_observed_resolver_fingerprint``. A corrected file compares
+        different and must wake; an unchanged file compares equal and
+        must stay refused even if priority ids, a full probe, or a leftover
+        due flag are set. Failed stays failed even when the fingerprint
+        changed. Every other phase wakes on a queued request or pending
+        rows.
+        """
+        if phase == "failed":
+            return False
+        if phase == "refused":
+            return fingerprint_changed
+        return queued_request or self._count_pending() > 0
+
     def _run_loop(self) -> None:
         while not self._stop.is_set():
             if not self._wake.wait(timeout=_POLL_IDLE_S):
+                # path-map.json can change after the sweep is complete or
+                # after a resolver-induced refusal. Nothing else sets the
+                # due flag for that edit, and the file fingerprint is
+                # enough: do not open state.db here.
+                # A half-written or unreadable map raises before the round's
+                # handler. Catch it here so the daemon thread stays alive and
+                # the next idle poll can read the repaired file. Do not mark
+                # the phase failed: that would refuse the later wake.
+                try:
+                    current_fingerprint = _resolver_fingerprint(self._data_dir)
+                except Exception as exc:
+                    log.exception(
+                        "availability worker could not read path-map.json while idle"
+                    )
+                    with self._lock:
+                        self._status.last_error = str(exc)
+                    continue
                 with self._lock:
                     phase = self._status.phase
-                    # A full probe (and any priority ids taken back after a
-                    # locked round) is queued work even when every live row
-                    # is already settled. Pending-only wake left that request
-                    # stuck after the retry budget was spent.
-                    queued_request = (
-                        self._full_probe is not None or bool(self._priority_ids)
+                    fingerprint_changed = (
+                        current_fingerprint != self._observed_resolver_fingerprint
                     )
-                if phase not in {"refused", "failed"} and (
-                    queued_request or self._count_pending() > 0
+                    if fingerprint_changed:
+                        self._resolver_invalidate_due = True
+                    # A full probe, priority ids taken back after a locked
+                    # round, a resolver-stamp reset that could not commit,
+                    # or a path map this worker has not stamped yet are
+                    # queued work even when every live row is already
+                    # settled. Pending-only wake left that request stuck
+                    # after the retry budget was spent.
+                    queued_request = (
+                        self._full_probe is not None
+                        or bool(self._priority_ids)
+                        or self._resolver_invalidate_due
+                    )
+                if self._idle_poll_should_wake(
+                    phase=phase,
+                    fingerprint_changed=fingerprint_changed,
+                    queued_request=queued_request,
                 ):
                     self._wake.set()
                 continue
@@ -644,10 +872,210 @@ class LibraryAvailabilityWorker:
                     self._status.last_error = str(exc)
                     self._status.complete = False
 
+    def _note_unreadable_path_map(self, exc: Exception) -> None:
+        """A path-map read failed during a drain.
+
+        Stay queued. ``failed`` makes later idle polls ignore a repaired
+        file. Do not record a fingerprint, so the next successful read
+        still looks new. Priority ids a capped round already took are
+        requeued by that round's ``except Exception``; this must not
+        requeue them again.
+        """
+        log.exception(
+            "availability worker could not read path-map.json during drain"
+        )
+        with self._lock:
+            self._status.phase = "queued"
+            self._status.last_error = str(exc)
+            self._status.complete = False
+            if not self._stop.is_set():
+                self._resolver_invalidate_due = True
+
+    def _commit_resolver_marker(
+        self,
+        conn: sqlite3.Connection,
+        current: str,
+        *,
+        reset_rows: bool,
+        preserve_ids: tuple[str, ...] = (),
+        retain_sweep_baseline: bool = False,
+    ) -> bool:
+        """Stamp ``current``. Stale every availability row when ``reset_rows``.
+
+        ``preserve_ids`` are rows this sweep already wrote under ``current``.
+        Their ``checked_at`` stays the probe timestamp. A restart that
+        matches this stamp must not select them as pending again. The stale
+        update is chunked at ``ID_BIND_BATCH`` including its two timestamps.
+
+        When that update stales nothing, the keyset cursor the round just
+        committed stays. Blanking it made a successful first empty-map round
+        look like the scan had not advanced. Staling any other row, or a
+        reset with no preserve list, restarts the cursor: a newly stale row
+        can sort at or before the tail, and the incomplete scan would skip it.
+
+        ``retain_sweep_baseline`` is for the deferred empty-map stamp only.
+        That stamp runs after the first capped round has already captured
+        the pre-migration present count. Clearing the baseline here let the
+        next round measure a 50% drop against the already-reduced count
+        (LIBM-41). A real resolver change still clears it.
+
+        Returns True, not None: the retry helper uses None when it gave up
+        or is shutting down. A database lock is raised for that helper, and
+        this attempt does not keep the stamp in that case. The observed
+        fingerprint is recorded only after the stamp commits.
+        """
+        rows_staled = 0
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if reset_rows:
+                if preserve_ids:
+                    rows_staled = _stale_availability_except(conn, preserve_ids)
+                else:
+                    conn.execute(
+                        "UPDATE track_availability SET checked_at = ? "
+                        "WHERE checked_at != ?",
+                        (_STALE_CHECKED_AT, _STALE_CHECKED_AT),
+                    )
+            conn.execute(
+                "DELETE FROM schema_meta_markers WHERE marker LIKE ?",
+                (_RESOLVER_MARKER_PREFIX + "%",),
+            )
+            conn.execute(
+                "INSERT INTO schema_meta_markers(marker, applied_at) VALUES (?, ?)",
+                (_resolver_marker(current), datetime.now(UTC).isoformat()),
+            )
+            conn.commit()
+        except (sqlite3.OperationalError, state_db.StateStoreBusyError):
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+        self._observed_resolver_fingerprint = current
+        if reset_rows:
+            with self._lock:
+                if not preserve_ids or rows_staled > 0:
+                    self._keyset_cursor = ""
+                self._scan_awaiting_volume = False
+                if not retain_sweep_baseline:
+                    self._sweep_baseline_present = None
+        return True
+
+    def _finish_deferred_stamp(
+        self,
+        conn: sqlite3.Connection,
+        current: str,
+        *,
+        preserve_ids: tuple[str, ...] = (),
+    ) -> bool:
+        """Stamp the first empty-map generation after the round has run.
+
+        An empty map is not a no-op on that first generation.
+        ``resolve_library_path`` still maps ``/PIONEER/...`` through
+        ``SHARE_ROOT`` with zero entries, so settled rows must be staled or
+        a fresh ``absent`` row stays absent forever. Rows this sweep already
+        committed keep their probe ``checked_at``. The stamp stays after
+        the round so a busy database can requeue priority ids first.
+
+        False means the write did not commit. The due flag stays set so a
+        later idle tick retries it. When the reset leaves rows pending, this
+        stays queued instead of letting the caller mark the sweep done.
+        """
+        wrote = self._attempt_with_lock_retries(
+            lambda: self._commit_resolver_marker(
+                conn,
+                current,
+                reset_rows=True,
+                preserve_ids=preserve_ids,
+                retain_sweep_baseline=True,
+            )
+        )
+        if wrote is None:
+            if not self._stop.is_set():
+                with self._lock:
+                    self._resolver_invalidate_due = True
+            return False
+        self._refresh_status_counts(conn)
+        if self._status.pending > 0 and not self._stop.is_set():
+            with self._lock:
+                self._status.phase = "queued"
+                self._status.complete = False
+                self._resolver_invalidate_due = True
+        return True
+
+    def _invalidate_if_resolver_changed(
+        self,
+        conn: sqlite3.Connection,
+        current: str,
+        *,
+        map_empty: bool,
+    ) -> str:
+        """Make persisted rows stale when the path map or resolver generation changes.
+
+        The incremental scan never selects a fresh ``absent`` row. An upgrade
+        that starts honoring ``path-map.json``, or an edit to that file,
+        would otherwise leave those tracks missing until a manual full probe.
+        The marker is written in the same transaction as the checked_at
+        reset, and the keyset cursor restarts, so a later process resumes
+        the reprobe instead of skipping rows already settled under the new
+        stamp. The marker is a row in this database, so replacing state.db
+        replaces the stamp with it.
+
+        Returns ``matched`` when the stored stamp already equals ``current``,
+        ``reset`` when this call staled rows and committed the stamp, or
+        ``defer`` when there is no stamp and the successfully read map has
+        no entries. ``defer`` does not write here. The first empty-map
+        generation still changes ``/PIONEER`` classification, so
+        ``_finish_deferred_stamp`` stales settled rows after this round.
+        Writing the stamp here would take the writer lock before priority
+        ids are collected, and a busy database then never reaches the
+        round's requeue.
+
+        When the stored fingerprint is not None and differs, or the map has
+        entries and the stamp does not match, the existing stale-all-rows
+        reset still runs in the same transaction as the marker.
+
+        A database lock on ``reset`` is raised for
+        ``_attempt_with_lock_retries``. ``current`` and ``map_empty`` were
+        read by the caller. A second read here would raise on a truncated
+        file after the caller had already decided the wake was runnable.
+        """
+        stored = _stored_resolver_fingerprint(conn)
+        if stored == current:
+            self._observed_resolver_fingerprint = current
+            return "matched"
+        if stored is None and map_empty:
+            return "defer"
+        self._commit_resolver_marker(conn, current, reset_rows=True)
+        return "reset"
+
     def _drain_once(self) -> None:
+        try:
+            path_map = _load_path_map(self._data_dir)
+            current_fingerprint = _resolver_fingerprint_from_map(
+                self._data_dir, path_map
+            )
+        except _PathMapUnreadable as exc:
+            self._note_unreadable_path_map(exc)
+            return
         conn = self._open_conn()
         try:
+            sync = self._attempt_with_lock_retries(
+                lambda: self._invalidate_if_resolver_changed(
+                    conn,
+                    current_fingerprint,
+                    map_empty=not path_map.entries,
+                )
+            )
+            if sync is None:
+                # The stamp did not advance, so no row is pending yet. Stay
+                # queued (the retry helper already set that phase) and let
+                # the idle loop drain again. A failed phase would suppress
+                # that wake until an external request_probe.
+                if not self._stop.is_set():
+                    with self._lock:
+                        self._resolver_invalidate_due = True
+                return
             with self._lock:
+                self._resolver_invalidate_due = False
                 full_probe = self._full_probe
                 if full_probe is not None:
                     self._status.phase = "running"
@@ -663,8 +1091,18 @@ class LibraryAvailabilityWorker:
                         self._status.phase = "refused"
                         self._status.last_error = str(exc)
                         self._full_probe = None
+                    # Hold this empty-map attempt. Do not stamp or rewrite
+                    # settled rows; the idle poll compares this value.
+                    self._observed_resolver_fingerprint = current_fingerprint
+                    return
+                except _PathMapUnreadable as exc:
+                    self._note_unreadable_path_map(exc)
                     return
                 if ran is None:
+                    return
+                if sync == "defer" and not self._finish_deferred_stamp(
+                    conn, current_fingerprint
+                ):
                     return
                 self._refresh_status_counts(conn)
                 return
@@ -673,13 +1111,24 @@ class LibraryAvailabilityWorker:
                 self._status.phase = "running"
                 self._status.last_error = None
 
-            round_result = self._attempt_with_lock_retries(
-                lambda: self._run_capped_round(conn)
-            )
+            try:
+                round_result = self._attempt_with_lock_retries(
+                    lambda: self._run_capped_round(conn)
+                )
+            except _PathMapUnreadable as exc:
+                self._note_unreadable_path_map(exc)
+                return
             if round_result is None:
                 return
-            batches_committed, refused = round_result
+            batches_committed, refused, written_ids = round_result
             if refused:
+                self._observed_resolver_fingerprint = current_fingerprint
+                return
+            if sync == "defer" and not self._finish_deferred_stamp(
+                conn,
+                current_fingerprint,
+                preserve_ids=tuple(written_ids),
+            ):
                 return
 
             with self._lock:

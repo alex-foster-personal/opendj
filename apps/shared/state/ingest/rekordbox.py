@@ -44,7 +44,9 @@ from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
+    path_collision_key,
 )
+from apps.shared.state.ingest.path_identity import live_inferred_by_path_key
 from apps.shared.state.writer import StateWriter, compute_playlist_id
 
 _log = logging.getLogger(__name__)
@@ -101,7 +103,7 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
         # the encoding) but we preserve it as 0.0 rather than dropping to
         # None so downstream reporting can distinguish "known zero" from
         # "missing". Only a None row value (column absent / non-numeric)
-        # maps back to None. See .planning/FAN-OUT-V2-TRIAGE-2026-04-17.md.
+        # maps back to None. See (private path).
         bpm_value = bpm_raw / 100.0 if bpm_raw is not None else None
         length_s = _safe_int(getattr(row, "Length", None))
         duration_ms = length_s * 1000 if length_s else None
@@ -282,6 +284,7 @@ def ingest_rb(
             # Ids the user removed (LIBM-140): skipped above, and filtered out
             # of every playlist's membership below.
             deleted_sids: set[str] = set()
+            existing_inferred = live_inferred_by_path_key(conn)
 
             for i, track in enumerate(all_rows):
                 if limit is not None and i >= limit:
@@ -292,7 +295,7 @@ def ingest_rb(
                 # (empty path for streaming) meant every ISRC-less
                 # streaming track hashed to sha1("|0.0"), so the
                 # seen_sids guard below silently dropped all but the first.
-                # See .planning/FAN-OUT-V2-TRIAGE-2026-04-17.md (2/3).
+                # See (private path) (2/3).
                 path_str = track["folder_path"]
                 mtime = 0.0
                 # Only hit the filesystem for real local paths; skip
@@ -316,6 +319,12 @@ def ingest_rb(
                 except ValueError:
                     report.tracks_skipped += 1
                     continue
+                if tier == "inferred" and path_str:
+                    reused = existing_inferred.get(path_collision_key(path_str))
+                    if reused is not None:
+                        sid = reused
+                    else:
+                        existing_inferred[path_collision_key(path_str)] = sid
 
                 rb_to_stable[track["id"]] = sid
                 if sid in seen_sids:

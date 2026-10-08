@@ -3,16 +3,16 @@
 # runner-images `toolset.json`: one declarative manifest, applied by
 # configuration management, kept complete by a test.
 #
-# Decision record: docs/decisions/ADR-NEW-runner-toolset-manifest.md
+# Decision record: (private path)
 #
-# Supersedes: the per-item tool list in docs/ci-actions-cost-review-2026-08-16.md
+# Supersedes: the per-item tool list in (private path)
 #   "Self-hosted runner provisioning" (now redirected here; its items stay only
 #   as the record of WHY each entry exists). The Ansible CI-host playbook's and
 #   the host audit's own tool lists live outside this repo and move to reading
-#   this file as a follow-up (.planning/debt/4250.md).
+#   this file as a follow-up ((private path)).
 #
 # Consumers (read this file, never a copy of it):
-#   - tests/scripts/test_runner_toolset_complete.py: scans workflows, the scripts
+#   - (private path): scans workflows, the scripts
 #     and justfile/Makefile recipes they call, and tests/, and fails when CI uses
 #     an executable, apt package or Playwright browser not declared here.
 #   - tests/scripts/test_runner_toolset_cargo.py: fails when a tracked Cargo.lock
@@ -94,7 +94,7 @@
 #
 # ----- deliberately NOT here: host configuration ----------------------------
 # Checked by scripts/ci_runner_host_audit.sh (host-config, not tools), per
-# docs/ci-actions-cost-review-2026-08-16.md "Self-hosted runner provisioning":
+# (private path) "Self-hosted runner provisioning":
 #   item 1  non-root runner account with NOPASSWD sudo
 #   item 2  AGENT_TOOLSDIRECTORY in <runner>/.env, owned by the runner user
 #   item 4  filesystem mtime tick (informational; fixed test-side)
@@ -208,7 +208,7 @@ entries:
     provision: job
     install: "ci.yml job contracts downloads cargo-nextest-0.9.146-x86_64-unknown-linux-gnu.tar.gz when `cargo nextest --version` is not 0.9.146 and installs the binary into ~/.cargo/bin"
     verify: "cargo nextest --version"
-    notes: "job-provisioned prebuilt: cargo install would compile nextest inside the contracts job's 10 minute budget. Invoked as `cargo nextest`, which the completeness scan records as cargo (rust-cargo)."
+    notes: "job-provisioned prebuilt: cargo install would compile nextest inside the contracts job budget (30 minutes, which also has to cover the live-engine acceptance). Invoked as `cargo nextest`, which the completeness scan records as cargo (rust-cargo)."
 
   #----- toolchains for the runner user (provisioning items 6, 7) -------------
   - name: node-system

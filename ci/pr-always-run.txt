@@ -1,0 +1,27 @@
+# Whole-tree guard test modules that every narrowed PR head runs, whatever it changed
+# (CICD-SPEED L00, scripts/ci_test_selection_rules.py `always_run_modules`). One test module
+# path per line; `#` starts a comment. A guard belongs here when it scans the whole tracked
+# tree (or every test module) instead of importing what it checks, so no import, name or
+# coupling link from a change reaches it, and any PR can break it.
+#
+# Every entry must be a test module the shard lane collects, or selection falls back to the
+# FULL suite ((private path) pins both). Decision record:
+# (private path). This is NOT
+# ci/fast-tier-always.txt: that file forces node ids into the fast tier by speed; this one
+# forces modules into a PR head's selection by reach. The ADR says why they stay separate.
+
+# Pathname and content audit of every tracked file for real identities (OSSPUB-01). Escaped
+# selection on #4871 (a one-file test change selected 1 module and skipped it; red at that head).
+(private path)
+
+# Every marked test in tests/ carries an [if]/[then] intent line (REQHYG).
+(private path)
+
+# The requirement-marker ratchet re-runs the marker scan over the whole tree.
+(private path)
+
+# Every .gitignore pattern is classified exactly by the CloudSync data-class registry.
+(private path)
+
+# Every tracked file has a CI seam class (test_every_tracked_file_has_a_class).
+(private path)

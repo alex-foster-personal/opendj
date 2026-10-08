@@ -1,10 +1,10 @@
 /**
  * Capture one zoomed-in image per Storybook story of a component, as the
- * evidence for a state inventory (specs/state-inventories/README.md).
+ * evidence for a state inventory ((private path)).
  *
  *   pnpm build-storybook
  *   node scripts/capture-ui-contracts.mjs \
- *     --title "Components/EnrichCardView" --selector '[data-testid="enrich-card"]' \
+ *     --title "Components/EnrichCardView" --selector '[data-testid="enrich-card"], [data-testid="enrich-pill"][aria-expanded="false"]' \
  *     --out ../../../specs/ui-contracts/enrich-on-open/states
  *
  * Reads the story list from the BUILT Storybook's index.json, so a story that

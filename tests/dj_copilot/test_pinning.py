@@ -8,7 +8,12 @@ import pytest
 
 from apps.dj_copilot.pinning import PinUnsatisfiableError, assign_peak_pin_slots
 from apps.dj_copilot.set_goal import SetGoal
-from apps.dj_copilot.solver import suggest_order
+from apps.dj_copilot.solver import (
+    _suggest_order_pinned,
+    _suggest_order_unpinned,
+    suggest_order,
+)
+from apps.shared.harmonic import TrackFeature
 
 from .conftest import make_tracks
 
@@ -73,6 +78,24 @@ def test_empty_pins_match_unpinned_order() -> None:
     )
     again = suggest_order(tracks=tracks, goal=pinned_goal)
     assert again.order == unpinned.order
+
+
+def test_pinned_and_unpinned_paths_share_free_slot_expansion() -> None:
+    """Both solver paths expand free slots through one helper (issue #5935)."""
+    tracks = [
+        TrackFeature("t-a", "A", 120.0, "8A", 3),
+        TrackFeature("t-b", "B", 128.0, "8A", 4),
+        TrackFeature("t-c", "C", 128.0, "2B", 5),
+        TrackFeature("t-d", "D", 121.0, "3A", 6),
+    ]
+    goal = SetGoal(duration_min=30)
+    unpinned = _suggest_order_unpinned(tracks=tracks, goal=goal)
+    pinned = _suggest_order_pinned(tracks=tracks, goal=goal)
+    kinds = [(c.kind, c.position) for c in unpinned.constraints_unmet]
+    assert kinds == [("bpm_window", 1), ("camelot_hardcut", 2)]
+    assert pinned.order == unpinned.order
+    assert pinned.per_step_trace == unpinned.per_step_trace
+    assert pinned.constraints_unmet == unpinned.constraints_unmet
 
 
 def test_peak_window_too_small() -> None:

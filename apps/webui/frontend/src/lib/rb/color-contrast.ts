@@ -222,6 +222,12 @@ export const PAIRINGS: ContrastPairing[] = [
     label: "accent indicator (toggles, faders, lit buttons)",
   },
   {
+    fg: "rb-on-accent",
+    bg: "rb-accent",
+    level: "body",
+    label: "text on an accent fill (Capture, lit buttons, active segments)",
+  },
+  {
     fg: "rb-green",
     bg: "rb-bg",
     level: "non-text",

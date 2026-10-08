@@ -29,7 +29,7 @@ Requirements (mini-PRD):
   ✔︎ ✅ ``load``: plan + optionally write scalars, the energy time series and
     the unmatched staging rows. DRY-RUN by default, ``--live`` writes.
     EVERY field is gated on the equivalence verdict file
-    (``data/state/equivalence-verdicts.json``); absent file means every field
+    (``(private path)``); absent file means every field
     is untested and NOTHING is written.
     [if] the verdict file is absent and no override flag [then] zero rows
       written, and stdout says so per field
@@ -73,6 +73,7 @@ from typing import Any
 
 from apps.shared.equivalence import verdict_path
 from apps.shared.mik_energy import readable_mik_energy
+from apps.shared.platform_paths import load_path_map
 from apps.shared.scan_mass_missing import MassMissingError
 from apps.shared.state import db as state_db
 
@@ -88,6 +89,8 @@ from .cli_promote import cmd_promote
 
 def cmd_availability(args: argparse.Namespace) -> int:
     path = _state_db_path(args)
+    data_dir = avail.resolve_data_dir(args.data_dir)
+    path_map = load_path_map(data_dir)
     # open_rw applies pending schema migrations and the machine-ID backfill
     # before returning, so opening it here for a dry-run would silently
     # mutate state.db despite "everything is dry-run without --live".
@@ -97,7 +100,7 @@ def cmd_availability(args: argparse.Namespace) -> int:
     conn = state_db.open_rw(path) if args.live else state_db.open_dry_run(path)
     allow = bool(getattr(args, "allow_mass_missing", False))
     try:
-        rows = avail.probe(conn)
+        rows = avail.probe(conn, path_map=path_map)
         histogram: dict[str, int] = {}
         for row in rows:
             histogram[row.state] = histogram.get(row.state, 0) + 1

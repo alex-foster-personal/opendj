@@ -1,20 +1,23 @@
 import { expect, test } from '@playwright/test';
 
-// requirement: LIBUX-34
-// [if] All Tracks lists a row whose BPM has beatgrid provenance [then] its BPM
-// hover names the method, exactly as a playlist row does [else stop].
-// Mac check on PR #4014 (Fri 2 Oct 2026): GET /api/v1/tracks dropped
-// bpm_source/bpm_method/bpm_confidence, so All Tracks and its search read only
-// "Exact BPM" while the playlist view named the beat grid.
+// requirement: LIBUX-34, STANDALONE-03
+// [if] All Tracks lists a fixture row with no beatgrid [then] the BPM hover
+// names why the cell is empty [else stop].
+// The root fixture (deckload_fixture.build) writes no bpm and no beatgrid.
+// Serving bpm_status=missing used to be hidden, so the hover led with
+// "Beat grid: own-analysis" from the placeholder source. The empty cell now
+// says why. A row that really has a method still leads with "Beat grid:"
+// (bpm-cell-title unit).
 
-test('All Tracks BPM hover names the beat grid method', async ({ page }) => {
+test('All Tracks BPM hover names why an empty cell is empty', async ({ page }) => {
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 	await page.getByText('All Tracks', { exact: true }).first().click();
 	const cells = page.locator('[data-testid="track-row"] td.c-bpm');
 	await expect(cells.first()).toBeVisible({ timeout: 30_000 });
-	// The fixture's tracks all carry provenance on the shared row builder.
 	const titles = await cells.evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
 	expect(titles.length).toBeGreaterThan(0);
-	for (const title of titles) expect(title).toMatch(/^Beat grid: \S/);
+	for (const title of titles) expect(title).toBe('no own analysis record for this lane yet');
+	const labels = await cells.evaluateAll((els) => els.map((el) => (el.textContent ?? '').trim()));
+	for (const label of labels) expect(label).toBe('missing');
 });

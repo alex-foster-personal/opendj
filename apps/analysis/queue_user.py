@@ -17,6 +17,7 @@ from typing import Literal
 
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics import fetch_verdicts
+from apps.lyrics.asr_hallucination import ASR_SOURCE, filter_asr_lines
 from apps.lyrics.service import vocals_sha256_for_track
 from apps.stems.selection import has_bundle
 
@@ -26,6 +27,7 @@ from .queue import QueueError
 from .queue_user_lanes import (
     MAX_ENQUEUE_IDS,
     SKIP_DETAIL,
+    SKIP_NO_LYRICS_FOUND,
     SKIP_UP_TO_DATE,
     USER_BACKENDS,
     USER_BATCH_IDS,
@@ -205,6 +207,46 @@ def artifact_is_fresh(
     )
 
 
+def _cache_has_lyric_line(loaded: lyrics_cache.Lyrics) -> bool:
+    """Fresh only when a lyric line is present, for every cache source.
+
+    Human-authored lines all count. ASR counts the lines the hallucination
+    filter still calls lyrics.
+    """
+    if loaded.source != ASR_SOURCE:
+        return len(loaded.lines) > 0
+    return filter_asr_lines(loaded.lines).lyric_line_count > 0
+
+
+def lyrics_skip_reason(stable_id: str, *, data_dir: Path) -> str | None:
+    """Why a lyrics enqueue should not run, or None when the job must run.
+
+    ``up_to_date`` is only a cache that already has a lyric line. A
+    hallucination-only ASR cache, which has none left, does not. A
+    ``no_source`` verdict with no vocals hash is the coverage drain's
+    answer before any stem identity exists (``None`` compared equal to
+    ``None`` and used to skip the lane). That track has not had a lyrics
+    run, so it runs. A miss that names the current vocals hash skips as
+    ``no_lyrics_found``.
+    """
+    path = lyrics_cache.cache_path(data_dir, stable_id)
+    loaded = lyrics_cache.load(path)
+    if (
+        loaded is not None
+        and loaded.stable_id == stable_id
+        and _cache_has_lyric_line(loaded)
+    ):
+        return SKIP_UP_TO_DATE
+    verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
+    if verdict is None or (verdict.outcome == "no_source" and not verdict.vocals_sha256):
+        return None
+    if verdict.outcome in ("instrumental", "no_source") and fetch_verdicts.is_terminal_fresh(
+        verdict, vocals_sha256_for_track(data_dir, stable_id)
+    ):
+        return SKIP_NO_LYRICS_FOUND
+    return None
+
+
 def _upsert(  # noqa: PLR0913
     conn: sqlite3.Connection,
     *,
@@ -286,7 +328,13 @@ def _plan_one(
     file_path = path or ""
     if existing is not None and existing.state == queue_store.ITEM_RUNNING:
         return "running"
-    if artifact_is_fresh(lane, sid, stems_root=stems_root, data_dir=data_dir):
+    if lane == "lyrics":
+        skip_reason = lyrics_skip_reason(sid, data_dir=data_dir)
+    elif artifact_is_fresh(lane, sid, stems_root=stems_root, data_dir=data_dir):
+        skip_reason = SKIP_UP_TO_DATE
+    else:
+        skip_reason = None
+    if skip_reason:
         _upsert(
             conn,
             batch_id=batch_id,
@@ -295,7 +343,7 @@ def _plan_one(
             file_path=file_path,
             duration_s=duration_s,
             state=queue_store.ITEM_SKIPPED,
-            reason=SKIP_UP_TO_DATE,
+            reason=skip_reason,
             position=0,
         )
         return "skipped"

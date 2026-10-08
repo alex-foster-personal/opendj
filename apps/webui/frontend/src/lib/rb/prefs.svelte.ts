@@ -789,7 +789,6 @@ export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean
  * module's own uiPrefs/_persist (library-filter-prefs.ts). */
 export const {
 	setNextOnlyFilter,
-	toggleNextOnlyFilter,
 	setRemixesFilter,
 	setVocalsFilter,
 	setAvailableOfflineFilter

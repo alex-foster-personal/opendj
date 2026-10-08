@@ -114,11 +114,6 @@ async function expectSpaceDoesNotScroll(page: Page): Promise<void> {
 		return { x, y, hitsTable: hit !== null && wrap.contains(hit) };
 	});
 	expect(aim.hitsTable, 'the wheel control must aim at a visible point of .table-wrap').toBe(true);
-	const restoreFocus = await page.evaluate(() => {
-		const active = document.activeElement;
-		if (active instanceof HTMLElement) active.setAttribute('data-scroll-probe-focus', '1');
-		return active instanceof HTMLElement;
-	});
 	const control = await sampleScroll(page, SCROLL_SETTLE_MS, async () => {
 		await page.mouse.move(aim.x, aim.y);
 		await page.mouse.wheel(0, 120);
@@ -131,12 +126,11 @@ async function expectSpaceDoesNotScroll(page: Page): Promise<void> {
 		el.scrollTop = top;
 	}, room.top);
 	await expect.poll(async () => tableWrap.evaluate((el) => el.scrollTop)).toBe(room.top);
-	if (restoreFocus) {
-		await page.locator('[data-scroll-probe-focus="1"]').focus();
-		await page.evaluate(() =>
-			document.querySelector('[data-scroll-probe-focus]')?.removeAttribute('data-scroll-probe-focus')
-		);
-	}
+	// Issue5761: body/inert-chrome Space owns transport; interactive rows do not.
+	await page.evaluate(() => {
+		if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+	});
+	expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
 
 	const docBefore = await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0);
 	const sampled = await sampleScroll(page, SCROLL_SETTLE_MS, async () => {

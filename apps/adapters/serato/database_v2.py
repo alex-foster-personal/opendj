@@ -10,9 +10,13 @@ Within an ``otrk`` container, per-track fields appear as leaf tags:
   * ``tsng`` -- title (UTF-16-BE)
   * ``tart`` -- artist (UTF-16-BE)
   * ``talb`` -- album (UTF-16-BE)
-  * ``tbpm`` -- BPM (ASCII decimal string)
-  * ``tkey`` -- key (ASCII string, Serato native format)
-  * ``ttyp`` -- file type (``"mp3"``/``"flac"``/...)
+  * ``tbpm`` -- BPM (UTF-16-BE decimal string)
+  * ``tkey`` -- key (UTF-16-BE, Serato native format)
+  * ``ttyp`` -- file type (UTF-16-BE: ``"mp3"``/``"flac"``/...)
+
+Every string is UTF-16-BE (Mixxx ``seratofeature.cpp`` decodes them all that
+way). Older builds of this codec wrote ``tbpm`` and ``ttyp`` as ASCII; the
+reader still accepts those.
   * ``tcmp`` -- composer
   * ``tgrp`` -- grouping
 
@@ -49,6 +53,17 @@ def _encode_utf16be(text: str) -> bytes:
     return text.encode("utf-16-be")
 
 
+def _decode_legacy_ascii_or_utf16be(data: bytes) -> str:
+    """For ``tbpm`` and ``ttyp`` only: UTF-16-BE, as Serato writes them, or
+    the ASCII this codec used to write. Their text is digits, a dot or a short
+    lowercase extension, so as UTF-16-BE every other byte is NUL; a payload
+    with no NUL at all is the legacy ASCII. (Not safe for titles: CJK text in
+    UTF-16-BE can have no NUL bytes.)"""
+    if data and b"\x00" not in data:
+        return data.decode("ascii", errors="replace")
+    return _decode_utf16be(data)
+
+
 # --------------------------------------------------------------- dataclass
 
 
@@ -65,7 +80,7 @@ class CrateTrack:
     title: str = ""
     artist: str = ""
     album: str = ""
-    bpm: str = ""        # kept as the native ASCII string Serato writes
+    bpm: str = ""        # kept as the decimal string Serato writes
     key: str = ""
     file_type: str = ""
     composer: str = ""
@@ -73,14 +88,14 @@ class CrateTrack:
     extra_tags: tuple[RawTag, ...] = field(default_factory=tuple)
 
     _KNOWN: tuple[tuple[str, str, str], ...] = (
-        # (tag_type, attribute, codec in {"utf16be", "ascii"})
+        # (tag_type, attribute, codec); every Serato string is UTF-16-BE
         ("pfil", "file_path", "utf16be"),
         ("tsng", "title", "utf16be"),
         ("tart", "artist", "utf16be"),
         ("talb", "album", "utf16be"),
-        ("tbpm", "bpm", "ascii"),
+        ("tbpm", "bpm", "utf16be_or_legacy_ascii"),
         ("tkey", "key", "utf16be"),
-        ("ttyp", "file_type", "ascii"),
+        ("ttyp", "file_type", "utf16be_or_legacy_ascii"),
         ("tcmp", "composer", "utf16be"),
         ("tgrp", "grouping", "utf16be"),
     )
@@ -96,10 +111,11 @@ class CrateTrack:
         for child in container.children:
             if isinstance(child, RawTag) and child.type in known_by_type:
                 attr, codec = known_by_type[child.type]
-                if codec == "utf16be":
-                    values[attr] = _decode_utf16be(child.payload)
-                else:
-                    values[attr] = child.payload.decode("ascii", errors="replace")
+                values[attr] = (
+                    _decode_legacy_ascii_or_utf16be(child.payload)
+                    if codec == "utf16be_or_legacy_ascii"
+                    else _decode_utf16be(child.payload)
+                )
             elif isinstance(child, RawTag):
                 extras.append(child)
             else:
@@ -112,15 +128,12 @@ class CrateTrack:
 
     def to_tag(self) -> ContainerTag:
         children: list[Tag] = []
-        for tag_type, attr, codec in self._KNOWN:
+        for tag_type, attr, _codec in self._KNOWN:
             value = getattr(self, attr)
             if not value:
                 # Skip empty strings -- Serato itself omits zero-length tags.
                 continue
-            if codec == "utf16be":
-                payload = _encode_utf16be(value)
-            else:
-                payload = value.encode("ascii", errors="replace")
+            payload = _encode_utf16be(value)
             children.append(RawTag(type=tag_type, payload=payload))
         children.extend(self.extra_tags)
         return ContainerTag(type="otrk", children=tuple(children))
@@ -191,9 +204,11 @@ class DatabaseV2:
 class Subcrate:
     """A per-crate playlist file ``Subcrates/<name>.crate``.
 
-    Top-level tags of interest: ``ptrk`` (one per track, UTF-16-BE path of the
-    track inside the crate). Other tags (column configs, sort modes) are
-    preserved on ``header_tags`` for byte-stable round-trip.
+    Each track is an ``otrk`` container holding a ``ptrk`` tag, the UTF-16-BE
+    path of the track (Mixxx ``seratofeature.cpp`` ``parseCrateTrackPath``).
+    A bare top-level ``ptrk``, which older builds of this codec wrote, is read
+    too. Other tags (column configs, sort modes) are preserved on
+    ``header_tags`` for byte-stable round-trip.
     """
 
     name: str
@@ -211,9 +226,10 @@ class Subcrate:
         trailer: list[Tag] = []
         state = "header"
         for tag in tags:
-            if isinstance(tag, RawTag) and tag.type == "ptrk":
+            path = _crate_track_path(tag)
+            if path is not None:
                 state = "tracks"
-                paths.append(_decode_utf16be(tag.payload))
+                paths.append(path)
             elif state == "header":
                 header.append(tag)
             else:
@@ -227,7 +243,10 @@ class Subcrate:
 
     def to_bytes(self) -> bytes:
         tags: list[Tag] = list(self.header_tags)
-        tags.extend(RawTag(type="ptrk", payload=_encode_utf16be(p)) for p in self.track_paths)
+        tags.extend(
+            ContainerTag(type="otrk", children=(RawTag(type="ptrk", payload=_encode_utf16be(p)),))
+            for p in self.track_paths
+        )
         tags.extend(self.trailer_tags)
         return TagStream.write(tags)
 
@@ -235,3 +254,15 @@ class Subcrate:
         target = Path(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(self.to_bytes())
+
+
+def _crate_track_path(tag: Tag) -> str | None:
+    """The track path a crate tag names, or None for a non-track tag."""
+    if isinstance(tag, RawTag) and tag.type == "ptrk":
+        return _decode_utf16be(tag.payload)
+    if isinstance(tag, ContainerTag) and tag.type == "otrk":
+        for child in tag.children:
+            if isinstance(child, RawTag) and child.type == "ptrk":
+                return _decode_utf16be(child.payload)
+        raise ValueError("crate otrk entry has no ptrk path")
+    return None

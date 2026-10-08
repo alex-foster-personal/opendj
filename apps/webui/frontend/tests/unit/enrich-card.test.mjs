@@ -93,18 +93,18 @@ test('one declined track reads in the singular', () => {
 	assert.equal(note.text, 'Key: 1 had no confident answer and is left blank');
 });
 
-test('background progress alone opens collapsed and names the running lanes', () => {
+test('background progress alone leaves the pill unflagged and names the running lanes', () => {
 	const s = summary({ key: { done: 44, missing: 1230 }, loudness: { done: 196, missing: 1078 } });
 	assert.equal(card.needsAttention(s, null, null), false);
 	assert.deepEqual(card.collapsedLine(s), {
 		text: 'Library: 2 lanes still running',
-		title: 'Running in the background: Key, Loudness. More shows the counts.'
+		title: 'Running in the background: Key, Loudness. Click for the counts.'
 	});
 	const one = summary({ key: { done: 44, missing: 1230 } });
 	assert.equal(card.collapsedLine(one).text, 'Library: 1 lane still running');
 });
 
-test('a question, a failure, a lane that cannot run or an unknown status opens expanded', () => {
+test('a question, a failure, a lane that cannot run or an unknown status flags the pill (never auto-expands, #5748)', () => {
 	assert.equal(card.needsAttention(summary({}, { stems: { state: 'ask', pending: 9, reason: null } }), null, null), true);
 	assert.equal(card.needsAttention(summary({ strip: { done: 1271, failed: 3 } }), null, null), true);
 	assert.equal(card.needsAttention(summary({ key: { unavailable: 'no model' } }), null, null), true);
@@ -112,7 +112,7 @@ test('a question, a failure, a lane that cannot run or an unknown status opens e
 	assert.equal(card.needsAttention(summary(), null, 'PUT failed'), true);
 });
 
-test('a declined or impossible stems lane does not by itself force the card open', () => {
+test('a declined or impossible stems lane does not by itself flag the pill', () => {
 	const declined = summary({ key: { done: 44, missing: 1230 } }, { stems: { state: 'user_declined', pending: 9, reason: null } });
 	const noSource = summary({}, { stems: { state: 'no_source', pending: 9, reason: 'no farm' } });
 	assert.equal(card.needsAttention(declined, null, null), false);
@@ -244,7 +244,7 @@ test('files not on this Mac get their own lines with the top folders, never a pe
 test('collapsed: paused lanes say paused, and BPM fully covered by rekordbox is not running', () => {
 	assert.deepEqual(card.collapsedLine(silver()), {
 		text: 'Library: 3 lanes paused while a deck is playing',
-		title: 'Paused while a deck is playing: Key, Loudness, Deck waveforms. More shows the counts.'
+		title: 'Paused while a deck is playing: Key, Loudness, Deck waveforms. Click for the counts.'
 	});
 	assert.equal(card.collapsedLine(silver('running')).text, 'Library: 3 lanes still running');
 });
@@ -342,4 +342,100 @@ test('green when failures plus pending are allowable, and the text still names w
 	assert.equal(line.text, 'Deck waveforms: 1,160 of 1,212 songs done, paused while a deck is playing, 2 failed');
 	const neutral = songSummary({ waveform: { done: 1150, missing: 60, failed: 2, allowable: false } });
 	assert.equal(card.analysisLines(neutral).find((l) => l.lane === 'waveform').tone, 'working');
+});
+
+/* ENRICH-04: failed separations are never silent (the maintainer, Wed 7 Oct 2026: "very often tonnes of stems are missing and UI is doing nothing about it"). */
+
+test('failed separations with nothing pending name the count, lyrics-style when songs are known', () => {
+	assert.equal(
+		card.stemsText({ state: 'failed', pending: 0, failed: 37, reason: null, separated: 812, not_yet: 0 }),
+		'Stems: 812 separated, 0 not yet, 37 failed'
+	);
+	assert.equal(card.stemsText({ state: 'failed', pending: 0, failed: 5, reason: null }), 'Stems: 5 tracks failed to separate');
+	assert.equal(card.stemsText({ state: 'failed', pending: 0, failed: 1, reason: null }), 'Stems: 1 track failed to separate');
+	assert.equal(card.stemsTone({ state: 'failed', pending: 0, failed: 5, reason: null }), 'failed');
+	assert.match(card.stemsTitle({ state: 'failed', pending: 0, failed: 5, reason: null }), /^5 failed: /);
+});
+
+test('failures ride along with the question and with a missing source', () => {
+	assert.equal(
+		card.stemsText({ state: 'ask', pending: 1222, failed: 37, reason: null, separated: 812, not_yet: 400 }),
+		'Stems: 812 separated, 400 not yet, 37 failed. Separate them?'
+	);
+	assert.equal(
+		card.stemsText({ state: 'ask', pending: 9, failed: 2, reason: null }),
+		'9 tracks have no stems yet, 2 failed. Separate them?'
+	);
+	assert.equal(
+		card.stemsText({ state: 'no_source', pending: 9, failed: 2, reason: 'no farm', separated: 3, not_yet: 9 }),
+		'Stems: 3 separated, 9 not yet, 2 failed, and this computer cannot make them (no farm)'
+	);
+});
+
+test('control: no failures leaves every stems wording and tone as it was', () => {
+	assert.equal(card.stemsText({ state: 'done', pending: 0, failed: 0, reason: null }), null);
+	assert.equal(
+		card.stemsText({ state: 'ask', pending: 1222, failed: 0, reason: null, separated: 812, not_yet: 400 }),
+		'Stems: 812 separated, 400 not yet. Separate them?'
+	);
+	assert.equal(card.stemsTitle({ state: 'ask', pending: 9, failed: 0, reason: null }), null);
+	assert.equal(card.stemsTone({ state: 'ask', pending: 9, reason: null }), 'working');
+	assert.equal(card.stemsTone({ state: 'no_source', pending: 9, reason: 'no farm' }), 'unavailable');
+});
+
+test('failed separations open the card expanded; a clean or declined stems lane does not', () => {
+	const failed = summary({}, { stems: { state: 'failed', pending: 0, failed: 3, reason: null } });
+	assert.equal(card.needsAttention(failed, null, null), true, 'failed separations must open the card');
+	const noSourceFailed = summary({}, { stems: { state: 'no_source', pending: 9, failed: 3, reason: 'no farm' } });
+	assert.equal(card.needsAttention(noSourceFailed, null, null), true, 'failures must not hide behind a missing source');
+	// Controls: nothing failed stays collapsed; a stored never is unchanged and stays quiet.
+	assert.equal(card.needsAttention(summary({}, { stems: { state: 'done', pending: 0, failed: 0, reason: null } }), null, null), false);
+	const declined = summary({}, { stems: { state: 'user_declined', pending: 0, failed: 3, reason: null } });
+	assert.equal(card.needsAttention(declined, null, null), false);
+	assert.equal(card.stemsText(declined.stems), null);
+});
+
+/* ENRICH-04: a source refusal files missing stems as terminal, so they are named with their count, never "done". */
+
+test('no stems source: the count that cannot be made here is named, songs when known', () => {
+	assert.equal(
+		card.stemsText({ state: 'no_source', pending: 0, failed: 0, missing: 1150, reason: 'no stems farm is configured', separated: 62, not_yet: 0 }),
+		"Stems: 62 separated, 1,150 songs can't be made on this computer (no stems farm is configured)"
+	);
+	assert.equal(
+		card.stemsText({ state: 'no_source', pending: 3, failed: 2, missing: 1, reason: 'no farm' }),
+		"Stems: 3 not yet, 2 failed, 1 track can't be made on this computer (no farm)"
+	);
+	assert.equal(card.stemsTone({ state: 'no_source', pending: 0, missing: 1150, reason: 'no farm' }), 'unavailable');
+	assert.match(card.stemsTitle({ state: 'no_source', pending: 0, missing: 1150, reason: 'no farm' }), /^1,150 without stems: .*\(no farm\)/);
+});
+
+test('control: a no_source line with nothing refused keeps its old wording and no title', () => {
+	assert.equal(
+		card.stemsText({ state: 'no_source', pending: 9, failed: 0, missing: 0, reason: 'no farm', separated: 3, not_yet: 9 }),
+		'Stems: 3 separated, 9 not yet, and this computer cannot make them (no farm)'
+	);
+	assert.equal(card.stemsTitle({ state: 'no_source', pending: 9, failed: 0, missing: 0, reason: 'no farm' }), null);
+});
+
+test('no stems source opens collapsed and the collapsed line names it, unless the user said never', () => {
+	const noSource = summary({}, { stems: { state: 'no_source', pending: 0, failed: 0, missing: 1150, reason: 'no farm' } });
+	assert.equal(card.needsAttention(noSource, null, null), false, 'no answer here can change it: collapsed');
+	assert.equal(card.collapsedLine(noSource).text, 'Library: 1,150 without stems, none can be made here');
+	assert.match(card.collapsedLine(noSource).title, /no farm/);
+	const declined = { ...noSource, decisions: { stems: 'never' } };
+	assert.equal(card.collapsedLine(declined).text, 'Library: nothing left running');
+	// A stored never also keeps no_source failures from forcing the card open.
+	const declinedFailed = summary({}, { stems: { state: 'no_source', pending: 0, failed: 3, missing: 5, reason: 'no farm' }, decisions: { stems: 'never' } });
+	assert.equal(card.needsAttention(declinedFailed, null, null), false);
+	// Lanes still running keep the running-lanes line AND still name the refusal (#5855 Codex P2).
+	const running = summary({ key: { done: 44, missing: 1230 } }, { stems: noSource.stems });
+	assert.equal(card.collapsedLine(running).text, 'Library: 1 lane still running; 1,150 without stems, none can be made here');
+	assert.match(card.collapsedLine(running).title, /no farm/);
+	// Control: with a stored never, the running line carries no stems clause.
+	const runningDeclined = { ...running, decisions: { stems: 'never' } };
+	assert.equal(card.collapsedLine(runningDeclined).text, 'Library: 1 lane still running');
+	// Control: without a refusal, the running line is unchanged.
+	const runningAsk = summary({ key: { done: 44, missing: 1230 } });
+	assert.doesNotMatch(card.collapsedLine(runningAsk).text, /without stems/);
 });

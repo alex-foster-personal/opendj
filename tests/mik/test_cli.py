@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,6 +82,65 @@ def test_availability_live_then_idempotent(library: Path, data_dir: Path, capsys
     assert first["written"]["changed"] == 1
     second = _run(["availability", "--json", "--live", "--data-dir", str(data_dir)], capsys)
     assert second["written"] == {"changed": 0, "unchanged": 1}
+
+
+def _env_without_data_dir_overrides() -> dict[str, str]:
+    """Child environment with the path-map selectors removed, not patched."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"MDT_PATH_MAP", "MDT_DATA_DIR"}
+    }
+
+
+def test_availability_uses_the_selected_data_dir_path_map(
+    data_dir: Path,
+    state_conn: sqlite3.Connection,
+    add_track,
+) -> None:
+    """`--data-dir` must classify through that directory's path-map.json.
+
+    [if] the stored path is missing and only `<dir>/path-map.json` points at
+    an existing file [then] the dry-run histogram counts the track present.
+    The CLI runs in a fresh process whose environment does not carry
+    MDT_PATH_MAP or MDT_DATA_DIR, so the selected directory is the only map.
+    """
+    stored_root = data_dir / "stored-missing"
+    mapped_root = data_dir / "mapped-present"
+    mapped_root.mkdir()
+    mapped_audio = mapped_root / "track.mp3"
+    mapped_audio.write_bytes(b"mapped-audio")
+    stored = stored_root / "track.mp3"
+    assert not stored.exists()
+    map_payload = {
+        "entries": [{"from": str(stored_root), "to": str(mapped_root)}],
+    }
+    (data_dir / "path-map.json").write_text(json.dumps(map_payload), encoding="utf-8")
+    add_track("m" * 40, file_path=str(stored), title="Mapped", artist="Map")
+    state_conn.commit()
+
+    repo_root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "apps.mik",
+            "availability",
+            "--json",
+            "--data-dir",
+            str(data_dir),
+        ],
+        cwd=repo_root,
+        env=_env_without_data_dir_overrides(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["tracks"] == 1
+    assert payload["classified"].get("present", 0) >= 1
+    assert mapped_audio.is_file()
 
 
 def test_match_reports_tiers(library: Path, data_dir: Path, capsys) -> None:

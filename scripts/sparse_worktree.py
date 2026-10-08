@@ -9,7 +9,7 @@ Usage::
     python -m scripts.sparse_worktree install-hook  # once per clone (`just wt-sparse-hook-install`)
 
 Why: ~70 live worktrees each carried the full 285 MB tracked tree, ~120 MB of
-which is blog hero renders and docs/landscape screenshots that no code, test or
+which is blog hero renders and (private path) screenshots that no code, test or
 build reads (measured Thu 1 Oct 2026). `scripts/githooks/post-checkout-sparse-
 worktree.sh` calls `post-checkout` from every checkout; it acts ONLY when the
 previous HEAD is the null id (a fresh `git worktree add`) in a LINKED worktree.
@@ -19,7 +19,9 @@ still lists them. Any tool that lists tracked files and then reads them must go
 through `tracked_bytes` (object store for skipped entries) or
 `require_materialized` (loud refusal), never a silent `is_file()` filter.
 
-Stdlib only and Python 3.9 compatible: the hook runs the system `python3`.
+Stdlib only and Python 3.9 compatible: the hook runs whichever Python 3.9+ it
+finds (`MDT_SPARSE_HOOK_PYTHON`, else `python3`, `python`, `py -3`), and fails
+closed naming SPARSE_HOOK_PYTHON_UNAVAILABLE when there is none (#5212).
 
 REQUIREMENTS (OPS-45)
   R-1 A fresh linked worktree is sparse.                            ✔︎ ✅ 🎯
@@ -47,6 +49,12 @@ REQUIREMENTS (OPS-45)
       [if a FULL request (opt-out) cannot undo inherited sparse state then
        the hook exits 1 with an ERROR, and `git worktree add` reports it]
       [if the python entry exits 1 then the hook script exits 1 too]
+  R-5 The installed hook is portable and fails closed (#5212).      ✔︎ ✅ 🎯
+      [if no Python 3.9+ is reachable for a fresh linked add then the hook
+       exits 3 naming SPARSE_HOOK_PYTHON_UNAVAILABLE, and the add reports it]
+      [if only `python` or the `py` launcher exists then that one is used]
+      [if the checkout is a branch switch then no interpreter is needed]
+      [if install-hook meets an older copy of this hook then it upgrades it]
 """
 
 from __future__ import annotations
@@ -78,6 +86,9 @@ class CFG:
     )
     OPT_OUT_ENV = "MDT_FULL_WORKTREE"
     HOOK_SOURCE = Path(__file__).resolve().parent / "githooks" / "post-checkout-sparse-worktree.sh"
+    # The dispatch line every version of this hook carries: an installed copy
+    # holding it is an older revision of OUR hook, upgraded in place (#5212).
+    HOOK_MARKER = b"-m scripts.sparse_worktree post-checkout"
     RESTORE_COMMAND = "git sparse-checkout disable"
 
 
@@ -264,12 +275,13 @@ def make_full(repo: Path) -> None:
 
 def install_hook(repo: Path) -> Path:
     """Copy the hook to the clone's effective hooks dir (core.hooksPath honored), by COPY so
-    it does not track the primary's branch. Refuses to replace a different post-checkout."""
+    it does not track the primary's branch. Upgrades an older copy of this same hook;
+    refuses to replace a different post-checkout."""
     target = Path(_git(repo, "rev-parse", "--git-path", "hooks/post-checkout").decode().strip())
     if not target.is_absolute():
         target = repo / target
     source = CFG.HOOK_SOURCE.read_bytes()
-    if target.exists() and target.read_bytes() != source:
+    if target.exists() and CFG.HOOK_MARKER not in target.read_bytes():
         raise SparseCheckoutError(
             f"{target} already holds a different post-checkout hook; chain the two by hand "
             f"(call {CFG.HOOK_SOURCE.name} from it) rather than overwrite it"

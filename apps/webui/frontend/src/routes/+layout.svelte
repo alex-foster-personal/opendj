@@ -386,19 +386,19 @@
 			<div class="status-strip" data-testid="header-status-strip">
 				{#if health.data}
 					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks, health.data.state_db.tracks_playable ?? 0)}>{health.data.state_db.tracks} tracks ({health.data.state_db.tracks_playable ?? 0} playable)</span>
-					<span class="sep" aria-hidden="true"> · </span>
+					<span class="sep" aria-hidden="true">{' · '}</span>
 					<span class="readout readout-numeric" title={headerPlaylistCountTitle(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
-					<span class="sep" aria-hidden="true"> · </span>
+					<span class="sep" aria-hidden="true">{' · '}</span>
 					{#if health.data.cloud.lock_holder}
 						<span class="readout">lock: {health.data.cloud.lock_holder.holder}</span>
 					{:else}
 						<span class="readout">lock: free</span>
 					{/if}
 					{#if health.data.syncthing}
-						<span class="sep" aria-hidden="true"> · </span>
+						<span class="sep" aria-hidden="true">{' · '}</span>
 						<span class="readout">syncthing: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
 					{/if}
-					<span class="sep" aria-hidden="true"> · </span>
+					<span class="sep" aria-hidden="true">{' · '}</span>
 					<span class="readout">bind: {health.data.bind_host}</span>
 				{:else}
 					<span class="readout">Connecting to configured worktree daemon...</span>
