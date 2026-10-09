@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
-	import { SEARCH_QUERY_HELP } from '$lib/rb/browser-search-query';
+	import { SEARCH_PLACEHOLDER, SEARCH_QUERY_HELP } from '$lib/rb/browser-search-query';
 
 	// Browser pane search (SCREENSHOT-SPEC 5c). Modes:
 	//   filter     - Cmd+F: client filter within this track list
@@ -21,7 +21,7 @@
 		value,
 		mode = 'filter',
 		focusToken = 0,
-		placeholder = 'Search within this track list',
+		placeholder = SEARCH_PLACEHOLDER,
 		oninput,
 		onclear,
 		onescapeclear,
@@ -31,7 +31,7 @@
 		mode?: 'filter' | 'find' | 'collection';
 		/** Bump to focus + select the input. */
 		focusToken?: number;
-		placeholder?: string;
+		placeholder?: string | undefined;
 		oninput: (next: string) => void;
 		onclear: () => void;
 		onescapeclear?: () => void;

@@ -3,39 +3,28 @@
 Registers as ``own_loudness.backfill`` so ``apps.analysis.run --backend``
 can write a v2 :class:`~apps.analysis.record.AnalysisRecord` through the
 existing store path. Measurement stays in the loudness producer; this
-module only supplies record identity, the contract decode fingerprint,
+module only supplies record identity, the canonical decode fingerprint,
 and the exception mapping the runner already classifies.
 """
 
 from __future__ import annotations
 
-import hashlib
 import importlib
-import os
-import subprocess
-import tempfile
-import threading
-from collections import deque
-from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
-from apps.loudness.scan import SCAN_TIMEOUT_S, LoudnessError, require_ffmpeg
+from apps.analysis.pcm_fingerprint import (
+    SAMPLE_RATE_HZ,
+    FingerprintUnavailable,
+    canonical_decode_fingerprint_and_frames,
+    require_resampler,
+)
+from apps.loudness.scan import LoudnessError, require_ffmpeg
 
 from ..record import AnalysisRecord
 from . import register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
-
-# Native-analysis v1 decode fingerprint (specs/native-analysis-v1.md §13):
-# sha256 of decoded PCM at 44100 Hz, mono, signed 16-bit, soxr resampler
-# at a pinned precision. The record contract requires the ``sha256:`` prefix.
-_FINGERPRINT_SAMPLE_RATE_HZ = 44100
-_FINGERPRINT_SAMPLE_WIDTH = 2  # s16le bytes per mono sample
-_FINGERPRINT_FILTER = "aresample=resampler=soxr:precision=28"
-_PCM_READ_CHUNK = 1 << 16
-_STDERR_TAIL = 2000
-_STDERR_READ_CHUNK = 4096
 
 # Pre-v2 analysis columns this loudness-only record cannot measure. They
 # exist because the table still requires them; they are not measurements
@@ -59,123 +48,24 @@ def _load_loudness_producer() -> ModuleType:
     return importlib.import_module(".".join(("apps", "analysis_loudness")))
 
 
-def _run_with_bounded_stderr(argv: list[str], timeout_s: float) -> tuple[int, str]:
-    """Run argv, retaining only the last ``_STDERR_TAIL`` stderr bytes.
+def _canonical_fingerprint(path: Path) -> tuple[str, float]:
+    """The canonical decode fingerprint and the duration it measured.
 
-    A drain thread feeds a ``deque(maxlen=...)`` ring so a chatty decoder
-    cannot accumulate an unbounded PIPE buffer. Holding the whole stream
-    until exit would retain that buffer; this drops the prefix as it
-    arrives and returns the useful final tail.
+    The same contract every own record carries (`apps.analysis.pcm_fingerprint`,
+    fingerprint v2: `odj-audio` decode, 44.1 kHz mono s16), so a loudness record
+    and a beatgrid or key record for the same bytes name the same decode. A
+    per-FILE failure is raised by name: vanished if the file is gone, else
+    unreadable.
     """
-    proc = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
-    stream = proc.stderr
-    if stream is None:  # pragma: no cover - PIPE always opens stderr
-        proc.wait()
-        returncode = proc.returncode
-        return (1 if returncode is None else returncode), ""
-    tail: deque[int] = deque(maxlen=_STDERR_TAIL)
-
-    def _drain() -> None:
-        while True:
-            chunk = stream.read(_STDERR_READ_CHUNK)
-            if not chunk:
-                return
-            tail.extend(chunk)
-
-    reader = threading.Thread(target=_drain, name="own-loudness-stderr", daemon=True)
-    reader.start()
     try:
-        proc.wait(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        with suppress(subprocess.TimeoutExpired):
-            proc.wait(timeout=1)
-        raise
-    finally:
-        reader.join(timeout=5)
-        stream.close()
-    returncode = proc.returncode
-    if returncode is None:  # pragma: no cover - wait() sets it
-        returncode = 1
-    return returncode, bytes(tail).decode("utf-8", errors="replace")
-
-
-def _hash_pcm_file(tmp_path: Path) -> tuple[str, int]:
-    digest = hashlib.sha256()
-    n_bytes = 0
-    with tmp_path.open("rb") as fh:
-        while True:
-            chunk = fh.read(_PCM_READ_CHUNK)
-            if not chunk:
-                break
-            digest.update(chunk)
-            n_bytes += len(chunk)
-    return digest.hexdigest(), n_bytes
-
-
-def _fingerprint_decoded_pcm(path: Path, binary: str) -> tuple[str, float]:
-    """Hash decoded PCM at the contract fingerprint and return (digest, duration_s).
-
-    Spools through a temporary file so a full track's s16le is never held in
-    memory. Hashes in chunks, requires a whole number of s16 samples, and
-    derives duration from the decoded byte count. Decoder stderr is ring-
-    buffered to a fixed tail; it is never captured whole.
-    """
-    fd, tmp_name = tempfile.mkstemp(prefix="mdt-own-loudness-", suffix=".s16le")
-    os.close(fd)
-    tmp_path = Path(tmp_name)
-    n_bytes = 0
-    digest_hex = ""
-    try:
-        returncode, stderr_tail = _run_with_bounded_stderr(
-            [
-                binary,
-                "-hide_banner",
-                "-nostdin",
-                "-nostats",
-                "-y",
-                "-i",
-                str(path),
-                "-map",
-                "a:0",
-                "-ac",
-                "1",
-                "-ar",
-                str(_FINGERPRINT_SAMPLE_RATE_HZ),
-                "-sample_fmt",
-                "s16",
-                "-af",
-                _FINGERPRINT_FILTER,
-                "-f",
-                "s16le",
-                str(tmp_path),
-            ],
-            SCAN_TIMEOUT_S,
-        )
-        if returncode != 0:
-            if not path.exists():
-                raise TrackVanished(f"{path}: gone before decode: {stderr_tail}")
-            raise TrackUnreadable(
-                f"{path.name}: ffmpeg exited {returncode} decoding PCM fingerprint: {stderr_tail}"
-            )
-        digest_hex, n_bytes = _hash_pcm_file(tmp_path)
-    finally:
-        with suppress(OSError):
-            tmp_path.unlink()
-    if n_bytes == 0:
-        raise TrackUnreadable(f"empty audio: {path.name}")
-    if n_bytes % _FINGERPRINT_SAMPLE_WIDTH:
+        digest_hex, frames = canonical_decode_fingerprint_and_frames(path)
+    except FingerprintUnavailable as exc:
+        if not path.exists():
+            raise TrackVanished(f"{path}: gone before decode") from None
         raise TrackUnreadable(
-            f"{path.name}: decoded PCM is {n_bytes} bytes, not a whole number of s16 samples"
-        )
-    n_samples = n_bytes // _FINGERPRINT_SAMPLE_WIDTH
-    duration_s = n_samples / float(_FINGERPRINT_SAMPLE_RATE_HZ)
-    return f"sha256:{digest_hex}", duration_s
+            f"the canonical decode fingerprint could not be taken for {path}: {exc}"
+        ) from None
+    return f"sha256:{digest_hex}", frames / float(SAMPLE_RATE_HZ)
 
 
 class OwnLoudnessBackfillBackend:
@@ -195,7 +85,7 @@ class OwnLoudnessBackfillBackend:
 
     @classmethod
     def warm_jit_cache(cls) -> str:
-        """Nothing to warm: R128/RMS/fingerprint decode are out-of-process ffmpeg.
+        """Nothing to warm: R128/RMS run in ffmpeg and the fingerprint in odj-audio.
 
         Stated rather than silently inherited, so an empty warm-up here is a
         recorded fact about this backend and not an oversight.
@@ -212,7 +102,16 @@ class OwnLoudnessBackfillBackend:
         path = Path(path)
         if not path.exists():
             raise TrackVanished(f"{path}: gone before decode")
-        fingerprint, duration_s = _fingerprint_decoded_pcm(path, binary)
+        try:
+            # Once per call, before a track is touched: without the engine
+            # EVERY fingerprint fails, which must read as a host gap, not as
+            # a library of unreadable files.
+            require_resampler()
+        except FingerprintUnavailable as exc:
+            raise BackendNotAvailable(
+                f"the canonical decode fingerprint cannot be taken on this host: {exc}"
+            ) from exc
+        fingerprint, duration_s = _canonical_fingerprint(path)
         producer = _load_loudness_producer()
         if cls.name != producer.PRODUCER_BACKEND or cls.version != producer.PRODUCER_VERSION:
             raise RuntimeError(
@@ -231,7 +130,7 @@ class OwnLoudnessBackfillBackend:
             backend_version=cls.version,
             analyzed_at=datetime.now(UTC),
             duration_s=duration_s,
-            sample_rate=_FINGERPRINT_SAMPLE_RATE_HZ,
+            sample_rate=SAMPLE_RATE_HZ,
             bpm=_PLACEHOLDER_BPM,
             bpm_confidence=_PLACEHOLDER_BPM_CONFIDENCE,
             key_camelot=_PLACEHOLDER_KEY_CAMELOT,

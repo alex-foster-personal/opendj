@@ -30,6 +30,18 @@ the downbeats of the track's own beatgrid lane, because Raveform Table 4
 measured a Harmonix-trained All-In-One at downbeat F1 0.753 on EDM, below the
 grid we already have.
 
+ENERGY ENVELOPES FOR THE DJ LABELS. allin1 separates the track with Demucs
+before it segments. With ``keep_byproducts=True`` the stems land in
+``<demix_dir>/htdemucs/<audio file stem>/{bass,drums,other,vocals}.wav``
+(all-in-one-mps 1.0.0 ``allin1/demix.py``; with ``keep_byproducts=False``
+it ignores ``demix_dir`` and deletes its own temp dir before returning, so
+the stems would be gone). The runner reads them once into RMS envelopes in dB
+at a fixed hop (``drums``, ``bass`` and ``mix``, the sum of all four stems),
+then deletes every byproduct itself, so nothing outlives the track. The
+envelopes feed ``apps/analysis_structure/dj_labels.py``. A failure to compute
+them never fails the track: ``envelopes`` is null and ``envelopes_error``
+says why.
+
 NOT BITWISE STABLE. Demucs runs first and seeding it does not make reruns
 identical end to end, so each output records the package, torch and device it
 ran with rather than claiming a rerun reproduces it.
@@ -52,6 +64,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata as md
 import json
+import shutil
 import sys
 import tempfile
 import time
@@ -60,6 +73,9 @@ from pathlib import Path
 from typing import Any
 
 MODEL = "harmonix-all"
+HOP_S = 0.1  # envelope frame; 10 frames a second keeps a 6 min track near 3600 values per lane
+FLOOR_DB = -120.0  # digital silence is clamped here instead of -inf
+STEMS = ("bass", "drums", "other", "vocals")
 
 
 def _device(requested: str) -> str:
@@ -86,21 +102,69 @@ def _versions(device: str) -> dict[str, str]:
     }
 
 
+def _rms_db(x: Any, hop: int) -> list[float]:
+    import numpy as np
+
+    n = len(x) // hop
+    frames = np.asarray(x[: n * hop], dtype=np.float64).reshape(n, hop)
+    rms = np.sqrt(np.mean(frames * frames, axis=1))
+    db = 20.0 * np.log10(np.maximum(rms, 10.0 ** (FLOOR_DB / 20.0)))
+    return [round(float(v), 1) for v in db]
+
+
+def envelopes(stem_dir: Path, hop_s: float = HOP_S) -> dict[str, Any]:
+    """RMS envelopes in dB of the drums, the bass and the full mix (sum of all stems)."""
+    import soundfile as sf
+
+    mono: dict[str, Any] = {}
+    rates = set()
+    for name in STEMS:
+        data, rate = sf.read(stem_dir / f"{name}.wav", dtype="float32", always_2d=True)
+        mono[name] = data.mean(axis=1)
+        rates.add(rate)
+    if len(rates) != 1:
+        raise ValueError(f"stems disagree on sample rate: {sorted(rates)}")
+    hop = round(rates.pop() * hop_s)
+    mix = sum(mono[name] for name in STEMS)
+    return {
+        "hop_s": hop_s,
+        "unit": "dBFS_rms",
+        "drums": _rms_db(mono["drums"], hop),
+        "bass": _rms_db(mono["bass"], hop),
+        "mix": _rms_db(mix, hop),
+    }
+
+
+def _envelopes_or_error(stem_dir: Path) -> dict[str, Any]:
+    try:
+        return {"envelopes": envelopes(stem_dir), "envelopes_error": None}
+    except Exception as exc:  # noqa: BLE001 -- the labels are optional, the sections are not
+        return {"envelopes": None, "envelopes_error": f"{type(exc).__name__}: {exc}"}
+
+
 def _analyze_one(path: Path, device: str, work: Path) -> dict[str, Any]:
     import allin1  # type: ignore[import-not-found]
 
     t0 = time.perf_counter()
-    r = allin1.analyze(
-        str(path),
-        out_dir=None,
-        model=MODEL,
-        device=device,
-        demucs_device=device,
-        demix_dir=str(work / "demix"),
-        spec_dir=str(work / "spec"),
-        keep_byproducts=False,
-        multiprocess=False,
-    )
+    try:
+        r = allin1.analyze(
+            str(path),
+            out_dir=None,
+            model=MODEL,
+            device=device,
+            demucs_device=device,
+            demix_dir=str(work / "demix"),
+            spec_dir=str(work / "spec"),
+            keep_byproducts=True,  # the stems are read below, then deleted here
+            multiprocess=False,
+        )
+        env = _envelopes_or_error(work / "demix" / "htdemucs" / path.stem)
+    finally:
+        # STRUCT-03: the stems must not stay on disk. A failed delete fails the
+        # track loudly (its reason names the dir) rather than passing as ok.
+        shutil.rmtree(work, ignore_errors=True)
+        if work.exists():
+            raise RuntimeError(f"could not delete Demucs byproducts in {work}")
     return {
         "status": "ok",
         "segments": [
@@ -110,6 +174,7 @@ def _analyze_one(path: Path, device: str, work: Path) -> dict[str, Any]:
         "model_bpm": r.bpm,
         "model_beats": [float(x) for x in r.beats],
         "model_downbeats": [float(x) for x in r.downbeats],
+        **env,
         "seconds": round(time.perf_counter() - t0, 3),
     }
 
@@ -127,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     tracks = [json.loads(line) for line in args.manifest.read_text().splitlines() if line.strip()]
     failed = 0
     with tempfile.TemporaryDirectory(prefix="allin1-") as tmp:
-        for t in tracks:
+        for i, t in enumerate(tracks):
             path = Path(t["path"])
             doc: dict[str, Any] = {
                 "stable_id": t["stable_id"],
@@ -137,7 +202,9 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 if not path.is_file():
                     raise FileNotFoundError(f"audio not found: {path}")  # noqa: TRY301
-                doc.update(_analyze_one(path, device, Path(tmp)))
+                # A fresh work dir per track: allin1 reuses any stems it finds
+                # under the same file stem, which two tracks can share.
+                doc.update(_analyze_one(path, device, Path(tmp) / f"t{i}"))
             except Exception as exc:  # noqa: BLE001 -- one bad file must not end the batch
                 failed += 1
                 doc.update(

@@ -14,6 +14,13 @@ and ``mood: 0``, which are not PSSI ids, plus the model's ``label`` and
 ``source: "own"``; the waveform only paints phrase starts, so the kind is
 never interpreted as a PSSI kind.
 
+THE PHRASE LANE CAN PICK OWN (STRUCT-04). The PARITY-02 dropdown's Phrase
+row sets the ``phrase`` selection lane. On ``rbx`` (the default) the rules
+above hold. On ``own`` only own sections are served, even where PSSI exists,
+and a track with no usable sidecar answers an empty list with
+``phrases_source: none`` rather than falling back to rekordbox: a chosen
+source is never silently substituted by another.
+
 A FAILED SIDECAR IS REPORTED, NOT HIDDEN. ``own_phrases`` carries the
 sidecar's status and reason whenever one exists, so "could not analyze this
 track" reaches the client instead of reading as "never analyzed".
@@ -32,8 +39,37 @@ from typing import Any
 from .pipeline import load_sidecar
 
 
-def merge_own_phrases(payload: dict[str, Any], stable_id: str, data_dir: Path) -> dict[str, Any]:
-    if payload.get("phrases"):
+def _own_phrase(section: dict[str, Any]) -> dict[str, Any]:
+    """One own section as a phrase; its DJ label wins ``label`` when it has one (STRUCT-03).
+
+    A section the energy rules labeled (``dj_labels.py``) is served with
+    ``label`` set to its DJ label, the model's pop label kept as
+    ``model_label``, plus ``ambient``. An unlabeled section is served exactly
+    as before, model label in ``label``.
+    """
+    phrase = {
+        "start_s": section["start_s"],
+        "end_s": section["end_s"],
+        "kind": 0,
+        "mood": 0,
+        "label": section["label"],
+        "source": "own",
+    }
+    if section.get("dj_label"):
+        phrase.update(
+            label=section["dj_label"],
+            model_label=section["label"],
+            ambient=bool(section.get("ambient")),
+        )
+    return phrase
+
+
+def merge_own_phrases(
+    payload: dict[str, Any], stable_id: str, data_dir: Path, *, source: str
+) -> dict[str, Any]:
+    if source not in ("rbx", "own"):
+        raise ValueError(f"unknown phrase source {source!r}")
+    if source == "rbx" and payload.get("phrases"):
         return {**payload, "phrases_source": "rekordbox"}
     doc = load_sidecar(data_dir, stable_id)
     if doc is None:
@@ -46,17 +82,7 @@ def merge_own_phrases(payload: dict[str, Any], stable_id: str, data_dir: Path) -
     }
     if doc["status"] != "ok":
         return {**payload, "phrases": [], "phrases_source": "none", "own_phrases": status}
-    phrases = [
-        {
-            "start_s": s["start_s"],
-            "end_s": s["end_s"],
-            "kind": 0,
-            "mood": 0,
-            "label": s["label"],
-            "source": "own",
-        }
-        for s in doc["sections"]
-    ]
+    phrases = [_own_phrase(s) for s in doc["sections"]]
     return {**payload, "phrases": phrases, "phrases_source": "own", "own_phrases": status}
 
 

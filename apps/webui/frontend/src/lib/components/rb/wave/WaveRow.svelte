@@ -76,6 +76,7 @@
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { effectiveWaveformDesign, waveSplitActive } from '$lib/rb/ui-skin';
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
+	import { sectionsApiFor } from './sections-lazy.svelte';
 	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
 	const { deckId }: { deckId: DeckId } = $props();
@@ -298,6 +299,7 @@
 			cssW,
 			cssH,
 			palette,
+			uiPrefs.show_sections,
 			splitPartner?.id ?? null,
 			partnerAnlz,
 			partnerPaintMs,
@@ -325,7 +327,7 @@
 		}
 		if (splitPartner !== null && partnerState !== null && partnerPaintMs !== null && partnerState.duration_ms !== null) {
 			const half = Math.floor(cssH / 2);
-			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin) };
+			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, showSections: uiPrefs.show_sections, waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin) };
 			paintSplitRow(
 				el,
 				ctx,
@@ -367,6 +369,7 @@
 			loop: deck.loop,
 			playheadTone: syncPlayheadTone,
 			playheadTimeMs: performance.now(),
+			showSections: uiPrefs.show_sections,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			masterDownbeatOverlay,
 			ghostSeekMs: ghost.ghostSeekMs,
@@ -444,6 +447,10 @@
 		void effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		void cssW;
 		void cssH;
+		void uiPrefs.show_sections;
+		// STRUCT-05: subscribe to the lazily loaded section painter so the
+		// bands paint as soon as it lands after the pref turns on.
+		void sectionsApiFor(uiPrefs.show_sections);
 		void palette;
 		draw(true);
 	});

@@ -126,7 +126,6 @@ def test_notice_carries_the_offer_and_the_configure_line() -> None:
 LANE_FILTERS = (
     ("apps/analysis_loudness/adapter.py", "astats"),
     ("apps/loudness/scan.py", "ebur128"),
-    ("apps/analysis/backends/own_loudness.py", "aresample"),
     ("apps/analysis/pcm_fingerprint.py", "aresample"),
     ("apps/analysis_waveform/decode.py", "asplit"),
     ("apps/analysis_waveform/decode.py", "aformat"),

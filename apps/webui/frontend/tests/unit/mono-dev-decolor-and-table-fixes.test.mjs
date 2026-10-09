@@ -38,13 +38,65 @@ test('if the compatible-key ring does not paint above the row separator on all f
 	const ring = ruleBodies(TABLE, '.c-key.key-compat::after')[0];
 	assert.ok(ring, 'expected a .c-key.key-compat::after overlay');
 	assert.match(ring, /position:\s*absolute/);
-	assert.match(ring, /inset:\s*0/);
-	assert.match(ring, /box-shadow:\s*inset 0 0 0 1px var\(--rb-key-compat-border, var\(--key-compat-color\)\)/);
 	const separator = ruleBodies(TABLE, 'tbody tr::after')[0];
 	assert.ok(zIndexOf(ring) > zIndexOf(separator), `ring z ${zIndexOf(ring)} must exceed separator z ${zIndexOf(separator)}`);
 	// The inline style hands the overlay its color rather than drawing a (clippable) td shadow.
 	assert.match(TABLE, /`--key-compat-color: \$\{masterKeyColor\}`/);
 	assert.doesNotMatch(TABLE, /box-shadow: inset 0 0 0 1px \$\{masterKeyColor\}/);
+});
+
+/** Resolve the ring rule's per-side border widths and insets the way the cascade would. */
+function ringBox(body) {
+	const px = (v) => Number(String(v).replace(/px$/, ''));
+	const widths = { top: 0, right: 0, bottom: 0, left: 0 };
+	const insets = { top: NaN, right: NaN, bottom: NaN, left: NaN };
+	for (const [, prop, value] of body.matchAll(/([\w-]+):\s*([^;]+);/g)) {
+		const v = value.trim();
+		if (prop === 'border') {
+			const w = v.match(/(\d+(?:\.\d+)?)px/);
+			for (const side of Object.keys(widths)) widths[side] = w ? px(w[1]) : 0;
+		} else if (/^border-(top|right|bottom|left)(-width)?$/.test(prop)) {
+			const side = prop.split('-')[1];
+			const w = v.match(/(\d+(?:\.\d+)?)px/);
+			widths[side] = w ? px(w[1]) : 0;
+		} else if (prop === 'inset') {
+			const parts = v.split(/\s+/).map(px);
+			const [t, r = t, b = t, l = r] = parts;
+			Object.assign(insets, { top: t, right: r, bottom: b, left: l });
+		} else if (/^(top|right|bottom|left)$/.test(prop)) {
+			insets[prop] = px(v);
+		}
+	}
+	return { widths, insets };
+}
+
+// LIBM-176 (the maintainer, Tue 6 Oct 2026): "bottom border on key highlights missing -
+// probably part of ensuring borders don't double up".
+// @pytest.mark.requirement LIBM-176
+test('if the key ring bottom border is thinner than its top, or the ring ends on the row separator, then the bottom edge goes missing', () => {
+	const ring = ruleBodies(TABLE, '.c-key.key-compat::after')[0];
+	assert.ok(ring, 'expected a .c-key.key-compat::after overlay');
+	const { widths, insets } = ringBox(ring);
+	assert.ok(widths.top > 0, `ring top border is ${widths.top}px; the probe resolved no border at all`);
+	assert.equal(widths.bottom, widths.top, 'ring bottom border width must equal its top');
+	assert.equal(widths.left, widths.top);
+	assert.equal(widths.right, widths.top);
+	// An inset shadow is not a border: it is what lost the bottom edge before.
+	assert.doesNotMatch(ring, /box-shadow/);
+	assert.match(ring, /box-sizing:\s*border-box/);
+	assert.match(ring, /border:\s*1px solid var\(--rb-key-compat-border, var\(--key-compat-color\)\)/);
+	// Inside its own cell (no negative inset, so the td clip cannot cut it),
+	// and its bottom edge clears the 1px row separator painted at the row bottom.
+	for (const side of ['top', 'right', 'left']) assert.ok(insets[side] >= 0, `${side} inset ${insets[side]}`);
+	const separator = ruleBodies(TABLE, 'tbody tr::after')[0];
+	const sepHeight = Number(separator.match(/height:\s*(\d+)px/)?.[1]);
+	assert.equal(sepHeight, 1, 'the row separator is the 1px line the ring must clear');
+	assert.match(separator, /bottom:\s*0;/);
+	assert.ok(insets.bottom >= sepHeight, `ring bottom inset ${insets.bottom}px must clear the ${sepHeight}px separator`);
+	// Overshoot control: the ring must not shrink away from the top and sides too.
+	assert.equal(insets.top, 0);
+	assert.equal(insets.left, 0);
+	assert.equal(insets.right, 0);
 });
 
 test('if the play-count header label is not centered then its icon sits off the column center', () => {

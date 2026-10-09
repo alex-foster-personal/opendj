@@ -6,6 +6,7 @@
  * no behavior change, no new coupling.
  */
 import type { AnlzCue, AnlzPhrase } from '$lib/rb/anlz-types';
+import { readSectionPalette, type SectionPalette } from './section-palette';
 
 /** Top strip reserved for beat ticks, cue markers and phrase chevrons.
  * Shared with render.ts's band painter so the marker strip and the band
@@ -30,7 +31,7 @@ export function markerBandHeightForSurface(surfaceHeightPx: number): number {
 // at the time of this PR the bpm-heat contrast helpers exist only on the
 // still-open PR #890 (commit 982aeaa4), so importing them here would couple
 // this branch to another in-flight one. Dedup once #890 lands - see
-// .planning/debt/947.md.
+// (private path).
 
 /** WCAG 2.1 AA for body text; the same floor bpm-heat.ts enforces on the BPM
  * column. A cue marker is a small graphic, not text, but issue #877 asks
@@ -117,13 +118,16 @@ export interface WavePalette {
 	phrase: string;
 	/** Vocal-presence bars (--rb-wave-vocal; mono palette: pale blue). */
 	vocal: string;
+	/** STRUCT-05 section band hues (--rb-section-*) plus label text (--rb-text). */
+	sections: SectionPalette;
 }
 
 // cueOutline intentionally reuses `tick` (--rb-text): rather than reading the
 // same CSS var twice, it is derived below once the loop resolves it. cueLoop
 // reads --rb-orange itself: it used to alias `low`, but issue #4219 moved the
 // lows band to --rb-wave-low (dark blue by default) while loops stay orange.
-const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueOutline'>, string> = {
+// `sections` is a nested palette read by readSectionPalette below.
+const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueOutline' | 'sections'>, string> = {
 	bg: '--rb-bg',
 	secondaryBg: '--rb-waverow-secondary',
 	low: '--rb-wave-low',
@@ -158,6 +162,7 @@ export function readPalette(el: HTMLElement): WavePalette {
 		out[key] = value;
 	}
 	out.cueOutline = out.tick;
+	out.sections = readSectionPalette(styles, out.tick);
 	const outlineContrast = contrastRatio(out.cueOutline, out.bg);
 	if (outlineContrast < CUE_MIN_CONTRAST) {
 		throw new Error(

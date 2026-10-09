@@ -30,10 +30,7 @@
 		type PreviewStripData,
 		type Vocals
 	} from '$lib/rb/api-rb';
-	import {
-		rememberOptionalResources,
-		shouldFetchArtwork
-	} from '$lib/rb/optional-resource-availability';
+	import { artworkFetchAllowed, artworkRetry, artworkRetrySrc } from '$lib/rb/artwork-retry';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
 	import { isPairedRow } from '$lib/rb/pairing-row';
@@ -377,6 +374,8 @@
 		browseScroll = null,
 		removable = false,
 		reorderable = false,
+		reorderBlocked = null,
+		onrestoreorder = undefined,
 		onscrollcursor,
 		onrenderedrowcapacity,
 		onsort,
@@ -454,6 +453,11 @@
 		 * order (no client sort/search) - drag handles only render then,
 		 * since row.order would otherwise not match the visual position. */
 		reorderable?: boolean;
+		/** W33: why an editable playlist cannot be drag-reordered right now
+		 * (a sort or search is on), or null. Added to the order cell's title,
+		 * and shown with a one-click restore when a row drag starts. */
+		reorderBlocked?: string | null;
+		onrestoreorder?: (() => void) | undefined;
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
 		/** Reports the number of actual rows the viewport can show after its
@@ -1269,7 +1273,10 @@
 	}
 
 	function orderCellTitle(order: number): string {
-		return `Playlist position ${order}`;
+		// W33: while a sort or search blocks drag-reorder, the cell says why.
+		return reorderBlocked === null
+			? `Playlist position ${order}`
+			: `Playlist position ${order}\n${reorderBlocked}`;
 	}
 
 	function timeCellTitle(ms: number | null): string {
@@ -1282,15 +1289,25 @@
 		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
-	let artworkLoadFailed = $state<ReadonlySet<string>>(new Set());
+	// LIBM-181: a cover that fails to load is retried (2 s, 8 s, 30 s), never
+	// recorded as "no artwork"; only the server's artwork_available says that.
+	// The tick re-renders rows when a retry comes due or a resync clears ids.
+	const coverRetry = artworkRetry();
+	let coverRetryTick = $state(0);
+	$effect(() => coverRetry.subscribe(() => (coverRetryTick += 1)));
 
-	function _onArtworkLoad(event: Event): void {
+	function _onArtworkLoad(event: Event, stableId: string): void {
 		(event.currentTarget as HTMLImageElement).classList.add('art-loaded');
+		coverRetry.noteLoad(stableId);
 	}
 
 	function _onArtworkError(stableId: string): void {
-		rememberOptionalResources(stableId, { artwork: false });
-		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
+		coverRetry.noteError(stableId);
+	}
+
+	function _retrySrc(url: string, stableId: string): string {
+		void coverRetryTick;
+		return artworkRetrySrc(url, stableId, coverRetry);
 	}
 
 	// LIBM-172: cover images wait in the boot scheduler's deferred queue, behind
@@ -1301,8 +1318,8 @@
 		return (
 			artworkReleased &&
 			artworkAvailable === true &&
-			shouldFetchArtwork(stableId) &&
-			!artworkLoadFailed.has(stableId)
+			coverRetryTick >= 0 &&
+			artworkFetchAllowed(stableId, coverRetry)
 		);
 	}
 
@@ -1311,6 +1328,44 @@
 	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
 	// rune - it only matters for the lifetime of one drag gesture.
 	let _dragSourceOrder: { start: number; count: number } | null = null;
+
+	// W33: a row drag on a sorted/searched playlist shows why reorder is off.
+	// Stays up for a few seconds after the drag so its button can be clicked.
+	const REORDER_HINT_LINGER_MS = 6000;
+	let reorderHintShown = $state(false);
+	let _reorderHintTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function _showReorderHint(): void {
+		if (_reorderHintTimer !== null) clearTimeout(_reorderHintTimer);
+		_reorderHintTimer = null;
+		reorderHintShown = true;
+	}
+
+	function _lingerReorderHint(): void {
+		if (!reorderHintShown) return;
+		if (_reorderHintTimer !== null) clearTimeout(_reorderHintTimer);
+		_reorderHintTimer = setTimeout(() => {
+			_reorderHintTimer = null;
+			reorderHintShown = false;
+		}, REORDER_HINT_LINGER_MS);
+	}
+
+	function _restoreOrder(): void {
+		// Fail fast: a blocker with no restore action is a broken integration, so
+		// throw before the hint hides rather than dismiss it with the sort still on.
+		if (!onrestoreorder) throw new Error('TrackTable: reorderBlocked is set but onrestoreorder is missing');
+		if (_reorderHintTimer !== null) clearTimeout(_reorderHintTimer);
+		_reorderHintTimer = null;
+		reorderHintShown = false;
+		onrestoreorder();
+	}
+
+	$effect(() => {
+		if (reorderBlocked === null) reorderHintShown = false;
+	});
+	$effect(() => () => {
+		if (_reorderHintTimer !== null) clearTimeout(_reorderHintTimer);
+	});
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
 		// A refused drag used to just preventDefault and return: no cursor
@@ -1346,6 +1401,7 @@
 			artist: row.artist ?? '',
 			count: ids.length
 		});
+		if (reorderBlocked !== null) _showReorderHint();
 		beginTrackDrag(ids, {
 			[row.stable_id]: {
 				file_exists: row.file_exists,
@@ -1358,6 +1414,7 @@
 	function onRowDragEnd(): void {
 		removeTrackDragGhost();
 		endTrackDrag();
+		_lingerReorderHint();
 	}
 
 	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
@@ -1429,6 +1486,12 @@
 	data-density={uiPrefs.library_density}
 	data-truncated={provider.truncated ? 'true' : 'false'}
 >
+	{#if reorderHintShown && reorderBlocked !== null}
+		<div class="reorder-hint" role="status" data-testid="reorder-blocked-hint">
+			<span>{reorderBlocked}</span>
+			<button type="button" onclick={_restoreOrder}>Restore playlist order</button>
+		</div>
+	{/if}
 	<TrackContextMenu
 		bind:this={trackContextMenu}
 		{selectedIds}
@@ -2060,10 +2123,10 @@
 							{#if row.artwork_available === true}
 								{#if _showArtworkImg(row.stable_id, row.artwork_available)}
 									<img
-										src={artworkUrl(row.stable_id, 's')}
+										src={_retrySrc(artworkUrl(row.stable_id, 's'), row.stable_id)}
 										alt=""
 										loading="lazy"
-										onload={_onArtworkLoad}
+										onload={(e) => _onArtworkLoad(e, row.stable_id)}
 										onerror={() => _onArtworkError(row.stable_id)}
 									/>
 								{/if}
@@ -2606,14 +2669,16 @@
 		pointer-events: none;
 		opacity: 0.85;
 	}
+	/* Square, the size and corner of an AnalysisDots grid cell it sits on
+	   (LIBM-177): a round dot read as foreign to the grid. */
 	.audio-cache-dot {
 		position: absolute;
 		top: 4px;
 		left: 3px;
 		z-index: 2;
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
+		width: 4px;
+		height: 4px;
+		border-radius: 0.5px;
 		background: #e89a3c;
 		pointer-events: none;
 		box-shadow: 0 0 0 1px color-mix(in srgb, #e89a3c 35%, transparent);
@@ -2743,16 +2808,17 @@
 		}
 	}
 	/* IOPIN-11: a row is green only when both Camelot key and closest
-	 * raw/half/double BPM relationship are compatible. */
+	 * raw/half/double BPM relationship are compatible. Skin hook: Gothic
+	 * (mono-dev) sets --rb-mix-compat-row-tint/-hover (theme.css) to drop the wash. */
 	tbody tr.rb-row-mix-compatible:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
 			.rb-row-spotify-pending
 		) {
-		background: color-mix(in srgb, var(--rb-green) 9%, transparent);
+		background: var(--rb-mix-compat-row-tint, color-mix(in srgb, var(--rb-green) 9%, transparent));
 	}
 	tbody tr.rb-row-mix-compatible:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
 		):not(.rb-row-spotify-pending) {
-		background: color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised));
+		background: var(--rb-mix-compat-row-hover, color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised)));
 	}
 	/* Spotify unmatched / pending acquisition: light green tint (stronger than
 	 * Camelot-compat so the missing-local rows read as intentional placeholders). */
@@ -2933,6 +2999,33 @@
 	.c-order .grip:hover {
 		color: var(--rb-text);
 	}
+	.reorder-hint {
+		position: absolute;
+		top: 24px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 20;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 8px;
+		border: 1px solid var(--rb-border, rgba(255, 255, 255, 0.18));
+		border-radius: 3px;
+		background: var(--rb-panel-raised);
+		color: var(--rb-text);
+		font-size: 11px;
+		white-space: nowrap;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+	}
+	.reorder-hint button {
+		padding: 1px 6px;
+		border: 1px solid var(--rb-accent);
+		border-radius: 2px;
+		background: none;
+		color: var(--rb-text);
+		font: inherit;
+		cursor: pointer;
+	}
 	.c-key {
 		color: var(--rb-text-dim);
 		box-sizing: border-box;
@@ -2945,15 +3038,22 @@
 	}
 	/* Compatible-key ring as an overlay ABOVE the row separator
 	   (tbody tr::after, z-index 4), so all four sides show; an inset
-	   box-shadow on the td itself lost its bottom edge under it. A skin may
-	   set --rb-key-compat-border (mono-dev: white) over the master key hue. */
+	   box-shadow on the td itself lost its bottom edge under it. The ring is
+	   a real 1px border (pixel-snapped on every side, unlike an inset shadow
+	   on the half-pixel row edges the collapsed header border leaves) and
+	   stops 1px short of the cell bottom, so its bottom edge sits above the
+	   row separator instead of on it, and two compatible rows in a row show
+	   two rings with the separator between them rather than one doubled
+	   line (LIBM-176). A skin may set --rb-key-compat-border (mono-dev:
+	   white) over the master key hue. */
 	.c-key.key-compat::after {
 		content: '';
 		position: absolute;
-		inset: 0;
+		inset: 0 0 1px 0;
 		z-index: 5;
+		box-sizing: border-box;
+		border: 1px solid var(--rb-key-compat-border, var(--key-compat-color));
 		border-radius: 2px;
-		box-shadow: inset 0 0 0 1px var(--rb-key-compat-border, var(--key-compat-color));
 		pointer-events: none;
 	}
 	.c-key.key-inert {

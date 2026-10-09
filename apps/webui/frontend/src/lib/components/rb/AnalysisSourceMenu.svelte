@@ -4,6 +4,8 @@
 		type AnalysisSource,
 		analysisSourceState
 	} from '$lib/rb/analysis-source.svelte';
+	import { setShowSections, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { sectionsLoadError } from '$lib/components/rb/wave/sections-lazy.svelte';
 
 	let {
 		style: menuStyle,
@@ -22,7 +24,8 @@
 		key: 'Key',
 		waveform: 'Waveform',
 		loudness: 'Loudness',
-		vocal: 'Vocal'
+		vocal: 'Vocal',
+		phrase: 'Phrase'
 	};
 
 	function _featureLabel(feature: string): string {
@@ -55,7 +58,36 @@
 	{#each ANALYSIS_SOURCE_FEATURES as feature (feature)}
 		{@const current = analysisSourceState.features[feature] ?? 'rekordbox'}
 		<div class="src-row">
-			<span class="src-label">{_featureLabel(feature)}</span>
+			<span class="src-label">
+				{_featureLabel(feature)}
+				{#if feature === 'phrase'}
+					<!-- STRUCT-05: persisted show_sections pref (PUT /api/v1/ui-prefs),
+					     next to the source choice it visualizes. -->
+					<label
+						class="src-show"
+						title="Show sections: paint each section as a labeled band over the deck and main waveforms"
+					>
+						<input
+							type="checkbox"
+							data-testid="show-sections-toggle"
+							checked={uiPrefs.show_sections}
+							onchange={(e) => setShowSections(e.currentTarget.checked)}
+						/>
+						show
+					</label>
+					{#if uiPrefs.show_sections && sectionsLoadError() !== null}
+						<!-- A painter that cannot load paints no bands; say so rather
+						     than look like a track with no sections. -->
+						<span
+							class="src-err"
+							data-testid="show-sections-error"
+							title={`Section overlay failed to load, retrying: ${sectionsLoadError()}`}
+						>
+							load failed
+						</span>
+					{/if}
+				{/if}
+			</span>
 			<div class="src-seg" role="group" aria-label={`${feature} source`}>
 				<button
 					type="button"
@@ -112,7 +144,30 @@
 		margin: 0 0 4px;
 	}
 	.src-label {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 		color: var(--rb-text);
+	}
+	.src-show {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		font-size: 9px;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.src-err {
+		font-size: 9px;
+		color: var(--rb-text);
+		text-decoration: underline wavy;
+	}
+	.src-show input {
+		margin: 0;
+		width: 10px;
+		height: 10px;
+		accent-color: var(--rb-accent);
+		cursor: pointer;
 	}
 	.src-seg {
 		display: flex;

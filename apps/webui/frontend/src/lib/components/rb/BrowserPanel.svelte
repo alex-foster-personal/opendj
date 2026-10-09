@@ -256,6 +256,7 @@
 		writeLv1,
 		rowHasVocalLyrics,
 		rowIsLocallyAvailable,
+		reorderBlockedReason,
 		rowIsRemix,
 		sortRows,
 		visibleRowsOf,
@@ -901,12 +902,12 @@
 		() => renderedRows,
 		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
 	);
+	// LIBM-175: list and whole-collection modes pass no placeholder, so
+	// SearchBox's SEARCH_PLACEHOLDER ('Search...') shows; the
+	// whole-collection toggle beside the box already shows the scope. Find
+	// keeps its own text because it highlights rather than filters.
 	const searchPlaceholder = $derived(
-		searchMode === 'find'
-			? 'Find in list (highlight, 3+ chars)'
-			: searchMode === 'collection'
-				? 'Search whole collection'
-				: 'Search within this track list'
+		searchMode === 'find' ? 'Find in list (highlight, 3+ chars)' : undefined
 	);
 	const emptyMessage = $derived.by((): string | null => {
 		if (searchFilterFallback !== null) return null;
@@ -958,10 +959,12 @@
 		pairingIndex.start(() => referenceMasterStableId);
 		const uninstallBrowserSortIpc = installBrowserSortIpc({
 			sort: sortBy,
+			restoreOrder: restorePlaylistOrder,
 			query: () => ({
 				sort_key: pane.sort_key,
 				sort_dir: pane.sort_dir,
-				visible_ids: visibleRows.map((row) => row.stable_id)
+				visible_ids: visibleRows.map((row) => row.stable_id),
+				reorder_blocked: reorderBlocked
 			})
 		});
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
@@ -3162,6 +3165,18 @@
 	const reorderablePane = $derived(
 		editablePane && pane.sort_key === null && pane.search.trim() === ''
 	);
+	// W33 (LIBM-182): an editable playlist that is sorted or searched says why
+	// drag-reorder is off, and offers one click back to membership order.
+	const reorderBlocked = $derived(reorderBlockedReason(editablePane, pane.sort_key, pane.search));
+
+	function restorePlaylistOrder(): void {
+		const p = panes[activePane];
+		p.clearSort();
+		if (p.search.trim() !== '') {
+			_filterDebounceFor(activePane).cancel();
+			p.setSearch('');
+		}
+	}
 
 	async function _mutateActivePane(computeNext: (items: string[]) => string[]): Promise<void> {
 		const p = pane;
@@ -3671,6 +3686,8 @@
 			{browseScroll}
 			removable={editablePane}
 			reorderable={reorderablePane}
+			{reorderBlocked}
+			onrestoreorder={restorePlaylistOrder}
 			onscrollcursor={(top) => {
 				_libraryRefreshGate.noteScroll();
 				panes[activePane].rememberScroll(top);

@@ -13,6 +13,9 @@ test('pin 5a833ab52fda TrackTable artwork uses two-thirds anchor and listing gat
 	assert.match(table, /object-position:\s*center 66\.67%/);
 	assert.match(table, /_showArtworkImg/);
 	assert.match(table, /artworkAvailable === true/);
-	assert.match(table, /rememberOptionalResources/);
+	// LIBM-181: the gate reads the server verdict through artworkFetchAllowed
+	// (shouldFetchArtwork underneath); an image error no longer writes it.
+	assert.match(table, /artworkFetchAllowed\(stableId, coverRetry\)/);
+	assert.doesNotMatch(table, /artwork:\s*false/);
 	assert.match(table, /art-loaded/);
 });

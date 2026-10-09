@@ -13,12 +13,12 @@ reason, so "not analyzed yet" and "could not be analyzed" never look alike
 (STRUCT-01). Nothing is ever written with ``status: ok`` and no sections.
 
 WHY A SIDECAR AND NOT A LANE ROW. Phrases are a v2 lane in
-``specs/native-analysis-v1.md``; promoting them into the record contract
+``(private path)``; promoting them into the record contract
 means a new lane in ``apps.analysis.lane_enums``, its payload validator,
 canonical pointer and projection. That lands once the lane has a bench score
 on the parity reference (rekordbox PSSI). Until then the sidecar follows the
 vocal-cache precedent: derived, machine-local, regenerable, merged into
-``/anlz`` at serve time. `docs/decisions/ADR-NEW-structure-and-genre-sidecars.md`
+``/anlz`` at serve time. `(private path)`
 records the decision.
 
 -Claude
@@ -39,11 +39,12 @@ from typing import Any
 from apps.analysis.canonical import canonical_pointer
 from apps.analysis.record import AnalysisRecord
 
+from .dj_labels import label_sections
 from .quantize import quantize
 
 SCHEMA = "structure-sidecar/v1"
 PRODUCER = "allin1"
-PRODUCER_VERSION = "0.1.0"  # bump when the quantizer policy or runner pins change
+PRODUCER_VERSION = "0.2.0"  # bump when the quantizer, the DJ label rules or runner pins change
 RUNNER = Path(__file__).with_name("allin1_runner.py")
 PHRASE_BARS = 4
 # Boundaries snap to downbeats, and phrase alignment is REPORTED, not forced:
@@ -121,6 +122,7 @@ def build_sidecar(
     sections = q.sections(duration_s)
     if not sections:
         return _failed(stable_id, "no_boundaries", versions=raw.get("versions"))
+    dj = attach_dj_labels(sections, raw)
     return {
         "schema": SCHEMA,
         "stable_id": stable_id,
@@ -134,9 +136,26 @@ def build_sidecar(
         "duration_s": round(duration_s, 3),
         "sections": sections,
         "quantize": q.to_dict(),
+        "dj_labels": dj,
         "model_segments": raw.get("segments"),
         "seconds": raw.get("seconds"),
     }
+
+
+def attach_dj_labels(sections: list[dict[str, Any]], raw: dict[str, Any]) -> dict[str, Any]:
+    """Add ``dj_label``/``ambient``/``energy`` to each section in place; return the summary.
+
+    The model's ``label`` is kept untouched. With no envelopes, or no energy
+    contrast, the sections stay unlabeled and the summary names why
+    (``dj_labels.py`` has the rules).
+    """
+    result = label_sections(sections, raw.get("envelopes"))
+    if result["status"] != "ok":
+        detail = raw.get("envelopes_error")
+        return {**result, "detail": detail} if detail else result
+    for section, dj in zip(sections, result["sections"], strict=True):
+        section.update(dj)
+    return {k: v for k, v in result.items() if k != "sections"}
 
 
 def write_sidecar(data_dir: Path, doc: dict[str, Any]) -> Path:
@@ -229,6 +248,7 @@ __all__ = [
     "PRODUCER_VERSION",
     "SCHEMA",
     "analyze",
+    "attach_dj_labels",
     "build_sidecar",
     "cache_dir",
     "load_sidecar",

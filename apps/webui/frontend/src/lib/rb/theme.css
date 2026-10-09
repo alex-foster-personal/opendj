@@ -36,6 +36,14 @@
 	--rb-red: #d0342c;           /* cue markers, position tick */
 	--rb-yellow: #e5c33a;        /* Free licence badge */
 	--rb-select: #1d3f73;        /* selected row highlight */
+	/* STRUCT-05 section bands (Show sections). Painted at low alpha over the
+	   waveforms, so these are hues, not surfaces: one per DJ label family. */
+	--rb-section-edge: #3fb3c8;    /* intro / outro - cool */
+	--rb-section-rise: #d9a441;    /* buildup, rekordbox Up - rising warm */
+	--rb-section-drop: #ea4a76;    /* drop, chorus - hot */
+	--rb-section-calm: #8b82c4;    /* breakdown / cooldown, rekordbox Down - muted */
+	--rb-section-body: #6e8fa8;    /* verse / bridge / inst / solo - song body */
+	--rb-section-neutral: #80868d; /* unknown label - neutral fallback */
 	--rb-master: #c9b35a;        /* master deck gold: MASTER button fill, master
 	                                library-row edge/wash, master-fold badge */
 	--rb-master-ink: #1a1608;    /* text drawn ON a --rb-master fill */
@@ -68,6 +76,8 @@
 	--rb-issue-square-ink: initial;    /* unset: the '!' glyph on that square stays near-black */
 	--rb-quality-filter: none;         /* QLT venue badges keep their colour ramp */
 	--rb-bpm-mismatch-ring: initial;   /* unset: off-tempo BPM cells keep their red severity rings */
+	--rb-mix-compat-row-tint: initial; /* unset: key+BPM-compatible library rows get a faint green wash */
+	--rb-mix-compat-row-hover: initial;
 	--rb-stem-vocal: initial;          /* unset: stem chips, tags, dials and rows use STEM_COLORS (stem-colors.ts) */
 	--rb-stem-instrumental: initial;
 	--rb-stem-drums: initial;
@@ -121,6 +131,12 @@ html[data-theme='light'] .perf-root {
 	--rb-red: #ad2420;
 	--rb-yellow: #927000;
 	--rb-select: #d6e5f5;
+	--rb-section-edge: #1f7f92;
+	--rb-section-rise: #a4730f;
+	--rb-section-drop: #b8254f;
+	--rb-section-calm: #5d539a;
+	--rb-section-body: #486a85;
+	--rb-section-neutral: #6b6660;
 	/* Darker gold + light ink: the dark-mode gold measured 1.88:1 on the
 	   light --rb-bg, and its pale row text 1.18:1 on the gold wash. */
 	--rb-master: #856500;
@@ -242,6 +258,11 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-issue-square-ink: #0a0a0a;
 	--rb-quality-filter: grayscale(1);
 	--rb-bpm-mismatch-ring: transparent;
+	/* W41 (the maintainer, Tue 6 Oct 2026): "in gothic let's not highlight matching
+	   rows, clutters." No row wash at rest or on hover; the key cell's
+	   compatible ring still marks the match. */
+	--rb-mix-compat-row-tint: transparent;
+	--rb-mix-compat-row-hover: var(--rb-panel-raised);
 	/* Stems: low-chroma tints, still five distinct hues, so they stop
 	   shouting against the gray chrome. */
 	--rb-stem-vocal: #8ea6ba;
@@ -376,11 +397,23 @@ html[data-skin='light'] .perf-root {
 	--rb-issue-square-ink: #f5f5f5;
 	--rb-quality-filter: grayscale(1);
 	--rb-bpm-mismatch-ring: transparent;
+	/* W41 mirrored: light is Gothic flipped, so no compatible-row wash either. */
+	--rb-mix-compat-row-tint: transparent;
+	--rb-mix-compat-row-hover: var(--rb-panel-raised);
 	--rb-stem-vocal: #4f6a80;
 	--rb-stem-instrumental: #566b49;
 	--rb-stem-drums: #7a5f45;
 	--rb-stem-bass: #625a7a;
 	--rb-stem-other: #3f6b63;
+	/* STRUCT-05 section band hues: the light theme's, so the translucent
+	 * bands keep their families on this near-white ground and no dark-theme
+	 * hue leaks in. */
+	--rb-section-edge: #1f7f92;
+	--rb-section-rise: #a4730f;
+	--rb-section-drop: #b8254f;
+	--rb-section-calm: #5d539a;
+	--rb-section-body: #486a85;
+	--rb-section-neutral: #6b6660;
 	/* Light-only hooks. Each one has a fallback at its use site that equals
 	 * the value Default and Gothic render, so those skins do not change.
 	 * - jog: the jog platter is a dark literal in every skin (JogDial.svelte),

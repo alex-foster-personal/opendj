@@ -37,6 +37,12 @@ import {
 } from '$lib/rb/wave-palette';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
+	SECTION_OVERLAY_PREF_DEFAULTS,
+	makeSectionOverlaySetters,
+	validateSectionOverlayPrefFields,
+	type SectionOverlayPrefsState
+} from './section-overlay-prefs';
+import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
 	makeLibraryFilterSetters,
 	validateLibraryFilterPrefFields
@@ -158,7 +164,8 @@ export interface RbUiPrefs
 		GigHelperPrefs,
 		AppModePrefs,
 		LyricsPrefs,
-		DevUiPrefs {
+		DevUiPrefs,
+		SectionOverlayPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -343,6 +350,7 @@ const DEFAULTS: RbUiPrefs = {
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	crossfade_curve: 'magic',
 	horizontal_wheel_knob: 'filter',
+	...SECTION_OVERLAY_PREF_DEFAULTS,
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
@@ -667,6 +675,8 @@ function _load(): RbUiPrefs {
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
 		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
+		...SECTION_OVERLAY_PREF_DEFAULTS,
+		...validateSectionOverlayPrefFields(parsed, STORAGE_KEY),
 		...LYRICS_PREF_DEFAULTS,
 		...validateLyricsPrefFields(parsed, STORAGE_KEY),
 		...LIBRARY_FILTER_PREF_DEFAULTS,
@@ -819,6 +829,13 @@ export function setTechnicallyWorkingAnimate(next: boolean): void {
 
 export const { setJogRadialWaveform } = makeJogRadialWaveformSetters(uiPrefs, _persist, (patch) =>
 	void _syncDiskPrefs(patch)
+);
+
+/** STRUCT-05: labeled section bands over the waveforms (default off). */
+export const { setShowSections, toggleShowSections } = makeSectionOverlaySetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
 );
 
 /** Persist the agent-pin layer through both local state and its HTTP twin. */

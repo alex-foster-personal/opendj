@@ -24,6 +24,9 @@ import {
 	MARKER_BAND_PX,
 	type WavePalette
 } from './cues';
+import type { SectionSpan } from './sections';
+import type { SectionPalette } from './section-palette';
+import { sectionsApiFor, type SectionsApi } from './sections-lazy.svelte';
 import {
 	drawGhostSeekPlayhead,
 	drawMasterDownbeatOverlay,
@@ -203,6 +206,8 @@ interface WaveBandImage {
 	key: string;
 	/** px per track-second the image was built at; draw scales from this. */
 	pxPerS: number;
+	/** Section spans baked under the bands (memoized per phrases array), or null. */
+	sections: readonly SectionSpan[] | null;
 }
 
 /**
@@ -302,6 +307,12 @@ export interface WaveRowFrame {
 	playheadTone?: PlayheadTone;
 	/** Wall time for drift pulse animation. */
 	playheadTimeMs?: number;
+	/** STRUCT-05 `show_sections`: labeled section bands behind grid and cues. */
+	showSections?: boolean;
+	/** Paint the section NAMES with the bands; default true. The flipped
+	 * bottom half of a split row passes false (its text would read upside
+	 * down), keeping the band tints only. */
+	sectionLabels?: boolean;
 	/** DECKUX-20: user-selected paint style; default tri-band. */
 	waveformDesign?: WaveformDesign;
 	/** 'blocks' height model; default BLOCKS_CFG.VARIANT_DEFAULT. */
@@ -337,6 +348,15 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const pxPerS = w / trackWindowS;
 
 	const design = frame.waveformDesign ?? 'tri-band';
+	// STRUCT-05: section bodies ride in the cached band image, under the
+	// waveform in every design (tri-band, mono, line, blocks); only the (crisp,
+	// sticky) labels paint per frame, after the master downbeat overlay.
+	// The painter module loads on first use (sections-lazy.svelte.ts keeps it
+	// out of the "/" first-paint bundle); until it lands this frame paints no
+	// bands and the caller's effect re-runs when it does.
+	const sectionsApi = sectionsApiFor(frame.showSections === true && frame.anlz !== null);
+	const spans =
+		sectionsApi !== null && frame.anlz !== null ? sectionsApi.sectionSpans(frame.anlz.phrases) : null;
 	if (frame.anlz !== null && durS > 0) {
 		const curve = blocksCurveFor(frame.anlz);
 		const blocks: BlocksSpec = {
@@ -345,7 +365,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 			beatPeriodS: beatPeriodS(frame.anlz.beatgrid?.beats),
 			mirrored: frame.blocksMirrored ?? true
 		};
-		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design, blocks);
+		_drawCachedBands(ctx, frame.anlz.waveform, sectionsApi, spans, tLeft, pxPerS, durS, w, h, palette, design, blocks);
 	}
 	// Derived only from the trusted MASTER grid plus this deck's own position
 	// and pitch, so a loaded row with no (or failed) local analysis still shows
@@ -354,6 +374,9 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		drawMasterDownbeatOverlay(ctx, frame.masterDownbeatOverlay, tLeft, pxPerS, w, h);
 	}
 	if (frame.anlz !== null && durS > 0) {
+		if (sectionsApi !== null && spans !== null && frame.sectionLabels !== false) {
+			sectionsApi.drawSectionLabels(ctx, spans, tLeft, pxPerS, w, palette.sections, MARKER_BAND_PX);
+		}
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		// Loop cue bands paint as background, before the beat grid/phrases they
 		// would otherwise blank out for their span; point cue markers stay in
@@ -436,9 +459,23 @@ function _mirrorRect(path: Path2D, x: number, centerY: number, halfHeight: numbe
 	path.rect(x, centerY - halfHeight, 1, halfHeight * 2);
 }
 
+/** Every section color the cached band image bakes in, memoized per palette
+ * object so the per-frame cache check builds no new string for it. */
+const _sectionKeys = new WeakMap<SectionPalette, string>();
+function _sectionPaletteKey(p: SectionPalette): string {
+	let key = _sectionKeys.get(p);
+	if (key === undefined) {
+		key = `${p.edge}|${p.rise}|${p.drop}|${p.calm}|${p.body}|${p.neutral}|${p.text}`;
+		_sectionKeys.set(p, key);
+	}
+	return key;
+}
+
 function _drawCachedBands(
 	ctx: CanvasRenderingContext2D,
 	waveform: AnlzWaveform,
+	sectionsApi: SectionsApi | null,
+	sections: readonly SectionSpan[] | null,
 	tLeft: number,
 	pxPerS: number,
 	durS: number,
@@ -452,13 +489,27 @@ function _drawCachedBands(
 	// always has document, while this direct branch keeps those geometry tests
 	// exercising the same real bucket painter without a fake DOM canvas.
 	if (typeof document === 'undefined') {
+		if (sectionsApi !== null && sections !== null) {
+			sectionsApi.drawSectionBands(ctx, sections, tLeft, pxPerS, w, h, palette.sections, MARKER_BAND_PX);
+		}
 		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 		return;
 	}
-	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
+	const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
+	const key = `${design}:${blocks.curve}:${blocks.variant}:${blocks.beatPeriodS}:${blocks.mirrored}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}:${sectionKey}`;
 	let image = _bandImages.get(waveform);
-	if (image === undefined || image.key !== key || !bandImageScaleReusable(image.pxPerS, pxPerS)) {
-		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design, blocks), key, pxPerS };
+	if (
+		image === undefined ||
+		image.key !== key ||
+		image.sections !== sections ||
+		!bandImageScaleReusable(image.pxPerS, pxPerS)
+	) {
+		image = {
+			canvas: _buildBandImage(waveform, sectionsApi, sections, pxPerS, durS, h, palette, design, blocks),
+			key,
+			pxPerS,
+			sections
+		};
 		_bandImages.set(waveform, image);
 	}
 	if (image.pxPerS === pxPerS) {
@@ -483,6 +534,8 @@ export function bandImageScaleReusable(builtPxPerS: number, livePxPerS: number):
 
 function _buildBandImage(
 	waveform: AnlzWaveform,
+	sectionsApi: SectionsApi | null,
+	sections: readonly SectionSpan[] | null,
 	pxPerS: number,
 	durS: number,
 	h: number,
@@ -499,6 +552,9 @@ function _buildBandImage(
 	canvas.height = h;
 	const ctx = canvas.getContext('2d');
 	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
+	if (sectionsApi !== null && sections !== null) {
+		sectionsApi.drawSectionBands(ctx, sections, 0, pxPerS, w, h, palette.sections, MARKER_BAND_PX);
+	}
 	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
 	return canvas;
 }

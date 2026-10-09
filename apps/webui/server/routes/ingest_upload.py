@@ -14,6 +14,12 @@ Requirements (mini-PRD):
     TAG_READER_UNAVAILABLE before any bytes are staged
     [if] fingerprint >= threshold match exists and force is not set
     [then] file skipped with duplicate_of reported
+    [if] more library tracks fall within the duration tolerance than are
+    fingerprinted [then] the closest by duration are compared (ties broken
+    by closest file size), and a track with no stored duration is measured
+    from its file
+    [if] a library track's file exists but cannot be read [then] it is
+    logged and named in unchecked_library_tracks, never silently dropped
     [if] the destination filename already exists in the batch [then ⛔️] 409,
     existing staged file untouched
 """
@@ -29,7 +35,7 @@ from pydantic import BaseModel
 
 from apps.shared import _tagreader
 from apps.shared._tagreader import HAS_TAG_READER
-from apps.shared.fingerprints import ChromaprintMissing, compare, compute
+from apps.shared.fingerprints import ChromaprintMissing, FingerprintFailed, compare, compute
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.webui.server.routes import ingest as ingest_cfg
 
@@ -39,6 +45,7 @@ _TAG_READER_UNAVAILABLE_MESSAGE = (
 )
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+_log = logging.getLogger(__name__)
 
 Verdict = Literal["new", "possible_duplicate", "skipped_duplicate"]
 
@@ -51,6 +58,9 @@ class UploadFileResult(BaseModel):
     duplicate_of: dict | None        # {stable_id, title, artist, method, score}
     duration_s: float | None
     fingerprint_method: str          # "chromaprint" | "duration"
+    # Library rows whose file exists but could not be read, so the duplicate
+    # check could not compare against them.
+    unchecked_library_tracks: list[str]
 
 
 class UploadOut(BaseModel):
@@ -75,7 +85,7 @@ def _raise_tag_reader_unavailable() -> NoReturn:
     )
 
 
-def _duration_s(path: Path) -> float | None:
+def _duration_s(path: Path) -> float:
     _tagreader.require()
     # tinytag has no raw ADTS .aac reader (it reports 0.03 s for a 7.3 s
     # stream), and without a true duration the duplicate check is skipped and
@@ -97,29 +107,95 @@ def _duration_s(path: Path) -> float | None:
     return float(duration)
 
 
-def _dup_candidates(duration_s: float) -> list[tuple[str, str, str, str]]:
-    """(stable_id, title, artist, file_path) within duration tolerance."""
-    lo = int(duration_s * 1000) - ingest_cfg.DUP_DURATION_TOLERANCE_MS
-    hi = int(duration_s * 1000) + ingest_cfg.DUP_DURATION_TOLERANCE_MS
+def _stored_or_file_duration_ms(duration_ms: int | None, path: Path) -> int:
+    """The row's stored duration, else the file's own duration.
+
+    Raises TagReadError or OSError when the file has to be measured and cannot be read.
+    """
+    if duration_ms and duration_ms > 0:
+        return duration_ms
+    return int(_duration_s(path) * 1000)
+
+
+def _duration_gap_ms(known_ms: int, target_ms: int) -> int:
+    """Duration distance for ranking, with whole-second storage error forgiven.
+
+    rekordbox stores whole seconds, rounded either way, so a stored value that
+    is a whole second can sit up to 999 ms from the file's true duration. Such
+    a row ranks as 0 ms away when it is within that error, so an exact copy
+    stored a second off never ranks behind unrelated rows on the next second.
+    """
+    gap = abs(known_ms - target_ms)
+    if known_ms % 1000 == 0:
+        return max(0, gap - 999)
+    return gap
+
+
+def _dup_candidates(
+    duration_s: float, size_bytes: int, limit: int | None = None
+) -> tuple[list[tuple[str, str, str, str]], list[str]]:
+    """(stable_id, title, artist, file_path) within duration tolerance, closest first,
+    and the stable_ids of rows whose file exists but could not be read.
+
+    A row with no stored duration is measured from its file, so a library track
+    whose duration was never recorded can still be found as the duplicate.
+    Durations imported from rekordbox are whole seconds, so a whole-second row
+    within a second of the upload counts as 0 ms away (_duration_gap_ms) and
+    many rows tie on duration distance; ties go to the file closest in size to the upload (an
+    exact copy is 0 bytes away), then stable_id for a stable order. With a
+    limit, every row tied with the last one kept is kept too, so no tie-break
+    by id can push the copy out of the fingerprinted set.
+
+    A row whose file is gone (a broken link) has nothing to compare and is
+    left out. A row whose file exists but cannot be read is logged and
+    returned as unchecked, so the upload result says the check was partial.
+    """
+    target = int(duration_s * 1000)
+    tolerance = ingest_cfg.DUP_DURATION_TOLERANCE_MS
     conn = ingest_cfg.open_ro()
     try:
-        return conn.execute(
-            "SELECT stable_id, title, artists_json, file_path FROM tracks "
-            "WHERE duration_ms BETWEEN ? AND ? AND file_path IS NOT NULL "
-            "AND deleted_at IS NULL",
-            (lo, hi),
+        rows = conn.execute(
+            "SELECT stable_id, title, artists_json, file_path, duration_ms FROM tracks "
+            "WHERE file_path IS NOT NULL AND deleted_at IS NULL "
+            "AND (duration_ms BETWEEN ? AND ? OR duration_ms IS NULL OR duration_ms <= 0)",
+            (target - tolerance, target + tolerance),
         ).fetchall()
     finally:
         conn.close()
+    ranked: list[tuple[int, int, str, tuple[str, str, str, str]]] = []
+    unchecked: list[str] = []
+    for sid, title, artist, file_path, duration_ms in rows:
+        path = Path(file_path)
+        if not path.is_file():
+            continue
+        try:
+            known_ms = _stored_or_file_duration_ms(duration_ms, path)
+            size = path.stat().st_size
+        except (_tagreader.TagReadError, OSError) as exc:
+            _log.warning("ingest upload: duplicate check could not read %s (%s): %s",
+                         sid, file_path, exc)
+            unchecked.append(sid)
+            continue
+        if abs(known_ms - target) > tolerance:
+            continue
+        ranked.append(
+            (_duration_gap_ms(known_ms, target), abs(size - size_bytes), sid,
+             (sid, title, artist, file_path))
+        )
+    ranked.sort(key=lambda r: r[:3])
+    if limit is not None and len(ranked) > limit:
+        cutoff = ranked[limit - 1][:2]
+        ranked = ranked[:limit] + [r for r in ranked[limit:] if r[:2] == cutoff]
+    return [row for *_, row in ranked], unchecked
 
 
-def _best_duplicate(staged: Path, duration_s: float) -> tuple[dict | None, str]:
-    """Best duplicate candidate and the method actually used."""
-    candidates = [
-        c for c in _dup_candidates(duration_s) if Path(c[3]).exists()
-    ][: ingest_cfg.DUP_MAX_FP_CANDIDATES]
+def _best_duplicate(staged: Path, duration_s: float) -> tuple[dict | None, str, list[str]]:
+    """Best duplicate candidate, the method actually used, and the unchecked rows."""
+    candidates, unchecked = _dup_candidates(
+        duration_s, staged.stat().st_size, limit=ingest_cfg.DUP_MAX_FP_CANDIDATES
+    )
     if not candidates:
-        return None, "duration"
+        return None, "duration", unchecked
     try:
         new_fp = compute(staged)
     except ChromaprintMissing:
@@ -130,14 +206,24 @@ def _best_duplicate(staged: Path, duration_s: float) -> tuple[dict | None, str]:
             {"stable_id": sid, "title": title, "artist": artist,
              "method": "duration", "score": None},
             "duration",
+            unchecked,
         )
     best: dict | None = None
     for sid, title, artist, fp_path in candidates:
-        score = compare(new_fp, compute(Path(fp_path)))
+        try:
+            library_fp = compute(Path(fp_path))
+        except (ChromaprintMissing, FingerprintFailed, OSError) as exc:
+            # The upload was just fingerprinted, so a backend works: the fpcalc
+            # path reports a file it cannot decode as ChromaprintMissing too.
+            _log.warning("ingest upload: duplicate check could not fingerprint %s (%s): %s",
+                         sid, fp_path, exc)
+            unchecked.append(sid)
+            continue
+        score = compare(new_fp, library_fp)
         if best is None or score > best["score"]:
             best = {"stable_id": sid, "title": title, "artist": artist,
                     "method": "chromaprint", "score": round(score, 4)}
-    return best, "chromaprint"
+    return best, "chromaprint", unchecked
 
 
 def _safe_relative_path(dest_dir: Path, name: str) -> Path:
@@ -202,9 +288,9 @@ def _stage_one_upload(
         raise HTTPException(422, f"empty upload: {rel_name}")
 
     duration = _hold_duration(hold, rel_name)
-    dup, method = (None, "duration")
+    dup, method, unchecked = None, "duration", []
     if duration is not None:
-        dup, method = _best_duplicate(hold, duration)
+        dup, method, unchecked = _best_duplicate(hold, duration)
     is_confirmed_dup = (
         dup is not None
         and dup["method"] == "chromaprint"
@@ -216,6 +302,7 @@ def _stage_one_upload(
             filename=rel_name, staged_path=None, skipped_duplicate=True,
             verdict="skipped_duplicate",
             duplicate_of=dup, duration_s=duration, fingerprint_method=method,
+            unchecked_library_tracks=unchecked,
         )
     is_possible_dup = dup is not None and not is_confirmed_dup
     if is_possible_dup and not force:
@@ -223,12 +310,14 @@ def _stage_one_upload(
             filename=rel_name, staged_path=None, skipped_duplicate=False,
             verdict="possible_duplicate",
             duplicate_of=dup, duration_s=duration, fingerprint_method=method,
+            unchecked_library_tracks=unchecked,
         )
     hold.rename(final)
     return UploadFileResult(
         filename=rel_name, staged_path=str(final), skipped_duplicate=False,
         verdict="new",
         duplicate_of=dup, duration_s=duration, fingerprint_method=method,
+        unchecked_library_tracks=unchecked,
     )
 
 
@@ -288,6 +377,7 @@ def decide_upload(body: DecideIn) -> UploadFileResult:
             filename=rel_name, staged_path=str(final), skipped_duplicate=False,
             verdict="new", duplicate_of=None, duration_s=None,
             fingerprint_method="duration",
+            unchecked_library_tracks=[],
         )
     if not hold.exists():
         if final.exists():
@@ -298,4 +388,5 @@ def decide_upload(body: DecideIn) -> UploadFileResult:
         filename=rel_name, staged_path=None, skipped_duplicate=True,
         verdict="skipped_duplicate", duplicate_of=None, duration_s=None,
         fingerprint_method="duration",
+        unchecked_library_tracks=[],
     )

@@ -15,7 +15,41 @@
     "test": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap 'dist-test/test/*.test.js'",
     "start": "tsc -p tsconfig.json && electron .",
     "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap --test-concurrency=1 'dist-test/e2e/*.e2e.js'",
-    "live-proof": "node scripts/live-proof.mjs"
+    "live-proof": "node scripts/live-proof.mjs",
+    "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64"
+  },
+  "build": {
+    "appId": "com.opendj.desktop",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "payload",
+        "to": "payload"
+      },
+      {
+        "from": "../setup",
+        "to": "setup"
+      }
+    ],
+    "mac": {
+      "icon": "assets/icon.png",
+      "identity": null,
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    }
   },
   "dependencies": {
     "electron-updater": "6.8.9"
@@ -24,6 +58,7 @@
     "@playwright/test": "1.61.1",
     "@types/node": "^22.19.0",
     "electron": "44.4.5",
+    "electron-builder": "26.15.3",
     "typescript": "^5.7.2"
   }
 }

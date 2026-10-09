@@ -39,6 +39,7 @@ import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
 export { installBrowserSortIpc } from './browser-sort-ipc';
+export { reorderBlockedReason } from './playlist-reorder-hint';
 export type { SortDir, SortKey } from './browser-sort-ipc';
 
 // ------------------------------------------------------------ row types
@@ -343,6 +344,12 @@ export class PaneStore {
 	}
 
 	/** Header click cycle: ordinary keys asc → desc → clear; AutoPlay asc → clear. */
+	/** Back to membership order (W33 "Restore playlist order"). */
+	clearSort(): void {
+		this.sort_key = null;
+		this.sort_dir = 1;
+	}
+
 	toggleSort(key: SortKey): void {
 		if (key === 'autoplay') {
 			if (this.sort_key === 'autoplay') {

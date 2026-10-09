@@ -163,9 +163,16 @@ export interface AnlzPhrase {
 	label?: string;
 	/** Present only on own sections; PSSI phrases carry no per-phrase source. */
 	source?: 'own';
+	/** Own sections only, when the producer reports it: an ambient intro or
+	 * outro (no beat), painted lighter and hatched by the section overlay. */
+	ambient?: boolean;
+	/** Own sections only, when present: the model's raw label before it was
+	 * mapped onto DJ vocabulary. Informational; `label` is what renders. */
+	model_label?: string;
 }
 
-/** Which producer filled `phrases` (STRUCT-02); rekordbox PSSI always wins when present. */
+/** Which producer filled `phrases`: on the rbx Phrase lane rekordbox PSSI wins when
+ * present (STRUCT-02); on the own lane only own sections are served (STRUCT-04). */
 export type AnlzPhrasesSource = 'rekordbox' | 'own' | 'none';
 
 /** Optional analyzer hints for future dynamic key and tempo-aware sync. */

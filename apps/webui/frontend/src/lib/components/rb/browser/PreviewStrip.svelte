@@ -36,6 +36,7 @@
 		readPalette
 	} from '../wave/cues';
 	import { vocalAlpha } from '../wave/render';
+	import { sectionsApiFor, type SectionsApi } from '../wave/sections-lazy.svelte';
 
 	const W = 165;
 	const H = 14;
@@ -122,7 +123,9 @@
 		const design = effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin);
 		if (canvas && strip !== null && revealed) {
 			const bandColors = resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
-			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors);
+			// STRUCT-05: the section painter loads on first use with the pref on;
+			// reading it here re-runs this effect when it lands.
+			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors, sectionsApiFor(uiPrefs.show_sections));
 		}
 	});
 
@@ -134,7 +137,8 @@
 		durMs: number | null,
 		ratio: number,
 		design: WaveformDesign,
-		bandColors: WaveBandColors
+		bandColors: WaveBandColors,
+		sectionsApi: SectionsApi | null
 	): void {
 		el.width = W * ratio;
 		el.height = H * ratio;
@@ -143,6 +147,11 @@
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.scale(ratio, ratio);
 		ctx.clearRect(0, 0, W, H);
+		// STRUCT-05: section bands behind the bars; too small for labels here.
+		if (sectionsApi !== null && markerAnlz !== null && durMs !== null && durMs > 0) {
+			const sections = readPalette(el).sections;
+			sectionsApi.drawSectionBands(ctx, sectionsApi.sectionSpans(markerAnlz.phrases), 0, W / (durMs / 1000), W, H, sections, 0);
+		}
 		if (data.max > 0) {
 			const bands = previewStripDataToStripBands(data);
 			drawStripPreviewBands(ctx, bands.preview, bands.kind, W, H, design, bandColors);

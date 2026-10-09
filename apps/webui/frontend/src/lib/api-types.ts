@@ -7223,7 +7223,7 @@ export interface components {
             expected_toggle_revision?: number | null;
             /**
              * Lane
-             * @description beatgrid, key, waveform, loudness or vocal
+             * @description beatgrid, key, waveform, loudness, vocal or phrase
              */
             lane: string;
             /**
@@ -16567,6 +16567,11 @@ export interface components {
              */
             show_agent_pins: boolean;
             /**
+             * Show Sections
+             * @default false
+             */
+            show_sections: boolean;
+            /**
              * Show Stems
              * @default false
              */
@@ -16651,6 +16656,8 @@ export interface components {
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
+            /** Show Sections */
+            show_sections?: boolean | null;
             /** Show Stems */
             show_stems?: boolean | null;
             /** Technically Working Animate */
@@ -16799,6 +16806,8 @@ export interface components {
             skipped_duplicate: boolean;
             /** Staged Path */
             staged_path: string | null;
+            /** Unchecked Library Tracks */
+            unchecked_library_tracks: string[];
             /**
              * Verdict
              * @enum {string}

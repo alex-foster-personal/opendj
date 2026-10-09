@@ -8,13 +8,13 @@ complete an ``analysis`` <-> ``analysis_beatgrid`` package cycle).
 
 from __future__ import annotations
 
-from .lanes import LANES
+from .lane_enums import SELECTION_LANES
 
 SERVING_LANES: set[str] = set()
 
 
 def register_serving_lane(lane: str) -> None:
-    if lane not in LANES:
+    if lane not in SELECTION_LANES:
         raise ValueError(f"unknown lane {lane!r}")
     SERVING_LANES.add(lane)
 

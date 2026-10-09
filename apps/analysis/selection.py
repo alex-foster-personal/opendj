@@ -1,6 +1,6 @@
 """Per-lane source selection (rbx vs own) and the one scalar read function.
 
-`specs/native-analysis-v1.md` section 3, "Effective source":
+`(private path)` section 3, "Effective source":
 
     Effective source per lane = the PARITY-02 dev toggle if it is set to
     ``rbx`` or ``own``, else the persisted per-lane default (D1). The
@@ -42,6 +42,7 @@ from typing import Any, Literal
 
 from ._value_check import require_allowed_value
 from .canonical import PROJECTION_FIELDS
+from .lane_enums import SELECTION_LANES
 from .lanes import LANES, Lane
 from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
 
@@ -74,7 +75,9 @@ def _now_iso() -> str:
 
 
 def check_lane(lane: str) -> str:
-    return require_allowed_value(lane, LANES, "lane", "lanes", SelectionError)
+    return require_allowed_value(
+        lane, SELECTION_LANES, "lane", "lanes", SelectionError
+    )
 
 
 def check_source(source: str) -> str:
@@ -158,7 +161,7 @@ def set_default(conn: sqlite3.Connection, lane: str, source: str) -> Source:
 
 
 def all_defaults(conn: sqlite3.Connection) -> dict[str, Source]:
-    return {lane: get_default(conn, lane) for lane in LANES}
+    return {lane: get_default(conn, lane) for lane in SELECTION_LANES}
 
 
 def lane_is_promoted(conn: sqlite3.Connection, lane: str) -> bool:
@@ -179,7 +182,7 @@ _TOGGLE_LOCK = threading.Lock()
 # it lives. Nothing loads it from disk on purpose: a toggle that could be
 # restored would be able to reapply an override a promotion superseded,
 # which is the exact failure PARITY-02's launch state exists to prevent.
-_TOGGLE: dict[str, ToggleState] = {lane: "unset" for lane in LANES}
+_TOGGLE: dict[str, ToggleState] = {lane: "unset" for lane in SELECTION_LANES}
 # Monotonic counter of successful toggle mutations, launch state 0. A "write"
 # is a `write_toggle` call that enters the locked mutation and assigns the
 # toggle (a compare-and-set refusal is not a write; an open-time durable
@@ -189,7 +192,7 @@ _TOGGLE: dict[str, ToggleState] = {lane: "unset" for lane in LANES}
 # again); a revision never does, so it is what tells "nothing changed since
 # my write" apart from "the value happens to match again"
 # (discussion_r3974993963 P1 BLOCKING, issue #3189).
-_TOGGLE_REVISION: dict[str, int] = {lane: 0 for lane in LANES}
+_TOGGLE_REVISION: dict[str, int] = {lane: 0 for lane in SELECTION_LANES}
 
 
 def get_toggle(lane: str) -> ToggleState:
@@ -308,7 +311,7 @@ def _toggle_snapshot() -> tuple[dict[str, ToggleState], dict[str, int]]:
 def reset_toggles() -> None:
     """Return every lane to its launch state. Used by tests and by nothing else."""
     with _TOGGLE_LOCK:
-        for lane in LANES:
+        for lane in SELECTION_LANES:
             _TOGGLE[lane] = "unset"
             _TOGGLE_REVISION[lane] = 0
 
@@ -486,7 +489,7 @@ def source_state(
                 "toggle_revision": revisions[lane],
                 "effective": toggles[lane] if toggles[lane] != "unset" else defaults[lane],
             }
-            for lane in LANES
+            for lane in SELECTION_LANES
         },
         "serving": sorted(SERVING_LANES),
     }
@@ -834,6 +837,7 @@ __all__ = [
     "LANES",
     "OWN_ANALYSIS_SOURCE",
     "PROJECTION_FIELDS",
+    "SELECTION_LANES",
     "SERVING_LANES",
     "SOURCES",
     "TOGGLE_STATES",

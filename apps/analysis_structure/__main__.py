@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import store as analysis_store
@@ -69,6 +70,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _dj(section: dict[str, Any]) -> str:
+    return section.get("dj_label", "") + (" (ambient)" if section.get("ambient") else "")
+
+
+def _print_dj_status(doc: dict[str, Any]) -> None:
+    dj_labels = doc.get("dj_labels") or {}
+    if dj_labels.get("status") != "ok":
+        print(f"dj labels: {dj_labels.get('status', 'absent')} {dj_labels.get('reason') or ''}")
+
+
 def _cmd_show(args: argparse.Namespace) -> int:
     data_dir = Path(args.data_dir) if args.data_dir else rb_config.DATA_DIR
     doc = load_sidecar(data_dir, args.stable_id)
@@ -81,7 +92,8 @@ def _cmd_show(args: argparse.Namespace) -> int:
     for s in doc["sections"]:
         bars = "" if s["bars"] is None else f"{s['bars']:>4d} bars"
         bar = "" if s["start_bar"] is None else f"bar {s['start_bar'] + 1:>4d}"
-        print(f"{s['start_s']:8.2f}s  {bar:9s} {bars:10s} {s['label']}")
+        print(f"{s['start_s']:8.2f}s  {bar:9s} {bars:10s} {s['label']:10s} {_dj(s)}".rstrip())
+    _print_dj_status(doc)
     q = doc["quantize"]
     print(
         f"phrase offset {q['phrase_offset']}, merged {q['merged']}, "

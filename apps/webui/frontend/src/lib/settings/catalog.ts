@@ -2,7 +2,6 @@
  * Warp-style settings catalog: working prefs + grayed PARITY-TODO stubs.
  * Search filters this list in-place (results ARE the settings).
  */
-
 import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
@@ -11,6 +10,7 @@ import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from './wave-palette-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
+import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -234,6 +234,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	MIDI_ENABLED_SETTING,
+	SHOW_SECTIONS_SETTING,
 	{
 		id: 'show_stems',
 		label: 'Stem mini-waveforms',

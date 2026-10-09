@@ -168,9 +168,21 @@ export interface ContrastViolation {
  * reach: that rule covers a UI component's boundary or state, not a plain
  * divider line. Named explicitly so "this token has no pairing" reads as a
  * decision `PAIRINGS` coverage checks can rely on, not a gap nobody noticed.
+ *
+ * The six `--rb-section-*` hues (STRUCT-05) are exempt for a different
+ * reason: they are painted only as translucent tints (8-40% alpha) behind the
+ * waveform, and every band also carries its section NAME as text in
+ * `--rb-text`, so the hue is a redundant cue (WCAG 1.4.1) and the raw
+ * token's ratio against a background would measure a color never shown.
  */
 export const DECORATIVE_TOKENS: readonly string[] = [
   "rb-border",
+  "rb-section-edge",
+  "rb-section-rise",
+  "rb-section-drop",
+  "rb-section-calm",
+  "rb-section-body",
+  "rb-section-neutral",
   // Icon-rail source tints (skin hooks, theme.css): the glyph shape and its
   // tooltip carry the meaning; the tint is identity decoration a skin may
   // gray out, so it is not a state indicator 1.4.11 reaches.

@@ -21,6 +21,8 @@ import {
 import type { WaveformDesign } from '$lib/rb/waveform-design';
 import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
+import type { SectionPalette, SectionSpan } from '../wave/sections';
+import type { SectionsApi } from '../wave/sections-lazy.svelte';
 
 // This module is PRESENTATIONAL: it names the shapes it paints instead of
 // importing `$lib/rb/types` or `$lib/rb/api-rb`. Two reasons, in order:
@@ -95,6 +97,16 @@ export interface StripFrame {
 	loop: LoopBandSource | null;
 	/** Stored loop hot cues. They remain visible when no loop is engaged. */
 	loopCues: readonly StripLoopCue[];
+	/** STRUCT-05: section bands behind the preview bars; null when the
+	 * show_sections pref is off or there is nothing to paint. Labels are the
+	 * caller's DOM (this canvas is stretched non-uniformly, text would smear).
+	 * `drawBands` is the lazily loaded painter (sections-lazy.svelte.ts), passed
+	 * in so this module never imports sections.ts into the "/" bundle. */
+	sections?: {
+		spans: readonly SectionSpan[];
+		palette: SectionPalette;
+		drawBands: SectionsApi['drawSectionBands'];
+	} | null;
 	waveformDesign?: WaveformDesign;
 	/** Band fills from `resolveStripBandColors`; default rekordbox 3Band. */
 	bandColors?: WaveBandColors;
@@ -121,6 +133,10 @@ export function drawStripPreviewBands(
 export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFrame): void {
 	const { widthPx: w, heightPx: h, durationMs } = frame;
 	ctx.clearRect(0, 0, w, h);
+	if (frame.sections != null && durationMs !== null && durationMs > 0) {
+		const { spans, palette, drawBands } = frame.sections;
+		drawBands(ctx, spans, 0, w / (durationMs / 1000), w, h, palette, 0);
+	}
 	if (frame.waveform !== null) {
 		drawStripPreviewBands(
 			ctx,

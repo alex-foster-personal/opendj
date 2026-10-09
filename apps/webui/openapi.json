@@ -763,7 +763,7 @@
             "title": "Expected Toggle Revision"
           },
           "lane": {
-            "description": "beatgrid, key, waveform, loudness or vocal",
+            "description": "beatgrid, key, waveform, loudness, vocal or phrase",
             "title": "Lane",
             "type": "string"
           },
@@ -25416,6 +25416,11 @@
             "title": "Show Agent Pins",
             "type": "boolean"
           },
+          "show_sections": {
+            "default": false,
+            "title": "Show Sections",
+            "type": "boolean"
+          },
           "show_stems": {
             "default": false,
             "title": "Show Stems",
@@ -25817,6 +25822,17 @@
               }
             ],
             "title": "Show Agent Pins"
+          },
+          "show_sections": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Sections"
           },
           "show_stems": {
             "anyOf": [
@@ -26259,6 +26275,13 @@
             ],
             "title": "Staged Path"
           },
+          "unchecked_library_tracks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unchecked Library Tracks",
+            "type": "array"
+          },
           "verdict": {
             "enum": [
               "new",
@@ -26276,7 +26299,8 @@
           "verdict",
           "duplicate_of",
           "duration_s",
-          "fingerprint_method"
+          "fingerprint_method",
+          "unchecked_library_tracks"
         ],
         "title": "UploadFileResult",
         "type": "object"

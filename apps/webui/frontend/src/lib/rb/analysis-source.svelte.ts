@@ -140,11 +140,26 @@ function _decksDisagreeWith(next: Record<string, AnalysisSource>): boolean {
 			if (held !== source) return true;
 			continue;
 		}
-		// Only beatgrid is deck-stamped on `/anlz` today; other lanes are toggle-only.
+		// Only beatgrid is deck-stamped on `/anlz` today; phrase refreshes off the
+		// mirror in `_adopt`, and the other lanes are toggle-only.
 		if (feature !== 'beatgrid') continue;
 		if (DECK_IDS.some((deck) => deckStates[deck].stable_id !== null)) return true;
 	}
 	return false;
+}
+
+/** True when the daemon confirmed a different Phrase source than the one
+ * this client last adopted. A first sighting (no prior value) is not a change:
+ * the beatgrid lane's unknown-watermark rule already refreshes loaded decks
+ * then. */
+function _phraseLaneChanged(next: Record<string, AnalysisSource>): boolean {
+	const was = analysisSourceState.features.phrase;
+	const now = next.phrase;
+	return was !== undefined && now !== undefined && was !== now;
+}
+
+function _anyDeckLoaded(): boolean {
+	return DECK_IDS.some((deck) => deckStates[deck].stable_id !== null);
 }
 
 /** Records what the decks now hold. `served` is the source `/anlz` stamped on
@@ -195,7 +210,19 @@ async function _adopt(
 	serialize: boolean
 ): Promise<void> {
 	if (isSuperseded()) return;
-	if (!_decksDisagreeWith(features)) {
+	// STRUCT-04: the Phrase lane changes what `/anlz` serves as `phrases` for
+	// the same URL, exactly like the beatgrid lane. It is not deck-stamped
+	// (`phrases_source` legitimately differs from the selection where
+	// rekordbox has no PSSI, STRUCT-02), so its watermark is the mirror: a
+	// change of the confirmed value refetches every loaded deck and drops
+	// every cached payload. The mirror only advances after that refresh
+	// succeeds, so a failed one is retried by the next poll.
+	const phraseChanged = _phraseLaneChanged(features);
+	if (phraseChanged && !_anyDeckLoaded()) {
+		bumpAnlzFetchGeneration();
+		invalidateAllAnlzCacheEntries();
+	}
+	if (!_decksDisagreeWith(features) && !(phraseChanged && _anyDeckLoaded())) {
 		// No LOADED deck disagrees, but a track merely prefetched (library
 		// browsing's ensureAnlz, never loaded onto a deck) is invisible to that
 		// check and would otherwise keep serving pre-switch bytes to whichever

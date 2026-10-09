@@ -21,7 +21,7 @@ file, a ``tests/`` path the PR itself changes, and a bounded number of changed
 lines in pre-existing pipeline files. Outside that scope the marker is refused
 and the idle plus quality-ok pair is still required.
 
-Allowlist (see docs/perf/perfbatch-gates.md for the reasoning and residuals):
+Allowlist (see (private path) for the reasoning and residuals):
 
     Python   judged against exact ``tokenize``/``ast`` facts for the WHOLE
              file on both sides (merge base and head): blank lines; ``#``
@@ -138,14 +138,25 @@ def _policy_int(table: dict, section: str, key: str, path: Path) -> int:
 
 
 # Horizontal whitespace only. Never `\\s`: a newline as the "reason" must fail.
-_IDLE = re.compile(r"perfbatch:[ \t]*pipelines-idle[ \t]+\S", re.IGNORECASE)
+# Each marker must OPEN its line (after optional indentation or one list
+# bullet), so prose that merely names a marker cannot satisfy it: PR #5823's
+# body said "CORE or the maintainer adds `perfbatch: pipelines-idle <evidence>`" and
+# that sentence passed the gate with no idle evidence at all. An idle reason
+# that opens with "<" is a template placeholder, never evidence.
+_LINE_START = r"^[ \t]*(?:[-*+][ \t]+)?"
+_IDLE = re.compile(
+    _LINE_START + r"perfbatch:[ \t]*pipelines-idle[ \t]+[^\s<]",
+    re.IGNORECASE | re.MULTILINE,
+)
 _QUALITY = re.compile(
-    r"perfbatch-03:[ \t]*quality-ok[ \t]+reqs=\S+[ \t]+signal=\S+[ \t]+before_after=\S+",
-    re.IGNORECASE,
+    _LINE_START
+    + r"perfbatch-03:[ \t]*quality-ok[ \t]+reqs=\S+[ \t]+signal=\S+[ \t]+before_after=\S+",
+    re.IGNORECASE | re.MULTILINE,
 )
 _CORRECTNESS = re.compile(
-    r"perfbatch:[ \t]*correctness-only[ \t]+reqs=(?P<reqs>\S+)[ \t]+tests=(?P<tests>\S+)",
-    re.IGNORECASE,
+    _LINE_START
+    + r"perfbatch:[ \t]*correctness-only[ \t]+reqs=(?P<reqs>\S+)[ \t]+tests=(?P<tests>\S+)",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 

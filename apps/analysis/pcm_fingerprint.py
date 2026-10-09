@@ -1,6 +1,6 @@
 """The canonical decode fingerprint every own record is stamped with.
 
-`specs/native-analysis-v1.md` defines `decode_fingerprint` as the sha256 of
+`(private path)` defines `decode_fingerprint` as the sha256 of
 the decoded PCM at FIXED parameters: 44100 Hz, mono, s16, decoded and
 resampled by the app's own engine, `odj-audio` (fingerprint v2; v1 was
 ffmpeg with `soxr`, see `DECODER` below). That is what makes it useful. Two
@@ -44,7 +44,7 @@ DECODER = "odj-audio"
 Fingerprint v2 (Fri 2 Oct 2026). v1 was ffmpeg with ``aresample=soxr`` at
 precision 28, which the shipped app does not bundle and Homebrew's default
 macOS build cannot run, so an installed app took no fingerprint and wrote no
-own record (``research/audio-decode/2026-10-01-packaging-audio-decode.md``).
+own record (``(private path)``).
 Every payload ships ``odj-audio``, and it is the decoder the Rust player uses,
 so the player's check now compares against the decode it plays.
 """
@@ -166,6 +166,16 @@ def canonical_decode_fingerprint(path: Path) -> str:
     Raises `FingerprintUnavailable` for a missing engine, a launch failure, a
     decode error, a timeout, or an empty stream.
     """
+    return canonical_decode_fingerprint_and_frames(path)[0]
+
+
+def canonical_decode_fingerprint_and_frames(path: Path) -> tuple[str, int]:
+    """`canonical_decode_fingerprint` plus the mono frame count it hashed.
+
+    The count is at `SAMPLE_RATE_HZ`, so a caller that needs the track's
+    length divides by that rather than decoding the file a second time. A
+    stream that ends mid-sample is refused rather than rounded down.
+    """
     audio_path = Path(path)
     exe = _resolve_or_raise()
     command = canonical_decode_command(audio_path, exe)
@@ -221,4 +231,10 @@ def canonical_decode_fingerprint(path: Path) -> str:
                 f"{DECODER} decoded 0 bytes of audio from {audio_path}, so there is "
                 "nothing to fingerprint"
             )
-    return digest.hexdigest()
+    sample_bytes = 2 * CHANNELS
+    if decoded_bytes % sample_bytes:
+        raise FingerprintUnavailable(
+            f"{DECODER} decoded {decoded_bytes} bytes from {audio_path}, not a whole "
+            f"number of {SAMPLE_FORMAT} frames"
+        )
+    return digest.hexdigest(), decoded_bytes // sample_bytes

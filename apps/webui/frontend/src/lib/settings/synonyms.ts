@@ -20,6 +20,8 @@ export const SETTINGS_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 	camelot: ['next_only_filter', 'key'],
 	remix: ['remixes_filter', 'bootleg', 'vip'],
 	vocals: ['vocals_filter', 'lyrics', 'lines'],
+	segments: ['show_sections', 'sections', 'phrase'],
+	structure: ['show_sections', 'sections', 'phrase'],
 	karaoke: ['lyrics_global', 'lyrics_waveform_overlay', 'lyrics_deck_line'],
 	lyrics: ['lyrics_global', 'lyrics_library_col', 'lyrics_hover_scrub', 'lyrics_load_strategy'],
 	confirm: ['confirm.delete_playlist', 'confirm.dblclick_load_play', 'confirm.playlist_drop_mode'],

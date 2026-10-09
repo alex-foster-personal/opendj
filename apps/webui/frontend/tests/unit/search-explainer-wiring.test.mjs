@@ -39,7 +39,7 @@ test('SearchBox imports the existing ControlExplainer pattern (not a bespoke one
 });
 
 test('the explainer bullets are sourced from browser-search-query.ts, not inlined copy', () => {
-	assert.match(source, /import \{ SEARCH_QUERY_HELP \} from ['"]\$lib\/rb\/browser-search-query['"]/);
+	assert.match(source, /import \{ (?:[\w, ]+, )?SEARCH_QUERY_HELP(?:, [\w, ]+)? \} from ['"]\$lib\/rb\/browser-search-query['"]/);
 	assert.match(source, /SEARCH_QUERY_HELP\.map/);
 });
 

@@ -1,7 +1,7 @@
 """On-disk UI prefs (confirm skips / theme / sync destinations / settings UI).
 
 GET  /api/v1/ui-prefs
-PUT  /api/v1/ui-prefs  - merge patch into data/state/ui-prefs.json
+PUT  /api/v1/ui-prefs  - merge patch into (private path)
 """
 
 from __future__ import annotations
@@ -60,6 +60,11 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
     "auto_play_maximize_reach": _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH,
     "master_muted": _DEFAULT_MASTER_MUTED,
 }
+# STRUCT-05: translucent labeled section bands over the deck strip, the main
+# scrolling waveform and the browser preview. Default off so nothing changes
+# for an existing user until they opt in.
+_DEFAULT_SHOW_SECTIONS = False
+_WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {"show_sections": _DEFAULT_SHOW_SECTIONS}
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
@@ -298,8 +303,14 @@ def _parse_perf_tier(raw: dict[str, Any]) -> str:
 
 
 def _parse_topbar_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
-    out = dict(_TOPBAR_BOOL_DEFAULTS)
-    for key in _TOPBAR_BOOL_DEFAULTS:
+    return _parse_bool_prefs(raw, _TOPBAR_BOOL_DEFAULTS)
+
+
+def _parse_bool_prefs(raw: dict[str, Any], defaults: dict[str, bool]) -> dict[str, bool]:
+    """Fill a group of boolean prefs: absent keys take their default, a
+    present but non-boolean value is refused rather than coerced."""
+    out = dict(defaults)
+    for key in defaults:
         if key not in raw:
             continue
         val = raw[key]
@@ -595,6 +606,7 @@ def _load(path: Path) -> dict[str, Any]:
             "gig_helper": _DEFAULT_GIG_HELPER,
             "app_mode": dict(_DEFAULT_APP_MODE),
             **_TOPBAR_BOOL_DEFAULTS,
+            **_WAVE_OVERLAY_BOOL_DEFAULTS,
             **_lyrics_defaults(),
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
@@ -680,6 +692,7 @@ def _load(path: Path) -> dict[str, Any]:
         "gig_helper": _parse_gig_helper(raw),
         "app_mode": _parse_app_mode(raw.get("app_mode")),
         **_parse_topbar_bool_prefs(raw),
+        **_parse_bool_prefs(raw, _WAVE_OVERLAY_BOOL_DEFAULTS),
         **_parse_lyrics(raw),
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
@@ -766,6 +779,7 @@ class UiPrefsOut(BaseModel):
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
     auto_play_maximize_reach: bool = _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH
     master_muted: bool = _DEFAULT_MASTER_MUTED
+    show_sections: bool = _DEFAULT_SHOW_SECTIONS
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
@@ -807,6 +821,7 @@ class UiPrefsPatch(BaseModel):
     auto_play_enforce_order: bool | None = None
     auto_play_maximize_reach: bool | None = None
     master_muted: bool | None = None
+    show_sections: bool | None = None
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
     next_only_filter: bool | None = None
@@ -822,7 +837,8 @@ class UiPrefsPatch(BaseModel):
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
-    for key in _TOPBAR_BOOL_DEFAULTS:
+    """Topbar booleans plus the wave-overlay ones (STRUCT-05 show_sections)."""
+    for key in (*_TOPBAR_BOOL_DEFAULTS, *_WAVE_OVERLAY_BOOL_DEFAULTS):
         value = getattr(body, key)
         if value is not None:
             current[key] = value

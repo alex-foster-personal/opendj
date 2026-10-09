@@ -11,8 +11,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * performance IPC parser accepted only beatgrid, so every non-beatgrid
  * click toasted "analysis-source feature must be beatgrid".
  *
- * Three sets must agree: the server's selection lanes (LANES in
- * apps/analysis/lane_enums.py, enforced by PUT /api/v1/analysis/source via
+ * Three sets must agree: the server's selection lanes (SELECTION_LANES in
+ * apps/analysis/lane_enums.py, i.e. LANES plus the selection-only lanes such
+ * as STRUCT-04 `phrase`, enforced by PUT /api/v1/analysis/source via
  * sel.check_lane), the parser's accepted features, and the features the UI
  * offers. The OpenAPI schema types `lane` as a bare string, so api-types.ts
  * carries no enum to derive from; the server tuple is read as text instead.
@@ -34,11 +35,24 @@ before(async () => {
 	featureState = await loadTypeScriptModule('src/lib/rb/analysis-source-state.svelte.ts');
 });
 
+function _tupleNames(text, pattern, name) {
+	const match = text.match(pattern);
+	assert.ok(match, `${name} tuple not found in apps/analysis/lane_enums.py; re-point this guard`);
+	return [...match[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+}
+
 function serverLanes() {
 	const text = readFileSync(`${REPO_ROOT}apps/analysis/lane_enums.py`, 'utf8');
-	const match = text.match(/^LANES: tuple\[Lane, \.\.\.\] = \(([^)]*)\)/m);
-	assert.ok(match, 'LANES tuple not found in apps/analysis/lane_enums.py; re-point this guard');
-	const lanes = [...match[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+	// check_lane validates against SELECTION_LANES = (*LANES, *SELECTION_ONLY_LANES).
+	assert.match(
+		text,
+		/^SELECTION_LANES: tuple\[str, \.\.\.\] = \(\*LANES, \*SELECTION_ONLY_LANES\)/m,
+		'SELECTION_LANES is no longer LANES + SELECTION_ONLY_LANES; re-point this guard'
+	);
+	const lanes = [
+		..._tupleNames(text, /^LANES: tuple\[Lane, \.\.\.\] = \(([^)]*)\)/m, 'LANES'),
+		..._tupleNames(text, /^SELECTION_ONLY_LANES: tuple\[str, \.\.\.\] = \(([^)]*)\)/m, 'SELECTION_ONLY_LANES')
+	];
 	assert.ok(lanes.length >= 1, 'parsed zero server lanes; the probe is broken, not the contract');
 	return lanes;
 }

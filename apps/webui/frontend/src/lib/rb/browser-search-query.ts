@@ -193,6 +193,11 @@ export function matchesSearchQuery(track: SearchableTrack, query: string): boole
 	return terms.every((t) => _matchesTerm(track, t));
 }
 
+/** LIBM-175 (the maintainer, Tue 6 Oct 2026): "Search pre-fill should just say
+ * 'Search...' the whole collection button makes obvious the scope". One
+ * placeholder for list-filter and whole-collection search alike. */
+export const SEARCH_PLACEHOLDER = 'Search...';
+
 /** Explainer copy (hover panel + empty-state, SearchBox.svelte) - each
  * example is asserted (browser-search-query.test.mjs) to actually parse as
  * the predicate it claims, so the taught syntax can never drift from the

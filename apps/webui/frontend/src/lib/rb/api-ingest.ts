@@ -149,6 +149,8 @@ export type UploadFileResult = {
 	} | null;
 	duration_s: number | null;
 	fingerprint_method: 'chromaprint' | 'duration';
+	/** Library tracks whose file exists but could not be read, so the duplicate check skipped them. */
+	unchecked_library_tracks: string[];
 };
 
 export type PendingBatch = {

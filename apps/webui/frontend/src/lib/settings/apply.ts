@@ -29,6 +29,7 @@ import {
 	setJogRadialWaveform,
 	setShowDevUi,
 	setShowStems,
+	setShowSections,
 	setWaveformDesign,
 	setWavePalette,
 	setUiSkin,
@@ -139,6 +140,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
+	'show_sections',
 	'waveform_design',
 	'wave_palette',
 	'ui_skin',
@@ -220,6 +222,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
 			return uiPrefs.show_stems;
+		case 'show_sections':
+			return uiPrefs.show_sections;
 		case 'waveform_design':
 			return uiPrefs.waveform_design;
 		case 'wave_palette':
@@ -361,6 +365,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
+			return;
+		case 'show_sections':
+			setShowSections(_asBool(value, key));
 			return;
 		case 'waveform_design': {
 			const design = parseWaveformDesignPref(value);

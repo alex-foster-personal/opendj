@@ -85,7 +85,7 @@ class AnalysisSourceOut(BaseModel):
 class AnalysisSourcePut(BaseModel):
     """Set the default, the toggle, or both, for one lane."""
 
-    lane: str = Field(description="beatgrid, key, waveform, loudness or vocal")
+    lane: str = Field(description="beatgrid, key, waveform, loudness, vocal or phrase")
     default: str | None = Field(
         default=None, description="rbx or own. Persisted; survives a relaunch."
     )

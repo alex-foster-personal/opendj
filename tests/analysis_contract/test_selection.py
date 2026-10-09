@@ -2,7 +2,7 @@
 
 [if] a relaunch loses a promoted default or the toggle is not unset [then] fail, [else stop].
 
-Spec: `specs/native-analysis-v1.md` section 3 ("Effective source") and D1.
+Spec: `(private path)` section 3 ("Effective source") and D1.
 Requirement: PARITY-02.
 
 Acceptance lines exercised here:
@@ -30,7 +30,7 @@ import sys
 import pytest
 
 from apps.analysis import selection
-from apps.analysis.lanes import LANES
+from apps.analysis.lane_enums import SELECTION_LANES as LANES
 
 pytestmark = pytest.mark.requirement("PARITY-02")
 
@@ -327,7 +327,7 @@ def test_persisting_a_default_on_an_in_memory_backend_is_refused(tmp_path) -> No
 def test_get_source_reports_every_lane(client) -> None:
     body = client.get("/api/v1/analysis/source").json()
     assert sorted(body["lanes"]) == sorted(LANES)
-    assert sorted(body["serving"]) == ["beatgrid", "key", "waveform"]
+    assert sorted(body["serving"]) == ["beatgrid", "key", "phrase", "waveform"]
     assert body["lanes"]["beatgrid"] == {
         "default": "rbx", "toggle": "unset", "toggle_revision": 0, "effective": "rbx",
     }

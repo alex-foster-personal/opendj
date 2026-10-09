@@ -22,16 +22,21 @@ interface BrowserSortSnapshot {
 	sort_key: SortKey | null;
 	sort_dir: SortDir;
 	visible_ids: readonly string[];
+	/** W33: why drag-reorder is off in this playlist, or null. */
+	reorder_blocked: string | null;
 }
 
 interface BrowserSortOwner {
 	sort(key: SortKey): void;
+	/** Clear the sort and the in-pane search: the "Restore playlist order" button. */
+	restoreOrder(): void;
 	query(): BrowserSortSnapshot;
 }
 
 interface BrowserSortIpc {
 	version: 1;
 	sort(key: unknown): BrowserSortSnapshot;
+	restore_order(): BrowserSortSnapshot;
 	query(): BrowserSortSnapshot;
 }
 
@@ -54,6 +59,7 @@ function _snapshot(owner: BrowserSortOwner): BrowserSortSnapshot {
 		(value.sort_key !== null && !BROWSER_SORT_KEYS.includes(value.sort_key)) ||
 		(value.sort_dir !== 1 && value.sort_dir !== -1) ||
 		!Array.isArray(value.visible_ids) ||
+		(value.reorder_blocked !== null && typeof value.reorder_blocked !== 'string') ||
 		!value.visible_ids.every((id) => typeof id === 'string')
 	) {
 		throw new Error('browser sort owner returned an invalid snapshot');
@@ -75,6 +81,11 @@ function createBrowserSortIpc(owner: BrowserSortOwner): {
 		sort: (key: unknown) => {
 			assertActive();
 			owner.sort(_sortKey(key));
+			return _snapshot(owner);
+		},
+		restore_order: () => {
+			assertActive();
+			owner.restoreOrder();
 			return _snapshot(owner);
 		},
 		query: () => {

@@ -31,7 +31,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
-const ALL_SOURCE_FEATURES = ['beatgrid', 'key', 'waveform', 'loudness', 'vocal'];
+const ALL_SOURCE_FEATURES = ['beatgrid', 'key', 'waveform', 'loudness', 'vocal', 'phrase'];
 
 /** Mirror the five-lane GET shape the production endpoint now returns. */
 function mirrorFeatures(overrides = {}) {
@@ -1166,3 +1166,76 @@ test(
 	}
 );
 
+
+// ------------------------------------------------ STRUCT-04 Phrase lane
+
+/** Flip one lane on the daemon directly, as an agent would. */
+async function daemonSelectLane(lane, toggle) {
+	const res = await fetch(`${apiBase}/api/v1/analysis/source`, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ lane, toggle })
+	});
+	assert.equal(res.status, 200, `fixture server rejected the direct ${lane} switch`);
+}
+
+test('a Phrase source switch refetches the loaded decks; an unchanged Phrase does not (STRUCT-04)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 0, beats: [] } };
+	try {
+		analysisSource.analysisSourceState.features = mirrorFeatures();
+		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+		// CONTROL: same Phrase, decks agree on beatgrid -> no refetch, so a
+		// refresh below can only be the Phrase change.
+		await analysisSource.loadAnalysisSource();
+		assert.deepEqual(runnerLog, [], 'nothing changed, nothing to refetch');
+
+		await daemonSelectLane('phrase', 'own');
+		await analysisSource.loadAnalysisSource();
+		assert.deepEqual(
+			runnerLog,
+			['enter', 'exit'],
+			'the loaded deck holds phrases from the old source; the switch must refetch it'
+		);
+		assert.equal(analysisSource.analysisSourceState.features.phrase, 'own');
+
+		// And back: own -> rbx refetches too.
+		runnerLog = [];
+		await daemonSelectLane('phrase', 'rbx');
+		await analysisSource.loadAnalysisSource();
+		assert.deepEqual(runnerLog, ['enter', 'exit']);
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+		await daemonSelectLane('phrase', 'rbx');
+	}
+});
+
+test('a Phrase source switch with no loaded deck still drops prefetched payloads (STRUCT-04)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	try {
+		analysisSource.analysisSourceState.features = mirrorFeatures();
+		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+		analysisSource.invalidateAnlzCacheEntry('real-track-a-own-grid');
+		analysisSource.ensureAnlz('real-track-a-own-grid');
+		await _waitForAnlzEntry('real-track-a-own-grid', (e) => e?.status === 'ready', 'prefetch');
+
+		// CONTROL: an unchanged Phrase keeps the prefetch.
+		await analysisSource.loadAnalysisSource();
+		assert.equal(analysisSource.getAnlzEntry('real-track-a-own-grid')?.status, 'ready');
+
+		await daemonSelectLane('phrase', 'own');
+		await analysisSource.loadAnalysisSource();
+		assert.deepEqual(runnerLog, [], 'nothing loaded: the fast path, no deck refresh');
+		assert.equal(
+			analysisSource.getAnlzEntry('real-track-a-own-grid'),
+			undefined,
+			'a prefetched payload carries the old phrases and must be dropped'
+		);
+	} finally {
+		await daemonSelectLane('phrase', 'rbx');
+	}
+});

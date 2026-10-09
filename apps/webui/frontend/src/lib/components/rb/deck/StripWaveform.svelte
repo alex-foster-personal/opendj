@@ -34,6 +34,9 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
+	import { readPalette } from '../wave/cues';
+	import type { SectionSpan } from '../wave/sections';
+	import { sectionsApiFor } from '../wave/sections-lazy.svelte';
 	import { resolveDeckStripPreview } from '$lib/rb/deck-strip-preview';
 	import { getAnlzEntry } from '$lib/components/rb/wave/anlz-cache.svelte';
 	import { prefetchDeckStripAnlz } from './strip-anlz-prefetch';
@@ -123,6 +126,30 @@
 		deck.hot_cues.flatMap((hc) => (hc.is_loop && hc.out_ms !== null ? [{ in_ms: hc.in_ms, out_ms: hc.out_ms }] : []))
 	);
 
+	// STRUCT-05: section bands (canvas) + labels (DOM) when show_sections is on.
+	// Spans are memoized per phrases array, so this is not per-tick work. The
+	// painter loads on first use (sections-lazy.svelte.ts); this re-derives
+	// when it lands, so the bands appear without a reload.
+	const sectionsApi = $derived(sectionsApiFor(uiPrefs.show_sections && deck.anlz !== null));
+	const sectionSpansNow: readonly SectionSpan[] | null = $derived(
+		sectionsApi !== null && deck.anlz !== null ? sectionsApi.sectionSpans(deck.anlz.phrases) : null
+	);
+	let wrapW: number = $state(0);
+	const sectionLabels = $derived.by(() => {
+		const dur = deck.duration_ms;
+		if (sectionsApi === null || sectionSpansNow === null || dur === null || dur <= 0 || wrapW <= 0) return [];
+		const minLabelPx = sectionsApi.SECTION_MIN_LABEL_PX;
+		const source = deck.anlz?.phrases_source === 'own' ? 'own sections' : 'rekordbox phrase';
+		return sectionSpansNow.flatMap((span) => {
+			const leftPct = ((span.start_s * 1000) / dur) * 100;
+			const widthPct = (((span.end_s - span.start_s) * 1000) / dur) * 100;
+			if ((widthPct / 100) * wrapW < minLabelPx) return [];
+			const range = `${_fmtMmSs(span.start_s * 1000)}-${_fmtMmSs(span.end_s * 1000)}`;
+			const ambient = span.ambient ? ' (ambient)' : '';
+			return [{ span, leftPct, widthPct, title: `${span.label}${ambient}: ${range} (${source})` }];
+		});
+	});
+
 	const keySegmentMarkersS: readonly number[] = $derived(
 		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key).markerTimesS
 	);
@@ -185,6 +212,10 @@
 			vocals,
 			loop: deck.loop,
 			loopCues,
+			sections:
+				sectionsApi !== null && sectionSpansNow !== null && sectionSpansNow.length > 0
+					? { spans: sectionSpansNow, palette: readPalette(c).sections, drawBands: sectionsApi.drawSectionBands }
+					: null,
 			waveformDesign: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			bandColors: resolveStripBandColors(effectiveWaveScheme(uiPrefs.theme, uiPrefs.ui_skin), effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin))
 		});
@@ -252,7 +283,7 @@
 	}
 </script>
 
-<div class="strip-wrap">
+<div class="strip-wrap" bind:clientWidth={wrapW}>
 	{#if playHintPct !== null && !deck.playing && deck.stable_id !== null}
 		<button
 			type="button"
@@ -287,6 +318,16 @@
 		{:else if showNativeGridMarker}
 			<span class="native-grid" data-testid="native-grid-marker" title="Measured native beatgrid; rekordbox has no AnalysisDataPath.">native grid</span>
 		{/if}
+
+		{#each sectionLabels as item, i (i)}
+			<span
+				class="section-label"
+				data-testid={`deck-section-label-${deck.deck_id}`}
+				data-section-family={item.span.family}
+				style={`left:${item.leftPct}%;max-width:${item.widthPct}%`}
+				title={item.title}
+			>{item.span.label}</span>
+		{/each}
 
 		{#each memoryCuesMs as ms, i (i)}
 			<span class="mem-cue" style={`left:${_pctOf(ms)}%`}></span>
@@ -396,6 +437,21 @@
 		color: var(--rb-green);
 		letter-spacing: 1px;
 		pointer-events: none;
+	}
+	.section-label {
+		position: absolute;
+		bottom: 0;
+		padding: 0 2px 0 3px;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: clip;
+		font-size: 8px;
+		line-height: 9px;
+		font-weight: 600;
+		color: var(--rb-text);
+		text-shadow: 0 0 2px var(--rb-bg);
+		pointer-events: none;
+		box-sizing: border-box;
 	}
 	.mem-cue {
 		position: absolute;

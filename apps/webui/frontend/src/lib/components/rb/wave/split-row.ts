@@ -47,14 +47,16 @@ export function splitPartnerDeck(selfId: DeckId, decks: readonly SplitDeckRef[])
 
 const _scratch = new WeakMap<HTMLCanvasElement, { top: HTMLCanvasElement; bottom: HTMLCanvasElement }>();
 
-function _paintHalf(target: HTMLCanvasElement, frame: WaveRowFrame, dpr: number): void {
+function _paintHalf(target: HTMLCanvasElement, frame: WaveRowFrame, sectionLabels: boolean, dpr: number): void {
 	target.width = Math.round(frame.widthCss * dpr);
 	target.height = Math.round(frame.heightCss * dpr);
 	const ctx = target.getContext('2d');
 	if (ctx === null) throw new Error('split row: 2d context unavailable');
 	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 	// Each half is one-sided so the two decks meet at the centerline.
-	drawWaveRow(ctx, { ...frame, blocksMirrored: false });
+	// One frame copy per half (as before sections), carrying the label flag
+	// too rather than spreading a second object for it.
+	drawWaveRow(ctx, { ...frame, blocksMirrored: false, sectionLabels });
 }
 
 /** `top` and `bottom` are frames at heightCss = row height / 2. */
@@ -71,8 +73,10 @@ export function paintSplitRow(
 		scratch = { top: document.createElement('canvas'), bottom: document.createElement('canvas') };
 		_scratch.set(row, scratch);
 	}
-	_paintHalf(scratch.top, top, dpr);
-	_paintHalf(scratch.bottom, bottom, dpr);
+	_paintHalf(scratch.top, top, top.sectionLabels !== false, dpr);
+	// The bottom half is flipped below, so its section names would read
+	// upside down: it keeps the section band tints and drops the labels.
+	_paintHalf(scratch.bottom, bottom, false, dpr);
 	const w = top.widthCss;
 	const half = top.heightCss;
 	ctx.save();

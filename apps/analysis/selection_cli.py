@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .lanes import LANES
+from .lane_enums import SELECTION_LANES as LANES
 from .selection import SOURCES, TOGGLE_STATES
 
 EXIT_OK = 0

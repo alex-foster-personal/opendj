@@ -32,6 +32,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "rb.midi_enabled",
         "hide_todo_settings",
         "jog_radial_waveform",
+        "show_sections",
         "auto_sync.rekordbox",
         "auto_sync.djay",
         "auto_sync.open_dj",

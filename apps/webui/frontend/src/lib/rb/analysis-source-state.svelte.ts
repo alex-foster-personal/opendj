@@ -22,7 +22,8 @@ export const ANALYSIS_SOURCE_FEATURES = [
 	'key',
 	'waveform',
 	'loudness',
-	'vocal'
+	'vocal',
+	'phrase'
 ] as const;
 export type AnalysisSourceFeature = (typeof ANALYSIS_SOURCE_FEATURES)[number];
 

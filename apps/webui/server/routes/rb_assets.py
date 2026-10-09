@@ -1,7 +1,7 @@
 """rb-assets routes -- the 4 NEW endpoints backing /performance.
 
-Contract: .planning/rekordbox-parity/COMPONENT-MAP.md section 2. All four
-are GET-only reads over state.db + data/master.plain.db + on-disk rekordbox
+Contract: (private path) section 2. All four
+are GET-only reads over state.db + (private path) + on-disk rekordbox
 share assets; resolution lives in :mod:`apps.webui.server.rb_vendor`.
 
 The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
@@ -36,7 +36,7 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
 )
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
-from .rb_assets_beatgrid_source import beatgrid_source_for_track
+from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -359,7 +359,7 @@ def get_track_anlz(
 
     The ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),
     ``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection
-    from data/state/vocal-cache, merged when PVDI is absent), and
+    from (private path), merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
     # NATIVE-21: a deck load (or a selected row) moves this track to the
@@ -389,7 +389,7 @@ def get_track_anlz(
             # Locally imported track (no rekordbox analysis). Everything
             # rekordbox owns stays empty, but the waveform is decodable from
             # the audio itself, so serve OUR peaks (ffmpeg, cached under
-            # data/state/local-waveform-cache) and say so in
+            # (private path)) and say so in
             # ``local_waveform``. A decode that has not and cannot run
             # yields empty bands plus the reason - never a synthesised shape.
             # Same audience GET /audio resolves for this request, so a Share
@@ -459,9 +459,11 @@ def get_track_anlz(
         beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
     )
     payload["beatgrid_source_basis"] = beatgrid_source_basis
-    # Own sections fill `phrases` only where rekordbox PSSI is empty, on every
-    # branch above, and `phrases_source` names which one was served (STRUCT-02).
-    payload = merge_own_phrases(payload, stable_id, rb_config.DATA_DIR)
+    # Phrase lane rbx: own sections fill only an empty PSSI (STRUCT-02); own:
+    # only own sections are served (STRUCT-04). `phrases_source` names which.
+    payload = merge_own_phrases(
+        payload, stable_id, rb_config.DATA_DIR, source=phrase_source_for_request(request)
+    )
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things

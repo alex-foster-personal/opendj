@@ -44,3 +44,17 @@ def beatgrid_source_for_track(request: Request, *, has_rb_mapping: bool) -> tupl
         conn.close()
     basis = BASIS_UNMAPPED_DEFAULT if implicit else BASIS_SELECTION
     return _BEATGRID_SOURCE_LABELS[source], basis
+
+
+def phrase_source_for_request(request: Request) -> str:
+    """The PARITY-02 ``phrase`` lane's effective source, ``rbx`` or ``own`` (STRUCT-04).
+
+    Lane-wide, not per track: own sections come from a machine-local sidecar
+    that exists or not regardless of rekordbox mapping, so STANDALONE-06's
+    unmapped-track default does not apply here.
+    """
+    conn = analysis_source_routes._open_ro(request)
+    try:
+        return selection.effective_source(conn, "phrase")
+    finally:
+        conn.close()

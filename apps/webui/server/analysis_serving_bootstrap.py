@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from apps.analysis.serving_lanes import SERVING_LANES, register_serving_lane
 
-_LANDED_LANES: tuple[str, ...] = ("beatgrid", "waveform")
+# ``phrase`` serves own sections from the structure sidecar
+# (apps/analysis_structure/serve.py); a track with no sidecar answers an empty
+# `phrases` with `phrases_source: none`, never rekordbox's (STRUCT-04).
+_LANDED_LANES: tuple[str, ...] = ("beatgrid", "waveform", "phrase")
 
 
 def ensure_analysis_serving_lanes() -> None:
