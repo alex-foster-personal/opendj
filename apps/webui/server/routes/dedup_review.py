@@ -23,7 +23,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 
-from apps.dedup import library_scan
+from apps.dedup.http import build_service
 from apps.shared import paths as dedup_paths
 from apps.shared.events import publish
 
@@ -117,7 +117,7 @@ class ScanStatusOut(BaseModel):
 @router.get("/scan", response_model=ScanStatusOut)
 def get_dedup_scan() -> ScanStatusOut:
     """Where the library fingerprint scan is (idle until first started)."""
-    return ScanStatusOut(**library_scan.JOB.status())
+    return ScanStatusOut(**build_service().scan_status().model_dump())
 
 
 @router.post(
@@ -137,12 +137,12 @@ def post_dedup_scan(request: Request) -> ScanStatusOut:
     # default, and writes clusters where the review routes read them.
     configured = getattr(request.app.state, "state_db_path", None)
     state_db = Path(configured) if configured is not None else None
-    if not library_scan.JOB.start(state_db=state_db, db_path=dedup_db_path()):
+    if not build_service().start_scan(state_db=state_db, db_path=dedup_db_path()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "scan_running", "message": "a duplicate scan is already running"},
         )
-    return ScanStatusOut(**library_scan.JOB.status())
+    return ScanStatusOut(**build_service().scan_status().model_dump())
 
 
 class MemberOut(BaseModel):

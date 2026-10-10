@@ -387,12 +387,26 @@ export function precedingDownbeatMs(beats: readonly AnlzBeat[], positionMs: numb
 	let candidate: AnlzBeat | null = null;
 	for (const beat of beats) {
 		if (beat.t > positionSec) break;
+		if (beat.bar_phase_untrusted === true) continue;
 		if (beat.n === 1) candidate = beat;
 	}
 	if (candidate === null) {
 		throw new RangeError(`no PQTZ downbeat (n===1) at or before ${positionMs}ms`);
 	}
 	return candidate.t * 1000;
+}
+
+/** Anchor for a fresh four-beat loop.
+ *
+ * An untrusted bar phase has no downbeat to trust, so this returns
+ * undefined and the caller keeps the ordinary nearest-beat anchor.
+ */
+export function freshFourBeatAnchorMs(
+	beats: readonly AnlzBeat[],
+	positionMs: number
+): number | undefined {
+	if (beats.some((beat) => beat.bar_phase_untrusted === true)) return undefined;
+	return precedingDownbeatMs(beats, positionMs);
 }
 
 /** Resize an engaged, beat-aligned loop to `beatCount` beats, anchored so

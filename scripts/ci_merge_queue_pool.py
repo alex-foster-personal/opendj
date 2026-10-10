@@ -12,6 +12,10 @@ Read-only: two `gh api` listings (repository variables and self-hosted runners),
 needing a token that can read them (the fleet human token can). It never sets or deletes
 a variable; `gh variable delete CI_RUNS_ON_MERGE_QUEUE` is the off switch it prints.
 
+The e2e gate's separate reserve, `CI_RUNS_ON_E2E_MERGE_QUEUE` (ADR amendment Fri 9 Oct
+2026), has the same stranding hazard but is not read here; preflight it with
+`--assume '<its value>'`, which checks any label set against the live runners.
+
     python -m scripts.ci_merge_queue_pool                  # the live variable
     python -m scripts.ci_merge_queue_pool --assume '["self-hosted","linux","mq"]'
                                                            # preflight a value before setting it

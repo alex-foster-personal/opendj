@@ -22,6 +22,7 @@ from pathlib import Path
 from tests.scripts.ci_runner_routes import (
     CANARY_RUNS_ON,
     CANARY_VENDOR_MATRIX,
+    E2E_MERGE_QUEUE_DISJUNCT,
     MERGE_QUEUE_DISJUNCT,
 )
 from tests.workflow_conditions import top_level_disjuncts
@@ -73,6 +74,9 @@ TRUNK_RUNNER_GUARD_PREFIXES = (
 #: runner-pool) on every job on a Trunk draft's required path. It selects a self-hosted pool
 #: too, so it prices at the hosted fallback like the guards above.
 MERGE_QUEUE_RUNNER_GUARD_PREFIX = MERGE_QUEUE_DISJUNCT
+#: e2e.yml `gate`'s guarded CI_RUNS_ON_E2E_MERGE_QUEUE disjunct (amendment Fri 9 Oct 2026):
+#: also a self-hosted pool, so it prices at the hosted fallback too.
+E2E_MERGE_QUEUE_RUNNER_GUARD_PREFIX = E2E_MERGE_QUEUE_DISJUNCT
 _JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")
 _VARS_DISJUNCT = re.compile(r"^vars\.[A-Z0-9_]+$")
 
@@ -151,6 +155,7 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
         if trimmed in (
             MAIN_FIX_RUNNER_GUARD_PREFIX,
             MERGE_QUEUE_RUNNER_GUARD_PREFIX,
+            E2E_MERGE_QUEUE_RUNNER_GUARD_PREFIX,
             *TRUNK_RUNNER_GUARD_PREFIXES,
         ):
             continue

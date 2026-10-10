@@ -1,6 +1,6 @@
 """``python -m apps.stems`` - htdemucs 4-stem bundle trickle CLI.
 
-Writes ``data/state/stems/<stable_id>/`` bundles for the webui mute/solo
+Writes ``(private path)/<stable_id>/`` bundles for the webui mute/solo
 path (PR #228). Reuses track loading from ``apps.vocals.cli``. Torch stays
 out of the repo venv via ``uv run scripts/stem_bundle_worker.py``.
 
@@ -35,7 +35,9 @@ from apps.vocals.cli import (
     Ctx,
     VocalTrack,
     _fmt_dur,
+    _open_ro,
     best_playlist_rank,
+    load_state_tracks,
     load_tracks,
     order_todo,
 )
@@ -49,6 +51,47 @@ WORKER_SCRIPT = (
 )
 CATEGORY_CACHED = "cached_stems"
 CATEGORY_MISSING_STEM = CATEGORY_MISSING  # reuse vocals missing-file label
+
+
+# ----- tracks ----------------------------------------------------------------
+
+
+def _read_rekordbox_schema(ctx: Ctx) -> None:
+    """Raise unless ``master.plain.db`` opens as a rekordbox database.
+
+    ``load_tracks`` fetches no row from it when state.db maps no track to
+    rekordbox, so without this read an empty or corrupt file would pass as a
+    healthy copy that happens to hold nothing.
+    """
+    master = _open_ro(ctx.master_db, "MASTER_DB")
+    try:
+        master.execute("SELECT 1 FROM djmdContent LIMIT 1").fetchone()
+    finally:
+        master.close()
+
+
+def load_stem_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
+    """The tracks a stems command may select, keyed by the app's own stable id.
+
+    A stem bundle needs only an id and an audio file, so the whole library is
+    every live track in state.db: the ones rekordbox holds (read with their
+    rekordbox length where a decrypted copy exists) plus every track it does
+    not hold, such as a folder import. A missing ``master.plain.db`` is a
+    normal library with no rekordbox, never an error (STEM-63); only a path
+    with nothing at it counts as missing, so a copy that is there but broken
+    (a directory, a dangling link) still fails loudly in ``load_tracks``, and
+    one that is a file but no rekordbox database fails in the schema read. A
+    playlist scope still reads rekordbox-mapped members only.
+    """
+    if playlist is not None:
+        return load_tracks(ctx, playlist)
+    no_rekordbox = not (ctx.master_db.is_symlink() or ctx.master_db.exists())
+    if not no_rekordbox:
+        _read_rekordbox_schema(ctx)
+    held = [] if no_rekordbox else load_tracks(ctx, None)
+    held_ids = {tr.stable_id for tr in held}
+    own = [tr for tr in load_state_tracks(ctx) if tr.stable_id not in held_ids]
+    return sorted([*held, *own], key=lambda tr: tr.stable_id)
 
 
 # ----- classify --------------------------------------------------------------
@@ -197,7 +240,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     live = bool(getattr(args, "live", False))
     ctx = Ctx(data_dir=args.data_dir)
     root = stems_dir(ctx.data_dir)
-    tracks = load_tracks(ctx, args.playlist)
+    tracks = load_stem_tracks(ctx, args.playlist)
     classify_stems(tracks, root)
     rank = best_playlist_rank(ctx, tracks)
     todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
@@ -248,7 +291,7 @@ def cmd_one(args: argparse.Namespace) -> int:
         raise SystemExit("error: `one` requires --live (refuses dry-run)")
     ctx = Ctx(data_dir=args.data_dir)
     root = stems_dir(ctx.data_dir)
-    tracks = load_tracks(ctx, None)
+    tracks = load_stem_tracks(ctx, None)
     match = next((t for t in tracks if t.stable_id == args.stable_id), None)
     if match is None:
         raise SystemExit(f"error: unknown stable_id {args.stable_id!r}")

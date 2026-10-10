@@ -174,6 +174,12 @@ export async function startOnboardingEngine(name: string): Promise<OnboardingEng
 	const port = await freeLoopbackPort();
 	const origin = `http://127.0.0.1:${port}`;
 	let child: ChildProcess | null = null;
+	// Settles when the spawned child has exited AND the stdio pipes it handed down
+	// have ended. The child is the owner guard and the engine is its descendant, so
+	// the guard exiting does not mean the engine has stopped writing into the data
+	// dir; the pipes the engine inherited end only when their last holder is gone.
+	// Tracked from spawn, so it is still correct when the guard exits on its own.
+	let everyHolderGone: Promise<void> = Promise.resolve();
 	let log = '';
 	const logTail = (): string => log.slice(-6000);
 
@@ -201,6 +207,7 @@ export async function startOnboardingEngine(name: string): Promise<OnboardingEng
 		spawned.stdout?.on('data', append);
 		spawned.stderr?.on('data', append);
 		child = spawned;
+		everyHolderGone = new Promise<void>((resolve) => spawned.once('close', () => resolve()));
 		await waitForHealth(origin, spawned, logTail);
 		await assertPackagedIdentity(origin);
 	};
@@ -208,15 +215,20 @@ export async function startOnboardingEngine(name: string): Promise<OnboardingEng
 	const kill = async (): Promise<void> => {
 		const running = child;
 		if (running === null || running.pid === undefined) return;
+		// Signal only a guard that is still running: once it has been reaped, its pid
+		// (and so its group id) may belong to something else.
 		if (running.exitCode === null && running.signalCode === null) {
-			const exited = new Promise((resolve) => running.once('exit', resolve));
 			try {
 				process.kill(-running.pid, 'SIGKILL');
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
 			}
-			await exited;
 		}
+		// Always wait, also when the guard already exited by itself: every member of
+		// the group gets the SIGKILL at once but dies on its own schedule.
+		// Regression line: if dispose() deletes the data dir while the engine can
+		// still write into it then broken (rmdir ENOTEMPTY on (private path)).
+		await everyHolderGone;
 		child = null;
 	};
 

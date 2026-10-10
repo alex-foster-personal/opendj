@@ -1,5 +1,9 @@
-"""Read-only projections over the canonical Phase 12 set event store."""
+"""Read-only projections over the canonical Phase 12 set event store.
 
-from .query import AnalyticsSchemaError, query_play_analytics
+Outside this package, import ``apps.play_analytics.contract`` (delivery layers
+may also import ``apps.play_analytics.http``).
+"""
 
-__all__ = ["AnalyticsSchemaError", "query_play_analytics"]
+from .contract import AnalyticsSchemaError
+
+__all__ = ["AnalyticsSchemaError"]

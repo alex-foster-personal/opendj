@@ -5,7 +5,7 @@ Per-file flow:
 1. Pre-write check: file exists; not an iCloud ``.icloud`` placeholder;
    RB + djay not running (pgrep-based).
 2. Hash the file; copy to
-   ``data/tags/backups/YYYY-MM-DD/<sha256>.ext`` (never overwrite).
+   ``(private path)/<sha256>.ext`` (never overwrite).
 3. Compute the UnifiedPlan via collect -> unify.
 4. Write the unified tags via ``apps.shared.tag_writer.write_tags``.
 5. Re-read the file, diff against the plan. On mismatch, restore from
@@ -27,7 +27,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.dedup import schema as dedup_schema
+from apps.dedup import contract as dedup_contract
 from apps.shared import paths
 from apps.shared.tag_writer import read_tags, write_tags
 
@@ -254,7 +254,7 @@ def run_apply(
     reversal_dir = reversal_dir or paths.TAGS_REVERSAL_DIR
     dedup_db = dedup_db_path or paths.DEDUP_FALLBACK_DB
 
-    conn = dedup_schema.ensure_schema(dedup_db)
+    conn = dedup_contract.ensure_schema(dedup_db)
     try:
         results: list[ApplyResult] = []
         for path in files:

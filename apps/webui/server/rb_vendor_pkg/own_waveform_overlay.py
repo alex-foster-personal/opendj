@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis import selection
+from apps.analysis.byte_siblings import canonical_result_or_same_bytes_sibling
 
 from .own_lane_store import (
     SOURCE_OWN,
@@ -84,7 +85,9 @@ def apply_own_waveform(
             != SOURCE_OWN
         ):
             return payload
-        result = canonical_lane_result(conn, stable_id, OWN_WAVEFORM_LANE)
+        result = canonical_result_or_same_bytes_sibling(
+            conn, stable_id, OWN_WAVEFORM_LANE, canonical_lane_result
+        )
         keep_served_waveform = result is None and selection.implicit_own_default(
             conn, OWN_WAVEFORM_LANE, has_rb_mapping=has_rb_mapping
         )

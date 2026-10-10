@@ -10,7 +10,7 @@ Ship-day guard (CORE): never merge or delete rows; the drain instead treats a
 row as done for a lane when another present row with the SAME file path has
 that lane's result. Selection and coverage both read the widened set, so the
 lane neither re-enqueues the sibling nor reports it as work left forever.
-The row merge is post-v1 (``.planning/debt``).
+The row merge is post-v1 (``(private path)``).
 
 Requirements (mini-PRD):
   ✔︎ a covered sibling is never re-enqueued (#5578)
@@ -28,11 +28,33 @@ def path_key(path: str) -> str:
     return unicodedata.normalize("NFC", path)
 
 
-def with_path_siblings(done: Iterable[str], path_of: Mapping[str, str]) -> set[str]:
-    """``done`` plus every present row sharing a file path with a done row."""
+def with_path_siblings(
+    done: Iterable[str],
+    path_of: Mapping[str, str],
+    hash_of: Mapping[str, str],
+) -> set[str]:
+    """``done`` plus present rows that share a path and an audio hash.
+
+    A row with no hash is not covered. There is no path-only fallback: a
+    caller that has not loaded hashes must not mark a sibling done.
+
+    ``hash_of`` is each row's hash at the decision. The ahead drain loads it
+    from the database then, not from the present-row snapshot, so a rewrite
+    inside that snapshot's minute is not treated as the same bytes.
+    """
     done_set = set(done)
-    covered_paths = {path_key(path_of[sid]) for sid in done_set if sid in path_of}
-    return done_set | {sid for sid, path in path_of.items() if path_key(path) in covered_paths}
+    covered_pairs = {
+        (path_key(path_of[sid]), hash_of[sid])
+        for sid in done_set
+        if sid in path_of and hash_of.get(sid)
+    }
+    if not covered_pairs:
+        return done_set
+    return done_set | {
+        sid
+        for sid, path in path_of.items()
+        if hash_of.get(sid) and (path_key(path), hash_of[sid]) in covered_pairs
+    }
 
 
 __all__ = ["path_key", "with_path_siblings"]

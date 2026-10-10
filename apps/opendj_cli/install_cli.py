@@ -8,11 +8,11 @@ loudly when something else occupies the path.
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from apps.opendj_cli import EXIT_FAILED
+from apps.opendj_cli.refusal import fail as _fail
 
 MANIFEST_KIND = "opendj-engine-payload"
 CLI_LAUNCHER_NAME = "opendj"
@@ -46,20 +46,6 @@ def bundled_launcher(root: Path | None = None) -> Path | None:
     if payload is None:
         return None
     return payload / "bin" / CLI_LAUNCHER_NAME
-
-
-def _fail(*, as_json: bool, code: str, message: str, exit_code: int) -> int:
-    if as_json:
-        print(
-            json.dumps(
-                {"error": {"code": code, "message": message}, "exit_code": exit_code},
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(f"opendj: {message}", file=sys.stderr)
-    return exit_code
 
 
 def _ok(*, as_json: bool, message: str, payload: dict[str, object] | None = None) -> int:

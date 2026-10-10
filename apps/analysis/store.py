@@ -45,7 +45,9 @@ from apps.shared.state.types import Event
 
 from . import queue_store
 from .canonical import refresh_for_record
-from .record import AnalysisRecord, validate_record_contract
+from .lane_enums import LANE_STATUSES
+from .lane_payloads_shared import bar_phase_untrusted
+from .record import AnalysisRecord, RecordContractError, validate_record_contract
 
 # --- additive schema ----------------------------------------------------
 
@@ -219,6 +221,69 @@ def _record_to_json(record: Any) -> str:
 _IDEMPOTENCY_VOLATILE_KEYS: tuple[str, ...] = ("analyzed_at",)
 
 
+class StoredRecordError(RecordContractError):
+    """A record's JSON does not have the shape the store writes."""
+
+
+def _beatgrid_payload(raw: str, label: str) -> dict[str, Any] | None:
+    """The ``ok`` beatgrid payload in one record JSON, or None when there is none.
+
+    None means absent and nothing else: no ``lanes`` (a row from before
+    lanes), no ``beatgrid`` lane, or a lane whose status is not ``ok``. Any
+    wrong shape raises. Reading it as "no trusted grid" would let the upsert
+    that follows overwrite the corrupt row and hide the drift. The queue
+    runner fails that one track on this error and carries on with the batch.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise StoredRecordError(f"{label} is not JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise StoredRecordError(f"{label} is a {type(data).__name__}, not an object")
+    lanes = data.get("lanes")
+    if lanes is None:
+        return None
+    if not isinstance(lanes, dict):
+        raise StoredRecordError(f"{label} has lanes of type {type(lanes).__name__}, not an object")
+    if "beatgrid" not in lanes:
+        return None
+    lane = lanes["beatgrid"]
+    if not isinstance(lane, dict):
+        raise StoredRecordError(f"{label} has a beatgrid lane of type {type(lane).__name__}")
+    status = lane.get("status")
+    if not isinstance(status, str) or status not in LANE_STATUSES:
+        raise StoredRecordError(f"{label} has beatgrid status {status!r}")
+    if status != "ok":
+        return None
+    payload = lane.get("payload")
+    if not isinstance(payload, dict):
+        raise StoredRecordError(
+            f"{label} has an ok beatgrid lane with a payload of type {type(payload).__name__}"
+        )
+    beats = payload.get("beats")
+    if beats is not None and not isinstance(beats, list):
+        raise StoredRecordError(f"{label} has beatgrid beats of type {type(beats).__name__}")
+    return payload
+
+
+def _untrusted_bar_phase_would_replace_trusted(
+    old_json: str, new_json: str, stable_id: str
+) -> bool:
+    """True when a later beatgrid would replace a trusted one with an untrusted bar phase.
+
+    Absent ``bar_phase_untrusted`` is trusted: grids written before the flag
+    exist, and a vote above the floor omits it. An untrusted result may still
+    replace an untrusted one, and a trusted result may replace an untrusted one.
+    """
+    old = _beatgrid_payload(old_json, f"stored analysis record for {stable_id!r}")
+    new = _beatgrid_payload(new_json, f"new analysis record for {stable_id!r}")
+    if old is None or new is None or not old.get("beats"):
+        return False
+    if bar_phase_untrusted(old):
+        return False
+    return bar_phase_untrusted(new)
+
+
 def _semantic_equal(old_json: str, new_json: str) -> bool:
     try:
         old = json.loads(old_json)
@@ -298,6 +363,16 @@ def upsert(
         ).fetchone()
         new_json = _record_to_json(record)
         unchanged = row is not None and _semantic_equal(row[0], new_json)
+        if (
+            row is not None
+            and not unchanged
+            and _untrusted_bar_phase_would_replace_trusted(
+                row[0], new_json, record.stable_id
+            )
+        ):
+            # Keep the stored trusted grid. The projection rebuild below
+            # reads that row, not this newer untrusted payload.
+            unchanged = True
 
         # ONE atomic unit: the record row, the canonical pointer, and the
         # whole projection rebuild. open_rw hands back an AUTOCOMMIT

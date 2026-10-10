@@ -74,6 +74,7 @@ from apps.opendj_cli.origin import (
     EngineOrigin,
     resolve_verified_origin,
 )
+from apps.opendj_cli.refusal import fail as _fail
 from apps.opendj_cli.verbs import (
     DURATION_ANCHORS,
     InvocationError,
@@ -199,21 +200,6 @@ def _parser(as_json: bool = False) -> _Parser:
 
 # ----- output --------------------------------------------------------------
 
-def _fail(args: argparse.Namespace, code: str, message: str, exit_code: int) -> int:
-    """Report a refusal on stderr (or as JSON on stdout) and return its code."""
-    if args.json:
-        print(
-            json.dumps(
-                {"error": {"code": code, "message": message}, "exit_code": exit_code},
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(f"opendj: {message}", file=sys.stderr)
-    return exit_code
-
-
 def _step_counts(steps: Sequence[dict[str, Any]]) -> str:
     counts: dict[str, int] = {}
     for step in steps:
@@ -310,12 +296,12 @@ def _refusal(args: argparse.Namespace, error: Exception) -> int:
     """Map one client refusal to its documented exit code."""
     message = str(error)
     if isinstance(error, NoPerformancePage):
-        return _fail(args, "no_performance_page", message, EXIT_NO_PAGE)
+        return _fail(args.json, "no_performance_page", message, EXIT_NO_PAGE)
     if isinstance(error, OrderTimedOut):
-        return _fail(args, "order_timeout", message, EXIT_TIMEOUT)
+        return _fail(args.json, "order_timeout", message, EXIT_TIMEOUT)
     if isinstance(error, MalformedResult):
-        return _fail(args, "malformed_result", message, EXIT_FAILED)
-    return _fail(args, "order_rejected", message, EXIT_FAILED)
+        return _fail(args.json, "malformed_result", message, EXIT_FAILED)
+    return _fail(args.json, "order_rejected", message, EXIT_FAILED)
 
 
 #: Weakest wins when a script's groups disagree. A run is only as strong as
@@ -462,7 +448,10 @@ def _dispatch(
         run = _post_all(client, orders, args.settle)
     except OrderTimedOut as error:
         return _fail(
-            args, "order_timeout", _timeout_message(client, error, over, beat_s), EXIT_TIMEOUT
+            args.json,
+            "order_timeout",
+            _timeout_message(client, error, over, beat_s),
+            EXIT_TIMEOUT,
         )
     except _REFUSALS as error:
         return _refusal(args, error)
@@ -751,11 +740,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         orders, over = _plan(args, head, rest)
         return _dispatch(args, resolve_verified_origin(args.lock), orders, over)
     except InvocationError as error:
-        return _fail(args, "usage", str(error), EXIT_FAILED)
+        return _fail(args.json, "usage", str(error), EXIT_FAILED)
     except EngineIdentityMismatch as error:
-        return _fail(args, "engine_identity_mismatch", str(error), EXIT_NO_ENGINE)
+        return _fail(args.json, "engine_identity_mismatch", str(error), EXIT_NO_ENGINE)
     except EngineNotRunning as error:
-        return _fail(args, "engine_not_running", str(error), EXIT_NO_ENGINE)
+        return _fail(args.json, "engine_not_running", str(error), EXIT_NO_ENGINE)
 
 
 if __name__ == "__main__":

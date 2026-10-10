@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -13,24 +12,11 @@ import httpx
 from apps.opendj_cli import EXIT_CONFIRMED, EXIT_FAILED, EXIT_NO_ENGINE
 from apps.opendj_cli.api_cli import UsageError, exit_for_status, resolve_backend_base_url
 from apps.opendj_cli.origin import EngineNotRunning
+from apps.opendj_cli.refusal import fail as _fail
 
 OUTPUT_HEALTH_PATH = "/api/v1/audio/output-health"
 SWITCH_OUTPUT_PATH = "/api/v1/audio/switch-output"
 REQUEST_TIMEOUT_S = 3.0
-
-
-def _fail(as_json: bool, code: str, message: str, exit_code: int) -> int:
-    if as_json:
-        print(
-            json.dumps(
-                {"error": {"code": code, "message": message}, "exit_code": exit_code},
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(f"opendj: {message}", file=sys.stderr)
-    return exit_code
 
 
 def _request(

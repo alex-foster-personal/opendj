@@ -31,7 +31,7 @@ import {
 
 import { defaultBootDeps, startEngine } from './boot';
 import { PAYLOAD_DIR } from './engine';
-import { makeLockProbe } from './launch';
+import { makeLockProbe, performancePageUrl } from './launch';
 import { outputHealthJson } from './output-health';
 import {
 	APP_HOST,
@@ -160,7 +160,12 @@ function main(): void {
 	let supervisor: EngineSupervisor | null = null;
 	let quitAllowed = false;
 	let shuttingDown: Promise<void> | null = null;
-	const page: PageInit = { engineOrigin: null, shellBuild: identity, supervisor: null };
+	const page: PageInit = {
+		engineOrigin: null,
+		shellBuild: identity,
+		perfProbe: process.env.OPENDJ_PERF_PROBE === '1',
+		supervisor: null
+	};
 
 	const shutdownAll = (reason: string): Promise<void> => {
 		if (shuttingDown === null) {
@@ -356,7 +361,7 @@ function main(): void {
 					navigateToOrigin: (origin) => {
 						page.engineOrigin = origin;
 						page.supervisor = null;
-						void window?.loadURL(`${origin}/performance`);
+						void window?.loadURL(performancePageUrl(origin));
 					},
 					navigateFatal: ({ exitCode, pid, port, healthPort }) => {
 						page.supervisor = { engine: 'dead', exit_code: exitCode, lock_pid: pid, lock_port: port, health_port: healthPort };

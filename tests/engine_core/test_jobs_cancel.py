@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,16 @@ from apps.engine_core.jobs.store import JOBS_TOPIC, JobStore
 from apps.shared.events import set_hub
 
 _SLEEPER = "import time; time.sleep(600)"
+
+# Ignores SIGTERM, then says so on the progress channel. Cancel must spend
+# the worker grace's SIGTERM share before SIGKILL; a ready line printed
+# before the trap is installed would measure a race.
+_STUBBORN = (
+    "import json, signal, time\n"
+    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    "print(json.dumps({'progress': 0.1, 'message': 'ready'}), flush=True)\n"
+    "time.sleep(600)\n"
+)
 
 # Writes a file the moment it is executed. If this ever runs, the queued job
 # it belongs to was spawned, which is the exact thing a queued cancel forbids.
@@ -323,3 +334,60 @@ def test_cancel_takes_the_whole_tree_not_just_the_worker(
         if psutil.pid_exists(child_pid):
             os.kill(child_pid, 9)
     store.close()
+
+
+@pytest.mark.requirement("NATIVE-31")
+def test_a_normal_job_cancel_keeps_the_ten_second_grace(tmp_path: Path) -> None:
+    """[if] a running job is cancelled [then] its reap keeps the 10s grace, [else stop]."""
+    from apps.engine_core.jobs.reap import (
+        WORKER_KILL_CONFIRM_S,
+        WORKER_TERMINATE_GRACE_S,
+    )
+
+    assert WORKER_TERMINATE_GRACE_S == 10.0
+    register_worker(
+        "cancel-stubborn", lambda _p: [sys.executable, "-c", _STUBBORN]
+    )
+    store = _store(tmp_path)
+    pgid = 0
+
+    async def drive() -> tuple[float, dict[str, Any], int]:
+        runner = JobRunner(store, poll_s=0.01)
+        await runner.start()
+        job = store.enqueue("cancel-stubborn", {})
+        deadline = asyncio.get_running_loop().time() + 20
+        while True:
+            row = store.get(job["id"])
+            if row["message"] == "ready" and row["worker_pgid"] is not None:
+                break
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError(f"stubborn worker never trapped SIGTERM: {row}")
+            await asyncio.sleep(0.02)
+        started = time.monotonic()
+        final = await runner.cancel(job["id"])
+        elapsed = time.monotonic() - started
+        await runner.stop()
+        return elapsed, final, int(row["worker_pgid"])
+
+    try:
+        elapsed, final, pgid = asyncio.run(drive())
+        term_budget = WORKER_TERMINATE_GRACE_S - min(
+            WORKER_KILL_CONFIRM_S, WORKER_TERMINATE_GRACE_S / 2
+        )
+        assert final["status"] == "cancelled", final
+        assert elapsed >= term_budget * 0.8, (
+            f"cancel returned in {elapsed:.2f}s, under the {term_budget:.0f}s "
+            f"SIGTERM share of the {WORKER_TERMINATE_GRACE_S:.0f}s grace"
+        )
+        assert elapsed < WORKER_TERMINATE_GRACE_S + 1.0, (
+            f"cancel took {elapsed:.2f}s, past the {WORKER_TERMINATE_GRACE_S:.0f}s grace"
+        )
+        assert "killed" in (final["error"] or ""), final["error"]
+    finally:
+        unregister_worker("cancel-stubborn")
+        if pgid > 1:
+            try:
+                os.killpg(pgid, 9)
+            except ProcessLookupError:
+                pass
+        store.close()

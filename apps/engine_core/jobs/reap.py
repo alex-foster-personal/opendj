@@ -52,6 +52,9 @@ from apps.shared.process_groups import (
     wait_group_gone,
 )
 
+# Every job reap uses this default, including a normal cancel. 10s is the
+# cancelled worker's flush window. Quit is bounded by #5844's stop window,
+# so this grace stays 10s rather than shrinking to fit a 5s quit.
 WORKER_TERMINATE_GRACE_S: float = 10.0
 
 # The share of the grace held back for the SIGKILL rung. A kill is not

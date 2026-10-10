@@ -53,6 +53,7 @@ export function masterDownbeatOverlayForDeck(input: {
 }): MasterDownbeatOverlay | null {
 	if (!input.beatSyncMax || input.masterState === null || input.masterAnlz === null) return null;
 	if (!input.hasTrustedBeatGrid(input.masterAnlz)) return null;
+	if (input.masterAnlz.beatgrid.bar_phase_untrusted === true) return null;
 	return {
 		masterBeats: input.masterAnlz.beatgrid.beats,
 		masterPositionSec: input.masterState.position_ms / 1000,

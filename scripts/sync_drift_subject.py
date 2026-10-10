@@ -20,14 +20,14 @@ state.db the first time a capture is POSTed. The re-derivation that found it
 worked by reading every module under apps/ containing a ``CREATE TABLE`` --
 a PYTHON-ONLY lens, and so structurally unable to see the EIGHTH authority:
 apps/launcher/src-tauri/src/state.rs, which runs ``CREATE TABLE IF NOT
-EXISTS launcher_meta`` against the same data/state/state.db on every launcher
+EXISTS launcher_meta`` against the same (private path) on every launcher
 start. Both omissions were silent in the same way and D-04 and D-08 fired on
 their tables the moment each authority was added.
 
 The lens is now a declaration rather than a method: ``DDL_SOURCE_FILES`` in
 scripts/sync_drift_rules.py names every file in the tree that declares a
 ``CREATE TABLE`` in ANY language, with one line saying whether it writes
-state.db, and tests/quality/test_sync_drift_authorities.py compares that
+state.db, and (private path) compares that
 declaration against a fresh scan of the tracked tree -- the WHOLE tree, in
 every language AND every directory, because a lens scoped to apps/ and
 scripts/ would hide the next authority exactly the way ``*.py`` hid the last.
@@ -39,7 +39,7 @@ The inventory a state table must appear in is SPLIT across two modules:
 ``apps/shared/state/schema.py`` names what the ladder and the authorities it
 knows about create (ALL_KNOWN_TABLES), and ``apps/database``'s docs modules
 name every table the generated AGENTS.md describes. The two OVERLAP heavily
-(tests/database/test_agents_md_generator.py pins the docs side to the schema
+((private path) pins the docs side to the schema
 tuples plus the consolidated engine's own domains), so D-08 checks their
 UNION: a table is declared if either module names it.
 
@@ -64,7 +64,7 @@ from apps.analysis import queue_stale as analysis_queue_stale
 from apps.analysis import queue_store as analysis_queue_store
 from apps.analysis import store as analysis_store
 from apps.database import generate_agents_md
-from apps.dedup import schema as dedup_schema
+from apps.dedup import contract as dedup_contract
 from apps.engine_core.store import schema as engine_schema
 from apps.launcher.scripts import bootstrap_db as launcher_bootstrap
 from apps.shared import fingerprints
@@ -353,7 +353,7 @@ directions: it omitted a whole language, and it recorded a re-check for
 ``SetStore(`` -- a name that appears nowhere in this repository except in the
 sentence you are reading, the class being ``SetsState`` -- so the zero it read
 as evidence could never have been anything else
-(.claude/rules/verification.md). Re-derived with the real name, and recorded
+((private path)). Re-derived with the real name, and recorded
 as the COMMAND rather than as its answer, so the next reader re-measures
 instead of inheriting a number: ``git grep -n 'SetsState(' -- apps`` names
 every construction site, and each takes either no argument or an explicit
@@ -396,7 +396,7 @@ def _build_engine_core_cache(_tmp: Path) -> sqlite3.Connection:
 
 def _build_dedup(tmp: Path) -> sqlite3.Connection:
     """The LIVE dedup schema, run today by apps/tags and apps/dedup."""
-    return dedup_schema.ensure_schema(tmp / "dedup" / "phase7.sqlite")
+    return dedup_contract.ensure_schema(tmp / "dedup" / "phase7.sqlite")
 
 
 def _build_fingerprint_cache(tmp: Path) -> sqlite3.Connection:

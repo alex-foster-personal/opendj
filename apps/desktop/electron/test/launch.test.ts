@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { after, test } from 'node:test';
 
 import { healthOk } from '../src/engine';
-import { flockProbe, inspectLock, makeLockProbe, parseLockJson, pidCanAct, readLockFields } from '../src/launch';
+import { flockProbe, inspectLock, makeLockProbe, parseLockJson, performancePageUrl, pidCanAct, readLockFields } from '../src/launch';
 import { scratchDir, statusServer } from './helpers';
 
 const PYTHON = 'python3';
@@ -126,4 +126,11 @@ test('readLockFields needs both a pid and a port', () => {
 	assert.equal(readLockFields(lock), null);
 	fs.writeFileSync(lock, '{"pid":12,"port":8683}');
 	assert.deepEqual(readLockFields(lock), { pid: 12, port: 8683 });
+});
+
+test('the performance page adds the frame probe only when OPENDJ_PERF_PROBE is 1', () => {
+	const origin = 'http://engine.invalid';
+	assert.equal(performancePageUrl(origin, { OPENDJ_PERF_PROBE: '1' }), `${origin}/performance?perfprobe=1`);
+	assert.equal(performancePageUrl(origin, {}), `${origin}/performance`);
+	assert.equal(performancePageUrl(origin, { OPENDJ_PERF_PROBE: '0' }), `${origin}/performance`);
 });

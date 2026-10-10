@@ -46,6 +46,7 @@ _REPAIR_PR = (
     "(github.event_name == 'pull_request' && "
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
 )
+_MAIN_PUSH = "(github.event_name == 'push' && github.ref == 'refs/heads/main')"
 #: The `test` shard job before this route: ADR-0041 reserve, then the trunk pool
 #: (ADR-NEW-trunk-ci-runs-on-agentbox-hosts-only), then #2654's general chain.
 PRE_ROUTE_SHARD_HEAD = (
@@ -58,9 +59,42 @@ SHARD_TAIL = (
     "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 )
 PRE_ROUTE_SHARD = PRE_ROUTE_SHARD_HEAD + SHARD_TAIL
+
+#: e2e.yml's `gate` job before either e2e route, and still the `extended`
+#: (nightly) job's route: the e2e pool, else hosted.
+E2E_POOL_TAIL = "vars.CI_RUNS_ON_E2E || '\"ubuntu-latest\"') }}"
+E2E_POOL_RUNS_ON = "${{ fromJSON(" + E2E_POOL_TAIL
+#: The e2e trunk-repair reserve (ICE row INC-5,
+#: ADR-NEW-e2e-trunk-repair-runner-reserve): ADR-0041's `ci:trunk-repair`
+#: guard, spelled exactly as on the `test` job, in front of the e2e pool.
+E2E_MAIN_FIX_DISJUNCT = f"{_REPAIR_PR} && vars.CI_RUNS_ON_E2E_MAIN_FIX"
+#: The `gate` job with the reserve alone: the control an unset
+#: `CI_RUNS_ON_E2E_TRUNK` must resolve to for every event.
+E2E_REPAIR_RESERVE_RUNS_ON = f"${{{{ fromJSON({E2E_MAIN_FIX_DISJUNCT} || {E2E_POOL_TAIL}"
+#: The e2e trunk lane (ADR-NEW-main-e2e-gets-a-trunk-runner-lane, E2ELANE-01):
+#: a push to main, and nothing else, prefers the `e2e-trunk` label. Repair PRs
+#: are deliberately absent: they belong to the reserve above, as on ci.yml,
+#: where CI_RUNS_ON_TRUNK and CI_RUNS_ON_MAIN_FIX are separate variables.
+E2E_TRUNK_DISJUNCT = f"{_MAIN_PUSH} && vars.CI_RUNS_ON_E2E_TRUNK"
 #: Repair routing stays first: the merge-queue preference sits after both repair
 #: disjuncts and after the main-push one, and before the general chain.
 SHARD_RUNS_ON = f"{PRE_ROUTE_SHARD_HEAD}{MERGE_QUEUE_DISJUNCT} || {SHARD_TAIL}"
+
+
+#: e2e.yml's `gate` (amendment Fri 9 Oct 2026): a Trunk draft prefers its own e2e reserve,
+#: `CI_RUNS_ON_E2E_MERGE_QUEUE`, never the pytest-host `CI_RUNS_ON_MERGE_QUEUE`. It requires
+#: `CI_RUNS_ON_E2E` too, so the gate's hosted-only steps (`vars.CI_RUNS_ON_E2E == ''`) can
+#: never run on the reserve, and the reserve can never be chosen while the gate is hosted.
+E2E_MERGE_QUEUE_DISJUNCT = (
+    f"{TRUNK_DRAFT_GUARD} && vars.CI_RUNS_ON_E2E && vars.CI_RUNS_ON_E2E_MERGE_QUEUE"
+)
+#: The `gate` before the merge-queue route: trunk lane, then repair reserve, then the pool.
+PRE_ROUTE_E2E_GATE = f"${{{{ fromJSON({E2E_TRUNK_DISJUNCT} || {E2E_MAIN_FIX_DISJUNCT} || {E2E_POOL_TAIL}"
+#: The stacked route: as above, with the merge-queue reserve after both disjuncts and before the pool.
+E2E_GATE_RUNS_ON = (
+    f"${{{{ fromJSON({E2E_TRUNK_DISJUNCT} || {E2E_MAIN_FIX_DISJUNCT} || "
+    f"{E2E_MERGE_QUEUE_DISJUNCT} || {E2E_POOL_TAIL}"
+)
 
 
 def without_merge_queue_route(runs_on: str) -> str:

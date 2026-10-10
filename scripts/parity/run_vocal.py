@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from apps.vocals.worker_output import parse_worker_stdout
+
 _REPO = Path(__file__).resolve().parents[2]
 WORKER_SCRIPT = _REPO / "scripts" / "vocal_region_worker.py"
 
@@ -73,7 +75,9 @@ def run_vocal(audio_path: Path, *, timeout_s: float = 3600.0) -> dict[str, Any]:
             f"vocal_region_worker failed (exit {proc.returncode}) for {audio_path}: "
             f"{proc.stderr.strip()}"
         )
-    stdout = json.loads(proc.stdout)
+    stdout = parse_worker_stdout(
+        proc.stdout, returncode=proc.returncode, stderr=proc.stderr, audio_path=audio_path
+    )
     return worker_stdout_to_payload(stdout)
 
 

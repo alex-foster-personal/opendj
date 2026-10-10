@@ -67,6 +67,10 @@ const ALLOWLIST = {
 	'src/lib/rb/performance-rescue-restore.svelte.ts': {
 		references: 4,
 		why: 'rescue decode poll: bounded by its ceiling timer, which re-reads the state itself'
+	},
+	'src/lib/rb/frame-probe.ts': {
+		references: 1,
+		why: 'PERFPROBE-01 opt-in frame-time probe: it measures the paint clock itself, so a timer backstop would falsify it; it publishes nothing other logic reads, and its window is posted only while the page is visible'
 	}
 };
 

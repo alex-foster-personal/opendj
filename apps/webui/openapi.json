@@ -4412,6 +4412,16 @@
             "title": "Decks",
             "type": "array"
           },
+          "frame_probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FrameProbeSample"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "js_heap_mb": {
             "anyOf": [
               {
@@ -9061,6 +9071,115 @@
           "interval_s"
         ],
         "title": "FolderWatchOut",
+        "type": "object"
+      },
+      "FrameProbeSample": {
+        "description": "One window of the opt-in in-page frame probe (PERFPROBE-01).\n\nMeasured inside the page so every shell, including WKWebView with no\ndebugging port, reports the same numbers the same way.",
+        "properties": {
+          "fps": {
+            "minimum": 0.0,
+            "title": "Fps",
+            "type": "number"
+          },
+          "frames": {
+            "minimum": 0.0,
+            "title": "Frames",
+            "type": "integer"
+          },
+          "frames_sampled": {
+            "minimum": 0.0,
+            "title": "Frames Sampled",
+            "type": "integer"
+          },
+          "long_frames": {
+            "minimum": 0.0,
+            "title": "Long Frames",
+            "type": "integer"
+          },
+          "max_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Ms"
+          },
+          "p50_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Ms"
+          },
+          "p95_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Ms"
+          },
+          "p99_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P99 Ms"
+          },
+          "shell": {
+            "enum": [
+              "electron",
+              "tauri",
+              "browser"
+            ],
+            "title": "Shell",
+            "type": "string"
+          },
+          "window_ms": {
+            "minimum": 0.0,
+            "title": "Window Ms",
+            "type": "number"
+          },
+          "xruns": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xruns"
+          }
+        },
+        "required": [
+          "shell",
+          "window_ms",
+          "frames",
+          "frames_sampled",
+          "fps",
+          "long_frames"
+        ],
+        "title": "FrameProbeSample",
         "type": "object"
       },
       "GateErrorBody": {
@@ -27116,6 +27235,37 @@
         "title": "VocalsAnalyzeOut",
         "type": "object"
       },
+      "VocalsFailedAttemptOut": {
+        "description": "Why the last requested analysis of a track produced nothing.",
+        "properties": {
+          "error_type": {
+            "title": "Error Type",
+            "type": "string"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "error_type",
+          "failed_at"
+        ],
+        "title": "VocalsFailedAttemptOut",
+        "type": "object"
+      },
       "VocalsRegionOut": {
         "properties": {
           "confidence": {
@@ -27151,8 +27301,18 @@
         "type": "object"
       },
       "VocalsStatusOut": {
-        "description": "Same shape and four states as ``/anlz``'s ``vocals`` field.",
+        "description": "The four states of ``/anlz``'s ``vocals`` field, plus the reason a\n``not_analyzed`` track's last requested analysis failed, when it did.",
         "properties": {
+          "failed_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VocalsFailedAttemptOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fps": {
             "anyOf": [
               {

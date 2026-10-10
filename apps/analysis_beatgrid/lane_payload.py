@@ -37,7 +37,7 @@ octave policy multiplies the least-squares fit to reach the published BPM, and
 the segment means are fits of the same intervals at the raw level. Publishing
 `bpm: 140` beside per-beat BPMs near 70, or a tempo marker reading 70 -> 72
 under a 140 grid, would make the payload disagree with itself in exactly the
-way `specs/native-analysis-v1.md` section 3 forbids ("the deck's public BPM
+way `(private path)` section 3 forbids ("the deck's public BPM
 must agree with the beat intervals it plays against"). So `octave_multiple`
 scales the per-beat BPM and both sides of every marker.
 
@@ -422,7 +422,7 @@ def _build_line_lane(
     # while the policy broke two-octave ties toward 112 BPM; the policy now
     # keeps the model's own level in that case, so the multiple is 1 unless
     # the model's level is outside [70, 180] or a genre tempo family picked
-    # another octave (`ops/beatbench/round-4-tempo-family`, `tf_fold_policy`).
+    # another octave (`(private path)`, `tf_fold_policy`).
     # `const_regions` takes no octave multiple and stays at the model's level,
     # so its block records 1.0 and a family never counts as applied there.
     if mode == GRID_FIT_CONST_REGIONS:
@@ -461,6 +461,8 @@ def _build_line_lane(
         )
     if fit.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
+    if fit.bar_phase_untrusted:
+        payload["bar_phase_untrusted"] = True
     _stamp_activations(result, payload)
     return BeatgridLane(status="ok", reason=None, confidence=tempo.confidence, payload=payload)
 

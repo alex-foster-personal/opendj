@@ -62,6 +62,12 @@ Requirements (mini-PRD):
   ✔︎ one track never closes a lane (NATIVE-21)
     [if] a chunk fails one unknown way [then] each track reruns alone before any verdict
     [if] only one track reproduces it alone [then] that track fails and the lane stays open
+  ✔︎ a timed-out lane call never holds the import (NATIVE-33)
+    [if] a batch times out [then] the next run is another track's lane, never that batch again
+    [if] a lane timed out [then] the lanes that did not finish for every track before it runs again
+    [if] a set-aside track times out alone too [then] it fails by name and the lane stays open
+    [if] a set-aside track is loaded on a deck [then] its retry is the next run, whichever lane holds it
+    [if] a lane closes with tracks set aside [then] each fails with the lane reason, none waits forever
   ✔︎ agent parity
     [if] coverage is asked for [then] GET /ahead-analysis/coverage and the CLI agree
   ✔︎ coverage never waits on a tick (NATIVE-21)
@@ -133,12 +139,15 @@ STARTUP_GRACE_STATE: str = "paused_startup"
 #: How old the served coverage snapshot may get before the loop recomputes it.
 COVERAGE_REFRESH_S: float = 60.0
 NICENESS: int = 19
-#: (lane, backend) in drain order: cheap and visible first.
+#: (lane, backend) in drain order. Loudness is cheap. Beatgrid and key are
+#: what a new library shows as BPM and key, so they run before waveform:
+#: waveform decode was holding the cold beatgrid model past the point a
+#: short import had any grid at all.
 LANE_ORDER: tuple[tuple[str, str], ...] = (
     ("loudness", "own_loudness.backfill"),
-    ("waveform", "own_waveform.backfill"),
     ("beatgrid", "own_beatgrid.backfill"),
     ("key", "own_key.backfill"),
+    ("waveform", "own_waveform.backfill"),
 )
 #: Predecessors a track must already have before it may join that lane's chunk.
 #: Key segmentation reads the beatgrid. Loudness and waveform order work inside
@@ -198,7 +207,7 @@ def next_lane_work(
     """The lane missing for the EARLIEST track (bumped first), and its chunk.
 
     Track-major: ties on that track go to ``LANE_ORDER``, so one track runs
-    loudness, waveform, beatgrid, key in turn, and a library-wide backlog in
+    loudness, beatgrid, key, waveform in turn, and a library-wide backlog in
     a cheap lane never starves the lanes a DJ reads (BPM, key). A chunk
     includes only tracks whose ``LANE_REQUIRES`` predecessors are already
     current, or have terminally failed for that track. A track that still
@@ -260,6 +269,15 @@ def reason_kind(reason: str) -> str:
 
 def _is_known_host_cause(reason: str) -> bool:
     return any(cause in reason for cause in KNOWN_HOST_CAUSES)
+
+
+#: How ``run_lane_via_queue`` words a queue call that outlived QUEUE_TIMEOUT_S.
+TIMEOUT_REASON: str = "queue call timed out"
+
+
+def _batch_timed_out(chunk: Sequence[str], errors: Mapping[str, str]) -> bool:
+    """A multi-track batch whose every track carries the queue-timeout reason."""
+    return len(chunk) > 1 and all(errors.get(sid, "").startswith(TIMEOUT_REASON) for sid in chunk)
 
 
 def _shared_reason(chunk: Sequence[str], errors: Mapping[str, str]) -> str | None:
@@ -336,6 +354,11 @@ class AheadSources:
     #: present stable_id -> file path; with it a row whose file a sibling row already
     #: covers counts as done for that lane (#5578). None keeps per-row selection.
     paths_fn: Callable[[], Mapping[str, str]] | None = None
+    #: present stable_id -> audio hash as of this call. With paths_fn, a sibling
+    #: counts as done only when the hash matches. None keeps the path-only seam.
+    #: This map is not the present-row snapshot: that snapshot is up to a minute
+    #: old, and a rewritten file would be skipped until it refreshed.
+    hashes_fn: Callable[[], Mapping[str, str]] | None = None
     #: Where undecodable files are recorded (AHEAD-DUD-01); None keeps them in memory.
     duds_path: Path | None = None
 
@@ -357,6 +380,9 @@ class AheadDrain:
         self._strip_failed: dict[str, str] = {}
         self._tags_failed: dict[str, str] = {}
         self._lane_failed: dict[str, dict[str, str]] = {lane: {} for lane, _b in LANE_ORDER}
+        #: lane -> tracks whose batch timed out, in order; each is retried alone,
+        #: once, after everything else (NATIVE-33). Not a failure: key still waits.
+        self._lane_set_aside: dict[str, list[str]] = {lane: [] for lane, _b in LANE_ORDER}
         self._duds = DudLedger(sources.duds_path)
         self._bumped: list[str] = []
         self._bump_lock = threading.Lock()
@@ -464,9 +490,11 @@ class AheadDrain:
         return bool(targets)
 
     def _lane_done(self, lane: str, backend: str) -> set[str]:
-        """Rows with the lane's result, plus their same-file siblings (#5578)."""
+        """Rows with the lane's result, plus same-bytes siblings (#5578)."""
         done = self._src.done_fn(lane, backend)
-        return done if self._src.paths_fn is None else with_path_siblings(done, self._src.paths_fn())
+        if self._src.paths_fn is None or self._src.hashes_fn is None:
+            return done
+        return with_path_siblings(done, self._src.paths_fn(), self._src.hashes_fn())
 
 
     def _plan_lane_work(self, present: list[str], bumped: list[str]) -> tuple[str, list[str]] | None:
@@ -484,7 +512,70 @@ class AheadDrain:
             # current nor a terminal per-track failure.
             done = self._lane_done(lane, backend)
             missing[lane] = [sid for sid in present if sid not in done]
-        return next_lane_work(present, missing, self._lane_failed, self._status.unavailable, bumped)
+        return self._next_work_around_timeouts(present, missing, bumped)
+
+    def _next_work_around_timeouts(
+        self, present: list[str], missing: dict[str, list[str]], bumped: list[str]
+    ) -> tuple[str, list[str]] | None:
+        """``next_lane_work``, with a lane that timed out sent to the back (NATIVE-33).
+
+        A queue call that outlives QUEUE_TIMEOUT_S says the lane is slow here,
+        not which track is at fault. Re-running its batch at once kept one
+        beatgrid batch on the queue for up to 75 min while no other track got
+        any lane (demon-llama, Thu 8 Oct 2026). So, in order: (0) a set-aside
+        track that is loaded on a deck is retried alone, whichever lane holds
+        it; (1) the lanes with no set-aside track run for every track, the
+        tracks that are not set aside first; (2) the slow lane runs for the
+        tracks that never timed out; (3) every other set-aside track is
+        retried alone, in ``LANE_ORDER``. Step (1) puts set-aside tracks last
+        because waveform now follows beatgrid (NATIVE-29): without that, the
+        batch that just timed out would get its waveform run next, and a bad
+        file could cost one more timeout before any other track moved. A lane that reads
+        the slow one (key reads beatgrid) waits with it for those tracks. A
+        lane that closed retries nothing, so its set-aside tracks fail with
+        the lane's own reason rather than wait forever.
+        """
+        unavailable = self._status.unavailable
+        for lane, held in self._lane_set_aside.items():
+            held[:] = [sid for sid in held if sid in missing[lane]]
+            if lane in unavailable and held:
+                self._lane_failed[lane].update(
+                    dict.fromkeys(held, f"lane unavailable on this host: {unavailable[lane]}")
+                )
+                held.clear()
+        retries = [(lane, sid) for lane, _b in LANE_ORDER for sid in self._lane_set_aside[lane]]
+        if not retries:
+            return next_lane_work(present, missing, self._lane_failed, unavailable, bumped)
+
+        def retry_alone(sid: str) -> tuple[str, list[str]]:
+            lane = next(name for name, held_sid in retries if held_sid == sid)  # its earliest lane
+            self._lane_set_aside[lane].remove(sid)
+            return lane, [sid]
+
+        loaded = front_first([sid for _lane, sid in retries if sid in bumped], bumped)
+        if loaded:
+            return retry_alone(loaded[0])
+        slow = {lane for lane, _sid in retries}
+        waits_on = {lane: {lane, *LANE_REQUIRES.get(lane, ())} & slow for lane, _b in LANE_ORDER}
+        quick = {lane: ([] if waits_on[lane] else ids) for lane, ids in missing.items()}
+        held_for = {
+            lane: {sid for need in waits_on[lane] for sid in self._lane_set_aside[need]} for lane in missing
+        }
+        rest = {lane: [sid for sid in ids if sid not in held_for[lane]] for lane, ids in missing.items()}
+        # Also a track whose solo retry already timed out: it is no longer set
+        # aside, and its other lanes are as suspect as its batch mates' are.
+        aside = {sid for _lane, sid in retries} | {
+            sid
+            for failed in self._lane_failed.values()
+            for sid, why in failed.items()
+            if why.startswith(TIMEOUT_REASON)
+        }
+        others_first = {lane: [sid for sid in ids if sid not in aside] for lane, ids in quick.items()}
+        for candidates in (others_first, quick, rest):
+            work = next_lane_work(present, candidates, self._lane_failed, unavailable, bumped)
+            if work is not None:
+                return work
+        return retry_alone(retries[0][1])
 
     def _tag_targets(self, present: list[str], bumped: list[str]) -> list[str]:
         blank = self._src.blank_tags_fn()
@@ -543,6 +634,13 @@ class AheadDrain:
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
         chunk, errors = self._set_aside_duds(lane, chunk, errors)
+        if _batch_timed_out(chunk, errors):
+            log.warning(
+                "ahead analysis: lane %s set aside %s after a timeout; other work runs first, then each alone",
+                lane, chunk,
+            )
+            self._lane_set_aside[lane].extend(sid for sid in chunk if sid not in self._lane_set_aside[lane])
+            return
         reason = _shared_reason(chunk, errors)
         if reason is not None and not _is_known_host_cause(reason):
             # One reason for the whole chunk is ambiguous: a host fault, or ONE
@@ -588,6 +686,8 @@ class AheadDrain:
         self._tags_failed.clear()
         for failures in self._lane_failed.values():
             failures.clear()
+        for held in self._lane_set_aside.values():
+            held.clear()
         self._duds.clear()
         if self._status.unavailable:
             log.warning("ahead analysis: re-arming unavailable lanes %s", sorted(self._status.unavailable))
@@ -797,6 +897,88 @@ def _item_reasons(db: str, batch_id: str) -> dict[str, str]:
     }
 
 
+def _audio_hashes(
+    open_ro: Callable[[], sqlite3.Connection], ids: Sequence[str]
+) -> dict[str, str]:
+    """stable_id -> audio hash for ids that have one. One query per chunk."""
+    if not ids:
+        return {}
+    conn = open_ro()
+    try:
+        found: dict[str, str] = {}
+        for start in range(0, len(ids), 500):
+            chunk = list(ids[start:start + 500])
+            marks = ",".join("?" * len(chunk))
+            for sid, digest in conn.execute(
+                "SELECT stable_id, audio_hash FROM tracks "
+                "WHERE deleted_at IS NULL AND audio_hash IS NOT NULL AND "
+                f"stable_id IN ({marks})",
+                tuple(chunk),
+            ):
+                if digest:
+                    found[str(sid)] = str(digest)
+        return found
+    finally:
+        conn.close()
+
+
+
+class PlayableRows:
+    """Present ids, paths and rekordbox mapping, refreshed at most once a minute.
+
+    Audio hashes are read from the database on every call. A folder rewrite
+    can change one duplicate's hash inside that minute, and a sibling
+    decision from a cached hash would skip the new bytes. The read is a few
+    milliseconds for a few thousand ids, cheap beside a 1 s tick.
+    """
+
+    def __init__(
+        self,
+        *,
+        snapshot_fn: Callable[[], Any],
+        open_ro: Callable[[], sqlite3.Connection],
+        mapped_fn: Callable[[Sequence[str]], Iterable[str]],
+        clock: Callable[[], float] = time.monotonic,
+        refresh_s: float = IDLE_INTERVAL_S,
+    ) -> None:
+        self._snapshot_fn = snapshot_fn
+        self._open_ro = open_ro
+        self._mapped_fn = mapped_fn
+        self._clock = clock
+        self._refresh_s = refresh_s
+        self._at: float | None = None
+        self._ids: list[str] = []
+        self._paths: dict[str, str] = {}
+        self._mapped: set[str] = set()
+
+    def _ensure(self) -> None:
+        now = self._clock()
+        if self._at is not None and now - self._at <= self._refresh_s:
+            return
+        snapshot = self._snapshot_fn()
+        self._ids = list(dict.fromkeys(sid for sid, _path in snapshot.on_disk))
+        self._paths = dict(snapshot.on_disk)
+        self._mapped = set(self._mapped_fn(self._ids))
+        self._at = now
+
+    def present(self) -> list[str]:
+        self._ensure()
+        return list(self._ids)
+
+    def paths(self) -> dict[str, str]:
+        self._ensure()
+        return dict(self._paths)
+
+    def mapped(self, ids: Sequence[str]) -> set[str]:
+        self._ensure()
+        return self._mapped & set(ids)
+
+    def audio_hashes(self) -> dict[str, str]:
+        """Current hashes for the present ids. Never the snapshot cache."""
+        self._ensure()
+        return _audio_hashes(self._open_ro, self._ids)
+
+
 def build_for_app(app: Any) -> AheadDrain:
     from apps.analysis_waveform import local_waveform
     from apps.shared.state import db as state_db
@@ -807,24 +989,14 @@ def build_for_app(app: Any) -> AheadDrain:
     from apps.webui.server.routes import ingest as ingest_routes
 
     db = str(app.state.state_db_path)
-    cache: dict[str, Any] = {"at": 0.0, "ids": [], "mapped": set(), "paths": {}}
-
-    def present() -> list[str]:
-        # The coverage snapshot is the engine's one "playable here" measure;
-        # refreshed at most once a minute so a busy tick costs no rescan.
-        if time.monotonic() - cache["at"] > IDLE_INTERVAL_S:
-            snapshot = ingest_routes.build_snapshot(app)
-            cache["ids"] = list(dict.fromkeys(sid for sid, _path in snapshot.on_disk))
-            cache["paths"] = dict(snapshot.on_disk)
-            cache["mapped"] = set(bulk_rb_meta(cache["ids"]))
-            cache["at"] = time.monotonic()
-        return list(cache["ids"])
+    rows = PlayableRows(
+        snapshot_fn=lambda: ingest_routes.build_snapshot(app),
+        open_ro=ingest_routes.open_ro,
+        mapped_fn=lambda ids: set(bulk_rb_meta(ids)),
+    )
 
     def has_strip(sid: str) -> bool:
         return local_waveform.local_preview_strip(sid)[0] is not None
-
-    def mapped(ids: Sequence[str]) -> set[str]:
-        return cache["mapped"] & set(ids)
 
     def write_strip(sid: str) -> None:
         local_waveform.ensure_local_peaks(sid)
@@ -853,10 +1025,16 @@ def build_for_app(app: Any) -> AheadDrain:
         finally:
             conn.close()
 
+    def song_index(ids: Sequence[str]) -> enrich_songs.SongIndex:
+        paths = rows.paths()
+        return enrich_songs.read_song_index(
+            ingest_routes.open_ro, [(sid, paths[sid]) for sid in ids if sid in paths]
+        )
+
     return AheadDrain(
         AheadSources(
-            present_fn=present,
-            mapped_fn=mapped,
+            present_fn=rows.present,
+            mapped_fn=rows.mapped,
             has_strip_fn=has_strip,
             write_strip_fn=write_strip,
             done_fn=lambda _lane, backend: done_ids(ingest_routes.open_ro, backend),
@@ -866,10 +1044,9 @@ def build_for_app(app: Any) -> AheadDrain:
             refresh_tags_fn=refresh_tags,
             declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
             library_values_fn=lambda field: library_value_sources(ingest_routes.open_ro, field),
-            song_index_fn=lambda ids: enrich_songs.read_song_index(
-                ingest_routes.open_ro, [(sid, cache["paths"][sid]) for sid in ids if sid in cache["paths"]]
-            ),
-            paths_fn=lambda: dict(cache["paths"]),
+            song_index_fn=song_index,
+            paths_fn=rows.paths,
+            hashes_fn=rows.audio_hashes,
             duds_path=Path(db).parent / DUDS_FILENAME,
         ),
         startup_grace_s=STARTUP_GRACE_S,
@@ -883,6 +1060,7 @@ __all__ = [
     "STARTUP_GRACE_STATE",
     "AheadDrain",
     "AheadSources",
+    "PlayableRows",
     "arm_from_environ",
     "build_for_app",
     "coverage_counts",

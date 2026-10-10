@@ -8594,6 +8594,7 @@ export interface components {
             client_timestamp: string;
             /** Decks */
             decks: components["schemas"]["DeckPerformanceSample"][];
+            frame_probe?: components["schemas"]["FrameProbeSample"] | null;
             /** Js Heap Mb */
             js_heap_mb?: number | null;
             /** Page Uptime Ms */
@@ -10363,6 +10364,40 @@ export interface components {
             unreadable_roots?: string[];
             /** Warning */
             warning?: string | null;
+        };
+        /**
+         * FrameProbeSample
+         * @description One window of the opt-in in-page frame probe (PERFPROBE-01).
+         *
+         *     Measured inside the page so every shell, including WKWebView with no
+         *     debugging port, reports the same numbers the same way.
+         */
+        FrameProbeSample: {
+            /** Fps */
+            fps: number;
+            /** Frames */
+            frames: number;
+            /** Frames Sampled */
+            frames_sampled: number;
+            /** Long Frames */
+            long_frames: number;
+            /** Max Ms */
+            max_ms?: number | null;
+            /** P50 Ms */
+            p50_ms?: number | null;
+            /** P95 Ms */
+            p95_ms?: number | null;
+            /** P99 Ms */
+            p99_ms?: number | null;
+            /**
+             * Shell
+             * @enum {string}
+             */
+            shell: "electron" | "tauri" | "browser";
+            /** Window Ms */
+            window_ms: number;
+            /** Xruns */
+            xruns?: number | null;
         };
         /**
          * GateErrorBody
@@ -17080,6 +17115,18 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /**
+         * VocalsFailedAttemptOut
+         * @description Why the last requested analysis of a track produced nothing.
+         */
+        VocalsFailedAttemptOut: {
+            /** Error Type */
+            error_type: string;
+            /** Failed At */
+            failed_at: string | null;
+            /** Reason */
+            reason: string;
+        };
         /** VocalsRegionOut */
         VocalsRegionOut: {
             /** Confidence */
@@ -17093,9 +17140,11 @@ export interface components {
         };
         /**
          * VocalsStatusOut
-         * @description Same shape and four states as ``/anlz``'s ``vocals`` field.
+         * @description The four states of ``/anlz``'s ``vocals`` field, plus the reason a
+         *     ``not_analyzed`` track's last requested analysis failed, when it did.
          */
         VocalsStatusOut: {
+            failed_attempt?: components["schemas"]["VocalsFailedAttemptOut"] | null;
             /** Fps */
             fps?: number | null;
             /** Regions */

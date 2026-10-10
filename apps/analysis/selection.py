@@ -780,6 +780,21 @@ def effective_fields(
     return out
 
 
+def own_projection_fields(
+    conn: sqlite3.Connection,
+    stable_ids: Iterable[str],
+) -> dict[str, dict[str, EffectiveField]]:
+    """Own ``analysis_projection`` rows only.
+
+    Never ``track_fields``. A caller that borrows a sibling lane must not
+    take a Rekordbox effective value along with it (NATIVE-30).
+    """
+    ids = list(stable_ids)
+    if not ids or not _table_exists(conn, "analysis_projection"):
+        return {sid: {} for sid in ids}
+    return _fetch_projection(conn, ids, tuple(PROJECTION_FIELDS))
+
+
 def field_column_sql(field_name: str, selection: Selection, *, table: str = "tracks") -> str:
     """The SQL twin of :func:`effective_fields` for one lane-owned field.
 

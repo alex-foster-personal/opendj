@@ -179,6 +179,8 @@ export interface PageInit {
 	/** OPENDJ_ENGINE_ORIGIN; null only before the engine is known. */
 	engineOrigin: string | null;
 	shellBuild: Record<string, unknown>;
+	/** OPENDJ_PERF_PROBE: true when the shell was launched with OPENDJ_PERF_PROBE=1 (PERFPROBE-02). */
+	perfProbe: boolean;
 	/** Present only while the supervisor has declared the engine dead. */
 	supervisor: { engine: 'dead'; exit_code: number; lock_pid: number; lock_port: number; health_port: number } | null;
 }

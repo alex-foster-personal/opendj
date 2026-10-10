@@ -60,6 +60,26 @@ class DeckPerformanceSample(BaseModel):
     processor_error: str | None = Field(default=None, max_length=2048)
 
 
+class FrameProbeSample(BaseModel):
+    """One window of the opt-in in-page frame probe (PERFPROBE-01).
+
+    Measured inside the page so every shell, including WKWebView with no
+    debugging port, reports the same numbers the same way.
+    """
+
+    shell: Literal["electron", "tauri", "browser"]
+    window_ms: float = Field(ge=0)
+    frames: int = Field(ge=0)
+    frames_sampled: int = Field(ge=0)
+    fps: float = Field(ge=0)
+    p50_ms: float | None = Field(default=None, ge=0)
+    p95_ms: float | None = Field(default=None, ge=0)
+    p99_ms: float | None = Field(default=None, ge=0)
+    max_ms: float | None = Field(default=None, ge=0)
+    long_frames: int = Field(ge=0)
+    xruns: int | None = Field(default=None, ge=0)
+
+
 class ClientPerformanceSampleIn(BaseModel):
     client_sample_id: str = Field(min_length=1, max_length=128)
     client_session_id: str = Field(min_length=1, max_length=128)
@@ -76,6 +96,8 @@ class ClientPerformanceSampleIn(BaseModel):
     audio_health_level: Literal["idle", "ok", "warn", "crit"]
     perf_event_count: int = Field(ge=0)
     decks: list[DeckPerformanceSample] = Field(min_length=4, max_length=4)
+    # Null unless the page was opened with ?perfprobe=1 (PERFPROBE-01).
+    frame_probe: FrameProbeSample | None = None
 
 
 class ClientPerformanceSampleOut(BaseModel):

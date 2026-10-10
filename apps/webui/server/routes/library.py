@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
+from apps.library_wheel.http import AXES, LibraryWheelError, build_service
 from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared import paths as shared_paths
 from apps.shared.state.db import open_ro
@@ -173,7 +173,7 @@ def get_library_wheel(
     )] = "play_count",
 ) -> dict[str, object]:
     try:
-        return query_library_wheel(
+        return build_service().query(
             shared_paths.STATE_DB, shared_paths.REKORDBOX_PLAIN_DB, axis=axis
         )
     except LibraryWheelError as exc:

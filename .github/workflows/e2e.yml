@@ -238,7 +238,37 @@ jobs:
     # --with-deps below stays unconditional because it is safe either way:
     # Playwright runs its apt step directly when uid 0 and through `sudo`
     # otherwise, and the runner user has NOPASSWD sudo.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
+    #
+    # Trunk-repair reserve (ICE row INC-5, ADR-NEW-e2e-trunk-repair-runner-reserve):
+    # a pull_request labeled `ci:trunk-repair` prefers vars.CI_RUNS_ON_E2E_MAIN_FIX,
+    # mirroring ADR-0041's reserve on ci.yml's `test` job. On Wed 7 and Thu 8 Oct
+    # 2026 main stopped merging twice for 6-7 h because the repair PR's e2e queued
+    # behind the backlog on the 4 e2e runners. The event_name check comes first so
+    # a push, schedule or dispatch run never reads github.event.pull_request; an
+    # unset variable or any other event falls through to today's chain unchanged.
+    # Pinned by tests/scripts/test_ci_e2e_main_fix_runner_reserve.py.
+    #
+    # Trunk lane (ADR-NEW-main-e2e-gets-a-trunk-runner-lane, E2ELANE-01), the
+    # first disjunct: a push to main, and only that, prefers
+    # vars.CI_RUNS_ON_E2E_TRUNK (label `e2e-trunk`). This mirrors ci.yml's two
+    # variables, CI_RUNS_ON_TRUNK for main and CI_RUNS_ON_MAIN_FIX for repair
+    # PRs. On Mon 5 Oct 2026 main's E2E sat queued 90+ min behind ~30 PR E2E
+    # jobs (GitHub does not assign queued jobs FIFO), so the trunk checkpoint,
+    # which needs `e2e verdict` on a main SHA, could not clear and every merge
+    # was held. A repair PR is not a main push, so it skips this disjunct and
+    # reaches the reserve above; unset CI_RUNS_ON_E2E_TRUNK and every event
+    # resolves exactly as the reserve alone routes it.
+    # Pinned and evaluated by tests/scripts/test_ci_e2e_trunk_lane.py.
+    #
+    # Merge-queue reserve, after both disjuncts above and before the pool: a
+    # Trunk queue draft (the same four-part test as `scope` and `verdict`)
+    # prefers the opt-in vars.CI_RUNS_ON_E2E_MERGE_QUEUE, a reserve label on e2e
+    # hosts, so a batch's gate never waits behind PR heads on the shared e2e pool.
+    # It takes effect only while CI_RUNS_ON_E2E is also set, so the hosted-only
+    # steps below (`vars.CI_RUNS_ON_E2E == ''`) still mean exactly "hosted runner".
+    # Unset, the chain is exactly the two disjuncts above and the pool.
+    # Pinned by (private path).
+    runs-on: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && vars.CI_RUNS_ON_E2E_TRUNK || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) && vars.CI_RUNS_ON_E2E_MAIN_FIX || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_E2E && vars.CI_RUNS_ON_E2E_MERGE_QUEUE || vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 30
     env:
       # One native thread per process. This job's "Root Playwright suite" step

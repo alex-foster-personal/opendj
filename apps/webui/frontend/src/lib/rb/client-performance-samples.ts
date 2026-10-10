@@ -20,6 +20,8 @@ import { DECK_IDS, deckPcmEstimatedBytes, deckStates } from '$lib/rb/audio-engin
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { readJsHeapMB } from '$lib/rb/memory-meter-model';
 import { readPerfEvents } from '$lib/rb/perf-event-log';
+import { frameProbeRequested } from '$lib/rb/frame-probe-flag';
+import type { FrameProbe, FrameProbeWindow } from '$lib/rb/frame-probe';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 export const SAMPLE_INTERVAL_MS = 10_000;
@@ -69,7 +71,8 @@ export function buildDeckSamples() {
 
 export function buildClientPerformanceSamplePayload(
 	clientSessionId: string,
-	clientSampleId: string
+	clientSampleId: string,
+	frameProbe: FrameProbeWindow | null = null
 ): Record<string, unknown> {
 	return {
 		client_sample_id: clientSampleId,
@@ -86,17 +89,43 @@ export function buildClientPerformanceSamplePayload(
 		audio_health_hz: audioHealthHz(),
 		audio_health_level: audioHealthLevel(),
 		perf_event_count: readPerfEvents().length,
-		decks: buildDeckSamples()
+		decks: buildDeckSamples(),
+		frame_probe: frameProbe
 	};
 }
 
+function storageOrNull(): Pick<Storage, 'getItem'> | null {
+	try {
+		return typeof localStorage === 'undefined' ? null : localStorage;
+	} catch {
+		return null;
+	}
+}
+
 export function startClientPerformanceSampling(
-	scheduler: BootScheduler = bootScheduler
+	scheduler: BootScheduler = bootScheduler,
+	startProbe?: () => FrameProbe
 ): () => void {
 	if (typeof window === 'undefined' || typeof document === 'undefined') {
 		return () => {};
 	}
 	const clientSessionId = crypto.randomUUID();
+	// PERFPROBE-01: opt-in only, read once at boot. The probe module loads
+	// only when asked for, so it stays out of the first-load bundle.
+	let stopped = false;
+	let frameProbe: FrameProbe | null = null;
+	if (frameProbeRequested(window.location.search ?? '', storageOrNull())) {
+		if (startProbe) {
+			frameProbe = startProbe();
+		} else {
+			void import('$lib/rb/frame-probe').then(
+				(mod) => {
+					if (!stopped) frameProbe = mod.startFrameProbe();
+				},
+				() => {}
+			);
+		}
+	}
 	let timer: ReturnType<typeof setInterval> | null = null;
 	let inFlight = false;
 	let firstScheduled = false;
@@ -105,7 +134,11 @@ export function startClientPerformanceSampling(
 	const postSample = (): void => {
 		if (inFlight || document.visibilityState !== 'visible') return;
 		inFlight = true;
-		const body = buildClientPerformanceSamplePayload(clientSessionId, crypto.randomUUID());
+		const body = buildClientPerformanceSamplePayload(
+			clientSessionId,
+			crypto.randomUUID(),
+			frameProbe?.take() ?? null
+		);
 		void fetch(`${API_BASE}${SAMPLE_PATH}`, {
 			method: 'POST',
 			keepalive: true,
@@ -158,7 +191,9 @@ export function startClientPerformanceSampling(
 	}
 
 	return () => {
+		stopped = true;
 		stopTimer();
+		frameProbe?.stop();
 		document.removeEventListener('visibilitychange', onVisibilityChange);
 	};
 }

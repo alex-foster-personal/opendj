@@ -15,7 +15,7 @@ import pytest
 from apps.cloud import stem_index
 from apps.lyrics.asr_source import AsrLyricsProvider
 from apps.lyrics.cache import cache_path, load
-from apps.lyrics.fetch_verdicts import load_verdict
+from apps.lyrics.fetch_verdicts import load_verdict, verdict_path
 from apps.lyrics.service import LyricsFetchService, Track
 
 pytestmark = pytest.mark.requirement("LYRICS-07")
@@ -79,6 +79,11 @@ def _seed_stem_index(tmp_path: Path, stable_id: str, vocals_digest: str) -> None
             }
         },
     )
+
+
+def test_verdict_path_refuses_a_traversing_stable_id(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="escapes lyrics-fetch"):
+        verdict_path(tmp_path, "../../etc/passwd")
 
 
 def test_lrclib_hit_skips_asr(tmp_path: Path) -> None:

@@ -47,6 +47,8 @@ export interface AnlzBeat {
 	/** Present on /beatgrid-fallback beats. true = synthesized past the last
 	 * detected downbeat. Omitted on rekordbox PQTZ. */
 	extrapolated?: boolean;
+/** Set on every beat when the grid's bar phase is below the floor. */
+bar_phase_untrusted?: boolean;
 }
 
 /** Which producer this beatgrid block came from. REQUIRED on every payload.
@@ -89,6 +91,9 @@ export interface AnlzBeatgrid {
 	 * the grid is trusted). Rekordbox omits it. `true` means a static grid
 	 * the analyzer distrusts (legacy / defensive). */
 	static_grid_untrusted?: boolean;
+/** Own payloads only. True when the bar-phase vote is below the floor.
+ * The tempo line is still the grid. Beat numbers are not a trusted downbeat. */
+bar_phase_untrusted?: boolean;
 }
 
 /** One tempo change detected by the own beatgrid analyzer (NATIVE-03). */

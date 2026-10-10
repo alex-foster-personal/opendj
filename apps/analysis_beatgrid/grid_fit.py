@@ -5,7 +5,7 @@ the model's 50 fps frames (20 ms steps) and carry its per-beat jitter, while a
 rekordbox static grid is a straight line: one BPM at 0.01 precision and one
 phase. Round 0 put the cost of that difference on the table: fixed-tempo F
 0.857 as served against 0.942 once each track's median offset is removed
-(`ops/beatbench/round-0/report-rescored-v1.1.0.md`). This module closes it in
+(`(private path)`). This module closes it in
 three steps, each measured separately by `scripts/beatbench/run_grid_fit.py`:
 
   1. LINE. Each constant-tempo segment (from `tempo_change.detect_tempo_changes`)
@@ -78,6 +78,12 @@ ROUND_STEPS = (1.0, 0.5, 0.1, 0.01)
 #: (matches rekordbox), +8 ms (human truth, round 2) the v2 target.
 DEFAULT_OFFSET_S = OFFSET_SERVED_S
 
+#: A beat this close to 0 s is still this file's first beat. The served
+#: offset is -10 ms, so a kick the model placed at 0 lands inside this
+#: window. Moving only that beat to 0 stays under a flam. A beat in
+#: [-0.05, -PRE_ZERO_SNAP_S) is before the file and is dropped instead.
+PRE_ZERO_SNAP_S = 0.015
+
 #: A model interval within this of the median counts as clean when seeding the
 #: line: two 50 fps frames, the model's own quantization plus one frame of jitter.
 CLEAN_INTERVAL_S = 0.040
@@ -123,6 +129,9 @@ class GridFit:
     #: Which fitter chose `lines`: `line` here, `const_regions` for
     #: `const_regions.fit_const_regions`.
     fitter: str = GRID_FIT_LINE
+    #: The bar vote lost. The tempo line is still served; bar numbers are the
+    #: best vote and are not a confident downbeat.
+    bar_phase_untrusted: bool = False
 
 
 def _clean_run(ts: Sequence[float], period: float) -> tuple[int, int]:
@@ -290,7 +299,9 @@ def _render(lines: Sequence[SegmentLine], offset_s: float) -> tuple[list[float],
     """Beat times from each line, cut where the next segment's line takes over.
 
     Returns the times and, per beat, the index of the line it came from. A
-    beat the offset would put before 0 s is dropped: the deck refuses t < 0.
+    beat the offset would put more than 50 ms before 0 s is dropped. A beat
+    in [-0.05, 0) s is kept for `grid_from_lines`, which snaps it to 0 only
+    inside `PRE_ZERO_SNAP_S` and otherwise drops it. The deck refuses t < 0.
     """
     out: list[float] = []
     owner: list[int] = []
@@ -305,7 +316,12 @@ def _render(lines: Sequence[SegmentLine], offset_s: float) -> tuple[list[float],
                 break
             out.append(t)
             owner.append(i)
-    kept = [(t + offset_s, i) for t, i in zip(out, owner, strict=True) if t + offset_s >= 0.0]
+    # Keep a beat in [-0.05, 0). Dropping one inside PRE_ZERO_SNAP_S would
+    # put a 124 BPM kick at 0 s (served offset -10 ms) on the next beat,
+    # about 0.47 s. grid_from_lines snaps only that close beat to 0 and
+    # drops a farther one. It does not move beats inside the file.
+    # Anything earlier than 50 ms is before the file.
+    kept = [(t + offset_s, i) for t, i in zip(out, owner, strict=True) if t + offset_s >= -0.05]
     return [t for t, _ in kept], [i for _, i in kept]
 
 
@@ -379,15 +395,33 @@ def grid_from_lines(
     if bars is None:
         return GridFit([], [], tuple(lines), offset_s, REASON_NO_DOWNBEATS, fitter=fitter)
     numbers, agreement = bars
-    if agreement < BAR_PHASE_AGREEMENT_FLOOR:
-        return GridFit(
-            [], [], tuple(lines), offset_s, REASON_BAR_PHASE_BELOW_FLOOR, agreement, fitter=fitter
-        )
-    return GridFit(grid, numbers, tuple(lines), offset_s, None, agreement, owner, fitter)
+    # A beat in [-0.05, 0) has not been heard. Within PRE_ZERO_SNAP_S, move
+    # only that beat to 0. Farther out, drop it and keep the bar number the
+    # vote above already gave the beats that remain, so bar 1 beat 1 is not
+    # reassigned to the old beat 2. Never slide beats the model placed
+    # inside the file: round-1 wav 8c3f6b60a8da494c14c291dfa326da3eab3dd1a2
+    # was 37 ms late on every beat when the whole grid moved.
+    while grid and grid[0] < -PRE_ZERO_SNAP_S:
+        del grid[0]
+        del owner[0]
+        del numbers[0]
+    if not grid:
+        return GridFit([], [], tuple(lines), offset_s, REASON_TOO_FEW_BEATS, fitter=fitter)
+    if grid[0] < 0.0:
+        grid[0] = 0.0
+    # A below-floor bar vote used to drop the whole grid, so a click track
+    # whose beats were on the line stored bpm=None. The tempo line is the
+    # served grid either way. The low vote is recorded, not hidden.
+    untrusted = agreement < BAR_PHASE_AGREEMENT_FLOOR
+    return GridFit(
+        grid, numbers, tuple(lines), offset_s, None, agreement, owner, fitter,
+        bar_phase_untrusted=untrusted,
+    )
 
 
 __all__ = [
     "DEFAULT_OFFSET_S",
+    "PRE_ZERO_SNAP_S",
     "GRID_FIT_CONST_REGIONS",
     "GRID_FIT_LINE",
     "GRID_FIT_MODES",

@@ -1,15 +1,5 @@
-"""On-disk performance rescue snapshot ring (RESCUE-01)."""
+"""On-disk performance rescue snapshot ring (RESCUE-01).
 
-from apps.rescue.ring import (
-    RING_SIZE,
-    append_snapshot,
-    read_index,
-    read_latest,
-)
-
-__all__ = [
-    "RING_SIZE",
-    "append_snapshot",
-    "read_index",
-    "read_latest",
-]
+Outside code reaches this package only through ``apps.rescue.contract`` (and,
+for delivery layers, ``apps.rescue.http``). The package root stays pure.
+"""

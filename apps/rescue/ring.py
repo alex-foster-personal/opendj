@@ -5,35 +5,32 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-RING_SIZE = 8
-MAX_BYTES = 32 * 1024
+from apps.rescue.contract import (
+    MAX_BYTES,
+    RING_SIZE,
+    RescueIndex,
+    RescueSlotMeta,
+    RescueSnapshotInvalidError,
+    RescueSnapshotTooLargeError,
+)
+
+__all__ = [
+    "MAX_BYTES",
+    "RING_SIZE",
+    "RescueIndex",
+    "RescueSlotMeta",
+    "RescueSnapshotInvalidError",
+    "RescueSnapshotTooLargeError",
+    "append_snapshot",
+    "read_index",
+    "read_latest",
+    "write_atomic",
+]
+
 _SCHEMA = 1
-
-
-class RescueSnapshotTooLargeError(ValueError):
-    """Serialized snapshot exceeds the 32 KiB cap."""
-
-
-class RescueSnapshotInvalidError(ValueError):
-    """Snapshot payload failed structural validation."""
-
-
-@dataclass(frozen=True)
-class RescueSlotMeta:
-    slot: int
-    captured_at_ms: int
-    bytes: int
-
-
-@dataclass(frozen=True)
-class RescueIndex:
-    schema: int
-    newest_slot: int
-    slots: tuple[RescueSlotMeta, ...]
 
 
 def _rescue_dir(data_dir: Path) -> Path:
@@ -109,8 +106,7 @@ def _index_to_dict(index: RescueIndex) -> dict[str, Any]:
         "schema": index.schema,
         "newest_slot": index.newest_slot,
         "slots": [
-            {"slot": slot.slot, "captured_at_ms": slot.captured_at_ms, "bytes": slot.bytes}
-            for slot in index.slots
+            {"slot": slot.slot, "captured_at_ms": slot.captured_at_ms, "bytes": slot.bytes} for slot in index.slots
         ],
     }
 

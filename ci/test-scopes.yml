@@ -252,11 +252,24 @@ scopes:
     # finds their consumers the way round 9 found the frontend's: by what tests spell. The
     # mentions are bare directory names, not suffixes: a `.md` mention matched an error
     # message in tests/conftest.py that names CLAUDE.md, which would have carried the scope.
-    # Root-level markdown stays unclaimed (FULL) for the same reason. `.planning/REQUIREMENTS.md`
-    # is a full trigger above and wins before this scope is consulted.
-    sources: ["docs/", "specs/", "app_docs/", ".planning/", "handoffs/", "blog/"]
+    # Root-level markdown stayed unclaimed (FULL) for the same reason. Round 18 claims the
+    # community files by exact name, each mentioned by that same name (the PR template by its
+    # stem, which can only select more), so no suffix can match an unrelated literal: on the 60 merges up to f495fdb775 this moves 7 from FULL to
+    # SCOPED (36 -> 43). Two suites read every tracked file without spelling one
+    # (`(private path)`, `(private path)`);
+    # this scope already selects `quality` and `scripts`, which is why these files join it rather
+    # than a scope of their own. Any other root file stays unclaimed: CLAUDE.md, AGENTS.md, release
+    # notes, `coverage-matrix.md`, and README.md, which a beatbench test spells, so claiming it
+    # adds beatbench to 18 scopes' dependents to narrow 1 of those merges. `.planning/REQUIREMENTS.md` belongs to the
+    # longer `requirements` prefix above.
+    sources: ["docs/", "specs/", "app_docs/", ".planning/", "handoffs/", "blog/", "research/",
+              "CHANGELOG.md", "PARITY-TODO.md", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md",
+              ".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE.md",
+              ".github/FUNDING.yml"]
     tests: []
-    mentions: ["docs", "specs", "app_docs", ".planning", "handoffs", "blog"]
+    mentions: ["docs", "specs", "app_docs", ".planning", "handoffs", "blog", "research",
+               "CHANGELOG.md", "PARITY-TODO.md", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md",
+               "ISSUE_TEMPLATE", "PULL_REQUEST_TEMPLATE", "FUNDING.yml"]
     dependents: ["agentic_testing", "analysis_bench", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
   - name: agentic_testing
     sources: ["(private path)/"]

@@ -28,6 +28,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from apps.analysis.lane_payloads_shared import bar_phase_untrusted
+
 SOURCE_OWN = "own"
 SOURCE_REKORDBOX = "rekordbox"
 
@@ -42,7 +44,7 @@ def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]
     pushed over the 600-line ceiling by this feature landing, and this
     function is the other half of the same ``source`` discriminator contract
     as ``apply_own_beatgrid`` below (spec section 3,
-    ``specs/native-analysis-v1-lanes/nav1-consumers.md`` item 1).
+    ``(private path)`` item 1).
 
     Wire shape on both sides is ``{n, bpm, t}``. Fixed-tempo write-back
     (``apps.sync.analysis_writeback_pqtz``, promotion-gated) maps ``n`` to
@@ -66,7 +68,7 @@ def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]
         # well as the own one. A consumer that had to infer the source from
         # which other fields happen to be present would relabel an own payload
         # as rekordbox the moment a field was renamed, and hand it quantize and
-        # Beat Sync by default (specs/native-analysis-v1-lanes/nav1-consumers.md
+        # Beat Sync by default ((private path)
         # item 1). A discriminator only one side states is not a discriminator.
         "source": SOURCE_REKORDBOX,
         "beat_count": len(beats),
@@ -139,49 +141,25 @@ def _own_beatgrid_lane_result(conn: Any, stable_id: str) -> Any:
     there, or a row that does not carry the lane the pointer named it for, is
     corruption and raises rather than degrading to `missing`.
 
-    `analysis_canonical` absent entirely is NOT that case (Sol P1, PR #1587):
-    it is created by the same idempotent `_ensure_analysis_tables` call as
-    `analysis_source_default` (apps/analysis/store.py), so the two tables are
-    always present or always absent together, never one without the other.
-    `apps.analysis.selection.get_default` already rules on that shared state
-    ("an absent table means no lane was ever promoted, which is a state with
-    a correct answer, not a failure to paper over"); the sibling table
-    disagreeing would make two reads of one atomic schema answer differently
-    for the identical database. A state DB with no analysis schema at all
-    reaches here only through the in-memory toggle (`set_toggle`, a dev/test
-    affordance), since promotion itself writes through `open_conn` and would
-    have created both tables already.
+    A row with no pointer is served one same-bytes sibling, chosen by
+    :func:`apps.analysis.byte_siblings.canonical_result_or_same_bytes_sibling`:
+    the first ok lane in stable_id order, or the first failed lane when none
+    is ok. The library scalars use that same rule.
+
+    `analysis_canonical` absent entirely is NOT a corruption case (Sol P1,
+    PR #1587): it is created by the same idempotent `_ensure_analysis_tables`
+    call as `analysis_source_default` (apps/analysis/store.py), so the two
+    tables are always present or always absent together. An absent table means
+    no lane was ever promoted, which is a state with a correct answer.
     """
     if conn is None or not _table_present(conn, "analysis_canonical"):
         return None
-    from apps.analysis.canonical import canonical_pointer
-    from apps.analysis.record import AnalysisRecord
+    from apps.analysis.byte_siblings import canonical_result_or_same_bytes_sibling
+    from apps.webui.server.rb_vendor_pkg.own_lane_store import canonical_lane_result
 
-    pointer = canonical_pointer(conn, stable_id, OWN_BEATGRID_LANE)
-    if pointer is None:
-        return None
-    row = conn.execute(
-        "SELECT record_json FROM analysis "
-        "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
-        (stable_id, pointer[0], pointer[1]),
-    ).fetchone()
-    if row is None:
-        raise RuntimeError(
-            f"canonical beatgrid pointer for {stable_id} names {pointer[0]}@"
-            f"{pointer[1]} but no such analysis row exists"
-        )
-    result = AnalysisRecord.from_json(row[0]).lanes.get(OWN_BEATGRID_LANE)
-    if result is None:
-        # Mirrors apps.analysis.canonical.rebuild_projection's identical guard:
-        # `_eligible_rows` only ever points a lane's canonical pointer at a row
-        # whose backend was parsed as THAT lane, so a pointed-to record missing
-        # its own named lane is the schema disagreeing with itself, not an
-        # ordinary "not analyzed yet" state.
-        raise RuntimeError(
-            f"canonical beatgrid record {pointer[0]}@{pointer[1]} for "
-            f"{stable_id} carries no {OWN_BEATGRID_LANE!r} lane"
-        )
-    return result
+    return canonical_result_or_same_bytes_sibling(
+        conn, stable_id, OWN_BEATGRID_LANE, canonical_lane_result
+    )
 
 
 def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], list[Any]]:
@@ -203,6 +181,7 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
         }, []
 
     payload = result.payload
+    untrusted_bars = bar_phase_untrusted(payload)
     beats = payload["beats"]
     if not beats:
         # Spec section 3: an empty `beatgrid.beats` with `status: ok` is a
@@ -219,7 +198,12 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
         "reason": None,
         "beat_count": len(beats),
         "beats": [
-            {"n": int(b["n"]), "bpm": float(b["bpm"]), "t": float(b["t"])}
+            {
+                "n": int(b["n"]),
+                "bpm": float(b["bpm"]),
+                "t": float(b["t"]),
+                **({"bar_phase_untrusted": True} if untrusted_bars else {}),
+            }
             for b in beats
         ],
         "bpm": float(payload["bpm"]),
@@ -227,6 +211,11 @@ def _own_beatgrid_block(result: Any, stable_id: str) -> tuple[dict[str, Any], li
     tempo_changes = list(payload["tempo_changes"])
     if not tempo_changes:
         block["static_grid_untrusted"] = bool(payload["static_grid_untrusted"])
+    # NATIVE-34: the tempo line is served either way. Bar numbers below the
+    # agreement floor must travel with it, or every consumer treats n==1 as
+    # a trusted downbeat.
+    if untrusted_bars:
+        block["bar_phase_untrusted"] = True
     return block, tempo_changes
 
 

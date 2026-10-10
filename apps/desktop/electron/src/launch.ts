@@ -199,6 +199,15 @@ export function originForAdopt(host: string, port: number): string {
 	return `http://${host}:${port}`;
 }
 
+/**
+ * The page the shell opens on the engine. `OPENDJ_PERF_PROBE=1` adds
+ * `?perfprobe=1`, which turns on the in-page frame probe (PERFPROBE-02):
+ * packaged builds have no devtools, so this is the only way to opt in there.
+ */
+export function performancePageUrl(origin: string, env: NodeJS.ProcessEnv = process.env): string {
+	return env.OPENDJ_PERF_PROBE === '1' ? `${origin}/performance?perfprobe=1` : `${origin}/performance`;
+}
+
 function signalHolder(pid: number, signal: NodeJS.Signals): void {
 	try {
 		process.kill(-pid, signal);

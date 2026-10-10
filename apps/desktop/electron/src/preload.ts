@@ -24,6 +24,7 @@ type Progress =
 interface PageInit {
 	engineOrigin: string | null;
 	shellBuild: Record<string, unknown>;
+	perfProbe: boolean;
 	supervisor: Record<string, unknown> | null;
 }
 
@@ -36,6 +37,7 @@ if (init !== null) {
 			const scope = globalThis as unknown as Record<string, unknown>;
 			if (state.engineOrigin !== null) scope.OPENDJ_ENGINE_ORIGIN = state.engineOrigin;
 			scope.OPENDJ_SHELL_BUILD = state.shellBuild;
+			scope.OPENDJ_PERF_PROBE = state.perfProbe;
 			scope.__OPENDJ_requestQuit = scope.__OPENDJ_requestQuit || function () {};
 			const pending = (scope.__OPENDJ_PENDING_SHELL_ERRORS__ as unknown[] | undefined) ?? [];
 			scope.__OPENDJ_PENDING_SHELL_ERRORS__ = pending;

@@ -84,7 +84,8 @@ function _view(deck: DeckId, positionSec?: number): SyncDeckView {
 		beats: st.anlz?.beatgrid.beats ?? [],
 		playing: st.playing,
 		positionSec: positionSec ?? playheadMs(deck) / 1000,
-		tempo: st.pitch
+		tempo: st.pitch,
+		barPhaseUntrusted: st.anlz?.beatgrid.bar_phase_untrusted === true
 	};
 }
 

@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.shared.state.stable_id_paths import confined_stable_id_json_path
+
 FETCH_VERDICT_SCHEMA = 1
 FETCH_VERDICT_DIRNAME = "lyrics-fetch"
 
@@ -34,11 +36,11 @@ def verdict_dir(data_dir: Path) -> Path:
 
 
 def verdict_path(data_dir: Path, stable_id: str) -> Path:
-    root = verdict_dir(data_dir).resolve()
-    path = (root / f"{stable_id}.json").resolve()
-    if path.parent != root:
-        raise ValueError(f"stable_id escapes lyrics-fetch directory: {stable_id!r}")
-    return path
+    return confined_stable_id_json_path(
+        verdict_dir(data_dir),
+        stable_id,
+        directory_name=FETCH_VERDICT_DIRNAME,
+    )
 
 
 def load_verdict(data_dir: Path, stable_id: str) -> FetchVerdict | None:

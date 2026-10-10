@@ -1,7 +1,7 @@
 """Persistent contract for WORD-level karaoke timings (artifact kind
 ``karaoke_words``).
 
-Entries live at ``data/state/karaoke-cache/{stable_id}.json``. This module is
+Entries live at ``(private path)/{stable_id}.json``. This module is
 the deliberate sibling of :mod:`apps.lyrics.cache`, which holds LINE-level
 lyrics and carries no word timestamps by design: neither file widens into the
 other (operational-plan D13.2).
@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.lyrics import lines
+from apps.shared.state.stable_id_paths import confined_stable_id_json_path
 
 KARAOKE_CACHE_SCHEMA: int = 1
 KARAOKE_CACHE_DIRNAME: str = "karaoke-cache"
@@ -115,13 +116,12 @@ def cache_dir(data_dir: Path) -> Path:
 
 def cache_path(data_dir: Path, stable_id: str) -> Path:
     """The artifact path for one track, refusing an id that escapes the dir."""
-    root = cache_dir(data_dir).resolve()
-    path = (root / f"{stable_id}.json").resolve()
-    if path.parent != root:
-        raise KaraokeCacheError(
-            f"stable_id escapes karaoke-cache directory: {stable_id!r}"
-        )
-    return path
+    return confined_stable_id_json_path(
+        cache_dir(data_dir),
+        stable_id,
+        directory_name=KARAOKE_CACHE_DIRNAME,
+        error_type=KaraokeCacheError,
+    )
 
 
 #-----------------------------------------------------------------------------

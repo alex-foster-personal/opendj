@@ -965,7 +965,7 @@ _SETTINGS: tuple[str, ...] = (
 
 # ==========================================================================
 # DOMAIN: dedup + tag unification
-# Legacy source: apps/dedup/schema.py (SCHEMA_SQL / ensure_schema, its own
+# Legacy source: apps/dedup/contract/schema.py (SCHEMA_SQL / ensure_schema, its own
 # (private path) fallback file)
 # ==========================================================================
 
@@ -1028,7 +1028,7 @@ _DEDUP: tuple[str, ...] = (
 # Legacy sources:
 #   fingerprints -- apps/shared/fingerprints.py (_CACHE_SCHEMA). A SECOND,
 #     divergent ``fingerprints`` definition lives in apps/sync/fingerprint.py;
-#     this one wins because apps/dedup/schema.py documents it as the shared
+#     this one wins because apps/dedup/contract/schema.py documents it as the shared
 #     shape. See REPORT.md.
 #   file_hashes  -- apps/shared/hashing.py (HashCache._ensure_schema). Legacy
 #     drops+recreates on a PRAGMA user_version mismatch instead of migrating.
@@ -1142,7 +1142,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "spotify": "apps/spotify/state_writer.py",
     "sets": "apps/sets/state.py",
     "settings": "apps/voice/settings.py",
-    "dedup": "apps/dedup/schema.py",
+    "dedup": "apps/dedup/contract/schema.py",
     "caches": "apps/shared/fingerprints.py + apps/shared/hashing.py",
     "launcher": "apps/launcher/scripts/bootstrap_db.py",
     "sync_write_tokens": "apps/shared/state/migrations_v21.py",

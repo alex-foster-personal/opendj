@@ -47,31 +47,13 @@ from apps.engine_core.update_channel import (
     check_via_engine,
 )
 from apps.opendj_cli.origin import EngineNotRunning, EngineOrigin, resolve_origin
+from apps.opendj_cli.refusal import fail as _fail
 
 CHECK_COMMAND = "check"
 APPLY_COMMAND = "apply"
 EXIT_USAGE = 1
 
 _USAGE = "usage: opendj update check | opendj update apply [--timeout-s SECONDS]"
-
-
-def _fail(*, as_json: bool, code: str, message: str, exit_code: int) -> int:
-    """Report a refusal on stderr, or as JSON on stdout, and return its code.
-
-    The same envelope ``opendj install-cli`` uses, so an agent parsing one
-    installed-app verb can parse them all.
-    """
-    if as_json:
-        print(
-            json.dumps(
-                {"error": {"code": code, "message": message}, "exit_code": exit_code},
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(f"opendj: {message}", file=sys.stderr)
-    return exit_code
 
 
 def _usage(problem: str, *, as_json: bool) -> int:

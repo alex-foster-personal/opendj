@@ -1,4 +1,8 @@
-"""Mountable FastAPI router for the read-only play-analytics contract."""
+"""Delivery surface of ``apps.play_analytics``: the service factory and router.
+
+Delivery layers (apps.webui, apps.engine_core, apps.opendj_cli) and scripts/
+import this module or ``.contract``; nothing else outside the package may.
+"""
 
 from __future__ import annotations
 
@@ -9,23 +13,28 @@ from fastapi import APIRouter, HTTPException, Query
 
 from apps.sets.paths import SETS_DB
 
-from .query import (
+from .contract import (
     DEFAULT_MIN_AUDIBLE_S,
     AnalyticsSchemaError,
     EventsTable,
+    PlayAnalyticsService,
     ShareState,
-    query_play_analytics,
 )
+from .service import PlayAnalytics
 
 
-def create_router(
-    *, db_path: Path = SETS_DB, events_table: EventsTable = "events"
-) -> APIRouter:
+def build_service() -> PlayAnalyticsService:
+    """Return the default play-analytics service."""
+    return PlayAnalytics()
+
+
+def create_router(*, db_path: Path = SETS_DB, events_table: EventsTable = "events") -> APIRouter:
     """Create a router bound to one explicit event-store path.
 
     Integration intentionally remains separate from the shared server app so a
     coordinating parity PR can register this router without hotspot conflicts.
     """
+    service = build_service()
     router = APIRouter(prefix="/api/play-analytics", tags=["play-analytics"])
 
     @router.get("")
@@ -45,7 +54,7 @@ def create_router(
         ] = DEFAULT_MIN_AUDIBLE_S,
     ) -> dict[str, object]:
         try:
-            return query_play_analytics(
+            return service.query_play_analytics(
                 db_path,
                 share_state=share_state,
                 limit=limit,
@@ -60,4 +69,10 @@ def create_router(
 
 router = create_router()
 
-__all__ = ["create_router", "router"]
+__all__ = [
+    "DEFAULT_MIN_AUDIBLE_S",
+    "AnalyticsSchemaError",
+    "build_service",
+    "create_router",
+    "router",
+]

@@ -756,6 +756,13 @@ test('precedingDownbeatMs picks the latest bar-1 beat at or before the position,
 	assertMs(loops.precedingDownbeatMs(DRIFTING_GRID, 4060), 4060); // last downbeat in the grid
 });
 
+test('an untrusted bar phase is not a downbeat for a fresh four-beat loop', () => {
+	const untrusted = DRIFTING_GRID.map((beat) => ({ ...beat, bar_phase_untrusted: true }));
+	assert.equal(loops.freshFourBeatAnchorMs(untrusted, 1000), undefined);
+	assert.throws(() => loops.precedingDownbeatMs(untrusted, 1000), /no PQTZ downbeat/i);
+	assertMs(loops.freshFourBeatAnchorMs(DRIFTING_GRID, 1000), 135);
+});
+
 test('precedingDownbeatMs refuses a position before every downbeat or a broken grid', () => {
 	assert.throws(() => loops.precedingDownbeatMs(DRIFTING_GRID, 50), /no PQTZ downbeat/i);
 	assert.throws(() => loops.precedingDownbeatMs([], 1000), /at least 2 beats/i);
@@ -845,7 +852,7 @@ test('engageBeatLoop anchors a fresh four-beat loop on the preceding downbeat, n
 	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
 	assert.match(
 		engineSource,
-		/beats === 4 && startMs === undefined \? precedingDownbeatMs\(grid, currentMs\) : startMs/
+		/beats === 4 && startMs === undefined \? freshFourBeatAnchorMs\(grid, currentMs\) : startMs/
 	);
 });
 

@@ -383,7 +383,16 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 		// the foreground, after them (discussion_r3918219289).
 		drawLoopCueBands(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		if (shouldPaintBeatGrid(frame.anlz)) {
-			_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
+			_drawBeatGrid(
+				ctx,
+				frame.anlz.beatgrid.beats,
+				tLeft,
+				pxPerS,
+				w,
+				h,
+				palette,
+				frame.anlz.beatgrid.bar_phase_untrusted === true
+			);
 			_drawTempoChanges(ctx, frame.anlz.tempo_changes, tLeft, pxPerS, w, h, palette);
 		}
 		drawPhraseMarkers(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
@@ -929,10 +938,11 @@ function _drawBeatGrid(
 	pxPerS: number,
 	w: number,
 	h: number,
-	palette: WavePalette
+	palette: WavePalette,
+	barPhaseUntrusted = false
 ): void {
 	ctx.fillStyle = palette.tick;
-	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h)) {
+	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h, barPhaseUntrusted)) {
 		// The low-alpha grid remains visible through the waveform. The original
 		// 8px/4px beat caps are then repainted at their stronger alpha.
 		ctx.globalAlpha = line.alpha;

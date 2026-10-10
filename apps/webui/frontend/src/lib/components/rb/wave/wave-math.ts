@@ -40,7 +40,8 @@ export function visibleBeatLines(
 	tLeftSec: number,
 	pxPerSec: number,
 	widthCss: number,
-	rowHeight: number
+	rowHeight: number,
+	barPhaseUntrusted = false
 ): BeatLineGeometry[] {
 	if (beats.length === 0) return [];
 	const tRightSec = tLeftSec + widthCss / pxPerSec;
@@ -48,7 +49,7 @@ export function visibleBeatLines(
 	for (let i = firstBeatAtOrAfter(beats, tLeftSec); i < beats.length; i++) {
 		const beat = beats[i];
 		if (beat.t > tRightSec) break;
-		const isDownbeat = beat.n === 1;
+		const isDownbeat = beat.n === 1 && !barPhaseUntrusted && beat.bar_phase_untrusted !== true;
 		lines.push({
 			x: Math.round((beat.t - tLeftSec) * pxPerSec),
 			y: 0,

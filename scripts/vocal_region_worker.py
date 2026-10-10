@@ -19,9 +19,12 @@ vocals/mix ratio -> hysteresis threshold (on 0.10, off 0.05) -> merge gaps
 region (same expression the PoC emitted).
 
 Requirements (mini-PRD):
-  ✔︎ ✅ emit regions JSON on stdout, logs on stderr only
-    [if] run on a vocal track [then] stdout parses as JSON with regions
-    [if] a log line lands on stdout [then ⛔️] JSON parse fails loudly
+  ✔︎ ✅ stdout carries ONE line: RESULT_FRAME + the regions JSON. Everything
+    else any code in this process (torch, demucs, a decoder child) writes
+    to stdout is handed to stderr, at the file-descriptor level.
+    [if] run on a vocal track [then] stdout is one framed JSON line
+    [if] a library prints to stdout mid-analysis [then] it lands on stderr
+    [if] the weights download draws a progress bar [then] stdout is unchanged
   ✔︎ ✅ region timestamps live in the SOURCE file's true timeline
     (NOTE-musicbot-alignment-learnings drift trap: a 48k analysis chain on
     a 44.1k file stretched timestamps 1.0884x). demucs resamples to the
@@ -66,7 +69,10 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
+
+# ----- stdout contract (must equal apps.vocals.worker_output.RESULT_FRAME) ----
+RESULT_FRAME: str = "odj-vocal-result-v1 "
 
 # ----- calibrated params (SPIKE-B2 section 6.6 - do NOT tune casually) --------
 MODEL_NAME: str = "htdemucs"
@@ -211,6 +217,20 @@ def regions_payload(
 
 def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
+
+
+def _claim_result_stream() -> TextIO:
+    """Keep the real stdout for the result; hand every other write to stderr.
+
+    File descriptor 1 is repointed at stderr, so a ``print`` in a library, a
+    C-level write and a child process's stdout all land in the log instead
+    of in front of the result.
+    """
+    sys.stdout.flush()
+    result_stream = os.fdopen(os.dup(1), "w", encoding="utf-8")
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return result_stream
 
 
 def _is_accelerator_failure(device: str, exc: BaseException) -> bool:
@@ -420,7 +440,7 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="uv run scripts/vocal_region_worker.py",
-        description="demucs htdemucs vocal-region detection -> JSON on stdout",
+        description="demucs htdemucs vocal-region detection -> one framed JSON line on stdout",
     )
     parser.add_argument("audio", type=Path, help="path to the audio file")
     parser.add_argument(
@@ -432,13 +452,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    result_stream = _claim_result_stream()
     result = analyse(args.audio, args.device)
     _log(
         f"done: {len(result['regions'])} regions "
         f"cov={result['coverage_pct']}% sep={result['timings']['separate_s']}s"
     )
-    json.dump(result, sys.stdout, indent=1)
-    sys.stdout.write("\n")
+    result_stream.write(RESULT_FRAME + json.dumps(result) + "\n")
+    result_stream.flush()
 
 
 if __name__ == "__main__":

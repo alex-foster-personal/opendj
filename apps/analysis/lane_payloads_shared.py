@@ -99,6 +99,21 @@ def _require_list(lane: str, payload: Mapping[str, Any], key: str) -> list[Any]:
     return value
 
 
+def bar_phase_untrusted(payload: Mapping[str, Any]) -> bool:
+    """The optional beatgrid ``bar_phase_untrusted`` flag, read strictly.
+
+    Absent is trusted: grids written before the flag have no key, and a vote
+    above the floor omits it. A value that is not a bool raises. Reading it
+    with ``is True`` would serve a malformed flag as a trusted downbeat.
+    """
+    if "bar_phase_untrusted" not in payload:
+        return False
+    flag = payload["bar_phase_untrusted"]
+    if not isinstance(flag, bool):
+        raise LaneContractError(f"beatgrid.bar_phase_untrusted must be a bool, got {flag!r}")
+    return flag
+
+
 __all__ = [
     "_require_bool",
     "_require_confidence",
@@ -107,4 +122,5 @@ __all__ = [
     "_require_number",
     "_require_positive",
     "_require_str",
+    "bar_phase_untrusted",
 ]

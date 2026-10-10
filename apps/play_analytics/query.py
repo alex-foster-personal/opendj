@@ -19,36 +19,20 @@ import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-ShareState = Literal["private", "shared_local", "shared_cloud"]
-EventsTable = Literal["events", "set_events"]
+from .contract import (
+    DEFAULT_MIN_AUDIBLE_S,
+    AnalyticsSchemaError,
+    EventsTable,
+    ShareState,
+)
+
 _SHARE_STATES: frozenset[str] = frozenset({"private", "shared_local", "shared_cloud"})
 _SESSION_COLUMNS = frozenset({"session_id", "started_at", "ended_at", "share_state"})
 _EVENT_COLUMNS = frozenset(
     {"id", "session_id", "wall_clock", "track_stable_id", "action", "value_json"}
 )
-
-
-#: Default read-time dwell filter, in seconds of audible playback.
-#:
-#: Applies ONLY to rows that carry an ``audible_s`` value, which today
-#: means the Open DJ own-deck source. Rows from ``rb_history`` and
-#: ``djay_monitor`` carry no dwell -- their upstream app already decided
-#: what earned a history row -- so they are never filtered here.
-#:
-#: 60s comes from docs/product/set-dwell-threshold-analysis.md, which
-#: measured 3678 real dwell gaps and found NO trough: the populations a
-#: threshold would separate are not separated in the data. 60s is where
-#: the flat sub-60s shelf gives way to the mix mode, and it sits below
-#: p10 (77s). It is a shoulder, not a calibrated constant, which is
-#: exactly why it lives here as an adjustable read-time default rather
-#: than as a capture-time gate that would destroy the evidence.
-DEFAULT_MIN_AUDIBLE_S: float = 60.0
-
-
-class AnalyticsSchemaError(RuntimeError):
-    """The configured event store cannot satisfy the analytics contract."""
 
 
 def _open_readonly(db_path: Path) -> sqlite3.Connection:
@@ -308,6 +292,7 @@ def query_play_analytics(
 
 
 __all__ = [
+    "DEFAULT_MIN_AUDIBLE_S",
     "AnalyticsSchemaError",
     "EventsTable",
     "ShareState",

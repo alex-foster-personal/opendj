@@ -299,7 +299,10 @@ def test_the_shell_bakes_no_default_engine_origin() -> None:
 def test_bootstrap_lands_on_performance() -> None:
     """Cold launch lands in Gig (issue #2698); supersedes AGENT-12 library-root pin."""
     setup_js = (TAURI_CONF.parent.parent / "setup/setup.js").read_text(encoding="utf-8")
-    assert "navigate(`${origin}/performance`)" in setup_js
+    # The default page is /performance; PERFPROBE-02 only appends ?perfprobe=1.
+    assert "pagePath = '/performance'," in setup_js
+    assert "navigate(`${origin}${pagePath}`)" in setup_js
+    assert "perfProbe === true ? '/performance?perfprobe=1' : '/performance'" in setup_js
     assert "navigate(`${origin}/`)" not in setup_js
 
 

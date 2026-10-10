@@ -115,3 +115,32 @@ test('hidden tab does not POST', async () => {
 	assert.equal(posted.length, 0);
 	stop();
 });
+
+// PERFPROBE-01: the frame probe rides the sample only when asked for.
+test('without ?perfprobe=1 the sample carries frame_probe null and no probe starts', async () => {
+	let started = 0;
+	const stop = samples.startClientPerformanceSampling(immediateBootScheduler(), () => {
+		started += 1;
+		return { take: () => ({}), stop() {} };
+	});
+	await Promise.resolve();
+	assert.equal(started, 0);
+	assert.equal(posted[0].body.frame_probe, null);
+	stop();
+});
+
+test('with ?perfprobe=1 each sample carries the probe window and stop stops the probe', async () => {
+	globalThis.window.location.search = '?perfprobe=1';
+	let stopped = 0;
+	const window1 = { shell: 'electron', fps: 59.7 };
+	const stop = samples.startClientPerformanceSampling(immediateBootScheduler(), () => ({
+		take: () => window1,
+		stop() {
+			stopped += 1;
+		}
+	}));
+	await Promise.resolve();
+	assert.deepEqual(posted[0].body.frame_probe, window1);
+	stop();
+	assert.equal(stopped, 1);
+});

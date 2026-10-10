@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import canonical
 from apps.analysis.record import AnalysisRecord
-from apps.analysis_structure.serve import merge_own_phrases
+from apps.analysis_structure.http import build_service as build_structure_service
 from apps.shared import platform_paths, runtime_policy
 
 from .. import rb_vendor
@@ -37,6 +37,7 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
 from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
+from .vocals import _own_vocals
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -408,6 +409,11 @@ def get_track_anlz(
             payload = apply_own_overlays(
                 payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
             )
+            # No PVDI can exist for a track rekordbox does not hold, so the
+            # vocal-cache under the app's own stable id is the only source of
+            # vocal bars (VOCALS-04): the same read GET /vocals/{id}/status
+            # serves, so the deck waveform and that route cannot disagree.
+            payload["vocals"] = _own_vocals(stable_id)
         elif code == "ANALYSIS_NOT_FOUND":
             if vendor_analysis_path_absent(content):
                 rescued_missing_analysis_path = True
@@ -461,7 +467,7 @@ def get_track_anlz(
     payload["beatgrid_source_basis"] = beatgrid_source_basis
     # Phrase lane rbx: own sections fill only an empty PSSI (STRUCT-02); own:
     # only own sections are served (STRUCT-04). `phrases_source` names which.
-    payload = merge_own_phrases(
+    payload = build_structure_service().merge_own_phrases(
         payload, stable_id, rb_config.DATA_DIR, source=phrase_source_for_request(request)
     )
     local_waveform = payload.get("local_waveform")

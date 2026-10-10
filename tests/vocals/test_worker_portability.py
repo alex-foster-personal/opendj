@@ -125,7 +125,9 @@ def test_wav_fastpath_runs_without_ffmpeg_on_path(tmp_path: Path) -> None:
     assert shutil.which("ffmpeg", path=env["PATH"]) is None
     import json
 
-    payload = json.loads(proc.stdout)
+    frame = "odj-vocal-result-v1 "
+    assert proc.stdout.startswith(frame) and proc.stdout.count("\n") == 1, proc.stdout[:200]
+    payload = json.loads(proc.stdout[len(frame):])
     assert "regions" in payload
     assert payload["source_sample_rate"] == 44100
 
@@ -288,7 +290,7 @@ def test_run_worker_uses_uv_run_by_default(monkeypatch: pytest.MonkeyPatch) -> N
 
     def fake_popen(cmd: list[str], **kwargs: Any) -> _FakeWorkerProcess:
         captured["cmd"] = cmd
-        return _FakeWorkerProcess(0, '{"ok": true}')
+        return _FakeWorkerProcess(0, 'odj-vocal-result-v1 {"ok": true}\n')
 
     monkeypatch.delenv("MDT_VOCAL_WORKER_PYTHON", raising=False)
     monkeypatch.delenv("MDT_VOCAL_WORKER_DEVICE", raising=False)
@@ -309,7 +311,7 @@ def test_run_worker_uses_interpreter_override_when_set(
 
     def fake_popen(cmd: list[str], **kwargs: Any) -> _FakeWorkerProcess:
         captured["cmd"] = cmd
-        return _FakeWorkerProcess(0, '{"ok": true}')
+        return _FakeWorkerProcess(0, 'odj-vocal-result-v1 {"ok": true}\n')
 
     monkeypatch.setenv("MDT_VOCAL_WORKER_PYTHON", "/bench/python")
     monkeypatch.setenv("MDT_VOCAL_WORKER_DEVICE", "cuda")

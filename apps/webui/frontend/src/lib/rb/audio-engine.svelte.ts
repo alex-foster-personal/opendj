@@ -294,7 +294,7 @@ import {
 	loopEndpointsWithinDurationMs,
 	phaseLockedSafetyLoop,
 	playbackReachedSafetyLoopOut,
-	precedingDownbeatMs,
+	freshFourBeatAnchorMs,
 	quantizedLoopEndpointsMs,
 	quantizedPositionMs,
 	quantizedSeekDecisionMs,
@@ -3750,8 +3750,9 @@ class RbAudioEngine implements AudioEngine {
 	 *
 	 * A fresh (no explicit start_ms) four-beat loop anchors on the preceding
 	 * PQTZ downbeat rather than the nearest beat, so timing is forgiving of a
-	 * click that landed slightly late - see precedingDownbeatMs. Every other
-	 * length, or an explicit start_ms, keeps the ordinary nearest-beat anchor.
+	 * click that landed slightly late. An untrusted bar phase has no downbeat,
+	 * so that loop uses the nearest beat. Every other length, or an explicit
+	 * start_ms, keeps the ordinary nearest-beat anchor.
 	 *
 	 * Reissuing the exact same beats + resulting range as the already-engaged
 	 * loop is a RESTART, not a re-engage: instead of leaving the playhead
@@ -3764,7 +3765,7 @@ class RbAudioEngine implements AudioEngine {
 		const grid = requireBeatGrid(st, 'engageBeatLoop');
 		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
 		const anchorMs =
-			beats === 4 && startMs === undefined ? precedingDownbeatMs(grid, currentMs) : startMs;
+			beats === 4 && startMs === undefined ? freshFourBeatAnchorMs(grid, currentMs) : startMs;
 		const range = exactBeatLoopRangeMs(grid, currentMs, beats, anchorMs);
 		const isRestart =
 			st.loop !== null &&

@@ -29,52 +29,13 @@ from typing import Any
 
 from apps.shared.state import play_log
 
+from .contract import AXES, AxisInfo, LibraryWheelError
 from .genre_families import simple_genre_family
 
 _SQL_CHUNK = 500
 
 
-@dataclass(frozen=True)
-class AxisInfo:
-    key: str
-    label: str
-    enabled: bool
-    reason: str | None
-
-
-AXES: tuple[AxisInfo, ...] = (
-    AxisInfo("genre", "Genre", True, None),
-    AxisInfo(
-        "decade",
-        "Decade",
-        False,
-        "release year is not ingested into state.db or master.plain.db by this "
-        "repo yet -- no track carries one (found during LIBUX-06 build; not one "
-        "of the two prerequisite gaps the requirement itself named)",
-    ),
-    AxisInfo("play_count", "Play count", True, None),
-    AxisInfo("popularity", "Popularity within genre", True, None),
-    AxisInfo(
-        "overplayed_ness",
-        "Overplayed-ness",
-        False,
-        "needs a popularity-curve calculation that LIBUX-06 marks as an "
-        "undefined prerequisite",
-    ),
-    AxisInfo("playlist", "Playlist membership", True, None),
-    AxisInfo(
-        "set_played_in",
-        "Set played in",
-        False,
-        "needs SET-08 set-history data and the Open DJ deck observer, "
-        "neither built yet (LIBUX-06 prerequisite)",
-    ),
-)
 _AXES_BY_KEY: dict[str, AxisInfo] = {axis.key: axis for axis in AXES}
-
-
-class LibraryWheelError(RuntimeError):
-    """The configured library cannot satisfy the wheel's data contract."""
 
 
 def _open_readonly(db_path: Path, label: str) -> sqlite3.Connection:

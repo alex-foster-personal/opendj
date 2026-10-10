@@ -7,8 +7,8 @@ from CONTEXT D2.
 
 Outputs:
 
-* ``data/dedup/clusters.csv``       -- cluster_id, canonical, alias rows.
-* ``data/dedup/manual-review.csv``  -- borderline clusters that need eyes.
+* ``(private path)``       -- cluster_id, canonical, alias rows.
+* ``(private path)``  -- borderline clusters that need eyes.
 * Inserts rows into ``duplicate_clusters`` + ``track_aliases``.
 
 Candidate pairs come from an inverted index of the 32-bit
@@ -33,10 +33,9 @@ from apps.shared import paths
 from apps.shared.fingerprints import Fingerprint, FingerprintCache, match, words
 
 from . import schema as dedup_schema
+from .contract import DEFAULT_DURATION_DELTA_S, DEFAULT_MAX_CLUSTER
 
 DEFAULT_THRESHOLD = 0.92
-DEFAULT_MAX_CLUSTER = 8
-DEFAULT_DURATION_DELTA_S = 3.0
 # Both CSVs keep one header whether or not the scan found anything, so a
 # consumer of an empty run reads a header-only file, not a different schema.
 CLUSTERS_CSV_HEADER = (

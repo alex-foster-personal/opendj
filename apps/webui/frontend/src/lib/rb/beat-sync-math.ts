@@ -65,6 +65,8 @@ export interface FollowerSyncRequest {
 	maxFollowerTempoRatio: number;
 	/** Beat matches the nearest beat; bar also requires the same PQTZ n. */
 	mode: SyncMode;
+	/** Either grid's bar phase is below the agreement floor. BAR must not lock to beat numbers. */
+	barPhaseUntrusted?: boolean;
 	/**
 	 * A user's seek on a synced, playing follower (waveform click, hot cue,
 	 * CUE): pick the anchor whose BEAT is nearest `followerPositionSec` (the
@@ -364,7 +366,8 @@ function _bestFollowerAnchor(
 	masterTempoRatio: number,
 	minRatio: number,
 	maxRatio: number,
-	anchorOnBeat?: boolean
+	anchorOnBeat?: boolean,
+	barPhaseUntrusted = false
 ): _FollowerAnchorPlan {
 	let best: _FollowerAnchorPlan | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
@@ -398,7 +401,7 @@ function _bestFollowerAnchor(
 		// than at one in four, because normalization is not known until after
 		// `_tempoRatioWithinRangeOrNull` has run. That is the price of asking
 		// the right question in the right order.
-		if (mode === 'bar' && !foldedBar && beat.n !== masterBeatNumber) continue;
+		if (mode === 'bar' && !foldedBar && !barPhaseUntrusted && beat.n !== masterBeatNumber) continue;
 		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex & 1 : 0;
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
@@ -470,6 +473,22 @@ export function resetBeatGridValidationMemoForTest(): void {
 	_gridWalks = 0;
 }
 
+/**
+ * Turn an error's captured stack into its string before the memo keeps it.
+ *
+ * Until `.stack` is first read, V8 and JavaScriptCore hold the raw frames,
+ * and V8's frames keep every caller's receiver and function alive. A memoized
+ * grid error thrown from inside a Svelte flush therefore pinned that update
+ * batch, whose previous-value map held the deck's prior analysis payload,
+ * whose beats array kept the prior verdict alive in turn: one link per track
+ * load, about 27 MB each on a gridless track (P11, Fri 9 Oct 2026). Reading
+ * `.stack` once formats it and lets both engines drop the frames.
+ */
+function _detachStack(error: Error): Error {
+	void error.stack;
+	return error;
+}
+
 /** Validate the complete runtime shape required by PQTZ beat math. */
 export function validateBeatGrid(beats: readonly AnlzBeat[]): void {
 	if (!Array.isArray(beats)) throw new TypeError('beat grid must be an array');
@@ -482,7 +501,7 @@ export function validateBeatGrid(beats: readonly AnlzBeat[]): void {
 	try {
 		_walkBeatGrid(beats);
 	} catch (error) {
-		_gridVerdicts.set(beats, { length: beats.length, error: error as Error });
+		_gridVerdicts.set(beats, { length: beats.length, error: _detachStack(error as Error) });
 		throw error;
 	}
 	_gridVerdicts.set(beats, { length: beats.length, error: null });
@@ -1205,7 +1224,10 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		request.masterTempoRatio,
 		request.minFollowerTempoRatio,
 		request.maxFollowerTempoRatio,
-		request.anchorOnBeat
+		request.anchorOnBeat,
+		request.barPhaseUntrusted === true ||
+			request.masterGrid.some((beat) => beat.bar_phase_untrusted === true) ||
+			request.followerGrid.some((beat) => beat.bar_phase_untrusted === true)
 	);
 
 	if (mode === 'bar') {

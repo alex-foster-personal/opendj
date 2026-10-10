@@ -45,6 +45,8 @@ Requirements (mini-PRD):
     missing_stems (it needs stems first)
   ✔︎ ✅ GET /vocals/{stable_id}/status: the same four vocals states /anlz serves.
     [if] a folder-imported track has a valid vocal-cache entry [then] demucs
+    [if] the last attempt failed after the 202 [then] not_analyzed carries
+    failed_attempt with the reason, until the next attempt starts
 """
 from __future__ import annotations
 
@@ -63,6 +65,7 @@ from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import load_path_map
 from apps.shared.state import locations as state_locations
 from apps.stems.artifacts import StemArtifactError, StemBundleNotFoundError
+from apps.vocals import attempts as vattempts
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 from apps.vocals.cli import (
@@ -122,13 +125,23 @@ class VocalsRegionOut(BaseModel):
     confidence: float | None = None
 
 
+class VocalsFailedAttemptOut(BaseModel):
+    """Why the last requested analysis of a track produced nothing."""
+
+    reason: str
+    error_type: str
+    failed_at: str | None
+
+
 class VocalsStatusOut(BaseModel):
-    """Same shape and four states as ``/anlz``'s ``vocals`` field."""
+    """The four states of ``/anlz``'s ``vocals`` field, plus the reason a
+    ``not_analyzed`` track's last requested analysis failed, when it did."""
 
     stable_id: str
     status: Literal["rekordbox", "no_vocals", "demucs", "not_analyzed"]
     fps: float | None = None
     regions: list[VocalsRegionOut] = Field(default_factory=list)
+    failed_attempt: VocalsFailedAttemptOut | None = None
 
 
 def _resolve_stable_ids(body: VocalsAnalyzeIn, backend: StateBackend) -> list[str]:
@@ -290,9 +303,25 @@ def _own_vocals(stable_id: str) -> dict[str, Any]:
 
 
 def _process_claimed_track(ctx: Ctx, track: VocalTrack, claim: TrackClaim) -> None:
-    """Run a claimed Demucs job after its HTTP response has been sent."""
+    """Run a claimed Demucs job after its HTTP response has been sent.
+
+    Nobody is waiting on this call, so a failure is recorded for the status
+    route before it is re-raised into the engine log. Both the clear of the
+    previous failure (in ``_process_one``) and the write of this one happen
+    while the claim is held, so no other attempt for the track can clear or
+    run in between. A failure that cannot be recorded is noted on the error
+    that caused it, which is still the one raised and the one the claim
+    context sees.
+    """
     with _managed_track_claim(claim):
-        _process_one(ctx, track, "[http]", WORKER_TIMEOUT_S, claim)
+        try:
+            _process_one(ctx, track, "[http]", WORKER_TIMEOUT_S, claim)
+        except Exception as exc:
+            try:
+                vattempts.record_failure(ctx.data_dir, track.stable_id, exc)
+            except Exception as record_exc:  # noqa: BLE001  # noted on exc, which is re-raised
+                exc.add_note(f"this failed attempt could not be recorded: {record_exc!r}")
+            raise
 
 
 @router.post("/analyze", response_model=VocalsAnalyzeOut, status_code=202)
@@ -381,17 +410,30 @@ def get_vocal_status(
             raise
         # Rekordbox does not hold this track (a folder import, or no
         # rekordbox on this machine): no PVDI is possible, so the vocal-cache
-        # keyed by the app's own stable id is the only source. /anlz does not
-        # merge it for such a track yet (PARITY-TODO "Merge the demucs
-        # vocal-cache into empty_anlz_payload").
+        # keyed by the app's own stable id is the only source. /anlz serves
+        # this same read for such a track (VOCALS-04).
         vocals = _own_vocals(stable_id)
     else:
         vocals = rb_vendor.vocals_for_content(content)
+    failed = (
+        vattempts.load_failure(DATA_DIR, stable_id)
+        if vocals["status"] == "not_analyzed"
+        else None
+    )
     return VocalsStatusOut(
         stable_id=stable_id,
         status=vocals["status"],
         fps=vocals.get("fps"),
         regions=[VocalsRegionOut(**r) for r in vocals.get("regions", [])],
+        failed_attempt=(
+            VocalsFailedAttemptOut(
+                reason=failed.reason,
+                error_type=failed.error_type,
+                failed_at=failed.failed_at,
+            )
+            if failed is not None
+            else None
+        ),
     )
 
 

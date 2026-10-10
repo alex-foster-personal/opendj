@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from apps.dedup.find_clusters import (
+from apps.dedup.contract import (
     DEFAULT_DURATION_DELTA_S,
     DEFAULT_MAX_CLUSTER,
 )

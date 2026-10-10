@@ -149,7 +149,7 @@ def build_legacy(tmp_path: Path) -> dict[str, str]:
     merged.update(objects(settings))
     settings.close()
 
-    # apps/dedup/schema.py -- returns its own open connection.
+    # apps/dedup/contract/schema.py -- returns its own open connection.
     dedup = dedup_ensure_schema(tmp_path / "phase7.sqlite")
     merged.update(objects(dedup))
     dedup.close()

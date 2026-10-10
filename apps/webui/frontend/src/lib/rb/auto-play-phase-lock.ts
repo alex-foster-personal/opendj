@@ -73,7 +73,10 @@ export function phaseLockOk(sourceId: DeckId, follower: DeckId): PhaseLockProbe 
 			syncAtContextTimeSec: PREFLIGHT_SYNC_AHEAD_SEC,
 			minFollowerTempoRatio: bounds.min,
 			maxFollowerTempoRatio: bounds.max,
-			mode
+			mode,
+			barPhaseUntrusted:
+				deckStates[sourceId].anlz?.beatgrid.bar_phase_untrusted === true ||
+				deckStates[follower].anlz?.beatgrid.bar_phase_untrusted === true
 		});
 		return { ok: true };
 	} catch (error: unknown) {

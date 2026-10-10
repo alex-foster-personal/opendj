@@ -1,6 +1,6 @@
 """Persistent contract for line-level synced lyrics.
 
-Entries live at ``data/state/lyrics-cache/{stable_id}.json``. Timestamps are
+Entries live at ``(private path)/{stable_id}.json``. Timestamps are
 integer milliseconds at the cache boundary. The contract deliberately has no
 word timestamps: karaoke belongs to neither this cache nor issue #1191.
 """
@@ -12,6 +12,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from apps.shared.state.stable_id_paths import confined_stable_id_json_path
 
 LYRICS_CACHE_SCHEMA = 1
 LYRICS_CACHE_DIRNAME = "lyrics-cache"
@@ -39,11 +41,11 @@ def cache_dir(data_dir: Path) -> Path:
 
 
 def cache_path(data_dir: Path, stable_id: str) -> Path:
-    root = cache_dir(data_dir).resolve()
-    path = (root / f"{stable_id}.json").resolve()
-    if path.parent != root:
-        raise ValueError(f"stable_id escapes lyrics-cache directory: {stable_id!r}")
-    return path
+    return confined_stable_id_json_path(
+        cache_dir(data_dir),
+        stable_id,
+        directory_name=LYRICS_CACHE_DIRNAME,
+    )
 
 
 def load(path: Path) -> Lyrics | None:

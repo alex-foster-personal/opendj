@@ -50,6 +50,8 @@ export interface SyncDeckView {
 	positionSec: number;
 	/** The deck's tempo ratio (engine `tempo`). */
 	tempo: number;
+	/** This deck's bar numbers are not a trusted downbeat (NATIVE-34). */
+	barPhaseUntrusted?: boolean;
 }
 
 export interface SyncJoin {
@@ -95,7 +97,8 @@ export function planRustFollowerJoin(
 		minFollowerTempoRatio: Math.max(0.01, 1 - range),
 		maxFollowerTempoRatio: 1 + range,
 		mode: options.mode,
-		anchorOnBeat: options.anchorOnBeat === true && options.followerAtSec !== undefined
+		anchorOnBeat: options.anchorOnBeat === true && options.followerAtSec !== undefined,
+		barPhaseUntrusted: master.barPhaseUntrusted === true || follower.barPhaseUntrusted === true
 	});
 	return { tempo: plan.followerTempoRatio, positionMs: plan.followerPositionSec * 1000, plan };
 }

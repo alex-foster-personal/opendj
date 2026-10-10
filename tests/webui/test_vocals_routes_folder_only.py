@@ -184,7 +184,8 @@ def test_refused_folder_tracks_write_nothing_and_report_not_analyzed(
     status = client.get("/api/v1/vocals/nostem/status")
     assert status.status_code == 200, status.text
     assert status.json() == {
-        "stable_id": "nostem", "status": "not_analyzed", "fps": None, "regions": []
+        "stable_id": "nostem", "status": "not_analyzed", "fps": None, "regions": [],
+        "failed_attempt": None,
     }
 
 

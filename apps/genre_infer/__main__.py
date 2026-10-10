@@ -25,8 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.adapters.rekordbox import config as rb_config
-from apps.library_wheel.genre_families import simple_genre_family
-from apps.library_wheel.query import genre_tags_by_stable_id
+from apps.library_wheel.contract import LibraryWheelService
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
@@ -43,12 +42,12 @@ def _paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     return data_dir, state, master
 
 
-def _family_labels(state: Path, master: Path) -> tuple[dict[str, str], list[str]]:
+def _family_labels(state: Path, master: Path, wheel: LibraryWheelService) -> tuple[dict[str, str], list[str]]:
     """(labels by stable_id, untagged-or-unmapped stable_ids)."""
     labels: dict[str, str] = {}
     unlabeled: list[str] = []
-    for sid, tag in genre_tags_by_stable_id(state, master).items():
-        fam = simple_genre_family(tag)
+    for sid, tag in wheel.genre_tags_by_stable_id(state, master).items():
+        fam = wheel.simple_genre_family(tag)
         if fam is None:
             unlabeled.append(sid)
         else:
@@ -56,7 +55,7 @@ def _family_labels(state: Path, master: Path) -> tuple[dict[str, str], list[str]
     return labels, unlabeled
 
 
-def _untagged(state: Path, master: Path) -> list[str]:
+def _untagged(state: Path, master: Path, wheel: LibraryWheelService) -> list[str]:
     """stable_ids with no genre tag anywhere: neither rekordbox nor the local genre field."""
     conn = state_db.open_ro(state)
     try:
@@ -67,7 +66,7 @@ def _untagged(state: Path, master: Path) -> list[str]:
             return sorted(sid for sid in jev_store.live_track_ids(conn) if sid not in local)
     finally:
         conn.close()
-    tags = genre_tags_by_stable_id(state, master)
+    tags = wheel.genre_tags_by_stable_id(state, master)
     return sorted(sid for sid, tag in tags.items() if not (tag or "").strip() and sid not in local)
 
 
@@ -143,7 +142,7 @@ def _cmd_train(args: argparse.Namespace) -> int:
             "no embeddings on disk; run `python -m apps.genre_infer embed` first", file=sys.stderr
         )
         return 2
-    labels, _unlabeled = _family_labels(state, master)
+    labels, _unlabeled = _family_labels(state, master, args.wheel)
     model = train(
         vectors,
         labels,
@@ -187,7 +186,7 @@ def _cmd_suggest(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    _labels, unlabeled = _family_labels(state, master)
+    _labels, unlabeled = _family_labels(state, master, args.wheel)
     targets = {sid: vectors[sid] for sid in unlabeled if sid in vectors}
     out = {
         sid: {"family": s.genre, "confidence": s.confidence, "top": s.top}
@@ -286,7 +285,7 @@ def _cmd_jev(args: argparse.Namespace) -> int:
     """Ask JEV for a genre family (and the user's tag questions) for untagged tracks."""
     data_dir, state, master = _paths(args)
     tags = jev.load_tag_questions(jev_store.tags_path(data_dir))
-    untagged = _untagged(state, master)
+    untagged = _untagged(state, master, args.wheel)
     # Only tracks with no genre tag at all: a tag the wheel cannot map is still
     # a tag, and its row would never serve the guess (GENRE-02).
     allowed = set(untagged)
@@ -323,7 +322,18 @@ def _probability(text: str) -> float:
     return value
 
 
-def main(argv: list[str] | None = None) -> int:
+def _default_wheel() -> LibraryWheelService:
+    """Build the library-wheel service for the ``python -m`` entry point.
+
+    The one composition step in this package: a domain module may otherwise
+    reach ``apps.library_wheel`` only through its contract.
+    """
+    from apps.library_wheel.http import build_service
+
+    return build_service()
+
+
+def main(argv: list[str] | None = None, *, wheel: LibraryWheelService | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m apps.genre_infer")
     ap.add_argument("--data-dir")
     ap.add_argument("--state-db")
@@ -351,6 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     j.add_argument("--workers", type=int, default=8)
     j.set_defaults(func=_cmd_jev)
     args = ap.parse_args(argv)
+    args.wheel = wheel if wheel is not None else _default_wheel()
     return int(args.func(args))
 
 

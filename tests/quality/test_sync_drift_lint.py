@@ -3,7 +3,7 @@
 The linter guards omissions, and an omission raises nothing. That makes a
 green run indistinguishable from a linter pointed at the wrong thing unless
 each check has been SHOWN to fire on the defect it names
-(``.claude/rules/verification.md``). So every check here gets two tests: an
+(``(private path)``). So every check here gets two tests: an
 INJECTED defect that must be reported exactly, and a negative control on the
 real tree that must report zero. A checker that flagged everything would pass
 the first and fail the second; one that flagged nothing would do the reverse.
@@ -455,7 +455,7 @@ def test_d05_allowlist_names_the_live_originals_not_only_the_dormant_copies() ->
     """A debt list covering only the dormant twins would read as complete.
 
     The four engine_core entries are copies; the executing originals live in
-    apps/dedup/schema.py and apps.shared.fingerprints, and both are scanned.
+    apps/dedup/contract/schema.py and apps.shared.fingerprints, and both are scanned.
     """
     ladders = {ladder for ladder, _, _ in lint.NAIVE_DEFAULT_ALLOWLIST}
 

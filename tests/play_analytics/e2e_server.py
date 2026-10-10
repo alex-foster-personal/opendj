@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from apps.engine_core.account.api import entitlements_router
 from apps.engine_core.build_info import MANIFEST_ENV, add_build_info_route
 from apps.engine_core.update_channel import add_update_check_route
-from apps.play_analytics.api import create_router
+from apps.play_analytics.http import create_router
 from apps.shared import platform_paths
 from apps.shared.state.schema import apply_migrations
 from apps.webui.server.models import PreflightOut

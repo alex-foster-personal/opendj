@@ -9,8 +9,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.play_analytics.api import create_router
 from apps.play_analytics.cli import main
+from apps.play_analytics.http import create_router
 from apps.play_analytics.query import query_play_analytics
 from apps.webui.server.app import create_app
 
@@ -26,9 +26,7 @@ def test_http_returns_query_contract(analytics_db: Path) -> None:
     app.include_router(create_router(db_path=analytics_db))
 
     with TestClient(app) as client:
-        response = client.get(
-            "/api/play-analytics", params={"share_state": "shared_local", "limit": 1}
-        )
+        response = client.get("/api/play-analytics", params={"share_state": "shared_local", "limit": 1})
 
     assert response.status_code == 200
     assert response.json() == query_play_analytics(

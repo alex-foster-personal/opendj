@@ -110,8 +110,14 @@ from apps.shared.process_groups import (
     wait_group_gone,
 )
 from apps.shared.state import locations as state_locations
+from apps.vocals import attempts as vattempts
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
+from apps.vocals.worker_output import (
+    WorkerOutputError,
+    parse_worker_stdout,
+    streams_excerpt,
+)
 
 # ----- CFG ---------------------------------------------------------------------
 DEMUCS_REALTIME_FACTOR: float = (
@@ -644,7 +650,12 @@ def preflight_worker(audio_path: Path, environ: Mapping[str, str]) -> None:
 
 
 def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
-    """Run the demucs worker with a deadline and parse its stdout JSON."""
+    """Run the demucs worker with a deadline and return its one framed result.
+
+    Both streams are captured: stdout is parsed strictly
+    (``apps.vocals.worker_output``), stderr is passed on to this process's
+    stderr once the worker has ended and its tail goes into any error.
+    """
     if timeout_s <= 0:
         raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
     preflight_worker(audio_path, os.environ)
@@ -657,25 +668,32 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
         proc = subprocess.Popen(
             _worker_command(audio_path),
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             **process_kwargs,
         )
     except (FileNotFoundError, PermissionError) as exc:
         raise WorkerUnavailableError(WORKER_UNAVAILABLE_MESSAGE) from exc
     try:
-        stdout, _ = proc.communicate(timeout=timeout_s)
+        stdout, stderr = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired as exc:
         _terminate_worker_tree(proc)
-        proc.communicate()
+        sys.stderr.write(proc.communicate()[1] or "")
         raise RuntimeError(
             f"vocal_region_worker timed out after {timeout_s}s for {audio_path}"
         ) from exc
+    sys.stderr.write(stderr or "")  # the worker's log stays in this process's log
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"vocal_region_worker failed (exit {proc.returncode}) for {audio_path}"
+        raise WorkerOutputError(
+            f"vocal_region_worker failed (exit {proc.returncode}) for {audio_path}; "
+            f"{streams_excerpt(stdout, stderr)}"
         )
-    return json.loads(stdout)
+    return parse_worker_stdout(
+        stdout, returncode=proc.returncode, stderr=stderr, audio_path=audio_path
+    )
 
 
 @contextmanager
@@ -999,8 +1017,13 @@ def _process_one(
     to the old content, so recording the pre-run mtime guarantees the
     entry self-invalidates against the new file instead of poisoning
     the cache. A detected change also fails loudly right here.
+
+    Every worker attempt (trickle, one, HTTP) starts here, so this is where
+    the track's previous failed-attempt record is cleared: it must not
+    outlive a newer attempt, whichever path made it.
     """
     assert tr.audio_path is not None
+    vattempts.clear_failure(ctx.data_dir, tr.stable_id)
     pre_mtime = tr.audio_path.stat().st_mtime
     pre_signature = vcache.audio_signature(tr.audio_path)
     t0 = time.perf_counter()

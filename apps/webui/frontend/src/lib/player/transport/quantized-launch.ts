@@ -36,6 +36,7 @@ function _usableGrid(beats: readonly AnlzBeat[]): boolean {
 }
 
 function _masterBeat1Candidates(beats: readonly AnlzBeat[], fromSec: number): readonly number[] {
+	if (beats.some((beat) => beat.bar_phase_untrusted === true)) return [];
 	const downbeats = beats.filter((beat) => beat.n === 1);
 	if (downbeats.length === 0) return [];
 	const index = downbeats.findIndex((beat) => beat.t >= fromSec);
@@ -44,6 +45,7 @@ function _masterBeat1Candidates(beats: readonly AnlzBeat[], fromSec: number): re
 }
 
 function _nextDownbeatSec(beats: readonly AnlzBeat[], positionSec: number): number | null {
+	if (beats.some((beat) => beat.bar_phase_untrusted === true)) return null;
 	const downbeats = beats.filter((beat) => beat.n === 1);
 	const found = downbeats.find((beat) => beat.t >= positionSec);
 	return found === undefined ? null : found.t;

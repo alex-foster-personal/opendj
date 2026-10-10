@@ -46,8 +46,8 @@ Requirements (mini-PRD, NAE-07 and NAE-08 in ``.planning/REQUIREMENTS.md``):
 from __future__ import annotations
 
 import collections
-import contextlib
 import json
+import os
 import logging
 import queue
 import secrets
@@ -282,11 +282,33 @@ class AudioEngineSupervisor:
         with self._lock:
             proc = self._proc
             thread = self._thread
+        # NATIVE-31: the whole stop, including stdin close and a late
+        # escalate, stays inside 2s. The deadline starts before the close
+        # so a flush into a full pipe cannot run with no timer. A waiter
+        # already blocked in proc.wait() does not see _stop, so this join
+        # must not spend the whole deadline. Leave half a second, terminate
+        # the live process directly, then join what remains. A supervisor
+        # still alive at the deadline is not reported stopped.
+        # odj-audio's own children stay for the quit reap (#5844).
+        deadline = time.monotonic() + min(self._stop_timeout_s + 2.0, 2.0)
         if proc is not None:
             _close_quietly(proc.stdin)
         if thread is not None:
-            thread.join(self._stop_timeout_s + 2.0)
+            thread.join(max(0.0, deadline - time.monotonic() - 0.5))
+        if thread is not None and thread.is_alive():
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                with self._lock:
+                    live = self._proc
+                if live is not None and live.poll() is None:
+                    self._terminate(live, kill_after_s=min(0.4, remaining))
+                thread.join(max(0.0, deadline - time.monotonic()))
         with self._lock:
+            live = self._proc
+            still_alive = live is not None and live.poll() is None
+            if (thread is not None and thread.is_alive()) or still_alive:
+                self._status.error = "odj-audio did not exit on stop"
+                return self._snapshot()
             if self._status.state in ("starting", "running", "restarting"):
                 self._status.state = "stopped"
             return self._snapshot()
@@ -373,6 +395,11 @@ class AudioEngineSupervisor:
                 self._set(state="unavailable", error=str(exc))
                 return
             outcome = self._run_once(binary, clock)
+            if outcome == "alive":
+                # Still running. A restart would leave a second engine, and
+                # reporting stopped would claim the process had exited.
+                self._set(error="odj-audio did not exit on stop")
+                return
             if self._stop.is_set():
                 self._set(state="stopped")
                 return
@@ -401,7 +428,7 @@ class AudioEngineSupervisor:
                 self._set(state="stopped")
                 return
 
-    def _run_once(self, binary: Binary, clock: str) -> Literal["exited", "fatal"]:
+    def _run_once(self, binary: Binary, clock: str) -> Literal["exited", "fatal", "alive"]:
         token = secrets.token_urlsafe(32)
         env = dict(self._environ)
         env[TOKEN_ENV] = token
@@ -460,13 +487,19 @@ class AudioEngineSupervisor:
                         break
                     self._on_line(line)
             code = self._wait(proc)
+            if proc.poll() is None:
+                # The stop budget ran out and the process is still alive.
+                # Leave _proc set so stop() does not report it stopped.
+                self._set(error="odj-audio did not exit on stop")
+                return "alive"
             self._set(last_exit_code=code, pid=None, ws_url=None, token=None)
             if not self._stop.is_set():
                 self._set(error=f"odj-audio exited with code {code}")
             return "exited"
         finally:
-            with self._lock:
-                self._proc = None
+            if proc.poll() is not None:
+                with self._lock:
+                    self._proc = None
             self._fail_pending("odj-audio exited before answering")
 
     def _await_hello(
@@ -501,22 +534,54 @@ class AudioEngineSupervisor:
         log.warning("odj-audio: %s", line)
 
     def _wait(self, proc: subprocess.Popen[str]) -> int:
-        if self._stop.is_set():
+        # proc.wait() with no timeout never notices a stop that arrives after
+        # this method is entered. _stop_engine would then join until its
+        # deadline was gone and skip terminate, leaving odj-audio alive.
+        # Slice the wait so each slice rechecks _stop. The one-second EOF
+        # grace plus the terminate rung still fit in the 2s stop budget.
+        while True:
+            if self._stop.is_set():
+                return self._wait_for_stop(proc)
             try:
-                return proc.wait(self._stop_timeout_s)
+                return proc.wait(0.2)
             except subprocess.TimeoutExpired:
-                log.warning("odj-audio ignored stdin EOF; terminating")
-                return self._terminate(proc)
-        return proc.wait()
+                continue
 
-    def _terminate(self, proc: subprocess.Popen[str]) -> int:
+    def _wait_for_stop(self, proc: subprocess.Popen[str]) -> int:
+        # stop() joins for at most 2s (NATIVE-31). Waiting the full
+        # stop_timeout (5s by default) returned from that join while this
+        # wait was still blocked, and the public state was then "stopped"
+        # with odj-audio alive. One second of EOF grace, then terminate,
+        # fits the escalate and the join in the same 2s.
+        graceful = min(self._stop_timeout_s, 1.0)
+        try:
+            return proc.wait(graceful)
+        except subprocess.TimeoutExpired:
+            log.warning("odj-audio ignored stdin EOF; terminating")
+            return self._terminate(proc, kill_after_s=0.4)
+
+    def _terminate(self, proc: subprocess.Popen[str], *, kill_after_s: float = 2.0) -> int | None:
+        """SIGTERM, then SIGKILL, both inside one ``kill_after_s`` budget.
+
+        The wait after SIGKILL uses only the time left on that budget, and
+        a slice of the budget is kept for that wait. Spending the whole
+        budget on an ignored SIGTERM left the process unreaped, and stop()
+        reported stopped while it still existed. A process still alive when
+        the budget is gone returns ``None`` instead of blocking ``stop()``
+        past the NATIVE-31 deadline.
+        """
+        deadline = time.monotonic() + max(0.0, kill_after_s)
         _close_quietly(proc.stdin)
         proc.terminate()
+        reap_s = min(0.25, max(0.0, deadline - time.monotonic()))
         try:
-            return proc.wait(2.0)
+            return proc.wait(max(0.0, deadline - time.monotonic() - reap_s))
         except subprocess.TimeoutExpired:
             proc.kill()
-            return proc.wait()
+            try:
+                return proc.wait(max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                return None
 
 
 def _pump(
@@ -537,10 +602,66 @@ def _pump(
 
 
 def _close_quietly(stream: IO[str] | None) -> None:
+    """Close a pipe without waiting on a full kernel buffer.
+
+    ``TextIOWrapper.close`` flushes first. When the child is not reading
+    and the pipe is full, that flush blocks, and ``stop()`` never reaches
+    its deadline. The fd is set non-blocking so the flush returns. When
+    the flush still fails, the fd is closed through the io object that owns
+    it and never by number: a second close by number could land on an
+    unrelated file or socket that reused the number.
+
+    When the fd cannot be made non-blocking the wrapper is left open and
+    the failure is logged: closing it would run that same flush on a
+    blocking fd. The caller's SIGTERM and SIGKILL deadline then ends the
+    child, which is what releases the pipe.
+    """
     if stream is None:
         return
-    with contextlib.suppress(OSError):
+    owner = _fd_owner(stream)
+    fd = _owner_fd(owner)
+    if fd is not None:
+        try:
+            os.set_blocking(fd, False)
+        except OSError as exc:
+            log.warning(
+                "odj-audio stdin fd %d could not be made non-blocking (%s); "
+                "left open so close cannot block on a flush",
+                fd,
+                exc,
+            )
+            return
+    try:
         stream.close()
+    except (OSError, ValueError) as exc:
+        log.warning("odj-audio stdin close did not flush (%s); closing its owner", exc)
+        if owner is stream:
+            return
+        try:
+            owner.close()
+        except (OSError, ValueError):
+            # Not raised: the caller is on its way to SIGTERM and SIGKILL,
+            # and that kill is what the stop bound depends on.
+            log.exception("odj-audio stdin owner close failed")
+
+
+def _fd_owner(stream: IO[str]) -> Any:
+    """The innermost io object of a text stream: the one that owns the fd."""
+    owner: Any = stream
+    buffer = getattr(stream, "buffer", None)
+    if buffer is not None:
+        owner = buffer
+        inner = getattr(buffer, "raw", None)
+        if inner is not None:
+            owner = inner
+    return owner
+
+
+def _owner_fd(owner: Any) -> int | None:
+    try:
+        return int(owner.fileno())
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 __all__ = [

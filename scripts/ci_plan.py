@@ -134,7 +134,7 @@ def matches(path: str, patterns: tuple[str, ...]) -> bool:
 # harmless-location BLACKLIST both turned out to be claims this repository refutes. Measured
 # rather than reasoned: 24 prose files are named by a literal path inside a test module
 # (`docs/architecture.md`, `.planning/REQUIREMENTS.md`, `AGENTS.md`), six more test modules
-# GLOB for prose, and `tests/scripts/test_oss_tip_audit_source.py` audits the PATHNAME of
+# GLOB for prose, and `(private path)` audits the PATHNAME of
 # every tracked file in the index, so adding or renaming any file at all is an input to it.
 # A derived list of test-read documentation cannot be complete either, because a literal-path
 # scan cannot see a glob or an index walk, and an incomplete list under-selects. Sol's P1 on

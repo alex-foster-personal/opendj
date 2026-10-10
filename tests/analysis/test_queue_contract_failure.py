@@ -119,3 +119,35 @@ def test_an_unexpected_crash_returns_claimed_items_to_pending(
     assert counts[queue_store.ITEM_RUNNING] == 0, "if a crashed run leaves items running then broken"
     assert counts[queue_store.ITEM_PENDING] == 2
     conn.close()
+
+
+def test_a_malformed_stored_record_fails_that_track_and_keeps_the_batch(tmp_path: Path) -> None:
+    """[if] one track's stored record is malformed [then] only that item fails, [else stop]."""
+    conn = open_conn(tmp_path / "state.db")
+    batch = queue_api.enqueue(conn, [_candidate("a", tmp_path), _candidate("b", tmp_path)])
+    item = queue_store.claim_next(conn, batch.batch_id, runner_id="runner-a")
+    assert item is not None
+    ctx = _ctx(conn, batch.batch_id)
+    # A row for this track already exists and its lanes value has the wrong shape.
+    good = _future_with(item.stable_id, last_beat_t=179.9).result()[1]
+    conn.execute(
+        "INSERT INTO analysis (stable_id, backend, backend_version, analyzed_at, duration_s, "
+        "sample_rate, bpm, bpm_confidence, key_camelot, key_openkey, key_confidence, energy, "
+        "energy_source, record_json) VALUES (?, ?, ?, ?, 180.0, 44100, 120.0, 0.9, '8A', '1m', "
+        "0.9, 5, 'derived', ?)",
+        (item.stable_id, good.backend, good.backend_version, "2026-10-08T00:00:00Z", '{"lanes": []}'),
+    )
+
+    _settle_one(ctx, _future_with(item.stable_id, last_beat_t=179.9), item)
+
+    assert ctx.summary.failed == 1 and ctx.summary.completed == 0
+    rows = {i.stable_id: i for i in queue_store.list_items(conn, batch.batch_id, limit=10)}
+    assert rows[item.stable_id].state == queue_store.ITEM_FAILED
+    assert "StoredRecordError" in (rows[item.stable_id].reason or "")
+    other = "b" if item.stable_id == "a" else "a"
+    assert rows[other].state == queue_store.ITEM_PENDING, "the sibling claim must be untouched"
+    stored = conn.execute(
+        "SELECT record_json FROM analysis WHERE stable_id = ?", (item.stable_id,)
+    ).fetchone()[0]
+    assert stored == '{"lanes": []}', "the malformed row must not be overwritten"
+    conn.close()

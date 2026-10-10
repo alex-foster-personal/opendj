@@ -21,6 +21,12 @@ class RecordingProvider:
         return self.synced
 
 
+def test_cache_path_refuses_a_traversing_stable_id(tmp_path: Path) -> None:
+    """[if] stable_id escapes lyrics-cache [then] cache_path raises ValueError, [else stop]."""
+    with pytest.raises(ValueError, match="escapes lyrics-cache"):
+        cache.cache_path(tmp_path, "../../etc/passwd")
+
+
 def test_lrc_fetch_is_cached_by_stable_id_and_never_refetched(tmp_path: Path) -> None:
     """If the same stable track id is fetched twice then the provider runs once."""
     track = Track("stable-track", "Artist", "Title", 180)

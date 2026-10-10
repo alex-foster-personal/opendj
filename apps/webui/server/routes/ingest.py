@@ -366,7 +366,12 @@ def unmapped_backlog(*, limit: int | None = None) -> backlog.Backlog:
 # Why a step is skipped in the unmapped scope when the reason is NOT a missing
 # rekordbox id. Vocals are derived from a stem bundle and keyed by the app's
 # own stable id, so telling a user with no rekordbox to import one is false.
+# Stems are keyed by that id too (STEM-63); this scope leaves them out because
+# they are the one opt-in lane (ENRICH-01), not because of what the track is.
 _UNMAPPED_SKIP_REASONS: dict[str, str] = {
+    "stems": "opt-in, so this queue never starts them; once requested "
+             "(Separate on the enrich card, or a stems order for one track) "
+             "they are made for these tracks too",
     "vocals": "derived from a stem bundle, so a track needs stems first; "
               "the coverage drain fills vocals once its stems exist",
 }

@@ -30,6 +30,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from apps.analysis.byte_siblings import canonical_result_or_same_bytes_sibling
 from apps.analysis.canonical import key_lane_stale_but_unpromoted
 
 from .own_lane_store import (
@@ -151,7 +152,9 @@ def apply_own_key_segments(
             payload.pop("key_segments", None)
             _set_dynamic_key_hint(payload, present=False)
             return payload
-        result = canonical_lane_result(conn, stable_id, OWN_KEY_LANE)
+        result = canonical_result_or_same_bytes_sibling(
+            conn, stable_id, OWN_KEY_LANE, canonical_lane_result
+        )
         # Same absent-schema rule as `canonical_lane_result`: no
         # `analysis_canonical` means no lane was ever promoted, so nothing can
         # be stale-but-unpromoted. Unguarded, an unmapped track (key lane now

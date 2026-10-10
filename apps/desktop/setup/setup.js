@@ -270,11 +270,21 @@ function showUnreachable(result, attempts) {
 }
 
 /**
+ * The page path to open on the engine. A shell launched with
+ * `OPENDJ_PERF_PROBE=1` injects `OPENDJ_PERF_PROBE = true`, which turns on the
+ * in-page frame probe (PERFPROBE-02); anything else opens plain /performance.
+ */
+export function performancePagePath(perfProbe) {
+	return perfProbe === true ? '/performance?perfprobe=1' : '/performance';
+}
+
+/**
  * Drive the page. Exported so a harness can run it with an injected
  * fetch and navigate function instead of the real ones.
  */
 export function startBootstrap({
 	origin,
+	pagePath = '/performance',
 	fetchImpl = globalThis.fetch,
 	navigate = (target) => globalThis.location.replace(target),
 	intervalMs = RETRY_INTERVAL_MS
@@ -305,7 +315,7 @@ export function startBootstrap({
 		if (result.reachable) {
 			stopped = true;
 			countdown.textContent = 'Engine found. Opening Open DJ.';
-			navigate(`${origin}/performance`);
+			navigate(`${origin}${pagePath}`);
 			return;
 		}
 		showUnreachable(result, attempts);
@@ -415,7 +425,8 @@ if (typeof document !== 'undefined' && document.getElementById('root') !== null)
 		wireRelaunchButton(supervisor, search);
 	} else {
 		startBootstrap({
-			origin: resolveEngineOrigin(search, globalThis.OPENDJ_ENGINE_ORIGIN)
+			origin: resolveEngineOrigin(search, globalThis.OPENDJ_ENGINE_ORIGIN),
+			pagePath: performancePagePath(globalThis.OPENDJ_PERF_PROBE)
 		});
 	}
 }

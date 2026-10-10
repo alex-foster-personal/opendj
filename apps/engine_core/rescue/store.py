@@ -1,4 +1,4 @@
-"""Adapter over ``apps.rescue.ring`` for RESCUE-04 list/restore HTTP and CLI."""
+"""Adapter over the ``apps.rescue`` contract for RESCUE-04 list/restore HTTP and CLI."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from apps.rescue.ring import RING_SIZE, append_snapshot, read_index
+from apps.rescue.contract import RING_SIZE
+from apps.rescue.http import build_service
 
 SNAPSHOT_ID_PREFIX = "slot-"
 
@@ -50,13 +51,14 @@ def _read_slot_payload(data_dir: Path, slot: int) -> dict[str, Any] | None:
 class RescueStore:
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
+        self._service = build_service()
 
     def list_entries(
         self,
         *,
         now_ms: int,  # noqa: ARG002 - retained for the caller's keyword contract
     ) -> list[RescueRingEntry]:
-        index = read_index(self._data_dir)
+        index = self._service.read_index(self._data_dir)
         rows: list[RescueRingEntry] = []
         for offset in range(RING_SIZE):
             slot = (index.newest_slot - offset) % RING_SIZE
@@ -115,7 +117,7 @@ class RescueStore:
 
     def append(self, *, captured_at_ms: int, payload: dict[str, Any]) -> RescueRingEntry:
         if not isinstance(payload, dict):
-            raise ValueError("rescue snapshot payload must be a JSON object")
+            raise ValueError("rescue snapshot payload must be a JSON object")  # noqa: TRY004 - callers catch ValueError
         body = dict(payload)
         body["captured_at_ms"] = captured_at_ms
         if body.get("reason") not in {"periodic", "transport", "load"}:
@@ -124,7 +126,7 @@ class RescueStore:
             body["app_posture"] = "gig"
         if body.get("schema") != 1:
             body["schema"] = 1
-        result = append_snapshot(self._data_dir, body)
+        result = self._service.append_snapshot(self._data_dir, body)
         slot = int(result["slot"])
         return RescueRingEntry(
             id=snapshot_id_for_slot(slot),

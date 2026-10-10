@@ -24,7 +24,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from apps.feature_flags import FlagStore, load_flags
-from apps.play_analytics.api import router as play_analytics_router
+from apps.play_analytics.http import router as play_analytics_router
 from apps.sets.api import router as sets_router
 from apps.sets.master_tap import MASTER_TAP_CHANNEL_STATE
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
