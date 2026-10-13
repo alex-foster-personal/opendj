@@ -25,3 +25,17 @@
 
 # Every tracked file has a CI seam class (test_every_tracked_file_has_a_class).
 (private path)
+
+# Content of every tracked regular blob for undeclared database authorities and DDL
+# (tests/ exempt). A narrowed head never selects it: replayed on Tue 13 Oct 2026, a change to
+# CHANGELOG.md (8 modules) or apps/webui/server/app.py (528) left it out.
+(private path)
+
+# Every tracked file under apps/ and scripts/ for naive timestamp defaults (D05). Same replay:
+# left out of both selections.
+tests/quality/test_sync_drift_sources.py
+
+# Every tracked file Playwright would load as a config, found by name OR by content, must turn
+# git-info capture off. Selected only when a changed path names a config; a config found by
+# content alone is reached by no link.
+tests/scripts/test_playwright_git_capture_off.py

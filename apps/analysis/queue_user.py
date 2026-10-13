@@ -195,6 +195,10 @@ def artifact_is_fresh(
 ) -> bool:
     if lane == "stems":
         return has_bundle(stable_id, stems_root)
+    if lane == "genre":
+        # Freshness is the stored finding's request digest, known only once the
+        # track's text is built: the genre runner reports it as up_to_date.
+        return False
     path = lyrics_cache.cache_path(data_dir, stable_id)
     loaded = lyrics_cache.load(path)
     if loaded is not None and loaded.stable_id == stable_id:

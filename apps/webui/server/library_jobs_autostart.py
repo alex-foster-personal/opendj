@@ -1,6 +1,7 @@
-"""Daemon drain for user-ordered stems and lyrics jobs (issue #1865).
+"""Daemon drain for user-ordered stems, lyrics and genre jobs (issue #1865).
 
-Two supervisors, one per lane, one running item each. Off the request
+One pass per lane per tick: one running item each for stems and lyrics, a
+small concurrent batch for genre (``apps.analysis.queue_user_genre``). Off the request
 thread. ``create_app`` leaves this OFF so pytest does not spawn workers.
 
 ``MUSIC_DJ_LIBRARY_JOBS`` is a fail-fast enum, ``on`` or ``off``, default on
@@ -16,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.analysis import queue_user, queue_user_runner
+from apps.analysis import queue_user, queue_user_genre, queue_user_runner
 from apps.analysis.queue_user_lanes import USER_JOB_LANES
 from apps.analysis.queue_user_runner import runner_from_environ
 from apps.analysis.store import open_conn
@@ -95,6 +96,15 @@ class LibraryJobsWatcher:
         try:
             queue_user.ensure_user_schema(conn)
             for lane in USER_JOB_LANES:
+                if lane == queue_user_genre.LANE:
+                    queue_user_genre.tick_genre(
+                        conn,
+                        runner_id=f"libjobs-{lane}-{os.getpid()}",
+                        data_dir=self.data_dir,
+                        stems_root=self.stems_root,
+                        dry=runner_from_environ() == "dry",
+                    )
+                    continue
                 queue_user_runner.tick_lane(
                     conn,
                     lane,

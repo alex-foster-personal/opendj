@@ -107,6 +107,7 @@ from .routes import feedback_replies as feedback_replies_routes
 from .routes import feedback_summary as feedback_summary_routes
 from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
+from .routes import genres as genres_routes
 from .routes import grid_provenance as grid_provenance_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
@@ -671,6 +672,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_backfill_routes.router,
         analysis_queue_routes.router,
         library_jobs_routes.router,
+        genres_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
         enrich_routes.router,

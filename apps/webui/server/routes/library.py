@@ -15,7 +15,7 @@ from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server import rb_vendor
 from apps.webui.server.backend import StateBackend
-from apps.webui.server.deps import get_library_data_dir, get_read_state
+from apps.webui.server.deps import get_library_data_dir, get_library_state_db, get_read_state
 from apps.webui.server.library_readiness import (
     LibraryReadinessOut,
     ReadinessAxis,
@@ -129,6 +129,7 @@ def post_row_assets(
     request: Request,
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+    state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
 ) -> RowAssetsOut:
     """The per-row disk reads the library index leaves out, for up to 200 rows (LIBM-172).
 
@@ -139,7 +140,7 @@ def post_row_assets(
     """
     found = backend.get_tracks_bulk(body.ids)
     tracks = [found[sid] for sid in dict.fromkeys(body.ids) if sid in found]
-    rows = rb_vendor.build_track_rows(tracks, data_dir=data_dir)
+    rows = rb_vendor.build_track_rows(tracks, data_dir=data_dir, state_db_path=state_db)
     drain = getattr(request.app.state, "ahead_analysis", None)
     pending = [r["stable_id"] for r in rows if r["preview_b64"] is None and not r["has_rb_mapping"]]
     if drain is not None:

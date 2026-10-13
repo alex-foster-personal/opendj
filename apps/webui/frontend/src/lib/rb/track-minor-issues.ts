@@ -1,5 +1,6 @@
 /** Minor track problems for the error-square indicator (CHROME-03). */
 import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte';
+import { listingGenre } from './genre-source';
 
 export type MinorIssueId =
 	| 'not-on-cloud'
@@ -49,7 +50,7 @@ export function minorIssuesFor(row: BrowserRow): MinorIssue[] {
 		}
 	}
 
-	const genre = row.genre ?? row.rb_meta?.genre ?? null;
+	const genre = listingGenre(row);
 	if ((genre === null || genre.trim() === '') && row.genre_reason) {
 		issues.push({ id: 'missing-genre', label: 'Missing genre' });
 	}

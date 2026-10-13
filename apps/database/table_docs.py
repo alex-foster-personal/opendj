@@ -61,7 +61,7 @@ TABLE_DOCS: dict[str, str] = {
         "matches no tracks row at all, so there is no stable_id to hang a "
         "track_fields row on. unmatched_reason records why; "
         "promoted_stable_id is the one-way door into track_fields once a "
-        "match is later found (see docs/analysis-retention.md)."
+        "match is later found (see (private path))."
     ),
     "track_energy_segments": (
         "Time-series destination for a source's energy-over-time data "
@@ -69,7 +69,7 @@ TABLE_DOCS: dict[str, str] = {
         "time-series-vs-scalar convention. track_fields is one row per "
         "(stable_id, field_name) and cannot hold a series."
     ),
-    # ----- native-analysis v1 (specs/native-analysis-v1.md section 3) ----
+    # ----- native-analysis v1 ((private path) section 3) ----
     "analysis_canonical": (
         "Which analysis row is canonical for one track and one selection lane. "
         "Recomputed from every row on each write by one rule (highest producer "
@@ -109,6 +109,39 @@ TABLE_DOCS: dict[str, str] = {
         "against a superseded beatgrid never reads as canonical. Consulted "
         "by apps.analysis.canonical._eligible_rows."
     ),
+    # ----- genre findings store (GENRE-03, machine-local) ---------------------
+    "genre_findings": (
+        "One row per (track, provider): that provider's genre for the track in "
+        "the Beatport taxonomy, or status unknown with the reason. Computed "
+        "providers (odj-fused, jev, deepseek) are written by "
+        "apps.genre_infer.pipeline; any other provider (beatport, agent.*) is "
+        "attached from outside through the genre routes, CLI or MCP tools. The "
+        "Library shows the first provider in the configured precedence with a "
+        "genre. Machine-local: not in the sync set."
+    ),
+    "genre_vectors": (
+        "JEV's full probability vector over the genre taxonomy for a track, "
+        "kept for the similarity query "
+        "(apps.genre_infer.findings.similar_tracks). Only vectors of the "
+        "current taxonomy version are read. Machine-local."
+    ),
+    "genre_search_cache": (
+        "The web-search snippets fetched for one frozen query string, so a "
+        "track is searched (and paid for) once. Keyed on the query and its "
+        "query version. Machine-local."
+    ),
+    "genre_config": (
+        "Genre settings as key/value JSON: the display precedence, auto_infer, "
+        "write_file_tags and write_roots. Read by "
+        "apps.genre_infer.findings.read_config; absent keys take the defaults. "
+        "Machine-local."
+    ),
+    "genre_tag_writes": (
+        "The undo journal for genre tags written into audio files (GENRE-05): "
+        "what was written where, the byte backup that restores it, and whether "
+        "it was undone. Written by apps.genre_infer.tag_write before the file "
+        "is replaced. Machine-local."
+    ),
     "analysis_field_verification": (
         "How each field was verified, stored next to the values it "
         "produced: cross-source agreement, a one-sided single-source "
@@ -127,7 +160,7 @@ TABLE_DOCS: dict[str, str] = {
         "into and out of it. Archive is a tombstone (deleted_at), never a "
         "DELETE."
     ),
-    # ----- v10 (specs/karaoke-lyrics-operational-plan.md D13.1) ------------
+    # ----- v10 ((private path) D13.1) ------------
     "lyric_verdict": (
         "One row per track holding the karaoke lyrics verdict (vocal, "
         "sparse, no-lyrics or unknown), the human override that survives a "
@@ -237,7 +270,7 @@ TABLE_DOCS: dict[str, str] = {
     ),
     # ----- apps.shared.state.schema.FOREIGN_AUTHORITY_TABLES --------------
     # Real tables other modules write into this same file. D2
-    # (specs/cloudsync-spec.md) plans to fold these into MIGRATIONS in a
+    # ((private path)) plans to fold these into MIGRATIONS in a
     # later round; until then they are documented here so a
     # fully-provisioned state.db does not break the generator.
     "pairings": (

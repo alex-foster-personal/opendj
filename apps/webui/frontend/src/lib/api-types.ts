@@ -2487,6 +2487,194 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/genres": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Genres */
+        get: operations["get_genres_api_v1_genres_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_v1_genres_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_v1_genres_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue */
+        post: operations["enqueue_api_v1_genres_enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Finding */
+        post: operations["attach_finding_api_v1_genres_findings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/findings/{stable_id}/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Finding */
+        delete: operations["remove_finding_api_v1_genres_findings__stable_id___provider__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/infer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Infer Now */
+        post: operations["infer_now_api_v1_genres_infer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Genre Status */
+        get: operations["genre_status_api_v1_genres_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/tags/journal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tag Journal */
+        get: operations["tag_journal_api_v1_genres_tags_journal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/tags/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Tag */
+        post: operations["undo_tag_api_v1_genres_tags_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/tags/write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Write Tag */
+        post: operations["write_tag_api_v1_genres_tags_write_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/genres/{stable_id}/similar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Similar */
+        get: operations["similar_api_v1_genres__stable_id__similar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -9776,6 +9964,17 @@ export interface components {
             version: string;
             waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
         };
+        /** EnqueueIn */
+        EnqueueIn: {
+            /**
+             * All Missing
+             * @description Queue every live track with local audio and no fused genre yet.
+             * @default false
+             */
+            all_missing: boolean;
+            /** Stable Ids */
+            stable_ids?: string[] | null;
+        };
         /**
          * EnrollCredentialModel
          * @description The credential the joining machine presents. Rides the BODY, not a header.
@@ -10145,6 +10344,29 @@ export interface components {
             stable_id: string;
             /** Would Change */
             would_change: boolean;
+        };
+        /** FindingIn */
+        FindingIn: {
+            /** Confidence */
+            confidence: number;
+            /** Genre */
+            genre: string;
+            /** Model */
+            model?: string | null;
+            /** Note */
+            note?: string | null;
+            /**
+             * Provider
+             * @description Your source's id, e.g. 'beatport'. Open DJ's own ids are refused.
+             */
+            provider: string;
+            /**
+             * Source
+             * @description Where the genre came from: a URL or a name.
+             */
+            source: string;
+            /** Stable Id */
+            stable_id: string;
         };
         /** FlagOut */
         FlagOut: {
@@ -10900,6 +11122,16 @@ export interface components {
             /** Table */
             table: string;
         };
+        /** InferIn */
+        InferIn: {
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Stable Ids */
+            stable_ids: string[];
+        };
         /**
          * IoDeviceAccessOut
          * @description IOPIN-14: whether the device lists could be read, and what to do if not.
@@ -11243,7 +11475,7 @@ export interface components {
              * Lane
              * @enum {string}
              */
-            lane: "stems" | "lyrics";
+            lane: "stems" | "lyrics" | "genre";
             /**
              * Placement
              * @default next
@@ -14444,6 +14676,8 @@ export interface components {
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            /** Genre Source */
+            genre_source?: string | null;
             grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
@@ -15708,6 +15942,16 @@ export interface components {
              */
             sync_mode: "bar" | "beat";
         };
+        /** TagUndoIn */
+        TagUndoIn: {
+            /** Write Id */
+            write_id: number;
+        };
+        /** TagWriteIn */
+        TagWriteIn: {
+            /** Stable Id */
+            stable_id: string;
+        };
         /**
          * TempoPrefOut
          * @description PREF-01: a track's user-set preferred tempo plus its playable range.
@@ -15917,6 +16161,8 @@ export interface components {
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            /** Genre Source */
+            genre_source?: string | null;
             grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
@@ -16069,6 +16315,8 @@ export interface components {
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            /** Genre Source */
+            genre_source?: string | null;
             grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
@@ -16358,6 +16606,8 @@ export interface components {
             genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            /** Genre Source */
+            genre_source?: string | null;
             grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
@@ -21915,6 +22165,398 @@ export interface operations {
             };
         };
     };
+    get_genres_api_v1_genres_get: {
+        parameters: {
+            query: {
+                ids: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_config_api_v1_genres_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_config_api_v1_genres_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_api_v1_genres_enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnqueueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_finding_api_v1_genres_findings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_finding_api_v1_genres_findings__stable_id___provider__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    infer_now_api_v1_genres_infer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InferIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    genre_status_api_v1_genres_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    tag_journal_api_v1_genres_tags_journal_get: {
+        parameters: {
+            query?: {
+                stable_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_tag_api_v1_genres_tags_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagUndoIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_tag_api_v1_genres_tags_write_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagWriteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    similar_api_v1_genres__stable_id__similar_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     engine_health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -22444,7 +23086,7 @@ export interface operations {
         parameters: {
             query: {
                 /** @description stems or lyrics */
-                lane: "stems" | "lyrics";
+                lane: "stems" | "lyrics" | "genre";
                 /** @description settled to include terminals */
                 include?: string | null;
             };
@@ -22512,7 +23154,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                lane: "stems" | "lyrics";
+                lane: "stems" | "lyrics" | "genre";
                 stable_id: string;
             };
             cookie?: never;
@@ -22548,7 +23190,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                lane: "stems" | "lyrics";
+                lane: "stems" | "lyrics" | "genre";
                 stable_id: string;
             };
             cookie?: never;

@@ -33,6 +33,7 @@ FAILURES ARE UNKNOWN. No key, a failed call or a malformed answer becomes
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import math
@@ -128,7 +129,11 @@ def load_tag_questions(path: Path) -> list[TagQuestion]:
     out: list[TagQuestion] = []
     seen: set[str] = set()
     for item in raw:
-        name, question = str(item["name"]).strip(), str(item["question"]).strip()
+        fields = (item.get("name"), item.get("question")) if isinstance(item, dict) else (None, None)
+        # A user-edited file: null, a number or a list must fail, not become the text "None".
+        if not all(isinstance(f, str) for f in fields):
+            raise ValueError(f"bad tag question {item!r}: name and question must be strings")
+        name, question = (str(f).strip() for f in fields)
         if not name or not question or name == "genre" or name in seen:
             raise ValueError(f"bad tag question {item!r}: needs a unique name (not 'genre') and a question")
         seen.add(name)
@@ -143,6 +148,21 @@ def build_request(state: str, tags: Iterable[TagQuestion], model: str) -> dict[s
     for tag in tags:
         questions[f"tag:{tag.name}"] = {"type": "noul", "instructions": tag.question}
     return {"model": model, "state": state, "questions": questions}
+
+
+def resolve_model(model: str | None = None) -> str:
+    """The model to ask: the argument, else ``JEV_MODEL``, else the default."""
+    return model or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
+
+
+def request_digest(state: str, tags: Iterable[TagQuestion], model: str) -> str:
+    """A stable hash of the exact request, stored with each answer.
+
+    A track is skipped as answered only while this matches, so a new model,
+    edited track text or reworded tag questions all re-ask it.
+    """
+    body = json.dumps(build_request(state, tags, model), sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(body.encode()).hexdigest()
 
 
 def _http_post(body: dict[str, Any], key: str) -> dict[str, Any]:
@@ -223,7 +243,8 @@ def parse_answer(doc: Any, tags: Iterable[TagQuestion]) -> dict[str, Any]:
     return {
         "status": "ok",
         "family": family,
-        "confidence": round(confidence, 4),
+        # Raw, not rounded: rounding could lift a value just under the floor onto it.
+        "confidence": confidence,
         "probabilities": {k: round(v, 4) for k, raw in probs.items() if (v := _prob(raw)) is not None},
         "tags": tag_p,
         "model": doc.get("model"),
@@ -241,7 +262,7 @@ def classify(
 ) -> dict[str, dict[str, Any]]:
     """Ask JEV about every track in ``states`` (stable_id -> state text), one call per track."""
     key = key if key is not None else os.environ.get(KEY_ENV, "")
-    model = model or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
+    model = resolve_model(model)
     if not key:
         return {sid: _unknown(f"no {KEY_ENV} in the environment") for sid in states}
 
@@ -252,9 +273,12 @@ def classify(
         if len(state) > MAX_STATE_CHARS:
             return sid, _unknown("state too large for JEV's context")
         try:
-            return sid, parse_answer(_http_post(build_request(state, tags, model), key), tags)
+            answer = parse_answer(_http_post(build_request(state, tags, model), key), tags)
         except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, OSError) as exc:
             return sid, _unknown(f"call failed: {type(exc).__name__}")
+        if answer["status"] == "ok":
+            answer["request"] = request_digest(state, tags, model)
+        return sid, answer
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         return dict(pool.map(one, states.items()))
@@ -272,4 +296,6 @@ __all__ = [
     "classify",
     "load_tag_questions",
     "parse_answer",
+    "request_digest",
+    "resolve_model",
 ]

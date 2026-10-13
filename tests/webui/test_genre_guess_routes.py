@@ -122,3 +122,31 @@ def test_library_rows_serve_the_guess_only_for_untagged_tracks(tmp_path: Path) -
     assert [r["genre_guess"]["family"] for r in found.json()["items"]] == ["drum-and-bass"]
     assert rows["t-tagged"]["genre"] == "House"
     assert rows["t-tagged"]["genre_guess"] is None
+
+
+def test_a_tag_hidden_by_the_genre_precedence_still_suppresses_the_guess(tmp_path: Path) -> None:
+    """[if] the precedence hides a track's library tag [then] the row shows no genre and still no guess, [else stop]."""
+    from fastapi.testclient import TestClient
+
+    from apps.webui.server.app import create_app
+    from apps.webui.server.sqlite_backend import SqliteBackend
+
+    data, state = library(tmp_path)
+    answer = jev.parse_answer(captured("dnb_with_tag")["response"], [WARMUP])
+    cli._jev_write(data, {"t-tagged": answer, "t-bare": answer}, [WARMUP], 0.8)
+    app = create_app(
+        backend=SqliteBackend(state),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        state_db_path=str(state),
+        mount_frontend=False,
+    )
+    with TestClient(app) as client:
+        before = {r["stable_id"]: r for r in client.get("/api/v1/tracks").json()["items"]}
+        assert before["t-tagged"]["genre"] == "House" and before["t-tagged"]["genre_guess"] is None
+        assert client.put("/api/v1/genres/config", json={"precedence": ["beatport"]}).status_code == 200
+        rows = {r["stable_id"]: r for r in client.get("/api/v1/tracks").json()["items"]}
+    assert rows["t-tagged"]["genre"] is None
+    assert rows["t-tagged"]["genre_guess"] is None
+    # Control: an untagged track still gets its guess under the same precedence.
+    assert rows["t-bare"]["genre_guess"] is not None

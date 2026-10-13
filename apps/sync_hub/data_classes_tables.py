@@ -5,7 +5,7 @@ the foreign authorities that write into the same file),
 ``apps.engine_core.store.schema.ALL_TABLES`` (the consolidated engine
 ladder), its ``ALL_CACHE_TABLES`` (``cache.db``) and its
 ``VENDOR_SIDECAR_TABLES`` (rekordbox ``master.db``). Coverage is enforced by
-``tests/cloudsync/test_data_classes.py``, which derives the table sets from
+``(private path)``, which derives the table sets from
 that schema code, never from this file.
 """
 
@@ -296,6 +296,23 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "A batch, its items, and records whose dependency moved: another machine "
         "re-enqueues its own work and does not inherit this queue.",
         (logical("engine-analysis"),),
+    ),
+    fixed(
+        "genre-findings-store",
+        "Genre findings, vectors, search cache, settings and tag-write journal",
+        state_tables(
+            "genre_findings",
+            "genre_vectors",
+            "genre_search_cache",
+            "genre_config",
+            "genre_tag_writes",
+        ),
+        "machine_local",
+        "Per-machine by decision (the genre findings ADR, GENRE-03): findings are "
+        "recomputable from paid calls this machine made, the tag-write journal "
+        "names file paths and backups on this disk, and the settings name local "
+        "write roots. Another machine infers its own.",
+        (logical("library-tracks"),),
     ),
     fixed(
         "file-fingerprint-cache",

@@ -1,4 +1,4 @@
-"""User-ordered job lanes (stems, lyrics). Not analysis record lanes.
+"""User-ordered job lanes (stems, lyrics, genre). Not analysis record lanes.
 
 Issue #1865 / PERFBATCH-05. These names must never join
 :data:`apps.analysis.lane_enums.LANES`: mixing them would drag stems and
@@ -7,14 +7,16 @@ beatgrid cascade.
 """
 from __future__ import annotations
 
-USER_JOB_LANES: tuple[str, str] = ("stems", "lyrics")
+USER_JOB_LANES: tuple[str, ...] = ("stems", "lyrics", "genre")
 USER_BATCH_IDS: dict[str, str] = {
     "stems": "ub_stems",
     "lyrics": "ub_lyrics",
+    "genre": "ub_genre",
 }
 USER_BACKENDS: dict[str, str] = {
     "stems": "user.stems",
     "lyrics": "user.lyrics",
+    "genre": "user.genre",
 }
 
 SKIP_UP_TO_DATE: str = "up_to_date"

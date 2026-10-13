@@ -66,6 +66,7 @@ from apps.analysis import store as analysis_store
 from apps.database import generate_agents_md
 from apps.dedup import contract as dedup_contract
 from apps.engine_core.store import schema as engine_schema
+from apps.genre_infer import findings as genre_findings
 from apps.launcher.scripts import bootstrap_db as launcher_bootstrap
 from apps.shared import fingerprints
 from apps.shared.pairings import schema_sql as pairings_sql
@@ -297,6 +298,12 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/analysis/queue_stale.py",
         lambda conn, _path: analysis_queue_stale.ensure_stale_table(conn),
+    ),
+    # The genre findings store: one ensure_schema, reached from the genre
+    # routes, the genre lane and the genre CLI.
+    Authority(
+        "apps/genre_infer/findings.py",
+        lambda conn, _path: genre_findings.ensure_schema(conn),
     ),
     Authority(
         "apps/shared/pairings/schema_sql.py",

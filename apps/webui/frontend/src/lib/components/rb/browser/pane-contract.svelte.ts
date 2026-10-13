@@ -31,6 +31,7 @@ import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$
 import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
+import { listingGenre } from '$lib/rb/genre-source';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
@@ -87,6 +88,8 @@ export interface BrowserRow extends Pick<
 	genre: string | null;
 	/** Explains an empty genre cell (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
+	/** GENRE-04: which provider the shown genre came from (user, beatport, odj-fused, library-tag...). */
+	genre_source?: string | null;
 	/** GENRE-02: a JEV genre-family guess; shown only while genre is empty. */
 	genre_guess?: { family: string; confidence: number; source: 'jev' } | null;
 	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
@@ -514,7 +517,7 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 				artist: r.artist,
 				comments: r.comments,
 				key: r.key,
-				genre: r.genre ?? r.rb_meta?.genre ?? null,
+				genre: listingGenre(r),
 				bpm: r.bpm,
 				rating: r.rating
 			},
@@ -535,7 +538,7 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'comments') return row.comments;
 	else if (key === 'time') return row.duration_ms;
 	else if (key === 'energy') return row.energy;
-	else if (key === 'genre') return row.genre ?? row.rb_meta?.genre ?? null;
+	else if (key === 'genre') return listingGenre(row);
 	else if (key === 'lyrics') return lyricsSortValue(row.lyrics);
 	else if (key === 'grid') return gridFlagSortValue(row);
 	throw new Error('AutoPlay ranks are not cell values');

@@ -4,7 +4,7 @@ Kept apart from the generator because these are the only hand-written words in
 ``AGENTS.md``; everything else is introspected from the live database and
 cannot go stale.  A table added to the schema without a line here shows up in
 the rendered document as ``UNDOCUMENTED`` and fails
-``tests/database/test_agents_md.py``, which is the point: a schema an agent
+``(private path)``, which is the point: a schema an agent
 cannot read is a schema an agent will guess at.
 
 Write for a reader who has never seen this project and is about to write a
@@ -25,7 +25,7 @@ TABLES: dict[str, str] = {
         "One place a track's audio has been seen, so a track can have several "
         "(a local copy, a USB export, a since-deleted path). Absence of a row "
         "means the audio is unresolvable, which is what the 'present' "
-        "denominator in docs/library-availability.md counts."
+        "denominator in (private path) counts."
     ),
     "track_availability": (
         "One track's current playability verdict (present, absent, "
@@ -190,6 +190,39 @@ TABLES: dict[str, str] = {
         "analysis_canonical until it is recomputed, so a key computed against a "
         "superseded beatgrid never reads as canonical. Written by the queue's "
         "dependency cascade, read by apps.analysis.canonical."
+    ),
+    # ----- genre findings store (GENRE-03, machine-local) ---------------------
+    "genre_findings": (
+        "One row per (track, provider): that provider's genre for the track in "
+        "the Beatport taxonomy, or status unknown with the reason. Computed "
+        "providers (odj-fused, jev, deepseek) are written by "
+        "apps.genre_infer.pipeline; any other provider (beatport, agent.*) is "
+        "attached from outside through the genre routes, CLI or MCP tools. The "
+        "Library shows the first provider in the configured precedence with a "
+        "genre. Machine-local: not in the sync set."
+    ),
+    "genre_vectors": (
+        "JEV's full probability vector over the genre taxonomy for a track, "
+        "kept for the similarity query "
+        "(apps.genre_infer.findings.similar_tracks). Only vectors of the "
+        "current taxonomy version are read. Machine-local."
+    ),
+    "genre_search_cache": (
+        "The web-search snippets fetched for one frozen query string, so a "
+        "track is searched (and paid for) once. Keyed on the query and its "
+        "query version. Machine-local."
+    ),
+    "genre_config": (
+        "Genre settings as key/value JSON: the display precedence, auto_infer, "
+        "write_file_tags and write_roots. Read by "
+        "apps.genre_infer.findings.read_config; absent keys take the defaults. "
+        "Machine-local."
+    ),
+    "genre_tag_writes": (
+        "The undo journal for genre tags written into audio files (GENRE-05): "
+        "what was written where, the byte backup that restores it, and whether "
+        "it was undone. Written by apps.genre_infer.tag_write before the file "
+        "is replaced. Machine-local."
     ),
     "analysis_source_default": (
         "The persisted per-lane source (rbx or own), one row per selection lane, "

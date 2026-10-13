@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from .. import rb_vendor, search_index
 from ..backend import StateBackend
-from ..deps import get_library_data_dir, get_read_state
+from ..deps import get_library_data_dir, get_library_state_db, get_read_state
 from ..models import TrackRowOut
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -41,7 +41,7 @@ class SearchResults(BaseModel):
 
 def _state_db_path(request: Request) -> Path:
     # Same lookup health.py uses for the same app.state field.
-    return Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
+    return Path(getattr(request.app.state, "state_db_path", "(private path)"))
 
 
 @router.get("", response_model=SearchResults)
@@ -59,6 +59,7 @@ def search_collection(
     state_db_path: Path = Depends(_state_db_path),  # noqa: B008  # FastAPI DI
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+    state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
 ) -> SearchResults:
     if not q.strip():
         return SearchResults(query=q, items=[], total=0, next_offset=None)
@@ -94,7 +95,7 @@ def search_collection(
     # delete (real, if rare, race) -- drop it rather than render a
     # half-hydrated row; membership order (bm25 rank) is preserved.
     ordered = [tracks_map[sid] for sid in stable_ids if sid in tracks_map]
-    rows = rb_vendor.build_track_rows(ordered, data_dir=data_dir)
+    rows = rb_vendor.build_track_rows(ordered, data_dir=data_dir, state_db_path=state_db)
     items = [
         SearchHit(**row, match_context=context_by_id.get(row["stable_id"], ""))
         for row in rows

@@ -34,7 +34,7 @@ from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
 from .. import boot_grace, rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
-from ..deps import get_library_data_dir, get_read_state, get_write_state
+from ..deps import get_library_data_dir, get_library_state_db, get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
@@ -379,6 +379,7 @@ def _listing_items(
         tracks,
         jobs_store=getattr(request.app.state, "jobs_store", None),
         data_dir=get_library_data_dir(request),
+        state_db_path=state_db_path,
     )
     stable_ids = [t.stable_id for t in tracks]
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
@@ -388,7 +389,7 @@ def _listing_items(
     for track, row in zip(tracks, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
             continue
-        if not include_non_music and is_non_music(track, row.get("genre")):
+        if not include_non_music and is_non_music(track, row.get("tag_genre")):
             non_music_hidden += 1
             continue
         base = _track_to_out(
@@ -443,6 +444,7 @@ def _listing_items(
                 is_remix=bool(row.get("is_remix")),
                 is_radio_edit=bool(row.get("is_radio_edit")),
                 genre=row.get("genre"),
+                genre_source=row.get("genre_source"),
                 genre_reason=row.get("genre_reason"),
                 genre_guess=row.get("genre_guess"),
             )
@@ -468,12 +470,13 @@ def _index_rows(
         tracks,
         jobs_store=getattr(request.app.state, "jobs_store", None),
         data_dir=get_library_data_dir(request),
+        state_db_path=get_library_state_db(request),
         with_row_assets=False,
     )
     kept = [
         (track, row)
         for track, row in zip(tracks, rows, strict=True)
-        if include_non_music or not is_non_music(track, row.get("genre"))
+        if include_non_music or not is_non_music(track, row.get("tag_genre"))
     ]
     return [
         {
@@ -515,6 +518,7 @@ def _index_rows(
             "is_remix": bool(row.get("is_remix")),
             "is_radio_edit": bool(row.get("is_radio_edit")),
             "genre": row.get("genre"),
+            "genre_source": row.get("genre_source"),
             "genre_reason": row.get("genre_reason"),
             "genre_guess": row.get("genre_guess"),
         }

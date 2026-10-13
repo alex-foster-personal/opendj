@@ -35,6 +35,8 @@
 	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
 	import { isPairedRow } from '$lib/rb/pairing-row';
 	import {
+		genreCellTitle,
+		listingGenre,
 		analysisIssuesFor,
 		bpmGridHoverText,
 		errColumnTitle,
@@ -643,10 +645,11 @@
 			.filter((t) => t !== '');
 	}
 
-	/** The Genre cell's raw text: the listing's own genre, else rekordbox's. */
+	/** The Genre cell's raw text: the listing's choice, else rekordbox's unless the precedence hides it. */
 	function genreText(row: BrowserRow): string {
-		return row.genre ?? row.rb_meta?.genre ?? '';
+		return listingGenre(row) ?? '';
 	}
+
 
 	function genreTagStyle(tag: string): string | undefined {
 		const color = genreHoverColor(tag);
@@ -2253,7 +2256,12 @@
 						</td>
 						<!-- LIBUX-36: a missing genre is a blank cell; why it is missing
 						     (STANDALONE-05) is the hover title, never cell text. -->
-						<td class="c-genre" title={genreText(row) || row.genre_reason || undefined}>
+						<!-- GENRE-04: the hover names the provider the shown genre came from. -->
+						<td
+							class="c-genre"
+							title={genreCellTitle(genreText(row), row.genre_source, row.genre_reason)}
+							data-genre-source={row.genre_source ?? undefined}
+						>
 							{#if splitGenreTags(genreText(row)).length > 0}
 								{#each splitGenreTags(genreText(row)) as tag, i (tag + String(i))}
 									{#if i > 0}<span class="genre-sep">, </span>{/if}

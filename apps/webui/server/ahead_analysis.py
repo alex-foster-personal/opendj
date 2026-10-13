@@ -847,6 +847,18 @@ def _last_line(text: str) -> str:
     return pick[:300]
 
 
+def _failure_text(out: str, err: str) -> str:
+    """Choose the stream that names why a queue call failed.
+
+    The queue CLI prints refusals to stdout while startup and other log lines
+    go to stderr. A stdout refusal therefore outranks stderr unless stderr
+    carries its own explicit error.
+    """
+    if "[ERROR]" in out and "[ERROR]" not in err:
+        return out
+    return err or out
+
+
 def run_lane_via_queue(
     db: str, conn_factory: Callable[[], sqlite3.Connection]
 ) -> Callable[[str, str, list[str]], dict[str, str]]:
@@ -867,12 +879,12 @@ def run_lane_via_queue(
             ["enqueue", "--lane", lane, "--backend", backend, "--note", "ahead-analysis", *id_args], db
         )
         if code != 0:
-            return dict.fromkeys(ids, f"enqueue failed: {_last_line(err or out)}")
+            return dict.fromkeys(ids, f"enqueue failed: {_last_line(_failure_text(out, err))}")
         batch_id = json.loads(out)["batch_id"]
         code, out, err = _queue_cli(["run", "--batch-id", batch_id, "--backend", backend], db)
         done = done_ids(conn_factory, backend)
         reasons = _item_reasons(db, batch_id)
-        fallback = f"queue run exit {code}: {_last_line(err or out)}"
+        fallback = f"queue run exit {code}: {_last_line(_failure_text(out, err))}"
         return {sid: reasons.get(sid) or fallback for sid in ids if sid not in done}
 
     return run

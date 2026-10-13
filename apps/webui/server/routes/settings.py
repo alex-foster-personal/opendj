@@ -14,6 +14,7 @@ Anything the running process cannot actually introspect is reported with
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -23,6 +24,7 @@ from starlette.routing import Mount
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.engine_core.host_info import HOST_INFO_STATE_ATTR
+from apps.genre_infer import service as genre_service
 from apps.shared.paths import DATA_DIR, STATE_DIR
 from apps.shared.perf_tier import HostFacts, read_override_from_prefs, resolve_tier
 from apps.shared.runtime_policy import settings_items as runtime_policy_items
@@ -194,6 +196,15 @@ def get_settings(request: Request) -> SettingsOut:
             ],
         ),
         SettingsGroup(group="Feature toggles", items=toggle_items),
+        SettingsGroup(
+            group="Genre inference",
+            items=[
+                SettingItem(key=key, value=value, note=note)
+                for key, value, note in genre_service.settings_items(
+                    Path(str(getattr(state, "state_db_path", STATE_DIR / "state.db")))
+                )
+            ],
+        ),
     ])
 
 

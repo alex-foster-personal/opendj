@@ -5,6 +5,7 @@
     python -m apps.genre_infer suggest [--min-confidence 0.6]  # untagged tracks only
     python -m apps.genre_infer show ID
     python -m apps.genre_infer jev [--limit 500]                # JEV guesses, untagged tracks only
+    python -m apps.genre_infer infer|findings|attach|similar|... # GENRE-03..07, see cli_genres.py
 
 Labels are the wheel's simple genre FAMILIES (``apps/library_wheel/genre_families.py``)
 of each track's tag, resolved with the wheel's own precedence
@@ -29,7 +30,7 @@ from apps.library_wheel.contract import LibraryWheelService
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import jev, jev_store, store
+from . import cli_genres, jev, jev_store, store
 from .classify import GenreModel, suggest, train
 
 RUNNER = Path(__file__).with_name("clap_runner.py")
@@ -229,12 +230,19 @@ def _tag_doc(tags: list[jev.TagQuestion]) -> list[dict[str, str]]:
     return [{"name": t.name, "question": t.question} for t in tags]
 
 
-def _answered(data_dir: Path, tags: list[jev.TagQuestion]) -> set[str]:
-    """Tracks already answered (status ok) under these exact tag questions."""
-    doc = jev_store.read_suggestions(data_dir)
-    if doc.get("tags", []) != _tag_doc(tags):
-        return set()
-    return {sid for sid, r in doc["suggestions"].items() if isinstance(r, dict) and r.get("status") == "ok"}
+def _answered(data_dir: Path, digests: dict[str, str]) -> set[str]:
+    """Tracks whose stored ``ok`` answer was made for exactly the request we would send now.
+
+    The digest covers the model, the track text and the tag questions, so a
+    change to any of them re-asks the track (an answer with no digest, from
+    before digests were stored, is re-asked once).
+    """
+    stored = jev_store.read_suggestions(data_dir)["suggestions"]
+    return {
+        sid
+        for sid, digest in digests.items()
+        if isinstance(r := stored.get(sid), dict) and r.get("status") == "ok" and r.get("request") == digest
+    }
 
 
 def _jev_write(data_dir: Path, results: dict, tags: list[jev.TagQuestion], min_confidence: float) -> list[str]:
@@ -289,19 +297,20 @@ def _cmd_jev(args: argparse.Namespace) -> int:
     # Only tracks with no genre tag at all: a tag the wheel cannot map is still
     # a tag, and its row would never serve the guess (GENRE-02).
     allowed = set(untagged)
-    if args.stable_id:
-        ids = [sid for sid in args.stable_id if sid in allowed]
-    else:
-        # Skip tracks already answered, so each run's --limit batch moves on to
-        # new tracks instead of paying for the same first batch again.
-        done = _answered(data_dir, tags)
-        ids = [sid for sid in untagged if sid not in done]
+    ids = [sid for sid in args.stable_id if sid in allowed] if args.stable_id else untagged
     conn = state_db.open_ro(state)
     try:
-        facts = jev_store.track_facts(conn, ids[: args.limit])
+        states = {sid: jev.build_state(f) for sid, f in jev_store.track_facts(conn, ids).items()}
     finally:
         conn.close()
-    results = jev.classify({sid: jev.build_state(f) for sid, f in facts.items()}, tags, workers=args.workers)
+    if not args.stable_id:
+        # Skip tracks answered for this exact request, so each run's --limit batch
+        # moves on to new tracks instead of paying for the same first batch again.
+        model = jev.resolve_model()
+        done = _answered(data_dir, {sid: jev.request_digest(st, tags, model) for sid, st in states.items()})
+        ids = [sid for sid in ids if sid not in done]
+    batch = {sid: states[sid] for sid in ids[: args.limit] if sid in states}
+    results = jev.classify(batch, tags, workers=args.workers)
     served = _jev_write(data_dir, results, tags, args.min_confidence)
     return _jev_report(results, served, len(untagged), args.min_confidence)
 
@@ -360,8 +369,11 @@ def main(argv: list[str] | None = None, *, wheel: LibraryWheelService | None = N
     j.add_argument("--min-confidence", type=_probability, default=jev.DEFAULT_MIN_CONFIDENCE)
     j.add_argument("--workers", type=int, default=8)
     j.set_defaults(func=_cmd_jev)
+    cli_genres.register(sub)
     args = ap.parse_args(argv)
-    args.wheel = wheel if wheel is not None else _default_wheel()
+    args.data_path, args.state_path, args.master_path = _paths(args)
+    if getattr(args, "needs_wheel", True):
+        args.wheel = wheel if wheel is not None else _default_wheel()
     return int(args.func(args))
 
 

@@ -1,4 +1,4 @@
-"""In-app stems and lyrics job ordering over HTTP (PERFBATCH-05, #1865).
+"""In-app stems, lyrics and genre job ordering over HTTP (PERFBATCH-05, #1865).
 
 Every control has a matching CLI subcommand
 (``python -m apps.analysis.queue_cli user-*``) and a UI surface
@@ -33,7 +33,7 @@ from ..deps import get_write_state
 
 router = APIRouter(prefix="/library-jobs", tags=["library-jobs"])
 
-Lane = Literal["stems", "lyrics"]
+Lane = Literal["stems", "lyrics", "genre"]
 Placement = Literal["next", "tail"]
 
 

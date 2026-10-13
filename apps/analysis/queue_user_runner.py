@@ -92,6 +92,8 @@ def run_claimed(
     execute_lyrics: ExecuteFn | None = None,
 ) -> str:
     """Finish one claimed item. Returns the terminal state written."""
+    if item.lane not in ("stems", "lyrics"):
+        raise ValueError(f"run_claimed drains stems and lyrics; {item.lane!r} has its own runner")
     batch_id = USER_BATCH_IDS[item.lane]
     runner_id = item.runner_id or ""
     if item.lane == "lyrics":

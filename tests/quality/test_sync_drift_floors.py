@@ -2,7 +2,7 @@
 
 Companion to test_sync_drift_lint.py, which proves each individual check can
 FAIL. These tests attack the three ways a run can be green for the wrong
-reason (``.claude/rules/verification.md``):
+reason (``(private path)``):
 
   - THE SUBJECT. A scan that skipped an authority, a ladder, or the docs
     introspection must abort rather than return. Each floor is asserted to
@@ -343,6 +343,8 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # classified by nobody.
         "apps/analysis/queue_store.py": "analysis_queue_item",
         "apps/analysis/queue_stale.py": "analysis_stale",
+        # The genre findings store (GENRE-03), additive on the same state.db.
+        "apps/genre_infer/findings.py": "genre_findings",
         "apps/shared/pairings/schema_sql.py": "pairings",
         # The same module's SECOND entry point, listed separately because it
         # is a separate ladder with its own version counter. Naming the module

@@ -8,11 +8,11 @@ from pydantic import BaseModel, Field, field_validator, model_serializer, model_
 from pydantic.json_schema import SkipJsonSchema
 
 from .models_grid_quality import GridQualityRowOut
-from .models_tempo_pref import TempoPrefOut, TempoPrefPatch
 
 # PREFLIGHT-01's boot-gate schemas live in their own module (models.py size budget);
 # re-exported here so every existing import keeps working.
 from .models_preflight import PreflightCheckOut, PreflightOut
+from .models_tempo_pref import TempoPrefOut, TempoPrefPatch
 
 FileAvailabilityStatus = Literal[
     "present",
@@ -275,6 +275,9 @@ class TrackListItemOut(TrackOut):
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
     # the cell is empty (no file tag vs no rekordbox genre).
     genre: str | None = None
+    # GENRE-04: which provider the shown genre came from (user, beatport,
+    # odj-fused, library-tag, ...); None when there is no genre.
+    genre_source: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
 
@@ -442,6 +445,7 @@ class TrackRowOut(BaseModel):
     rating: int | None
     duration_ms: int | None
     genre: str | None
+    genre_source: str | None = None
     genre_reason: str | None = None
     genre_guess: GenreGuessOut | None = None
     comments: str | None

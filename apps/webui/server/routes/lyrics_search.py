@@ -25,7 +25,7 @@ from apps.lyrics.search_snippet import matched_snippet
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_library_data_dir, get_read_state
+from ..deps import get_library_data_dir, get_library_state_db, get_read_state
 from .search import SearchHit, SearchResults
 
 router = APIRouter(prefix="/lyrics/search", tags=["lyrics"])
@@ -35,7 +35,7 @@ def _data_dir(request: Request) -> Path:
     # Same derivation apps.webui.server.app.build_lyric_index_watcher uses to
     # bind the background indexer to this app's data (state_db_path is
     # data_dir/state/state.db).
-    state_db_path = Path(getattr(request.app.state, "state_db_path", "data/state/state.db"))
+    state_db_path = Path(getattr(request.app.state, "state_db_path", "(private path)"))
     return state_db_path.parent.parent
 
 
@@ -52,6 +52,7 @@ def search_lyrics(
     offset: int = Query(0, ge=0),
     data_dir: Path = Depends(_data_dir),  # noqa: B008
     library_dir: Path = Depends(get_library_data_dir),  # noqa: B008
+    state_db: Path = Depends(get_library_state_db),  # noqa: B008
     backend: StateBackend = Depends(get_read_state),  # noqa: B008
 ) -> SearchResults:
     if not q.strip():
@@ -65,7 +66,7 @@ def search_lyrics(
     rows_by_id = {
         row["stable_id"]: row
         for row in rb_vendor.build_track_rows(
-            [tracks_map[sid] for sid in stable_ids if sid in tracks_map], data_dir=library_dir
+            [tracks_map[sid] for sid in stable_ids if sid in tracks_map], data_dir=library_dir, state_db_path=state_db
         )
     }
     items: list[SearchHit] = []

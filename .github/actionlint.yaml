@@ -1,0 +1,5 @@
+# actionlint config: custom labels of self-hosted runners that a workflow names literally.
+# Every other self-hosted job picks its labels from a vars.CI_RUNS_ON_* chain, which actionlint cannot see.
+self-hosted-runner:
+  labels:
+    - airgap-mac   # the offline MacBook (fleet-af ci--hosts/airgap-mac, ADR-0024); (private path)

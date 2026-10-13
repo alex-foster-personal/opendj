@@ -45,7 +45,7 @@ full_triggers:
 # list to it. Named by scope rather than written as path triggers because ownership is
 # longest-prefix (`apps/webui/frontend/` is its own scope inside `apps/webui/`), and a
 # prefix trigger on the parent would swallow the child. Round 9.
-helper_carried: ["adapters", "analysis", "analysis_beatgrid", "analysis_key", "analysis_waveform", "audit", "cloud", "database", "entitlements", "loudness", "lyrics", "open_dj", "shared", "smartlists", "stems", "sync", "sync_hub", "vocals"]
+helper_carried: ["adapters", "analysis", "analysis_beatgrid", "analysis_key", "analysis_waveform", "audit", "cloud", "database", "entitlements", "genre_infer", "loudness", "lyrics", "open_dj", "shared", "smartlists", "stems", "sync", "sync_hub", "vocals"]
 
 # Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
 always:
@@ -73,11 +73,11 @@ scopes:
   - name: analysis
     sources: ["apps/analysis/"]
     tests: ["tests/analysis/"]
-    dependents: ["agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_beatgrid
     sources: ["apps/analysis_beatgrid/"]
     tests: ["tests/analysis_beatgrid/"]
-    dependents: ["agentic_testing", "analysis", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_bench
     sources: ["apps/analysis_bench/"]
     tests: ["tests/analysis_bench/"]
@@ -85,7 +85,7 @@ scopes:
   - name: analysis_key
     sources: ["apps/analysis_key/"]
     tests: ["tests/analysis_key/"]
-    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: analysis_loudness
     sources: ["apps/analysis_loudness/"]
     tests: ["tests/analysis_loudness/"]
@@ -129,7 +129,7 @@ scopes:
   - name: genre_infer
     sources: ["apps/genre_infer/"]
     tests: ["tests/genre_infer/"]
-    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync_hub", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: launcher
     sources: ["apps/launcher/"]
     tests: ["tests/launcher/"]
@@ -137,11 +137,11 @@ scopes:
   - name: loudness
     sources: ["apps/loudness/"]
     tests: ["tests/loudness/"]
-    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: lyrics
     sources: ["apps/lyrics/"]
     tests: ["tests/lyrics/"]
-    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
+    dependents: ["agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "engine_core", "entitlements", "fixtures", "genre_infer", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "parity", "perf", "play_analytics", "quality", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "sync", "sync_hub", "vocals", "webui"]
   - name: mik
     sources: ["apps/mik/"]
     tests: ["tests/mik/"]

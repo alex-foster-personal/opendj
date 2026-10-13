@@ -64,6 +64,11 @@ def _artists(artists_json: str | None) -> str | None:
     return str(value).strip() or None
 
 
+def artist_name(artists_json: str | None) -> str | None:
+    """The display artist string for a ``tracks.artists_json`` value."""
+    return _artists(artists_json)
+
+
 def live_track_ids(conn: sqlite3.Connection) -> list[str]:
     """stable_ids of every track that is not deleted."""
     return [r[0] for r in conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL")]
@@ -174,6 +179,7 @@ def genre_guess(doc: dict[str, Any], stable_id: str) -> dict[str, Any] | None:
 
 
 __all__ = [
+    "artist_name",
     "genre_guess",
     "load_suggestions",
     "read_suggestions",

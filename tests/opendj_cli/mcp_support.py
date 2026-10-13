@@ -30,7 +30,7 @@ pytest.importorskip(
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.types import CallToolResult
+from mcp.types import CallToolResult, TextContent
 
 
 def stdio_params(
@@ -84,6 +84,13 @@ def tool_payload(result: CallToolResult) -> dict[str, Any]:
     encoded = result.structured_content.get("result")
     assert not isinstance(encoded, str), "double-encoded structuredContent"
     return result.structured_content
+
+
+def tool_text(result: CallToolResult) -> str:
+    """The text of a tool result's first content block (an error message, for a failed call)."""
+    block = result.content[0]
+    assert isinstance(block, TextContent), block
+    return block.text
 
 
 def destructive_env() -> dict[str, str]:

@@ -151,7 +151,7 @@ TABLES: tuple[str, ...] = (
     # v6 (auth, Google sign-in) -- landed on main first, took v6
     "users",
     "auth_sessions",
-    # v7 (CLOUDSYNC, specs/design_decision_05.md) -- yielded to v7
+    # v7 (CLOUDSYNC, (private path)) -- yielded to v7
     "machines",
     "sync_policies",
     "playlist_pins",
@@ -165,15 +165,15 @@ TABLES: tuple[str, ...] = (
     "unmatched_source_analysis",
     "track_energy_segments",
     "analysis_field_verification",
-    # v9 (MACHINE ENROLLMENT, specs/design_decision_12.md) -- hub-authoritative
+    # v9 (MACHINE ENROLLMENT, (private path)) -- hub-authoritative
     # and OUTSIDE the sync set, so neither appears in protocol.SYNC_TABLES
     "machine_owners",
     "enrollment_grants",
-    # v10 (karaoke lyrics verdict, specs/karaoke-lyrics-operational-plan.md D13.1)
+    # v10 (karaoke lyrics verdict, (private path) D13.1)
     "lyric_verdict",
     # v11 (per-machine sync credential, ADR 12 amendment) -- hub-local, unsynced
     "machine_credentials",
-    # v12 (FBSYNC-01, docs/decisions/ADR-0013-feedback-pin-cloudsync.md)
+    # v12 (FBSYNC-01, (private path))
     "feedback_pins",
     # v21 (issue #4396) -- machine-local digest gate, never synced
     "sync_write_tokens",
@@ -253,6 +253,12 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "playlist_set_entries",
     "playlist_set_runs",
     "playlist_sets_schema_meta",
+    # apps/genre_infer/findings.py :: ensure_schema (GENRE-03, machine-local)
+    "genre_findings",
+    "genre_vectors",
+    "genre_search_cache",
+    "genre_config",
+    "genre_tag_writes",
     # apps/launcher/scripts/bootstrap_db.py
     "tracks_fts",
     "tracks_fts_config",
@@ -281,7 +287,7 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
 )
 """Tables this module does NOT create but that legitimately live in the same
 file, written by the other three schema authorities (spec section 1.3 of
-``specs/cloudsync-spec.md``). Declared so the drift tripwire can pass on a
+``(private path)``). Declared so the drift tripwire can pass on a
 fully-provisioned DB while still failing on a genuinely undeclared table.
 D2 folds these into :data:`MIGRATIONS` in a later round; until then this
 tuple is the honest inventory, not an aspiration."""

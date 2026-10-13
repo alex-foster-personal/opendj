@@ -414,6 +414,8 @@ export interface PlaylistTrackRowWire {
 	genre: string | null;
 	/** When genre is null, names why (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
+	/** GENRE-04: which provider the shown genre came from. */
+	genre_source?: string | null;
 	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
 	genre_guess?: GenreGuess | null;
 	comments: string | null;
@@ -682,6 +684,8 @@ export type GenreGuess = { family: string; confidence: number; source: 'jev' };
 export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;
+	/** GENRE-04: which provider the shown genre came from. */
+	genre_source?: string | null;
 	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
 	genre_guess?: GenreGuess | null;
 	duration_ms?: number | null;

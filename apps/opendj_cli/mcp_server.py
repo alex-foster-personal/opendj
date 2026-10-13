@@ -31,6 +31,7 @@ from apps.opendj_cli.client import (
     OrderTimedOut,
 )
 from apps.opendj_cli.engine_status import build_engine_status
+from apps.opendj_cli.mcp_genre_tools import register_genre_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
     guard_library_request,
@@ -551,6 +552,12 @@ def create_server() -> MCPServer:
         return document
 
     register_update_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_genre_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

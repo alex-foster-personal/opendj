@@ -39,7 +39,6 @@
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
 		line-height: 16px;
-		opacity: 0.92;
 	}
 
 	.tab-leader-take {

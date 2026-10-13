@@ -1,3 +1,5 @@
+import { listingGenre } from './genre-source';
+
 /** Split `text` into plain / hit spans for in-place find highlight. */
 export function highlightSpans(
 	text: string,
@@ -30,13 +32,14 @@ export function rowMatchesFind(
 		comments: string | null;
 		key: string | null;
 		genre: string | null;
+		genre_reason?: string | null;
 		rb_meta?: { genre: string | null } | null;
 	},
 	query: string
 ): boolean {
 	const q = query.trim().toLowerCase();
 	if (q.length < 3) return false;
-	const genre = row.genre ?? row.rb_meta?.genre ?? null;
+	const genre = listingGenre(row);
 	return [row.title, row.artist, row.comments, row.key, genre].some(
 		(field) => field !== null && field.toLowerCase().includes(q)
 	);

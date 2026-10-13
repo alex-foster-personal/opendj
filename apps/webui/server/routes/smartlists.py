@@ -64,7 +64,7 @@ from apps.webui.soft_deletes import has_soft_deletes
 
 from .. import rb_vendor
 from ..backend import ConflictError, StateBackend
-from ..deps import get_library_data_dir, get_read_state, get_write_state
+from ..deps import get_library_data_dir, get_library_state_db, get_read_state, get_write_state
 from ..errors import precondition_required
 from ..models import TrackRowOut
 from .smartlists_models import (
@@ -205,7 +205,7 @@ def _row_to_model(row: tuple) -> SmartlistRow:
 
 def get_smartlists_conn(request: Request) -> Iterator[sqlite3.Connection]:
     db_path = Path(
-        getattr(request.app.state, "state_db_path", "data/state/state.db")
+        getattr(request.app.state, "state_db_path", "(private path)")
     )
     if not db_path.exists():
         raise HTTPException(status_code=503, detail={
@@ -229,7 +229,7 @@ def get_smartlists_conn(request: Request) -> Iterator[sqlite3.Connection]:
 
 def get_smartlists_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
     db_path = Path(
-        getattr(request.app.state, "state_db_path", "data/state/state.db")
+        getattr(request.app.state, "state_db_path", "(private path)")
     )
     if not db_path.exists():
         raise HTTPException(status_code=503, detail={
@@ -466,6 +466,7 @@ def get_smartlist_tracks(
     conn: sqlite3.Connection = Depends(get_smartlists_conn),  # noqa: B008  # FastAPI DI
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+    state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
 ) -> SmartlistTracks:
     row = _fetch_smartlist(conn, smartlist_id)
     try:
@@ -493,7 +494,7 @@ def get_smartlist_tracks(
                 f"stable_ids with no track row (first: {missing[:5]})"
             ),
         })
-    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in stable_ids], data_dir=data_dir)
+    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in stable_ids], data_dir=data_dir, state_db_path=state_db)
     return SmartlistTracks(
         smartlist_id=row.id,
         name=row.name,

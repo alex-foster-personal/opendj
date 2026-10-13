@@ -7647,6 +7647,33 @@
         "title": "EngineHealthOut",
         "type": "object"
       },
+      "EnqueueIn": {
+        "properties": {
+          "all_missing": {
+            "default": false,
+            "description": "Queue every live track with local audio and no fused genre yet.",
+            "title": "All Missing",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stable Ids"
+          }
+        },
+        "title": "EnqueueIn",
+        "type": "object"
+      },
       "EnrollCredentialModel": {
         "description": "The credential the joining machine presents. Rides the BODY, not a header.\n\n:class:`apps.sync_hub.transport.HubTransport` is a two-method protocol\nwith no header support, and a grant is not a bearer for ``push`` or\n``pull``. Widening the transport for it would create a credential slot\nthose endpoints would then be expected to fill.",
         "properties": {
@@ -8576,6 +8603,66 @@
           "etag"
         ],
         "title": "FindReplaceRowOut",
+        "type": "object"
+      },
+      "FindingIn": {
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "genre": {
+            "title": "Genre",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "provider": {
+            "description": "Your source's id, e.g. 'beatport'. Open DJ's own ids are refused.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where the genre came from: a URL or a name.",
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "provider",
+          "genre",
+          "confidence",
+          "source"
+        ],
+        "title": "FindingIn",
         "type": "object"
       },
       "FlagOut": {
@@ -10642,6 +10729,29 @@
         "title": "IdentityRejectModel",
         "type": "object"
       },
+      "InferIn": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "InferIn",
+        "type": "object"
+      },
       "IoDeviceAccessOut": {
         "description": "IOPIN-14: whether the device lists could be read, and what to do if not.\n\n`status` is one of not_checked, listed, permission_needed, permission_denied,\napi_missing, enumeration_failed, timeout. Only `listed` means `outputs` and\n`inputs` are the machine's real device names; an agent must read this before\ntreating a short list as a machine with few devices.",
         "properties": {
@@ -11379,7 +11489,8 @@
           "lane": {
             "enum": [
               "stems",
-              "lyrics"
+              "lyrics",
+              "genre"
             ],
             "title": "Lane",
             "type": "string"
@@ -19740,6 +19851,17 @@
             ],
             "title": "Genre Reason"
           },
+          "genre_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Source"
+          },
           "grid_quality": {
             "anyOf": [
               {
@@ -22816,6 +22938,32 @@
         "title": "SyncSnapshotOut",
         "type": "object"
       },
+      "TagUndoIn": {
+        "properties": {
+          "write_id": {
+            "title": "Write Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "write_id"
+        ],
+        "title": "TagUndoIn",
+        "type": "object"
+      },
+      "TagWriteIn": {
+        "properties": {
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id"
+        ],
+        "title": "TagWriteIn",
+        "type": "object"
+      },
       "TempoPrefOut": {
         "description": "PREF-01: a track's user-set preferred tempo plus its playable range.\n\nAny of the three may be null (unset). Never fabricated on read - a track\nwith no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,\nnot this shape with all-null members (see sqlite_backend._row_to_track).",
         "properties": {
@@ -23518,6 +23666,17 @@
             ],
             "title": "Genre Reason"
           },
+          "genre_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Source"
+          },
           "grid_quality": {
             "anyOf": [
               {
@@ -24032,6 +24191,17 @@
               }
             ],
             "title": "Genre Reason"
+          },
+          "genre_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Source"
           },
           "grid_quality": {
             "anyOf": [
@@ -25020,6 +25190,17 @@
               }
             ],
             "title": "Genre Reason"
+          },
+          "genre_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre Source"
           },
           "grid_quality": {
             "anyOf": [
@@ -33736,6 +33917,530 @@
         ]
       }
     },
+    "/api/v1/genres": {
+      "get": {
+        "operationId": "get_genres_api_v1_genres_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Genres Api V1 Genres Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Genres",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/config": {
+      "get": {
+        "operationId": "get_config_api_v1_genres_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Config Api V1 Genres Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "genres"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_v1_genres_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Patch",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Config Api V1 Genres Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/enqueue": {
+      "post": {
+        "operationId": "enqueue_api_v1_genres_enqueue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnqueueIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enqueue Api V1 Genres Enqueue Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/findings": {
+      "post": {
+        "operationId": "attach_finding_api_v1_genres_findings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Attach Finding Api V1 Genres Findings Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attach Finding",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/findings/{stable_id}/{provider}": {
+      "delete": {
+        "operationId": "remove_finding_api_v1_genres_findings__stable_id___provider__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Finding Api V1 Genres Findings  Stable Id   Provider  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Finding",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/infer": {
+      "post": {
+        "operationId": "infer_now_api_v1_genres_infer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Infer Now Api V1 Genres Infer Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Infer Now",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/status": {
+      "get": {
+        "operationId": "genre_status_api_v1_genres_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Genre Status Api V1 Genres Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Genre Status",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/tags/journal": {
+      "get": {
+        "operationId": "tag_journal_api_v1_genres_tags_journal_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stable_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stable Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tag Journal Api V1 Genres Tags Journal Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tag Journal",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/tags/undo": {
+      "post": {
+        "operationId": "undo_tag_api_v1_genres_tags_undo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagUndoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Undo Tag Api V1 Genres Tags Undo Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Tag",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/tags/write": {
+      "post": {
+        "operationId": "write_tag_api_v1_genres_tags_write_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagWriteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Write Tag Api V1 Genres Tags Write Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write Tag",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
+    "/api/v1/genres/{stable_id}/similar": {
+      "get": {
+        "operationId": "similar_api_v1_genres__stable_id__similar_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Similar Api V1 Genres  Stable Id  Similar Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Similar",
+        "tags": [
+          "genres"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "engine_health_api_v1_health_get",
@@ -34398,7 +35103,8 @@
               "description": "stems or lyrics",
               "enum": [
                 "stems",
-                "lyrics"
+                "lyrics",
+                "genre"
               ],
               "title": "Lane",
               "type": "string"
@@ -34503,7 +35209,8 @@
             "schema": {
               "enum": [
                 "stems",
-                "lyrics"
+                "lyrics",
+                "genre"
               ],
               "title": "Lane",
               "type": "string"
@@ -34568,7 +35275,8 @@
             "schema": {
               "enum": [
                 "stems",
-                "lyrics"
+                "lyrics",
+                "genre"
               ],
               "title": "Lane",
               "type": "string"
