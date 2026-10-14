@@ -7,9 +7,9 @@ here is about the refusal being loud and NAMING the incumbent.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -31,6 +31,11 @@ from apps.engine_core.lock import (
     _swap_reason,
     inspect_lock,
     read_holder,
+)
+
+UNLINKS_AN_OPEN_FILE = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="unlinks the lock file while it is open; Windows refuses to delete an open file",
 )
 
 
@@ -91,6 +96,7 @@ def test_the_wedged_holder_refusal_still_says_to_kill_it(
     assert "kill it before booting" in message, message
 
 
+@UNLINKS_AN_OPEN_FILE
 def test_acquire_refuses_a_lock_file_swapped_under_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -99,20 +105,20 @@ def test_acquire_refuses_a_lock_file_swapped_under_it(
     The hazard is a swap landing between the open and the flock: the acquirer
     ends up holding an exclusive lock on an inode that no longer has a name,
     believes it is the singleton, and boots alongside whoever locks the new
-    file. The swap is driven from inside flock() so the race is exact rather
-    than hoped for.
+    file. The swap is driven from inside the lock call so the race is exact
+    rather than hoped for.
     """
     lock_path = tmp_path / ".engine.lock"
     lock_path.write_text("{}", encoding="utf-8")
-    real_flock = fcntl.flock
+    real_try_lock = lock_module.file_lock.try_lock
 
-    def _swap_then_lock(fd: int, operation: int) -> None:
-        real_flock(fd, operation)
-        if operation & fcntl.LOCK_EX:
-            lock_path.unlink()
-            lock_path.write_text("{}", encoding="utf-8")
+    def _lock_then_swap(fd: int) -> bool:
+        taken = real_try_lock(fd)
+        lock_path.unlink()
+        lock_path.write_text("{}", encoding="utf-8")
+        return taken
 
-    monkeypatch.setattr(lock_module.fcntl, "flock", _swap_then_lock)
+    monkeypatch.setattr(lock_module.file_lock, "try_lock", _lock_then_swap)
 
     lock = EngineLock(lock_path, boot_id="boot-b")
     with pytest.raises(EngineLockError) as refusal:
@@ -123,6 +129,7 @@ def test_acquire_refuses_a_lock_file_swapped_under_it(
     assert not lock.held, "a refused acquire must not leave the lock held"
 
 
+@UNLINKS_AN_OPEN_FILE
 def test_swap_detection_names_both_shapes(tmp_path: Path) -> None:
     """The guard itself: replaced inode and vanished name are both refusals."""
     lock_path = tmp_path / ".engine.lock"

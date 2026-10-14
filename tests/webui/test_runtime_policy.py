@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from apps.adapters.rekordbox import config as rb_config
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 

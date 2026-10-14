@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 
-from .conftest import _stub_rb_vendor
+from .app_fixtures import _stub_rb_vendor
 
 _FILL_TS = (
     Path(__file__).resolve().parents[2]

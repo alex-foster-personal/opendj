@@ -99,11 +99,11 @@ test('refreshHotCues re-checks the generation and the confirmed source, delegati
 	const rest = body.slice(assignEnd);
 	assert.match(
 		rest,
-		/st\.anlz\s*=\s*fresh/,
+		/st\.anlz\s*=\s*rawAnlz\(fresh\)/,
 		'st.anlz must be set from `fresh` AFTER the generation and source checks, so a re-fetched answer actually lands'
 	);
 	assert.ok(
-		rest.indexOf('st.anlz = fresh') < rest.indexOf('st.hot_cues'),
+		rest.indexOf('st.anlz = rawAnlz(fresh)') < rest.indexOf('st.hot_cues'),
 		'st.anlz must be published from the resolved `fresh` before hot cues are derived from it'
 	);
 });

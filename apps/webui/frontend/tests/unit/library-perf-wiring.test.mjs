@@ -240,7 +240,9 @@ test('BrowserPanel presents the persisted hide preference as an affirmative Brok
 		/aria-label="Show broken links"\s*checked=\{!uiPrefs\.hide_broken_links\}\s*onchange=\{\(e\) => setHideBrokenLinks\(!e\.currentTarget\.checked\)\}/,
 		'the checked UI state must keep the persisted hide flag inverted at the component boundary'
 	);
-	assert.match(src, /<span>Broken<\/span>/);
+	// The label text lives in the shared map (CMDK-05), printed here by reference.
+	assert.match(src, /<span>\{LIBRARY_FILTER_LABELS\.broken\.name\}<\/span>/);
+	assert.match(source('src/lib/rb/library-filter-labels.ts'), /broken: \{\s*name: 'Broken'/);
 });
 
 test('the row-select prefetch caches emit sampled timings', () => {

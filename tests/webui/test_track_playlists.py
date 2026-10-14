@@ -20,6 +20,7 @@ from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 TRACK_T = "t-target-track-id-012345678901234567890"
 TRACK_OTHER = "t-other-track-id-01234567890123456789012"

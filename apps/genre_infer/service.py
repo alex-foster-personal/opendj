@@ -18,7 +18,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import findings, library_tags, pipeline, providers, tag_write, taxonomy
+from . import findings, groups, library_tags, pipeline, providers, tag_write, taxonomy
 
 MAX_IDS = 500
 
@@ -52,6 +52,12 @@ def genres_for(
 ) -> dict[str, Any]:
     """Every provider's finding plus the chosen genre, per track.
 
+    GENRE-08: the findings are the track's duplicate GROUP's, one per provider
+    (:func:`groups.resolve`), so a copy that was never asked about shows what
+    its duplicate got; each finding names the copy that holds it
+    (``stable_id``) and ``duplicates`` lists the other copies. ``user`` is the
+    genre typed on any copy (newest edit); ``library-tag`` stays each row's own.
+
     ``library-tag`` is the rekordbox genre (``master_path``, default the
     configured master database), then the imported file tag, exactly as the
     Library row resolves it, so every surface and the file-tag writer choose
@@ -59,20 +65,27 @@ def genres_for(
     """
     ids = _require_tracks(conn, stable_ids)
     cfg = findings.read_config(conn)
-    stored = findings.findings_for(conn, ids) if findings.has_schema(conn) else {}
+    grp = groups.load(conn)
+    stored = groups.findings_for(conn, grp, ids) if findings.has_schema(conn) else {}
+    vector_of = groups.vector_holders(conn, stored) if findings.has_schema(conn) else {}
+    typed = groups.user_genres(conn, grp, ids)
     fields = library_tags.field_genres(conn, ids)
     rekordbox = library_tags.rekordbox_genres(conn, ids, master_path or rb_config.MASTER_PLAIN_DB)
     tracks: dict[str, Any] = {}
     for sid in ids:
-        user, imported = fields.get(sid, (None, None))
+        own_typed, imported = fields.get(sid, (None, None))
+        user = typed.get(sid) or own_typed
         library = rekordbox.get(sid) or imported
         chosen = findings.choose(stored.get(sid, ()), cfg.precedence, user_genre=user, library_genre=library)
+        vector = vector_of.get(sid)
         tracks[sid] = {
             "chosen": None
             if chosen is None
             else {"genre": chosen.genre, "provider": chosen.provider, "confidence": chosen.confidence},
             "virtual": {findings.PROVIDER_USER: user, findings.PROVIDER_LIBRARY_TAG: library},
             "findings": [f.as_dict() for f in stored.get(sid, ())],
+            "duplicates": list(grp.siblings_of(sid)),
+            "vector": None if vector is None else {"provider": findings.PROVIDER_JEV, "stable_id": vector},
         }
     return {"precedence": list(cfg.precedence), "taxonomy_version": taxonomy.TAXONOMY_VERSION, "tracks": tracks}
 
@@ -88,12 +101,39 @@ def attach_finding(
     note: str | None = None,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """Store an externally supplied finding (a person's or an agent's). Commits."""
-    _require_tracks(conn, [stable_id])
+    """Store an externally supplied finding (a person's or an agent's). Commits.
+
+    GENRE-08: it applies to every duplicate of the track; another copy's finding
+    from the same provider is replaced, so the newest attach is the one read.
+    """
     findings.require_provider_id(provider, external=True)
     if not source.strip():
         raise findings.GenreInputError("source is required: say where the genre came from (a URL or a name)")
     findings.ensure_schema(conn)
+    # One write transaction from the group read to the commit: the identity recorded,
+    # the row stored and the copies cleared all see the same group.
+    began = groups.begin_write(conn)
+    try:
+        return _attach(conn, stable_id, provider, genre, confidence, source, note, model)
+    except BaseException:
+        if began:
+            conn.rollback()
+        raise
+
+
+def _attach(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    provider: str,
+    genre: str,
+    confidence: float,
+    source: str,
+    note: str | None,
+    model: str | None,
+) -> dict[str, Any]:
+    _require_tracks(conn, [stable_id])
+    grp = groups.load(conn)
+    groups.bind_legacy(conn, grp)
     canonical = taxonomy.canonical(genre)
     stored = findings.put_finding(
         conn,
@@ -103,11 +143,17 @@ def attach_finding(
             status=findings.STATUS_OK,
             genre=canonical or genre.strip(),
             confidence=confidence,
-            evidence={"source": source.strip(), **({"note": note} if note else {})},
+            evidence={
+                "source": source.strip(),
+                **({"note": note} if note else {}),
+                # The group the finding is for: a later retag of this track makes it unshared.
+                groups.EVIDENCE_IDENTITY: grp.key(stable_id),
+            },
             model=model,
             version="external",
         ),
     )
+    groups.delete_findings(conn, grp.siblings_of(stable_id), [provider])
     conn.commit()
     return stored.as_dict()
 
@@ -116,7 +162,10 @@ def remove_finding(conn: sqlite3.Connection, *, stable_id: str, provider: str) -
     findings.require_provider_id(provider, external=True)
     if not findings.has_schema(conn):
         return False
-    removed = findings.delete_finding(conn, stable_id, provider)
+    # GENRE-08: the finding may sit on any copy; removing it removes it for the group
+    # as it is now (the write lock is held from the group read to the commit).
+    groups.begin_write(conn)
+    removed = groups.delete_findings(conn, groups.load(conn).members_of(stable_id), [provider]) > 0
     conn.commit()
     return removed
 
@@ -179,7 +228,7 @@ def similar(conn: sqlite3.Connection, stable_id: str, limit: int) -> dict[str, A
     _require_tracks(conn, [stable_id])
     if not findings.has_schema(conn):
         raise KeyError(f"track {stable_id} has no genre vector; run genre inference first")
-    neighbors = findings.similar_tracks(conn, stable_id, limit=limit)
+    neighbors = groups.similar_tracks(conn, groups.load(conn), stable_id, limit=limit)
     return {
         "stable_id": stable_id,
         "provider": findings.PROVIDER_JEV,

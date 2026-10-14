@@ -220,11 +220,20 @@ def delete_finding(conn: sqlite3.Connection, stable_id: str, provider: str) -> b
     )
 
 
-def findings_for(conn: sqlite3.Connection, stable_ids: Iterable[str] | None = None) -> dict[str, list[Finding]]:
-    """stable_id -> its findings, newest first. ``None`` reads every track (one query)."""
+def findings_for(
+    conn: sqlite3.Connection, stable_ids: Iterable[str] | None = None, *, providers: Sequence[str] | None = None
+) -> dict[str, list[Finding]]:
+    """stable_id -> its findings, newest first. ``None`` reads every track (one query).
+
+    ``providers`` narrows the read to those provider ids.
+    """
     out: dict[str, list[Finding]] = {}
+    only = "" if providers is None else f" AND provider IN ({','.join('?' * len(providers))})"
+    bound = [] if providers is None else list(providers)
     if stable_ids is None:
-        rows: Iterable[Sequence[Any]] = conn.execute(f"SELECT {_COLUMNS} FROM genre_findings ORDER BY created_at DESC")
+        rows: Iterable[Sequence[Any]] = conn.execute(
+            f"SELECT {_COLUMNS} FROM genre_findings WHERE 1 = 1{only} ORDER BY created_at DESC", bound
+        )
         for row in rows:
             out.setdefault(row[0], []).append(_finding_from_row(row))
         return out
@@ -233,7 +242,8 @@ def findings_for(conn: sqlite3.Connection, stable_ids: Iterable[str] | None = No
         chunk = ids[start : start + 500]
         marks = ",".join("?" * len(chunk))
         for row in conn.execute(
-            f"SELECT {_COLUMNS} FROM genre_findings WHERE stable_id IN ({marks}) ORDER BY created_at DESC", chunk
+            f"SELECT {_COLUMNS} FROM genre_findings WHERE stable_id IN ({marks}){only} ORDER BY created_at DESC",
+            [*chunk, *bound],
         ):
             out.setdefault(row[0], []).append(_finding_from_row(row))
     return out
@@ -309,11 +319,17 @@ def similar_tracks(
     all_vectors = vectors(conn, provider)
     if stable_id not in all_vectors:
         raise KeyError(f"track {stable_id} has no {provider} genre vector; run genre inference first")
-    target = _unit(all_vectors[stable_id])
+    target = all_vectors.pop(stable_id)
+    return nearest(all_vectors, target, limit)
+
+
+def nearest(
+    candidates: Mapping[str, Mapping[str, float]], target: Mapping[str, float], limit: int
+) -> list[tuple[str, float]]:
+    """The ``limit`` candidates closest (cosine) to ``target``, best first, ties by id."""
+    unit = _unit(target)
     scored = [
-        (sid, round(sum(a * b for a, b in zip(target, _unit(vec), strict=True)), 4))
-        for sid, vec in all_vectors.items()
-        if sid != stable_id
+        (sid, round(sum(a * b for a, b in zip(unit, _unit(vec), strict=True)), 4)) for sid, vec in candidates.items()
     ]
     scored.sort(key=lambda item: (-item[1], item[0]))
     return scored[: max(1, limit)]
@@ -451,6 +467,7 @@ __all__ = [
     "findings_for",
     "has_schema",
     "import_search_cache",
+    "nearest",
     "put_finding",
     "put_search",
     "put_vector",

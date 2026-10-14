@@ -155,6 +155,7 @@ import {
 	reconcileLoopForAuthoritativeGrid,
 	requireBeatGrid,
 	resolvePublishedAnlz,
+	rawAnlz,
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
@@ -2655,7 +2656,7 @@ const _beatgridGuards = createBeatgridResyncGuards({
 	deckLoadToken: (deck) => _rt[deck].loadToken,
 	deckStableId: (deck) => deckStates[deck].stable_id,
 	deckAnlz: (deck) => deckStates[deck].anlz,
-	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = anlz),
+	publishDeckAnlz: (deck, anlz) => (deckStates[deck].anlz = rawAnlz(anlz)),
 	publishDeckBpm: (deck, bpm) => (deckStates[deck].bpm = bpm),
 	setDeckAnlzError: (deck, code) => (deckStates[deck].anlz_error = code),
 	reconcileDeckLoop: (deck, anlz) => reconcileLoopForAuthoritativeGrid(deckStates[deck], anlz),
@@ -3205,7 +3206,7 @@ class RbAudioEngine implements AudioEngine {
 			const usableAnlz = isAnlzEntryUsable(latestAnlzEntry) ? (latestAnlzEntry.data as AnlzWithVocals) : null;
 			const latestAnlzError = latestAnlzEntry?.status === 'error' ? latestAnlzEntry.code : null;
 			const { anlz: publishedAnlz, anlzError: publishedAnlzError, bpm: publishedBpm } = resolvePublishedAnlz(usableAnlz, latestAnlzError, candidateAnlz, candidateTrack.bpm ?? null);
-			st.anlz = publishedAnlz;
+			st.anlz = rawAnlz(publishedAnlz);
 			st.anlz_error = publishedAnlzError;
 			// Kept in lockstep with publishedAnlz - see `resolvePublishedAnlz`'s own doc.
 			st.bpm = publishedBpm;
@@ -3291,7 +3292,7 @@ class RbAudioEngine implements AudioEngine {
 				: await fetchAnlzUntilSourceConfirmed(() => fetchAnlzBypassingHttpCache(stableId));
 		if (st.stable_id !== stableId) return; // deck was swapped mid-request
 		refreshAnlzCacheEntry(stableId, fresh);
-		st.anlz = fresh;
+		st.anlz = rawAnlz(fresh);
 		st.hot_cues = _hotCuesFromSlots(slots);
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 		st.loop = displayLoopFrom(fresh.cues, fresh.beatgrid.beats);

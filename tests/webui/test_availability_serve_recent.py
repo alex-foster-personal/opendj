@@ -22,8 +22,9 @@ from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.rb_vendor_pkg import availability, path_index
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.webui.app_fixtures import _stub_rb_vendor
 
-from .conftest import TEST_HOST_BASE_URL, _stub_rb_vendor
+from .conftest import TEST_HOST_BASE_URL
 from .test_rb_availability_budget import (
     _configure_data_dir,
     _mark_availability,

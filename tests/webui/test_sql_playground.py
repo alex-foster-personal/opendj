@@ -16,6 +16,7 @@ import sqlite3
 import pytest
 
 from apps.webui.server.routes import sql_playground
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 def _seed_db(path) -> None:

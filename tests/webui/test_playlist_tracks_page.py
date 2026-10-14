@@ -14,7 +14,7 @@ from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 from apps.webui.server.sqlite_backend import SqliteBackend
 
-from .conftest import _stub_rb_vendor
+from .app_fixtures import _stub_rb_vendor
 
 
 def _seed_1k_playlist(backend: InMemoryBackend, tmp_path: Path) -> str:

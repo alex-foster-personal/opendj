@@ -20,37 +20,58 @@ Requirements (statuses per the house docstring convention):
   bundle identifier is running (the single-instance plugin would hand our
   launch to it), proves the engine's own reported data_dir is the isolated
   one BEFORE writing anything, and proves afterwards that the real data dir's
-  state.db was not modified.
+  state.db and its WAL sidecars hold the same bytes as before.
   - [if] the host is silver [then ⛔️] exit 2 before launching anything
   - [if] /setup/status reports a data_dir outside the run root [then ⛔️]
-    the app is quit and the run fails before any import
-  - [if] the real state.db bytes changed during the run [then ⛔️]
-    check `isolation` FAILs
-- ✔︎ ✅ OPS-55 checks, each PASS/FAIL/UNKNOWN with numbers:
-  manifest_sha, first_run_import, deck_load, audio_plays, stems_lyrics,
-  analysis, clean_quit, memory (report-only).
+    `isolation` FAILs, the app is quit and the run stops before any import
+  - [if] the content digest (sha256) of the real state.db or of a WAL sidecar
+    differs after the run, or either read fails [then ⛔️]
+    `real_store_untouched` FAILs. Identical bytes under a new mtime pass.
+- ✔︎ ✅ OPS-55 checks, each PASS/FAIL/UNKNOWN with numbers. Check ids the
+  result can carry: `isolation`, `manifest_sha`, `first_run_import`,
+  `deck_load`, `audio_plays`, `memory`, `stems_lyrics`, `analysis`,
+  `clean_quit`, `real_store_untouched`, `harness_cleanup` and `harness`.
+  The last two appear only when the harness had to signal a leftover process
+  or crashed. `memory` is report-only in v1.
   - [if] the running engine's build-info sha differs from --expect-sha
-    [then ⛔️] manifest_sha FAILs
-  - [if] master RMS is zero while a deck plays, or non-zero while paused
-    [then ⛔️] audio_plays FAILs (UNKNOWN when the paused control is non-zero)
+    [then ⛔️] `manifest_sha` FAILs
+  - [if] the meter reads no audible level while a deck plays, or the output
+    is not silent after pause [then ⛔️] `audio_plays` FAILs; when the paused
+    playhead is frozen but the meter still reads a fresh level, the meter
+    itself is suspect and `audio_plays` is UNKNOWN
   - [if] a stems job reports success but no bundle exists for the track
-    [then ⛔️] stems_lyrics FAILs naming the job id and its duration
+    [then ⛔️] `stems_lyrics` FAILs naming the job id and its duration
   - [if] the pending-scope stems job succeeds, or its failure does not name
-    the truncated control [then ⛔️] stems_lyrics FAILs
-  - [if] a required stem part is missing or truncated [then ⛔️]
-    stems_lyrics FAILs
+    the truncated control [then ⛔️] `stems_lyrics` FAILs
+  - [if] a bundle lacks one of vocals, drums, bass, other, or one of them does
+    not stream back real bytes [then ⛔️] it is not a bundle and `stems_lyrics` FAILs
+  - [if] the 2 s sample after pause holds a fresh audible level or a moving
+    playhead [then ⛔️] `audio_plays` does not pass, whatever was read before it
+  - [if] the per-track stems enqueue fails or does nothing
+    [then ⛔️] `stems_lyrics` FAILs even when a real bundle exists
   - [if] any import job this run did not start is present [then ⛔️]
-    first_run_import is UNKNOWN
+    `first_run_import` is UNKNOWN
   - [if] quit takes longer than QUIT_TOTAL_MAX_S, the engine exits slower
     than ENGINE_SIGTERM_EXIT_MAX_MS after SIGTERM, any SIGKILL sweep ran, or a
-    process from the bundle or run root survives [then ⛔️] clean_quit FAILs
+    process from the bundle or run root, or a renderer this launch owned,
+    survives [then ⛔️] `clean_quit` FAILs
+  - [if] the renderers this launch owns cannot be told apart from another
+    app's (the ownership lookup is unavailable or fails) [then ⛔️] `memory`
+    is UNKNOWN and `clean_quit` is UNKNOWN: no webview figure is reported
+    and no "0 survivors" is claimed
+  - [if] a running app's Info.plist cannot be read or parsed [then ⛔️] exit 2
+    naming its pid and bundle: it might be another instance of this app
 - ✔︎ ✅ OPS-56 JSON result + exit code: 0 only when every check is PASS; 1 on
-  any FAIL/UNKNOWN; 2 when a precondition refused the run.
+  any FAIL/UNKNOWN; 2 when a precondition refused the run. Every written
+  result records the fixture schema, the sha256 of the fixture.json bytes,
+  and the sha256 of the verified track bytes in manifest order (null content
+  digest when the fixture was not verified).
   - [if] any check is UNKNOWN [then ⛔️] exit 1 and overall FAIL
   - [if] fixture staging fails [then ⛔️] a REFUSED result is written and the process exits 2
 - ✔︎ ✅ OPS-57 shell-agnostic: shell specifics (data dir, launch, process
   family, renderer processes, quit log) live behind the Shell class; the
-  checks only use HTTP.
+  checks only use HTTP. A WebKit process belongs to this launch only when
+  macOS names the launched app's pid as its responsible process.
 - ✔︎ ✅ OPS-60 analysis: after the folder import, with no rekordbox master.db
   under the run HOME and the import job in folder mode, the check drives the
   same HTTP a new user does. GET /tracks/index must answer 200,
@@ -70,8 +91,10 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import ctypes
 import hashlib
 import json
+import math
 import os
 import plistlib
 import re
@@ -82,7 +105,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -90,6 +113,14 @@ from typing import Any
 # ----- CFG ------------------------------------------------------------------
 SCHEMA = "opendj-app-acceptance/v1"
 FIXTURE_SCHEMA = "opendj-acceptance-fixture/v1"
+# Sidecar inside the staged library. Folder import ingests audio only, so this
+# file is not a track. It is the load-time identity, not a later rehash.
+STAGED_FIXTURE_IDENTITY = ".opendj-fixture-identity.json"
+# Platform binaries, resolved once. A PATH `ps` or `scutil` must not decide the verdict.
+_PS_BIN = next((p for p in ("/bin/ps", "/usr/bin/ps") if os.access(p, os.X_OK)), "")
+_SCUTIL_BIN = "/usr/sbin/scutil" if os.access("/usr/sbin/scutil", os.X_OK) else ""
+_HOSTNAME_BIN = "/bin/hostname" if os.access("/bin/hostname", os.X_OK) else ""
+_HOST_IDENTITY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$")
 BOOT_TIMEOUT_S = 120
 IMPORT_TIMEOUT_S = 180
 PAGE_TIMEOUT_S = 60
@@ -121,9 +152,17 @@ RSS_ALARM_MB = 1600
 MEMORY_CYCLES = 3
 CLEANUP_SIGTERM_WAIT_S = 30
 TERMINAL_LANE_STATES = ("done", "failed", "skipped", "cancelled")
+# The four parts every stem bundle carries: apps/stems/artifacts.py:63 (STEM_PARTS).
+# Restated because this file runs as a copied, stdlib-only script; a test pins the two together.
+STEM_PARTS = ("vocals", "drums", "bass", "other")
+STEM_PART_MIN_BYTES = 10_000
 TERMINAL_JOB_STATES = ("succeeded", "failed", "cancelled")
 REFUSED_HOST_MARKERS = ("silver",)
 WEBKIT_PROCESS_MARKER = "/WebKit.framework/"
+# macOS records, for every process, the app it is attributed to. WebKit's
+# content, GPU and networking processes are children of launchd and run from a
+# system path, so this is the only thing that ties one to the app that owns it.
+LIBSYSTEM = "/usr/lib/libSystem.B.dylib"
 ACCEPTANCE_ROOT = Path.home() / ".opendj-acceptance" / "runs"
 
 PASS, FAIL, UNKNOWN = "PASS", "FAIL", "UNKNOWN"
@@ -144,12 +183,36 @@ class Check:
         return self
 
 
+@dataclass(frozen=True)
+class FixtureRecord:
+    """Identity from one Fixture.load. The result keeps this; it does not rehash."""
+
+    schema: str | None = None
+    manifest_sha256: str | None = None
+    content_sha256: str | None = None
+
+    def as_dict(self) -> dict[str, str | None]:
+        return {"schema": self.schema, "manifest_sha256": self.manifest_sha256,
+                "content_sha256": self.content_sha256}
+
+
 class Refused(Exception):
     """A precondition refused the run before the app was touched (exit 2)."""
+
+    def __init__(self, message: str, fixture_record: FixtureRecord | None = None) -> None:
+        super().__init__(message)
+        self.fixture_record = fixture_record
 
 
 class Unmeasurable(Exception):
     """The instrument could not measure; the check is UNKNOWN."""
+
+class StoreUnreadable(Exception):
+    """A store file could not be read. A missing file is not this error."""
+
+    def __init__(self, path: Path, err: OSError) -> None:
+        self.path = path
+        super().__init__(f"{path.name}: {type(err).__name__}: {err}")
 
 
 def _now() -> str:
@@ -231,7 +294,9 @@ class Proc:
 
 
 def _ps() -> list[Proc]:
-    out = subprocess.run(["ps", "-axww", "-o", "pid=,ppid=,rss=,command="],
+    if not _PS_BIN:
+        raise Unmeasurable("ps not found at /bin/ps or /usr/bin/ps")
+    out = subprocess.run([_PS_BIN, "-axww", "-o", "pid=,ppid=,rss=,command="],
                          capture_output=True, text=True, check=True).stdout
     procs = []
     for line in out.splitlines():
@@ -255,6 +320,38 @@ def _descendants(root_pid: int, procs: list[Proc]) -> list[Proc]:
     return found
 
 
+# pid -> the pid macOS holds responsible for it, or None when that process has exited.
+ResponsibleLookup = Callable[[int], "int | None"]
+
+
+def _responsible_pid(pid: int) -> int | None:
+    """The owning app's pid for `pid`, from responsibility_get_pid_responsible_for_pid.
+
+    Raises Unmeasurable when the call does not exist on this host or fails
+    for a process that is still running: ownership is then unknown, never guessed.
+    """
+    try:
+        lookup = ctypes.CDLL(LIBSYSTEM).responsibility_get_pid_responsible_for_pid
+    except (OSError, AttributeError) as exc:
+        raise Unmeasurable(f"process ownership lookup unavailable on this host: {exc}") from exc
+    lookup.argtypes, lookup.restype = [ctypes.c_int], ctypes.c_int
+    owner = int(lookup(pid))
+    if owner > 0:
+        return owner
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        pass
+    raise Unmeasurable(f"process ownership lookup failed for running pid {pid} (returned {owner})")
+
+
+def owned_by(candidates: list[Proc], owner_pid: int, responsible: ResponsibleLookup) -> list[Proc]:
+    """The candidates whose responsible process is owner_pid. A failed lookup propagates."""
+    return [p for p in candidates if responsible(p.pid) == owner_pid]
+
+
 def _rss_mb(procs: list[Proc]) -> float:
     return round(sum(p.rss_kb for p in procs) / 1024, 1)
 
@@ -276,9 +373,21 @@ class Shell:
 
     def __init__(self, app: Path) -> None:
         self.app = app
-        info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
-        self.identifier: str = info["CFBundleIdentifier"]
-        self.executable: Path = app / "Contents" / "MacOS" / info["CFBundleExecutable"]
+        plist_path = app / "Contents" / "Info.plist"
+        try:
+            info = plistlib.loads(plist_path.read_bytes())
+        except (OSError, plistlib.InvalidFileException, ValueError) as exc:
+            raise Refused(f"{app} bundle metadata unreadable: {exc}") from exc
+        if not isinstance(info, dict):
+            raise Refused(f"{app} Info.plist is not a dictionary")
+        identifier = info.get("CFBundleIdentifier")
+        executable = info.get("CFBundleExecutable")
+        if not isinstance(identifier, str) or not identifier:
+            raise Refused(f"{app} Info.plist lacks CFBundleIdentifier")
+        if not isinstance(executable, str) or not executable:
+            raise Refused(f"{app} Info.plist lacks CFBundleExecutable")
+        self.identifier = identifier
+        self.executable = app / "Contents" / "MacOS" / executable
 
     @staticmethod
     def detect(app: Path) -> Shell:
@@ -304,15 +413,33 @@ class Shell:
     def quit_log_findings(self, home: Path) -> dict[str, Any]:
         raise NotImplementedError
 
-    def renderer_processes(self, procs: list[Proc], seen_before: set[int]) -> list[Proc]:
-        """Page renderers this launch started. Empty means RSS cannot be attributed."""
+    def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,
+                           responsible: ResponsibleLookup) -> list[Proc]:
+        """Renderer processes that belong to the shell process owner_pid.
+
+        Empty means this launch has no renderer the instrument can see.
+        Raises Unmeasurable when ownership cannot be established.
+        """
         raise NotImplementedError
 
 
 class TauriShell(Shell):
     def manifest_identity(self) -> dict[str, Any]:
+        """Payload identity. Invalid JSON or a missing identity refuses the run."""
         manifest = self.app / "Contents" / "Resources" / "payload" / "manifest.json"
-        return json.loads(manifest.read_text())["identity"]
+        try:
+            text = manifest.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise Refused(f"{manifest} unreadable: {exc}") from exc
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise Refused(f"{manifest} is not valid JSON: {exc}") from exc
+        try:
+            identity = payload["identity"]
+        except (KeyError, TypeError) as exc:
+            raise Refused(f"{manifest} lacks identity") from exc
+        return identity
 
     def data_dir(self, home: Path) -> Path:
         # Tauri's app_data_dir is $HOME/Library/Application Support/<identifier>.
@@ -351,9 +478,12 @@ class TauriShell(Shell):
             raise Unmeasurable("engine.log has no [shell shutdown] lines: the shell did not log its quit")
         return findings
 
-    def renderer_processes(self, procs: list[Proc], seen_before: set[int]) -> list[Proc]:
-        # WKWebView content, GPU and networking processes live in WebKit.framework.
-        return [p for p in procs if WEBKIT_PROCESS_MARKER in p.command and p.pid not in seen_before]
+    def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,
+                           responsible: ResponsibleLookup) -> list[Proc]:
+        # WKWebView content, GPU and networking processes live in WebKit.framework
+        # for every app on the Mac. Only the ones this app is responsible for are ours.
+        webkit = [p for p in procs if WEBKIT_PROCESS_MARKER in p.command and p.pid not in seen_before]
+        return owned_by(webkit, owner_pid, responsible)
 
 
 class ElectronShell(Shell):
@@ -364,7 +494,9 @@ class ElectronShell(Shell):
     attribute this shell's renderers, which is the part that is not WebKit.
     """
 
-    def renderer_processes(self, procs: list[Proc], seen_before: set[int]) -> list[Proc]:
+    def renderer_processes(self, procs: list[Proc], seen_before: set[int], *, owner_pid: int,  # noqa: ARG002
+                           responsible: ResponsibleLookup) -> list[Proc]:  # noqa: ARG002
+        # Chromium helpers run from inside the bundle, so the path already names the app.
         root = str(self.app) + "/"
         found: list[Proc] = []
         for proc in procs:
@@ -387,13 +519,19 @@ class Fixture:
     deck_title: str
     stems_lyrics_title: str
     lyrics_words: list[str]
+    manifest_sha256: str
+    content_sha256: str
     analysis_subjects: list[dict[str, Any]]
     negative_title: str
     negative_file: Path
+    negative_sha256: str
     downbeat_tolerance_s: float
 
     def duration_s(self, title: str) -> float:
         return next(t["duration_ms"] for t in self.tracks if t["title"] == title) / 1000
+
+    def record(self) -> FixtureRecord:
+        return FixtureRecord(FIXTURE_SCHEMA, self.manifest_sha256, self.content_sha256)
 
     def subject(self, title: str) -> dict[str, Any] | None:
         return next((s for s in self.analysis_subjects if s["title"] == title), None)
@@ -402,44 +540,59 @@ class Fixture:
     def load(root: Path) -> Fixture:
         manifest = root / "fixture.json"
         try:
-            text = manifest.read_text()
+            raw = manifest.read_bytes()
         except OSError as exc:
-            raise Refused(f"fixture {manifest} unreadable: {exc}") from exc
+            raise Refused(f"fixture {manifest} unreadable: {exc}", FixtureRecord()) from exc
+        manifest_sha256 = hashlib.sha256(raw).hexdigest()
+        unverified = FixtureRecord(None, manifest_sha256, None)
+        try:
+            text = raw.decode()
+        except UnicodeDecodeError as exc:
+            raise Refused(f"fixture {manifest} unreadable: {exc}", unverified) from exc
         try:
             spec = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise Refused(f"fixture {manifest} is not valid JSON: {exc}") from exc
+            raise Refused(f"fixture {manifest} is not valid JSON: {exc}", unverified) from exc
         if not isinstance(spec, dict):
-            raise Refused(f"fixture {manifest} must be a JSON object, got {type(spec).__name__}")
+            raise Refused(f"fixture {manifest} must be a JSON object, got {type(spec).__name__}", unverified)
         if spec.get("schema") != FIXTURE_SCHEMA:
-            raise Refused(f"fixture schema {spec.get('schema')!r} is not {FIXTURE_SCHEMA!r}: this harness does not understand it")
+            raise Refused(f"fixture schema {spec.get('schema')!r} is not {FIXTURE_SCHEMA!r}: this harness does not understand it",
+                          unverified)
         try:
             tracks = spec["tracks"]
+            content = hashlib.sha256()
             for track in tracks:
                 path = root / track["file"]
                 try:
-                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    data = path.read_bytes()
                 except OSError as exc:
-                    raise Refused(f"fixture {path} unreadable: {exc}") from exc
+                    raise Refused(f"fixture {path} unreadable: {exc}", unverified) from exc
+                digest = hashlib.sha256(data).hexdigest()
                 if digest != track["sha256"]:
                     raise Refused(f"fixture {track['file']} sha256 {digest[:12]} != recorded {track['sha256'][:12]}: "
-                                  "regenerate with make_fixture.sh and record the new digests")
+                                  "regenerate with make_fixture.sh and record the new digests", unverified)
+                content.update(data)
             analysis = spec["analysis"]
             negative = analysis["negative"]
             neg_path = root / negative["file"]
             try:
-                neg_digest = hashlib.sha256(neg_path.read_bytes()).hexdigest()
+                neg_data = neg_path.read_bytes()
             except OSError as exc:
-                raise Refused(f"fixture {neg_path} unreadable: {exc}") from exc
+                raise Refused(f"fixture {neg_path} unreadable: {exc}", unverified) from exc
+            neg_digest = hashlib.sha256(neg_data).hexdigest()
             if neg_digest != negative["sha256"]:
                 raise Refused(f"fixture {negative['file']} sha256 {neg_digest[:12]} != recorded "
-                              f"{negative['sha256'][:12]}: regenerate with make_fixture.sh")
+                              f"{negative['sha256'][:12]}: regenerate with make_fixture.sh", unverified)
+            # The negative control is part of the content the run consumes, so the
+            # recorded content identity covers it too, after the library tracks.
+            content.update(neg_data)
             titles = {t["title"] for t in tracks}
             subjects = analysis["subjects"]
+            tolerance_s = _fixture_numbers(analysis, subjects, unverified)
             missing_subjects = [s["title"] for s in subjects if s["title"] not in titles]
             if missing_subjects or negative["title"] not in titles:
                 raise Refused(f"fixture analysis titles are not tracks: {missing_subjects} "
-                              f"negative={negative['title']!r}")
+                              f"negative={negative['title']!r}", unverified)
             return Fixture(root=root, tracks=tracks,
                            expected_tracks=spec["expected"]["tracks"],
                            expected_import_playlists=spec["expected"]["import_playlists"],
@@ -447,13 +600,34 @@ class Fixture:
                            playlist_titles=spec["playlist"]["titles"],
                            deck_title=spec["deck_track"], stems_lyrics_title=spec["stems_lyrics_track"],
                            lyrics_words=spec["lyrics_words"],
+                           manifest_sha256=manifest_sha256,
+                           content_sha256=content.hexdigest(),
                            analysis_subjects=subjects, negative_title=negative["title"],
-                           negative_file=neg_path,
-                           downbeat_tolerance_s=float(analysis["first_downbeat_tolerance_s"]))
+                           negative_file=neg_path, negative_sha256=neg_digest,
+                           downbeat_tolerance_s=tolerance_s)
         except KeyError as exc:
-            raise Refused(f"fixture {manifest} missing field {exc}") from exc
-        except TypeError as exc:
-            raise Refused(f"fixture {manifest} has a wrong-typed field: {exc}") from exc
+            raise Refused(f"fixture {manifest} missing field {exc}", unverified) from exc
+        except (TypeError, ValueError) as exc:
+            raise Refused(f"fixture {manifest} has a wrong-typed field: {exc}", unverified) from exc
+
+
+def _fixture_numbers(analysis: dict[str, Any], subjects: list[dict[str, Any]], record: FixtureRecord) -> float:
+    """Validate every manifest number the analysis check reads; return the downbeat tolerance."""
+    for subject in subjects:
+        for name in ("bpm_min", "bpm_max", "first_downbeat_s"):
+            if subject.get(name) is not None:
+                _fixture_number(subject[name], f"analysis.subjects[{subject.get('title')!r}].{name}", record)
+    return _fixture_number(analysis["first_downbeat_tolerance_s"], "analysis.first_downbeat_tolerance_s", record)
+
+
+def _fixture_number(value: Any, name: str, record: FixtureRecord) -> float:
+    """A finite, non-negative manifest number, or a structured refusal naming the field."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise Refused(f"fixture field {name} must be a number, got {value!r}", record)
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise Refused(f"fixture field {name} must be a finite non-negative number, got {value!r}", record)
+    return number
 
 
 @dataclass
@@ -467,6 +641,10 @@ class Run:
     engine: Engine | None = None
     shell_pid: int | None = None
     pids_before_launch: set[int] = field(default_factory=set)
+    # pid -> command of every renderer seen owned by this launch while the app was alive.
+    owned_renderers: dict[int, str] = field(default_factory=dict)
+    # Why ownership could not be read at a capture point, kept for cleanup.
+    ownership_unmeasured: str | None = None
     ids_by_title: dict[str, str] = field(default_factory=dict)
     our_job_ids: set[str] = field(default_factory=set)
     memory_boot: dict[str, Any] = field(default_factory=dict)
@@ -474,31 +652,72 @@ class Run:
 
 
 # ----- helpers --------------------------------------------------------------------
-def _host_name() -> str:
+def _binary_stdout(binary: str, args: list[str]) -> str:
+    """Stdout of one absolute binary. A missing binary or a launch error is empty."""
+    if not binary:
+        return ""
     try:
-        out = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True, check=False)
-        reported = out.stdout.strip()
+        out = subprocess.run([binary, *args], capture_output=True, text=True, check=False)
     except OSError:
-        reported = ""
-    return (reported or os.uname().nodename).lower()
+        return ""
+    return out.stdout
 
 
-def _running_same_identifier(shell: Shell) -> list[str]:
-    """Running executables whose bundle carries our identifier (single-instance)."""
+def host_identity_from_outputs(scutil_out: str, hostname_out: str) -> str:
+    """Lowercase host token. scutil wins when it printed one; otherwise hostname.
+
+    Empty or ill-formed text refuses. Callers pass stdout from absolute binaries.
+    """
+    raw = scutil_out.strip() or hostname_out.strip()
+    if _HOST_IDENTITY_RE.fullmatch(raw) is None:
+        raise Refused(
+            "host identity cannot be established (empty or not a hostname): "
+            f"{raw!r}"
+        )
+    return raw.lower()
+
+
+def _host_name() -> str:
+    scutil_out = _binary_stdout(_SCUTIL_BIN, ["--get", "LocalHostName"])
+    hostname_out = ""
+    if not scutil_out.strip():
+        hostname_out = _binary_stdout(_HOSTNAME_BIN, ["-s"])
+    return host_identity_from_outputs(scutil_out, hostname_out)
+
+
+def same_identifier_processes(procs: list[Proc], identifier: str) -> list[str]:
+    """Running app executables whose bundle carries this identifier (single-instance).
+
+    This guard keeps the acceptance launch from being handed to a person's
+    running app, so it fails closed: a running app whose Info.plist cannot be
+    read or parsed might be that app, and the run is refused naming it. An app
+    whose Info.plist reads fine and names another identifier is not a hit.
+    """
     hits = []
-    for proc in _ps():
+    for proc in procs:
         exe = proc.command.split(" --", 1)[0]
         marker = ".app/Contents/MacOS/"
         if marker not in exe:
             continue
         bundle = Path(exe.split(marker, 1)[0] + ".app")
+        plist_path = bundle / "Contents" / "Info.plist"
         try:
-            info = plistlib.loads((bundle / "Contents" / "Info.plist").read_bytes())
-        except (OSError, plistlib.InvalidFileException):
-            continue
-        if info.get("CFBundleIdentifier") == shell.identifier:
+            info = plistlib.loads(plist_path.read_bytes())
+        except Exception as exc:  # unreadable, missing or unparseable: identity unknown
+            raise Refused(f"cannot tell whether running app pid {proc.pid} ({bundle}) is another instance of "
+                          f"{identifier}: {plist_path} is unreadable ({type(exc).__name__}: {exc}). "
+                          "Quit that app or repair its bundle, then run again.") from exc
+        if not isinstance(info, dict):
+            raise Refused(f"cannot tell whether running app pid {proc.pid} ({bundle}) is another instance of "
+                          f"{identifier}: {plist_path} is not a dictionary. "
+                          "Quit that app or repair its bundle, then run again.")
+        if info.get("CFBundleIdentifier") == identifier:
             hits.append(f"pid {proc.pid}: {bundle}")
     return hits
+
+
+def _running_same_identifier(shell: Shell) -> list[str]:
+    return same_identifier_processes(_ps(), shell.identifier)
 
 
 def _store_file_record(path: Path) -> tuple[str, int] | None:
@@ -521,44 +740,87 @@ def _store_file_record(path: Path) -> tuple[str, int] | None:
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise Unmeasurable(f"real store {path} unreadable: {exc}") from exc
+        raise StoreUnreadable(path, exc) from exc
     return digest.hexdigest(), size
 
 
-def _real_store_stat(shell: Shell) -> dict[str, tuple[str, int] | None]:
-    """Content hash of the real state.db AND its WAL sidecars (a WAL commit can leave the main file alone)."""
-    state = shell.data_dir(Path.home()) / "state"
-    stats: dict[str, tuple[str, int] | None] = {}
+def real_store_digest(state_dir: Path) -> dict[str, str | None]:
+    """SHA-256 of state.db and its WAL sidecars. A missing file is None."""
+    digests: dict[str, str | None] = {}
     for name in ("state.db", "state.db-wal", "state.db-shm"):
-        stats[name] = _store_file_record(state / name)
-    return stats
+        record = _store_file_record(state_dir / name)
+        digests[name] = None if record is None else record[0]
+    return digests
+
+
+def _real_store_stat(shell: Shell) -> dict[str, str | None]:
+    """Content digest of the real state.db and its WAL sidecars."""
+    return real_store_digest(shell.data_dir(Path.home()) / "state")
 
 
 def memory_sample(shell: Shell, procs: list[Proc], *, shell_pid: int | None, engine_pid: int | None,
-                  seen_before: set[int]) -> dict[str, Any]:
-    """RSS split for one shell. Renderers come from the shell, never a WebKit path."""
+                  seen_before: set[int], responsible: ResponsibleLookup) -> dict[str, Any]:
+    """RSS split for one shell. Renderers come from the shell, never a WebKit path.
+
+    Every process lands in exactly one set: the shell, the renderers, the
+    engine tree (rooted at the engine pid) or the shell's other children.
+    total_mb is the sum of those four, so nothing is counted twice.
+    """
     if shell_pid is None:
         raise Unmeasurable("shell pid unknown")
     shell_procs = [p for p in procs if p.pid == shell_pid]
-    tree = _descendants(shell_pid, procs)
-    renderers = shell.renderer_processes(procs, seen_before)
-    if not shell_procs or not tree:
-        raise Unmeasurable("shell or engine process not found for RSS sample")
+    if not shell_procs:
+        raise Unmeasurable("shell process not found for RSS sample")
+    renderers = shell.renderer_processes(procs, seen_before, owner_pid=shell_pid, responsible=responsible)
     if not renderers:
-        raise Unmeasurable("no renderer process started after launch: renderer RSS unattributable")
-    main = [p for p in tree if p.pid == engine_pid]
-    workers = [p for p in tree if p.pid != engine_pid]
-    return {"shell_mb": _rss_mb(shell_procs), "engine_tree_mb": _rss_mb(tree),
+        raise Unmeasurable("no renderer process owned by this launch: renderer RSS unattributable")
+    counted = {shell_pid} | {p.pid for p in renderers}
+    main = [p for p in procs if p.pid == engine_pid and p.pid not in counted]
+    if not main:
+        raise Unmeasurable(f"engine process (pid {engine_pid}) not found for RSS sample")
+    workers = [p for p in _descendants(main[0].pid, procs) if p.pid not in counted]
+    counted |= {p.pid for p in main + workers}
+    shell_other = [p for p in _descendants(shell_pid, procs) if p.pid not in counted]
+    return {"shell_mb": _rss_mb(shell_procs), "engine_tree_mb": _rss_mb(main + workers),
             "engine_main_mb": _rss_mb(main), "engine_workers_mb": _rss_mb(workers),
             "engine_workers": [_short_command(p.command) for p in workers],
-            "engine_tree_procs": len(tree),
+            "engine_tree_procs": len(main + workers),
             "webview_mb": _rss_mb(renderers), "webview_procs": len(renderers),
-            "total_mb": _rss_mb(shell_procs + tree + renderers)}
+            "shell_other_mb": _rss_mb(shell_other), "shell_other_procs": len(shell_other),
+            "total_mb": _rss_mb(shell_procs + main + workers + renderers + shell_other)}
 
 
 def _memory_sample(run: Run) -> dict[str, Any]:
-    return memory_sample(run.shell, _ps(), shell_pid=run.shell_pid,
-                         engine_pid=run.shell.engine_pid(run.home), seen_before=run.pids_before_launch)
+    return memory_sample(run.shell, _ps(), shell_pid=run.shell_pid, engine_pid=run.shell.engine_pid(run.home),
+                         seen_before=run.pids_before_launch, responsible=_responsible_pid)
+
+
+def _note_owned_renderers(run: Run) -> None:
+    """Record the renderers this launch owns right now. Only meaningful while the shell is alive."""
+    if run.shell_pid is None:
+        raise Unmeasurable("shell pid unknown: renderer ownership cannot be established")
+    owned = run.shell.renderer_processes(_ps(), run.pids_before_launch, owner_pid=run.shell_pid,
+                                         responsible=_responsible_pid)
+    run.owned_renderers.update({p.pid: p.command for p in owned})
+
+
+def _capture_owned_renderers(run: Run) -> None:
+    """Record owned renderers now, while the shell is known to be up. A failed read is kept, not raised.
+
+    WebKit helpers are launchd children whose commands name neither the bundle
+    nor the run HOME, so a shell that later crashes leaves them invisible to
+    _run_processes unless they were recorded here first.
+    """
+    try:
+        _note_owned_renderers(run)
+    except Unmeasurable as exc:
+        run.ownership_unmeasured = str(exc)
+        _log(f"renderer ownership unmeasurable: {exc}")
+
+
+def _owned_renderers_alive(run: Run, procs: list[Proc]) -> list[Proc]:
+    """Recorded renderers still running. A recycled pid with another command is not one."""
+    return [p for p in procs if run.owned_renderers.get(p.pid) == p.command]
 
 
 def _mirror(engine: Engine) -> dict[str, Any] | None:
@@ -651,6 +913,16 @@ def pending_stems_problem(job_id: str | None, status: str | None, seconds: float
         return (f"stems (whole library): job {job_id} succeeded in {seconds}s but the "
                 f"truncated control did not fail the pending-scope job")
     return f"stems (whole library): job {job_id} {status}: {str(error)[:200]}"
+
+
+def fixture_words_in(text: str, words: list[str]) -> list[str]:
+    """The fixture words that appear in text as WHOLE words, in fixture order.
+
+    "build" is not in "building" and "voice" is not in "invoice": a longer
+    word that merely contains a fixture word is some other song's text.
+    """
+    spoken = set(re.findall(r"[a-z0-9]+", text.lower()))
+    return [w for w in words if w.lower() in spoken]
 
 
 def lyrics_problem(lyrics_present: bool, item: dict[str, Any], stems_real: bool,
@@ -1034,10 +1306,13 @@ def audio_verdict(moving: bool, silent: bool, playing: dict[str, Any], paused: d
             or paused.get("fresh_samples", 0) <= 0 or playing.get("fresh_samples", 0) <= 0):
         return UNKNOWN, "no fresh meter reading: the output level is unmeasurable"
     paused_moved = (paused["position_last"] or 0) - (paused["position_first"] or 0)
-    if not silent and paused_moved <= 0 and paused["rms_max"] >= RMS_AUDIBLE_MIN:
+    # The paused sample is judged on its own: an earlier silent reading (`silent`)
+    # never excuses a fresh audible level or a moving playhead seen after it.
+    paused_audible = paused["rms_max"] >= RMS_AUDIBLE_MIN
+    if paused_audible and paused_moved <= 0:
         return UNKNOWN, (f"paused deck is frozen but the meter still reads a FRESH rms {paused['rms_max']:.4f}: "
                          "the meter does not read zero when silent")
-    if not silent:
+    if not silent or paused_audible or paused_moved > 0:
         return FAIL, (f"pause does not silence the output within {PAUSE_SILENCE_MAX_S}s: playhead moved "
                       f"{paused_moved:.0f} ms and rms {paused['rms_max']:.4f} in the 2s after")
     advanced = (playing["position_last"] or 0) - (playing["position_first"] or 0)
@@ -1199,8 +1474,7 @@ def _enqueue(engine: Engine, lane: str, track_id: str) -> tuple[int, Any]:
     return code, body
 
 
-REQUIRED_STEM_PARTS = ("vocals", "drums", "bass", "other")
-MIN_STEM_PART_BYTES = 10_000
+REQUIRED_STEM_PARTS = STEM_PARTS
 
 
 def stem_bundle_is_real(parts: list[str], seconds: float, min_seconds: float,
@@ -1210,7 +1484,7 @@ def stem_bundle_is_real(parts: list[str], seconds: float, min_seconds: float,
     The manifest publishes one frame count. A bundle can name four parts and
     still hide a missing or truncated drums, bass, or other file when only
     the vocals body is read. Each part's own response is the coverage check
-    the manifest cannot make: HTTP 200 and more than MIN_STEM_PART_BYTES.
+    the manifest cannot make: HTTP 200 and more than STEM_PART_MIN_BYTES.
     """
     if any(name not in parts for name in REQUIRED_STEM_PARTS):
         return False
@@ -1218,7 +1492,7 @@ def stem_bundle_is_real(parts: list[str], seconds: float, min_seconds: float,
         return False
     for name in REQUIRED_STEM_PARTS:
         code, size = part_responses.get(name, (0, 0))
-        if code != 200 or size <= MIN_STEM_PART_BYTES:
+        if code != 200 or size <= STEM_PART_MIN_BYTES:
             return False
     return True
 
@@ -1226,9 +1500,9 @@ def stem_bundle_is_real(parts: list[str], seconds: float, min_seconds: float,
 def _stem_bundle(engine: Engine, track_id: str, min_seconds: float) -> dict[str, Any] | None:
     """Presence of real stem output for one track, never a job status.
 
-    Real = the track's stem state is local, the manifest names vocals, drums,
-    bass and other, the shared frame count covers the track, and each of
-    those parts streams its own body.
+    Real = the track's stem state is local, the manifest names every canonical
+    part (STEM_PARTS), its frame count covers the track, and each of those
+    parts actually streams back more than STEM_PART_MIN_BYTES.
     """
     body = engine.call("GET", f"/api/v1/tracks/{track_id}/stems")[1]
     state = engine.call("GET", f"/api/v1/tracks/{track_id}/stems/state")[1]
@@ -1242,11 +1516,34 @@ def _stem_bundle(engine: Engine, track_id: str, min_seconds: float) -> dict[str,
         for name in REQUIRED_STEM_PARTS
     }
     vocal_code, vocal_size = part_responses["vocals"]
+    missing = sorted(set(STEM_PARTS) - set(parts))
+    not_streaming = [name for name, (code, size) in part_responses.items()
+                     if name not in missing and (code != 200 or size <= STEM_PART_MIN_BYTES)]
     return {"parts": parts, "seconds": round(seconds, 1), "model": body.get("model"),
+            "required_parts": list(STEM_PARTS), "missing_parts": missing,
             "part_responses": {name: {"status": code, "bytes": size}
                                for name, (code, size) in part_responses.items()},
+            "parts_not_streaming": not_streaming,
             "probe_part": "vocals", "probe_part_status": vocal_code, "probe_part_bytes": vocal_size,
             "real": stem_bundle_is_real(parts, seconds, min_seconds, part_responses)}
+
+
+def per_track_enqueue_problem(code: int | None, body: Any, track_id: str) -> str | None:
+    """None when the library-lane enqueue accepted this track. Otherwise why it did not."""
+    if code != 201 or not isinstance(body, dict):
+        return f"stems: per-track library enqueue failed or did nothing (status={code})"
+    ids: set[str] = set()
+    items = body.get("items")
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict) and isinstance(item.get("stable_id"), str):
+                ids.add(item["stable_id"])
+    running = body.get("already_running")
+    if isinstance(running, list):
+        ids.update(sid for sid in running if isinstance(sid, str))
+    if track_id not in ids:
+        return f"stems: per-track library enqueue did nothing for this track (status={code})"
+    return None
 
 
 def pending_scope_stems_payload() -> dict[str, Any]:
@@ -1312,13 +1609,12 @@ def stems_start_problem(numbers: dict[str, Any], evidence: list[str], track_id: 
 
 
 def start_stems_lyrics(run: Run, check: Check) -> None:
-    """Start both user paths right after import so the slow work overlaps the deck checks.
+    """Enqueue the per-track stems and lyrics lanes so they overlap the deck checks.
 
-    Per track (right-click / library lane): stems + lyrics for the vocal
-    track. Whole library: one stems.separate job with scope=pending. That
-    scope includes the truncated negative control, and the job must fail.
-    A non-201 response or a body that does not name the created job raises.
-    _guarded_call records that exception, and check_stems_lyrics fails on it.
+    Per track (right-click / library lane): stems + lyrics for the vocal track.
+    The whole-library scope=pending job is not started here. It writes the same
+    stem bundle, so it starts only after the per-track lane has its own terminal
+    result (see start_pending_stems).
     """
     engine = run.engine
     assert engine is not None
@@ -1330,7 +1626,19 @@ def start_stems_lyrics(run: Run, check: Check) -> None:
         code, body = _enqueue(engine, lane, track_id)
         check.numbers[f"{lane}_enqueue_status"] = code
         check.numbers[f"{lane}_enqueue"] = _enqueue_record(code, body)
+        if lane == "stems":
+            check.numbers["stems_enqueue_judged"] = True
+            check.numbers["stems_enqueue_problem"] = per_track_enqueue_problem(code, body, track_id)
         check.evidence.append(f"enqueue {lane} -> {code}: {str(body)[:300]}")
+
+
+def start_pending_stems(run: Run, check: Check) -> None:
+    """The readiness-panel 'generate stems for pending' job, after the per-track probe."""
+    engine = run.engine
+    assert engine is not None
+    track_id = run.ids_by_title.get(run.fixture.stems_lyrics_title)
+    if not track_id:
+        return
     payload = pending_scope_stems_payload()
     code, job, _ = engine.call("POST", "/api/v1/jobs",
                                {"kind": "stems.separate", "payload": payload})
@@ -1344,11 +1652,22 @@ def start_stems_lyrics(run: Run, check: Check) -> None:
         raise RuntimeError(problem)
 
 
-def track_stems_problem(stems: dict[str, Any] | None, item: dict[str, Any]) -> str | None:
-    """The per-track (library lane) stems request, judged by the bundle it left."""
-    if stems and stems["real"]:
-        return None
+def track_stems_problem(stems: dict[str, Any] | None, item: dict[str, Any],
+                        enqueue_problem: str | None = None) -> str | None:
+    """The per-track library-lane stems action, judged on its own enqueue and terminal state.
+
+    A real bundle is not enough: the scope=pending job writes the same files,
+    and a broken right-click action must still fail.
+    """
+    if enqueue_problem:
+        return enqueue_problem
     state = item.get("state")
+    real = bool(stems and stems.get("real"))
+    if state == "done" and real:
+        return None
+    if real:
+        return (f"stems: a real bundle exists but the per-track library lane did not finish it "
+                f"(state={state})")
     if state == "done":
         return (f"stems: the lane reported done ({item.get('started_at')} -> {item.get('finished_at')}) "
                 f"but no real stem bundle exists for the track ({stems})")
@@ -1390,19 +1709,33 @@ class StemsProbe:
             return {}
         return self.engine.call("GET", f"/api/v1/jobs/{self.pending_id}")[1] or {}
 
-    def wait(self, deadline: float) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-        """Until every path has real output or a terminal state, or the deadline."""
+    def wait_until_lane_terminal(self, lane: str, deadline: float) -> dict[str, Any]:
+        """This lane's own terminal item. A stem bundle from another job does not settle it."""
+        item: dict[str, Any] = {}
+        while True:
+            item = self.lane_item(lane)
+            if item.get("state") in TERMINAL_LANE_STATES or time.monotonic() >= deadline:
+                return item
+            time.sleep(5)
+
+    def wait_for_pending_and_lyrics(self, deadline: float) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """After the per-track stems lane has already been judged."""
         stems = lyrics = None
-        while time.monotonic() < deadline:
-            stems = stems if stems and stems["real"] else self.stems()
+        while True:
+            stems = stems if stems and stems.get("real") else self.stems()
             lyrics = lyrics or self.lyrics()
-            stems_settled = bool(stems and stems["real"]) or self.lane_item("stems").get("state") in TERMINAL_LANE_STATES
             lyrics_settled = bool(lyrics) or self.lane_item("lyrics").get("state") in TERMINAL_LANE_STATES
             pending_settled = not self.pending_id or self.pending_job().get("status") in TERMINAL_JOB_STATES
-            if stems_settled and lyrics_settled and pending_settled:
-                break
+            if (lyrics_settled and pending_settled) or time.monotonic() >= deadline:
+                return stems, lyrics
             time.sleep(5)
-        return stems, lyrics
+
+
+def _per_track_enqueue_problem(check: Check, track_id: str) -> str | None:
+    if not check.numbers.get("stems_enqueue_judged"):
+        return per_track_enqueue_problem(None, None, track_id)
+    stored = check.numbers.get("stems_enqueue_problem")
+    return stored if isinstance(stored, str) else None
 
 
 def check_stems_lyrics(run: Run, check: Check, deadline: float) -> Check:
@@ -1411,23 +1744,35 @@ def check_stems_lyrics(run: Run, check: Check, deadline: float) -> Check:
     track_id = run.ids_by_title.get(run.fixture.stems_lyrics_title)
     if not track_id:
         return check.set(UNKNOWN, f"fixture track {run.fixture.stems_lyrics_title!r} not in library")
+    probe = StemsProbe(engine, track_id, run.fixture.duration_s(run.fixture.stems_lyrics_title), None)
+    enqueue_problem = _per_track_enqueue_problem(check, track_id)
+    # Finish the right-click lane before scope=pending can write the same bundle.
+    per_track_item = (probe.wait_until_lane_terminal("stems", deadline) if enqueue_problem is None
+                      else probe.lane_item("stems"))
+    per_track_bundle = probe.stems()
+    try:
+        start_pending_stems(run, check)
+    except Exception as exc:
+        check.evidence.append(f"pending enqueue failed: {type(exc).__name__}: {exc}")
     start_problem = stems_start_problem(check.numbers, check.evidence, track_id)
     if start_problem:
         check.defects.append(start_problem)
         return check.set(FAIL, start_problem)
-    probe = StemsProbe(engine, track_id, run.fixture.duration_s(run.fixture.stems_lyrics_title),
-                       check.numbers.get("pending_job_id"))
-    stems, lyrics = probe.wait(deadline)
-    # The analysis negative control has replaced this title's bytes with a
-    # truncated mp3. A stem bundle of that file is not the question.
+    pending_id = check.numbers.get("pending_job_id")
+    probe.pending_id = pending_id if isinstance(pending_id, str) else None
+    # One absolute deadline for the per-track lane and the scope=pending job:
+    # a hang in either is bounded by the same stems deadline, never by two.
+    stems, lyrics = probe.wait_for_pending_and_lyrics(deadline)
     per_track = {t["title"]: _stem_bundle(engine, run.ids_by_title.get(t["title"], ""), t["duration_ms"] / 1000)
                  for t in run.fixture.tracks if t["title"] != run.fixture.negative_title}
     pending = probe.pending_job()
     items = {lane: probe.lane_item(lane) for lane in ("stems", "lyrics")}
+    items["stems"] = per_track_item
     words_code, words, _ = engine.call("GET", f"/api/v1/tracks/{track_id}/lyrics/words")
     mentions = _worker_mentions(run.shell.data_dir(run.home) / "logs")
     check.numbers.update({
-        "per_track_stems": per_track, "library_job_items": items, "stems": stems,
+        "per_track_stems": per_track, "per_track_lane_stems": per_track_bundle,
+        "library_job_items": items, "stems": stems,
         "lyrics_present": bool(lyrics), "lyrics_words_status": words_code, "lyrics_words": str(words)[:400],
         "pending_job": {**{k: pending.get(k) for k in ("id", "status", "message", "error", "started_at",
                                                         "finished_at", "worker_argv")},
@@ -1438,8 +1783,8 @@ def check_stems_lyrics(run: Run, check: Check, deadline: float) -> Check:
                   "payload": j.get("payload"), "message": j.get("message")}
                  for j in _jobs(engine) if j.get("kind", "").startswith(("stems", "lyrics"))]})
     if lyrics:
-        text = " ".join(str(line.get("text", "")) for line in lyrics.get("lines", [])).lower()
-        check.numbers["lyrics_known_words_matched"] = [w for w in run.fixture.lyrics_words if w in text]
+        text = " ".join(str(line.get("text", "")) for line in lyrics.get("lines", []))
+        check.numbers["lyrics_known_words_matched"] = fixture_words_in(text, run.fixture.lyrics_words)
     if not sum(mentions.values()):
         check.defects.append(f"stems worker output is not captured: 0 mentions of the worker in {sorted(mentions)}")
     unstemmed = [title for title, bundle in per_track.items() if not (bundle and bundle["real"])]
@@ -1448,7 +1793,7 @@ def check_stems_lyrics(run: Run, check: Check, deadline: float) -> Check:
     problems = [p for p in (
         pending_stems_problem(probe.pending_id, pending.get("status"), check.numbers["pending_job"]["seconds"],
                               unstemmed, len(per_track), pending.get("error"), control_id),
-        track_stems_problem(stems, items["stems"]),
+        track_stems_problem(per_track_bundle, per_track_item, enqueue_problem),
         lyrics_problem(bool(lyrics), items["lyrics"], bool(stems and stems["real"]),
                        check.numbers.get("lyrics_known_words_matched")),
     ) if p]
@@ -1561,6 +1906,20 @@ def _negative_terminal(observed: dict[str, Any] | None) -> bool:
     return bool(observed.get("bpm") is not None or observed.get("beats") or observed.get("key"))
 
 
+def _staged_control_bytes(run: Run) -> tuple[bytes, str | None]:
+    """The staged negative control's bytes, or a problem when they no longer match the verified digest."""
+    title = run.fixture.negative_title
+    try:
+        payload = run.fixture.negative_file.read_bytes()
+    except OSError as exc:
+        return b"", f"analysis: negative: {title}: staged control unreadable: {exc}"
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != run.fixture.negative_sha256:
+        return b"", (f"analysis: negative: {title}: staged control sha256 {digest[:12]} != verified "
+                     f"{run.fixture.negative_sha256[:12]}: refusing to credit a control that changed")
+    return payload, None
+
+
 def _replace_truncated(run: Run, track: dict[str, Any]) -> str | None:
     """Point the imported carrier at the truncated mp3. Only inside this run's HOME.
 
@@ -1583,7 +1942,9 @@ def _replace_truncated(run: Run, track: dict[str, Any]) -> str | None:
     if home != resolved and home not in resolved.parents:
         return (f"analysis: negative: {title}: file_path {dest} resolves outside the isolated HOME "
                 f"({resolved})")
-    payload = run.fixture.negative_file.read_bytes()
+    payload, problem = _staged_control_bytes(run)
+    if problem is not None:
+        return problem
     flags = os.O_WRONLY | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -1762,11 +2123,21 @@ def check_clean_quit(run: Run) -> Check:
     home_marker = str(run.home)
 
     def survivors() -> list[Proc]:
-        return [p for p in _ps() if bundle_marker in p.command or home_marker in p.command]
+        procs = _ps()
+        marked = [p for p in procs if bundle_marker in p.command or home_marker in p.command]
+        seen = {p.pid for p in marked}
+        return marked + [p for p in _owned_renderers_alive(run, procs) if p.pid not in seen]
 
+    # Renderers run from a system path under launchd: neither marker sees them,
+    # so they are recorded by ownership while the app that owns them is alive.
+    _note_owned_renderers(run)
+    check.numbers["owned_renderers_before_quit"] = len(run.owned_renderers)
+    if not run.owned_renderers:
+        return check.set(UNKNOWN, "orphan probe sees no renderer owned by this launch before quit: it cannot see "
+                                  "the app's renderers, so an empty result after would mean nothing")
     before = survivors()
     check.numbers["processes_before_quit"] = len(before)
-    if len(before) < 2:
+    if len(before) - len(_owned_renderers_alive(run, before)) < 2:
         return check.set(UNKNOWN, f"orphan probe sees {len(before)} app processes before quit: it cannot see "
                                   "the app, so an empty result after would mean nothing")
     t0 = time.monotonic()
@@ -1814,6 +2185,99 @@ def _stage_fixture_library(src: Path, dest: Path) -> None:
         raise Refused(f"fixture staging failed: /usr/bin/ditto: {exc}") from exc
 
 
+def verify_staged_library(staged_library: Path, fixture: Fixture) -> None:
+    """Refuse when the staged copy is not the verified fixture tracks.
+
+    Call this after ditto and before the identity sidecar is written. The
+    recorded digest then describes the bytes the run would import.
+    """
+    content = hashlib.sha256()
+    for track in fixture.tracks:
+        rel = Path(track["file"])
+        if rel.parts and rel.parts[0] == "library":
+            rel = Path(*rel.parts[1:])
+        if rel.is_absolute() or ".." in rel.parts:
+            raise Refused(f"staged fixture path {track['file']!r} escapes the library", fixture.record())
+        path = staged_library / rel
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise Refused(f"staged fixture {path} unreadable: {exc}", fixture.record()) from exc
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != track["sha256"]:
+            raise Refused(
+                f"staged fixture {rel} sha256 {digest[:12]} != verified {str(track['sha256'])[:12]}",
+                fixture.record(),
+            )
+        content.update(data)
+    try:
+        negative = fixture.negative_file.read_bytes()
+    except OSError as exc:
+        raise Refused(f"staged negative control {fixture.negative_file} unreadable: {exc}", fixture.record()) from exc
+    if hashlib.sha256(negative).hexdigest() != fixture.negative_sha256:
+        raise Refused("staged negative control sha256 != verified load", fixture.record())
+    content.update(negative)
+    if content.hexdigest() != fixture.content_sha256:
+        raise Refused("staged fixture content sha256 != verified load", fixture.record())
+
+
+def stage_negative_control(fixture: Fixture, home: Path) -> Fixture:
+    """Copy the negative control into HOME, reverify it, and return a fixture that names only the copy.
+
+    Fixture.load verified the source once. The run is long, so analysis must not
+    reopen the source: a swap there would be consumed under the old identity.
+    """
+    dest_dir = home / "fixture-negative"
+    dest = dest_dir / fixture.negative_file.name
+    try:
+        data = fixture.negative_file.read_bytes()
+        dest_dir.mkdir(parents=True, exist_ok=False)
+        dest.write_bytes(data)
+        staged = dest.read_bytes()
+    except OSError as exc:
+        raise Refused(f"negative control staging failed: {exc}", fixture.record()) from exc
+    digest = hashlib.sha256(staged).hexdigest()
+    if digest != fixture.negative_sha256:
+        raise Refused(f"staged negative control sha256 {digest[:12]} != verified "
+                      f"{fixture.negative_sha256[:12]}", fixture.record())
+    return replace(fixture, negative_file=dest)
+
+
+def bind_staged_fixture_identity(staged_library: Path, record: FixtureRecord) -> FixtureRecord:
+    """Write the load-time identity onto the staged library and return that file.
+
+    Callers use the returned record. They do not hash the original fixture directory again.
+    """
+    path = staged_library / STAGED_FIXTURE_IDENTITY
+    try:
+        path.write_text(json.dumps(record.as_dict()) + "\n", encoding="utf-8", newline="\n")
+    except OSError as exc:
+        raise Refused(f"staged fixture identity {path} could not be written: {exc}", record) from exc
+    return read_staged_fixture_identity(staged_library)
+
+
+def read_staged_fixture_identity(staged_library: Path) -> FixtureRecord:
+    path = staged_library / STAGED_FIXTURE_IDENTITY
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Refused(f"staged fixture identity {path} unreadable: {exc}") from exc
+    if not isinstance(data, dict):
+        raise Refused(f"staged fixture identity {path} must be a JSON object")
+    schema, manifest, content = data.get("schema"), data.get("manifest_sha256"), data.get("content_sha256")
+    if not all(isinstance(value, str) and value for value in (schema, manifest, content)):
+        raise Refused(f"staged fixture identity {path} is incomplete")
+    return FixtureRecord(schema, manifest, content)
+
+
+def _capture_fixture_record(root: Path) -> FixtureRecord:
+    """One read for a refusal that happened before Fixture.load. Not a second hash."""
+    try:
+        return Fixture.load(root).record()
+    except Refused as exc:
+        return exc.fixture_record if exc.fixture_record is not None else FixtureRecord()
+
+
 # ----- orchestration ----------------------------------------------------------------
 def _boot(run: Run) -> str | None:
     """Launch and wait for a healthy engine in the isolated data dir. None = ok."""
@@ -1831,50 +2295,91 @@ def _boot(run: Run) -> str | None:
     if len(shells) != 1:
         return f"expected 1 new shell process, found {len(shells)}"
     run.shell_pid = shells[0].pid
+    _capture_owned_renderers(run)
     return None
 
 
-def run_acceptance(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+def run_acceptance(args: argparse.Namespace) -> tuple[dict[str, Any], int, FixtureRecord]:
+    source = Path(args.fixture).resolve()
+    try:
+        return _begin_acceptance(args, source)
+    except Refused as exc:
+        record = exc.fixture_record
+        if record is None:
+            record = _capture_fixture_record(source)
+        raise Refused(str(exc), record) from exc
+
+
+def _fresh_home(home: Path, captured: FixtureRecord) -> Path:
+    """Create the run's isolated HOME, or refuse with the captured record."""
+    if home.exists():
+        raise Refused(f"{home} already exists: every run needs a fresh HOME", captured)
+    try:
+        home.mkdir(parents=True)
+    except OSError as exc:
+        raise Refused(f"could not create the isolated HOME {home}: {exc}", captured) from exc
+    return home
+
+
+def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str, Any], int, FixtureRecord]:
     app = Path(args.app).resolve()
-    if not (app / "Contents" / "Info.plist").is_file():
-        raise Refused(f"{app} is not an app bundle")
     host = _host_name()
     if host_refused(host):
         raise Refused(f"host {host!r} is silver: the acceptance never runs there (the maintainer's live store)")
-    shell = Shell.detect(app)
-    running = _running_same_identifier(shell)
-    if running:
-        raise Refused(f"another {shell.identifier} instance is running ({'; '.join(running)}); "
-                      "the single-instance plugin would swallow the launch. Quit it first.")
-    fixture = Fixture.load(Path(args.fixture).resolve())
+    fixture = Fixture.load(source)
+    captured = fixture.record()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     root = Path(args.run_root).resolve() if args.run_root else ACCEPTANCE_ROOT / stamp
-    home = root / "home"
+    home = _fresh_home(root / "home", captured)
+    staged = home / "fixture-library"
     try:
-        real_before = _real_store_stat(shell)
-    except Unmeasurable as exc:
-        raise Refused(
-            f"real store unreadable, acceptance cannot prove it stays unchanged: {exc}"
-        ) from exc
-    if home.exists():
-        raise Refused(f"{home} already exists: every run needs a fresh HOME")
-    home.mkdir(parents=True)
-    _stage_fixture_library(fixture.root / "library", home / "fixture-library")
+        _stage_fixture_library(fixture.root / "library", staged)
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
+    try:
+        fixture = stage_negative_control(fixture, home)
+        verify_staged_library(staged, fixture)
+        captured = bind_staged_fixture_identity(staged, captured)
+    except Refused as exc:
+        record = exc.fixture_record if exc.fixture_record is not None else captured
+        raise Refused(str(exc), record) from exc
+    if not (app / "Contents" / "Info.plist").is_file():
+        raise Refused(f"{app} is not an app bundle", captured)
+    try:
+        shell = Shell.detect(app)
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
+    try:
+        running = _running_same_identifier(shell)
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
+    if running:
+        raise Refused(f"another {shell.identifier} instance is running ({'; '.join(running)}); "
+                      "the single-instance plugin would swallow the launch. Quit it first.", captured)
     run = Run(shell=shell, fixture=fixture, home=home, expect_sha=args.expect_sha,
               stems_timeout_s=args.stems_timeout, lyrics_timeout_s=args.lyrics_timeout)
+    try:
+        real_before = _real_store_stat(shell)
+    except StoreUnreadable as exc:
+        raise Refused(f"real store could not be read before launch: {exc}", captured) from exc
+    try:
+        identity = shell.manifest_identity()
+    except Refused as exc:
+        raise Refused(str(exc), captured) from exc
     result: dict[str, Any] = {"schema": SCHEMA, "started_at": _now(), "host": host, "app": str(app),
                               "identifier": shell.identifier, "shell": type(shell).__name__,
-                              "run_root": str(root), "identity": shell.manifest_identity(), "checks": []}
+                              "run_root": str(root), "identity": identity, "checks": []}
     checks: list[Check] = []
     try:
-        return _launch_and_check(run, result, checks, real_before)
+        finished, code = _launch_and_check(run, result, checks, real_before)
     except Exception as exc:  # the app must never outlive the harness
         checks.append(Check("harness").set(UNKNOWN, f"harness error {type(exc).__name__}: {exc}"))
-        return _finish(result, checks, run, real_before)
+        finished, code = _finish(result, checks, run, real_before)
+    return finished, code, captured
 
 
 def _launch_and_check(run: Run, result: dict[str, Any], checks: list[Check],
-                      real_before: dict[str, tuple[str, int] | None]) -> tuple[dict[str, Any], int]:
+                      real_before: dict[str, str | None]) -> tuple[dict[str, Any], int]:
     shell, home = run.shell, run.home
     isolation = Check("isolation")
     checks.append(isolation)
@@ -1947,24 +2452,53 @@ def _quit_quietly(run: Run) -> None:
         run.engine.call("POST", "/api/v1/lifecycle/quit", {"force": True}, timeout=10)
 
 
+
+def judge_real_store(
+    before: dict[str, str | None] | None,
+    before_problem: str | None,
+    after: dict[str, str | None] | None,
+    after_problem: str | None,
+) -> Check:
+    """PASS only when both reads succeeded and the digests match.
+
+    A read error is FAIL and names the file. Identical missing-file digests
+    still pass: the store was absent before and after.
+    """
+    guard = Check("real_store_untouched")
+    guard.numbers = {
+        "before": before,
+        "after": after,
+        "before_problem": before_problem,
+        "after_problem": after_problem,
+    }
+    problems = [item for item in (before_problem, after_problem) if item]
+    if problems:
+        return guard.set(FAIL, "real store could not be read: " + "; ".join(problems))
+    if before is None or after is None:
+        return guard.set(FAIL, "real store could not be read: digest missing")
+    if before == after:
+        summary = (
+            "real state.db and its WAL sidecars unchanged"
+            if before.get("state.db")
+            else "no real state.db on this host before or after"
+        )
+        return guard.set(PASS, summary)
+    changed = [name for name in after if before.get(name) != after[name]]
+    return guard.set(FAIL, f"the real app data dir CHANGED during the run: {changed}")
+
+
 def _finish(result: dict[str, Any], checks: list[Check], run: Run,
-            real_before: dict[str, tuple[str, int] | None]) -> tuple[dict[str, Any], int]:
+            real_before: dict[str, str | None]) -> tuple[dict[str, Any], int]:
     leftover = _cleanup(run)
     if leftover:
         checks.append(Check("harness_cleanup").set(FAIL, leftover))
-    guard = Check("real_store_untouched")
     try:
         real_after = _real_store_stat(run.shell)
-    except Unmeasurable as exc:
-        guard.set(FAIL, f"real store unreadable, not proven unchanged: {exc}")
-    else:
-        guard.numbers = {"before": real_before, "after": real_after}
-        if real_before == real_after:
-            guard.set(PASS, "real state.db and its WAL sidecars unchanged" if real_before.get("state.db") else
-                      "no real state.db on this host before or after")
-        else:
-            changed = [n for n in real_after if real_before.get(n) != real_after[n]]
-            guard.set(FAIL, f"the real app data dir CHANGED during the run: {changed}")
+        after_problem = None
+    except StoreUnreadable as exc:
+        real_after = None
+        after_problem = str(exc)
+    guard = judge_real_store(real_before, None, real_after, after_problem)
     checks.append(guard)
     result["checks"] = [asdict(c) for c in checks]
     result["finished_at"] = _now()
@@ -1977,13 +2511,42 @@ def _finish(result: dict[str, Any], checks: list[Check], run: Run,
 
 def _run_processes(run: Run) -> list[Proc]:
     shell_exe = str(run.shell.executable)
-    return [p for p in _ps() if p.pid not in run.pids_before_launch
-            and (p.command.startswith(shell_exe) or str(run.home) in p.command)]
+    procs = _ps()
+    marked = [p for p in procs if p.pid not in run.pids_before_launch
+              and (p.command.startswith(shell_exe) or str(run.home) in p.command)]
+    seen = {p.pid for p in marked}
+    return marked + [p for p in _owned_renderers_alive(run, procs) if p.pid not in seen]
 
 
 def _cleanup(run: Run) -> str | None:
     """Leave nothing running. Returns a note when it had to signal anything."""
-    if not run.launched_at or not _run_processes(run):
+    if not run.launched_at:
+        return None
+    ownership_note: str | None = None
+    if run.shell_pid is not None and _pid_alive(run.shell_pid):
+        # The app is still up (a run that stopped before clean_quit): record its
+        # renderers now, while ownership can still be read. When it cannot,
+        # harness_cleanup FAILs and the shell is still signalled by its markers.
+        try:
+            _note_owned_renderers(run)
+        except Unmeasurable as exc:
+            # WebKit renderers are launchd children on a system path: without
+            # ownership the sweep below cannot see them, so the run must say so.
+            ownership_note = f"renderer ownership unmeasurable while the shell was alive, renderers not swept: {exc}"
+            _log(f"cleanup: {ownership_note}")
+    elif run.ownership_unmeasured and not run.owned_renderers:
+        # The shell is gone and no capture ever read ownership: its renderers may survive unseen.
+        ownership_note = f"renderer ownership was never measured, renderers not swept: {run.ownership_unmeasured}"
+        _log(f"cleanup: {ownership_note}")
+    swept = _sweep(run)
+    if ownership_note and swept:
+        return f"{ownership_note}; {swept}"
+    return ownership_note or swept
+
+
+def _sweep(run: Run) -> str | None:
+    """Quit, then SIGTERM, whatever _run_processes still finds. Returns a note when it had to signal anything."""
+    if not _run_processes(run):
         return None
     port = run.shell.engine_port(run.home)
     if port is not None:
@@ -2023,15 +2586,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stems-timeout", type=float, default=STEMS_TIMEOUT_S)
     parser.add_argument("--lyrics-timeout", type=float, default=LYRICS_TIMEOUT_S)
     args = parser.parse_args(argv)
+    for flag, seconds in (("--stems-timeout", args.stems_timeout), ("--lyrics-timeout", args.lyrics_timeout)):
+        if not (0 < seconds < float("inf")):  # also false for nan
+            print(f"[ERROR] {flag} must be a positive number of seconds, got {seconds!r}", file=sys.stderr)
+            return 2
     if not re.fullmatch(r"[0-9a-f]{40}", args.expect_sha):
         print(f"[ERROR] --expect-sha must be a full 40-char sha, got {args.expect_sha!r}", file=sys.stderr)
         return 2
     try:
-        result, code = run_acceptance(args)
+        result, code, record = run_acceptance(args)
     except Refused as exc:
-        result, code = {"schema": SCHEMA, "overall": "REFUSED", "refused": str(exc), "at": _now()}, 2
-    Path(args.result).write_text(json.dumps(result, indent=2, default=str) + "\n")
+        result = {"schema": SCHEMA, "overall": "REFUSED", "refused": str(exc), "at": _now()}
+        code = 2
+        record = exc.fixture_record if exc.fixture_record is not None else FixtureRecord()
+    result["fixture"] = record.as_dict()
     _print_report(result)
+    try:
+        Path(args.result).write_text(json.dumps(result, indent=2, default=str) + "\n")
+    except OSError as exc:
+        # No result file can carry this, so the exit code and stderr must. The
+        # wrapper writes its own REFUSED result when none appears.
+        print(f"[ERROR] could not write the result to {args.result}: {exc}", file=sys.stderr)
+        return 2
     return code
 
 

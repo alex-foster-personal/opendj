@@ -99,6 +99,12 @@ def providers_live(monkeypatch: pytest.MonkeyPatch) -> Iterator[ProviderServer]:
         yield srv
 
 
+#: Ids of :func:`library`'s tracks, for suites that name them without repeating them:
+#: the track the captured provider replies are about, another track by the same
+#: artist, the placeholder (``ID`` by ``ID``) and the one that can point at real audio.
+ASKED_ID, SAME_ARTIST_ID, PLACEHOLDER_ID, COPY_ID = "t-fred", "t-fred2", "t-id", "t-copy"
+
+
 def library(tmp_path: Path, *, audio: Path | None = None) -> tuple[Path, Path]:
     """(data_dir, state.db) with four tracks; ``t-copy`` points at ``audio`` when given."""
     data = tmp_path / "data"

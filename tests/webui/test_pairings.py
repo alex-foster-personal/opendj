@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from apps.webui.server.etag import compute_etag
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 @pytest.mark.requirement("CAT-05")

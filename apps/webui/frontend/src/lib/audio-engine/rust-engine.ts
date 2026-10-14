@@ -27,6 +27,7 @@ import {
 } from './client';
 import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToast } from './rust-link';
 import { PAGE_DECIDED, rustMode } from './rust-mode.svelte';
+import { rawAnlz } from '$lib/rb/anlz-raw';
 import {
 	cancelArmedJump,
 	decideOnPage,
@@ -204,7 +205,7 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.key = track.key ?? null;
 	// Until the engine's first state message says how long the decoded audio is.
 	st.duration_ms = track.duration_ms ?? null;
-	st.anlz = anlz;
+	st.anlz = rawAnlz(anlz);
 	st.anlz_error = null;
 	st.bpm = anlz.beatgrid.bpm ?? track.bpm ?? null;
 	st.hot_cues = hotCuesFromAnlz(slots.flatMap((s) => (s.cue === null ? [] : [s.cue])));

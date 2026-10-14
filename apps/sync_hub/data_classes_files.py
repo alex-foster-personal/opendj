@@ -2,11 +2,17 @@
 
 ``<data>`` is the data dir (``MDT_DATA_DIR``: the repo's ``data/`` or the
 packaged app's support dir); ``<repo>`` is the git checkout. Every
-``.gitignore`` pattern is classified in :data:`IGNORED_PATHS`, and a test
-parses the real ``.gitignore`` so a new pattern cannot land unclassified.
+``.gitignore`` pattern is classified by the ``# cloudsync:`` marker above it;
+:func:`parse_gitignore` reads them into :data:`IGNORED_PATHS`, so a new
+pattern cannot land unclassified.
 """
 
 from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from pathlib import Path
+from typing import cast, get_args
 
 from apps.shared.state.migrations_v10 import ASSET_KIND_CHECK_VALUES
 from apps.sync_hub.data_classes_types import (
@@ -126,7 +132,7 @@ FILE_CLASSES: tuple[DataClass, ...] = (
         files("<data>/master.plain.db", "<data>/master.db.copy"),
         _LOCAL,
         "Regenerate locally by re-decrypting each machine's own rekordbox "
-        "(specs/cloudsync-spec.md); never sync a vendor DB copy.",
+        "((private path)); never sync a vendor DB copy.",
         (),
     ),
     fixed(
@@ -224,7 +230,7 @@ FILE_CLASSES: tuple[DataClass, ...] = (
             Location("external", "browser localStorage (frontend)"),
         ),
         _LOCAL,
-        "Machine-local on purpose (specs/cloudsync-spec.md): screen size, paths "
+        "Machine-local on purpose ((private path)): screen size, paths "
         "and devices differ per machine. The localStorage keys are not inventoried.",
         (),
     ),
@@ -343,8 +349,8 @@ FILE_CLASSES: tuple[DataClass, ...] = (
         "The code repository",
         (Location("git", "<repo>"),),
         "git",
-        "autoreposync fast-forwards origin/main on every enabled machine every "
-        "120s. All user data is gitignored, so git moves code only.",
+        "Moved by git, never by CloudSync; dev machines are fast-forwarded by "
+        "fleet-af's autoreposync. All user data is gitignored, so git moves code only.",
         (),
     ),
     fixed(
@@ -352,7 +358,7 @@ FILE_CLASSES: tuple[DataClass, ...] = (
         "Whole state.db replica to R2",
         (Location("r2", "apps/cloud/litestream.yml target"),),
         "not_yet_built",
-        "Configured but not running; hard-codes data/state/state.db (ignores "
+        "Configured but not running; hard-codes (private path) (ignores "
         "MDT_DATA_DIR) and would ship auth_sessions tokens. Owner decision D4f.",
         (logical("data-dir"),),
     ),
@@ -363,215 +369,73 @@ NON_TABLE_CLASSES: tuple[DataClass, ...] = (*ASSET_CLASSES, *FILE_CLASSES)
 
 # ----- .gitignore classification ---------------------------------------------
 
+GITIGNORE_MARKER = "# cloudsync:"
+IGNORED_ARTIFACT: Path = Path(__file__).with_name("data_classes_ignored.json")
+"""Generated from ``.gitignore`` by ``--markdown``: the packaged app ships
+``apps/`` without the repo's ``.gitignore``, so runtime reads this copy."""
 
-def _ignored(kind: IgnoredKind, data_class: str | None, *patterns: str) -> tuple[IgnoredPath, ...]:
-    """Rows for ``patterns`` sharing one classification."""
-    return tuple(IgnoredPath(p, kind, data_class) for p in patterns)
+
+class GitignoreClassError(ValueError):
+    """A ``.gitignore`` pattern or ``# cloudsync:`` marker that does not classify cleanly."""
 
 
-IGNORED_PATHS: tuple[IgnoredPath, ...] = (
-    *_ignored(
-        "user_data",
-        "data-dir",
-        "data/*",
-        "*.db",
-        "*.db-wal",
-        "*.db-shm",
-        "*.sqlite",
-        "*.sqlite-wal",
-        "*.sqlite-shm",
-    ),
-    *_ignored("user_data", "vendor-working-copies", "*.xml"),
-    *_ignored("user_data", "operation-journals-and-backups", "data/spotify/"),
-    *_ignored(
-        "user_data", "logs-and-journals", "data/voice/*.log", "data/voice/*.jsonl", "ops/logs/"
-    ),
-    *_ignored("user_data", "settings-and-preferences", "data/voice/settings.sqlite*"),
-    *_ignored(
-        "user_data",
-        "usb-export-state",
-        "usb-profiles/local/",
-        "data/usb/",
-        "apps/sync/usb/pioneer/traces/",
-    ),
-    *_ignored(
-        "user_data",
-        "secrets",
-        ".env",
-        "apps/shared/bundled_google_oauth.json",
-        "*.pem",
-        "*.key",
-        "*.p12",
-        "*.p8",
-        "*.mobileprovision",
-        "credentials.json",
-        "service-account*.json",
-    ),
-    *_ignored(
-        "user_data",
-        "stem-experiments",
-        "scripts/bench/clips/",
-        "scripts/bench/clips-musdb/",
-        "scripts/bench/clips-4stem/",
-        "scripts/bench/clips-roformer-spike/",
-    ),
-    *_ignored(
-        "user_data",
-        "model-weights",
-        "apps/voice/models/*.bin",
-        "apps/voice/models/*.onnx",
-        "apps/voice/models/*.mlmodelc/",
-        "apps/voice/models/*.ppn",
-        "vendor/whisper.cpp/",
-    ),
-    *_ignored(
-        "user_data",
-        "vendor-documentation",
-        "docs/controller/reference/*.pdf",
-        "docs/controller/reference/*_MIDI_Message_List_*.txt",
-        "tools/deck-diagrams/devices/*/source/*.pdf",
-        "tools/deck-diagrams/devices/*/source/*.txt",
-        "tools/deck-diagrams/devices/*/source/midi-list-page-*.png",
-    ),
-    *_ignored(
-        "user_data",
-        "rekordbox-plain-db",
-        "tests/fixtures/rekordbox/_tmp_plain.db",
-        "tests/fixtures/rekordbox/master.plain.db",
-    ),
-    *_ignored(
-        "user_data",
-        "usb-export-state",
-        "tests/fixtures/rb-usb-export/Contents/",
-        "tests/fixtures/rb-usb-export/PIONEER/extracted/",
-        "tests/fixtures/rb-usb-export/",
-        "tests/fixtures/rb-usb-export-onetera-20260805/",
-    ),
-    *_ignored(
-        "user_data",
-        "data-dir",
-        "/Music/Recovered/",
-        "/odj-private",
-        "private_owner/",
-        "/refs/",
-        "/blog/",
-    ),
-    *_ignored(
-        "build_output",
-        None,
-        "__pycache__/",
-        "*.pyc",
-        ".mypy_cache/",
-        ".pnpm-store/",
-        ".xdg-cache/",
-        ".venv/",
-        "*.egg-info/",
-        "/dist/",
-        "/build/",
-        ".pytest_cache/",
-        ".coverage",
-        ".coverage.*",
-        "junit-shard-*.xml",  # per-shard JUnit the fast lane uploads to Trunk Flaky Tests
-        # nextest --profile ci writes these at the crate roots (.config/nextest.toml)
-        "apps/desktop/src-tauri/junit.xml",
-        "apps/audio-engine/junit.xml",
-        "htmlcov/",
-        "coverage-matrix.md",
-        "/node_modules/",  # root npm install: @trunkio/launcher (npm run lint / fmt)
-        "node_modules/",  # any depth: the CI runners keep every node_modules (ci_clean_untracked.sh)
-        "target/",  # any depth: cargo output, which the CI runners keep as well
-        "apps/webui/frontend/node_modules/",
-        "apps/webui/frontend/build/",
-        "apps/webui/frontend/.svelte-kit/",
-        "apps/webui/frontend/.vite/",
-        "/ds-bundle/",
-        "/.ds-sync/",
-        "apps/launcher/src-tauri/Cargo.lock",
-        "ops/quality/report.md",
-        "ops/quality/metrics.json",
-        "ops/quality/stretch/work/",
-        "ops/stable/*.json",
-        "apps/webui/frontend/tests/e2e/fixtures/deckload-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/boot-burst-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/boot-burst*.json",
-        "apps/webui/frontend/tests/e2e/fixtures/hotcue-mapping-gate-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/vocals-demucs-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/preflight-gate-healthy-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/preflight-gate-broken-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/performance-playwright-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/playlist-switch-latency-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/comment-hotkey-gate-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/autoplay-stall-gate-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/autoplay-error-hunt-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/stem-decode-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/stem-decode-bench.json",
-        "apps/webui/frontend/tests/e2e/fixtures/waveform-render.json",
-        "apps/webui/frontend/tests/e2e/fixtures/cloudsync-ui-hub-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/cloudsync-ui-spoke-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/lyrics-words-data/",
-        "apps/webui/frontend/tests/e2e/fixtures/lyrics-words-manifest.json",
-        "apps/webui/frontend/test-results/",
-        "apps/desktop/mcp/.smoke-data/",
-        "apps/webui/frontend/tests/unit/fixtures/machine-id",
-        "/spikes/aalink-js-link/node_modules/",
-        "/spikes/carabiner-link/.tools/",
-        "/spikes/carabiner-link/build/",
-        "/spikes/carabiner-link/upstream/",
-        "/spikes/rusty-link/.cargo-home/",
-        "/spikes/rusty-link/.rustup-home/",
-        "/spikes/rusty-link/.tool-venv/",
-        "/spikes/rusty-link/target/",
-        "/_rb_waveform_native*.so",
-        ".wrangler/",
-    ),
-    *_ignored(
-        "runtime_state",
-        None,
-        ".tmp/",
-        ".DS_Store",
-        ".vscode/",
-        ".idea/",
-        ".planning/ci-watcher-*.txt",
-        ".planning/ci-watcher-*.log",
-        ".planning/.tmp-*",
-        ".planning/.lock-*",
-        ".planning/heartbeats/",
-        ".planning/ci-fixer/",
-        ".claude/worktrees/",
-        ".claude/checkpoints/",
-        ".claude/mailbox/",
-        ".claude/routines/.state/",
-        ".claude/scheduled_tasks.lock",
-        ".claude/scheduled_tasks.json",
-        ".claude/agent-registry.json",
-        ".claude/agent-memory-local",
-        ".claude/first-run",
-        ".claude/assistant-daemon-state.json",
-        ".claude/settings.local.json",
-        ".codex/**/cache/",
-        ".codex/**/*.log",
-        ".cursor/**/cache/",
-        ".cursor/**/*.log",
-        "/runs/",
-        "/.sweep-*",
-        "/wt/",
-        "/zTasks.md",
-        "/.cccron/",
-        "docs/threads/.provenance-watermark.json",
-        "docs/threads/.provenance-lock",
-        "docs/threads/*.tmp",
-        "ops/autoreposync/",
-        "ops/autoreposync/com.af.autoreposync.plist",
-        ".planning/bifrost2-handoff/",
-        "**/sync-kit/",
-        ".codex/skills/",
-        "adws/adw_data/sessions/",
-        "adws/adw_data/sssf.db*",
-    ),
+def _marker(line: str, number: int) -> tuple[IgnoredKind, str | None]:
+    """``(kind, data_class)`` from ``# cloudsync: <kind> [<data class>]``."""
+    parts = line.removeprefix(GITIGNORE_MARKER).split()
+    if not parts:
+        raise GitignoreClassError(f".gitignore:{number}: malformed marker {line!r}")
+    kind, *data_class = parts
+    if kind not in get_args(IgnoredKind) or len(data_class) > 1:
+        raise GitignoreClassError(f".gitignore:{number}: malformed marker {line!r}")
+    return cast(IgnoredKind, kind), (data_class[0] if data_class else None)
+
+
+def gitignore_line(raw: str) -> str:
+    """``raw`` as Git reads it: trailing spaces dropped unless escaped, leading ones kept."""
+    line = raw.rstrip("\r ")
+    escapes = len(line) - len(line.rstrip("\\"))
+    if raw[len(line) : len(line) + 1] == " " and escapes % 2:
+        line += " "
+    return line
+
+
+def parse_gitignore(text: str) -> tuple[IgnoredPath, ...]:
+    """Every non-negated pattern in ``text``, classified by the marker above it.
+
+    Raises on a pattern with no marker above it, a marker with no pattern
+    under it, or a pattern listed twice.
+    """
+    rows: dict[str, IgnoredPath] = {}
+    marker: tuple[IgnoredKind, str | None] | None = None
+    open_marker = 0
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = gitignore_line(raw)
+        if line.startswith(GITIGNORE_MARKER):
+            if open_marker:
+                raise GitignoreClassError(f".gitignore:{open_marker}: marker classifies no pattern")
+            marker, open_marker = _marker(line, number), number
+        elif line and not line.startswith(("#", "!")):
+            if marker is None:
+                raise GitignoreClassError(f".gitignore:{number}: {line!r} has no marker above it")
+            if line in rows:
+                raise GitignoreClassError(f".gitignore:{number}: {line!r} is listed twice")
+            rows[line], open_marker = IgnoredPath(line, *marker), 0
+    if open_marker:
+        raise GitignoreClassError(f".gitignore:{open_marker}: marker classifies no pattern")
+    return tuple(rows.values())
+
+
+def render_ignored_artifact(rows: tuple[IgnoredPath, ...]) -> str:
+    """The committed :data:`IGNORED_ARTIFACT` text, one row per line."""
+    return "[\n" + ",\n".join(json.dumps(asdict(row)) for row in rows) + "\n]\n"
+
+
+IGNORED_PATHS: tuple[IgnoredPath, ...] = tuple(
+    IgnoredPath(**row) for row in json.loads(IGNORED_ARTIFACT.read_text(encoding="utf-8"))
 )
 """Every non-negated ``.gitignore`` pattern, verbatim, with what it holds.
 
 ``runtime_state`` is a third bucket beside the requested user-data/build
 split: agent bookkeeping, locks and editor state are neither user data nor
 build output, and filing them under either would mislead a reader."""
+

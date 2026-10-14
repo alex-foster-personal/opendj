@@ -8,7 +8,6 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +19,11 @@ from apps.cloud.stem_source import STEM_BUNDLE_NOT_INDEXED, STEM_BUNDLE_PRESIGN_
 from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.shared.state import db as state_db
 from apps.sync_hub import service_credentials
+from apps.sync_hub.service_request import (
+    SYNC_NO_DB_MESSAGE_ASSET_ROUTERS,
+    _data_dir,
+    _db_path,
+)
 
 StemIndexFetcher = Callable[[], stem_index.StemAssetIndex]
 
@@ -29,29 +33,11 @@ _auth = service_credentials.credential_responses
 _PRESIGN_EXPIRY_S: int = asset_store.DEFAULT_PRESIGN_EXPIRY_SECONDS
 
 
-def _db_path(request: Request) -> Path:
-    configured = getattr(request.app.state, "state_db_path", None)
-    if configured is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "SYNC_NO_DB",
-                "message": "app.state.state_db_path is unset",
-            },
-        )
-    return Path(str(configured))
-
-
-def _data_dir(request: Request) -> Path:
-    configured = getattr(request.app.state, "sync_hub_data_dir", None)
-    if configured is not None:
-        return Path(str(configured))
-    return _db_path(request).resolve().parent.parent
-
-
 @contextmanager
 def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    conn = state_db.open_rw(_db_path(request))
+    conn = state_db.open_rw(
+        _db_path(request, sync_no_db_message=SYNC_NO_DB_MESSAGE_ASSET_ROUTERS)
+    )
     try:
         yield conn
     finally:

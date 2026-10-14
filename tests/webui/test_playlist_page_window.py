@@ -159,7 +159,7 @@ def test_null_order_key_sorts_by_padded_position(mixed_db: Path) -> None:
 
 @pytest.fixture
 def client(mixed_db: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    from .conftest import _stub_rb_vendor
+    from .app_fixtures import _stub_rb_vendor
 
     _stub_rb_vendor(monkeypatch)
 

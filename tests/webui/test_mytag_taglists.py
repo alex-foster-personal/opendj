@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
+
 from .conftest import current_etag
 
 pytestmark = pytest.mark.requirement("LIBM-127")

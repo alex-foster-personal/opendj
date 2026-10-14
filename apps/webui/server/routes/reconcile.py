@@ -237,11 +237,22 @@ def _is_local_path(path: str | None) -> bool:
     return True
 
 
+def _state_db_path(backend: StateBackend) -> Path | None:
+    """The backend's own state.db. None for a backend that has no file, so
+    helpers keep their process-default database."""
+    if isinstance(backend, SqliteBackend):
+        return backend.writeback_state_db_path
+    return None
+
+
 def _scan_broken(backend: StateBackend) -> tuple[int, list[_BrokenScan]]:
     """(total scanned tracks, broken tracks sorted by (title, stable_id)).
     See module docstring for the exact availability predicate."""
     tracks = _iter_all_tracks(backend)
-    metas = rb_vendor.bulk_rb_meta([t.stable_id for t in tracks])
+    state_db_path = _state_db_path(backend)
+    metas = rb_vendor.bulk_rb_meta(
+        [t.stable_id for t in tracks], state_db_path=state_db_path
+    )
 
     candidates: list[_BrokenScan] = []
     for track in tracks:
@@ -256,7 +267,9 @@ def _scan_broken(backend: StateBackend) -> tuple[int, list[_BrokenScan]]:
             vendor_id=meta.vendor_id if meta is not None else None,
         ))
 
-    exists = rb_vendor.bulk_file_exists(c.original_path for c in candidates)
+    exists = rb_vendor.bulk_file_exists(
+        (c.original_path for c in candidates), state_db_path=state_db_path
+    )
     broken = [c for c in candidates if not exists[c.original_path]]
     broken.sort(key=lambda c: ((c.track.title or "").casefold(), c.track.stable_id))
     return len(tracks), broken
@@ -299,9 +312,15 @@ def _lean_track_rows(backend: StateBackend) -> list[tuple[str, str | None, str |
         conn.close()
 
 
-def _local_refs(rows: list[tuple[str, str | None, str | None]]) -> list[_BrokenRef]:
+def _local_refs(
+    rows: list[tuple[str, str | None, str | None]],
+    *,
+    state_db_path: Path | None,
+) -> list[_BrokenRef]:
     """One ref per row whose audio is a local path (rekordbox's folder path wins)."""
-    metas = rb_vendor.bulk_rb_meta([sid for sid, _title, _path in rows])
+    metas = rb_vendor.bulk_rb_meta(
+        [sid for sid, _title, _path in rows], state_db_path=state_db_path
+    )
     refs: list[_BrokenRef] = []
     for sid, title, file_path in rows:
         meta = metas.get(sid)
@@ -336,8 +355,11 @@ def _scan_broken_refs(backend: StateBackend) -> tuple[int, list[_BrokenRef]]:
             _BrokenRef(b.track.stable_id, b.track.title, b.original_path, b.vendor_id)
             for b in broken
         ]
-    candidates = _local_refs(rows)
-    exists = rb_vendor.bulk_file_exists(c.original_path for c in candidates)
+    state_db_path = _state_db_path(backend)
+    candidates = _local_refs(rows, state_db_path=state_db_path)
+    exists = rb_vendor.bulk_file_exists(
+        (c.original_path for c in candidates), state_db_path=state_db_path
+    )
     broken_refs = [c for c in candidates if not exists[c.original_path]]
     broken_refs.sort(key=_ref_order)
     return len(rows), broken_refs

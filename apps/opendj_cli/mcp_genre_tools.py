@@ -87,7 +87,9 @@ def register_genre_tools(
 
         ``chosen.provider`` names where the shown genre came from (``user``,
         ``beatport``, ``odj-fused``, ``library-tag``...); ``precedence`` is the
-        configured order that picked it.
+        configured order that picked it. Duplicates of a track share one result:
+        ``duplicates`` lists a track's other copies, and a finding's
+        ``stable_id`` names the copy that holds it.
         """
         return call("GET", "", params=[("ids", sid) for sid in stable_ids])
 
@@ -125,18 +127,19 @@ def register_genre_tools(
         """Run genre inference now for up to 500 tracks; cached by request digest unless ``force``.
 
         Costs a web search per uncached track plus two small model calls; the
-        result reports the measured cost.
+        result reports the measured cost. Duplicates of a track are asked once:
+        the other copies report ``shared_from`` and cost nothing.
         """
         return call("POST", "/infer", json_body={"stable_ids": stable_ids, "force": force}, timeout=INFER_TIMEOUT_S)
 
     @server.tool(annotations=_MUTATING)
     def genres_enqueue_missing() -> dict[str, Any]:
-        """Queue every present track with no inferred genre yet on the background genre lane."""
+        """Queue every present track with no inferred genre yet on the background genre lane (one job per duplicate group)."""
         return call("POST", "/enqueue", json_body={"all_missing": True})
 
     @server.tool(annotations=_READ_ONLY)
     def genres_similar(stable_id: str, limit: int = 20) -> dict[str, Any]:
-        """Tracks whose genre probability vector is closest (cosine) to this one's."""
+        """Tracks whose genre probability vector is closest (cosine) to this one's; never its own duplicates."""
         return call("GET", f"/{stable_id}/similar", params={"limit": limit})
 
     @server.tool(annotations=_DESTRUCTIVE)

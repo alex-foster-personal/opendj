@@ -78,6 +78,17 @@ class PathAvailabilityRefresher:
                 self._pending.add(path)
             self._queue.put(path)
 
+    def owns_database(self, state_db_path: Path | None) -> bool:
+        """True when this refresher persists the caller's database.
+
+        None selects ``config.STATE_DB`` at call time, because tests rebind
+        that name. A refresher started for a different file must refuse the
+        handoff: otherwise the rows land in its database and the caller's
+        index stays empty.
+        """
+        selected = config.STATE_DB if state_db_path is None else Path(state_db_path)
+        return self._state_db_path.resolve() == selected.resolve()
+
     def record(self, namespace: str, rows: Sequence[tuple[str, int | None]]) -> None:
         """Queue answers a request already statted; this thread persists them."""
         with self._lock:
@@ -212,15 +223,24 @@ def schedule(paths: Iterable[str]) -> None:
         refresher.schedule(paths)
 
 
-def record(namespace: str, rows: Sequence[tuple[str, int | None]]) -> bool:
+def record(
+    namespace: str,
+    rows: Sequence[tuple[str, int | None]],
+    *,
+    state_db_path: Path | None = None,
+) -> bool:
     """Hand already-statted answers to the running refresher to persist.
 
     Returns False when no refresher thread is running (a CLI, a script, or a
-    test with no lifespan): that caller has no background writer and must
-    persist the rows itself. True means the refresher owns them now.
+    test with no lifespan), and when the running refresher persists a
+    different database than ``state_db_path``. That caller has no background
+    writer for its own file and must persist the rows itself. True means the
+    refresher owns them now.
     """
     refresher = _ACTIVE.get("refresher")
     if refresher is None or not refresher.running:
+        return False
+    if not refresher.owns_database(state_db_path):
         return False
     refresher.record(namespace, rows)
     return True

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from apps.webui.server.backend import Provenance, Track
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 from .conftest import current_etag
 

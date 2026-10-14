@@ -25,6 +25,7 @@ from apps.lyrics.asr_source import (
 from apps.lyrics.cache import LyricLine, Lyrics
 from apps.lyrics.fetch_verdicts import FetchVerdict, utc_now_iso, write_verdict
 from apps.lyrics.lookup_metadata import lookup_metadata_problem
+from apps.lyrics.lrclib_query import asr_cache_upgrade, lrclib_query_params, mark_asr_rechecked
 
 LRCLIB_GET_URL = "https://lrclib.net/api/get"
 USER_AGENT = "music-dj-tools-lyrics/1.0"
@@ -47,12 +48,13 @@ class SyncedLyricsProvider(Protocol):
 class LrclibProvider:
     """Keyless, duration-anchored LRCLIB reader. No paid provider is involved."""
 
+    def __init__(self, get_url: str = LRCLIB_GET_URL) -> None:
+        self.get_url = get_url
+
     def fetch_synced(self, track: Track) -> str | None:
-        params = urllib.parse.urlencode(
-            {"artist_name": track.artist, "track_name": track.title, "duration": track.duration_s}
-        )
+        params = urllib.parse.urlencode(lrclib_query_params(track))
         request = urllib.request.Request(
-            f"{LRCLIB_GET_URL}?{params}", headers={"User-Agent": USER_AGENT}
+            f"{self.get_url}?{params}", headers={"User-Agent": USER_AGENT}
         )
         try:
             with urllib.request.urlopen(request, timeout=25) as response:
@@ -122,8 +124,9 @@ class LyricsFetchService:
         if cached is not None:
             if cached.stable_id != track.stable_id:
                 raise ValueError(f"lyrics-cache identity mismatch at {path}")
+            upgrade = asr_cache_upgrade(self.provider, cached, track, parse_lrc_lines)
             servable = servable_lyrics(cached)
-            if servable is None:
+            if upgrade is None and servable is None:
                 # LYRICS-12: a hallucination-only ASR cache is an instrumental.
                 # Record the verdict so the lane does not run this cache again.
                 return self._record_instrumental(
@@ -131,10 +134,16 @@ class LyricsFetchService:
                     vocals_sha256=vocals_sha256_for_track(self.data_dir, track.stable_id),
                     language_iso3=None,
                 )
-            return FetchResult(outcome="cached", lyrics=servable)
-        synced = self.provider.fetch_synced(track)
-        if synced is not None:
-            lyrics = Lyrics(track.stable_id, "lrclib", parse_lrc_lines(synced))
+            if upgrade is None:
+                if cached.source == ASR_SOURCE:
+                    mark_asr_rechecked(self.data_dir, track.stable_id, vocals_sha256_for_track(self.data_dir, track.stable_id))
+                return FetchResult(outcome="cached", lyrics=servable)
+            lines: tuple[LyricLine, ...] | None = upgrade
+        else:
+            synced = self.provider.fetch_synced(track)
+            lines = parse_lrc_lines(synced) if synced is not None else None
+        if lines is not None:
+            lyrics = Lyrics(track.stable_id, "lrclib", lines)
             cache.write(path, lyrics)
             write_verdict(
                 self.data_dir,

@@ -489,6 +489,8 @@ def _index_rows(
             "key": row["key"],
             "rating": track.rating,
             "notes": track.notes,
+            # The comment the library shows (a webui edit, else rekordbox, else state).
+            "comments": row.get("comments"),
             "file_path": track.file_path,
             "play_count": int(row.get("play_count") or 0),
             "has_rb_mapping": row["has_rb_mapping"],

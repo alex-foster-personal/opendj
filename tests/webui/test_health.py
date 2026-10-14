@@ -3,6 +3,12 @@ from __future__ import annotations
 
 import pytest
 
+from tests.webui.app_fixtures import (  # noqa: F401  (pytest fixtures)
+    client_fixture,
+    insecure_client_fixture,
+    locked_client_fixture,
+)
+
 
 @pytest.mark.requirement("CAT-05")
 def test_health_happy_path(client):

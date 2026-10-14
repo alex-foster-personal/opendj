@@ -2,6 +2,9 @@
 
 One run (:func:`infer_tracks`) for a list of stable_ids:
 
+0. Duplicates are asked ONCE (GENRE-08): the requested tracks are folded into
+   duplicate groups (:mod:`apps.genre_infer.groups`), one member is asked, and
+   every other requested member shares its result at no cost.
 1. Build each track's text: what the library knows (``jev.build_state``), up to
    10 of the artist's other library titles (never their genres), then the web
    search snippets for the frozen query (from ``genre_search_cache`` when the
@@ -23,7 +26,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import re
 import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -37,7 +39,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.shared.non_music import is_non_music
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import findings, jev, jev_store, library_tags, providers, taxonomy
+from . import findings, groups, jev, jev_store, library_tags, providers, taxonomy
 
 log = logging.getLogger("apps.genre_infer.pipeline")
 
@@ -52,8 +54,8 @@ OUTCOME_FAILED = "failed"
 OUTCOME_CANCELLED = "cancelled"
 SKIP_NO_ARTIST_TITLE = "no_artist_title"
 SKIP_NOT_A_TRACK = "not_in_library"
-# "ID - ID" and friends: an unreleased track; a search for it finds nothing useful.
-_PLACEHOLDER = re.compile(r"^\s*(id|unknown|untitled|track\s*\d*)\s*$", re.IGNORECASE)
+# The track's title or artists changed while the models were being asked about its old ones.
+FAIL_RETAGGED = "retagged while it was being asked; ask again"
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,8 @@ class TrackResult:
     cost_usd: float = 0.0
     paid_search: bool = False
     search_cost_usd: float = 0.0
+    #: GENRE-08: the requested duplicate whose ask this track shares; nothing was paid for this one.
+    shared_from: str | None = None
 
 
 @dataclass
@@ -88,9 +92,22 @@ class RunSummary:
     def search_cost_usd(self) -> float:
         return round(sum(r.search_cost_usd for r in self.results), 6)
 
+    @property
+    def asked(self) -> int:
+        """Tracks a call was made for: a duplicate sharing another track's ask is not one."""
+        return sum(
+            1
+            for r in self.results
+            if r.shared_from is None and r.outcome in (OUTCOME_DONE, OUTCOME_FAILED, OUTCOME_CANCELLED)
+        )
+
+    @property
+    def shared(self) -> int:
+        """Requested tracks that shared a duplicate's ask instead of paying for their own."""
+        return sum(1 for r in self.results if r.shared_from is not None)
+
     def _per_1k(self, usd: float) -> float | None:
-        asked = self.count(OUTCOME_DONE) + self.count(OUTCOME_FAILED) + self.count(OUTCOME_CANCELLED)
-        return None if asked == 0 else round(1000 * usd / asked, 4)
+        return None if self.asked == 0 else round(1000 * usd / self.asked, 4)
 
     @property
     def cost_per_1k_usd(self) -> float | None:
@@ -110,6 +127,8 @@ class RunSummary:
             "skipped": self.count(OUTCOME_SKIPPED),
             "failed": self.count(OUTCOME_FAILED),
             "cancelled": self.count(OUTCOME_CANCELLED),
+            "asked": self.asked,
+            "shared_with_duplicates": self.shared,
             "paid_searches": self.paid_searches,
             "cost_usd": self.cost_usd,
             "search_cost_usd": self.search_cost_usd,
@@ -127,6 +146,11 @@ class _Context:
     artist: str
     title: str
     base_state: str
+    #: GENRE-08: the requested tracks this ask answers, the payer first (``stable_id`` may not be one of them).
+    requested: tuple[str, ...] = ()
+    #: The duplicate group the ask was planned for. Membership is read again when the
+    #: result is stored: a retag can move a track while the calls are in flight.
+    group_key: str = ""
 
 
 # ------------------------------------------------------------------ context
@@ -152,7 +176,7 @@ def _artist_title(facts: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def _searchable(artist: str, title: str) -> bool:
-    return bool(artist and title) and not _PLACEHOLDER.match(title) and not _PLACEHOLDER.match(artist)
+    return groups.nameable(artist, title)
 
 
 def searchable_ids(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> list[str]:
@@ -184,6 +208,39 @@ def _contexts(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> tuple[dict
             state += "\nOther tracks by this artist in the library:\n" + "\n".join(others[sid])
         contexts[sid] = _Context(sid, artist, title, state)
     return contexts, skipped
+
+
+def _bind_legacy(conn: sqlite3.Connection) -> None:
+    """Give findings from before identities were recorded their identity, in one committed write."""
+    began = groups.begin_write(conn)
+    groups.bind_legacy(conn, groups.load(conn))
+    if began:
+        conn.commit()
+
+
+def _plan(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> tuple[dict[str, _Context], dict[str, str]]:
+    """(one context per duplicate group, skip reasons) for ``stable_ids`` (GENRE-08).
+
+    The member asked is the copy that already holds the group's fused finding,
+    so its stored request digest is compared with its own text; with no finding
+    yet it is the first requested member.
+    """
+    contexts, skipped = _contexts(conn, stable_ids)
+    grp = groups.load(conn)
+    requested: dict[str, list[str]] = {}
+    for sid in contexts:
+        requested.setdefault(grp.key(sid), []).append(sid)
+    firsts = [members[0] for members in requested.values()]
+    stored = groups.findings_for(conn, grp, firsts, providers=[findings.PROVIDER_FUSED]) if firsts else {}
+    holder_of = {sid: rows[0].stable_id for sid, rows in stored.items()}
+    outside = [holder for holder in holder_of.values() if holder not in contexts]
+    held_contexts = _contexts(conn, outside)[0] if outside else {}
+    plan: dict[str, _Context] = {}
+    for members in requested.values():
+        holder = holder_of.get(members[0], members[0])
+        ctx = contexts.get(holder) or held_contexts.get(holder) or contexts[members[0]]
+        plan[ctx.stable_id] = replace(ctx, requested=tuple(members), group_key=grp.key(ctx.stable_id))
+    return plan, skipped
 
 
 def full_state(ctx: _Context, snippets: str) -> str:
@@ -294,12 +351,32 @@ def _store_answers(
     conn: sqlite3.Connection, asked: _Asked, jev: providers.Answer, deepseek: providers.Answer, search_cost: float
 ) -> TrackResult:
     sid = asked.ctx.stable_id
+    llm_cost = sum(a.cost_usd or 0.0 for a in (jev, deepseek))
+    # GENRE-08: the group is read NOW, not as planned: a retag can move a track while the
+    # calls are in flight. An asked track that moved was asked about its old name, so
+    # nothing is stored (the answer would be read by every copy in its NEW group).
+    grp = groups.load(conn)
+    if grp.key(sid) != asked.ctx.group_key:
+        return TrackResult(
+            sid,
+            OUTCOME_FAILED,
+            FAIL_RETAGGED,
+            cost_usd=llm_cost + search_cost,
+            paid_search=asked.paid_search,
+            search_cost_usd=search_cost,
+        )
     # A failed call is not an answer: store no digest, so the next run asks again.
     digest = (
         None if jev.transient or deepseek.transient else request_digest(full_state(asked.ctx, asked.snippets or ""))
     )
     query = providers.search_query(asked.ctx.artist, asked.ctx.title)
-    evidence = {"search_query": query, "query_version": providers.QUERY_VERSION, "snippets": bool(asked.snippets)}
+    evidence = {
+        "search_query": query,
+        "query_version": providers.QUERY_VERSION,
+        "snippets": bool(asked.snippets),
+        # The group this answer is about: a later retag of the holder makes it unshared (GENRE-08).
+        groups.EVIDENCE_IDENTITY: asked.ctx.group_key,
+    }
     for answer in (jev, deepseek):
         findings.put_finding(
             conn,
@@ -314,10 +391,12 @@ def _store_answers(
                 cost_usd=answer.cost_usd,
             ),
         )
+    # The group keeps ONE computed result, the one stored now; a track that left the
+    # group meanwhile is no longer a copy and keeps its own findings.
+    groups.delete_findings(conn, grp.siblings_of(sid), findings.COMPUTED_PROVIDERS)
     if jev.probabilities is not None:
         findings.put_vector(conn, sid, findings.PROVIDER_JEV, jev.probabilities)
     fused = providers.fuse(jev, deepseek)
-    llm_cost = sum(a.cost_usd or 0.0 for a in (jev, deepseek))
     reason = None if fused.genre else f"jev: {jev.reason}; deepseek: {deepseek.reason}"
     findings.put_finding(
         conn,
@@ -346,25 +425,75 @@ def _store_answers(
     )
 
 
-def _store_and_settle(conn: sqlite3.Connection, asked: _Asked, settle: Callable[[TrackResult], bool]) -> TrackResult:
-    """Store one track and settle its job in one transaction; a lost claim rolls the store back."""
+def _for_requested(conn: sqlite3.Connection, asked: _Asked, result: TrackResult) -> list[TrackResult]:
+    """The group's result for each requested member: the first carries the cost, the rest share it.
+
+    A requested member that left the group while the calls were in flight does not
+    share the answer: it fails as :data:`FAIL_RETAGGED`, to be asked under its new name.
+    So does every member when the copy that holds the group's result left it (an
+    ``up_to_date`` group whose holder was retagged meanwhile has no result any more).
+    """
+    payer, *rest = asked.ctx.requested or (asked.ctx.stable_id,)
+    shared = [
+        replace(result, stable_id=sid, cost_usd=0.0, paid_search=False, search_cost_usd=0.0, shared_from=payer)
+        for sid in rest
+    ]
+    grp = groups.load(conn)
+    answered = (OUTCOME_DONE, OUTCOME_UP_TO_DATE)
+    still = {sid for sid in (asked.ctx.stable_id, payer, *rest) if grp.key(sid) == asked.ctx.group_key}
+    return [
+        r
+        if r.outcome not in answered or {asked.ctx.stable_id, r.stable_id} <= still
+        else replace(r, outcome=OUTCOME_FAILED, reason=FAIL_RETAGGED, genre=None, confidence=None, rule=None)
+        for r in (replace(result, stable_id=payer), *shared)
+    ]
+
+
+def _store_alone(conn: sqlite3.Connection, asked: _Asked) -> list[TrackResult]:
+    """Store one group's result in its own write transaction and commit it.
+
+    The lock is taken BEFORE the group is read again, so the membership the
+    answer is checked against is the membership it is stored against.
+    """
+    began = groups.begin_write(conn)
+    try:
+        results = _for_requested(conn, asked, _store(conn, asked))
+    except BaseException:
+        if began:
+            conn.rollback()
+        raise
+    conn.commit()
+    return results
+
+
+def _store_and_settle(
+    conn: sqlite3.Connection, asked: _Asked, settle: Callable[[TrackResult], bool]
+) -> list[TrackResult]:
+    """Store one group and settle its requested members' jobs in one transaction.
+
+    The store is kept when at least one member's claim still holds; when every
+    one was cancelled meanwhile it is rolled back.
+    """
     conn.execute("BEGIN IMMEDIATE")
     try:
-        result = _store(conn, asked)
-        kept = settle(result)
-        conn.execute("COMMIT" if kept else "ROLLBACK")
+        results = _for_requested(conn, asked, _store(conn, asked))
+        kept = [settle(result) for result in results]
+        conn.execute("COMMIT" if any(kept) else "ROLLBACK")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    if kept:
-        return result
     # Cancelled while the calls were in flight: the search was paid for, so it
     # stays cached, and the cost still counts; no finding is stored.
-    if asked.paid_search and asked.snippets is not None:
+    if not any(kept) and asked.paid_search and asked.snippets is not None:
         findings.put_search(
             conn, providers.search_query(asked.ctx.artist, asked.ctx.title), providers.QUERY_VERSION, asked.snippets
         )
-    return replace(result, outcome=OUTCOME_CANCELLED, reason="cancelled while running", genre=None, confidence=None)
+    return [
+        result
+        if held
+        else replace(result, outcome=OUTCOME_CANCELLED, reason="cancelled while running", genre=None, confidence=None)
+        for result, held in zip(results, kept, strict=True)
+    ]
 
 
 def required_keys(environ: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -501,7 +630,11 @@ def infer_tracks(
     workers: int = DEFAULT_WORKERS,
     settle: Callable[[TrackResult], bool] | None = None,
 ) -> RunSummary:
-    """Infer and store genres for ``stable_ids``; commits once at the end.
+    """Infer and store genres for ``stable_ids``; each group's result is committed as it is stored.
+
+    Duplicates among ``stable_ids`` are asked once (GENRE-08): the first member
+    of a group carries the result and its cost, the others get the same outcome
+    with ``shared_from`` naming it and no cost.
 
     ``settle`` (the genre lane's queue settlement) runs inside the SAME write
     transaction as each asked track's findings; when it returns False (the job
@@ -515,12 +648,14 @@ def infer_tracks(
     findings.ensure_schema(conn)
     ids = list(dict.fromkeys(stable_ids))
     with inference_lock(conn):
-        contexts, skipped = _contexts(conn, ids)
+        _bind_legacy(conn)
+        contexts, skipped = _plan(conn, ids)
         asked = _ask_all(conn, contexts, keys, force=force, workers=workers)
         summary = RunSummary([TrackResult(sid, OUTCOME_SKIPPED, reason) for sid, reason in skipped.items()])
         conn.commit()
         for a in asked:
-            summary.results.append(_store(conn, a) if settle is None else _store_and_settle(conn, a, settle))
+            summary.results.extend(_store_alone(conn, a) if settle is None else _store_and_settle(conn, a, settle))
+        # Nothing is left open: a search cached after a cancelled group is written outside its transaction.
         conn.commit()
     per_1k = summary.cost_per_1k_usd
     if per_1k is not None and per_1k > COST_CEILING_USD_PER_1K:
@@ -551,26 +686,35 @@ def eligible_ids(conn: sqlite3.Connection, *, master_path: Path | None = None) -
 
 
 def missing_fused_ids(conn: sqlite3.Connection, candidates: Iterable[str]) -> list[str]:
-    """Candidates with no complete ``odj-fused`` finding.
+    """Candidates whose duplicate group has no complete ``odj-fused`` finding, one per group.
 
     Complete is ``ok`` WITH a request digest: an unknown fused finding (both
     calls failed) and a degraded one (one call failed, stored without a digest)
     do not count, so "infer everything untagged" picks the track up again.
+
+    GENRE-08: a finding on ANY copy covers the group, and only the first
+    candidate of a group is returned, so duplicates are never queued twice.
     """
     findings.ensure_schema(conn)
-    have = {
-        row[0]
-        for row in conn.execute(
-            "SELECT stable_id FROM genre_findings WHERE provider = ? AND status = 'ok' AND request_digest IS NOT NULL",
-            (findings.PROVIDER_FUSED,),
+    _bind_legacy(conn)
+    grp = groups.load(conn)
+    # A finding made for a holder's OLD name covers nothing: its group is asked again.
+    have = [
+        sid
+        for sid, rows in findings.findings_for(conn, providers=[findings.PROVIDER_FUSED]).items()
+        if any(
+            f.status == findings.STATUS_OK and f.request_digest is not None and groups.describes_holder(f, grp)
+            for f in rows
         )
-    }
-    return [sid for sid in candidates if sid not in have]
+    ]
+    covered = {grp.key(sid) for sid in have}
+    return grp.first_per_group(sid for sid in candidates if grp.key(sid) not in covered)
 
 
 __all__ = [
     "COST_CEILING_USD_PER_1K",
     "CROSS_PROCESS_WAIT_S",
+    "FAIL_RETAGGED",
     "OUTCOME_CANCELLED",
     "OUTCOME_DONE",
     "OUTCOME_FAILED",

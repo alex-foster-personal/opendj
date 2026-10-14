@@ -8,7 +8,7 @@ folders). Counting rows told the maintainer he had "2k tracks"; he has about 1.2
 * ``build_song_index``: one song per group of present rows, joined when they
   share a file path (ALWAYS) or the v1 song key: normalized title + artists +
   duration in whole seconds (``SONG_KEY``). The ADR
-  ``docs/decisions/ADR-NEW-enrich-card-song-identity.md`` records it and the
+  ``(private path)`` records it and the
   post-v1 move to an acoustic fingerprint. A row missing any key part is its
   own song unless its path joins it to another.
 * ``lane_songs`` / ``usable_songs`` / ``step_songs``: the drain's and the
@@ -32,12 +32,13 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from apps.shared.song_identity import artists_from_json, song_key
 
 
 class CFG:
@@ -83,18 +84,6 @@ class SongIndex:
 #-----------------------------------------------------------------------------
 # the index
 #-----------------------------------------------------------------------------
-def _norm(text: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
-
-
-def song_key(title: str | None, artists: Sequence[str], duration_ms: int | None) -> str | None:
-    """The v1 song key, or None when a part is missing (no dedupe on metadata then)."""
-    names = sorted(_norm(a) for a in artists if a and _norm(a))
-    if not title or not _norm(title) or not names or not duration_ms or duration_ms <= 0:
-        return None
-    return f"{_norm(title)}|{'|'.join(names)}|{round(duration_ms / 1000)}"
-
-
 def build_song_index(rows: Iterable[tuple[str, str, str | None, Sequence[str], int | None]]) -> SongIndex:
     """``rows`` are (stable_id, path, title, artists, duration_ms) for present rows."""
     parent: dict[str, str] = {}
@@ -138,20 +127,12 @@ def read_song_index(conn_factory: Callable[[], sqlite3.Connection], present: Seq
             for sid, title, artists_json, duration_ms in conn.execute(
                 f"SELECT stable_id, title, artists_json, duration_ms FROM tracks WHERE stable_id IN ({marks}) AND deleted_at IS NULL", batch
             ):
-                meta[str(sid)] = (title, _artists(artists_json), duration_ms)
+                meta[str(sid)] = (title, artists_from_json(artists_json), duration_ms)
     finally:
         conn.close()
     return build_song_index(
         (sid, path, *meta.get(sid, (None, [], None))) for sid, path in paths.items()
     )
-
-
-def _artists(raw: object) -> list[str]:
-    try:
-        value = json.loads(str(raw)) if raw else []
-    except ValueError:
-        return []
-    return [str(a) for a in value] if isinstance(value, list) else []
 
 
 #-----------------------------------------------------------------------------

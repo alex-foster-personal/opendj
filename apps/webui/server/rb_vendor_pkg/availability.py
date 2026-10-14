@@ -144,19 +144,34 @@ def _l1_hits(wanted: Sequence[str], now: float) -> dict[str, int | None]:
     }
 
 
+def _state_db(state_db_path: Path | None) -> Path:
+    """The caller's database, or the process default when it names none."""
+    return config.STATE_DB if state_db_path is None else state_db_path
+
+
 def _load_index(
-    namespace: str, paths: Sequence[str]
+    namespace: str,
+    paths: Sequence[str],
+    *,
+    state_db_path: Path | None = None,
 ) -> dict[str, path_index.IndexEntry | None]:
-    if not paths or not config.STATE_DB.exists():
+    db_path = _state_db(state_db_path)
+    if not paths or not db_path.exists():
         return {}
-    conn = _open_ro(config.STATE_DB, "STATE_DB")
+    conn = _open_ro(db_path, "STATE_DB")
     try:
         return path_index.bulk_lookup(conn, namespace, paths)
     finally:
         conn.close()
 
 
-def _record_stats(namespace: str, sizes: Mapping[str, int | None], now: float) -> None:
+def _record_stats(
+    namespace: str,
+    sizes: Mapping[str, int | None],
+    now: float,
+    *,
+    state_db_path: Path | None = None,
+) -> None:
     """Cache this request's stats in L1, and persist them off the request thread.
 
     A read request never opens a write connection while the server runs
@@ -171,10 +186,11 @@ def _record_stats(namespace: str, sizes: Mapping[str, int | None], now: float) -
         for path, size in sizes.items():
             config._FILE_EXISTS_CACHE[path] = (now, size)
     rows = list(sizes.items())
-    if path_availability_refresh.record(namespace, rows):
+    if path_availability_refresh.record(namespace, rows, state_db_path=state_db_path):
         return
-    if config.STATE_DB.exists():
-        conn = state_db.open_rw(config.STATE_DB)
+    db_path = _state_db(state_db_path)
+    if db_path.exists():
+        conn = state_db.open_rw(db_path)
         try:
             path_index.upsert_rows(conn, namespace, rows)
             conn.commit()
@@ -242,6 +258,7 @@ def bulk_probe_paths(
     probe_mode: AvailabilityProbeMode = AvailabilityProbeMode.ROW_HYDRATION,
     budget: ProbeBudget | None = None,
     trust_index: bool = True,
+    state_db_path: Path | None = None,
 ) -> dict[str, PathProbeResult]:
     """Disk truth or ``AVAILABILITY_PENDING`` for each unique local path.
 
@@ -252,6 +269,10 @@ def bulk_probe_paths(
     A copied ``path_availability`` index can mark another machine's path
     present with no stat here; those paths spend a budgeted stat, or come
     back pending. They are never reported present from the index alone.
+
+    ``state_db_path`` is the database whose ``path_availability`` index this
+    call reads and, when no refresher is running, writes. None is the
+    process default.
     """
     wanted = list(dict.fromkeys(p for p in paths if p))
     if not wanted:
@@ -263,30 +284,44 @@ def bulk_probe_paths(
     if not rest:
         return out
     namespace = path_index.resolver_namespace(config.DATA_DIR)
-    index = _load_index(namespace, rest) if trust_index else {}
+    index = (
+        _load_index(namespace, rest, state_db_path=state_db_path) if trust_index else {}
+    )
     recent = _recent_answers(rest, index, now) if budget.serves_recent else {}
     stat_now, background = _triage(rest, index, budget, out, recent)
     sizes = {path: _stat_size(resolve_asset_path(path).resolved) for path in stat_now}
     out.update((path, _size_result(size)) for path, size in sizes.items())
-    _record_stats(namespace, sizes, now)
+    _record_stats(namespace, sizes, now, state_db_path=state_db_path)
     if background:
         path_availability_refresh.schedule(background)
     return out
 
 
-def bulk_file_size(paths: Iterable[str]) -> dict[str, int | None]:
+def bulk_file_size(
+    paths: Iterable[str], *, state_db_path: Path | None = None
+) -> dict[str, int | None]:
     """Disk-truth size in bytes per library path (None = not on disk).
 
     A full scan: every path is answered (index hits, else a stat), because
-    a size map has no way to say "not probed yet".
+    a size map has no way to say "not probed yet". ``state_db_path`` selects
+    the path index, same as :func:`bulk_probe_paths`.
     """
-    probed = bulk_probe_paths(paths, probe_mode=AvailabilityProbeMode.FULL_SCAN)
+    probed = bulk_probe_paths(
+        paths,
+        probe_mode=AvailabilityProbeMode.FULL_SCAN,
+        state_db_path=state_db_path,
+    )
     return {path: result.materialised_size for path, result in probed.items()}
 
 
-def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
+def bulk_file_exists(
+    paths: Iterable[str], *, state_db_path: Path | None = None
+) -> dict[str, bool]:
     """Disk-truth existence per path; a full scan, see :func:`bulk_file_size`."""
-    return {path: size is not None for path, size in bulk_file_size(paths).items()}
+    return {
+        path: size is not None
+        for path, size in bulk_file_size(paths, state_db_path=state_db_path).items()
+    }
 
 
 def local_paths(paths: Iterable[str | None]) -> list[str]:

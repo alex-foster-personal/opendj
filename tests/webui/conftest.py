@@ -6,9 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from apps.webui.server.app import create_app
 from apps.webui.server.backend import (
     InMemoryBackend,
     Pairing,
@@ -18,6 +16,7 @@ from apps.webui.server.backend import (
     Track,
 )
 from apps.webui.server.etag import compute_etag
+from tests.webui.testclient_host import TEST_HOST_BASE_URL  # noqa: F401  (re-exported for test modules)
 
 # SEC-01 (issue #2689): the TestClient host-allowlist default lives once in
 # the root tests/conftest.py (it applies fleet-wide, not just to this
@@ -25,12 +24,15 @@ from apps.webui.server.etag import compute_etag
 
 WEBUI_TEST_ROOT: Path = Path(__file__).resolve().parent
 
-# request_guard's host allowlist (issue #2689) checks the literal HTTP Host
-# header; httpx's TestClient default base_url sends "testserver", which
-# matches nothing in the allowlist. Every fixture below passes hostname=
-# "test-host" to create_app(), so pinning base_url to that same name is the
-# one consistent value the app will actually accept.
-TEST_HOST_BASE_URL = "http://test-host"
+# TEST_HOST_BASE_URL lives in tests/webui/testclient_host.py, which imports
+# nothing, so both this conftest and tests/webui/app_fixtures.py can use it
+# without importing each other.
+#
+# BigRfc-1: this conftest must not import create_app or any router. A
+# conftest import puts every test beneath it in the selector's reach of that
+# module ("conftest reach" in scripts/ci_test_selection_rules.py). The
+# full-app fixtures live in tests/webui/app_fixtures.py, and a test that
+# builds the app imports them by name.
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +52,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Auto-mark webui tests with pytest.mark.rb_parity at collection time.
 
     The focused Rekordbox parity gates select with ``-m rb_parity``, and
-    tests/scripts/test_run_rb_parity_check.py enrolls every
+    (private path) enrolls every
     tests/webui/test_*.py by rglob. A new webui test file must therefore be
     selected with no hand-written marker (issue #1140): this hook supplies the
     marker. It is handed items from the whole collection session, not just
@@ -70,23 +72,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 def _iso(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-def _stub_rb_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make the app fixtures hermetic: no live master.plain.db dependency.
-
-    ``list_playlists`` consults ``rb_vendor.playlist_order_index`` whenever
-    rekordbox playlists exist; it reads the live ``master.plain.db``. On a
-    dev Mac that happens to exist, so the unit test silently depended on
-    machine state; on any other machine it fails loudly (by design) and the
-    endpoint 500s. Stub ONLY the db-backed order lookup -- everything else
-    (``bulk_availability`` is a pure stat pass) stays real. rb_vendor's own
-    behaviour is covered by tests/webui/test_rb_vendor_portability.py and
-    the live-db suite.
-    """
-    from apps.webui.server import rb_vendor
-
-    monkeypatch.setattr(rb_vendor, "playlist_order_index", lambda: {})
 
 
 @pytest.fixture
@@ -143,45 +128,20 @@ def seed_backend() -> InMemoryBackend:
     return backend
 
 
-@pytest.fixture
-def client(
-    seed_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
-    _stub_rb_vendor(monkeypatch)
-    app = create_app(
-        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
-        port=18697, frontend_port=19411,
-        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
-    )
-    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
-        yield c
-
-
-@pytest.fixture
-def insecure_client(
-    seed_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
-    _stub_rb_vendor(monkeypatch)
-    app = create_app(backend=seed_backend, bind_host="0.0.0.0",
-                     hostname="test-host")
-    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
-        yield c
-
-
-@pytest.fixture
-def locked_client(
-    seed_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[TestClient]:
-    _stub_rb_vendor(monkeypatch)
-    app = create_app(
-        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: {"holder": "other-host",
-                                 "expires_at": "2099-01-01T00:00:00Z"},
-    )
-    with TestClient(app, base_url=TEST_HOST_BASE_URL) as c:
-        yield c
-
-
 def current_etag(backend: InMemoryBackend, stable_id: str) -> str:
     track = backend.get_track(stable_id)
     return compute_etag(track.stable_id, track.updated_at)
+
+
+# BigRfc-1 ACTIVATION SWITCH (inert while this import stands). Re-exporting the
+# full-app fixtures keeps the selector's old edge, conftest -> create_app, so
+# every test beneath this directory stays in the reach of every server module,
+# exactly as before tests/webui/app_fixtures.py existed. Deleting this import
+# (and its twin in tests/engine_core/conftest.py) is the whole activation: the
+# test modules that build the app already import their fixtures by name.
+# Activation criteria and measurements: (private path).
+from tests.webui.app_fixtures import (  # noqa: E402, F401  (re-exported as fixtures)
+    client_fixture,
+    insecure_client_fixture,
+    locked_client_fixture,
+)

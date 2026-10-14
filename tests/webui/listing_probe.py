@@ -34,6 +34,7 @@ from apps.shared._tagreader import HAS_TAG_READER
 from apps.webui.server.app import create_app
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 from tests.webui.sql_trace import SqlTrace, trace_sqlite
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

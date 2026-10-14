@@ -1,0 +1,25 @@
+{
+ "description": "Trust anchor for the review-chain captures. Each file is what scripts.review_coverage reads for one merged pull request of this repo, recorded with the gh argv that code itself runs. (private path) verifies these checksums BEFORE parsing (pattern follows (private path)).",
+ "captured": "Tue 13 Oct 2026",
+ "shape": "head_sha: `gh pr view <n> --json headRefOid -q .headRefOid`. api_pages[<endpoint>]: the parsed output of `gh api <endpoint> --paginate --slurp` (a list of pages) for pulls/<n>/files, pulls/<n>/commits, pulls/<n>/reviews, pulls/<n>/comments and issues/<n>/comments. pr_checks: `gh pr checks <n> --json name,bucket,state,description`, whole. pr_diff: `gh api repos/<repo>/pulls/<n> -H 'Accept: application/vnd.github.v3.diff'`, whole.",
+ "projection": "Nothing invented, nothing reordered, no record dropped (same form as (private path)). Each API record keeps only the fields review_coverage and review_control_plane read, plus ids and timestamps, with their values untouched: files filename/previous_filename/status; commits sha, parents[].sha, commit.message; reviews id, user.login, state, commit_id, submitted_at, body; pull comments id, pull_request_review_id, in_reply_to_id, user.login, commit_id, original_commit_id, path, created_at, body; issue comments id, user.login, created_at, body. The projection was applied by a script at capture time, not by hand. Dropped with the unread fields: commit author and committer mailboxes, which scripts.oss_tip_audit refuses in the tracked tree, so no placeholder was substituted anywhere.",
+ "omitted": "pr5465.json and pr3359.json hold no pr_diff. Those PRs' diffs add decorator lines of the form `+<at-sign><dotted name>`, which scripts.oss_tip_audit reads as a mailbox; a diff cannot be projected without rewriting it, so it was left out instead of edited. The replay answers that argv with a failure, so a run that reaches the diff reads as could not measure, never as a verdict. review-coverage reads the diff only after REVIEW-13 passes, so every state before the second independent review at those heads is fully served.",
+ "regenerate": "Re-capture with the argv under `shape`, apply `projection`, recompute sha256/bytes. Never hand-edit a payload to make a test pass. All three PRs are merged, so their heads and review history no longer move.",
+ "files": {
+  "pr5465.json": {
+   "sha256": "f32c28ad648eec13289e33e109e0a30de2be6e20d77b65280eaa7d66577749a2",
+   "bytes": 22859,
+   "source": "PR #5465 at head afe21e424ac540e5dd66dde0751b80b54360621a, captured 2026-10-13T20:22:55Z. Control plane (.github/workflows/e2e.yml), commits -Claude. The incident PR: at each of its heads Sol reviewed first and Grok second. At this head: Sol 2026-10-09T20:56:18Z, Grok 2026-10-09T21:15:52Z."
+  },
+  "pr5463.json": {
+   "sha256": "36caa90ef733fd933aa7db01afda070fcdd3043822148d8fefb19ebcd93b0445",
+   "bytes": 14093,
+   "source": "PR #5463 at head 1083602ea7fd0d86886d13ee782daabdae9295eb, captured 2026-10-13T20:23:02Z. Two frontend e2e specs, no control-plane path: the one Sol review at head (2026-10-05T18:52:23Z) covered it."
+  },
+  "pr3359.json": {
+   "sha256": "74e051328fb8e4b19b8ea18f7a506e6cf4fe1d544fd9e1a4affeb8309f4c8b01",
+   "bytes": 33359,
+   "source": "PR #3359 at head 0230f53118be9884913c1a9457785113ce2d8f48, captured 2026-10-13T21:30:59Z. Control plane (justfile), every commit -Claude, and the only lane review at head is Claude's own (2026-09-21T15:21:29Z): recognized, and excluded by REVIEW-13 as the author's harness."
+  }
+ }
+}

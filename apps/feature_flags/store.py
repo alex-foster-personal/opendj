@@ -101,7 +101,7 @@ FLAGS: tuple[FlagDef, ...] = (
             "feature cannot work there and must not appear to. Turning the "
             "flag off is what makes the store build a CONFIG of this build "
             "rather than a fork of it. See SAND-02 in "
-            "specs/appstore-sandbox-remediation.md."
+            "(private path)."
         ),
         retire_by="2027-03-01",
         sandbox_gated=True,
@@ -127,6 +127,19 @@ FLAGS: tuple[FlagDef, ...] = (
             "The v1 fallback if the packaged-build verify fails: OFF hides the "
             "REC controls and POST /api/sets/recorder/start answers 403 "
             "'set recording is disabled in this build', never a broken start."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
+        flag_id="cmdk.v2",
+        default=False,
+        owner="maintainer",
+        note=(
+            "The redesigned Cmd K bar (CMDK-04..07, design artifact Thu 8 Oct "
+            "2026): one in-memory search over the open playlist and the whole "
+            "collection, the library's filters as an icon row, deck rings above "
+            "the bar. OFF keeps the shipped CMDK-01..03 bar unchanged."
         ),
         retire_by="2027-03-01",
         sandbox_gated=False,

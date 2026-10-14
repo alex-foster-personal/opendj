@@ -16,6 +16,7 @@ import json
 import pytest
 
 from apps.webui.server.routes import quality
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 def test_quality_ratchet_served_from_repo(client):

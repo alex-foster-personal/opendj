@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 from apps.webui.server.etag import compute_etag
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 def _iso(dt: datetime) -> str:

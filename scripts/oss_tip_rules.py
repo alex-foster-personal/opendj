@@ -38,12 +38,12 @@ PLACEHOLDER_USERS = frozenset(
         # login on any machine this project runs on (the macOS account is the
         # author's first name, the Linux accounts are elsewhere), and it is what
         # #910/#1326 already substituted into the launchd plists, the autoreposync
-        # skill's per-machine path table and the platform-path tests. Left out of
+        # per-machine path table (now in fleet-af) and the platform-path tests. Left out of
         # the original list, which is why 105 tracked references read as findings
         # (#1808).
         "dev",
         # The second macOS machine's placeholder login, so the autoreposync
-        # per-machine path table and its profiles can keep three DISTINCT homes
+        # per-machine path table (now in fleet-af) and its profiles can keep three DISTINCT homes
         # (Air, silver, agentbox) after the real silver login was scrubbed. Keyed
         # to the fleet's own machine names, not to a shape (#1808).
         "silver",
@@ -78,7 +78,7 @@ PLACEHOLDER_USERS = frozenset(
         # so the path names nothing reachable; scrubbing 120 planning docs buys nothing.
         "dev3",
         # De-identified logins minted by scripts/fixtures/deidentify_store_names.py for
-        # tests/fixtures/provenance/cc-store-names.tsv.
+        # (private path).
         "vlx",
         "uwcyb",
     }
@@ -240,7 +240,7 @@ _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
 )
 
 # bzip2 and zlib verbatim upstream license texts name their authors by email; per file, never per dir (#4853).
-MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"}) | {
+MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "(private path)"}) | {
     f"docs/legal/python-build-standalone/LICENSE.{lib}.txt" for lib in ("bzip2", "zlib")
 }
 GENERATED_TEST_ID_PATHS = frozenset({".test_durations"})  # pytest-split cache, not a mailbox
@@ -253,10 +253,10 @@ _ALLOWED_TAILNETS = frozenset(
     {
         "example",
         "example-tailnet",
-        # Negative-example label `tests/scripts/test_oss_tip_audit.py` builds to
+        # Negative-example label `(private path)` builds to
         # prove the tailnet-name rule fires; not a network anyone operates.
         "not-a-real-tailnet",
-        # Negative-example label `tests/webui/test_crate_sync.py` builds to prove
+        # Negative-example label `(private path)` builds to prove
         # a push destination on the WRONG tailnet is rejected; not a network
         # anyone operates.
         "not-this-deployments-tailnet",
@@ -288,7 +288,7 @@ _URL_AUTHORITY_BEFORE = re.compile(r"[a-z][a-z0-9+.\-]*://[^\s/]+$", re.IGNORECA
 # The trade this makes explicit: a real identity typed into a NEW record will not
 # fail CI. That is accepted, and is the reason this list is four directories
 # rather than "anything dated".
-RECORD_PATHS = ("app_docs/", "docs/threads/", ".planning/", "specs/")
+RECORD_PATHS = ("app_docs/", "(private path)/", ".planning/", "specs/")
 
 
 def is_record_path(rel: str) -> bool:
@@ -399,9 +399,9 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     # Linux homes too. The macOS and Windows rules reported the tree clean while a
-    # real `/home/<login>` sat in four tracked files, so the gate certified a tip
+    # real `/home/user>` sat in four tracked files, so the gate certified a tip
     # that still named a live account (Codex P1, #1440).
-    ("linux-home-path", re.compile(r"/home/([^/\s'\"`)]+)")),
+    ("linux-home-path", re.compile(r"/home/user/\s'\"`)]+)")),
     (
         # Any local part at any registrable domain, not a list of providers: a
         # provider list is a value that rots, and the rule exists to catch the

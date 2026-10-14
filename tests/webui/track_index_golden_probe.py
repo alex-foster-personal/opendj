@@ -64,6 +64,8 @@ def old_index_body(request: Request, backend: StateBackend) -> bytes:
             base["play_count"] = int(row.get("play_count") or 0)
             base["bpm"] = row["bpm"]
             base["key"] = row["key"]
+            # CMDK-04: the index carries the comment the library shows.
+            base["comments"] = row.get("comments")
             items.append(
                 TrackIndexItemOut(
                     **base,

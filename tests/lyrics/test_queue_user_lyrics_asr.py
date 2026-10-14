@@ -155,13 +155,55 @@ def test_no_source_is_done_until_vocals_hash_changes(tmp_path: Path) -> None:
     )
 
 
-def test_asr_cache_enqueue_is_skipped_when_fresh(tmp_path: Path) -> None:
+def _asr_verdict(stable_id: str, recorded_at: str) -> FetchVerdict:
+    return FetchVerdict(
+        stable_id=stable_id,
+        outcome="cached",
+        source="asr",
+        vocals_sha256=None,
+        hub_code=None,
+        hub_message=None,
+        language_iso3=None,
+        recorded_at=recorded_at,
+    )
+
+
+@pytest.mark.parametrize(
+    ("recorded_at", "expected"),
+    [
+        (None, queue_store.ITEM_PENDING),
+        ("2000-01-01T00:00:00Z", queue_store.ITEM_PENDING),
+        ("now", queue_store.ITEM_SKIPPED),
+    ],
+    ids=["no-verdict", "stale-ask", "fresh-ask"],
+)
+def test_asr_cache_enqueue_reasks_lrclib_only_when_stale(
+    tmp_path: Path, recorded_at: str | None, expected: str
+) -> None:
+    """An ASR cache is up to date only while its last LRCLIB ask is recent."""
     db = tmp_path / "state.db"
     stable_id = "asr-cached"
     _seed(db, [stable_id])
     write(
         cache_path(tmp_path, stable_id),
         Lyrics(stable_id, "asr", (LyricLine(1000, "Line"),)),
+    )
+    if recorded_at is not None:
+        stamp = utc_now_iso() if recorded_at == "now" else recorded_at
+        write_verdict(tmp_path, _asr_verdict(stable_id, stamp))
+    conn = _conn(db)
+    result = _enqueue(conn, "lyrics", [stable_id], tmp_path)
+    assert result.items[0].state == expected
+    conn.close()
+
+
+def test_lrclib_cache_enqueue_is_skipped_without_a_verdict(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    stable_id = "lrclib-cached"
+    _seed(db, [stable_id])
+    write(
+        cache_path(tmp_path, stable_id),
+        Lyrics(stable_id, "lrclib", (LyricLine(1000, "Line"),)),
     )
     conn = _conn(db)
     result = _enqueue(conn, "lyrics", [stable_id], tmp_path)

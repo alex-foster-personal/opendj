@@ -87,6 +87,17 @@ export function stepSelection(index: number, count: number, step: -1 | 1): numbe
 	return Math.min(count - 1, Math.max(0, index + step));
 }
 
+/**
+ * The next Tab stop among `count` focusable controls, wrapping at both ends
+ * (CMDK-04). `at` is the focused control's index, or -1 when focus sits on
+ * none of them, which lands on the first control either way.
+ */
+export function cycleFocusIndex(at: number, count: number, back: boolean): number {
+	if (count <= 0) return -1;
+	if (at < 0 || at >= count) return 0;
+	return (at + (back ? count - 1 : 1)) % count;
+}
+
 /** How long vocals-only waits for the deck's stems before giving up. Stems
  * decode after the mix, and a bundle the hub is still fetching from R2 can
  * take minutes (STEM_HYDRATE_MAX_WAIT_MS allows ten). */

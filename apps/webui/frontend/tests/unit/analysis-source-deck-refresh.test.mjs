@@ -192,6 +192,11 @@ test('refreshes a loaded deck onto a fresh, real own-source anlz payload', async
 		audio.deckStates[1].anlz.beatgrid.beat_count > 0,
 		'the real own analysis for this track has downbeats; the served grid must not be empty'
 	);
+	// perf board row anlz-raw-not-deep-proxy: the real refresh publishes the
+	// served payload through rawAnlz(), so the deep $state record stores it raw
+	// instead of proxying every beat. A proxied read reports Object.prototype.
+	const proto = Object.getPrototypeOf(audio.deckStates[1].anlz);
+	assert.equal(proto?.[Symbol.for('opendj.anlz-raw')], true, 'the refreshed payload must be published raw, not deep-proxied');
 });
 
 test(

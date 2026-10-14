@@ -12,6 +12,7 @@ import pytest
 
 from apps.webui.port_config import PortConfigError, WebuiPorts, WorktreeUnavailableError
 from apps.webui.server.routes import worktree_ports
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 def test_worktree_ports_happy_path(client, monkeypatch):

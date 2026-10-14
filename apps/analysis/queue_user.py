@@ -18,6 +18,7 @@ from typing import Literal
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics import fetch_verdicts
 from apps.lyrics.asr_hallucination import ASR_SOURCE, filter_asr_lines
+from apps.lyrics.lrclib_query import asr_recheck_due
 from apps.lyrics.service import vocals_sha256_for_track
 from apps.stems.selection import has_bundle
 
@@ -235,13 +236,16 @@ def lyrics_skip_reason(stable_id: str, *, data_dir: Path) -> str | None:
     """
     path = lyrics_cache.cache_path(data_dir, stable_id)
     loaded = lyrics_cache.load(path)
+    verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
     if (
         loaded is not None
         and loaded.stable_id == stable_id
         and _cache_has_lyric_line(loaded)
     ):
+        # LYRICS-07: an ASR cache re-asks LRCLIB once its last ask is stale.
+        if loaded.source == ASR_SOURCE and asr_recheck_due(verdict, datetime.now(UTC)):
+            return None
         return SKIP_UP_TO_DATE
-    verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
     if verdict is None or (verdict.outcome == "no_source" and not verdict.vocals_sha256):
         return None
     if verdict.outcome in ("instrumental", "no_source") and fetch_verdicts.is_terminal_fresh(

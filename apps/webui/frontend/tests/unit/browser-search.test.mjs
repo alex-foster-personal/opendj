@@ -103,7 +103,7 @@ test('the compatible filter is always reachable in the header, never gated on se
 		searchOnlyBlock.includes('class="whole-collection"'),
 		'Search all playlists stays in the search-focused options row'
 	);
-	assert.match(source, /class="hide-broken"[\s\S]*?class="next-only"[\s\S]*?<span>compatible<\/span>/);
+	assert.match(source, /class="hide-broken"[\s\S]*?class="next-only"[\s\S]*?<span>\{LIBRARY_FILTER_LABELS\.compatible\.name\}<\/span>/);
 	// One explainer per control (#5535): the description lives in the hover
 	// card, not in a title= on the label that would draw a second box.
 	assert.doesNotMatch(source, /class="next-only"\s+title=/);

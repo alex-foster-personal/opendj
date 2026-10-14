@@ -39,9 +39,21 @@ export function libraryIndexIsCurrent(): boolean {
 	return held !== null && held.generation === generation;
 }
 
+const invalidationListeners = new Set<() => void>();
+
 /** A library change happened: the next load fetches, the held copy stays for paint. */
 export function invalidateLibraryIndex(): void {
 	generation += 1;
+	for (const listener of [...invalidationListeners]) listener();
+}
+
+/** Calls `listener` after each invalidation, so a view holding rows can re-ask
+ * while it stays open. Returns the unsubscribe. */
+export function onLibraryIndexInvalidated(listener: () => void): () => void {
+	invalidationListeners.add(listener);
+	return () => {
+		invalidationListeners.delete(listener);
+	};
 }
 
 /** The current index: the held one, or one shared request for it. A failed

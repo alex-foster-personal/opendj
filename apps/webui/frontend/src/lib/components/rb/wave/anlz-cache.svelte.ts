@@ -57,6 +57,9 @@ export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 // itself (audio-engine.svelte.ts) can read the fetch generation through the
 // same edge, rather than adding a second one to anlz-fetch-generation.ts.
 export { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+// Re-exported for audio-engine.svelte.ts, which sits on the frontend.max_fan_out
+// ratchet: every deck ANLZ publish there goes through it (anlz-raw.ts).
+export { rawAnlz } from '$lib/rb/anlz-raw';
 // Same reasoning: audio-engine.svelte.ts is pinned at the file_size.max_frontend
 // and frontend.max_fan_out ratchet floors with zero headroom, so this reads
 // the last CONFIRMED rbx-vs-own selection (for createBeatgridResyncGuards's

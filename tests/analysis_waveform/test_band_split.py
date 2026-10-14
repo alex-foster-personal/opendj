@@ -80,7 +80,7 @@ def test_each_tone_shows_in_its_own_band_only(tmp_path: Path) -> None:
     source = tmp_path / "three tones.wav"
     _write_sequential_tones(source, BAND_TONES_HZ)
 
-    peaks = decode.decode_peaks(source)
+    peaks = decode.decode_peaks_from("ffmpeg", source)
     assert peaks.ndim == 2 and peaks.shape[1] == decode.BAND_COUNT, (
         f"expected (n, 3) tri-band columns, got {peaks.shape}"
     )
@@ -120,7 +120,7 @@ def test_a_silent_band_is_measured_as_silent_not_copied_from_a_loud_one(
     source = tmp_path / "low only.wav"
     _write_sequential_tones(source, (BAND_TONES_HZ[0],))
 
-    levels = decode.decode_peaks(source).max(axis=0) / 255.0
+    levels = decode.decode_peaks_from("ffmpeg", source).max(axis=0) / 255.0
     assert levels[0] >= IN_BAND_MIN, f"the low tone itself only reached {levels[0]:.3f}"
     assert levels[1] <= OUT_OF_BAND_MAX and levels[2] <= OUT_OF_BAND_MAX, (
         "mid and high must be measured silence for a low-only file, not a copy "
@@ -133,7 +133,7 @@ def test_a_garbage_file_is_not_decoded_with_a_stated_reason(tmp_path: Path) -> N
     source = tmp_path / "not really audio.wav"
     source.write_bytes(b"this is not a RIFF header" * 4096)
     with pytest.raises(decode.LocalDecodeUnavailable) as raised:
-        decode.decode_peaks(source)
+        decode.decode_peaks_from("ffmpeg", source)
     assert raised.value.reason, "not_decoded must name a reason, never an empty string"
     assert raised.value.retryable is False, (
         "undecodable bytes are a fact about the file, not a transient queue state"
@@ -155,7 +155,7 @@ def test_a_decode_deadline_miss_is_retryable_not_a_verdict_on_the_file(
     _write_sequential_tones(source, BAND_TONES_HZ)
     impatient = decode.DecodeProfile(timeout_s=0.001)
     with pytest.raises(decode.LocalDecodeUnavailable) as raised:
-        decode.decode_peaks(source, impatient)
+        decode.decode_peaks_from("ffmpeg", source, impatient)
     assert "within" in raised.value.reason, raised.value.reason
     assert raised.value.retryable is True, (
         "a deadline miss describes the host at that moment, not the file"

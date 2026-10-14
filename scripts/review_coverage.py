@@ -98,6 +98,7 @@ repo's 600-line file-size ratchet -- see that module's docstring for why.
 
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -149,7 +150,7 @@ REPO = "private_owner/music-dj-tools"
 #: Grok and Cursor joined Thu 1 Oct 2026 (the maintainer's "Auto failover chain"
 #: decision): subscription lanes via the af-sub-broker, tried by
 #: `just review <PR>` in exactly this order, Claude last because it bills
-#: the maintainer's own allowance. See scripts/review_chain.py.
+#: the maintainer's own allowance. See (private path).
 EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL, GROK, CURSOR, CLAUDE)
 
 #: Substrings that mean the check reported success WITHOUT reviewing. Matched
@@ -493,6 +494,23 @@ def _require_head_unchanged(sampled: str, current: str) -> None:
             f"PR head moved from {sampled} to {current} while collecting "
             "review evidence; re-run against the new head"
         )
+
+
+#: One row of the "reviewer coverage" table `triage` prints below, read back.
+_REVIEWER_ROW = re.compile(r"^    (?P<mark>ok|sub|MISS) +(?P<name>\w+): ", re.M)
+
+
+def read_reviewer_marks(output: str) -> dict[str, str]:
+    """`triage`'s own per-reviewer table: expected reviewer -> `ok`, `sub` or `MISS`.
+
+    `ok` is the only mark that means THIS reviewer left a recognized artifact at the head
+    (`sub` is a reviewer another one covered for). Empty when the table was not printed,
+    which is every run REVIEW-13 or the docs-only exemption decided first."""
+    return {
+        row["name"]: row["mark"]
+        for row in _REVIEWER_ROW.finditer(output)
+        if row["name"] in EXPECTED_REVIEWERS
+    }
 
 
 def triage(pr: str) -> int:

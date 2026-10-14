@@ -15,6 +15,7 @@ import pytest
 
 from apps.voice import settings
 from apps.webui.server.routes import voice_probe
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 @pytest.fixture(autouse=True)

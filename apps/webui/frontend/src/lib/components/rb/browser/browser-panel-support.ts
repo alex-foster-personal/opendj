@@ -107,3 +107,5 @@ export {
 } from '$lib/rb/library-playlist-page-prefetch';
 // The order answers when a playlist selection lands, not when its fill ends.
 export { paneLoadState, untilSelectionLands } from './selection-lands';
+// The filter labels shared with the Cmd K bar (CMDK-05).
+export { LIBRARY_FILTER_LABELS } from '$lib/rb/library-filter-labels';

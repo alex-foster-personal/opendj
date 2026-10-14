@@ -772,7 +772,9 @@ type TrackIndexOmittedField =
 	| 'lyrics_available'
 	| 'auto_cues_available'
 	| 'stems_available';
-export type TrackIndexItemWire = Omit<TrackListItemWire, TrackIndexDeferredField | TrackIndexOmittedField>;
+/** Index rows also carry `comments`, which the Cmd K v2 bar searches collection-wide (CMDK-04). */
+export type TrackIndexItemWire = Omit<TrackListItemWire, TrackIndexDeferredField | TrackIndexOmittedField> &
+	Pick<components['schemas']['TrackIndexItemOut'], 'comments'>;
 
 export interface TrackIndexWire {
 	revision: string;

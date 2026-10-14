@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.backend import InMemoryBackend
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 
 def _set_file_path(backend: InMemoryBackend, stable_id: str, file_path: str | None) -> None:

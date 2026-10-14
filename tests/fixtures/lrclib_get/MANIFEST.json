@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "source": "https://lrclib.net/api/get",
+  "captured": "Tue 13 Oct 2026",
+  "files": {
+    "hit.json": {
+      "status": 200,
+      "request": "GET /api/get/{id}",
+      "sha256": "c6e515f6ff8c80853ad39c79ac16b74defaaecd874f39feade877cfebaa1ac24",
+      "sanitized": "id, name, trackName, artistName, albumName and every lyric text line in plainLyrics, syncedLyrics and lyricsfile replaced with invented text; field set, types, flags, duration, line count, stanza breaks and every timestamp kept as captured",
+      "raw_sha256": "067acfb9cacbfe3395bdbcd00f096c3352f1e65c22373fb13254a79cd58eb85d"
+    },
+    "not_found.json": {
+      "status": 404,
+      "request": "GET /api/get?artist_name&track_name&duration for an invented track",
+      "sha256": "9be71347cec25fa05acdc8f236044126c51ba9dc4ddaccb9933a59fe20fe2802",
+      "sanitized": "none (verbatim)"
+    },
+    "server_overloaded.json": {
+      "status": 503,
+      "request": "GET /api/get?artist_name&track_name&duration, served with retry-after: 1",
+      "sha256": "32cef4f9c4d79666db4294c5046635fb25876b800e9c60fc2d5098516ec5255a",
+      "sanitized": "none (verbatim)"
+    }
+  }
+}

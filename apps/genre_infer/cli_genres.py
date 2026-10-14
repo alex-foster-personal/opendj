@@ -80,6 +80,7 @@ def _infer(args: argparse.Namespace, conn: Any) -> dict[str, Any]:
         doc.pop("results")
     print(
         f"genre: {doc['done']} done, {doc['up_to_date']} up to date, {doc['skipped']} skipped, {doc['failed']} failed; "
+        f"{doc['asked']} asked, {doc['shared_with_duplicates']} shared a duplicate's ask; "
         f"{doc['paid_searches']} paid searches (${doc['search_cost_usd']:.4f}); total ${doc['cost_usd']:.4f}; "
         f"per 1k asked: ${doc['cost_per_1k_usd']} total, ${doc['model_cost_per_1k_usd']} models only",
         file=sys.stderr,

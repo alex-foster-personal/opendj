@@ -53,6 +53,7 @@ from scripts.perf.capture_s5 import (
     require_stem_bundle,
     stems_payload_is_ready,
 )
+from tests.socket_stub import stop_accept_loop
 from tests.webui.test_stems import _bundle
 
 pytestmark = pytest.mark.requirement("PERF-CAPTURE-01")
@@ -136,10 +137,9 @@ class _SilentHub:
                 self._on_accept()
 
     def close(self) -> None:
-        self._listener.close()
+        stop_accept_loop(self._listener, self._thread)
         for conn in self._conns:
             conn.close()
-        self._thread.join(timeout=5)
 
 
 def _closed_port_url() -> str:

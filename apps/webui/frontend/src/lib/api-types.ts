@@ -16139,6 +16139,8 @@ export interface components {
             /** Bpm Status */
             bpm_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
+            /** Comments */
+            comments?: string | null;
             /** Duration Ms */
             duration_ms?: number | null;
             /** Energy */

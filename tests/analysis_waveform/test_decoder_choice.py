@@ -15,6 +15,7 @@ suffix, and it is part of the local cache key.
 from __future__ import annotations
 
 import math
+import os
 import struct
 import wave
 from pathlib import Path
@@ -23,10 +24,18 @@ import numpy as np
 import pytest
 
 from apps.analysis_waveform import decode
+from apps.shared import platform_paths
+from apps.shared.odj_audio_binary import BIN_ENV
+from tests.rust_build_env import build_audio_engine
 
 pytestmark = pytest.mark.requirement("NATIVE-21")
 
 RATE = 44_100
+
+
+@pytest.fixture(scope="module")
+def engine_bin() -> Path:
+    return build_audio_engine(platform_paths.PROJECT_ROOT / "apps" / "audio-engine")
 
 
 def _engine_or_skip() -> None:
@@ -54,8 +63,15 @@ def _write_stereo_mix(path: Path, seconds: float = 4.0) -> None:
 
 
 @pytest.mark.requires_ffmpeg
-def test_the_engine_matches_ffmpeg_to_one_step_on_a_stereo_file(tmp_path: Path) -> None:
+def test_the_engine_matches_ffmpeg_to_one_step_on_a_stereo_file(tmp_path: Path, engine_bin: Path) -> None:
+    # The production resolver runs unmodified: an operator's ODJ_AUDIO_BIN wins,
+    # otherwise it must pick the checkout build the fixture just made fresh.
     _engine_or_skip()
+    if not os.environ.get(BIN_ENV, "").strip():
+        assert decode.resolve_engine() == str(engine_bin), (
+            f"the resolver did not pick the fresh checkout build {engine_bin}; "
+            "a newer build under apps/audio-engine/target shadows it"
+        )
     source = tmp_path / "mix.wav"
     _write_stereo_mix(source)
     engine = decode.decode_peaks_from("engine", source).astype(int)

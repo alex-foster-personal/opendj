@@ -205,6 +205,11 @@ test.describe('setup entry points', () => {
 			response.url().includes('/api/v1/update/check')
 		);
 
+		// Spend PERFMODE-11's cold-open redirect before `/`: otherwise Gig mounts
+		// early, ui-mirror PUT/GET races Run setup's deliberate `/performance`
+		// handoff, and Chromium logs a designed 409 on `/api/v1/state/ui-mirror`.
+		// Same pattern as smoke.spec.ts and the build-identity test below.
+		await spendBootLanding(page);
 		await gotoShellReady(page, '/');
 		await expect(settingsDialog(page)).toHaveCount(0);
 

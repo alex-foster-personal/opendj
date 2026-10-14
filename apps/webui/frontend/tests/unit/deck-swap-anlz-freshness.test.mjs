@@ -65,7 +65,7 @@ test('load() publishes resolvePublishedAnlz\'s freshness-checked answer at swap 
 	const usableIndex = body.indexOf('isAnlzEntryUsable(latestAnlzEntry)');
 	const errorBranchIndex = body.indexOf("latestAnlzEntry?.status === 'error'");
 	const resolveCallIndex = body.indexOf('resolvePublishedAnlz(usableAnlz, latestAnlzError, candidateAnlz, candidateTrack.bpm ?? null)');
-	const anlzAssignIndex = body.indexOf('st.anlz = publishedAnlz;');
+	const anlzAssignIndex = body.indexOf('st.anlz = rawAnlz(publishedAnlz);');
 	const anlzErrorAssignIndex = body.indexOf('st.anlz_error = publishedAnlzError;');
 	const loopAssignIndex = body.indexOf('displayLoopFrom(publishedAnlz.cues, publishedAnlz.beatgrid.beats)');
 	const bpmAssignIndex = body.indexOf('st.bpm = publishedBpm;');

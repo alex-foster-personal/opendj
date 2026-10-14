@@ -359,6 +359,15 @@ function _allowed(list: AllowEntry[], skin: Skin, surface: Surface, el: string):
 }
 
 test('every visible text element clears WCAG AA in every skin, or is allowlisted with a reason', async ({ page }) => {
+	// NAMED QUARANTINE, not a silent skip (issue #6082). This audit goes red under
+	// runner load on PRs that do not touch it (#6399, #6567, #6293) while main's
+	// e2e passes at b79e0507c6, so it is a load flake, not a trunk red.
+	// Skip only on pull_request. Local runs, push, schedule, and workflow_dispatch
+	// still execute the audit. Delete this skip when #6082 closes.
+	test.skip(
+		process.env.GITHUB_EVENT_NAME === 'pull_request',
+		'QUARANTINED (#6082): contrast audit flakes under runner load on unrelated PRs'
+	);
 	test.setTimeout(240_000);
 	await page.setViewportSize({ width: 1600, height: 900 });
 

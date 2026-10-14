@@ -27,6 +27,7 @@ from typing import Any
 import pytest
 
 from apps.shared.state import db as state_db
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 from tests.webui.listing_boot_probe import run_boot_probe, share_root_under
 
 pytestmark = [pytest.mark.requirement("LIBM-171")]
@@ -44,6 +45,9 @@ DEFERRED = frozenset({
     "provenance", "tags", "last_played_at", "tempo_pref", "created_at", "updated_at",
     "lyrics_available", "auto_cues_available", "stems_available",
 })
+#: Fields only the index carries: the Cmd K v2 bar searches comments collection-wide
+#: (CMDK-04), and a listing row has no use for them.
+INDEX_ONLY = frozenset({"comments"})
 
 
 def _sid(i: int) -> str:
@@ -86,10 +90,10 @@ def _seed(root: Path) -> tuple[Path, Path]:
             "rb_local_deleted INTEGER NOT NULL DEFAULT 0)"
         )
         master.executemany(
-            "INSERT INTO djmdContent (ID, ImagePath, AnalysisDataPath, DJPlayCount) VALUES (?, ?, ?, 0)",
+            "INSERT INTO djmdContent (ID, ImagePath, AnalysisDataPath, Commnt, DJPlayCount) VALUES (?, ?, ?, ?, 0)",
             [
                 (str(i + 1), f"/PIONEER/Artwork/{i % 4096:03x}/{i:08x}/artwork.jpg",
-                 f"/PIONEER/USBANLZ/{i % 4096:03x}/{i:08x}/ANLZ0000.DAT")
+                 f"/PIONEER/USBANLZ/{i % 4096:03x}/{i:08x}/ANLZ0000.DAT", f"rb comment {i}")
                 for i in range(TRACKS)
             ],
         )
@@ -120,7 +124,13 @@ def test_index_is_the_full_walk_minus_deferred_fields(probe) -> None:
     assert len(walk) == TRACKS
     assert isinstance(index["revision"], str) and index["revision"] != ""
     assert all(DEFERRED.isdisjoint(row) for row in index["items"])
-    assert index["items"] == [{k: v for k, v in row.items() if k not in DEFERRED} for row in walk]
+    assert all(INDEX_ONLY <= row.keys() for row in index["items"])
+    # The comment the library shows: rekordbox's Commnt for a mapped row (CMDK-04).
+    assert [row["comments"] for row in index["items"]] == [f"rb comment {i}" for i in range(TRACKS)]
+    assert all(INDEX_ONLY.isdisjoint(row) for row in walk)
+    assert [{k: v for k, v in row.items() if k not in INDEX_ONLY} for row in index["items"]] == [
+        {k: v for k, v in row.items() if k not in DEFERRED} for row in walk
+    ]
 
 
 def test_index_sql_cost_is_per_read_page_not_per_row(probe) -> None:

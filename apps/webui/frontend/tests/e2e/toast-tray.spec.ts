@@ -163,6 +163,7 @@ async function raiseAndSampleExit(
 }
 
 test.beforeEach(async ({ page }) => {
+	// Cold `goto('/')` races PERFMODE-11's one-shot redirect into Gig; see boot-landing.ts.
 	// The tray is global. A cold open of `/` redirects into /performance, whose
 	// deck boot raises its own toasts (Deck N QUANTIZE / BEAT SYNC needs a beat
 	// grid). With a 3-toast cap those evict the oldest toast, which on a loaded

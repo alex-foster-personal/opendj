@@ -1,8 +1,7 @@
 """Guards on the CI Insights staging step's failure behavior.
 
 Extracted from `test_ci_fast_lane_junit_staging.py` when that module approached the
-quality gate's per-file line limit, following the same split as
-`autoreposync_uv.py`. The helpers stay in the original module so there is one
+quality gate's per-file line limit. The helpers stay in the original module so there is one
 definition of how the workflow is loaded.
 """
 

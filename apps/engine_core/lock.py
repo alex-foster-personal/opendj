@@ -1,14 +1,14 @@
 """Engine singleton lock.
 
-An exclusive ``flock`` on ``<data_dir>/.engine.lock`` whose contents are the
+An exclusive OS file lock (:mod:`apps.shared.file_lock`: ``flock`` on POSIX,
+``msvcrt.locking`` on Windows) on ``<data_dir>/.engine.lock`` whose contents are the
 holder's identity JSON ``{pid, role, port, boot_id, started_at, heartbeat_at}``. The
-flock is the authority -- the kernel drops it when the holder dies -- and the
+lock is the authority -- the OS drops it when the holder dies -- and the
 JSON exists so a refusal can NAME the holder instead of saying "busy".
 """
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import uuid
@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+
+from apps.shared import file_lock
 
 # A holder whose heartbeat is younger than this is live. An older heartbeat
 # under a still-held flock means the process is alive but wedged -- also a
@@ -99,15 +101,13 @@ class EngineLock:
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
+        if not file_lock.try_lock(fd):
             holder = _read_holder(fd)
             os.close(fd)
-            raise EngineLockError(_refusal(self.path, holder)) from exc
+            raise EngineLockError(_refusal(self.path, holder))
         swapped = _swap_reason(fd, self.path)
         if swapped is not None:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            file_lock.unlock(fd)
             os.close(fd)
             raise EngineLockError(swapped)
         self._fd = fd
@@ -118,7 +118,7 @@ class EngineLock:
             return
         fd, self._fd = self._fd, None
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            file_lock.unlock(fd)
         finally:
             os.close(fd)
 
@@ -232,12 +232,10 @@ def inspect_lock(path: Path) -> Literal["free"] | LockHolder:
         return "free"
     fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            return "free"
-        except OSError:
+        if not file_lock.try_lock(fd):
             return _read_holder(fd)
+        file_lock.unlock(fd)
+        return "free"
     finally:
         os.close(fd)
 
@@ -251,6 +249,7 @@ def _swap_reason(fd: int, path: Path) -> str | None:
     uncontended, and boots -- two live engines on one jobs db, which is the
     exact outcome this lock exists to prevent. So the held fd and the path are
     compared after the flock succeeds, and a mismatch refuses the boot.
+    Windows refuses to unlink an open file, so the race is POSIX-only there.
     """
     held = os.fstat(fd)
     try:

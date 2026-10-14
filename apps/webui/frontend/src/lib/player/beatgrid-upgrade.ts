@@ -27,6 +27,7 @@ import {
 import { recordPerfTiming } from '$lib/rb/perf-event-log';
 import { isUsbTrackId } from '$lib/rb/track-source';
 import { pushToast } from '$lib/stores.svelte';
+import { rawAnlz } from '$lib/rb/anlz-raw';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import type { DeckState } from '$lib/rb/deck-state-types';
 
@@ -109,7 +110,7 @@ export async function upgradeDeckBeatgrid(
 		// track, so assigning nextAnlz wholesale would roll those back and leave
 		// the wave row's cue markers stale against the hot-cue bank
 		// (PR #765 'Merge the fallback grid into the latest ANLZ payload').
-		st.anlz = { ...latest, beatgrid: nextAnlz.beatgrid };
+		st.anlz = rawAnlz({ ...latest, beatgrid: nextAnlz.beatgrid });
 		stages.total = Math.round(performance.now() - t0);
 		recordPerfTiming(`deck-beatgrid-fallback sid=${stableId.slice(0, 12)}`, stages, deck);
 	};

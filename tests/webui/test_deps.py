@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.webui.app_fixtures import locked_client_fixture  # noqa: F401  (pytest fixtures)
+
 
 @pytest.mark.requirement("CAT-05")
 def test_read_endpoint_works_when_peer_holds_lock(locked_client):

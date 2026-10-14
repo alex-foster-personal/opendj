@@ -31,6 +31,7 @@ from apps.webui.server.routes.performance_headphones import (
 )
 from apps.webui.server.routes.state import router as state_router
 from tests.opendj_cli.ts_contract import command_fields, headphone_command_fields
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 pytestmark = pytest.mark.requirement("CUEOUT-04")
 

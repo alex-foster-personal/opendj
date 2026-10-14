@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "capture": {
+    "kind": "webui-track-index-body",
+    "source": "GET /api/v1/tracks/index from the engine composition root (build_config, apply_env_contract, prepare_layout, create_app) in a child interpreter over a StateWriter-hydrated data dir: tests/webui/capture_cmdk_index.py",
+    "captured_on": "2026-10-13",
+    "scenario": "Five rows for the Cmd K v2 tests (CMDK-04, CMDK-05; Codex P1 on PR #6089, thread PRRT_kwDOSEvNd86rCuos): three present real mp3 copies (one a remix, two sharing an album), one local path that does not exist, and one tidal: streaming URI. Re-captured Tue 13 Oct 2026 for a reviewed index wire change: index rows now carry comments (CMDK-04, Codex P2 on #6089), and one row has a comment written through StateWriter.set_field; every other field is byte-identical to the first capture. Local file_path values are rewritten to <data_dir>/audio/<name> because the temp dir differs per run; no test reads them.",
+    "immutable": "Do not regenerate or rewrite this capture to make a test pass. Re-capture only for a reviewed change to the index wire shape."
+  },
+  "files": {
+    "cmdk-index-captured.json": {
+      "bytes": 7501,
+      "sha256": "443d25bb81fa62fd2e0f17cc0f0d5b6ebe6d82e392cc636fc4eb37427f9984a3"
+    }
+  }
+}

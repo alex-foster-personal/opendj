@@ -68,6 +68,7 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from scripts.review_claude import CLAUDE_MARKER
 from scripts.review_control_plane_carry import (
@@ -244,6 +245,53 @@ class DualReview:
     ok: bool | None  # None = could not measure
     detail: str
     carried: tuple[CarriedReview, ...] = ()
+    #: Harnesses with a review recognized AT HEAD, the author's own included.
+    recognized: tuple[str, ...] = ()
+    #: Harnesses that count as independent (at head or carried; the author's excluded).
+    counted: tuple[str, ...] = ()
+
+
+class Recognition(NamedTuple):
+    """`recognition_line`, read back: who was recognized at head, who counts, how many are needed."""
+
+    recognized: frozenset[str]
+    counted: frozenset[str]
+    need: int
+
+
+_RECOGNITION = re.compile(
+    r"^\[review-coverage\] REVIEW-13 reviewers: recognized at head (?P<recognized>[^;]*); "
+    r"counted as independent (?P<counted>[^;]*); need (?P<need>\d+)$",
+    re.M,
+)
+_NOBODY = "(none)"
+
+
+def recognition_line(verdict: DualReview) -> str:
+    """Per-harness result beside a REVIEW-13 FAIL, so review_chain can tell a lane whose review
+    was recognized (one more is needed) from a lane whose review was not recognized at all."""
+    return (
+        f"[review-coverage] REVIEW-13 reviewers: recognized at head {', '.join(verdict.recognized) or _NOBODY}; "
+        f"counted as independent {', '.join(verdict.counted) or _NOBODY}; need {DUAL_REVIEW_MIN}"
+    )
+
+
+def read_recognition(output: str) -> Recognition | None:
+    """The last `recognition_line` on review-coverage's output; None when it printed none."""
+    found = list(_RECOGNITION.finditer(output))
+    if not found:
+        return None
+
+    def names(group: str) -> frozenset[str]:
+        text = found[-1].group(group).strip()
+        return frozenset() if text == _NOBODY else frozenset(n.strip() for n in text.split(","))
+
+    return Recognition(names("recognized"), names("counted"), int(found[-1].group("need")))
+
+
+def failure_lines(verdict: DualReview, head_sha: str) -> tuple[str, str]:
+    """Everything `enforce` prints for a REVIEW-13 FAIL, carry proofs aside."""
+    return verdict_line(False, head_sha, verdict.detail), recognition_line(verdict)
 
 
 @dataclass(frozen=True)
@@ -504,7 +552,8 @@ def dual_review(
     if carry.unknown and not ok:
         detail += f"; carry UNKNOWN ({'; '.join(carry.unknown)}), so a review at head is required"
     used = tuple(carried[n] for n in counted_names if n in carried)
-    return DualReview(ok, detail, used)
+    recognized = tuple(sorted(n for n, reviewed in reviewed_at_head.items() if reviewed))
+    return DualReview(ok, detail, used, recognized, tuple(counted_names))
 
 
 def measure(
@@ -602,6 +651,6 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         print_carry_proofs(verdict.carried, head_sha)
         return 0
     _LAST_FAILURE.append(verdict.detail)
-    print(verdict_line(False, head_sha, verdict.detail))
+    print(*failure_lines(verdict, head_sha), sep="\n")
     print_carry_proofs(verdict.carried, head_sha)
     return 1

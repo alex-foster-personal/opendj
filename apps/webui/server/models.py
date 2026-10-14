@@ -340,6 +340,10 @@ class TrackIndexItemOut(TrackListItemOut):
     lyrics_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     auto_cues_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     stems_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
+    #: CMDK-04: the Cmd K v2 bar searches comments across the whole collection from
+    #: this index, so the index carries them (a string the backend already holds per
+    #: track; no disk read). Listing rows (``GET /tracks``) do not.
+    comments: str | None = None
 
 
 class TrackIndexOut(BaseModel):

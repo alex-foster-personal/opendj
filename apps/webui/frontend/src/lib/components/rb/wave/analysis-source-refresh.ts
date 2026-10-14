@@ -23,6 +23,7 @@ import {
 } from '$lib/rb/anlz-fetch-generation';
 import type { AnlzData } from '$lib/rb/anlz-types';
 import { isUsbTrackId } from '$lib/rb/track-source';
+import { rawAnlz } from '$lib/rb/anlz-raw';
 
 // rbx-lane BPM/key provenance is one of several concrete sources (rekordbox,
 // manual, inferred, webui), not a binary rbx/own one, so "not literally
@@ -317,7 +318,7 @@ export async function refreshAnalysisSourceDecks(
 			// A load() that landed mid-request owns this deck now; its own
 			// fetch already ran under the post-switch generation.
 			if (decks[deck].stable_id !== stableId) continue;
-			decks[deck].anlz = anlz;
+			decks[deck].anlz = rawAnlz(anlz);
 			// `?? null` for the same reason load() uses it: TrackOut spells
 			// every nullable field optional, so absent and null both mean
 			// "unknown" to a deck.

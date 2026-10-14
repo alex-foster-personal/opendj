@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.paths import STATE_DB
+from tests.webui.app_fixtures import client_fixture, insecure_client_fixture  # noqa: F401  (pytest fixtures)
 
 
 def _flatten(body: dict) -> dict[str, dict]:

@@ -23563,6 +23563,17 @@
               }
             ]
           },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
           "duration_ms": {
             "anyOf": [
               {

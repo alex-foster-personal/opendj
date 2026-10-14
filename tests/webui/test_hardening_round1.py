@@ -1,6 +1,6 @@
 """Adversarial hardening round 1 -- library management surface (LIBMX-01..10 wave).
 
-See specs/library-hardening-adversarial-testing.md for the round log. Each
+See (private path) for the round log. Each
 test below reproduces one concrete finding from direct code reading, not a
 hypothesis -- run against ``origin/main`` before any fix lands here to get
 the round's "before" score, then again after the fix for "after".
@@ -30,6 +30,7 @@ from apps.smartlists.repo import SmartlistsRepo
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import smartlists as smartlists_routes
 from apps.webui.server.sqlite_backend import SqliteBackend
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (pytest fixtures)
 
 # request_guard's host allowlist (issue #2689) rejects TestClient's default
 # Host ("testserver"); "test-host" is the hostname= every app below is given.

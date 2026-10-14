@@ -18,6 +18,8 @@ source is an environment problem.
 | 0 | clean: no field FAILED and every known-answer check passed |
 | 2 | at least one field FAILED, i.e. a proven mapping bug |
 | 3 | a known-answer check failed or a fixture track did not resolve |
+|   | (also while a check awaits a human: the gate file IS written then, with |
+|   | that check's own fields held back as untested)                         |
 | 4 | a source could not be read |
 
 An UNTESTED verdict is NOT an error exit: "we have not proven this yet" is a
@@ -64,6 +66,7 @@ from apps.equivalence.sources import (
 )
 from apps.equivalence.verdict import (
     FAILED,
+    UNTESTED,
     build_document,
     decide,
     render_report,
@@ -221,6 +224,8 @@ def _write_gate_if_trustworthy(
         return
     if args.fields:
         document = _merge_with_existing_gate(document, CFG.verdicts_path)
+        # A prior gate's verdict for a held field must not outlive the hold.
+        _hold_back(document, document["meta"].get("held_by_pending_checks", {}))
     write_document(document, CFG.verdicts_path)
     CFG.report_path.write_text(render_report(document), encoding="utf-8")
     document["meta"]["written_to"] = {
@@ -248,12 +253,15 @@ def _report_and_exit(
         return EXIT_MAPPING_BUG
     if not known["ok"]:
         print(
+            f"\nHELD BACK as untested by a pending human check: "
+            f"{document['meta'].get('held_by_pending_checks', 'nothing (whole gate withheld)')}"
             f"\nKNOWN-ANSWER failures: {known['failed']} failed, "
             f"{known['pending_human_verification']} pending human "
             f"verification, {known['unresolved_tracks']} unresolved tracks, "
             f"{known['unresolved_checks']} unresolved checks. Our reader or the "
-            f"fixture has drifted, or a needs-maintainer entry is still unsettled; "
-            f"the verdicts above are not trustworthy until that is settled.",
+            f"fixture has drifted, or a needs-maintainer entry is still unsettled. "
+            f"A failed or unresolved check withholds the whole gate; a pending "
+            f"one withholds only the fields named above.",
             file=sys.stderr,
         )
         return EXIT_KNOWN_ANSWER_FAILED
@@ -297,10 +305,65 @@ def main(argv: list[str] | None = None) -> int:
         single_source=single,
     )
     failed = [v.field_name for v in verdicts + single if v.status == FAILED]
-    trustworthy = not failed and known["ok"]
+    held = _fields_held_by_pending(known)
+    known_drifted = bool(known["failed"] or known["unresolved_checks"])
+    trustworthy = not failed and not known_drifted and held is not None
+    if trustworthy and held:
+        _hold_back(document, held)
 
     _write_gate_if_trustworthy(document, trustworthy=trustworthy, args=args)
     return _report_and_exit(document, failed=failed, known=known, args=args)
+
+
+def _fields_held_by_pending(known: dict[str, Any]) -> dict[str, list[str]] | None:
+    """Our field name -> the pending known-answer targets holding it back.
+
+    A check awaiting a human (``verified_by: needs-maintainer``) says nothing about
+    a field it does not read, so it withholds only the fields declared on its
+    own target column. ``None`` means a pending target maps to no declared
+    field: its reach cannot be bounded, so the whole gate is withheld.
+    """
+    fields_by_target: dict[str, set[str]] = {}
+    for pair in FIELD_PAIRS:
+        for side in (pair.left, pair.right):
+            fields_by_target.setdefault(f"{side.source}.{side.attr}", set()).add(pair.field_name)
+    # Same ownership rule as the harness's own target index (known._spec_index):
+    # a pair side owns its target, and among source-unique fields the FIRST
+    # declarer does. ``energy`` and ``energy_segments`` both declare
+    # ``mik.energy``, but the harness resolves that target to the scalar
+    # column and never reads the segment table, so a pending scalar check
+    # says nothing about the series.
+    for spec in SINGLE_SOURCE_FIELDS:
+        target = f"{spec.source.source}.{spec.source.attr}"
+        fields_by_target.setdefault(target, {spec.field_name})
+    held: dict[str, list[str]] = {}
+    for result in known["results"]:
+        if result["status"] != "pending":
+            continue
+        owners = fields_by_target.get(result["target"])
+        if not owners:
+            return None
+        for field_name in owners:
+            held.setdefault(field_name, []).append(result["target"])
+    return {name: sorted(set(targets)) for name, targets in sorted(held.items())}
+
+
+def _hold_back(document: dict[str, Any], held: dict[str, list[str]]) -> None:
+    """Publish every held field as untested, naming the checks that hold it.
+
+    Idempotent: it runs on this run's document and again after a ``--fields``
+    merge, so a prior gate's verdict for a held field cannot outlive the hold.
+    """
+    document["meta"]["held_by_pending_checks"] = held
+    for field_name, targets in held.items():
+        entry = document["fields"].get(field_name)
+        if entry is None:
+            continue
+        # A hold withdraws a pass. It never softens a FAILED verdict, which is
+        # a proven mapping bug and must keep blocking as one.
+        if entry["status"] != FAILED:
+            entry["status"] = UNTESTED
+        entry["held_by_pending_checks"] = targets
 
 
 def _merge_with_existing_gate(document: dict[str, Any], path: Path) -> dict[str, Any]:

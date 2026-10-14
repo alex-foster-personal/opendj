@@ -14,6 +14,7 @@ Both are exercised end to end through ``apps.equivalence.__main__.main`` with
 needed -- empty source rows are enough to reach the write-gating logic
 without tripping any mapping-bug cluster.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ import pytest
 from apps.equivalence import __main__ as cli
 from apps.equivalence.compare import Agreement
 from apps.equivalence.config import SINGLE_SOURCE_FIELDS
+from apps.equivalence.known import write_manifest
 from apps.equivalence.probe import Probe
 from apps.equivalence.verdict import PASSED, SUITE_PASSED, PairVerdict, build_document
 
@@ -100,9 +102,7 @@ def _patch_known_answers(monkeypatch: pytest.MonkeyPatch, *, ok: bool) -> None:
         "results": [],
         "note": "fake report for CLI publish-timing tests",
     }
-    monkeypatch.setattr(
-        cli, "run_known_answers", lambda *a, **k: _FakeKnownReport(payload)
-    )
+    monkeypatch.setattr(cli, "run_known_answers", lambda *a, **k: _FakeKnownReport(payload))
 
 
 def test_a_corrupt_source_exits_source_unreadable_not_traceback(
@@ -127,9 +127,7 @@ def test_a_corrupt_source_exits_source_unreadable_not_traceback(
     assert exit_code == cli.EXIT_SOURCE_UNREADABLE
 
 
-def test_gate_not_written_when_known_answers_fail(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_not_written_when_known_answers_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_empty_sources(monkeypatch)
     _patch_known_answers(monkeypatch, ok=False)
 
@@ -139,9 +137,7 @@ def test_gate_not_written_when_known_answers_fail(
     assert not (tmp_path / "state" / "equivalence-verdicts.json").exists()
 
 
-def test_gate_written_when_run_is_trustworthy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_gate_written_when_run_is_trustworthy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_empty_sources(monkeypatch)
     _patch_known_answers(monkeypatch, ok=True)
 
@@ -156,9 +152,7 @@ def test_gate_written_when_run_is_trustworthy(
     }
 
 
-def test_partial_fields_run_merges_onto_existing_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_partial_fields_run_merges_onto_existing_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A ``--fields key`` run must not demote ``bpm``'s prior proven verdict."""
     state_dir = tmp_path / "state"
     state_dir.mkdir(parents=True)
@@ -175,9 +169,7 @@ def test_partial_fields_run_merges_onto_existing_gate(
     _patch_empty_sources(monkeypatch)
     _patch_known_answers(monkeypatch, ok=True)
 
-    exit_code = cli.main(
-        ["run", "--data-dir", str(tmp_path), "--json", "--fields", "key"]
-    )
+    exit_code = cli.main(["run", "--data-dir", str(tmp_path), "--json", "--fields", "key"])
 
     assert exit_code == cli.EXIT_OK
     written = json.loads(verdicts_path.read_text(encoding="utf-8"))
@@ -204,3 +196,226 @@ def test_merge_with_existing_gate_no_prior_file_is_a_no_op(tmp_path: Path) -> No
     merged = cli._merge_with_existing_gate(document, tmp_path / "nope.json")
 
     assert merged is document
+
+
+# ------------------------------------------------ per-field hold, real path
+#
+# Real path end to end: a real rekordbox-shaped sqlite file, a real Mixed In
+# Key-shaped sqlite file and a real checksummed fixture go through the
+# production readers, matcher, known-answer harness and verdict builders by
+# way of ``python -m apps.equivalence run``. Nothing is replaced.
+#
+# [if] a tempo check awaits a human [then] bpm is published untested and every other field keeps its verdict, [else stop].
+
+SONG_COUNT = 150
+CAMELOT = [f"{number}{letter}" for number in range(1, 13) for letter in "AB"]
+RB_SCALE = {
+    "1A": "Abm", "2A": "Ebm", "3A": "Bbm", "4A": "Fm", "5A": "Cm", "6A": "Gm",
+    "7A": "Dm", "8A": "Am", "9A": "Em", "10A": "Bm", "11A": "F#m", "12A": "Dbm",
+    "1B": "B", "2B": "F#", "3B": "Db", "4B": "Ab", "5B": "Eb", "6B": "Bb",
+    "7B": "F", "8B": "C", "9B": "G", "10B": "D", "11B": "A", "12B": "E",
+}  # fmt: skip
+
+
+def _song(index: int) -> dict[str, Any]:
+    return {
+        "title": f"Track {index:03d}",
+        "artist": f"Artist {index % 17}",
+        "key": CAMELOT[index % len(CAMELOT)],
+        "energy": 1 + index % 9,
+        "tempo": 100.0 + index % 40,
+        "volume": -14.0 + (index % 50) / 10,
+        "seconds": 180 + index % 240,
+        "clipped": index % 7,
+    }
+
+
+def _write_sources(data_dir: Path) -> Path:
+    songs = [_song(index) for index in range(1, SONG_COUNT + 1)]
+    rekordbox = sqlite3.connect(data_dir / "master.plain.db")
+    rekordbox.executescript(
+        """
+        CREATE TABLE djmdKey (ID TEXT PRIMARY KEY, ScaleName TEXT);
+        CREATE TABLE djmdArtist (ID TEXT PRIMARY KEY, Name TEXT);
+        CREATE TABLE djmdContent (
+            ID TEXT PRIMARY KEY, FolderPath TEXT, FileNameL TEXT, Title TEXT,
+            BPM INTEGER, Length INTEGER, Rating INTEGER, KeyID TEXT, ArtistID TEXT
+        );
+        """
+    )
+    store_path = data_dir / "Collection10.mikdb"
+    store = sqlite3.connect(store_path)
+    store.executescript(
+        """
+        CREATE TABLE ZSONG (
+            Z_PK INTEGER PRIMARY KEY, ZNAME TEXT, ZARTIST TEXT, ZKEY TEXT,
+            ZENERGY REAL, ZTEMPO REAL, ZVOLUME REAL, ZRATING REAL,
+            ZCLIPPEDPEAKCOUNT INTEGER, ZBOOKMARKDATA BLOB
+        );
+        CREATE TABLE ZENERGYSEGMENT (
+            Z_PK INTEGER PRIMARY KEY, ZSONG INTEGER, ZENERGY REAL,
+            ZLENGTH REAL, ZSTARTTIME REAL
+        );
+        CREATE TABLE ZKEYSEGMENT (
+            Z_PK INTEGER PRIMARY KEY, ZSONG INTEGER, ZCONFIDENCE REAL, ZKEY TEXT
+        );
+        """
+    )
+    for key in CAMELOT:
+        rekordbox.execute("INSERT INTO djmdKey VALUES (?, ?)", (key, RB_SCALE[key]))
+    for index, song in enumerate(songs, start=1):
+        rekordbox.execute("INSERT OR IGNORE INTO djmdArtist VALUES (?, ?)", (song["artist"], song["artist"]))
+        rekordbox.execute(
+            "INSERT INTO djmdContent VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
+            (
+                str(index),
+                f"/Users/dev/Music/{song['title']}.mp3",
+                f"{song['title']}.mp3",
+                song["title"],
+                int(song["tempo"] * 100),
+                song["seconds"],
+                song["key"],
+                song["artist"],
+            ),
+        )
+        store.execute(
+            "INSERT INTO ZSONG VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, NULL)",
+            (
+                index,
+                song["title"],
+                song["artist"],
+                song["key"],
+                float(song["energy"]),
+                song["tempo"],
+                song["volume"],
+                song["clipped"],
+            ),
+        )
+        half = song["seconds"] / 2
+        for start, energy in ((0.0, song["energy"]), (half, 1 + (song["energy"] % 10))):
+            store.execute(
+                "INSERT INTO ZENERGYSEGMENT (ZSONG, ZENERGY, ZLENGTH, ZSTARTTIME) VALUES (?, ?, ?, ?)",
+                (index, float(energy), half, start),
+            )
+        store.execute(
+            "INSERT INTO ZKEYSEGMENT (ZSONG, ZCONFIDENCE, ZKEY) VALUES (?, 0.95, ?)",
+            (index, song["key"]),
+        )
+    rekordbox.commit()
+    rekordbox.close()
+    store.commit()
+    store.close()
+    return store_path
+
+
+def _write_fixture(path: Path, pending_targets: list[str]) -> Path:
+    song = _song(1)
+    checks: list[dict[str, Any]] = [
+        {"target": "mik.energy", "raw": float(song["energy"]), "verified_by": "source-read"},
+        {"target": "mik.volume", "raw": song["volume"], "verified_by": "source-read"},
+    ]
+    checks.extend({"target": target, "verified_by": "needs-maintainer", "why": "needs an ear"} for target in pending_targets)
+    answered = {check["target"] for check in checks}
+    if "mik.tempo" not in answered:
+        checks.append({"target": "mik.tempo", "raw": song["tempo"], "verified_by": "source-read"})
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "equivalence-known-answers/v1",
+                "tracks": [{"id": "track-001", "select": {"mik_title": song["title"]}, "expect": checks}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_manifest(path, path.with_suffix(".manifest.json"))
+    return path
+
+
+def _run(data_dir: Path, store: Path, fixture: Path, *extra: str) -> tuple[int, dict[str, Any] | None]:
+    code = cli.main(
+        ["run", "--data-dir", str(data_dir), "--mik-db", str(store), "--fixture", str(fixture), "--json", *extra]
+    )
+    gate = data_dir / "state" / "equivalence-verdicts.json"
+    return code, json.loads(gate.read_text(encoding="utf-8")) if gate.exists() else None
+
+
+def _statuses(document: dict[str, Any]) -> dict[str, str]:
+    return {name: entry["status"] for name, entry in document["fields"].items()}
+
+
+@pytest.fixture
+def sources(tmp_path: Path) -> tuple[Path, Path]:
+    (tmp_path / "state").mkdir()
+    return tmp_path, _write_sources(tmp_path)
+
+
+def test_a_pending_tempo_check_holds_back_bpm_and_nothing_else(sources, capsys) -> None:
+    data_dir, store = sources
+    settled_code, settled = _run(data_dir, store, _write_fixture(data_dir / "settled.json", []))
+    assert settled_code == cli.EXIT_OK
+    assert settled is not None
+    baseline = _statuses(settled)
+    # The control: with nothing pending these fields really do pass, so a
+    # later 'untested' can only come from the hold.
+    assert baseline["bpm"] == "passed"
+    assert baseline["energy"] == "passed"
+    assert baseline["energy_segments"] == "passed"
+
+    pending_code, pending = _run(data_dir, store, _write_fixture(data_dir / "pending.json", ["mik.tempo"]))
+    capsys.readouterr()
+
+    assert pending_code == cli.EXIT_KNOWN_ANSWER_FAILED
+    assert pending is not None
+    assert _statuses(pending) == {**baseline, "bpm": "untested"}
+    assert pending["fields"]["bpm"]["held_by_pending_checks"] == ["mik.tempo"]
+    assert pending["meta"]["held_by_pending_checks"] == {"bpm": ["mik.tempo"]}
+
+
+def test_a_pending_energy_check_holds_the_scalar_and_leaves_the_series(sources, capsys) -> None:
+    """The harness reads the scalar column for ``mik.energy``; it never reads the segment table."""
+    data_dir, store = sources
+    code, document = _run(data_dir, store, _write_fixture(data_dir / "pending.json", ["mik.energy"]))
+    capsys.readouterr()
+
+    assert code == cli.EXIT_KNOWN_ANSWER_FAILED
+    assert document is not None
+    statuses = _statuses(document)
+    assert statuses["energy"] == "untested"
+    assert statuses["energy_segments"] == "passed"
+    assert document["meta"]["held_by_pending_checks"] == {"energy": ["mik.energy"]}
+
+
+def test_a_failed_known_answer_beside_a_pending_one_withholds_the_whole_gate(sources, capsys) -> None:
+    data_dir, store = sources
+    fixture = data_dir / "drifted.json"
+    _write_fixture(fixture, ["mik.tempo"])
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+    payload["tracks"][0]["expect"][0]["raw"] = 99.0  # not what the store holds
+    fixture.write_text(json.dumps(payload), encoding="utf-8")
+    write_manifest(fixture, fixture.with_suffix(".manifest.json"))
+
+    code, document = _run(data_dir, store, fixture)
+    capsys.readouterr()
+
+    assert code == cli.EXIT_KNOWN_ANSWER_FAILED
+    assert document is None
+
+
+def test_a_hold_never_softens_a_failed_verdict_already_in_the_gate(sources, capsys) -> None:
+    """Under ``--fields`` a prior FAILED bpm verdict must survive a tempo hold as FAILED."""
+    data_dir, store = sources
+    gate = data_dir / "state" / "equivalence-verdicts.json"
+    _run(data_dir, store, _write_fixture(data_dir / "settled.json", []))
+    prior = json.loads(gate.read_text(encoding="utf-8"))
+    prior["fields"]["bpm"]["status"] = "failed"
+    gate.write_text(json.dumps(prior), encoding="utf-8")
+
+    _code, document = _run(
+        data_dir, store, _write_fixture(data_dir / "pending.json", ["mik.tempo"]), "--fields", "energy"
+    )
+    capsys.readouterr()
+
+    assert document is not None
+    assert document["fields"]["bpm"]["status"] == "failed"
+    assert document["fields"]["bpm"]["held_by_pending_checks"] == ["mik.tempo"]
+    assert document["fields"]["energy"]["status"] == "passed"

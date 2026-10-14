@@ -54,8 +54,7 @@ PREFLIGHT = REPO / "scripts" / "dmg_preflight.sh"
 # the collision this guards against. /bin/bash is a POSIX baseline present on
 # every macOS and Linux runner GitHub Actions uses, and is the same
 # convention every other subprocess-driving test in this suite already uses
-# (tests/scripts/test_dmg_preflight_signing_identity.py, the autoreposync
-# tests).
+# (tests/scripts/test_dmg_preflight_signing_identity.py).
 BASH = "/bin/bash"
 
 OAUTH_ENV = (

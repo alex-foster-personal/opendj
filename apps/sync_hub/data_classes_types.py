@@ -25,7 +25,7 @@ Mechanism = Literal[
     "sync_hub_changelog",  # LWW rows through the hub changelog (SYNC_TABLES)
     "sync_hub_registry",  # the owner-scoped machines registry snapshot
     "r2_asset_tier",  # content-addressed R2 objects governed by sync_policies
-    "git",  # the repo itself, kept current by autoreposync
+    "git",  # the repo itself, moved by git pull/push
     "machine_local",  # never leaves the machine, by design
     "not_yet_built",  # should move between machines but nothing moves it yet
 ]

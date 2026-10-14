@@ -1,9 +1,14 @@
-"""Re-export the webui daemon fixtures so emit-point tests drive real routes.
+"""Shared engine_core fixtures; re-exports the webui ``seed_backend``.
 
 The emit points live in the legacy routers, so proving them needs the real
 app + seeded backend, not a second copy of either. pytest cannot reach a
 sibling directory's conftest, and ``pytest_plugins`` is rootdir-only, so the
 fixtures are imported here by name -- the ONE supported way to share them.
+
+The full-app ``client`` fixture is imported by name in each test module that
+drives the real app (BigRfc-1), so once the activation switch below is
+deleted only those modules stay in the test selector's reach of the app's
+composition root, not every test in this directory.
 """
 from __future__ import annotations
 
@@ -20,10 +25,11 @@ from apps.engine_core.build_info import BuildIdentity, BuildInfoOut
 # PR test selection must run the engine_core tests when it changes
 # ((private path)).
 from apps.webui.server import coverage_stems_jobs  # noqa: F401
-from tests.webui.conftest import (  # noqa: F401  (re-exported as fixtures)
-    client,
-    seed_backend,
-)
+
+# BigRfc-1 ACTIVATION SWITCH, twin of the one at the end of
+# tests/webui/conftest.py: inert while it stands, delete both to activate.
+from tests.webui.app_fixtures import client_fixture  # noqa: F401  (re-exported as fixtures)
+from tests.webui.conftest import seed_backend  # noqa: F401  (re-exported as fixtures)
 
 
 def build_identity(source: Literal["payload", "repo"]) -> BuildIdentity:

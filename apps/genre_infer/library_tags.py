@@ -61,6 +61,19 @@ def rekordbox_genres(conn: sqlite3.Connection, stable_ids: Sequence[str], master
     return {sid: genre_by_vid[vid] for sid, vid in vendor_by_sid.items() if vid in genre_by_vid}
 
 
+def genre_text(value_json: str | None) -> str | None:
+    """A ``track_fields`` genre value as non-empty text, else None.
+
+    Values are JSON strings; a value that is not JSON is read as the text
+    itself. One parser for every reader of the field in this package.
+    """
+    try:
+        value = json.loads(value_json) if value_json else None
+    except ValueError:
+        value = value_json
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
 def field_genres(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str, tuple[str | None, str | None]]:
     """stable_id -> (user genre typed in the library, imported tag genre) from ``track_fields``."""
     out: dict[str, tuple[str | None, str | None]] = {}
@@ -72,14 +85,10 @@ def field_genres(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[st
             f"WHERE field_name = 'genre' AND deleted_at IS NULL AND stable_id IN ({marks})",
             chunk,
         ):
-            try:
-                value = json.loads(value_json) if value_json else None
-            except ValueError:
-                value = value_json
-            text = value.strip() if isinstance(value, str) and value.strip() else None
+            text = genre_text(value_json)
             user, library = out.get(sid, (None, None))
             out[sid] = (text, library) if source == "webui" else (user, text)
     return out
 
 
-__all__ = ["field_genres", "rekordbox_genres"]
+__all__ = ["field_genres", "genre_text", "rekordbox_genres"]

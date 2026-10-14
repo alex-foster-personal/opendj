@@ -109,7 +109,8 @@
 		loadTrackClipboard,
 		loadBrowserConfirmDialog,
 		paneLoadState,
-		untilSelectionLands
+		untilSelectionLands,
+		LIBRARY_FILTER_LABELS
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -2763,12 +2764,35 @@
 		return pane.rows;
 	}
 
+	/** The broken filter for the open pane: off on Missing Tracks, as the pane itself shows it. */
+	export function commandBarHideBroken(): boolean {
+		return hideBrokenForActivePane;
+	}
+
 	export function commandBarTitle(): string {
 		return pane.title;
 	}
 
 	export async function commandBarLoad(row: LoadableRow, deck: DeckId): Promise<void> {
 		await _loadOntoDeck(row, deck);
+	}
+
+	/** CMDK-04: the v2 bar's three ports, which the bar combines with its pick
+	 * loader (importing that here would raise this file's fan-out). A
+	 * collection-only result was never on screen to be hydrated, so the bar
+	 * settles it the table's way, through its own retrying rb-meta fetch. */
+	export function commandBarV2Meta(stable_id: string): Promise<RbMeta> {
+		return _fetchRbMetaWithRetry(stable_id);
+	}
+	/** The browser's load path; the bar checks it committed (a refusal
+	 * returns normally). */
+	export async function commandBarV2Load(row: LoadableRow, deck: DeckId): Promise<void> {
+		await _loadOntoDeck(row, deck);
+	}
+	/** This panel's reservations on a deck, which move before a browser load
+	 * commits; the bar adds the engine's own deck state to make its mark. */
+	export function commandBarV2Reservation(deck: DeckId): number {
+		return deckLoadSeq[deck];
 	}
 
 	/** CMDK-03: called once the deck's stems have settled for the loaded
@@ -3552,7 +3576,7 @@
 							stroke-linecap="round"
 						/>
 					</svg>
-					<span>Broken</span>
+					<span>{LIBRARY_FILTER_LABELS.broken.name}</span>
 				</label>
 				<label
 					class="remixes-filter"
@@ -3563,7 +3587,7 @@
 						checked={uiPrefs.remixes_filter}
 						onchange={(e) => setRemixesFilter(e.currentTarget.checked)}
 					/>
-					<span>Remixes</span>
+					<span>{LIBRARY_FILTER_LABELS.remixes.name}</span>
 				</label>
 				<label
 					class="vocals-filter"
@@ -3574,7 +3598,7 @@
 						checked={uiPrefs.vocals_filter}
 						onchange={(e) => setVocalsFilter(e.currentTarget.checked)}
 					/>
-					<span>Vocals</span>
+					<span>{LIBRARY_FILTER_LABELS.vocals.name}</span>
 				</label>
 				<!--
 					pin 5e3ed689ad3a: this control used to live in `.search-options`,
@@ -3594,7 +3618,7 @@
 							checked={uiPrefs.next_only_filter}
 							onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
 						/>
-						<span>compatible</span>
+						<span>{LIBRARY_FILTER_LABELS.compatible.name}</span>
 					</CompatibleFilterPopover>
 				</label>
 				<label
@@ -3607,7 +3631,7 @@
 						checked={uiPrefs.available_offline_filter}
 						onchange={(e) => setAvailableOfflineFilter(e.currentTarget.checked)}
 					/>
-					<span>available offline</span>
+					<span>{LIBRARY_FILTER_LABELS.offline.name}</span>
 				</label>
 				<button
 					type="button"

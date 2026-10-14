@@ -16,8 +16,8 @@ and ``digest`` by :mod:`apps.sync_hub.service_credentials`. The default
 OBSERVE mode refuses nothing (it logs the verdict and ``hello`` reports it);
 only ``MDT_SYNC_CREDENTIAL_MODE=enforce`` answers 401. Until then trust is
 tailnet membership (ADR 04 c7), and reading this file as "the hub is
-authenticated" would be exactly the error ``.claude/rules/verification.md``
-is about. Multi-user: ``specs/cloudsync-multi-user.md``.
+authenticated" would be exactly the error ``(private path)``
+is about. Multi-user: ``(private path)``.
 
 ``push``, ``pull`` and ``status`` all take a ``machine_id`` and all refuse a
 machine that never said hello (ADR 08 point 6, round 1 finding 7b). That is a
@@ -50,7 +50,6 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -104,6 +103,7 @@ from apps.sync_hub.service_models import (
     StatusResponse,
     SyncRowSampleModel,
 )
+from apps.sync_hub.service_request import _data_dir, _db_path
 from apps.sync_hub.service_stem_assets import router as stem_assets_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -131,35 +131,6 @@ _CAPABILITIES_QUERY: Any = Query(
 
 
 # ----- wiring helpers ------------------------------------------------------
-
-
-def _db_path(request: Request) -> Path:
-    configured = getattr(request.app.state, "state_db_path", None)
-    if configured is None:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "SYNC_NO_DB",
-                "message": (
-                    "app.state.state_db_path is unset; the hub has no state DB "
-                    "to sync against."
-                ),
-            },
-        )
-    return Path(str(configured))
-
-
-def _data_dir(request: Request) -> Path:
-    """Where this hub's ``machine-id`` file lives.
-
-    Derived from the DB path (``<data-dir>/state/state.db``) unless the app
-    sets ``sync_hub_data_dir`` explicitly. No env fallback: a hub that cannot
-    say which data root it owns should fail, not adopt a plausible one.
-    """
-    configured = getattr(request.app.state, "sync_hub_data_dir", None)
-    if configured is not None:
-        return Path(str(configured))
-    return _db_path(request).resolve().parent.parent
 
 
 def _machine_name(request: Request) -> str | None:
