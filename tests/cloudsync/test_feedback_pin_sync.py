@@ -57,7 +57,7 @@ from apps.sync_hub import service as sync_service
 from apps.sync_hub import status as sync_status
 from apps.webui.server.app import create_app
 from apps.webui.server.cloudsync_scheduler import CloudSyncScheduler
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 _T_OLD = "2026-09-01T09:00:00.000000Z"
 _T_NEW = "2026-09-02T09:00:00.000000Z"
@@ -79,8 +79,7 @@ def _serve(app: FastAPI, what: str) -> Iterator[str]:
     try:
         yield f"http://127.0.0.1:{port}"
     finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
+        stop_uvicorn_in_thread(server, thread, what=what)
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ name: Periodic checks
 # The tier that runs OFF the per-PR path (DEVOPS-01..03).
 #
 # Policy, with one row per check and the reasoning behind each cadence:
-# docs/ops/periodic-checks.md. Ledger issue: #1492.
+# (private path). Ledger issue: #1492.
 #
 # WHY THIS EXISTS. Per-PR CI is deliberately thin (the maintainer, Fri 28 Aug 2026:
 # momentum over ceremony). The full pytest suite moved to full-ci.yml behind
@@ -87,7 +87,7 @@ env:
   DEFAULT_THRESHOLD: "50"
   # Self-hosted runners persist the workspace between jobs, so a .pyc written
   # by one job is a file the next one may not own. Repo-wide rule, enforced by
-  # tests/quality/test_workspace_ownership_hygiene.py.
+  # (private path).
   PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
@@ -248,7 +248,7 @@ jobs:
           # Row 10 (windows parity): own marker, own threshold. A merges:100
           # row that read the merges:50 marker would skip forever: every
           # 50-window moves the shared SHA forward before 100 accrue
-          # (docs/ops/periodic-checks.md, "One marker per row"). No weekly
+          # ((private path), "One marker per row"). No weekly
           # floor: the table states merges:100 only.
           WP_THRESHOLD=100
           python3 -m scripts.periodic_window decide \
@@ -538,7 +538,7 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Row 5: the boot-burst perf bench, against docs/perf/performance-register.md.
+  # Row 5: the boot-burst perf bench, against (private path).
   # A MEASUREMENT lane: it prints medians and never fails on a threshold, so a
   # red here means the harness broke, not that the app got slower. That is
   # exactly what continue-on-error: false is protecting.
@@ -562,7 +562,7 @@ jobs:
       # 0 (the fixture default) measures raw loopback: the two-track burst
       # comes back ~86ms, about 40x too small to resolve the production
       # regression this bench exists to catch (per the Boot request window
-      # row in docs/perf/performance-register.md). 120 matches the declared
+      # row in (private path)). 120 matches the declared
       # per-request regime the 472->383ms #645 result was measured under, so
       # a periodic PASS here is a real measurement, not noise dressed as one.
       BOOT_BURST_LATENCY_MS: "120"
@@ -996,27 +996,87 @@ jobs:
     name: preview drift (remote refs)
     needs: window
     if: needs.window.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    # Self-hosted on bifrost1 (ADR-NEW-hosted-runner-exit, Thu 15 Oct 2026): the hosted
+    # Actions budget is exhausted, so a hosted pin cannot start. Revert: delete
+    # vars.CI_RUNS_ON_BIFROST1 (falls back to the linux-light pool).
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_BIFROST1 || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     outputs:
       verdict: ${{ steps.drift.outputs.verdict }}
     steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # Credentials persist on purpose: the drift step runs `git fetch origin`
-          # against this private repo on a GitHub-hosted runner, which has no other
-          # credential. Suppressed by file:line in .github/zizmor.yml.
+          # against this private repo, and the job has no other credential for it.
+          # actions/checkout's post step removes them. Suppressed in .github/zizmor.yml.
           # The SHA the window recorded; see the bundle job for why.
           ref: ${{ needs.window.outputs.head }}
           # git cherry compares patch ids across the whole divergence, so this
           # needs real history, not a depth-1 clone.
           fetch-depth: 0
-          clean: true
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      # Stale-install guard (PR #4251); tests/scripts/test_ci_workflow_stale_install_coverage.py.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: Drift check
         id: drift
@@ -1063,7 +1123,7 @@ jobs:
   # `- [x]`, and its own text says the markdown half stays agent discipline.
   #
   # WHAT WAS MISSING WAS THE CADENCE, and that is what this job is. Row 11 of
-  # docs/ops/periodic-checks.md recorded this report as pasted into a burn-down
+  # (private path) recorded this report as pasted into a burn-down
   # comment by hand, which is the shape that file itself calls a P0: a cadence
   # with no runs is indistinguishable from a check that does not exist. The
   # report is a REPORT, never a gate -- a docs PR naming an id is a legitimate
@@ -1080,7 +1140,10 @@ jobs:
     name: requirement status drift
     needs: window
     if: needs.window.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    # Self-hosted on bifrost1 (ADR-NEW-hosted-runner-exit, Thu 15 Oct 2026): the hosted
+    # Actions budget is exhausted, so a hosted pin cannot start. Revert: delete
+    # vars.CI_RUNS_ON_BIFROST1 (falls back to the linux-light pool).
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_BIFROST1 || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     outputs:
       verdict: ${{ steps.drift.outputs.verdict }}
@@ -1092,17 +1155,76 @@ jobs:
       contents: read
       pull-requests: read
     steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner (tests/scripts/test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           # The SHA the window recorded; see the bundle job for why.
           ref: ${{ needs.window.outputs.head }}
-          clean: true
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      # Stale-install guard (PR #4251); tests/scripts/test_ci_workflow_stale_install_coverage.py.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: Requirement status drift
         id: drift
@@ -1128,7 +1250,7 @@ jobs:
           # REQS_JSON_PATH is unset in production, so this is a no-op here: it
           # exists so a test can point the tool at a pinned reqs.json snapshot
           # instead of this repo's live one, whose v1 pending ids keep flipping
-          # under it (tests/quality/test_periodic_checks_reqs_drift_row.py).
+          # under it ((private path)).
           if [ -n "${REQS_JSON_PATH:-}" ]; then
             window_args+=(--reqs-path "$REQS_JSON_PATH")
           fi
@@ -1196,13 +1318,16 @@ jobs:
   # and never calls ship_dmg.sh, and the ledger reports headed evidence as
   # OBSERVED or UNOBSERVED/needs:mac. UNKNOWN (exit 2) reds the job. A missing
   # Mac run is UNOBSERVED, never a silent skip and never a row=7 SHA marker
-  # (that marker is owned by ops/dmg-smoke/run.sh on the Air).
+  # (that marker is owned by (private path) on the Air).
   # ---------------------------------------------------------------------------
   dmg-smoke-cadence:
     name: desktop dmg smoke observe
     needs: window
     if: needs.window.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    # Self-hosted on bifrost1 (ADR-NEW-hosted-runner-exit, Thu 15 Oct 2026): the hosted
+    # Actions budget is exhausted, so a hosted pin cannot start. Revert: delete
+    # vars.CI_RUNS_ON_BIFROST1 (falls back to the linux-light pool).
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_BIFROST1 || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     outputs:
       verdict: ${{ steps.observe.outputs.verdict }}
@@ -1210,16 +1335,75 @@ jobs:
       contents: read
       issues: read
     steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner (tests/scripts/test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
-          clean: true
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      # Stale-install guard (PR #4251); tests/scripts/test_ci_workflow_stale_install_coverage.py.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: Desktop dmg smoke cadence observe
         id: observe
@@ -1260,7 +1444,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # Row 8: dependency audit (DEVOPS-01, #1507). Monthly cadence on its own
   # schedule arm, NOT the merge window: a new advisory overnight must not red
-  # every open PR. Policy commands live in docs/ops/periodic-checks.md row 8;
+  # every open PR. Policy commands live in (private path) row 8;
   # the instrument is scripts/dependency_audit.py.
   # ---------------------------------------------------------------------------
   dependency-audit:
@@ -1376,7 +1560,7 @@ jobs:
 
       - name: Ensure cargo-audit
         # Pinned: ci/runner-toolset.yml's cargo-audit entry declares this version
-        # and tests/scripts/test_runner_toolset_complete.py checks the two agree.
+        # and (private path) checks the two agree.
         # A runner already carrying another version is replaced, never trusted.
         env:
           CARGO_AUDIT_VERSION: "0.22.2"
@@ -1448,7 +1632,10 @@ jobs:
     name: dependency audit ledger (row 8)
     needs: dependency-audit
     if: always() && needs.dependency-audit.result != 'skipped'
-    runs-on: ubuntu-latest
+    # Self-hosted on bifrost1 (ADR-NEW-hosted-runner-exit, Thu 15 Oct 2026): the hosted
+    # Actions budget is exhausted, so a hosted pin cannot start. Revert: delete
+    # vars.CI_RUNS_ON_BIFROST1 (falls back to the linux-light pool).
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_BIFROST1 || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       issues: write
@@ -1890,7 +2077,7 @@ jobs:
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
           | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
 
-          Rows 3 and 8: see \`docs/ops/periodic-checks.md\`. Row 7 Linux
+          Rows 3 and 8: see \`(private path)\`. Row 7 Linux
           observe is in this table; headed Mac attach stays needs:mac until
           \`com.af.dmg-smoke\` is loaded. Row 10 (Windows parity) posts its
           own ledger comment when its merges:100 window fires. A row absent

@@ -2,7 +2,7 @@
 
 Companion to :mod:`tests.cloudsync.test_hub_sync_hardening` (round 1) and
 :mod:`tests.cloudsync.test_hub_sync_round3` (round 2). Each test here is one
-reproduction from ``.planning/cloudsync-round3-adversarial.md`` Part 2, for the
+reproduction from ``(private path)`` Part 2, for the
 engine-security-restore lane (R1, R2, R6, R7). The mapping, so a failure names
 the defect it just let back in:
 
@@ -67,7 +67,7 @@ from tests.cloudsync.test_hub_sync import (
     _TestClientTransport,
     _track_title,
 )
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
@@ -446,8 +446,7 @@ def live_hub(hub_dir: Path) -> Iterator[str]:
     try:
         yield f"http://127.0.0.1:{port}"
     finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
+        stop_uvicorn_in_thread(server, thread, what="the live hub")
 
 
 def test_the_cli_syncs_end_to_end_against_a_live_hub(

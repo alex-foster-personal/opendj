@@ -27,6 +27,12 @@ Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] semgrep scanned files but loaded 0 rules [then] exit 2.
 - [if] an --expect-file path is absent from semgrep's paths.scanned [then] exit 2 and the
   message names it ("control files not scanned: <path>"), whether or not the file floor held.
+- [if] secret-jobs finds a job that reads the `secrets` context (in any `${{ }}` expression,
+  however the YAML spells or splits it, or through workflow-level env or defaults, which every
+  job inherits) or passes `secrets:` to a reusable workflow, and its
+  runs-on is not exactly ubuntu-latest [then] it prints `<job>: runs-on: <value>`.
+- [if] secret-jobs cannot import PyYAML or parse the workflow, or it has no jobs mapping
+  [then] exit 2. This is the one subcommand that is not stdlib-only (lib.sh sec_py_yaml).
 """
 
 from __future__ import annotations
@@ -230,7 +236,15 @@ def cmd_trufflehog_summary(args: argparse.Namespace) -> int:
     path = Path(args.jsonl)
     if not path.exists():
         return _unknown(f"trufflehog output missing: {path}")
+    suppress: list[re.Pattern[str]] = []
+    if args.suppress_raw:
+        suppress = [
+            re.compile(line)
+            for line in Path(args.suppress_raw).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
     lines: list[str] = []
+    suppressed = 0
     for raw in path.read_text(encoding="utf-8").splitlines():
         if not raw.strip().startswith("{"):
             continue
@@ -238,10 +252,19 @@ def cmd_trufflehog_summary(args: argparse.Namespace) -> int:
         if "DetectorName" not in rec:
             continue
         git = rec.get("SourceMetadata", {}).get("Data", {}).get("Git", {})
-        state = "verified" if rec.get("Verified") else "unverified"
+        verified = bool(rec.get("Verified"))
+        # A value suppression only ever drops an UNVERIFIED candidate: a verified
+        # hit is a live secret whatever it looks like, and is never filtered.
+        value = str(rec.get("Raw", ""))
+        if not verified and any(rx.search(value) for rx in suppress):
+            suppressed += 1
+            continue
+        state = "verified" if verified else "unverified"
         where = f"{git.get('file', '?')}:{git.get('line', '?')}"
         commit = str(git.get("commit", ""))[:9]
         lines.append(f"{rec['DetectorName']} {state} {where} commit={commit}")
+    if suppressed:
+        print(f"trufflehog: {suppressed} unverified candidate(s) matched a value suppression", file=sys.stderr)
     _emit(args, args.title, lines, len(lines))
     return 0
 
@@ -454,6 +477,46 @@ def cmd_zizmor_summary(args: argparse.Namespace) -> int:
 
 
 # ----- cli -------------------------------------------------------------------------------------
+EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
+SECRETS_CONTEXT = re.compile(r"(?<![A-Za-z0-9_.-])secrets(?![A-Za-z0-9_-])")
+
+
+def _reads_secret(node: object) -> bool:
+    """True when any key or string under node holds an expression naming the secrets context."""
+    if isinstance(node, dict):
+        return any(_reads_secret(k) or _reads_secret(v) for k, v in node.items())
+    if isinstance(node, list):
+        return any(_reads_secret(v) for v in node)
+    return isinstance(node, str) and any(
+        SECRETS_CONTEXT.search(m.group(1)) for m in EXPRESSION.finditer(node)
+    )
+
+
+def cmd_secret_jobs(args: argparse.Namespace) -> int:
+    try:
+        import yaml  # not stdlib: sec_py_yaml runs this from a hash-pinned venv
+    except ImportError as exc:
+        return _unknown(f"secret-jobs needs PyYAML: {exc}")
+    try:
+        doc = yaml.safe_load(Path(args.workflow).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        return _unknown(f"cannot parse {args.workflow}: {exc}")
+    jobs = doc.get("jobs") if isinstance(doc, dict) else None
+    if not isinstance(jobs, dict):
+        return _unknown(f"{args.workflow} has no jobs mapping")
+    # Workflow-level env and defaults reach every job's steps, so a secret there taints them all.
+    inherited = _reads_secret({k: v for k, v in doc.items() if k in ("env", "defaults")})
+    for name, job in jobs.items():
+        if not isinstance(job, dict):
+            return _unknown(f"{args.workflow} job {name!r} is not a mapping")
+        if not (inherited or _reads_secret(job) or "secrets" in job):
+            continue
+        runs = job.get("runs-on")
+        if runs != "ubuntu-latest":
+            print(f"{name}: " + ("(no runs-on)" if runs is None else f"runs-on: {json.dumps(runs)}"))
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -492,6 +555,10 @@ def _parser() -> argparse.ArgumentParser:
 
     p = add("trufflehog-summary", cmd_trufflehog_summary)
     p.add_argument("jsonl")
+    p.add_argument(
+        "--suppress-raw",
+        help="file of regexes; an UNVERIFIED candidate whose Raw value matches one is dropped",
+    )
 
     p = add("semgrep-summary", cmd_semgrep_summary)
     p.add_argument("json")
@@ -519,6 +586,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--semgrep", required=True)
     p.add_argument("--config", action="append", required=True)
     p.add_argument("--exclude", action="append", default=[])
+
+    p = add("secret-jobs", cmd_secret_jobs)
+    p.add_argument("workflow")
 
     p = add("zizmor-summary", cmd_zizmor_summary)
     p.add_argument("json")

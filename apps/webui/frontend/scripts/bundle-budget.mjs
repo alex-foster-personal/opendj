@@ -238,7 +238,15 @@ const BUDGETS = [
   // Merge note (PR #4014 x #4906, Sat 3 Oct 2026): both sides already sit on the
   // same 264,192 ceiling (the larger of the two). The merged tree measures
   // 264,845 (653 over); +5% ceil-to-KiB => 278,528 (272 KiB).
-  { name: 'library', limit: 278528, measured: 264845, note: 'initial load of "/"' },
+  // RAISED Wed 14 Oct 2026 (+1 KiB, PR #6585 follow-up, perf board row
+  // anlz-raw-not-deep-proxy): rawAnlz (src/lib/rb/anlz-raw.ts) keeps each deck's
+  // ANLZ payload out of the deep $state proxy, roughly 20 MB and ~100k signals per
+  // loaded deck, and every deck ANLZ writer on "/" calls it. Measured locally with
+  // vite build: main 427057f20 without #6585's src 278,441; main with it 278,530
+  // (+89, 2 over; CI read 278,529 to 278,532 on the PRs it blocked).
+  // Payback, not yet measured: the isRawAnlz probe and the brand comment are the
+  // only parts not needed on first paint.
+  { name: 'library', limit: 279552, measured: 278530, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

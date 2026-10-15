@@ -19,12 +19,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from pyrekordbox.db6 import tables as rekordbox_tables
 
 from scripts import redteam_fixture_library as fixtures
 from scripts import redteam_fixture_schema as fixture_schema
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+pytestmark = [
+    pytest.mark.timeout(150),
+]
 
 
 #----- helpers ----------------------------------------------------------------

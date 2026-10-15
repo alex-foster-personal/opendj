@@ -213,6 +213,330 @@ jobs:
         run: python3 -m scripts.ci_required_gate scope --workflow e2e.yml
 
   # ---------------------------------------------------------------------------
+  # Trunk flaky-test quarantine, the token half (ADR-NEW-trunk-flaky-quarantine-on).
+  # Fetches collection "Playwright e2e gate" (L3VoLxNK) and hands the list to
+  # `gate` as a job output. The client lives only in this run block, so this
+  # job never checks out or executes a repository file while TRUNK_API_TOKEN
+  # is in scope; (private path) drives this exact
+  # block against a localhost server, so there is no second copy to drift.
+  # The token never enters a self-hosted job. The org token can change
+  # merge-queue settings, so it stays on this ephemeral ubuntu-latest runner.
+  #
+  # A fetch error exits the interpreter nonzero and writes no list, so the
+  # gate's verdict excuses nothing; continue-on-error on the fetch step stops
+  # that step from failing the workflow and from opening a trunk-red issue.
+  # The job is not in `e2e verdict`'s needs, so a Trunk outage does not by
+  # itself fail the required check. The client still reads GET
+  # /v2/test-collections/{id} then GET /v2/tests, not /v2/test-cases. e2e.yml
+  # has no `tier` dispatch input, so the ci.yml fast-tier clause is not copied.
+  # vars.TRUNK_QUARANTINE_CI is the kill switch.
+  trunk-quarantine-list:
+    name: Trunk quarantined tests (list)
+    if: ${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      list: ${{ steps.fetch.outputs.list }}
+      # The step is continue-on-error, so the job reads success even when the
+      # fetch failed; the resolver needs the step's own outcome.
+      fetch_outcome: ${{ steps.fetch.outcome }}
+    steps:
+      # Trunk API v2: GET /v2/test-collections/{id} answers 404 for an unknown
+      # collection, while GET /v2/tests with an unknown testCollectionId answers
+      # 200 with an empty list, so the collection is read first and a typo can
+      # never pass as "nothing quarantined". https://docs.trunk.io/flaky-tests/reference/api-reference
+      - name: Fetch the quarantined-test list from Trunk
+        id: fetch
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          TRUNK_API_TOKEN: ${{ secrets.TRUNK_API_TOKEN }}
+          TRUNK_API_URL: https://api.trunk.io
+          TRUNK_TEST_COLLECTION_ID: L3VoLxNK
+        run: |
+          # Resolved once, never a bare python3 in argv (AGENTS.md, "Portable by default").
+          py="$(command -v python3)" || { echo "::error title=Trunk quarantine list::no python3 on PATH"; exit 1; }
+          "$py" <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          COLLECTION_PATH = "/v2/test-collections/"
+          TESTS_PATH = "/v2/tests"
+          MAX_PAGES = 20
+          PAGE_LIMIT = 100
+          TIMEOUT_S = 20
+          ATTEMPTS = 3
+
+
+          class FetchError(Exception):
+              pass
+
+
+          def _snippet(body, token):
+              text = body[:300].decode("utf-8", "replace").replace("\n", " ")
+              if token:
+                  text = text.replace(token, "***")
+              return text
+
+
+          def _describe(url):
+              parsed = urllib.parse.urlparse(url)
+              return parsed.path or url
+
+
+          def _request(url, token):
+              last_error = f"GET {_describe(url)} failed"
+              for _attempt in range(ATTEMPTS):
+                  request = urllib.request.Request(
+                      url,
+                      headers={"Authorization": f"Bearer {token}"},
+                      method="GET",
+                  )
+                  try:
+                      with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+                          return response.read()
+                  except urllib.error.HTTPError as error:
+                      body = error.read()
+                      detail = (
+                          f"GET {_describe(url)} failed: HTTP {error.code} "
+                          f"{_snippet(body, token)}"
+                      )
+                      if error.code >= 500:
+                          last_error = detail
+                          continue
+                      raise FetchError(detail) from error
+                  except urllib.error.URLError as error:
+                      last_error = f"GET {_describe(url)} failed: {error.reason}"
+                      continue
+                  except TimeoutError:
+                      last_error = f"GET {_describe(url)} failed: timed out"
+                      continue
+              raise FetchError(last_error)
+
+
+          def _load_object(body, what):
+              try:
+                  payload = json.loads(body)
+              except json.JSONDecodeError as error:
+                  raise FetchError(f"{what} is not JSON ({error})") from error
+              if not isinstance(payload, dict):
+                  raise FetchError(f"{what} is not a JSON object")
+              return payload
+
+
+          def _rows(data, page):
+              rows = []
+              for entry in data:
+                  if not isinstance(entry, dict):
+                      raise FetchError(f"page {page} has a malformed entry {entry!r}")
+                  class_name = entry.get("className")
+                  name = entry.get("name")
+                  if (
+                      not isinstance(class_name, str)
+                      or not class_name
+                      or not isinstance(name, str)
+                      or not name
+                  ):
+                      raise FetchError(
+                          f"page {page} has a row without a non-empty className and name: {entry!r}"
+                      )
+                  rows.append({"c": class_name, "n": name})
+              return rows
+
+
+          def main():
+              github_output = os.environ.get("GITHUB_OUTPUT", "")
+              token = os.environ.get("TRUNK_API_TOKEN", "")
+              if not token:
+                  print(
+                      "TRUNK_API_TOKEN is not provisioned, so nothing is quarantined",
+                      file=sys.stderr,
+                  )
+                  return 1
+              try:
+                  api_url = os.environ.get("TRUNK_API_URL", "")
+                  if not api_url:
+                      raise FetchError("TRUNK_API_URL is not set")
+                  collection_id = os.environ.get("TRUNK_TEST_COLLECTION_ID", "")
+                  if not collection_id:
+                      raise FetchError("TRUNK_TEST_COLLECTION_ID is not set")
+                  if not github_output:
+                      raise FetchError("GITHUB_OUTPUT is not set")
+                  base = api_url.rstrip("/")
+                  collection = _load_object(
+                      _request(f"{base}{COLLECTION_PATH}{collection_id}", token),
+                      "collection",
+                  )
+                  if collection.get("id") != collection_id:
+                      raise FetchError(f"collection {collection_id} read back without its id")
+                  tests = []
+                  cursor = ""
+                  for page in range(1, MAX_PAGES + 1):
+                      params = [
+                          ("testCollectionId", collection_id),
+                          ("quarantineState", "quarantined"),
+                          ("limit", str(PAGE_LIMIT)),
+                      ]
+                      if cursor:
+                          params.append(("cursor", cursor))
+                      body = _request(
+                          f"{base}{TESTS_PATH}?{urllib.parse.urlencode(params)}",
+                          token,
+                      )
+                      payload = _load_object(body, f"page {page}")
+                      data = payload.get("data")
+                      if not isinstance(data, list):
+                          raise FetchError(f"page {page} has no data array")
+                      tests.extend(_rows(data, page))
+                      if payload.get("hasMore") is not True:
+                          blob = json.dumps(
+                              {"status": "ok", "tests": tests},
+                              separators=(",", ":"),
+                              ensure_ascii=False,
+                          )
+                          with open(github_output, "a", encoding="utf-8") as handle:
+                              handle.write(f"list={blob}\n")
+                          print(f"Quarantined tests: {len(tests)}")
+                          return 0
+                      cursor = (
+                          payload.get("nextCursor")
+                          if isinstance(payload.get("nextCursor"), str)
+                          else ""
+                      )
+                      if not cursor:
+                          raise FetchError("hasMore without a nextCursor")
+                  raise FetchError("more than 20 pages; refusing a list that long")
+              except FetchError as error:
+                  print(f"::error title=Trunk quarantine list::{error}", file=sys.stderr)
+                  return 1
+
+
+          sys.exit(main())
+          PY
+
+  # ---------------------------------------------------------------------------
+  # Trunk flaky-test quarantine, the cache half
+  # (ADR-NEW-trunk-quarantine-survives-a-budget-wall, Thu 15 Oct 2026). The
+  # Actions budget ran out on Thu 15 Oct and every hosted job stopped starting,
+  # trunk-quarantine-list included, so the list was empty and nothing was
+  # excused while self-hosted shards kept running. This job runs on the
+  # self-hosted pool with NO secret in scope: it passes the live list through
+  # when trunk-quarantine-list produced one (and caches it from main), and
+  # otherwise restores the newest cached list, at most MAX_AGE_HOURS old.
+  # Pull requests no longer start the hosted fetch at all (a billed hosted minute on every PR run); they
+  # read the list the last main run cached. No list, a list over the age cap,
+  # or an unreadable cache still excuses nothing.
+  # tests/scripts/test_ci_trunk_quarantine_cache.py drives the run block.
+  trunk-quarantine:
+    name: Trunk quarantined tests (live or cached)
+    needs: trunk-quarantine-list
+    if: ${{ !cancelled() && vars.TRUNK_QUARANTINE_CI == 'true' }}
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      list: ${{ steps.resolve.outputs.list }}
+      source: ${{ steps.resolve.outputs.source }}
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # No secret in this job, so a checkout is fine. Only scripts/ is needed, and the
+      # clean step removes any list an earlier job left in this reused workspace.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            scripts
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+      - name: Restore the newest cached list
+        id: restore
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .trunk-quarantine/list.json
+          key: trunk-quarantine-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: trunk-quarantine-e2e-
+      - name: Resolve the list (live, else cached and under the age cap)
+        id: resolve
+        env:
+          LIVE_LIST: ${{ needs.trunk-quarantine-list.outputs.list }}
+          LIVE_RESULT: ${{ needs.trunk-quarantine-list.outputs.fetch_outcome || needs.trunk-quarantine-list.result }}
+          CACHE_HIT: ${{ steps.restore.outputs.cache-matched-key != '' }}
+          CACHE_FILE: .trunk-quarantine/list.json
+          MAX_AGE_HOURS: "168"
+        run: |
+          # Resolved once, never a bare python3 in argv (AGENTS.md, "Portable by default").
+          py="$(command -v python3)" || { echo "::error title=Trunk quarantine::no python3 on PATH"; exit 1; }
+          exec "$py" -m scripts.ci_trunk_quarantine_cache
+      # Saved only from main (push or dispatch): a pull request's cache is
+      # scoped to that PR, so saving there would buy nothing.
+      - name: Cache the live list for runs that cannot fetch it
+        if: steps.resolve.outputs.source == 'live' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .trunk-quarantine/list.json
+          key: trunk-quarantine-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # ---------------------------------------------------------------------------
   # TIER 1, BLOCKING on every PR and every push to main.
   #
   # Everything in this job is hermetic: it needs the repo, a production build,
@@ -223,8 +547,13 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: e2e gate (webkit artifact + hermetic chromium)
-    needs: scope
-    if: needs.scope.outputs.in_scope == 'true'
+    # trunk-quarantine feeds the root Playwright verdict
+    # (ADR-NEW-trunk-flaky-quarantine-on). !cancelled() and the scope result
+    # keep this job running when that list fails or is switched off. A bare
+    # scope-output `if` is GitHub's implicit success(), which would skip an
+    # in-scope gate, and `e2e verdict` reads that skip as red.
+    needs: [scope, trunk-quarantine]
+    if: ${{ needs.scope.outputs.in_scope == 'true' && !cancelled() && needs.scope.result == 'success' }}
     # Runner is a repo-variable switch (see ci.yml's `test` job for the full
     # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
     # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
@@ -882,13 +1211,68 @@ jobs:
             pnpm exec playwright test --config tests/e2e/playwright.performance.config.ts tests/e2e/performance-headphone-device-probe.spec.ts --output test-results/performance-headphone-gate
 
       - name: Root Playwright suite (real engine + Vite)
+        id: root-playwright
         working-directory: apps/webui/frontend
         # `test:e2e` fixes a pair reserved for this suite, builds its own
         # generated-audio library, and starts the engine before Vite. This is
         # the default Playwright command developers run, so running it here
         # keeps its API-backed specs from becoming an unobserved test estate.
+        #
+        # continue-on-error defers this step's red to the verdict below
+        # (ADR-NEW-trunk-flaky-quarantine-on). Playwright 1.61's junit reporter
+        # reads the two PLAYWRIGHT_JUNIT_* vars: an absolute runner.temp path
+        # stays absolute under this working-directory, and "1" turns on the
+        # project prefix. classname is the spec path relative to testDir
+        # (./tests/e2e). The report is deleted first so a persistent runner
+        # cannot hand the verdict a file from an earlier job.
         if: ${{ !cancelled() }}
-        run: pnpm test:e2e --output test-results/root-playwright
+        continue-on-error: true
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: ${{ runner.temp }}/junit-e2e-root.xml
+          PLAYWRIGHT_JUNIT_INCLUDE_PROJECT_IN_TEST_NAME: "1"
+        run: |
+          set -uo pipefail
+          rm -f "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-e2e-root.xml"
+          set +e
+          pnpm test:e2e --output test-results/root-playwright --reporter=list,junit
+          rc=$?
+          set -e
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # THE root suite's verdict (ADR-NEW-trunk-flaky-quarantine-on). The step
+      # above is continue-on-error, so this is what turns its red into a red
+      # job. Exit 0 passes. Exit 1 passes only when every failed testcase is
+      # on the list trunk-quarantine-list fetched (collection L3VoLxNK). No
+      # list, any other exit, or a step that never ran all fail. No
+      # continue-on-error here: a refusal fails the job. Later steps still
+      # run under !cancelled(), so a failure of any other step still fails
+      # the gate on its own and still reaches `e2e verdict`.
+      - name: Root Playwright verdict (Trunk quarantine applied)
+        if: always()
+        timeout-minutes: 1
+        env:
+          ROOT_OUTCOME: ${{ steps.root-playwright.outcome }}
+          ROOT_RC: ${{ steps.root-playwright.outputs.rc }}
+          TRUNK_QUARANTINE_LIST: ${{ needs.trunk-quarantine.outputs.list }}
+        run: |
+          set -uo pipefail
+          case "$ROOT_OUTCOME" in
+            success)
+              echo "VERDICT: PASS -- root Playwright exited 0"
+              exit 0
+              ;;
+            failure)
+              .venv/bin/python scripts/ci_trunk_quarantine_verdict.py \
+                --pytest-rc "$ROOT_RC" \
+                --junit "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-e2e-root.xml" \
+                --shard e2e-root
+              ;;
+            *)
+              printf '::error title=root Playwright did not run::root Playwright step outcome=%s\n' "${ROOT_OUTCOME:-empty}"
+              exit 1
+              ;;
+          esac
 
       - name: Library jobs ordering (chromium, dry runner)
         working-directory: apps/webui/frontend
@@ -958,6 +1342,58 @@ jobs:
             apps/webui/frontend/tests/e2e/fixtures/*-data/logs/**
           if-no-files-found: ignore
           retention-days: 2
+
+      # Stage the root JUnit for the hosted uploader (ADR-NEW-trunk-flaky-quarantine-on).
+      # This job checks out the repo, so the token stays in e2e-trunk-upload.
+      # continue-on-error: a copy failure is instrumentation, not the verdict.
+      # Copy only a report this attempt's root step actually ran; anything else
+      # is staged as an absence so a persistent workspace cannot upload a stale file.
+      - name: Stage the root Playwright JUnit report for Trunk
+        if: always()
+        id: stage-e2e-junit
+        continue-on-error: true
+        env:
+          STAGE_DIR: e2e-trunk-junit-${{ github.run_id }}-${{ github.run_attempt }}
+          ROOT_OUTCOME: ${{ steps.root-playwright.outcome }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$STAGE_DIR" || exit 1
+          case "$ROOT_OUTCOME" in
+            success|failure)
+              if [ -f "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-e2e-root.xml" ]; then
+                cp "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-e2e-root.xml" "$STAGE_DIR/" || {
+                  printf '::error title=Trunk e2e JUnit UNMEASURED::the report existed but could not be staged\n'
+                  exit 1
+                }
+              fi
+              ;;
+            *)
+              printf '::notice title=Trunk e2e JUnit::root Playwright step did not run (outcome=%s); staging an absence\n' \
+                "${ROOT_OUTCOME:-empty}"
+              ;;
+          esac
+          printf '%s' "$ROOT_OUTCOME" > "$STAGE_DIR/outcome.txt" || {
+            printf '::error title=Trunk e2e JUnit UNMEASURED::could not write outcome.txt\n'
+            exit 1
+          }
+          printf 'stage_dir=%s\n' "$STAGE_DIR" >> "$GITHUB_OUTPUT" || {
+            printf '::error title=Trunk e2e JUnit UNMEASURED::could not write stage_dir\n'
+            exit 1
+          }
+          find . -maxdepth 1 -type d \
+            -name "e2e-trunk-junit-*" \
+            ! -name "$STAGE_DIR" -mmin +120 \
+            -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Upload the root Playwright JUnit report for Trunk
+        if: always() && steps.stage-e2e-junit.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-trunk-junit-attempt-${{ github.run_attempt }}
+          path: ${{ steps.stage-e2e-junit.outputs.stage_dir }}
+          if-no-files-found: error
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # TIER 2, NIGHTLY. Not a PR gate, but a real red when it breaks.
@@ -1457,9 +1893,13 @@ jobs:
     # a queue reads `skipped` is undocumented. If the gate is ever skipped on
     # ordinary PR heads by design (PR #4175's queue-draft-only gate), that
     # condition belongs in the scope decision, not in the gate's own `if`:
-    # (private path) pins the gate's `if` to the
-    # scope output alone, so the verdict can never read a designed skip as red
-    # or an undesigned one as green. `extended` is nightly-only and not gated.
+    # (private path) pins that `if` to the scope
+    # output plus `!cancelled()` and `needs.scope.result == 'success'`
+    # (ADR-NEW-trunk-flaky-quarantine-on). Those two clauses only keep a failed
+    # or skipped trunk-quarantine-list from skipping an in-scope gate. A
+    # designed skip still lives in the scope decision, so the verdict never
+    # reads one as red or an undesigned one as green. `extended` is nightly-only
+    # and not gated. `e2e-trunk-upload` records the report and is not a need.
     needs:
       - scope
       - gate
@@ -1539,3 +1979,82 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python3 -m scripts.ci_required_gate verdict
+
+  # ---------------------------------------------------------------------------
+  # Root Playwright JUnit to Trunk Flaky Tests (ADR-NEW-trunk-flaky-quarantine-on).
+  # Measure only. No checkout: the org token never shares a job with repository
+  # code. Not in `verdict.needs`, so a failed upload cannot redden `e2e verdict`.
+  # quarantine stays false: the verdict lives in the gate's own step.
+  e2e-trunk-upload:
+    name: Trunk e2e root report
+    needs: gate
+    if: always() && needs.gate.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Is a Trunk API token provisioned
+        id: trunk-token
+        timeout-minutes: 1
+        env:
+          TRUNK_API_TOKEN: ${{ secrets.TRUNK_API_TOKEN }}
+        run: |
+          if [ -n "${TRUNK_API_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the root Playwright JUnit report
+        id: download-e2e-root
+        if: always() && steps.trunk-token.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: e2e-trunk-junit-attempt-${{ github.run_attempt }}
+          path: staged-e2e-root
+
+      - name: Find the root Playwright report
+        id: e2e-root-report
+        if: always() && steps.trunk-token.outputs.present == 'true'
+        run: |
+          if [ -f "staged-e2e-root/junit-e2e-root.xml" ]; then
+            echo "report=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "report=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record the root Playwright suite in Trunk Flaky Tests
+        id: trunk-flaky-tests-e2e-root
+        if: always() && steps.trunk-token.outputs.present == 'true' && steps.e2e-root-report.outputs.report == 'true'
+        continue-on-error: true
+        uses: trunk-io/analytics-uploader@14c0f18990953eecd01c9c5afe3cc63a73b6c371 # v2.1.5
+        with:
+          junit-paths: staged-e2e-root/junit-e2e-root.xml
+          org-slug: seat-a-org
+          token: ${{ secrets.TRUNK_API_TOKEN }}
+          test-collection-id: L3VoLxNK
+          use-uncloned-repo: true
+          quarantine: false
+          gh-repo-url: ${{ github.event.pull_request.base.repo.html_url || format('{0}/{1}', github.server_url, github.repository) }}
+          gh-repo-head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          gh-repo-head-branch: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          gh-repo-head-commit-epoch: ${{ github.event.pull_request.updated_at || github.event.head_commit.timestamp }}
+          cli-version: 0.15.6
+
+      - name: The Trunk upload must have run
+        if: always() && steps.trunk-token.outputs.present == 'true'
+        env:
+          HAS_REPORT: ${{ steps.e2e-root-report.outputs.report }}
+          TRUNK_UPLOAD: ${{ steps.trunk-flaky-tests-e2e-root.outcome }}
+          DOWNLOAD: ${{ steps.download-e2e-root.outcome }}
+        run: |
+          set -uo pipefail
+          if [ "$HAS_REPORT" != "true" ] && [ "$DOWNLOAD" != "success" ]; then
+            printf '::error title=Trunk upload UNMEASURED (e2e root)::the staged artifact could not be downloaded (download outcome=%s). This is an instrumentation failure. It never affects the verdict.\n' "${DOWNLOAD:-empty}"
+          elif [ "$HAS_REPORT" != "true" ]; then
+            printf '::notice title=Trunk upload::root Playwright produced no JUnit report (download outcome=%s); nothing to record\n' "${DOWNLOAD:-empty}"
+          elif [ "$TRUNK_UPLOAD" != "success" ]; then
+            printf '::error title=Trunk upload UNMEASURED (e2e root)::the report was staged but the upload outcome=%s. It never affects the verdict.\n' "${TRUNK_UPLOAD:-empty}"
+          else
+            echo "Trunk upload recorded the root Playwright report"
+          fi

@@ -1,12 +1,15 @@
-"""The lockfile check is hosted-only and gated on the account's hosted billing.
+"""Both halves of the lockfile check run, ungated, on the self-hosted pool.
 
-- [if] GitHub-hosted Actions are blocked on billing [then] the job is skipped, never
-  a failure that reads as a lockfile verdict, [else stop]
-- [if] the gate variable is set [then] the job runs on ubuntu-latest exactly as before,
-  [else stop]
-- [if] the hosted job is skipped [then] the metadata half still runs, ungated, on the
-  self-hosted pool with no resolution, so a stale lock stays red (Codex P1, #3763),
-  [else stop]
+ADR-NEW-security-scans-on-self-hosted-pool, Thu 15 Oct 2026. The resolution half used
+to be GitHub-hosted and gated on vars.CI_HOSTED_LOCKFILE_CHECK, which stayed unset after
+the Mon 21 Sep 2026 billing block, so it skipped on every PR for over three weeks.
+
+- [if] the resolution half is gated on a repo variable again [then] fail, [else stop]
+- [if] it runs `uv lock --check` without --no-build on the pool [then] fail: a source
+  build runs package code on a persistent runner, [else stop]
+- [if] its uv cache is not the job's RUNNER_TEMP [then] fail: a download would outlive
+  the job, [else stop]
+- [if] the metadata half is gated or resolves [then] fail (Codex P1, #3763), [else stop]
 """
 
 from __future__ import annotations
@@ -16,22 +19,21 @@ from pathlib import Path
 import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "lockfile-check.yml"
-GATE = "vars.CI_HOSTED_LOCKFILE_CHECK == 'true'"
-
-
-def test_lockfile_check_is_gated_on_hosted_billing() -> None:
-    """if the gate is dropped then a billing block reads as a red lockfile verdict"""
-    job = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["uv-lock"]
-    condition = " ".join(str(job.get("if", "")).split())
-    assert GATE in condition, (
-        "the hosted lockfile job must skip while hosted billing is blocked, "
-        f"not fail with no runner:\n{condition!r}"
-    )
-    assert job["runs-on"] == "ubuntu-latest", "the check stays hosted (sdist exposure)"
-    assert "uv lock --check" in job["steps"][-1]["run"]
-
-
 LINUX_POOL = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+
+
+def test_resolution_check_runs_ungated_on_the_pool_without_builds() -> None:
+    """if the gate returns then a forgotten variable silently skips the check again;
+    if --no-build goes then a dependency PR's sdist build runs code on the pool"""
+    job = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["uv-lock"]
+    assert "if" not in job, f"the resolution half must never be gated: {job.get('if')!r}"
+    assert job["runs-on"] == LINUX_POOL, job["runs-on"]
+    check = [s for s in job["steps"] if "uv lock" in s.get("run", "")]
+    assert len(check) == 1, check
+    assert check[0]["run"].split() == ["uv", "lock", "--check", "--no-build"], check[0]["run"]
+    assert check[0]["env"]["UV_CACHE_DIR"] == "${{ runner.temp }}/uv-cache", check[0]
+    setup = [s for s in job["steps"] if str(s.get("uses", "")).startswith("astral-sh/setup-uv@")]
+    assert setup and setup[0]["with"]["enable-cache"] is False, setup
 
 
 def test_metadata_check_runs_ungated_on_the_pool() -> None:

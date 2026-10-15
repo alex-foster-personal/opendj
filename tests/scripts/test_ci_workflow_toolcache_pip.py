@@ -16,7 +16,7 @@ tests/scripts/test_ci_workflow_stale_install_coverage.py, so the two guards cann
 disagree about which jobs count): every pip install in a ``run:`` step (whole-line shell
 comments ignored, backslash continuations joined) names a VIRTUALENV target explicitly.
 Quoted text, trailing ``# ...`` comments and heredoc bodies are NOT masked, so a pip
-install that only appears there is still flagged (fail-closed; see .planning/debt/4576.md).
+install that only appears there is still flagged (fail-closed; see (private path)).
 
   pip / pip3 / pip3.N install ...            flagged, unless spelled as a venv path
   python[3[.N]] -m pip install ...           flagged, unless the interpreter is a
@@ -96,7 +96,7 @@ _VENV_PATH = re.compile(r"(?i)(?:^|/)[^/\s]*venv[^/\s]*/bin/")
 
 WAVEFORM_JOB = "periodic-checks.yml:perf-bench-waveform-render"
 WAVEFORM_STEP = "Install waveform native extension"
-HOSTED_JOB = "periodic-checks.yml:preview-drift"
+HOSTED_JOB = "ci.yml:ci-insights"  # macos-packaging moved self-hosted Thu 15 Oct 2026 (#5638)
 
 
 # ---------------------------------------------------------------------------

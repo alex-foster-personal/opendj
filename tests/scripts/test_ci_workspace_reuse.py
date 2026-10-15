@@ -40,7 +40,7 @@ Acceptance tests:
   [then] this fails [⛔️ a depth-1 fetch writes .git/shallow, and the next
   full-history job on that runner pays an `--unshallow` re-download: measured
   6.8 GB of the 11.2 GB of pack writes on nucbox in 48 h; see the
-  uniform-checkout-depth ADR in docs/decisions/].
+  uniform-checkout-depth ADR in (private path)/].
 - [if] the selector stops finding the history-dependent jobs (ci.yml test,
   fast, contracts, quality; adr-check) [then] this fails [⛔️ the depth rule
   would pass vacuously for the jobs whose results depend on history].
@@ -69,6 +69,10 @@ WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 CLEAN_SCRIPT = REPO_ROOT / "scripts" / "ci_clean_untracked.sh"
 VENV_SCRIPT = REPO_ROOT / "scripts" / "ci_venv.sh"
 SELF_HOSTED_VAR_PREFIX = "vars.CI_RUNS_ON_"
+#: The bifrost1 Windows runner (ADR-NEW-hosted-runner-exit): a single Windows host whose
+#: Linux-shell hygiene (sudo, /proc, bash clean step) cannot run there. Its one job checks
+#: out with clean: true, so it leaves no tree for a later job to inherit.
+WINDOWS_RUNNER_VAR = "vars.CI_RUNS_ON_WINDOWS"
 CHECKOUT_PREFIX = "actions/checkout@"
 CLEAN_STEP_RUN = "scripts/ci_clean_untracked.sh"
 FULL_HISTORY = 0
@@ -92,7 +96,8 @@ def _self_hosted_jobs() -> list[tuple[str, str, list[dict]]]:
     for path in sorted(WORKFLOW_DIR.glob("*.yml")):
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         for job_name, job in (doc.get("jobs") or {}).items():
-            if SELF_HOSTED_VAR_PREFIX in str(job.get("runs-on", "")):
+            runs_on = str(job.get("runs-on", ""))
+            if SELF_HOSTED_VAR_PREFIX in runs_on and WINDOWS_RUNNER_VAR not in runs_on:
                 found.append((path.name, job_name, job.get("steps") or []))
     return found
 

@@ -43,8 +43,8 @@ def _workflow(name: str) -> str:
 def test_dependency_jobs_provision_venvs_with_uv() -> None:
     """Dependency installs are targeted at a venv, never runner Python."""
     # Self-hosted jobs reuse a persistent .venv through scripts/ci_venv.sh and
-    # install it exactly (tests/scripts/test_ci_workspace_reuse.py); the
-    # hosted macOS job starts clean and keeps the plain form.
+    # install it exactly (tests/scripts/test_ci_workspace_reuse.py). The macOS
+    # job joined them when it moved to the self-hosted Macs (Thu 15 Oct 2026, #5638).
     # Both halves live in one command there, so the second item is the command itself.
     ci_lock = "scripts/ci_venv.sh 3.11 --lock pylock.ci.toml"
     release_lock = "scripts/ci_venv.sh 3.11 --lock pylock.release-check.toml"
@@ -55,10 +55,7 @@ def test_dependency_jobs_provision_venvs_with_uv() -> None:
         # The macOS pytest job moved out of release-check.yml into its own
         # workflow (#924). The contract follows the job, not the file it used
         # to live in - otherwise relocating a job silently drops its cover.
-        "macos-native-companion.yml": (
-            "uv venv --python 3.11 .venv",
-            "uv pip install --python .venv/bin/python -r requirements.txt pytest",
-        ),
+        "macos-native-companion.yml": (release_lock, release_lock),
     }
 
     for workflow, (venv_command, install_command) in requirements_jobs.items():
@@ -130,7 +127,7 @@ def test_pytest_jobs_forbid_child_uv_runs_from_resyncing_the_venv() -> None:
     """`uv run` syncs `.venv` to uv.lock unless told not to.
 
     apps/stems/job.py spawns `uv run --with modal ...` from the repo root and
-    tests/stems/test_stems_job_pipeline.py drives it for real. Once #1106 made
+    (private path) drives it for real. Once #1106 made
     `.venv` the job environment, that sync pruned pytest, librosa and soundfile
     mid-suite (trunk run 33884587140, Fri 4 Sep 2026). UV_NO_SYNC on the job
     is what keeps the provisioned environment intact.

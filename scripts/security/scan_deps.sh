@@ -27,6 +27,7 @@ MANIFESTS=(
   pylock.release-check.toml
   pylock.docs.toml
   scripts/security/semgrep-requirements.txt
+  scripts/security/workflow-yaml-requirements.txt
   apps/webui/frontend/pnpm-lock.yaml
   apps/desktop/pnpm-lock.yaml
   apps/desktop/electron/pnpm-lock.yaml

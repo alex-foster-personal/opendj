@@ -32,8 +32,14 @@ permissions:
 jobs:
   desktop-compile:
     name: desktop shell cargo check
-    runs-on: macos-14
-    timeout-minutes: 5
+    # Self-hosted macOS pool since Thu 15 Oct 2026 (hosted-runner exit, issue #5638):
+    # vars.CI_RUNS_ON_MAC_LIGHT = ["self-hosted","macOS","mac-light"], any of the four
+    # fleet Macs (megamac X64, the Air, DL, airgap ARM64). A compile gate has no arch
+    # need. Unset variable = the hosted macos-14 fallback.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_MAC_LIGHT || '"macos-14"') }}
+    # 15, not 5: a cold check on megamac's 2013 Xeon takes several minutes. target/
+    # persists in the self-hosted workspace, so steady state stays near hosted speed.
+    timeout-minutes: 15
     # Hosted spend is the maintainer-gated: same CI_HOSTED_OS_JOBS switch as
     # macos-packaging.yml. The variable arm is conjoined with push/PR only so
     # branch `create` events do not bill macOS minutes when the switch is on.
@@ -47,7 +53,19 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
-          clean: true
+          # Persistent self-hosted workspace contract (tests/scripts/test_ci_workspace_reuse.py):
+          # full history, and clean: false so target/ survives; the next step removes the rest.
+          fetch-depth: 0
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      # Stale-install guard (PR #4251), required on every self-hosted checkout job.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@6190aa5fb88a88ee71c12769924bbe63a9ab152e # 1.96.0
@@ -55,7 +73,9 @@ jobs:
           toolchain: "1.96.0"
 
       # Cache only under apps/desktop/src-tauri/target (not Linux target dirs).
+      # Hosted only: a self-hosted Mac keeps target/ in its persistent workspace.
       - name: Restore cargo cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |

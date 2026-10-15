@@ -39,3 +39,115 @@ tests/quality/test_sync_drift_sources.py
 # git-info capture off. Selected only when a changed path names a config; a config found by
 # content alone is reached by no link.
 tests/scripts/test_playwright_git_capture_off.py
+
+# Every tracked .plist must be well-formed XML. A plist edit selects 8 modules and not this one
+# (replayed Tue 13 Oct 2026).
+tests/scripts/test_plists_well_formed.py
+
+# Every tracked .sh and justfile: no mktemp template carries a suffix after its Xs (BSD mktemp
+# does not randomize it). A .sh edit selects 38 modules and not this one.
+tests/scripts/test_macos_signing.py
+
+# Every Makefile, justfile and package.json (and the scripts they run) must call `node --test`
+# with the TAP reporter. A package.json edit reaches it by name; a script it scans does not.
+tests/scripts/test_node_test_tap_reporter.py
+
+# This list's own completeness check reads every test module. A PR that adds an unlisted
+# whole-tree guard selects that module but not this check, so it must always run.
+# It is the one entry over the 8 s admission line (about 14 s locally): the list stays complete
+# only if it runs on every narrowed head.
+(private path)
+
+# Subtree scans of every `apps/**/*.py`: vendored licenses, native tool paths, GPL tag
+# libraries, rekordbox writeback surfaces, function-body `scripts` imports. Of 12 sampled
+# `apps/` edits, none selected the first three (Tue 13 Oct 2026); each runs under 5 s.
+tests/scripts/test_third_party_licenses.py
+tests/shared/test_native_tool_paths.py
+tests/shared/test_no_gpl_tag_library.py
+(private path)
+tests/scripts/test_apps_scripts_import_audit.py
+
+# Lints every shell file and justfile recipe in the tree (`discover(REPO)`); under 1 s.
+tests/scripts/test_shell_construct_lint.py
+
+# Assert over every entry of a listed directory, each under 4 s (Tue 13 Oct 2026): apps/
+# packages against the import-linter contracts and layers, generated duplicates under apps/,
+# CI lock use in every workflow and `scripts/*.sh`, adapter docs against shipped adapters,
+# agentic-testing driver verdicts, the security status table against the repository, and an
+# ADR-check replay over the real `(private path)`.
+tests/quality/test_importlinter_contracts.py
+(private path)
+tests/quality/test_gate_generated_dup.py
+tests/scripts/test_ci_lock.py
+tests/open_dj/test_glossary.py
+(private path)
+(private path)
+(private path)
+
+# Read the real tree and assert over every entry, each under 8 s (Tue 13 Oct 2026): frontend
+# sources the agentic primer names, plan-name branching, the test suites gate scope covers, test
+# sources that must not launch the real app, e2e fixture data dirs, the desktop icon set, the
+# icon composer catalog, Playwright configs, and fixed ports in TypeScript.
+(private path)
+tests/entitlements/test_plan_name_branching.py
+(private path)
+tests/scripts/test_app_acceptance_no_real_app.py
+tests/scripts/test_ci_e2e_failure_artifact.py
+tests/scripts/test_desktop_icons.py
+tests/scripts/test_icon_composer_asset.py
+tests/scripts/test_orphan_cleanup.py
+tests/webui/test_reserved_fixed_ports_drift.py
+
+# Scan every `apps/**/*.py` for a forbidden `set_default("beatgrid", "own")` call through a
+# function-local `apps_root`. `apps/webui/server/app.py` and `apps/stems/relay/app.py` edits
+# reach them only through this list (Tue 13 Oct 2026). 5.0 s and 3.2 s.
+tests/analysis_contract/test_native01_promotion_gate.py
+tests/analysis_contract/test_native14_d1_promotion.py
+
+# Scan every `apps/**/*.py` for a duplicate FFmpeg resolver (root from `__file__`, which the derived
+# check now resolves) and for hard deletes on synchronized tables (through a helper in the test
+# module, outside the check's contract, so listed by hand; see #6526). `apps/webui/server/app.py` and
+# `apps/stems/relay/app.py` edits select neither. 0.5 s and 1.6 s.
+tests/shared/test_ffmpeg_resolver.py
+tests/cloudsync/test_soft_delete.py
+
+# Find the root from `__file__` and assert over the real tree, each under 6 s (Tue 13 Oct 2026):
+# App Store refusal language in every `apps/**/*.py` (`apps/stems/relay/app.py` edits skip it), the
+# conformance corpus round trip, and the preview pins ledger against the committed corpus.
+(private path)
+tests/open_dj/test_corpus_roundtrip.py
+(private path)
+(private path)
+
+# Scan every module under the rekordbox vendor and adapter packages for duplicate hot-cue DDL,
+# from those packages' own `__file__` (a subtree root, outside the derived check's contract, so
+# listed by hand). A new, otherwise unreferenced module there selects nothing else. It is the only
+# test module that lists from another module's `__file__` (9 candidates read, Tue 13 Oct 2026). 3.4 s.
+(private path)
+
+# Found by the run-time tree-read census (#6539), not the derived check,
+# Tue 13 Oct 2026. The license gate runs `git ls-files` at the root (scripts/license_gate.py
+# tracked_lockfiles) and checks every tracked lockfile; the toolset pins test expands each `repo:`
+# glob in ci/runner-toolset.yml across the tree. A new lockfile or package.json in an otherwise
+# unrelated directory selects neither. 4.5 s and 4.2 s.
+(private path)
+tests/scripts/test_runner_toolset_repo_pins.py
+
+# Also found by the census, Tue 13 Oct 2026: the dataset-register test rglobs the analysis packages
+# (`apps/analysis_*`) for dataset names the register must hold, and the soft-delete read guard walks every
+# Python file under apps/ for synced-table reads that do not filter `deleted_at`. A new module in a package neither
+# test imports selects neither. 4.2 s and 4.7 s.
+(private path)
+(private path)
+
+# Every test module under tests/webui and tests/engine_core imports a full-app fixture by name
+# (BigRfc-1): it walks both subtrees, so a new test there that leans on the conftest re-export
+# selects only itself and never reaches this guard. Arrived from main on Wed 14 Oct 2026, caught by
+# the derived check on merge. 1.3 s.
+(private path)
+
+# Every job in .github/workflows/*.yml is pinned to a self-hosted route or allowlisted as hosted
+# with a reason (ADR-NEW-hosted-runner-exit). It globs the whole workflow directory, so a new
+# workflow job selects nothing that reaches it. Arrived from main on Thu 15 Oct 2026, caught by
+# the derived check on merge.
+tests/quality/test_hosted_runner_pins_are_allowlisted.py

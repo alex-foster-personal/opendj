@@ -110,6 +110,41 @@ def start_uvicorn_in_thread(
     return server, thread
 
 
+FORCE_EXIT_JOIN_S = 5.0
+
+
+def stop_uvicorn_in_thread(
+    server: uvicorn.Server,
+    thread: threading.Thread,
+    *,
+    what: str,
+    join_timeout_s: float = THREAD_HANG_GUARD_S,
+) -> None:
+    """Shut down a server started with :func:`start_uvicorn_in_thread`.
+
+    A ``thread.join(timeout=10)`` that returns while the thread is still alive
+    leaves a uvicorn thread serving on the shard; measured on CI shard 3/4
+    (Thu 15 Oct 2026) that shows up as a wall-budget timeout long after
+    ``test_transport_timeout`` passed, not as a failure inside one test.
+    """
+    server.should_exit = True
+    thread.join(timeout=join_timeout_s)
+    if not thread.is_alive():
+        return
+    # Graceful shutdown hung. Still a failure, but end the server first so the
+    # failing test does not leave it serving under every later test on the shard.
+    server.force_exit = True
+    thread.join(timeout=FORCE_EXIT_JOIN_S)
+    cleanup = (
+        "still alive after force_exit; leaked uvicorn threads stall later tests on the shard"
+        if thread.is_alive()
+        else "ended by force_exit"
+    )
+    raise AssertionError(
+        f"HANG: {what} server thread did not exit within {join_timeout_s}s ({cleanup})"
+    )
+
+
 class RoundCounter(Protocol):
     """A background scheduler that counts rounds as they start and as they finish."""
 

@@ -76,7 +76,7 @@ Findings, rules and policies live on the Semgrep AppSec Platform dashboard.
 
 ## UNKNOWN is never clean
 
-Per `.claude/rules/verification.md`: a scanner that cannot measure must report UNKNOWN.
+Per `(private path)`: a scanner that cannot measure must report UNKNOWN.
 
 - osv-scanner exit 127 (error) or 128 (no packages found) fails the job.
 - Every job asserts it scanned something: the lockfile count, the file count, the rule
@@ -99,7 +99,7 @@ permissions:
   contents: read
 jobs:
   deps:
-    runs-on: ubuntu-latest    # GitHub-hosted on purpose: see ci-supply-chain.md rule 4
+    runs-on: ubuntu-latest    # sketch; the real jobs run on the self-hosted pool (ci-supply-chain.md rule 4)
     permissions: { contents: read, issues: write }
     steps:
       - uses: actions/checkout@<sha>  # vX

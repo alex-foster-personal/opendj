@@ -29,6 +29,19 @@ from apps.shared.fingerprints import (
 from apps.shared.stable_id import stable_id
 
 
+def _stable_id_for_fingerprint(fp) -> str:
+    return stable_id(
+        isrc=None,
+        fingerprint=fp.fp_str,
+        duration_ms=int(fp.duration * 1000),
+        size_bytes=fp.size,
+    )[0]
+
+
+def _put_fingerprint(cache: FingerprintCache, fp) -> None:
+    cache.put(fp, stable_id=_stable_id_for_fingerprint(fp))
+
+
 @dataclass(slots=True)
 class ScanResult:
     """Outcome of a ``scan`` run."""
@@ -80,15 +93,7 @@ def run_scan(
             try:
                 if force_recompute:
                     fp = compute(af.path)
-                    cache.put(
-                        fp,
-                        stable_id=stable_id(
-                            isrc=None,
-                            fingerprint=fp.fp_str,
-                            duration_ms=int(fp.duration * 1000),
-                            size_bytes=fp.size,
-                        )[0],
-                    )
+                    _put_fingerprint(cache, fp)
                     out.computed += 1
                     status = "recomputed"
                 else:
@@ -98,15 +103,7 @@ def run_scan(
                         status = "hit"
                     else:
                         fp = compute(af.path)
-                        cache.put(
-                            fp,
-                            stable_id=stable_id(
-                                isrc=None,
-                                fingerprint=fp.fp_str,
-                                duration_ms=int(fp.duration * 1000),
-                                size_bytes=fp.size,
-                            )[0],
-                        )
+                        _put_fingerprint(cache, fp)
                         out.computed += 1
                         status = "computed"
             except ChromaprintMissing:
@@ -144,7 +141,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--db",
         type=Path,
         default=None,
-        help="SQLite cache DB. Defaults to data/dedup/phase7.sqlite.",
+        help="SQLite cache DB. Defaults to (private path).",
     )
     p.add_argument(
         "--force-recompute",

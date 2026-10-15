@@ -7,7 +7,10 @@
 #
 # Rows:
 #   workflow-invariants  every workflow has a top-level permissions: block, and every
-#                        security.yml job runs on GitHub-hosted ubuntu-latest (rule 4).
+#                        security.yml job that references a repo secret runs on
+#                        GitHub-hosted ubuntu-latest (rule 4,
+#                        ADR-NEW-security-scans-on-self-hosted-pool). Secret-free
+#                        scanner jobs may run on the self-hosted pool.
 #   zizmor               --min-severity=medium, config .github/zizmor.yml (each
 #                        suppression carries a reason). Offline: no GitHub API audits.
 #   actionlint           syntax + expression checks; shellcheck/pyflakes off (style
@@ -27,26 +30,83 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 cd "$SECURITY_REPO_ROOT"
 
 # ----- invariants (a grep is an instrument too: each gets a control that must fire) ----------------
+# _secret_jobs_off_hosted <workflow>: one line per job that can read a repo secret but whose
+# runs-on is not literally ubuntu-latest. secscan.py secret-jobs parses the workflow as YAML, so
+# block, flow, folded and quoted spellings of a job are all one job; exit 2 means not measured.
+_secret_jobs_off_hosted() { sec_py_yaml secret-jobs "$1"; }
+
 check_invariants() {
-  local scanner="workflow-invariants" probe="$OUT/no-permissions.yml" missing runs_on offending
+  local scanner="workflow-invariants" probe="$OUT/no-permissions.yml" secret_probe="$OUT/secret-self-hosted.yml" inherit_probe="$OUT/secret-inherited-env.yml"
+  local missing jobs offending
   printf 'on: push\njobs: {}\n' >"$probe"
   [[ -n "$(grep -L '^permissions:' "$probe")" ]] ||
     { sec_unknown "$scanner" "$MODE" "permissions grep control did not fire"; return 2; }
+  # Control for the secret/runner rule: six ways a pool job reads a secret (each must be named,
+  # the last a flow-style job after a hosted one), a pool job whose script merely says
+  # "secrets" and a secret job on ubuntu-latest (neither may be).
+  cat >"$secret_probe" <<'PROBE'
+jobs:
+  leaky:
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX) }}
+    env:
+      T: ${{ secrets.TOKEN }}
+  leaky-index:
+    runs-on: [self-hosted]
+    env:
+      T: ${{secrets['TOKEN']}}
+  leaky-whole:
+    runs-on: [self-hosted]
+    env:
+      T: ${{ toJSON(secrets) }}
+  leaky-inherit:
+    uses: ./.github/workflows/x.yml
+    secrets: inherit
+  leaky-folded:
+    runs-on: [self-hosted]
+    env:
+      T: >-
+        ${{
+          secrets.TOKEN
+        }}
+  clean:
+    runs-on: [self-hosted]
+    steps:
+      - run: areas="secrets,workflows"; echo ${{ vars.secrets_dir }}
+  hosted:
+    runs-on: ubuntu-latest
+    env:
+      T: ${{ secrets.TOKEN }}
+  leaky-flow: { runs-on: [self-hosted], env: { T: "${{ secrets.TOKEN }}" }, steps: [{ run: "true" }] }
+PROBE
+  local control
+  control="$(_secret_jobs_off_hosted "$secret_probe")" ||
+    { sec_unknown "$scanner" "$MODE" "secret-job runner check could not parse its control"; return 2; }
+  [[ "$(cut -d: -f1 <<<"$control" | tr '\n' ' ')" == "leaky leaky-index leaky-whole leaky-inherit leaky-folded leaky-flow " ]] ||
+    { sec_unknown "$scanner" "$MODE" "secret-job runner control did not name exactly the six leaky jobs"; return 2; }
+  # A secret in workflow-level env reaches every job, so the pool job must be named and the
+  # hosted one must not.
+  printf '%s\n' 'env:' '  T: ${{ secrets.TOKEN }}' 'jobs:' '  pool:' '    runs-on: [self-hosted]' \
+    '    steps: [{ run: "true" }]' '  hosted:' '    runs-on: ubuntu-latest' '    steps: [{ run: "true" }]' >"$inherit_probe"
+  control="$(_secret_jobs_off_hosted "$inherit_probe")" ||
+    { sec_unknown "$scanner" "$MODE" "secret-job runner check could not parse its inherited-env control"; return 2; }
+  [[ "$(cut -d: -f1 <<<"$control")" == "pool" ]] ||
+    { sec_unknown "$scanner" "$MODE" "secret-job runner control missed a secret in workflow-level env"; return 2; }
   missing="$(grep -L '^permissions:' "$WORKFLOWS_DIR"/*.yml || true)"
-  runs_on="$(grep -cE '^\s+runs-on:' "$SECURITY_WORKFLOW" || true)"
-  [[ "$runs_on" -gt 0 ]] ||
+  jobs="$(grep -cE '^\s+runs-on:' "$SECURITY_WORKFLOW" || true)"
+  [[ "$jobs" -gt 0 ]] ||
     { sec_unknown "$scanner" "$MODE" "no runs-on lines found in $SECURITY_WORKFLOW"; return 2; }
-  offending="$(grep -E '^\s+runs-on:' "$SECURITY_WORKFLOW" | grep -vE 'runs-on: ubuntu-latest$' || true)"
+  offending="$(_secret_jobs_off_hosted "$SECURITY_WORKFLOW")" ||
+    { sec_unknown "$scanner" "$MODE" "secret-job runner check could not parse $SECURITY_WORKFLOW"; return 2; }
   if [[ -z "$missing" && -z "$offending" ]]; then
-    sec_row "$scanner" "$MODE" "fired(1)" 0 PASS "all workflows declare permissions; $runs_on security job(s) hosted"
+    sec_row "$scanner" "$MODE" "fired(2)" 0 PASS "all workflows declare permissions; every secret-holding security job of $jobs is hosted"
     return 0
   fi
   {
     printf '\n### workflow invariants\n\n'
     for f in $missing; do printf -- '- `%s` lacks a top-level permissions: block\n' "$f"; done
-    [[ -n "$offending" ]] && printf -- '- `%s` has a non-hosted runs-on: `%s`\n' "$SECURITY_WORKFLOW" "$offending"
+    [[ -n "$offending" ]] && printf -- '- `%s` job holds a secret off GitHub-hosted runners: `%s`\n' "$SECURITY_WORKFLOW" "$offending"
   } | tee -a "$SECURITY_WORK_DIR/report.md"
-  sec_row "$scanner" "$MODE" "fired(1)" "$(($(echo "$missing" | grep -c . || true) + $(echo "$offending" | grep -c . || true)))" FAIL "see report"
+  sec_row "$scanner" "$MODE" "fired(2)" "$(($(echo "$missing" | grep -c . || true) + $(echo "$offending" | grep -c . || true)))" FAIL "see report"
   return 1
 }
 

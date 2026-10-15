@@ -2,9 +2,9 @@
 
 Reads the places CI can reach an external executable from and reports each
 executable, apt package and Playwright browser it names, with the file and
-line that names it. `tests/scripts/test_runner_toolset_complete.py` compares
+line that names it. `(private path)` compares
 that against `ci/runner-toolset.yml`, the declared toolset
-(docs/decisions/ADR-NEW-runner-toolset-manifest.md), so a tool a job needs is
+((private path)), so a tool a job needs is
 declared before a host first fails on it rather than after.
 
 Surfaces scanned:
@@ -227,11 +227,31 @@ class _Walker:
         elif lex.is_separator(tok) or tok in KEYWORDS_BEFORE_COMMAND or tok in {"{", "}"}:
             self.at_command = True
             self.k += 1
+        elif self._is_array_assignment(tok):
+            self._skip_array_literal()
         elif not self.at_command or ASSIGNMENT_RE.match(tok):
             self.k += 1
         else:
             return False
         return True
+
+    def _is_array_assignment(self, tok: str) -> bool:
+        """`NAME=(a b c)`: the lexer splits off `(`, and its words are values, not commands."""
+        following = self.toks[self.k + 1][0] if self.k + 1 < len(self.toks) else ""
+        return tok.endswith("=") and bool(ASSIGNMENT_RE.match(tok)) and following == "("
+
+    def _skip_array_literal(self) -> None:
+        """Step past `NAME=( ... )`; command position is unchanged, as for a scalar assignment."""
+        self.k += 2
+        while self.k < len(self.toks) and not self._closes_array(self.toks[self.k][0]):
+            _note_repo_path(self.toks[self.k][0], self.source, self.ctx)
+            self.k += 1
+        self.k += 1  # the close may carry a glued separator (`);`): command position holds
+
+    @staticmethod
+    def _closes_array(tok: str) -> bool:
+        """`)`, or `)` with a separator the lexer glued on (`);`, `)&&`)."""
+        return tok.startswith(")") and set(tok) <= lex.PUNCT
 
     def _is_fd_prefix(self, tok: str) -> bool:
         following = self.toks[self.k + 1][0] if self.k + 1 < len(self.toks) else ""

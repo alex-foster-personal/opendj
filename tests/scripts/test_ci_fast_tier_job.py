@@ -179,7 +179,7 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
     fast = _pytest_step(_jobs()["fast"])
     ignores = lambda run: sorted(tok for tok in run.split() if tok.startswith("--ignore="))  # noqa: E731
     assert ignores(fast) == ignores(shard)
-    assert len(ignores(fast)) == 9  # + playlist-switch bench (e2e.yml extended) and NATIVE-25 live-engine (fail-closed when loudness is unavailable; must not collect on the fast lane)
+    assert len(ignores(fast)) == 10  # playlist-switch bench (e2e.yml extended), nextest quarantine (contracts) and NATIVE-25 live-engine (fail-closed when loudness is unavailable; must not collect on the fast lane)
 
 
 def test_shard_job_gains_only_the_ledger_guard() -> None:

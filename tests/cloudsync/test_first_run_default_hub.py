@@ -32,7 +32,7 @@ from apps.sync_hub import config as sync_config
 from apps.sync_hub import scheduler as sync_scheduler
 from apps.sync_hub import status as sync_status
 from tests.cloudsync.conftest import free_port
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-25")
 
@@ -90,8 +90,7 @@ def live_hub(tmp_path: Path) -> Iterator[str]:
     try:
         yield f"http://127.0.0.1:{port}"
     finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
+        stop_uvicorn_in_thread(server, thread, what="the first-run default-hub test hub")
 
 
 # ----- resolution ------------------------------------------------------------

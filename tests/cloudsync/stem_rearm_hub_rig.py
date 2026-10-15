@@ -15,7 +15,7 @@ from apps.sync_hub import service as sync_service
 from apps.sync_hub.transport import HttpTransport
 from tests.cloudsync.conftest import free_port
 from tests.cloudsync.test_hub_deploy import _init_data_dir
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 
 class _CountingStemIndexFetcher:
@@ -119,8 +119,7 @@ def boot_stem_hub(
 
 
 def stop_stem_hub(hub: BootedStemHub) -> None:
-    hub.server.should_exit = True
-    hub.thread.join(timeout=10.0)
+    stop_uvicorn_in_thread(hub.server, hub.thread, what="stem rearm hub")
 
 
 def read_hit_count(hub: BootedStemHub) -> int:

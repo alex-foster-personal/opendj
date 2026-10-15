@@ -54,7 +54,7 @@ FRONTEND_DIR = REPO_ROOT / "apps" / "webui" / "frontend"
 # justified after the fact. CI is the exception and runs SERIAL: `-n auto` was
 # measured on the ubuntu runner and came out SLOWER (295s against 273-289s
 # serial), because 4 vCPUs plus per-worker cold imports plus pytest-cov's
-# combine step eat the gain. See ops/test-latency/README.md.
+# combine step eat the gain. See (private path).
 PYTEST_WORKERS = "auto"
 
 # `--dist loadgroup` rather than the default `load`, so a suite that genuinely
@@ -105,6 +105,7 @@ def _steps() -> list[Step]:
                 "-n", PYTEST_WORKERS,
                 "--dist", PYTEST_DIST,
                 "--collect-floor", PYTEST_COLLECT_FLOOR,
+                "--ignore=(private path)",
             ],
             REPO_ROOT,
             slow=True,

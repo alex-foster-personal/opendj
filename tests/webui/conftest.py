@@ -131,17 +131,3 @@ def seed_backend() -> InMemoryBackend:
 def current_etag(backend: InMemoryBackend, stable_id: str) -> str:
     track = backend.get_track(stable_id)
     return compute_etag(track.stable_id, track.updated_at)
-
-
-# BigRfc-1 ACTIVATION SWITCH (inert while this import stands). Re-exporting the
-# full-app fixtures keeps the selector's old edge, conftest -> create_app, so
-# every test beneath this directory stays in the reach of every server module,
-# exactly as before tests/webui/app_fixtures.py existed. Deleting this import
-# (and its twin in tests/engine_core/conftest.py) is the whole activation: the
-# test modules that build the app already import their fixtures by name.
-# Activation criteria and measurements: (private path).
-from tests.webui.app_fixtures import (  # noqa: E402, F401  (re-exported as fixtures)
-    client_fixture,
-    insecure_client_fixture,
-    locked_client_fixture,
-)

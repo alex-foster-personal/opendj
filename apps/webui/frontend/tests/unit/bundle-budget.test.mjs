@@ -11,7 +11,7 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 278528 then the figure moved
+// - if the library limit stops being exactly 279552 then the figure moved
 //   without a reviewed note: 256000 was the inherited figure this repair
 //   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
 //   the live-transport probe on the client error path, with main already
@@ -27,7 +27,8 @@
 //   over, then +1 KiB Sat 3 Oct 2026 (PR #5086) and +1 KiB Sat 3 Oct 2026
 //   (PR #4906, the deck's named stem states). Sat 3 Oct 2026 the merge of
 //   #4014 with main measured 264,845 against the shared 264,192 ceiling
-//   (653 over); +5% ceil-to-KiB => 278,528. Any further move is a deliberate act with
+//   (653 over); +5% ceil-to-KiB => 278,528. +1 KiB Wed 14 Oct 2026 (PR #6585's
+//   rawAnlz, +89 bytes, main 2 bytes over) => 279,552. Any further move is a deliberate act with
 //   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
@@ -140,16 +141,17 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 278528: the inherited 256000 plus the reviewed KiB through the #4014 x main merge', () => {
+test('the library limit is exactly 279552: the inherited 256000 plus the reviewed KiB through the #6585 rawAnlz raise', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 278528,/,
+    /\{ name: 'library', limit: 279552,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
+  assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6585 follow-up/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
   assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 26 Sep 2026 \(\+2 KiB, PR #3837/, 'the raise must carry its note');

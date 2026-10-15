@@ -16,8 +16,8 @@ rules:
   artipacked:
     ignore:
       # These checkouts keep credentials because a later step runs git fetch
-      # (periodic-checks preview-drift, on a GitHub-hosted runner with no other
+      # (periodic-checks preview-drift, on a runner with no other
       # credential for this private repo) or git fetch + push (debt-index-regen).
       # None of these jobs uploads the checkout as an artifact.
       - debt-index-regen.yml:91
-      - periodic-checks.yml:943
+      - periodic-checks.yml:1055

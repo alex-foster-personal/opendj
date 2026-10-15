@@ -241,7 +241,7 @@ jobs:
         # its test landed on the host that lacked it, green on the PR because
         # that shard had landed on the other host. The list is pinned by
         # tests/scripts/test_ci_shard_binary_preflight.py; provisioning lives in
-        # docs/ci-actions-cost-review-2026-08-16.md item 7.
+        # (private path) item 7.
         run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
 
       - name: Keep the numba JIT cache across jobs on this runner
@@ -313,6 +313,7 @@ jobs:
             --collect-floor 3700 \
             --ignore=tests/quality/test_frontend_typing_gate.py \
             --ignore=tests/quality/test_frontend_typing_directives.py \
+            --ignore=(private path) \
             --cov=apps --cov-branch \
             --cov-report=term-missing \
             --cov-report=html \

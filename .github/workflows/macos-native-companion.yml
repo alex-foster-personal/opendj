@@ -19,7 +19,7 @@ on:
       - scripts/check_waveform_installed_consumer.py
       - tests/fixtures/_resolver.py
       - tests/fixtures/rb-usb-export.manifest.json
-      - tests/webui/test_waveform_native.py
+      - (private path)
       - Makefile
       - MANIFEST.in
       - pyproject.toml
@@ -39,7 +39,7 @@ on:
       - scripts/check_waveform_installed_consumer.py
       - tests/fixtures/_resolver.py
       - tests/fixtures/rb-usb-export.manifest.json
-      - tests/webui/test_waveform_native.py
+      - (private path)
       - Makefile
       - MANIFEST.in
       - pyproject.toml
@@ -64,7 +64,12 @@ permissions:
 jobs:
   macos-native-companion:
     name: macOS native companion wheel
-    runs-on: macos-14
+    # Self-hosted macOS pool since Thu 15 Oct 2026 (hosted-runner exit, issue #5638).
+    # vars.CI_RUNS_ON_MAC_ARM64 = ["self-hosted","macOS","ARM64","mac-light"]: the
+    # wheel it proves is the arm64 production wheel, so megamac (X64) is excluded.
+    # The fleet runners carry the ANLZ fixtures at MUX_FIXTURE_HOST (runner .env).
+    # Unset variable = the hosted macos-14 fallback.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_MAC_ARM64 || '"macos-14"') }}
     timeout-minutes: 20
     # The canonical ANLZ fixture is not available to hosted macOS runners.
     # Until the maintainer enables the hosted macOS spend and fixture facility, automatic
@@ -82,11 +87,28 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+          # Persistent self-hosted workspace contract (tests/scripts/test_ci_workspace_reuse.py).
+          fetch-depth: 0
+          clean: false
 
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      # Hosted only. A self-hosted Mac gets 3.11 from `uv venv --python 3.11` below
+      # (uv-managed), because setup-python's macOS installer wants sudo there.
       - name: Setup Python
+        if: runner.environment == 'github-hosted'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      # Pinned toolchain for the setuptools-rust extension. On a self-hosted Mac
+      # this installs into the runner's private RUSTUP_HOME, never the login user's.
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@6190aa5fb88a88ee71c12769924bbe63a9ab152e # 1.96.0
+        with:
+          toolchain: "1.96.0"
 
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
@@ -95,10 +117,26 @@ jobs:
         with:
           enable-cache: false
 
+      # Self-hosted: uv-managed interpreters only. A login user's own python3.11 on the
+      # runner PATH can be an x86_64 build, and the arm64 wheel gate then resolves for
+      # macosx_x86_64 (demon-llama, Thu 15 Oct 2026). Hosted keeps uv's default.
+      # (A step, because job-level env cannot read the runner context.)
+      - name: Self-hosted uses uv-managed Python only
+        if: runner.environment == 'self-hosted'
+        run: echo "UV_PYTHON_PREFERENCE=only-managed" >> "$GITHUB_ENV"
+
+      # Stale-install guard (PR #4251), required on every self-hosted checkout job.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
       - name: Install release gate dependencies
-        run: |
-          uv venv --python 3.11 .venv
-          uv pip install --python .venv/bin/python -r requirements.txt pytest
+        # ci_venv.sh with the release-check lock, not bare `uv venv` + `uv pip install`:
+        # the persistent self-hosted workspace keeps .venv, uv refuses to create over
+        # it, and a reused venv must be installed exactly from a hash-pinned lock
+        # (tests/scripts/test_ci_workspace_reuse.py). Same lock as release-check.yml,
+        # the workflow this job moved out of (#924); it carries requirements.txt + pytest.
+        run: scripts/ci_venv.sh 3.11 --lock pylock.release-check.toml
 
       - name: Build, inspect, install, and prove real ANLZ parity
         run: |

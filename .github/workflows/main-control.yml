@@ -15,8 +15,9 @@ on:
 env:
   PYTHONDONTWRITEBYTECODE: "1"
 
+# actions: write is granted to the one job that dispatches ci.yml, not to the
+# whole workflow (zizmor excessive-permissions, weekly scan Mon 12 Oct 2026).
 permissions:
-  actions: write
   contents: read
   pull-requests: read
 
@@ -28,6 +29,9 @@ jobs:
   dispatch-fast-tier:
     name: Dispatch fast tier on current main
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    permissions:
+      actions: write
+      contents: read
     # One `gh workflow run`; without an explicit cap the cost guard's ceiling
     # for this workflow is GitHub's 360-minute default and its arithmetic is
     # meaningless (tests/test_ci_cost_guard.py).

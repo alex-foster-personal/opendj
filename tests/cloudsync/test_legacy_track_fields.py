@@ -33,7 +33,7 @@ from tests.cloudsync.test_hub_sync import (
     _sync,
     _TestClientTransport,
 )
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-03")
 
@@ -494,8 +494,7 @@ def live_hub(tmp_path: Path) -> Iterator[tuple[str, Path]]:
     try:
         yield f"http://127.0.0.1:{port}", hub_path
     finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
+        stop_uvicorn_in_thread(server, thread, what="legacy track_fields hub")
 
 
 def test_cloudsync_digest_diff_reports_no_track_fields_rows(

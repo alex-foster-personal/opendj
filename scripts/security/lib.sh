@@ -77,3 +77,18 @@ sec_py() {
   "$SECURITY_BIN_DIR/uv" run --no-project --quiet --python 3.12 \
     python "$SECURITY_SCRIPTS/secscan.py" "$@"
 }
+
+# sec_py_yaml: secscan.py with PyYAML, for the one subcommand that parses workflow YAML. The venv
+# is built from hash-pinned wheels (workflow-yaml-requirements.txt) and rebuilt when that changes.
+sec_py_yaml() {
+  local venv="$SECURITY_WORK_DIR/yaml-venv" req="$SECURITY_SCRIPTS/workflow-yaml-requirements.txt" sha
+  sha="$(sha256sum "$req" 2>/dev/null || shasum -a 256 "$req")"
+  sha="${sha%% *}"
+  if [[ "$(cat "$venv/.req.sha256" 2>/dev/null)" != "$sha" ]]; then
+    rm -rf "$venv"
+    "$SECURITY_BIN_DIR/uv" venv --quiet --python 3.12 "$venv" >&2 &&
+      VIRTUAL_ENV="$venv" "$SECURITY_BIN_DIR/uv" pip install --quiet --require-hashes --no-deps -r "$req" >&2 &&
+      echo "$sha" >"$venv/.req.sha256" || return 2
+  fi
+  "$venv/bin/python" "$SECURITY_SCRIPTS/secscan.py" "$@"
+}

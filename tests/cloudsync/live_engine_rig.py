@@ -28,7 +28,7 @@ from fastapi import FastAPI
 from apps.engine_core.app import create_app
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.lock import EngineLock
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 BOOT_ID = "test-boot-cloudsync14"
 
@@ -203,8 +203,8 @@ def boot_real_engine(
     ``listener`` comes from `bound_loopback`: the engine serves on that
     already-bound socket, so no other process can take its port first.
 
-    Returns ``(app, server, thread, lock)``; the caller owns tearing all four
-    down (``server.should_exit = True``, join the thread, ``lock.release()``).
+    Returns ``(app, server, thread, lock)``; tear down with
+    :func:`shutdown_real_engine`.
     """
     port = int(listener.getsockname()[1])
     monkeypatch.setenv("MDT_DATA_DIR", str(data_dir))
@@ -218,3 +218,13 @@ def boot_real_engine(
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server, thread = start_uvicorn_in_thread(config, what="the real engine", sockets=[listener])
     return app, server, thread, lock
+
+
+def shutdown_real_engine(
+    server: uvicorn.Server, thread: threading.Thread, lock: EngineLock
+) -> None:
+    """Pair of :func:`boot_real_engine`; fails closed if the thread survives."""
+    try:
+        stop_uvicorn_in_thread(server, thread, what="the real engine")
+    finally:
+        lock.release()

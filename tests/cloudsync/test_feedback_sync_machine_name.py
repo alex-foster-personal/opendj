@@ -27,7 +27,7 @@ from apps.sync_hub import maintenance, maintenance_enroll
 from apps.sync_hub import service as sync_service
 from apps.sync_hub import status as sync_status
 from apps.webui.server.app import create_app
-from tests.waits import start_uvicorn_in_thread
+from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
 _HOST = "sharedhost"
 _CONFIGURED = "air-preview"
@@ -61,8 +61,7 @@ def hub_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     try:
         yield url
     finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
+        stop_uvicorn_in_thread(server, thread, what="the machine-name hub")
 
 
 def _open(data_dir: Path) -> sqlite3.Connection:

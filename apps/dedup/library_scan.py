@@ -33,7 +33,6 @@ from apps.shared.fingerprints import (
 )
 
 from . import find_clusters
-
 # Each fingerprint is a child process decoding one file; a few at once keep
 # the cores busy without starving playback.
 DEFAULT_WORKERS = 3

@@ -417,7 +417,7 @@ def test_r2_first_worker_subprocess_hydrates_indexed_track(
     from apps.stems.job import PROGRESS_TRACK_KEY, R2_FIRST_WORKER_SCRIPT
     from apps.sync_hub.transport import HttpTransport
     from tests.cloudsync.conftest import free_port
-    from tests.waits import start_uvicorn_in_thread
+    from tests.waits import start_uvicorn_in_thread, stop_uvicorn_in_thread
 
     stable_id = "subprocess-track"
     spoke_dir, hub_dir, cfg, s3, entry, _machine_id = _hub_spoke_setup(
@@ -468,8 +468,7 @@ def test_r2_first_worker_subprocess_hydrates_indexed_track(
                 check=False,
             )
     finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
+        stop_uvicorn_in_thread(server, thread, what="the live stem hub")
 
     assert result.returncode == 0, result.stderr
     assert PROGRESS_TRACK_KEY in result.stdout

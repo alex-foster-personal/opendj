@@ -10,7 +10,7 @@ FRONTEND_NODE ?= node
 # PYTEST_JOBS feeds `-n`: `auto` lets xdist size itself to the box. Override for
 # a serial run (`make test PYTEST_JOBS=0`), which is what you want when reading
 # a traceback rather than a pass/fail, and what ci.yml's own pytest step does
-# because `-n` measured SLOWER on a 4-vCPU runner (ops/test-latency/README.md).
+# because `-n` measured SLOWER on a 4-vCPU runner ((private path)).
 # PYTEST_COLLECT_FLOOR is the guard that
 # keeps `-n` honest: parallelism redistributes tests, it never removes them, so
 # collecting fewer than the floor means the suite lost tests. It only ratchets
@@ -22,7 +22,7 @@ PYTEST_COLLECT_FLOOR ?= 3700
 # its own default under the system temp dir). CI workflows pass it set to a
 # path under $RUNNER_TEMP, which GitHub wipes per job, so a shard killed by
 # its wall budget leaves no lock file behind to outlive the job (see
-# docs/decisions for the ADR). The flag is a single directory under
+# (private path) for the ADR). The flag is a single directory under
 # PYTEST_BASETEMP (hyphenated with $@), not a nested path: pytest creates the
 # basetemp with parents=False, so the parent must already exist. $@ still
 # namespaces per target, so a composite target (release-check: test +
@@ -31,7 +31,7 @@ PYTEST_COLLECT_FLOOR ?= 3700
 pytest_basetemp_flag = $(if $(PYTEST_BASETEMP),--basetemp=$(PYTEST_BASETEMP)-$@,)
 
 test:
-	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR) $(pytest_basetemp_flag)
+	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR) --ignore=(private path) $(pytest_basetemp_flag)
 
 # Fast iteration gates for the Rekordbox parity stack. These deliberately omit
 # untouched analysis backends and Pioneer actuator suites, which require
@@ -49,7 +49,7 @@ rb-parity-final: rb-parity-check
 	cd apps/webui/frontend && pnpm build
 
 cov:
-	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html $(pytest_basetemp_flag)
+	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html --ignore=(private path) $(pytest_basetemp_flag)
 
 reqs:
 	$(PY) -m scripts.build_reqs_json
@@ -62,9 +62,9 @@ fixture:
 
 # Explicit machine-local acceptance gate. This is intentionally not a
 # dependency of any portable release gate: portable tests use the committed
-# sanitized fixture in tests/fixtures/vocal-kpi/, while this command validates
+# sanitized fixture in (private path)/, while this command validates
 # and prints the current real cache.
-VOCAL_CACHE_DIR ?= data/state/vocal-cache
+VOCAL_CACHE_DIR ?= (private path)
 vocal-kpi-live-check:
 	uv run scripts/bench/kpi_derive.py --cache-dir "$(VOCAL_CACHE_DIR)" --window latest --json
 
@@ -166,7 +166,7 @@ waveform-native-verify: require-venv-py
 			--manifest $(CURDIR)/tests/fixtures/rb-usb-export.manifest.json
 	uv pip install --python $(PY) --reinstall --no-deps dist/music_dj_tools-*.whl
 	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
-		$(PYTEST) -q tests/webui/test_waveform_native.py $(pytest_basetemp_flag) \
+		$(PYTEST) -q (private path) $(pytest_basetemp_flag) \
 			-k 'native_request_selects or collision_resistant or canonical_fixture or release_acceptance or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
 
 waveform-native-release-check: waveform-native-wheel waveform-native-verify

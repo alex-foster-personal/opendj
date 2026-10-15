@@ -154,6 +154,12 @@ COUPLINGS: tuple[Coupling, ...] = (
     Coupling("specs/", ('"specs"', "specs/"), "specs: readers of the spec tree"),
     Coupling("data/", ('"data"', "data/"), "data: tests read committed data files by tree"),
     Coupling("tools/", ('"tools"', "tools/"), "tools: tests run tool scripts by tree"),
+    Coupling(
+        "apps/desktop/src-tauri/capabilities/",
+        ("capabilities/",),  # not `"capabilities"`, a JSON key ten CloudSync tests spell
+        "Tauri capability files: a guard checks them against the frontend's plugin calls (found Wed 14 Oct 2026"
+        " by replaying the selector for the tree-read census's `reached:` excusals, #6539)",
+    ),
 )
 
 _TOKEN = re.compile(r"[\w.+@/-]+")

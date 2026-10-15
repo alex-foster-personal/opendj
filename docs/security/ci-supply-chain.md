@@ -29,9 +29,18 @@ Our exposure, measured Mon 14 Sep 2026:
    [autofixing.md](autofixing.md)).
 3. No `pull_request_target`, and no `${{ github.event.* }}` interpolated into `run:`
    (pass values through `env:`, as the repo already does).
-4. **Security scanners run on GitHub-hosted runners** (`ubuntu-latest`) with no repo
-   secrets in scope, never on the self-hosted pool. `security.yml` hardcodes the label,
-   and `scripts/security/scan_workflows.sh` fails if any of its jobs says otherwise.
+4. **A security job that holds a repo secret runs on GitHub-hosted runners**
+   (`ubuntu-latest`); secret-free scanner jobs run on the self-hosted pool
+   (ADR-NEW-security-scans-on-self-hosted-pool, Thu 15 Oct 2026).
+   `scripts/security/scan_workflows.sh` fails when any `security.yml` job that
+   references `secrets.` has a runs-on other than `ubuntu-latest`, with a control that
+   must flag exactly one planted job. Today that is `semgrep ci` alone
+   (`SEMGREP_APP_TOKEN`). The pool jobs install the sha256-pinned scanners into the
+   job's `RUNNER_TEMP`, so no binary one job installed is run by the next.
+   - Supersedes: until Thu 15 Oct 2026 this rule kept EVERY scanner job hosted. With
+     hosted minutes billing as overage and the gate variable below left unset, that
+     meant no PR was scanned for over three weeks. The reasoning that follows is the
+     original rule's, kept as the record; the ADR says which parts still hold.
    - Since Mon 21 Sep 2026 the pull_request-event scans additionally run only
      while the repo variable `CI_HOSTED_SECURITY_JOBS` is `'true'`, so a
      GitHub-hosted billing block reads as "skipped" on a PR rather than as a
@@ -80,5 +89,5 @@ uvx zizmor --min-severity=medium .github/workflows
 - [if] a control workflow under `tests/fixtures/security/zizmor-control/` containing
   `run: echo ${{ github.event.issue.title }}` does not make zizmor exit non-zero
   [then] fail: the tool is not auditing.
-- [if] a security-scan job's `runs-on` resolves to a self-hosted label [then] fail
-  (checked by a grep over `security.yml`).
+- [if] a `security.yml` job that references a repo secret has a `runs-on` other than
+  `ubuntu-latest` [then] fail (checked by `scan_workflows.sh`, with a planted control).
