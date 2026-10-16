@@ -266,6 +266,32 @@ def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> 
     assert base != marker(19, tracks_only, GENERATOR_VERSION + 1)
 
 
+def test_open_rw_tolerates_permission_error_reading_agents_md_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if the AGENTS.md sidecar cannot be read then open_rw still opens and skips regen - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    agents_md = tmp_path / "AGENTS.md"
+    before_ino = agents_md.stat().st_ino
+
+    def deny_sidecar_read(path: Path, marker: str) -> bool:
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(
+        "apps.database.generate_agents_md.sidecar_carries_cache_line",
+        deny_sidecar_read,
+    )
+
+    conn = open_rw(db_path)
+    try:
+        conn.execute("SELECT 1").fetchone()
+    finally:
+        conn.close()
+
+    assert agents_md.stat().st_ino == before_ino
+
+
 def test_open_rw_reopen_on_unchanged_schema_skips_regeneration(tmp_path: Path) -> None:
     """if schema and owned tables are unchanged then a reopen does not rewrite AGENTS.md - broken"""
     db_path = tmp_path / "state.db"

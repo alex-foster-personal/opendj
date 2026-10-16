@@ -24,10 +24,13 @@ and the reverse import would make the two packages a cycle.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
 from apps.shared.state import schema_markers
+
+_log = logging.getLogger(__name__)
 
 
 def regenerate_agents_md_cached(
@@ -58,10 +61,20 @@ def regenerate_agents_md_cached(
         owned_tables=owned_tables,
         generator_version=GENERATOR_VERSION,
     )
-    if schema_markers.has_marker(conn, marker) and sidecar_carries_cache_line(
-        state_dir / "AGENTS.md", marker
-    ):
-        return False
+    sidecar_path = state_dir / "AGENTS.md"
+    if schema_markers.has_marker(conn, marker):
+        try:
+            sidecar_current = sidecar_carries_cache_line(sidecar_path, marker)
+        except OSError as exc:
+            # Windows file-sharing locks (OPEN-DJ-BE-A6) and other transient
+            # read denials must not abort open_rw; retry on a later tick.
+            _log.warning(
+                "AGENTS.md sidecar cache read failed (%s); skipping regeneration this open",
+                exc,
+            )
+            return False
+        if sidecar_current:
+            return False
     wrote = regenerate_agents_md_if_writable(
         conn, state_dir, owned_tables=owned_tables, cache_marker=marker
     )
