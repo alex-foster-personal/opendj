@@ -113,6 +113,29 @@ async function expectPollingStops(page: Page, request: APIRequestContext, wire: 
 	expect(wire.status.length, 'closed and idle: no timer left running').toBe(closedAt);
 }
 
+type PerfRingWindow = Window & {
+	__mdtPerfLog?: () => readonly { kind: string; message: string; id?: string }[];
+};
+
+/** Ids of the run-end toasts this page has raised, read from the app's own
+ * durable toast record (perf-event-log.ts: every pushToast writes a
+ * `toast-<kind>` row, stamped with the toast's id, before it renders). That
+ * record outlives the on-screen toast, which dismisses itself after 5 s and can
+ * be evicted early by a full tray. Ids, not a count: the ring is bounded per
+ * bucket, so a new row can evict an older matching one and leave a count flat. */
+async function runEndToastIds(page: Page): Promise<string[]> {
+	return page.evaluate(() => {
+		const ring = (window as PerfRingWindow).__mdtPerfLog;
+		if (ring === undefined) throw new Error('window.__mdtPerfLog is not installed (app-init.ts)');
+		return ring()
+			.filter((e) => e.kind.startsWith('toast-') && /^Refresh (done|failed):/.test(e.message))
+			.map((e) => {
+				if (e.id === undefined) throw new Error(`toast row without an id: ${e.kind} ${e.message}`);
+				return e.id;
+			});
+	});
+}
+
 /** Make the page's own library sweep launch a real CLI (the vocals step runs
  * its from-stems CLI whatever the target count), so the POST reliably answers
  * with the run still going. An analysis-only sweep has no targets once an
@@ -384,6 +407,8 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 			};
 			await btn.focus();
 			await waitIdle(request);
+			// The ring is persisted, so an earlier attempt's run-end toast is in it.
+			const endToastsBefore = new Set(await runEndToastIds(page));
 			const answered = page.waitForResponse(
 				(r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh'
 			);
@@ -423,9 +448,38 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 			});
 			await release();
 			await page.unroute(matcher);
-			await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+			// The run is still followed to its end: the polled terminal phase is
+			// applied, and the page raised exactly one run-end toast for it. Read
+			// from the toast record, not the tray, so the 5 s on-screen life of the
+			// toast is not a clock this check races. CI runs 38540335646,
+			// 38542725851, 38543135035 and 38669588799 failed the old on-screen
+			// check with the done status applied and no toast in the tray; on a
+			// failure here the ring and wire are attached to tell "raised but
+			// not seen" from "never raised".
+			const pop = page.getByTestId('refresh-analysis-pop');
+			try {
+				await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 30_000 });
+				await expect
+					.poll(async () => (await runEndToastIds(page)).filter((id) => !endToastsBefore.has(id)).length, {
+						timeout: 5_000
+					})
+					.toBe(1);
+			} catch (err) {
+				await test.info().attach('perf-ring-and-wire.json', {
+					contentType: 'application/json',
+					body: JSON.stringify(
+						{ wire, ring: await page.evaluate(() => (window as PerfRingWindow).__mdtPerfLog?.() ?? null) },
+						null,
+						2
+					)
+				});
+				throw err;
+			}
 			await btn.press('Escape');
 			await expectPollingStops(page, request, wire);
+			// Polling has stopped, so the toast record is final: still exactly one.
+			const newEndToasts = (await runEndToastIds(page)).filter((id) => !endToastsBefore.has(id));
+			expect(newEndToasts, 'run-end toasts raised for this run once polling stopped').toHaveLength(1);
 			return;
 		}
 		throw new Error('no attempt saw the engine log grow within a running refresh');

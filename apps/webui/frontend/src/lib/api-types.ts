@@ -2675,6 +2675,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/handoff/apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Handoff Apps
+         * @description Which hand-off apps this machine can open a track in, and why not when absent.
+         */
+        get: operations["list_handoff_apps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -4070,6 +4090,24 @@ export interface paths {
         put?: never;
         /** Undo Playlist Edit */
         post: operations["undo_playlist_edit_api_v1_playlist_history_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playlist-tree/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Playlist Tree Order */
+        get: operations["get_playlist_tree_order_api_v1_playlist_tree_order_get"];
+        /** Put Playlist Tree Order */
+        put: operations["put_playlist_tree_order_api_v1_playlist_tree_order_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6670,6 +6708,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}:open-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Track In App
+         * @description Open a track's local file in rekordbox or djay Pro. Writes nothing of ours.
+         */
+        post: operations["open_track_in_app"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}:remove": {
         parameters: {
             query?: never;
@@ -6762,7 +6820,7 @@ export interface paths {
         put?: never;
         /**
          * Validate Watcher Folders
-         * @description LIBM-129 v1: existence check only; no watcher daemon.
+         * @description LIBM-129: existence check before save. The folder-rescan scheduler watches them.
          */
         post: operations["validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post"];
         delete?: never;
@@ -7136,6 +7194,9 @@ export interface components {
          *     ``exists`` true with ``readable`` false and ``denied`` true is the macOS
          *     TCC case: the folder is there and full of music, and the listing is
          *     refused, so anything that counted files inside it would report zero.
+         *     ``pending`` true is the folder that gave no answer before the deadline
+         *     (``exists`` is then true only if that much was established),
+         *     usually because macOS is still showing its consent dialog.
          */
         AccessProbeOut: {
             /** Denied */
@@ -7146,6 +7207,8 @@ export interface components {
             exists: boolean;
             /** Path */
             path: string;
+            /** Pending */
+            pending: boolean;
             /** Readable */
             readable: boolean;
         };
@@ -10465,7 +10528,7 @@ export interface components {
         FolderImportIn: {
             /**
              * Folders
-             * @description absolute paths to walk; at least one
+             * @description absolute paths to walk; at least one, at most 64
              */
             folders: string[];
             /**
@@ -10760,6 +10823,25 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HandoffAppOut */
+        HandoffAppOut: {
+            /**
+             * App
+             * @enum {string}
+             */
+            app: "rekordbox" | "djay";
+            /** Available */
+            available: boolean;
+            /** Label */
+            label: string;
+            /** Reason */
+            reason: string | null;
+        };
+        /** HandoffAppsOut */
+        HandoffAppsOut: {
+            /** Apps */
+            apps: components["schemas"]["HandoffAppOut"][];
         };
         /** HashPendingResponse */
         HashPendingResponse: {
@@ -13527,6 +13609,22 @@ export interface components {
             total: number;
             /** Tracks */
             tracks: components["schemas"]["TrackRowOut"][];
+        };
+        /** PlaylistTreeOrderIn */
+        PlaylistTreeOrderIn: {
+            /**
+             * Order
+             * @description Playlist ids top to bottom. May be partial: playlists it leaves out follow it in their previous order. Each id must name a live playlist and appear once.
+             */
+            order: string[];
+        };
+        /** PlaylistTreeOrderOut */
+        PlaylistTreeOrderOut: {
+            /**
+             * Order
+             * @description Stored order, stale ids included as written.
+             */
+            order: string[];
         };
         /** PlaylistWriteOut */
         PlaylistWriteOut: {
@@ -16751,6 +16849,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Deck Default Quantize
+             * @default true
+             */
+            deck_default_quantize: boolean;
+            /**
              * Deck Right Mirror
              * @default false
              */
@@ -16902,6 +17005,8 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Deck Default Quantize */
+            deck_default_quantize?: boolean | null;
             /** Deck Right Mirror */
             deck_right_mirror?: boolean | null;
             /** Gig Helper */
@@ -22559,6 +22664,26 @@ export interface operations {
             };
         };
     };
+    list_handoff_apps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffAppsOut"];
+                };
+            };
+        };
+    };
     engine_health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -24658,6 +24783,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryApplyOut"];
+                };
+            };
+        };
+    };
+    get_playlist_tree_order_api_v1_playlist_tree_order_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistTreeOrderOut"];
+                };
+            };
+        };
+    };
+    put_playlist_tree_order_api_v1_playlist_tree_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistTreeOrderIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistTreeOrderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -29595,6 +29773,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    open_track_in_app: {
+        parameters: {
+            query: {
+                /** @description Target app: rekordbox or djay */
+                app: "rekordbox" | "djay";
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

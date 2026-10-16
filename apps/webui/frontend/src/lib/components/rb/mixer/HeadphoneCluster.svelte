@@ -30,6 +30,9 @@
 	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 
+	/** Whether this engine knows the `:open` pseudo-class (older engines do not). */
+	const OPEN_PSEUDO_SUPPORTED = typeof CSS !== 'undefined' && CSS.supports('selector(:open)');
+
 	interface Props {
 		state: HeadphoneState;
 		onmix: (value: number) => void;
@@ -162,6 +165,94 @@
 		closeIoView();
 	}
 
+	// Pin 5d0378165889: one outside click still drives the decks. The second hides I/O.
+	let ioPanelEl: HTMLDivElement | undefined = $state();
+	let ioOutsideClicks = 0;
+	// Set by a press on a select inside the panel: its native menu paints
+	// outside the panel and reports the next hit on the page root. Consumed by
+	// that one root hit, or cleared once the select commits, loses focus, or
+	// its menu is canceled (Escape, or a second press on the same select that
+	// closes it), so a canceled menu never swallows a later genuine press.
+	let ioSelectMenuOpen = false;
+	let ioSelectMenuOwner: HTMLSelectElement | null = null;
+
+	$effect(() => {
+		if (!ioSurface.open) {
+			ioOutsideClicks = 0;
+			_clearIoSelectMenu();
+		}
+	});
+
+	function onIoPanelSelectSettled(event: Event): void {
+		if (event.target instanceof HTMLSelectElement) _clearIoSelectMenu();
+	}
+
+	function onIoPanelKeydown(event: KeyboardEvent): void {
+		if (event.key === 'Escape' && event.target instanceof HTMLSelectElement) _clearIoSelectMenu();
+	}
+
+	/** Whether the armed select's native menu is still open. `:open` reports it
+	 * directly, so a menu canceled with Escape (a key the menu consumes before
+	 * the page sees it) reads closed; an engine without `:open` falls back to
+	 * the armed flag. Support is a capability check, not a caught exception, so
+	 * any other selector failure propagates (Sol P1 4290994508). */
+	function _ioSelectMenuStillOpen(): boolean {
+		if (!ioSelectMenuOpen || ioSelectMenuOwner === null) return false;
+		if (!OPEN_PSEUDO_SUPPORTED) return true;
+		return ioSelectMenuOwner.matches(':open');
+	}
+
+	function _clearIoSelectMenu(): void {
+		ioSelectMenuOpen = false;
+		ioSelectMenuOwner = null;
+	}
+
+	function pinPlacementArmed(): boolean {
+		const armed = (window as unknown as Record<string, unknown>).__mdtPinPlacementArmed as
+			| { get?: () => boolean }
+			| undefined;
+		return armed?.get?.() === true;
+	}
+
+	function onIoOutsidePointerDown(event: PointerEvent): void {
+		if (!ioSurface.open || event.button !== 0) return;
+		const target = event.target;
+		if (!(target instanceof Node)) return;
+		if (ioPanelEl?.contains(target)) {
+			ioOutsideClicks = 0;
+			// Any press on a select arms the one-hit skip. Whether a later root hit
+			// really is that select's menu is decided then, from `:open`
+			// (`_ioSelectMenuStillOpen`), so a press that closes the menu, or a
+			// menu canceled with Escape, skips nothing (Codex P2 4286965506). An
+			// engine without `:open` skips the next root hit: at worst one more
+			// outside press is needed, never one fewer.
+			const select = target instanceof Element ? target.closest('select') : null;
+			if (select !== null) {
+				ioSelectMenuOpen = true;
+				ioSelectMenuOwner = select;
+			} else {
+				_clearIoSelectMenu();
+			}
+			return;
+		}
+		// The openers re-call openIoView on click, so they must not count as "outside".
+		if (target instanceof Element && target.closest('.hp-io-trigger, .tray-midi, .fb-place-skip') !== null) return;
+		if (pinPlacementArmed()) return;
+		// A native select menu paints outside the panel and reports the hit on the
+		// page root: skip exactly that one hit. Focus alone is not the signal (Sol
+		// P1 4285298949): a select keeps focus during a later genuine root press.
+		if ((target === document.documentElement || target === document.body) && _ioSelectMenuStillOpen()) {
+			_clearIoSelectMenu();
+			return;
+		}
+		_clearIoSelectMenu();
+		ioOutsideClicks += 1;
+		if (ioOutsideClicks >= 2) {
+			ioOutsideClicks = 0;
+			closeIo();
+		}
+	}
+
 	function onWindowKeydown(event: KeyboardEvent): void {
 		if (event.key === 'Escape' && ioSurface.open && !cueAlignModal.open) {
 			event.preventDefault();
@@ -209,7 +300,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown} onpointerdowncapture={onIoOutsidePointerDown} />
 
 <!-- The headphone mark sits inside the MIX and VOL captions ("[icon] MIX"), not beside the dial. -->
 {#snippet hpCaptionIcon()}
@@ -275,11 +366,11 @@
 </div>
 
 {#if ioSurface.open}
-	<div class="hp-panel" role="dialog" aria-label="Audio I/O settings" aria-modal="false" tabindex="-1" data-audio-io-panel>
+	<div class="hp-panel" role="dialog" aria-label="Audio I/O settings" aria-modal="false" tabindex="-1" data-audio-io-panel bind:this={ioPanelEl} onchange={onIoPanelSelectSettled} onfocusout={onIoPanelSelectSettled} onkeydown={onIoPanelKeydown}>
 		<header class="hp-panel-header">
 			<div>
 				<strong>Audio I/O</strong>
-				<small>Esc or X to dismiss</small>
+				<small>Two clicks outside, Esc, or X to dismiss</small>
 			</div>
 			<button type="button" class="hp-panel-close" aria-label="Close audio I/O settings" onclick={closeIo}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d={CLOSE_PATH} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg></button>
 		</header>
@@ -452,8 +543,10 @@
 		color: var(--rb-text-dim, #838990);
 		cursor: pointer;
 	}
+	/* No device: the dim text token alone says idle. A 0.6 opacity on top of it
+	   rendered 7px text at 2.8:1 (alpha status B25). */
 	.midi-btn.st-grey {
-		opacity: 0.6;
+		color: var(--rb-text-dim, #838990);
 	}
 	.midi-btn.st-green {
 		color: var(--rb-green);
@@ -485,7 +578,9 @@
 		margin-left: 10px;
 	}
 	.hp-btn-io.io-alert {
-		color: var(--rb-red, #e5484d);
+		/* The border and glow carry the alarm red; the 10px label is lifted toward
+		   white so it reads at 4.5:1 on the dark panel (raw red was 3.7:1, B25). */
+		color: color-mix(in srgb, var(--rb-red, #e5484d) 70%, #fff);
 		border-color: var(--rb-red, #e5484d);
 		box-shadow: 0 0 6px color-mix(in srgb, var(--rb-red, #e5484d) 70%, transparent);
 		animation: io-alert-pulse 1.2s ease-in-out infinite;
@@ -498,6 +593,14 @@
 		50% {
 			box-shadow: 0 0 9px color-mix(in srgb, var(--rb-red, #e5484d) 95%, transparent);
 		}
+	}
+	/* Light skin: the panel is light, so the plain red already contrasts. */
+	/* Light surfaces keep the raw skin red: lifting it toward white there
+	   drops it to 3.1:1 (ui-contrast-audit, theme-light). The light theme is
+	   a light surface only under the Default skin (no data-skin); Gothic stays
+	   dark over either theme. */
+	:global(html:is([data-skin='light'], [data-theme='light']:not([data-skin]))) .hp-btn-io.io-alert {
+		color: var(--rb-red, #b3261e);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		/* Glow without pulse. */

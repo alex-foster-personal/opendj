@@ -468,7 +468,11 @@ def get_track_anlz(
     # Phrase lane rbx: own sections fill only an empty PSSI (STRUCT-02); own:
     # only own sections are served (STRUCT-04). `phrases_source` names which.
     payload = build_structure_service().merge_own_phrases(
-        payload, stable_id, rb_config.DATA_DIR, source=phrase_source_for_request(request)
+        payload,
+        stable_id,
+        rb_config.DATA_DIR,
+        source=phrase_source_for_request(request),
+        share=getattr(request.state, "share_audience", "local") == "share",
     )
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True

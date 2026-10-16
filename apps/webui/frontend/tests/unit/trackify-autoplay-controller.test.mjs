@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { build } from 'esbuild';
+import { build } from './esbuild-tsconfig.mjs';
 
 import { importBundledSource } from './import-bundled-source.mjs';
 import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';

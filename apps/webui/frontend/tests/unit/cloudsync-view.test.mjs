@@ -5,7 +5,7 @@
  * Regression one-liners:
  * - if an unset policy cell reads anything but 'unset' (e.g. 'stream') then broken
  * - if a budget edit on an unset or non-cached cell yields a PUT then broken
- * - if picking 'unset' yields a PUT (there is no route that clears a row) then broken
+ * - if picking 'unset' on a stored cell yields anything but a DELETE decision then broken
  * - if the chip reads anything but 'off' without a fresh heartbeat then broken
  * - if Sync now posts without an effective hub URL then broken
  * - if the config form sends enabled=true with no hub URL then broken
@@ -121,13 +121,12 @@ test('a malformed budget is refused on a cached cell', () => {
 	}
 });
 
-test('picking unset is refused, and a real mode sends no stray budget', () => {
-	/** if 'unset' yields a PUT, or a non-cached mode carries a budget, then broken */
+test('picking unset clears a stored cell, and a real mode sends no stray budget', () => {
+	/** if 'unset' on a stored cell yields a PUT or a refusal, or a non-cached mode carries a budget, then broken */
 	const unsetPick = view.policyModeChange('m1', 'audio', policy(), 'unset');
-	assert.equal(unsetPick.kind, 'refuse');
-	// The refusal must say WHY (no route clears a row), not pass by accident
-	// as an "unknown mode": that is the inert-with-tooltip contract.
-	assert.match(unsetPick.reason, /no DELETE route.*not implemented - see PARITY-TODO/);
+	assert.deepEqual(unsetPick, { kind: 'delete', machineId: 'm1', assetKind: 'audio' });
+	// Already unset: nothing to clear, and nothing is written.
+	assert.deepEqual(view.policyModeChange('m1', 'audio', undefined, 'unset'), { kind: 'noop' });
 	assert.equal(view.policyModeChange('m1', 'audio', undefined, 'bogus').kind, 'refuse');
 	const toStream = view.policyModeChange('m1', 'audio', policy({ mode: 'cached', cache_budget_mb: 64 }), 'stream');
 	assert.equal(toStream.kind, 'put');
@@ -135,6 +134,42 @@ test('picking unset is refused, and a real mode sends no stray budget', () => {
 	assert.equal(toStream.body.cache_budget_mb, null);
 	const toCached = view.policyModeChange('m1', 'audio', policy({ mode: 'cached', cache_budget_mb: 64 }), 'cached');
 	assert.equal(toCached.body.cache_budget_mb, 64);
+});
+
+test('the unset option title says the machine keeps that kind local-only (CLOUDSYNC-33)', () => {
+	/** if the unset title stops saying local-only / never streamed, or still claims PARITY-TODO, then broken */
+	assert.match(view.UNSET_OPTION_TITLE, /local-only/);
+	assert.match(view.UNSET_OPTION_TITLE, /never streamed/);
+	assert.doesNotMatch(view.UNSET_OPTION_TITLE, /PARITY-TODO/);
+});
+
+test('a cleared cell reads as info, folding non-blocking completeness notes in', () => {
+	/** if a non-blocking completeness warning is dropped or worded as a failure then broken */
+	const outcome = {
+		author_machine_id: 'm1',
+		blocking: false,
+		measurable: true,
+		plan: [],
+		written: true,
+		violations: [
+			{
+				blocking: false,
+				introduced: true,
+				message: 'm1 has no policy for audio',
+				rule_id: 'completeness',
+				severity: 'warning',
+				subject: 'm1/audio'
+			}
+		]
+	};
+	const note = view.policyClearedNote('Audio', 'gig laptop', outcome);
+	assert.match(note, /^Audio on gig laptop is now unset: this machine keeps it local-only\./);
+	assert.match(note, /Expected note: m1 has no policy for audio/);
+	assert.doesNotMatch(note, /fail|error/i);
+	assert.equal(
+		view.policyClearedNote('Audio', 'gig laptop', { ...outcome, violations: [] }),
+		'Audio on gig laptop is now unset: this machine keeps it local-only.'
+	);
 });
 
 test('only runtime-wired asset kinds escape the inert PARITY-TODO marker', () => {

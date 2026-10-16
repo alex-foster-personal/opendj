@@ -67,6 +67,9 @@ class AccessProbeOut(BaseModel):
     ``exists`` true with ``readable`` false and ``denied`` true is the macOS
     TCC case: the folder is there and full of music, and the listing is
     refused, so anything that counted files inside it would report zero.
+    ``pending`` true is the folder that gave no answer before the deadline
+    (``exists`` is then true only if that much was established),
+    usually because macOS is still showing its consent dialog.
     """
 
     path: str
@@ -74,6 +77,7 @@ class AccessProbeOut(BaseModel):
     readable: bool
     denied: bool
     detail: str
+    pending: bool
 
 
 class PermissionsOut(BaseModel):
@@ -229,12 +233,18 @@ class SetupImportIn(BaseModel):
     )
 
 
+#: Most folders one import may name. The preflight probes each on its own
+#: thread, so the request bounds how many threads it can start (Codex on #6825).
+MAX_IMPORT_FOLDERS: int = 64
+
+
 class FolderImportIn(BaseModel):
     """Point at one or more folders of audio files. No rekordbox involved."""
 
     folders: list[str] = Field(
         min_length=1,
-        description="absolute paths to walk; at least one",
+        max_length=MAX_IMPORT_FOLDERS,
+        description=f"absolute paths to walk; at least one, at most {MAX_IMPORT_FOLDERS}",
     )
     limit: int | None = Field(
         default=None, ge=1, description="import at most N files"

@@ -568,6 +568,9 @@
 										</pre>
 									</details>
 								{/if}
+							{:else if caveat !== null}
+								<!-- No folder refused, but one has not answered: a count may be incomplete. -->
+								<p class="warning" role="status">{caveat}</p>
 							{/if}
 
 							<fieldset class="choice">

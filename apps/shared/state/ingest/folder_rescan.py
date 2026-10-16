@@ -38,11 +38,10 @@ from typing import Any
 
 from apps.shared import audio_files, fs_access
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots, path_is_under_root
-from apps.shared.state.ingest.path_collisions import path_collision_key
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state.ingest.folder import FolderIngestReport, _write_tracks, collect_audio
-from apps.shared.state.ingest.path_collisions import PathCollisionError, assert_no_path_collisions
+from apps.shared.state.ingest.path_collisions import PathCollisionError, assert_no_path_collisions, path_collision_key
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_tracks import DELETED_FILE_MISSING
 
@@ -72,6 +71,11 @@ class FolderRescanReport:
     #: and the writer disagree about what is stored -- surfaced, not folded
     #: silently into ``tracks_added``.
     tracks_unexpected_noop: int = 0
+    #: Files already in the library as a non-folder row (rekordbox, djay, a
+    #: stick import) at the same path. A watched folder that overlaps another
+    #: source must not mint a second, folder-tier copy of the same file
+    #: (FWATCH-02), so these are counted and left alone.
+    files_owned_by_other_source: int = 0
     skipped_no_changes: bool = False
     signature: str = ""
     warning: str | None = None
@@ -117,8 +121,46 @@ def _existing_live_by_path(conn: Any, roots: list[Path]) -> dict[str, list[str]]
     return by_path
 
 
+# A row another source owns: any non-inferred tier, or an inferred row that a
+# vendor import (rekordbox, djay, ...) stamped with its own id. A rekordbox
+# track with no ISRC is minted ``inferred`` too, so the tier alone misses it.
+_OWNED_BY_OTHER_SOURCE = (
+    "(t.stable_id_tier != 'inferred' OR EXISTS "
+    "(SELECT 1 FROM track_vendor_ids v WHERE v.stable_id = t.stable_id))"
+)
+
+
+def _other_source_path_keys(conn: Any) -> set[str]:
+    """Path keys owned by any source other than a folder import.
+
+    A live row owns its path. So does a row the USER removed (``deleted_reason``
+    ``user``, or NULL from before the column): a watched folder must not bring
+    back, as a folder-tier row, a track the user took out of the library.
+    """
+    rows = conn.execute(
+        "SELECT t.file_path FROM tracks t "
+        f"WHERE t.file_path IS NOT NULL AND {_OWNED_BY_OTHER_SOURCE} "
+        "AND (t.deleted_at IS NULL OR t.deleted_reason IS NULL OR t.deleted_reason = 'user')"
+    ).fetchall()
+    return {path_collision_key(file_path) for (file_path,) in rows}
+
+
+def _other_source_stamp(conn: Any) -> str:
+    """One aggregate over non-folder rows, folded into the cheap-skip signature.
+
+    A file skipped as owned by another source (FWATCH-02) must be reconsidered
+    once that row is removed or relinked away, even though nothing on disk
+    changed. ``COUNT`` plus ``MAX(updated_at)`` moves on any such edit and is
+    one query, so an unchanged library still cheap-skips.
+    """
+    count, latest = conn.execute(
+        f"SELECT COUNT(*), MAX(t.updated_at) FROM tracks t WHERE {_OWNED_BY_OTHER_SOURCE}"
+    ).fetchone()
+    return f"other={count}:{latest}"
+
+
 def _initial_scan(
-    root_list: list[Path], previous_signature: str
+    root_list: list[Path], previous_signature: str, other_stamp: str = ""
 ) -> tuple[FolderRescanReport, list[audio_files.AudioFile], bool]:
     """The always-cheap first step: walk, sign, and decide whether to stop.
 
@@ -128,6 +170,8 @@ def _initial_scan(
     """
     files, denied, dataless = collect_audio(root_list)
     signature = compute_signature(files, denied)
+    if other_stamp:
+        signature = f"{signature}|{other_stamp}"
     report = FolderRescanReport(
         roots=[str(root) for root in root_list],
         unreadable_roots=denied,
@@ -267,7 +311,9 @@ def reconcile_folders(
     """
     start = time.perf_counter()
     root_list = [Path(root).expanduser() for root in roots]
-    report, files, done = _initial_scan(root_list, previous_signature)
+    report, files, done = _initial_scan(
+        root_list, previous_signature, _other_source_stamp(writer.raw_conn)
+    )
     if done:
         report.duration_s = round(time.perf_counter() - start, 3)
         return report
@@ -314,6 +360,10 @@ def reconcile_folders(
         minted = current_sid_by_path[str(entry.path)][0]
         if minted not in stored:
             refreshes.append(entry)
+    other_source = _other_source_path_keys(writer.raw_conn)
+    owned = [f for f in write_candidates if path_collision_key(str(f.path)) not in other_source]
+    report.files_owned_by_other_source = len(write_candidates) - len(owned)
+    write_candidates = owned
 
     _apply_tombstones_and_writes(writer, report, tombstones, write_candidates, refreshes)
 

@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { build } from 'esbuild';
+import { build } from './esbuild-tsconfig.mjs';
 
 import { importBundledSource } from './import-bundled-source.mjs';
 

@@ -91,11 +91,12 @@ test('the import walk reaches the components this pin is about (instrument contr
 });
 
 test('the bare-string scan fires on a known offender (negative control)', () => {
-	// TrackActions.svelte lives on /track/[id], not /performance, and still
-	// carries the stub: the detector must see it there and the walk must not.
-	const offsite = join(SRC, 'lib/components/TrackActions.svelte');
+	// The /library-wheel route is not /performance and still carries the stub:
+	// the detector must see it there and the walk must not. (TrackActions was
+	// this fixture until its hand-off buttons were built, HANDOFF-01.)
+	const offsite = join(SRC, 'routes/library-wheel/+page.svelte');
 	assert.ok(readFileSync(offsite, 'utf8').includes(BARE), 'control fixture moved - pick another');
-	assert.equal(components.has(offsite), false, 'TrackActions must not be on /performance');
+	assert.equal(components.has(offsite), false, 'library-wheel must not be on /performance');
 });
 
 test('no /performance-mounted component shows the bare PARITY-TODO stub as its tooltip', () => {

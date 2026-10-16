@@ -101,7 +101,7 @@ export function buildRescueSnapshot(
 	reason: RescueSnapshotReason,
 	captured_at_ms: number,
 	sourcePaths: Readonly<Record<DeckId, string | null>>,
-	deck_layout: DeckLayoutMode = 'more'
+	deck_layout: DeckLayoutMode
 ): RescueSnapshot {
 	const decks = {} as Record<DeckId, RescueDeckSnapshot>;
 	for (const deckId of DECK_IDS) {

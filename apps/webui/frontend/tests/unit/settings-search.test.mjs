@@ -15,12 +15,28 @@ test('filterSettings matches keywords and synonyms', async () => {
 	assert.ok(sync.keyword.some((s) => s.id === 'auto_sync'));
 });
 
-test('filterSettings hideTodo drops unimplemented rows', async () => {
+test('settingRowVisible hideTodo drops an unimplemented row and keeps a built one', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	// In-test fixture: the shipped catalog has no todo row (SETSTUB-01).
+	const row = { id: 'fixture.todo', label: 'x', group: 'advanced', keywords: [], title: 'x', detail: 'x', implemented: false, control: { kind: 'boolean' } };
+	assert.equal(mod.settingRowVisible(row, { hideTodo: true }), false);
+	assert.equal(mod.settingRowVisible(row, { hideTodo: false }), true);
+	assert.equal(mod.settingRowVisible({ ...row, implemented: true }, { hideTodo: true }), true);
+});
+
+test('SETSTUB-01 hideTodo changes nothing on the shipped catalog, which has no todo row', async () => {
 	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
 	const all = mod.filterSettings('', { hideTodo: false, group: null });
 	const slim = mod.filterSettings('', { hideTodo: true, group: null });
-	assert.ok(all.all.length > slim.all.length);
-	assert.ok(slim.all.every((s) => s.implemented));
+	assert.ok(all.all.length > 30, `control: catalog rows listed (${all.all.length})`);
+	assert.deepEqual(slim.all.map((s) => s.id), all.all.map((s) => s.id));
+	assert.ok(all.all.every((s) => s.implemented));
+});
+
+test('searching quantize finds the Quantize on new decks setting', async () => {
+	const mod = await loadTypeScriptModule('src/lib/settings/search.ts');
+	const r = mod.filterSettings('quantize', { hideTodo: true, group: null });
+	assert.ok(r.keyword.some((s) => s.id === 'deck_default_quantize'));
 });
 
 test('filterSettings appends AI ids without duplicates', async () => {

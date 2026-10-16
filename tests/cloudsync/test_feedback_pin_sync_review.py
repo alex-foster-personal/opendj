@@ -130,7 +130,12 @@ def test_a_sync_tombstone_loses_to_a_newer_local_reply(
 ) -> None:
     """[if] local reply is newer than tombstone [then] tombstone is rejected, [else stop]."""
     pin = air.drop("survives tombstone")
-    air.patch(pin["id"], status="fixed")
+    # The fix names its commit. Without it the route falls back to the
+    # process-wide cached checkout stamp (feedback._repo_stamp), and a shard
+    # whose first git read failed leaves fixed_in_sha empty, so the reply
+    # below has no fix to reopen (pytest fast lane shard 4, run 38879100684).
+    fixed = air.patch(pin["id"], status="fixed", fixed_in_sha="1a2b3c4d")
+    assert fixed["fixed_in_sha"] == "1a2b3c4d"
     air.sync()
     silver.sync()
 
@@ -138,10 +143,11 @@ def test_a_sync_tombstone_loses_to_a_newer_local_reply(
     assert archived.status_code == 200, archived.text
     silver.sync()
 
-    air.http.post(
+    replied = air.http.post(
         f"/api/v1/feedback/comments/{pin['id']}/replies",
         json={"text": "still open after fix attempt"},
     )
+    assert replied.status_code == 200, replied.text
     air.sync()
 
     assert pin["id"] in air.pins(), "newer local reply lost to sync tombstone"

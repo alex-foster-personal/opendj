@@ -1,5 +1,5 @@
 /**
- * Warp-style settings catalog: working prefs + grayed PARITY-TODO stubs.
+ * Warp-style settings catalog: working prefs only (SETSTUB-01).
  * Search filters this list in-place (results ARE the settings).
  */
 import { APP_POSTURE_SETTING } from './app-posture-setting';
@@ -20,14 +20,6 @@ import {
 
 export type { LinkSettingDef, SettingDef, SettingGroupId } from './catalog-types';
 import type { LinkSettingDef, SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
-import { DJAY_PARITY_STUBS, REKORDBOX_PARITY_STUBS } from './catalog-parity-stubs';
-
-/** Canonical PARITY-TODO stub title. Declared here, not just in
- * catalog-parity-stubs.ts, so the shared-constant drift check (H13 + M20 in
- * inert-controls.test.mjs) still finds it verbatim in this module. Not
- * exported: the test reads this file's own source text, it never imports
- * this constant, and an unused export is its own quality-gate regression. */
-const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
@@ -36,12 +28,11 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'confirmations', label: 'Confirmations' },
 	{ id: 'sync', label: 'Sync' },
 	{ id: 'cloudsync', label: 'CloudSync' },
-	{ id: 'advanced', label: 'Advanced' },
-	{ id: 'rekordbox', label: 'Rekordbox (todo)' },
-	{ id: 'djay', label: 'djay Pro (todo)' }
+	{ id: 'advanced', label: 'Advanced' }
 ];
 
-/** Working settings first, then catalog stubs for parity browsing. */
+/** Every row is a working setting (SETSTUB-01: the catalog ships no
+ * implemented:false placeholder rows). */
 export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	// ----- working --------------------------------------------------------
 	{
@@ -73,15 +64,16 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	{
 		id: 'library_watcher_folders',
-		label: 'Watcher folders (v2)',
+		label: 'Watched folders',
 		group: 'library',
-		keywords: ['watcher', 'folder', 'import', 'auto', 'monitor', 'ingest'],
-		title: 'Folder paths to watch for auto-import (v2 - not active yet)',
-		detail: 'One absolute path per line, checked to exist on save. No watcher runs until v2.',
+		keywords: ['watcher', 'watch', 'folder', 'import', 'auto', 'monitor', 'ingest'],
+		title: 'Folders Open DJ checks for new audio while it runs',
+		detail: 'One absolute path per line, checked to exist on save. Rescanned about once a minute.',
 		implemented: true,
 		control: {
 			kind: 'path_lines',
-			v2Notice: 'v2 - folder watcher not active; paths are stored for a future release only.'
+			notice:
+				'Checked about every 60 s while Open DJ runs. New audio files join the library; a file that disappears is marked missing and comes back on its own. Open DJ only reads these folders and never changes your files.'
 		}
 	},
 	{
@@ -152,6 +144,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		title: 'Turn Beat Sync on for every loaded deck, BAR downbeat lock held',
 		detail:
 			'Turning it on turns Beat Sync on for every deck with a track loaded in an open performance view (otherwise each deck syncs on its next load), and for each deck as a track loads; synced playing decks then keep PQTZ n=1 aligned on every relocate and over playback. A deck SYNC press still turns that deck off until its next load. Turning it off changes no deck; followers then sync on seek using their own BEAT/BAR mode and the master free-seeks.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_default_quantize',
+		label: 'Quantize on new decks',
+		group: 'performance',
+		keywords: ['quantize', 'grid', 'snap', 'default', 'deck', 'q'],
+		title: 'Quantize state each deck starts with',
+		detail:
+			'The Q button state a deck starts with when the page opens or the deck is ejected; changing it updates every deck with no track loaded. A loaded deck keeps its own Q. Default on.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
@@ -542,8 +545,6 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'link', href: '/cloudsync?tab=overview' }
 	},
-
-	...REKORDBOX_PARITY_STUBS,
 	{
 		id: 'crossfade_curve',
 		label: 'Crossfader curve',
@@ -572,8 +573,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 				{ value: 'color', label: 'Color' }
 			]
 		}
-	},
-	...DJAY_PARITY_STUBS
+	}
 ];
 
 /**

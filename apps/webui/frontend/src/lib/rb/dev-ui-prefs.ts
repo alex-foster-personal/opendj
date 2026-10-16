@@ -5,7 +5,7 @@
  * One flag, default OFF, that reveals:
  *   - the sidebar's developer links (Admin, the progress ledger at
  *     /progress-tree, Queues) in routes/+layout.svelte;
- *   - the unbuilt PARITY-TODO settings rows and their "(todo)" groups in the
+ *   - any unbuilt PARITY-TODO settings rows in the
  *     settings overlay (lib/settings/search.ts `showDev`).
  *
  * Persisted LOCALLY only (the rb-ui-prefs localStorage blob, like

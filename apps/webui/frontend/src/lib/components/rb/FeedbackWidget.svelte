@@ -2,7 +2,7 @@
 	/**
 	 * In-app review/feedback widget (FB-01..FB-04): the topbar cluster.
 	 *
-	 * A down-chevron left of the vibe meter toggles the compact, draggable
+	 * A down-chevron left of the feedback thumbs toggles the compact, draggable
 	 * review-todo panel (FeedbackPanel.svelte); a comment icon arms one-shot
 	 * comment-anywhere pin placement. Pin markers and placement live in
 	 * FeedbackPinLayer.svelte at the app root (FB-16).

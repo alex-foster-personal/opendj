@@ -247,6 +247,10 @@ const BUDGETS = [
   // Payback, not yet measured: the isRawAnlz probe and the brand comment are the
   // only parts not needed on first paint.
   { name: 'library', limit: 279552, measured: 278530, note: 'initial load of "/"' },
+  // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
+  // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
+  // in anlz-cache and analysis-source. Both raises land on one ceiling; no second
+  // raise. main + this PR measures 279,023 locally with vite build (529 under).
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

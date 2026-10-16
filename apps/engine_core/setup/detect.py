@@ -27,6 +27,7 @@ from apps.shared.fs_access import (  # re-exported: ONE access probe in the tree
     music_root_access,
     probe_all,
     probe_readable,
+    unreadable_roots,
 )
 from apps.shared.paths import REKORDBOX_PLAIN_DB, REKORDBOX_WORKING_DB
 
@@ -330,4 +331,5 @@ __all__ = [
     "probe_readable",
     "rekordbox_is_running",
     "resolve_share_root",
+    "unreadable_roots",
 ]

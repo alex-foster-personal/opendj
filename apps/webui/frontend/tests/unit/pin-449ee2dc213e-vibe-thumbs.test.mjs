@@ -3,7 +3,7 @@
  * semantics (PREF-02). Behaviour is on main; this file is the #4087 acceptance
  * contract so the pin id is grep-able in CI.
  *
- * [if] VibeMeter still wires chevron arrows or voteVibe [then STOP]
+ * [if] the thumbs still wire chevron arrows or voteVibe [then STOP]
  * [if] thumbs do not dispatch feedback_mark with bad/good/great [then STOP]
  */
 import assert from 'node:assert/strict';
@@ -12,10 +12,10 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const VIBE_METER = fileURLToPath(
-	new URL('../../src/lib/components/rb/VibeMeter.svelte', import.meta.url)
+	new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url)
 );
 
-test('pin 449ee2dc213e: VibeMeter uses thumbs that dispatch feedback_mark, not voteVibe arrows', async () => {
+test('pin 449ee2dc213e: the feedback thumbs that dispatch feedback_mark, not voteVibe arrows', async () => {
 	const source = await readFile(VIBE_METER, 'utf8');
 	assert.match(source, /aria-label="thumbs down"/);
 	assert.match(source, /aria-label="thumbs up"/);

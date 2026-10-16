@@ -41,7 +41,6 @@
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { skinCycleTitle } from '$lib/rb/ui-skin';
 	import { openSettings } from '$lib/settings/hotkeys';
-	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
 	import { describeAudioOutputHealth } from '$lib/rb/audio-output-health-display';
@@ -91,7 +90,7 @@
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import StemsProgress from './StemsProgress.svelte';
-	import VibeMeter from './VibeMeter.svelte';
+	import FeedbackThumbs from './FeedbackThumbs.svelte';
 	import TransitioningChip from './TransitioningChip.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
@@ -449,9 +448,7 @@
 
 <header
 	class="rb-topbar rb-panel"
-	class:vibe-rainbow={vibeState.display >= 0.9}
 	class:less-view={uiPrefs.deck_layout === 'less'}
-	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
 >	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
 	<AnalysisSourceToggle />
@@ -592,17 +589,18 @@
 	<div class="spacer"></div>
 
 	<!-- review/feedback widget: chevron + comment pin on the LEFT-hand side of
-	     the vibe meter (FB-07, superseding the right-hand placement shipped in
+	     the feedback thumbs (FB-07, superseding the right-hand placement shipped in
 	     #523); REAL -> /api/v1/feedback, inert when the daemon does not serve
-	     it (FB-01..FB-04). Both this and the vibe meter are absolutely
+	     it (FB-01..FB-04). Both this and the thumbs are absolutely
 	     centred, so DOM order does not place them - the .fb-cluster anchor
 	     does. It reads first here so focus and screen-reader order match what
 	     is on screen. -->
 	<FeedbackWidget />
 
-	<!-- dead-center vibe meter: mouse movement tops it up; history in localStorage -->
-	<div class="vibe-slot topbar-slot-vibe">
-		<VibeMeter />
+	<!-- dead-center feedback thumbs (PREF-02). The vibe meter that sat between
+	     them was removed, R10, Wed 7 Oct 2026. -->
+	<div class="thumbs-slot topbar-slot-thumbs">
+		<FeedbackThumbs />
 	</div>
 
 	<TransitioningChip />
@@ -1011,7 +1009,7 @@
 		flex: 2;
 	}
 
-	.vibe-slot {
+	.thumbs-slot {
 		position: static;
 		flex: none;
 		margin-inline: 2px;
@@ -1162,7 +1160,7 @@
 	   chip REPORT state and operate nothing, so the 1160px tier is where they
 	   go. Below that the inert/duplicated chrome goes, then the clock, then
 	   the free badge and the utility icons, then - only on a window too narrow
-	   for the row to be honest about it - the vibe meter (Create pairing
+	   for the row to be honest about it - the feedback thumbs (Create pairing
 	   shortens to "Pair" at that tier instead, see below).
 
 	   Deliberately NOT evicted, because each is the only door to something:
@@ -1230,9 +1228,12 @@
 	   its label at every width; tests/e2e/performance-topbar-responsive.spec.ts
 	   asserts it visible, labelled and hittable at 800x600. */
 
-	/* The vibe meter is decoration and yields at 1740px. Create pairing is a
+	/* The feedback thumbs keep the tier the vibe meter had and yield at
+	   1740px. The meter went in R10 (Wed 7 Oct 2026), which frees about 110px
+	   of the 150px slot; the tiers were measured with the meter, so they are
+	   left as they were rather than re-swept by hand. Create pairing is a
 	   real control (the only door to DECKUX-12), so it shortens to the Pair
-	   span instead of leaving with the vibe meter. It leaves the row only at
+	   span instead of leaving with the thumbs. It leaves the row only at
 	   1160px, where that short label still crushed the command input. */
 	.rb-topbar .topbar-slot-pairing {
 		flex-shrink: 0;
@@ -1240,7 +1241,7 @@
 	}
 	.rb-topbar .pair-short { display: none; }
 	@media (max-width: 1740px) {
-		.rb-topbar .topbar-slot-vibe { display: none; }
+		.rb-topbar .topbar-slot-thumbs { display: none; }
 		/* Shorten in the DOM (pair-long / pair-short) rather than a ::after
 		   label. Hiding the control at this width hid it on every Mac laptop
 		   window (1470-1728px). */
@@ -1289,7 +1290,7 @@
 	   and AP already do; it keeps its aria-label and its menu. Placed after
 	   the base rules so the pair-long/pair-short swap wins. */
 	@media (max-height: 799px) and (max-width: 1795px) {
-		.rb-topbar .topbar-slot-vibe { display: none; }
+		.rb-topbar .topbar-slot-thumbs { display: none; }
 		.rb-topbar .pair-long { display: none; }
 		.rb-topbar .pair-short { display: inline; }
 	}
@@ -1440,24 +1441,6 @@
 	.ap-hint {
 		margin: 0;
 		color: var(--rb-text-dim);
-	}
-
-	.rb-topbar.vibe-rainbow {
-		/* 200% size + identical end stop: shift by 50% = one seamless cycle.
-		   --vr grows unbounded (no wrap) so there is no loop seam. */
-		background: linear-gradient(
-				90deg,
-				#ff0040,
-				#ff8000,
-				#ffef00,
-				#00e676,
-				#00e5ff,
-				#2979ff,
-				#d500f9,
-				#ff0040
-			)
-			calc(var(--vr) * 50%) 0 / 200% 100%;
-		border-color: color-mix(in srgb, #c44dff 40%, var(--rb-border));
 	}
 
 	.mode-dd {

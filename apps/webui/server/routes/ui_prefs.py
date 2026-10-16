@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from apps.shared.events import publish
 from apps.shared.paths import DATA_DIR
@@ -59,6 +59,13 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
     "auto_play_enforce_order": _DEFAULT_AUTO_PLAY_ENFORCE_ORDER,
     "auto_play_maximize_reach": _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH,
     "master_muted": _DEFAULT_MASTER_MUTED,
+}
+# SETSTUB-02: the Quantize state a deck starts with when the page opens or the
+# deck is ejected ("Quantize on new decks"). Default on, the value every deck
+# was hardcoded to before this pref existed.
+_DEFAULT_DECK_DEFAULT_QUANTIZE = True
+_DECK_DEFAULT_BOOL_DEFAULTS: dict[str, bool] = {
+    "deck_default_quantize": _DEFAULT_DECK_DEFAULT_QUANTIZE,
 }
 # STRUCT-05: translucent labeled section bands over the deck strip, the main
 # scrolling waveform and the browser preview. Default off so nothing changes
@@ -304,6 +311,10 @@ def _parse_perf_tier(raw: dict[str, Any]) -> str:
 
 def _parse_topbar_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
     return _parse_bool_prefs(raw, _TOPBAR_BOOL_DEFAULTS)
+
+
+def _parse_deck_default_bool_prefs(raw: dict[str, Any]) -> dict[str, bool]:
+    return _parse_bool_prefs(raw, _DECK_DEFAULT_BOOL_DEFAULTS)
 
 
 def _parse_bool_prefs(raw: dict[str, Any], defaults: dict[str, bool]) -> dict[str, bool]:
@@ -606,6 +617,7 @@ def _load(path: Path) -> dict[str, Any]:
             "gig_helper": _DEFAULT_GIG_HELPER,
             "app_mode": dict(_DEFAULT_APP_MODE),
             **_TOPBAR_BOOL_DEFAULTS,
+            **_DECK_DEFAULT_BOOL_DEFAULTS,
             **_WAVE_OVERLAY_BOOL_DEFAULTS,
             **_lyrics_defaults(),
             **_library_browser_bool_defaults(),
@@ -692,6 +704,7 @@ def _load(path: Path) -> dict[str, Any]:
         "gig_helper": _parse_gig_helper(raw),
         "app_mode": _parse_app_mode(raw.get("app_mode")),
         **_parse_topbar_bool_prefs(raw),
+        **_parse_deck_default_bool_prefs(raw),
         **_parse_bool_prefs(raw, _WAVE_OVERLAY_BOOL_DEFAULTS),
         **_parse_lyrics(raw),
         **_parse_library_browser_bool_prefs(raw),
@@ -779,6 +792,7 @@ class UiPrefsOut(BaseModel):
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
     auto_play_maximize_reach: bool = _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH
     master_muted: bool = _DEFAULT_MASTER_MUTED
+    deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
@@ -821,6 +835,8 @@ class UiPrefsPatch(BaseModel):
     auto_play_enforce_order: bool | None = None
     auto_play_maximize_reach: bool | None = None
     master_muted: bool | None = None
+    # Strict: lax bool would coerce "yes" or 1 to True and seed every deck from it.
+    deck_default_quantize: StrictBool | None = None
     show_sections: bool | None = None
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
@@ -837,8 +853,8 @@ class UiPrefsPatch(BaseModel):
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
-    """Topbar booleans plus the wave-overlay ones (STRUCT-05 show_sections)."""
-    for key in (*_TOPBAR_BOOL_DEFAULTS, *_WAVE_OVERLAY_BOOL_DEFAULTS):
+    """Topbar booleans, the deck defaults and the wave-overlay ones (STRUCT-05 show_sections)."""
+    for key in (*_TOPBAR_BOOL_DEFAULTS, *_DECK_DEFAULT_BOOL_DEFAULTS, *_WAVE_OVERLAY_BOOL_DEFAULTS):
         value = getattr(body, key)
         if value is not None:
             current[key] = value
@@ -974,7 +990,7 @@ class WatcherFoldersValidateIn(BaseModel):
 
 @router.post("/watcher-folders:validate")
 def validate_watcher_folders(body: WatcherFoldersValidateIn) -> dict[str, bool]:
-    """LIBM-129 v1: existence check only; no watcher daemon."""
+    """LIBM-129: existence check before save. The folder-rescan scheduler watches them."""
     missing: list[str] = []
     for raw in body.paths:
         path = Path(raw)

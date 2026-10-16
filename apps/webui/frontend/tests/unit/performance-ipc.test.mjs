@@ -590,8 +590,8 @@ test('key controls validate through IPC and round-trip serializable shift state'
 });
 
 // requirement: PREF-02
-test('vibe meter uses thumb glyphs and routes every mark through the typed dispatcher', async () => {
-	const source = await readFile(new URL('../../src/lib/components/rb/VibeMeter.svelte', import.meta.url), 'utf8');
+test('the feedback thumbs use thumb glyphs and routes every mark through the typed dispatcher', async () => {
+	const source = await readFile(new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url), 'utf8');
 	assert.match(source, /recordFeedback\('bad', event\)/);
 	assert.match(source, /event\.shiftKey \? 'great' : 'good'/);
 	assert.match(source, /type: 'feedback_mark'/);

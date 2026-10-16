@@ -4,8 +4,10 @@
 	margin-left: auto;
 	gap: 0;
 }
+/* Quiet by color, not by opacity: 0.45 opacity drew this label at 2.1:1 in
+   every skin (alpha status B25). The dim text token is the skin's own
+   readable-but-quiet ink. */
 .tray-midi {
-	opacity: 0.45;
 	margin-right: 20px;
 	background: transparent;
 	border: 1px solid var(--rb-border);
@@ -16,7 +18,6 @@
 	cursor: pointer;
 }
 .tray-midi:hover {
-	opacity: 0.75;
 	color: var(--rb-text);
 }
 .tray-preview {

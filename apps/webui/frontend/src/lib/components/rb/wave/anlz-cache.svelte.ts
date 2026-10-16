@@ -57,6 +57,9 @@ export type { BeatgridResyncPorts } from '$lib/player/beatgrid-resync-guards';
 // itself (audio-engine.svelte.ts) can read the fetch generation through the
 // same edge, rather than adding a second one to anlz-fetch-generation.ts.
 export { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
+// STRUCT-06: re-exported so analysis-source reaches the /anlz layer's sections
+// token through the edge it already has.
+export { noteSectionsAnnounced } from '$lib/rb/api-rb';
 // Re-exported for audio-engine.svelte.ts, which sits on the frontend.max_fan_out
 // ratchet: every deck ANLZ publish there goes through it (anlz-raw.ts).
 export { rawAnlz } from '$lib/rb/anlz-raw';
@@ -744,6 +747,17 @@ export function invalidateAnlzCacheEntry(stable_id: string): void {
 	_cache.delete(stable_id);
 }
 
+/** STRUCT-06: ids whose cache entry still waits on own-fast sections: a ready
+ * `pending` answer, or a fetch still in flight. Used on a bus resync, which
+ * replays nothing: the `sections` event either was waiting on may be the one
+ * missed (discussion_r4253325024), and a `pending` answer reused on load never
+ * heals. The caller treats them as announced. */
+export function anlzCacheIdsAwaitingSections(): string[] {
+	return [..._cache]
+		.filter(([, e]) => e.status === 'loading' || (e.status === 'ready' && e.data.own_phrases?.status === 'pending'))
+		.map(([stable_id]) => stable_id);
+}
+
 /** Evicts every cached entry outright, all at once. Used when a change
  * invalidates a field embedded in EVERY track's /anlz payload - the
  * PARITY-02 rbx-vs-own toggle changes which beatgrid a fresh response
@@ -790,7 +804,8 @@ export function evictAnlzCacheEntriesServingOtherSource(
 export function refreshAnalysisSourceDecks(
 	deckIds: readonly _RefreshDeckId[],
 	decks: Record<_RefreshDeckId, AnalysisSourceRefreshDeck>,
-	isSuperseded?: () => boolean
+	isSuperseded?: () => boolean,
+	sectionsOnly = false
 ): Promise<'rekordbox' | 'own' | null> {
 	return _refreshAnalysisSourceDecksImpl(
 		deckIds,
@@ -806,7 +821,8 @@ export function refreshAnalysisSourceDecks(
 				return isAnlzEntryUsable(entry) ? entry.data : null;
 			}
 		},
-		isSuperseded
+		isSuperseded,
+		sectionsOnly
 	);
 }
 

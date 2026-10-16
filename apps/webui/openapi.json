@@ -21,7 +21,7 @@
         "type": "object"
       },
       "AccessProbeOut": {
-        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
+        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.\n``pending`` true is the folder that gave no answer before the deadline\n(``exists`` is then true only if that much was established),\nusually because macOS is still showing its consent dialog.",
         "properties": {
           "denied": {
             "title": "Denied",
@@ -39,6 +39,10 @@
             "title": "Path",
             "type": "string"
           },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
           "readable": {
             "title": "Readable",
             "type": "boolean"
@@ -49,7 +53,8 @@
           "exists",
           "readable",
           "denied",
-          "detail"
+          "detail",
+          "pending"
         ],
         "title": "AccessProbeOut",
         "type": "object"
@@ -8929,10 +8934,11 @@
         "description": "Point at one or more folders of audio files. No rekordbox involved.",
         "properties": {
           "folders": {
-            "description": "absolute paths to walk; at least one",
+            "description": "absolute paths to walk; at least one, at most 64",
             "items": {
               "type": "string"
             },
+            "maxItems": 64,
             "minItems": 1,
             "title": "Folders",
             "type": "array"
@@ -9625,6 +9631,61 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HandoffAppOut": {
+        "properties": {
+          "app": {
+            "enum": [
+              "rekordbox",
+              "djay"
+            ],
+            "title": "App",
+            "type": "string"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "app",
+          "label",
+          "available",
+          "reason"
+        ],
+        "title": "HandoffAppOut",
+        "type": "object"
+      },
+      "HandoffAppsOut": {
+        "properties": {
+          "apps": {
+            "items": {
+              "$ref": "#/components/schemas/HandoffAppOut"
+            },
+            "title": "Apps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "apps"
+        ],
+        "title": "HandoffAppsOut",
         "type": "object"
       },
       "HashPendingResponse": {
@@ -16852,6 +16913,40 @@
           "total"
         ],
         "title": "PlaylistTracksPage",
+        "type": "object"
+      },
+      "PlaylistTreeOrderIn": {
+        "properties": {
+          "order": {
+            "description": "Playlist ids top to bottom. May be partial: playlists it leaves out follow it in their previous order. Each id must name a live playlist and appear once.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "PlaylistTreeOrderIn",
+        "type": "object"
+      },
+      "PlaylistTreeOrderOut": {
+        "properties": {
+          "order": {
+            "description": "Stored order, stale ids included as written.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "title": "PlaylistTreeOrderOut",
         "type": "object"
       },
       "PlaylistWriteOut": {
@@ -25598,6 +25693,11 @@
             "title": "Confirm",
             "type": "object"
           },
+          "deck_default_quantize": {
+            "default": true,
+            "title": "Deck Default Quantize",
+            "type": "boolean"
+          },
           "deck_right_mirror": {
             "default": false,
             "title": "Deck Right Mirror",
@@ -25876,6 +25976,17 @@
               }
             ],
             "title": "Confirm"
+          },
+          "deck_default_quantize": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Default Quantize"
           },
           "deck_right_mirror": {
             "anyOf": [
@@ -34452,6 +34563,28 @@
         ]
       }
     },
+    "/api/v1/handoff/apps": {
+      "get": {
+        "description": "Which hand-off apps this machine can open a track in, and why not when absent.",
+        "operationId": "list_handoff_apps",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffAppsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Handoff Apps",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "engine_health_api_v1_health_get",
@@ -37779,6 +37912,66 @@
           }
         },
         "summary": "Undo Playlist Edit",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlist-tree/order": {
+      "get": {
+        "operationId": "get_playlist_tree_order_api_v1_playlist_tree_order_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistTreeOrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Playlist Tree Order",
+        "tags": [
+          "playlists-write"
+        ]
+      },
+      "put": {
+        "operationId": "put_playlist_tree_order_api_v1_playlist_tree_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistTreeOrderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistTreeOrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Playlist Tree Order",
         "tags": [
           "playlists-write"
         ]
@@ -44892,6 +45085,57 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}:open-in": {
+      "post": {
+        "description": "Open a track's local file in rekordbox or djay Pro. Writes nothing of ours.",
+        "operationId": "open_track_in_app",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Target app: rekordbox or djay",
+            "in": "query",
+            "name": "app",
+            "required": true,
+            "schema": {
+              "description": "Target app: rekordbox or djay",
+              "enum": [
+                "rekordbox",
+                "djay"
+              ],
+              "title": "App",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Track In App",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}:remove": {
       "post": {
         "description": "Soft-delete a track from the library while keeping the audio file on disk.\n\nUses ``POST :remove`` rather than ``DELETE /tracks/{stable_id}`` so\n``LIBM-53`` can own file deletion later as a separate, harder action.",
@@ -45076,7 +45320,7 @@
     },
     "/api/v1/ui-prefs/watcher-folders:validate": {
       "post": {
-        "description": "LIBM-129 v1: existence check only; no watcher daemon.",
+        "description": "LIBM-129: existence check before save. The folder-rescan scheduler watches them.",
         "operationId": "validate_watcher_folders_api_v1_ui_prefs_watcher_folders_validate_post",
         "requestBody": {
           "content": {

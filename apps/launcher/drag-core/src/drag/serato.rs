@@ -42,9 +42,8 @@ impl DragAdapter for SeratoAdapter {
                 Ok(DragOutcome::Started)
             }
             Err(_e) => {
-                // Fallback 1 (watch folder) intentionally not wired in Plan 18-01.
-                // TODO(phase 18.1): Serato watch-folder fallback.
-                // Go straight to fallback 2 (clipboard).
+                // Fallback 1 (watch folder) is documented in the module header and
+                // intentionally unwired in Plan 18-01; go straight to fallback 2.
                 self.copy_path_fallback(host, track)
             }
         }

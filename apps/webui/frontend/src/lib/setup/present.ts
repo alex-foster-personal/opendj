@@ -144,11 +144,27 @@ export function humanFolderVerdict(scan: FolderScan): string {
 }
 
 export function humanAccessCaveat(permissions: Permissions | null): string | null {
-	const denied = permissions?.denied ?? [];
-	if (denied.length === 0) return null;
+	const roots = permissions?.roots ?? [];
+	// Refused, or answered with an error (not a folder, an I/O failure): either way it is not coming back on its own.
+	const failed = roots.filter((root) => root.exists && !root.readable && !root.denied && root.pending !== true);
+	const unreadable = (permissions?.denied ?? []).length + failed.length;
+	// No answer before the deadline: usually a folder still on its permission dialog.
+	// Its existence may not be established yet either, so `exists` is not required here.
+	const waiting = roots.filter((root) => root.pending === true);
+	const waitingLine =
+		'If macOS is asking for permission, answer the dialog, then check again.';
+	if (unreadable > 0) {
+		const also =
+			waiting.length > 0 ? ` ${waiting.length} more have not answered yet. ${waitingLine}` : '';
+		return (
+			`Some music folders could not be read (${unreadable}), so any count below ` +
+			`covers only what was accessible, not your whole library.${also}`
+		);
+	}
+	if (permissions?.all_readable !== false || waiting.length === 0) return null;
 	return (
-		`Some music folders could not be read (${denied.length}), so any count below ` +
-		'covers only what was accessible, not your whole library.'
+		`Some music folders have not answered yet (${waiting.length}), so any count below ` +
+		`may be incomplete. ${waitingLine}`
 	);
 }
 

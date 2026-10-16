@@ -21,6 +21,8 @@
 // requirement: CHROME-07
 import { expect, test, type APIRequestContext, type Page, type Route } from '@playwright/test';
 
+import { watchUiPrefsPuts, type UiPrefsPutWatch } from './support/ui-prefs-puts';
+
 const RUNTIME = 'midi-ui-state.svelte.ts';
 
 async function diskMidi(request: APIRequestContext): Promise<unknown> {
@@ -35,15 +37,18 @@ async function setDiskMidi(request: APIRequestContext, value: boolean): Promise<
 	expect(await diskMidi(request)).toBe(value);
 }
 
-/** Every midi_enabled value the page PUTs to ui-prefs, in order. */
-function watchMidiPuts(page: Page): unknown[] {
-	const puts: unknown[] = [];
-	page.on('request', (r) => {
-		if (r.method() !== 'PUT' || !new URL(r.url()).pathname.endsWith('/api/v1/ui-prefs')) return;
-		const body = r.postDataJSON() as { midi_enabled?: unknown } | null;
-		if (body !== null && 'midi_enabled' in body) puts.push(body.midi_enabled);
-	});
-	return puts;
+/** The midi_enabled values in a list of ui-prefs PUT bodies, in order. */
+function midiValues(bodies: readonly Record<string, unknown>[]): unknown[] {
+	return bodies.filter((body) => 'midi_enabled' in body).map((body) => body.midi_enabled);
+}
+
+/** The current test's page writes, settled by afterEach before it resets the disk. */
+let activeWatch: UiPrefsPutWatch | null = null;
+
+/** Watch the page's ui-prefs PUTs; afterEach waits for every one to be answered. */
+function watchMidiPuts(page: Page): UiPrefsPutWatch {
+	activeWatch = watchUiPrefsPuts(page);
+	return activeWatch;
 }
 
 async function failRuntime(page: Page): Promise<string[]> {
@@ -73,19 +78,29 @@ async function midiToggle(page: Page) {
 
 test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 	test.setTimeout(120_000);
-	test.afterEach(async ({ request }) => setDiskMidi(request, false));
+	test.afterEach(async ({ request }) => {
+		// The page is still open here (its fixture tears down after this hook),
+		// and a PUT it already SENT can still be on its way through the proxy.
+		// Reset the disk only once every one of them has been answered: a page
+		// write that lands between this reset and the read below would make the
+		// read return the page's value instead of ours.
+		const watch = activeWatch;
+		activeWatch = null;
+		await watch?.settle();
+		await setDiskMidi(request, false);
+	});
 
 	test('a failed-load disable writes off to disk, so a reload keeps it off', async ({ page, request }) => {
 		await setDiskMidi(request, true);
 		const failed = await failRuntime(page);
-		const puts = watchMidiPuts(page);
+		const watch = watchMidiPuts(page);
 		const toggle = await midiToggle(page);
 		await expect(toggle, 'hydration read the disk-backed on').toBeChecked();
 
 		await toggle.click();
 		await expect.poll(() => diskMidi(request), { timeout: 15_000 }).toBe(false);
 		expect(failed.length, 'the runtime chunk was requested and failed').toBeGreaterThan(0);
-		expect(puts).toEqual([false]);
+		expect(midiValues(watch.sent)).toEqual([false]);
 		await expect(toggle).not.toBeChecked();
 
 		// The reversal Codex described: disk hydration on the next load.
@@ -96,12 +111,12 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 	test('a failed-load enable never writes on to disk', async ({ page, request }) => {
 		await setDiskMidi(request, false);
 		const failed = await failRuntime(page);
-		const puts = watchMidiPuts(page);
+		const watch = watchMidiPuts(page);
 		const toggle = await midiToggle(page);
 		await expect(toggle).not.toBeChecked();
 
 		await toggle.click();
-		await expect.poll(() => puts, { timeout: 15_000 }).toEqual([false]);
+		await expect.poll(() => midiValues(watch.sent), { timeout: 15_000 }).toEqual([false]);
 		expect(failed.length).toBeGreaterThan(0);
 		expect(await diskMidi(request)).toBe(false);
 		await expect(toggle).not.toBeChecked();
@@ -121,12 +136,15 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 		page.on('requestfinished', (r) => {
 			if (new URL(r.url()).pathname.endsWith(`/${RUNTIME}`)) loaded.push(r.url());
 		});
-		const puts = watchMidiPuts(page);
+		const watch = watchMidiPuts(page);
 		const toggle = await midiToggle(page);
 		await expect(toggle).not.toBeChecked();
 
 		await toggle.click();
-		await expect.poll(() => puts[0], { timeout: 15_000 }).toBe(true);
+		await expect.poll(() => midiValues(watch.sent)[0], { timeout: 15_000 }).toBe(true);
+		// On the wire is not on disk: the title's claim holds only once the
+		// engine has answered that PUT.
+		await expect.poll(() => midiValues(watch.landed)[0], { timeout: 15_000 }).toBe(true);
 		expect(loaded.length, 'the runtime chunk loaded, so this is the normal path').toBeGreaterThan(0);
 	});
 });

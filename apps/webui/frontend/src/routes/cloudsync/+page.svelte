@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * CloudSync config surface (specs/cloudsync-spec.md D5): per-machine
+	 * CloudSync config surface ((private path) D5): per-machine
 	 * asset policy matrix, playlist pins, and a fleet hydration overview.
 	 * Every control here is backed live by /api/v1/cloudsync/* -- full
 	 * agent parity, nothing UI-only.
@@ -16,7 +16,9 @@
 		listMachines,
 		listPlaylistPins,
 		listPolicies,
+		policyErrorMessage,
 		putPlaylistPin,
+		removePlaylistPin,
 		type AssetKind,
 		type CloudMachine,
 		type CloudSyncOverview,
@@ -60,6 +62,8 @@
 	let newPinPlaylistId = $state('');
 	let newPinMode = $state<SyncMode>('pinned');
 	let pinBusy = $state(false);
+	/** `machine_id:playlist_id` of the pin whose Unpin is in flight. */
+	let unpinBusyKey = $state<string | null>(null);
 
 	function selectTab(next: (typeof TABS)[number]['id']): void {
 		const url = new URL($page.url);
@@ -82,6 +86,31 @@
 			),
 			saved
 		];
+	}
+
+	function clearPolicy(machineId: string, assetKind: AssetKind, note: string): void {
+		policies = policies.filter((p) => !(p.machine_id === machineId && p.asset_kind === assetKind));
+		// Info, not an error: an unset cell (and any completeness note it
+		// brings) is the expected result of the user's choice.
+		pushToast(note, 'info');
+	}
+
+	function pinKey(pin: PlaylistPin): string {
+		return `${pin.machine_id}:${pin.playlist_id}`;
+	}
+
+	async function unpin(pin: PlaylistPin): Promise<void> {
+		const label = `${pin.playlist_name ?? pin.playlist_id} on ${machineName(pin.machine_id)}`;
+		unpinBusyKey = pinKey(pin);
+		try {
+			await removePlaylistPin(pin.machine_id, pin.playlist_id);
+			pins = await listPlaylistPins();
+			pushToast(`Unpinned ${label}`);
+		} catch (exc) {
+			pushToast(`Failed to unpin ${label}: ${policyErrorMessage(exc)}`, 'error');
+		} finally {
+			unpinBusyKey = null;
+		}
 	}
 
 	function upsertPin(saved: PlaylistPin): void {
@@ -167,7 +196,7 @@
 
 <h2>CloudSync</h2>
 <p style="color: var(--muted);">
-	Per-machine sync policy over R2 (specs/cloudsync-spec.md D5). Machines self-register the first
+	Per-machine sync policy over R2 ((private path) D5). Machines self-register the first
 	time this page loads on them or they sync with the hub; the Status tab shows whether this
 	machine's background scheduler is actually running.
 </p>
@@ -228,6 +257,7 @@
 										kindLabel={ASSET_KIND_LABEL[kind]}
 										policy={policyFor(m.machine_id, kind)}
 										onSaved={upsertPolicy}
+										onCleared={clearPolicy}
 										onError={(message) => pushToast(message, 'error')}
 									/>
 								{/each}
@@ -287,6 +317,7 @@
 							<th>Playlist</th>
 							<th>Mode</th>
 							<th>Updated</th>
+							<th><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -307,6 +338,18 @@
 									</select>
 								</td>
 								<td title={pin.updated_at ?? 'never updated'}>{pin.updated_at ?? '-'}</td>
+								<td>
+									<button
+										type="button"
+										class="unpin"
+										data-testid="cloudsync-unpin"
+										disabled={unpinBusyKey !== null}
+										title={`Remove the ${pin.mode} pin for ${pin.playlist_name ?? pin.playlist_id} on ${machineName(pin.machine_id)} (synced to every machine)`}
+										onclick={() => unpin(pin)}
+									>
+										{unpinBusyKey === pinKey(pin) ? 'Unpinning...' : 'Unpin'}
+									</button>
+								</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -409,6 +452,27 @@
 		gap: 8px;
 		align-items: center;
 		margin-bottom: 1rem;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+	}
+	button.unpin {
+		padding: 3px 8px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		background: var(--surface);
+		color: var(--fg);
+		cursor: pointer;
+		font-size: 0.8rem;
+	}
+	button.unpin:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 	.pin-form button {
 		padding: 6px 12px;

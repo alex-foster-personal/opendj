@@ -282,7 +282,11 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			when: (ctx) => ctx.audio === 'present'
 		}
 	],
-	'playlists-root': newItems<'playlists-root'>(),
+	'playlists-root': [
+		...newItems<'playlists-root'>(),
+		// LIBTREE-02: writes the whole tree order, the same route a drag uses.
+		{ id: 'sort-name', label: 'Sort playlists A-Z', command: 'playlist_tree.order' }
+	],
 	playlist: [
 		...newItems<'playlist'>(),
 		{ id: 'rename', label: 'Rename', command: 'playlist.update' },

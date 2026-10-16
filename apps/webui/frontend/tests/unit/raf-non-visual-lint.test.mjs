@@ -57,7 +57,6 @@ const ALLOWLIST = {
 		why: 'position mirror for the native engine, read by AutoPlay, so it is backstopped'
 	},
 	'src/lib/ui/clamp-to-viewport.ts': { references: 2, why: 'popover placement after layout: paint only' },
-	'src/lib/rb/vibe.svelte.ts': { references: 3, why: 'pointer-activity meter decay: a display value, driven by pointer moves a hidden page never gets' },
 	'src/lib/rb/mixer-performance-listeners.ts': { references: 2, why: 'fader ghost guidance: when to SHOW a hint, paint only' },
 	'src/lib/player/headphones.ts': {
 		references: 4,

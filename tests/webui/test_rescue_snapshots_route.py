@@ -2,6 +2,7 @@
 
 [if] a snapshot is POSTed [then] it lands in slot 0 and latest and index serve it, [else stop].
 [if] the ring is empty [then] the latest route returns 404, [else stop].
+[if] a snapshot with deck_layout "less" is POSTed [then] latest serves "less" back, [else stop] (RESCUE-08).
 """
 
 from __future__ import annotations
@@ -107,3 +108,20 @@ async def test_latest_404_when_empty(app: FastAPI) -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         latest = await client.get("/api/v1/performance/rescue-snapshots/latest")
         assert latest.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.requirement("RESCUE-08")
+@pytest.mark.parametrize("layout", ["less", "more"])
+async def test_deck_layout_survives_the_real_ring(app: FastAPI, layout: str) -> None:
+    """If the ring stores or serves a different deck_layout than was POSTed, restore flips the layout."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        post = await client.post(
+            "/api/v1/performance/rescue-snapshots",
+            json={**_minimal_snapshot(43_000), "deck_layout": layout},
+        )
+        assert post.status_code == 202, post.text
+        latest = await client.get("/api/v1/performance/rescue-snapshots/latest")
+        assert latest.status_code == 200
+        assert latest.json()["deck_layout"] == layout

@@ -50,7 +50,7 @@ test('Mixtour stem settings survive real four-deck session and rescue restore', 
 		const { buildRescueSnapshot } = await import(snapshotUrl) as typeof import('../../src/lib/rb/rescue-snapshot');
 		const { executeRescueRestore } = await import(restoreUrl) as typeof import('../../src/lib/rb/rescue-restore.svelte');
 		const snapshot = buildRescueSnapshot(window.musicDjToolsPerformance!.query(), 'periodic', Date.now(),
-			{ 1: null, 2: null, 3: null, 4: null });
+			{ 1: null, 2: null, 3: null, 4: null }, 'more');
 		const result = await executeRescueRestore({ snapshot, mode: 'layout' });
 		return { result, state: window.musicDjToolsPerformance!.query() };
 	}, { snapshotUrl: '/src/lib/rb/rescue-snapshot.ts', restoreUrl: '/src/lib/rb/rescue-restore.svelte.ts' });
@@ -69,7 +69,7 @@ test('Mixtour stem settings survive real four-deck session and rescue restore', 
 		const { buildRescueSnapshot } = await import(snapshotUrl) as typeof import('../../src/lib/rb/rescue-snapshot');
 		const { executeRescueRestore } = await import(restoreUrl) as typeof import('../../src/lib/rb/rescue-restore.svelte');
 		const ipc = window.musicDjToolsPerformance!;
-		const snapshot = buildRescueSnapshot(ipc.query(), 'periodic', Date.now(), { 1: null, 2: null, 3: null, 4: null });
+		const snapshot = buildRescueSnapshot(ipc.query(), 'periodic', Date.now(), { 1: null, 2: null, 3: null, 4: null }, 'more');
 		for (const deck of [1, 3] as const) await ipc.dispatch({ type: 'play', deck, playing: false });
 		return executeRescueRestore({ snapshot, mode: 'play' });
 	}, { snapshotUrl: '/src/lib/rb/rescue-snapshot.ts', restoreUrl: '/src/lib/rb/rescue-restore.svelte.ts' });

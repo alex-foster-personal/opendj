@@ -106,9 +106,9 @@ test('_feedbackMark reads published deck and mixer state and does not write the 
 	assert.doesNotMatch(body, /AudioContext/);
 });
 
-test('VibeMeter thumbs dispatch a voided feedback_mark without opening library UI', async () => {
+test('the feedback thumbs dispatch a voided feedback_mark without opening library UI', async () => {
 	const source = await readFile(
-		new URL('../../src/lib/components/rb/VibeMeter.svelte', import.meta.url),
+		new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url),
 		'utf8'
 	);
 	assert.match(source, /aria-label="thumbs down"/);

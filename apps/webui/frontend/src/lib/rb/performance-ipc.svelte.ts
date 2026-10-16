@@ -90,10 +90,11 @@ import {
 	pitchRanges,
 	reattachingDecks,
 	setMasterMuted,
+	assertDeckLoadAllowed,
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
-import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
+import { executeInRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
 import { deckFacingMessage } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
@@ -186,11 +187,12 @@ import { waveformStutterSnapshot } from '$lib/rb/audio-health.svelte';
 import {
 	performanceFeedbackSummary,
 	recordPerformanceFeedback
-} from '$lib/rb/vibe.svelte';
+} from '$lib/rb/performance-feedback';
 import {
 	previewCacheStats,
 	previewCue,
 	previewCueSeek,
+	silencePreviewCue,
 	stopPreviewCue
 } from '$lib/player/preview-cue.svelte';
 import {
@@ -984,7 +986,9 @@ installScopedSyncRunner((_deck, run) => {
 // A dev hot update re-runs this module while analysis-source keeps its
 // runner; reinstallAcrossHotUpdates releases the old one first (no-op in prod).
 reinstallAcrossHotUpdates(import.meta.hot, 'analysisSourceRefreshRunner', () =>
-	installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work))
+	installAnalysisSourceRefreshRunner((work, scopes) =>
+		_commandScheduler.run(scopes === undefined ? [...DECK_IDS, 'sync'] : [...scopes], work)
+	)
 );
 // An automatic master handoff (unload, pause, natural end) re-joins the
 // followers under the same wide claim, queued behind the command that moved the
@@ -2227,26 +2231,47 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
 	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
 	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
+	//
+	// refuseIfMaster is enforced HERE, before either engine sees the command:
+	// rust-engine.ts handles load/unload without reading it, so a check inside
+	// the Web Audio branches alone would let ?engine=rust replace the live
+	// master. It runs inside the queued run() slot for this deck's scope, not
+	// just at the UI dispatch boundary: 'master' shares this deck's scope
+	// ([deck, 'sync']), so a MASTER command queued moments before this one
+	// can complete BETWEEN the UI-layer is_master check and this command's
+	// own turn (r3920224754). getDeckState reads engine state directly, which
+	// is authoritative once this command's scope is held. Opt-in only (see
+	// the PerformanceCommand union comment): a standalone load or eject must
+	// stay able to target the master; engine.unload elects another playing
+	// master afterward, which Deck.svelte's Unload button and Quick Draw rely
+	// on even when it is the only loaded deck (r3920297846). Only
+	// BrowserPanel's destructive-replace path opts in.
+	if (
+		(command.type === 'load' || command.type === 'unload') &&
+		command.refuseIfMaster === true &&
+		getDeckState(command.deck).is_master
+	) {
+		throw new Error(`cannot ${command.type}: CH${command.deck} is the live master - unload or reassign it first`);
+	}
+	// A strip click auditions in the headphones. The moment any deck load is
+	// accepted, that audition stops: the operator is putting a track on a
+	// deck to play it (pin 3f7259934680). A refused master load threw above,
+	// so the preview keeps going, and so does a load the Web Audio engine
+	// refuses up front (the deck is playing, audible or mid-transport): that
+	// refusal throws here, before the silence (Codex P2 4287743996), and
+	// engine.load repeats it under its own claim. Silence leaves the decoded
+	// buffer for engine.load to reuse.
+	if (command.type === 'load') {
+		initRustMode();
+		if (!rustMode.enabled) assertDeckLoadAllowed(command.deck);
+		silencePreviewCue();
+	}
 	if (await executeInRustEngine(command, pushToast)) {
 		if (command.type === 'load') await _quantizeOnForNewTrack(command.deck);
 		return;
 	}
 	if (command.type === 'load') {
-		// refuseIfMaster, rechecked here inside the queued run() slot for
-		// this deck's scope, not just at the UI dispatch boundary: 'master'
-		// shares this deck's scope ([deck, 'sync']), so a MASTER command
-		// queued moments before this load can complete BETWEEN the UI-layer
-		// is_master check and this command's own turn, making the deck
-		// master out from under a check that already passed (r3920224754).
-		// getDeckState reads engine state directly, which is authoritative
-		// by the time this command's scope has been acquired - any
-		// same-scope command queued earlier is guaranteed to have already
-		// settled. Opt-in only (see the PerformanceCommand union comment):
-		// a standalone load must stay able to target the master, same as
-		// unload below.
-		if (command.refuseIfMaster === true && getDeckState(command.deck).is_master) {
-			throw new Error(`cannot load: CH${command.deck} is the live master - unload or reassign it first`);
-		}
+		// refuseIfMaster was enforced above, before the engine dispatch.
 		// THE deck-load entry point from every UI surface, so it is also the
 		// one place the boot scheduler has to be told a load is in flight:
 		// deferred boot work waits for this to settle rather than racing it
@@ -2277,17 +2302,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			throw new Error(`load_play_intent generation ${command.generation} is not pending on CH${command.deck}`);
 		}
 	} else if (command.type === 'unload') {
-		// See the 'load' branch above for why this is rechecked here rather
-		// than trusted from the UI-layer check (r3920224754). Opt-in only:
-		// engine.unload already supports unloading the live master (it
-		// elects another playing master afterward), which a standalone
-		// eject (Deck.svelte's Unload button, Quick Draw's unload action)
-		// relies on, including when it is the only loaded deck and there is
-		// nothing to "reassign master to" first (r3920297846). Only
-		// BrowserPanel's destructive-replace path opts in.
-		if (command.refuseIfMaster === true && getDeckState(command.deck).is_master) {
-			throw new Error(`cannot unload: CH${command.deck} is the live master - unload or reassign it first`);
-		}
+		// refuseIfMaster was enforced above, before the engine dispatch.
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;

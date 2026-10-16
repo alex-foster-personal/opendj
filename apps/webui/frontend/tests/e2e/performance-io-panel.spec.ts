@@ -46,7 +46,7 @@ test('I/O hover is brief and click opens persistent settings with routing inside
 	const panel = page.getByRole('dialog', { name: 'Audio I/O settings' });
 	await expect(panel).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Close audio I/O settings' })).toBeVisible();
-	await expect(panel.getByText('Esc or X to dismiss')).toBeVisible();
+	await expect(panel.getByText('Two clicks outside, Esc, or X to dismiss')).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Practice output mode' })).toBeVisible();
 	await expect(panel.getByRole('button', { name: 'Split cable output mode' })).toBeVisible();
 	await expect(panel.getByText('BOOTH / MONITOR')).toBeVisible();

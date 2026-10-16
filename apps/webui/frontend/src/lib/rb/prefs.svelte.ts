@@ -80,6 +80,13 @@ import {
 	type DevUiPrefs
 } from './dev-ui-prefs';
 import {
+	DECK_DEFAULT_PREF_DEFAULTS,
+	announceDeckDefaults,
+	makeDeckDefaultPrefSetters,
+	mergeDeckDefaultPrefsFromParsed,
+	type DeckDefaultPrefs
+} from './deck-default-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
@@ -165,6 +172,7 @@ export interface RbUiPrefs
 		AppModePrefs,
 		LyricsPrefs,
 		DevUiPrefs,
+		DeckDefaultPrefs,
 		SectionOverlayPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
@@ -357,7 +365,8 @@ const DEFAULTS: RbUiPrefs = {
 	...APP_POSTURE_PREF_DEFAULTS,
 	...GIG_HELPER_PREF_DEFAULTS,
 	...APP_MODE_PREF_DEFAULTS,
-	...DEV_UI_PREF_DEFAULTS
+	...DEV_UI_PREF_DEFAULTS,
+	...DECK_DEFAULT_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -695,7 +704,8 @@ function _load(): RbUiPrefs {
 		library_watcher_folders: Array.isArray(parsed.library_watcher_folders)
 			? parsed.library_watcher_folders.filter((p): p is string => typeof p === 'string')
 			: DEFAULTS.library_watcher_folders,
-		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY)
+		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY),
+		...mergeDeckDefaultPrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -926,6 +936,10 @@ export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) 
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 /** "Show developer pages" - local-only, see dev-ui-prefs.ts. */
 export const { setShowDevUi } = makeDevUiPrefSetters(uiPrefs, _persist);
+/** "Quantize on new decks" (SETSTUB-02) - see deck-default-prefs.ts. */
+export const { setDeckDefaultQuantize } = makeDeckDefaultPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+// Seed the deck store from the stored value without it importing this module.
+announceDeckDefaults(uiPrefs);
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

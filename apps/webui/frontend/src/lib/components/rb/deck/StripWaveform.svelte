@@ -43,6 +43,7 @@
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import { decodePreviewStrip } from '$lib/rb/api-rb';
 	import { shouldShowNativeGridMarker } from './strip-native-grid';
+	import { phraseMomentTicks } from '$lib/rb/phrase-moment-ticks';
 
 	let {
 		deck,
@@ -139,7 +140,8 @@
 		const dur = deck.duration_ms;
 		if (sectionsApi === null || sectionSpansNow === null || dur === null || dur <= 0 || wrapW <= 0) return [];
 		const minLabelPx = sectionsApi.SECTION_MIN_LABEL_PX;
-		const source = deck.anlz?.phrases_source === 'own' ? 'own sections' : 'rekordbox phrase';
+		const served = deck.anlz?.phrases_source;
+		const source = served === 'own' ? 'own sections' : served === 'own-fast' ? 'own fast sections' : 'rekordbox phrase';
 		return sectionSpansNow.flatMap((span) => {
 			const leftPct = ((span.start_s * 1000) / dur) * 100;
 			const widthPct = (((span.end_s - span.start_s) * 1000) / dur) * 100;
@@ -149,6 +151,12 @@
 			return [{ span, leftPct, widthPct, title: `${span.label}${ambient}: ${range} (${source})` }];
 		});
 	});
+
+	// STRUCT-07: drop and break moments as ticks, only while sections are shown:
+	// gated on the same visible-spans state the bands draw from.
+	const momentTicks = $derived(
+		sectionSpansNow === null ? [] : phraseMomentTicks(deck.anlz?.phrase_moments, deck.duration_ms)
+	);
 
 	const keySegmentMarkersS: readonly number[] = $derived(
 		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key).markerTimesS
@@ -329,6 +337,16 @@
 			>{item.span.label}</span>
 		{/each}
 
+		{#each momentTicks as tick, i (i)}
+			<span
+				class="moment-tick"
+				data-testid={`deck-moment-tick-${deck.deck_id}`}
+				data-moment-kind={tick.kind}
+				style={`left:${tick.leftPct}%`}
+				title={tick.title}
+			>{tick.text}</span>
+		{/each}
+
 		{#each memoryCuesMs as ms, i (i)}
 			<span class="mem-cue" style={`left:${_pctOf(ms)}%`}></span>
 		{/each}
@@ -452,6 +470,23 @@
 		text-shadow: 0 0 2px var(--rb-bg);
 		pointer-events: none;
 		box-sizing: border-box;
+	}
+	.moment-tick {
+		position: absolute;
+		top: 0;
+		padding-left: 2px;
+		border-left: 1px solid var(--rb-text);
+		font-size: 8px;
+		line-height: 9px;
+		font-weight: 700;
+		color: var(--rb-text);
+		text-shadow: 0 0 2px var(--rb-bg);
+		pointer-events: auto;
+		white-space: nowrap;
+	}
+	.moment-tick[data-moment-kind='break'] {
+		font-weight: 400;
+		opacity: 0.8;
 	}
 	.mem-cue {
 		position: absolute;

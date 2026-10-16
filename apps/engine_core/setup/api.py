@@ -27,6 +27,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ValidationError
 
+from apps.shared.engine_app_state import data_dir_from_engine_request
 from apps.engine_core.build_info import (
     BUILD_IDENTITY_STATE_ATTR,
     CODE_BUILD_IDENTITY_UNAVAILABLE,
@@ -91,13 +92,7 @@ SCAN_SAMPLE_SIZE: int = 5
 
 # ----- helpers ------------------------------------------------------------
 def _data_dir(request: Request) -> Path:
-    cfg = getattr(request.app.state, "engine_cfg", None)
-    if cfg is None:
-        raise RuntimeError(
-            "engine config is not mounted on app.state.engine_cfg; setup "
-            "cannot guess which data dir it is being asked about"
-        )
-    return Path(cfg.data_dir)
+    return data_dir_from_engine_request(request)
 
 
 def _store(request: Request) -> JobStore:
@@ -138,7 +133,8 @@ def _permissions_out() -> PermissionsOut:
     probes = detect.music_root_access()
     denied = detect.denied_roots(probes)
     return PermissionsOut(
-        all_readable=not denied,
+        # Not `not denied`: a root with no answer yet is unreadable without being denied.
+        all_readable=not detect.unreadable_roots(probes),
         denied=denied,
         roots=[AccessProbeOut(**probe.to_dict()) for probe in probes],
         how_to_grant=detect.GRANT_INSTRUCTIONS,
@@ -434,7 +430,8 @@ def start_folder_import(request: Request, body: FolderImportIn) -> dict[str, Any
         )
 
     probes = fs_access.probe_all([Path(folder) for folder in body.folders])
-    if not any(probe.readable for probe in probes):
+    # A folder still on its consent dialog is not refused: the import job waits for its answer.
+    if not any(probe.readable for probe in probes) and not fs_access.pending_roots(probes):
         denied = fs_access.denied_roots(probes)
         if denied:
             raise _refuse(

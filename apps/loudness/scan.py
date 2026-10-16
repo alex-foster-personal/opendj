@@ -22,7 +22,7 @@ Acceptance
 
 Why ffmpeg as a subprocess and not a library: an arm's-length CLI invocation is
 not linking, so this stays clean under Apache-2.0 regardless of how the local
-ffmpeg was built. See docs/research/adrian-level-meters-clipping-lights.md.
+ffmpeg was built. See (private path).
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ DEFAULT_TARGET_LUFS = -23.0
 # mastering convention, chosen because lossy codecs overshoot on decode.
 DEFAULT_CEILING_DBTP = -1.0
 SCAN_TIMEOUT_S = 900
+_STDERR_TAIL_CHARS = 2000
 
 
 class LoudnessError(RuntimeError):
@@ -104,7 +105,7 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
         if not matches:
             raise LoudnessError(
                 f"ebur128 summary for {path} has no '{field}' line. "
-                f"ffmpeg stderr tail:\n{stderr[-2000:]}"
+                f"ffmpeg stderr tail:\n{stderr[-_STDERR_TAIL_CHARS:]}"
             )
         # The filter prints running values during the pass and the summary last,
         # so the final match is the summary figure.
@@ -125,7 +126,7 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
 def require_ffmpeg() -> str:
     """Resolve the ffmpeg binary, or raise. The one resolution path every
     caller in this lane shares, so executable selection cannot drift between
-    the measurements that need it (specs/native-analysis-v1.md:601).
+    the measurements that need it ((private path):601).
 
     Delegates to :func:`apps.shared.ffmpeg.resolve_ffmpeg` so this lane honors
     ``MDT_FFMPEG`` like every other decoder caller: an installed app has no
@@ -177,7 +178,7 @@ def scan_file(path: Path, binary: str | None = None) -> LoudnessScan:
     if completed.returncode != 0:
         raise LoudnessError(
             f"ffmpeg exited {completed.returncode} scanning {path}:\n"
-            f"{completed.stderr[-2000:]}"
+            f"{completed.stderr[-_STDERR_TAIL_CHARS:]}"
         )
     fields = _parse_summary(completed.stderr, path)
     return LoudnessScan(

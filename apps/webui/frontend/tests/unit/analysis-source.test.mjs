@@ -48,6 +48,8 @@ let serverProcess;
 let apiBase;
 /** Every entry/exit of the injected command-scheduler runner, in order. */
 let runnerLog = [];
+// Per-test override of the installed refresh runner (it is install-once).
+let runnerOverride = null;
 /** How many of the next runner invocations must reject, for the retry tests. */
 let runnerFailures = 0;
 /** The single FakeSocket the shared bus is opened on. See _openSharedBus. */
@@ -72,7 +74,12 @@ class FakeSocket {
 	}
 	deliver(topic, seq, payload) {
 		this.onmessage?.({
-			data: JSON.stringify({ topic, seq, ts: '2026-09-09T10:00:00.000Z', payload })
+			data: JSON.stringify({
+				topic,
+				seq,
+				ts: '2026-09-09T10:00:00.000Z',
+				payload
+			})
 		});
 	}
 	/** A frame the bus cannot parse. `_onFrame` fires resync('malformed') and
@@ -157,7 +164,9 @@ async function holdNextAnlz(stableId) {
 }
 
 async function releaseHeldAnlz() {
-	const res = await fetch(`${apiBase}/test/release-held-anlz`, { method: 'POST' });
+	const res = await fetch(`${apiBase}/test/release-held-anlz`, {
+		method: 'POST'
+	});
 	assert.equal(res.status, 200, 'fixture server rejected release-held-anlz');
 }
 
@@ -194,7 +203,11 @@ before(async () => {
 		// PYTHONPATH, not an editable install: CI's frontend job provisions only
 		// requirements.txt (no setuptools-rust build) for this one fixture, so
 		// `apps` must resolve from the tree rather than from site-packages.
-		env: { ...process.env, MDT_LIBRARY_MODE: 'local', PYTHONPATH: REPOSITORY_ROOT },
+		env: {
+			...process.env,
+			MDT_LIBRARY_MODE: 'local',
+			PYTHONPATH: REPOSITORY_ROOT
+		},
 		stdio: ['ignore', 'pipe', 'inherit']
 	});
 	const port = await new Promise((resolve, reject) => {
@@ -211,7 +224,8 @@ before(async () => {
 	analysisSource = await loadTypeScriptModule('tests/unit/fixtures/analysis-source-entry.ts', {
 		viteApiBase: apiBase
 	});
-	analysisSource.installAnalysisSourceRefreshRunner(async (work) => {
+	analysisSource.installAnalysisSourceRefreshRunner(async (work, scopes) => {
+		if (runnerOverride !== null) return runnerOverride(work, scopes);
 		runnerLog.push('enter');
 		if (runnerFailures > 0) {
 			runnerFailures -= 1;
@@ -241,6 +255,7 @@ beforeEach(() => {
 	analysisSource.analysisSourceState.serving = ['beatgrid', 'key'];
 	runnerLog = [];
 	runnerFailures = 0;
+	runnerOverride = null;
 });
 
 test('loadAnalysisSource GETs the production daemon selection and mirrors it into state', async () => {
@@ -256,7 +271,9 @@ test('the very first adopt must not rubber-stamp a deck that is ALREADY loaded (
 	// its /anlz was fetched under whatever source was effective at load time,
 	// which this first-ever adopt has no watermark yet to compare against.
 	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
-	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 0, beats: [] } };
+	analysisSource.deckStates[1].anlz = {
+		beatgrid: { beat_count: 0, beats: [] }
+	};
 	try {
 		await analysisSource.loadAnalysisSource();
 
@@ -291,7 +308,9 @@ test('a production-route rejected feature throws and leaves prior state untouche
 });
 
 test('a GET begun before a local PUT cannot overwrite the confirmed PUT adoption', async () => {
-	await fetch(`${apiBase}/test/delay-next-analysis-source-get`, { method: 'POST' });
+	await fetch(`${apiBase}/test/delay-next-analysis-source-get`, {
+		method: 'POST'
+	});
 	const staleGet = analysisSource.loadAnalysisSource();
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	await analysisSource.setAnalysisSource('beatgrid', 'own');
@@ -371,7 +390,9 @@ test('two overlapping polls leave the NEWEST daemon answer in place, not the las
 	// per-poll sequencing both carry the same mutation number, so the slow one
 	// adopts last and the mirror ends up on the pre-switch value while the
 	// daemon and the decks are on the new one.
-	await fetch(`${apiBase}/test/delay-next-analysis-source-get`, { method: 'POST' });
+	await fetch(`${apiBase}/test/delay-next-analysis-source-get`, {
+		method: 'POST'
+	});
 	const slow = analysisSource.loadAnalysisSource();
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	await daemonSelect('own');
@@ -394,7 +415,9 @@ test('two overlapping polls leave the NEWEST daemon answer in place, not the las
 // --------------------------------------------- re-analysis under an OWN source
 
 test('a completed re-analysis refreshes the decks while the beatgrid lane is OWN', async () => {
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	const { socket, unsubscribe } = _subscribedBus();
 
@@ -429,7 +452,10 @@ test('a completed re-analysis refreshes the decks while the beatgrid lane is OWN
  * opened exactly once for the file and every test drives the same socket. Each
  * test still owns its own unsubscribe. */
 function _subscribedBus() {
-	return { socket: _openSharedBus(), unsubscribe: analysisSource.subscribeAnalysisRecordChanges() };
+	return {
+		socket: _openSharedBus(),
+		unsubscribe: analysisSource.subscribeAnalysisRecordChanges()
+	};
 }
 
 /** The exact frame ingest.py's _refresh_worker publishes on completion, at the
@@ -439,7 +465,9 @@ function _deliverTracksChanged(socket) {
 }
 
 test('a bus RESYNC refreshes the OWN grids the missed events could have moved', async () => {
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-resync.test/events');
 
@@ -465,7 +493,9 @@ test('a bus RESYNC refreshes the OWN grids the missed events could have moved', 
 	assert.deepEqual(runnerLog, [], 'a rekordbox-sourced grid cannot have gone stale');
 
 	// Disposal covers BOTH subscriptions, not just the kind one.
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	unsubscribe();
 	socket.deliverRaw('after teardown');
 	await new Promise((resolve) => setTimeout(resolve, 0));
@@ -474,7 +504,9 @@ test('a bus RESYNC refreshes the OWN grids the missed events could have moved', 
 
 test('a FAILED record-change refresh stays pending and the next poll retries it', async () => {
 	await daemonSelect('own');
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-retry.test/events');
 
@@ -519,7 +551,9 @@ test('an event-driven refresh records what /anlz actually SERVED, not the stale 
 	// discussion_r3976638774) - that guard is a real, independently-tested
 	// invariant, not the thing this test is about.
 	await daemonSelect('rbx');
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	analysisSource.deckStates[1].stable_id = 'real-track-c-no-own-analysis';
 	const { socket, unsubscribe } = _subscribedBus('ws://analysis-source-served-watermark.test/events');
@@ -559,7 +593,9 @@ test('an event-driven refresh records what /anlz actually SERVED, not the stale 
 
 test('an EARLIER refresh completing must not clear a mark a LATER change set while it was in flight (discussion_r3972154604)', async () => {
 	await daemonSelect('own');
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'own' };
 	// A real ~150ms server delay on /anlz (analysis_source_anlz_server.py),
 	// not a fabricated timer: the gap it opens is what lets a SECOND event
@@ -622,7 +658,9 @@ test('a mirror that drifted from the decks still refreshes them on the next answ
 	// older GET's `own`. Comparing the daemon's next answer against the MIRROR
 	// reads own-against-own and never refreshes, so the decks stay on the
 	// opposite grid for good (discussion_r3970117741).
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 
 	await analysisSource.loadAnalysisSource();
@@ -632,12 +670,16 @@ test('a mirror that drifted from the decks still refreshes them on the next answ
 		['enter', 'exit'],
 		'the decks are on the other grid; the comparison must notice that, not the mirror'
 	);
-	assert.deepEqual(analysisSource.analysisSourceState.deckFeatures, { beatgrid: 'own' });
+	assert.deepEqual(analysisSource.analysisSourceState.deckFeatures, {
+		beatgrid: 'own'
+	});
 });
 
 test('a mirror that drifted does NOT buy a refresh the decks do not need', async () => {
 	await daemonSelect('rbx');
-	analysisSource.analysisSourceState.features = mirrorFeatures({ beatgrid: 'own' });
+	analysisSource.analysisSourceState.features = mirrorFeatures({
+		beatgrid: 'own'
+	});
 	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 
 	await analysisSource.loadAnalysisSource();
@@ -809,7 +851,9 @@ test('a switch whose deck refresh fails puts the DAEMON back where it found it',
 	// injected error. `setAnalysisSource` runs serialize:false (its only caller
 	// already holds the claim), so this is the engine's own refresh failing.
 	analysisSource.deckStates[1].stable_id = 'slow-absent-track';
-	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+	analysisSource.deckStates[1].anlz = {
+		beatgrid: { beat_count: 1, beats: [] }
+	};
 	try {
 		await assert.rejects(
 			() => analysisSource.setAnalysisSource('beatgrid', 'own'),
@@ -847,7 +891,9 @@ test('a RETRY after a failed switch rolls back to the original source, not the f
 	// second failure restores the daemon to 'own' - the source the decks never
 	// reached (discussion_r3970967286).
 	analysisSource.deckStates[1].stable_id = 'slow-absent-track';
-	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+	analysisSource.deckStates[1].anlz = {
+		beatgrid: { beat_count: 1, beats: [] }
+	};
 	try {
 		await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
 		await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
@@ -859,7 +905,9 @@ test('a RETRY after a failed switch rolls back to the original source, not the f
 			'the second rollback must displace the SECOND attempt, and land on the ' +
 				'source the decks are actually on'
 		);
-		assert.deepEqual(analysisSource.analysisSourceState.deckFeatures, { beatgrid: 'rekordbox' });
+		assert.deepEqual(analysisSource.analysisSourceState.deckFeatures, {
+			beatgrid: 'rekordbox'
+		});
 	} finally {
 		analysisSource.deckStates[1].stable_id = null;
 		analysisSource.deckStates[1].anlz = null;
@@ -883,7 +931,9 @@ test('a failed switch never clobbers a concurrent agent-driven HTTP change durin
 	await analysisSource.loadAnalysisSource();
 
 	analysisSource.deckStates[1].stable_id = 'slow-absent-track';
-	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+	analysisSource.deckStates[1].anlz = {
+		beatgrid: { beat_count: 1, beats: [] }
+	};
 	try {
 		const raceWindow = new Promise((resolve) => setTimeout(resolve, 30)).then(() =>
 			// A distinct third value (neither 'rbx', the displaced toggle, nor
@@ -932,7 +982,9 @@ test(
 		await daemonSelect('unset');
 
 		analysisSource.deckStates[1].stable_id = 'slow-absent-track';
-		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+		analysisSource.deckStates[1].anlz = {
+			beatgrid: { beat_count: 1, beats: [] }
+		};
 		try {
 			await assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
 
@@ -977,7 +1029,9 @@ test(
 		analysisSource.invalidateAnlzCacheEntry('real-track-b-own-grid');
 
 		analysisSource.deckStates[1].stable_id = 'slow-absent-track';
-		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 1, beats: [] } };
+		analysisSource.deckStates[1].anlz = {
+			beatgrid: { beat_count: 1, beats: [] }
+		};
 		try {
 			const genBeforeSwitch = analysisSource.currentAnlzFetchGeneration();
 			const switchOutcome = assert.rejects(() => analysisSource.setAnalysisSource('beatgrid', 'own'));
@@ -1035,7 +1089,9 @@ test(
 		// A sentinel no real server response could ever produce, so any change
 		// away from it proves a publish happened.
 		analysisSource.deckStates[1].stable_id = 'real-track-slow-own-grid';
-		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: -1, beats: [] } };
+		analysisSource.deckStates[1].anlz = {
+			beatgrid: { beat_count: -1, beats: [] }
+		};
 		try {
 			// Park the slow deck's /anlz on the fixture until we release it, so
 			// ordering does not depend on shared-runner wall-clock scheduling.
@@ -1105,7 +1161,9 @@ test(
 		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
 		analysisSource.invalidateAnlzCacheEntry('real-track-slow-own-grid');
 		analysisSource.deckStates[1].stable_id = 'real-track-slow-own-grid';
-		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: -1, beats: [] } };
+		analysisSource.deckStates[1].anlz = {
+			beatgrid: { beat_count: -1, beats: [] }
+		};
 		const armed = await fetch(`${apiBase}/test/hold-next-track`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
@@ -1138,7 +1196,9 @@ test(
 			await analysisSource.setAnalysisSource('beatgrid', 'rekordbox');
 			// Only now does the held /tracks/{id} run its handler: bpm provenance
 			// comes back from 'rekordbox' while /anlz was served under 'own'.
-			const released = await fetch(`${apiBase}/test/release-held-track`, { method: 'POST' });
+			const released = await fetch(`${apiBase}/test/release-held-track`, {
+				method: 'POST'
+			});
 			assert.equal(released.status, 200);
 			await switchToOwn; // superseded: must resolve, discarding, not reject
 
@@ -1183,7 +1243,9 @@ test('a Phrase source switch refetches the loaded decks; an unchanged Phrase doe
 	await daemonSelect('rbx');
 	await daemonSelectLane('phrase', 'rbx');
 	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
-	analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: 0, beats: [] } };
+	analysisSource.deckStates[1].anlz = {
+		beatgrid: { beat_count: 0, beats: [] }
+	};
 	try {
 		analysisSource.analysisSourceState.features = mirrorFeatures();
 		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
@@ -1237,5 +1299,457 @@ test('a Phrase source switch with no loaded deck still drops prefetched payloads
 		);
 	} finally {
 		await daemonSelectLane('phrase', 'rbx');
+	}
+});
+
+test('own-fast sections landing refetch the deck holding that track, whatever the lanes (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const { socket, unsubscribe } = _subscribedBus();
+	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+	analysisSource.deckStates[1].anlz = {
+		beatgrid: { beat_count: 0, beats: [] }
+	};
+	try {
+		// CONTROL first: sections for a track no deck holds refetch no deck, so a
+		// refresh below can only be the loaded track's own event.
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: ['some-other-track']
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(runnerLog, [], 'no loaded deck holds that track');
+
+		socket.deliver('library.changed', ++busSeq, { kind: 'sections', ids: ['real-track-a-own-grid'] });
+		for (let i = 0; i < 200 && !runnerLog.includes('exit'); i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.deepEqual(
+			runnerLog,
+			['enter', 'exit'],
+			'the deck holds the pending answer; under the default rbx lanes the own-grid gate must not swallow this'
+		);
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+		unsubscribe();
+	}
+});
+
+test('own-fast sections landing hold ONLY their deck, so other decks run during the refetch (discussion_r4253771060, #6505)', async () => {
+	const { ScopedCommandScheduler } = await loadTypeScriptModule('src/lib/rb/performance-command-scheduler.ts');
+	const scheduler = new ScopedCommandScheduler();
+	const ALL = [1, 2, 3, 4, 'sync'];
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const { socket, unsubscribe } = _subscribedBus();
+	const pendingAnlz = { beatgrid: { beat_count: 0, beats: [] }, own_phrases: { status: 'pending' } };
+	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+	analysisSource.deckStates[1].anlz = pendingAnlz;
+	analysisSource.deckStates[2].stable_id = 'real-track-b';
+	const deck2Anlz = {
+		beatgrid: { beat_count: 0, beats: [] },
+		marker: 'deck-2-untouched'
+	};
+	analysisSource.deckStates[2].anlz = deck2Anlz;
+	let openGate;
+	const gate = new Promise((resolve) => (openGate = resolve));
+	let entered;
+	const inFlight = new Promise((resolve) => (entered = resolve));
+	const claimed = [];
+	let done = false;
+	// The REAL scheduler, holding the refresh open as a slow network round trip would.
+	runnerOverride = (work, scopes) => {
+		claimed.push(scopes ?? ALL);
+		return scheduler.run(scopes ?? ALL, async () => {
+			entered();
+			await gate;
+			const out = await work();
+			done = true;
+			return out;
+		});
+	};
+	try {
+		// CONTROL: the all-deck claim the source-switch refresh still takes blocks deck 2.
+		let releaseControl;
+		const control = scheduler.run(ALL, () => new Promise((resolve) => (releaseControl = resolve)));
+		let blockedRan = false;
+		const blocked = scheduler.run([2], async () => (blockedRan = true));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		assert.equal(blockedRan, false, 'control: an all-deck claim queues a deck-2 command');
+		releaseControl();
+		await control;
+		await blocked;
+
+		const logBefore = (await requestLog()).length;
+		socket.deliver('library.changed', ++busSeq, { kind: 'sections', ids: ['real-track-a-own-grid'] });
+		await inFlight;
+		assert.deepEqual(claimed, [[1]], 'only the deck holding the track is claimed, not every deck plus sync');
+		const play = await Promise.race([
+			scheduler.run([2], async () => 'deck-2 ran'),
+			new Promise((resolve) => setTimeout(() => resolve('deck-2 blocked'), 500))
+		]);
+		assert.equal(play, 'deck-2 ran', 'a deck-2 command must not wait behind deck 1 sections I/O');
+		const sync = await Promise.race([
+			scheduler.run(['sync'], async () => 'sync ran'),
+			new Promise((resolve) => setTimeout(() => resolve('sync blocked'), 500))
+		]);
+		assert.equal(sync, 'sync ran', 'nor a sync command');
+		assert.equal(done, false, 'all of that happened while the refetch was still in flight');
+		openGate();
+		for (let i = 0; i < 200 && !done; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+		assert.equal(done, true);
+		assert.notEqual(analysisSource.deckStates[1].anlz, pendingAnlz, 'deck 1 got the refetched sections');
+		assert.equal(analysisSource.deckStates[2].anlz, deck2Anlz, 'deck 2 was not refetched');
+		const served = (await requestLog()).slice(logBefore);
+		assert.ok(
+			served.some((url) => url.includes('/anlz') && url.includes('real-track-a-own-grid')),
+			'control: /anlz was read'
+		);
+		assert.ok(
+			!served.some((url) => /\/tracks\/real-track-a-own-grid(\?|$)/.test(url)),
+			`a sections refresh reads no track row (discussion_r4260719119): ${served.join(', ')}`
+		);
+	} finally {
+		openGate();
+		for (const deck of [1, 2]) {
+			analysisSource.deckStates[deck].stable_id = null;
+			analysisSource.deckStates[deck].anlz = null;
+		}
+		unsubscribe();
+	}
+});
+
+test("sections cut on a different beatgrid are not installed over the deck's grid (discussion_r4264186277)", async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const { socket, unsubscribe } = _subscribedBus();
+	// The deck still draws an OWN grid; the server now serves the rekordbox lane.
+	const ownGridAnlz = {
+		beatgrid_source: 'own',
+		beatgrid: {
+			source: 'own',
+			beat_count: 1,
+			beats: [{ n: 1, bpm: 120, time_ms: 0 }]
+		},
+		own_phrases: { status: 'pending' }
+	};
+	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+	analysisSource.deckStates[1].anlz = ownGridAnlz;
+	let ran;
+	const finished = new Promise((resolve) => (ran = resolve));
+	runnerOverride = async (work) => {
+		try {
+			return await work();
+		} finally {
+			ran();
+		}
+	};
+	try {
+		const logBefore = (await requestLog()).length;
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: ['real-track-a-own-grid']
+		});
+		await finished;
+		const served = (await requestLog()).slice(logBefore);
+		assert.ok(
+			served.some((url) => url.includes('/anlz') && url.includes('real-track-a-own-grid')),
+			'control: /anlz was read'
+		);
+		assert.equal(
+			analysisSource.deckStates[1].anlz,
+			ownGridAnlz,
+			"the other grid's sections were discarded"
+		);
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+		unsubscribe();
+	}
+});
+
+test('a failed sections refresh retries on the SAME deck, never the all-deck refresh (discussion_r4260719119)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const { socket, unsubscribe } = _subscribedBus();
+	const pendingAnlz = {
+		beatgrid: { beat_count: 0, beats: [] },
+		own_phrases: { status: 'pending' }
+	};
+	analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+	analysisSource.deckStates[1].anlz = pendingAnlz;
+	const claimed = [];
+	let failures = 1;
+	runnerOverride = async (work, scopes) => {
+		claimed.push(scopes ?? 'ALL');
+		if (failures > 0) {
+			failures -= 1;
+			throw new Error('injected scheduler failure');
+		}
+		return work();
+	};
+	try {
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: ['real-track-a-own-grid']
+		});
+		for (let i = 0; i < 900 && analysisSource.deckStates[1].anlz === pendingAnlz; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.notEqual(
+			analysisSource.deckStates[1].anlz,
+			pendingAnlz,
+			'the retry delivered the sections'
+		);
+		assert.deepEqual(claimed, [[1], [1]], 'failed once, retried on deck 1 only; no all-deck claim');
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+		unsubscribe();
+	}
+});
+
+test('own-fast sections landing drop a prefetched payload for that track (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const { socket, unsubscribe } = _subscribedBus();
+	try {
+		analysisSource.invalidateAnlzCacheEntry('real-track-a-own-grid');
+		analysisSource.ensureAnlz('real-track-a-own-grid');
+		await _waitForAnlzEntry('real-track-a-own-grid', (e) => e?.status === 'ready', 'prefetch');
+
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: ['some-other-track']
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(analysisSource.getAnlzEntry('real-track-a-own-grid')?.status, 'ready', 'another track: kept');
+
+		socket.deliver('library.changed', ++busSeq, { kind: 'sections', ids: ['real-track-a-own-grid'] });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(
+			analysisSource.getAnlzEntry('real-track-a-own-grid'),
+			undefined,
+			'the prefetch holds the pending answer and must be asked again on load'
+		);
+		assert.deepEqual(runnerLog, [], 'nothing loaded: no deck refresh');
+	} finally {
+		unsubscribe();
+	}
+});
+
+test('a bus RESYNC refetches decks and evicts prefetches still holding pending own-fast sections, under rbx lanes (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const pending = { status: 'pending', reason: 'computing', producer: 'own-fast', producer_version: '0.2.0' };
+	const { socket, unsubscribe } = _subscribedBus();
+	/** The real server's payload for `id`, republished into the cache as the given own_phrases answer. */
+	async function cacheAs(id, ownPhrases) {
+		analysisSource.invalidateAnlzCacheEntry(id);
+		analysisSource.ensureAnlz(id);
+		const ready = await _waitForAnlzEntry(id, (e) => e?.status === 'ready', `prefetch ${id}`);
+		const data = { ...ready.data, own_phrases: ownPhrases };
+		analysisSource.refreshAnlzCacheEntry(id, data);
+		return data;
+	}
+	try {
+		// CONTROL first: a loaded deck whose sections are settled costs no refetch on a
+		// resync under rbx lanes; the gate is the pending answer, not "any deck".
+		analysisSource.deckStates[1].stable_id = 'real-track-a-own-grid';
+		analysisSource.deckStates[1].anlz = await cacheAs('real-track-a-own-grid', { ...pending, status: 'ok' });
+		socket.deliverRaw('unparseable: resync');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(runnerLog, [], 'settled sections: a resync must not cost a multi-MB refetch');
+		assert.equal(analysisSource.getAnlzEntry('real-track-a-own-grid')?.status, 'ready', 'settled: kept');
+
+		// Both a loaded deck and a prefetch still say pending, as the server answered before the event was missed.
+		analysisSource.deckStates[1].anlz = await cacheAs('real-track-a-own-grid', pending);
+		await cacheAs('real-track-b-own-grid', pending);
+		socket.deliverRaw('unparseable: resync again');
+		for (let i = 0; i < 200 && !runnerLog.includes('exit'); i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.deepEqual(runnerLog, ['enter', 'exit'], 'the missed sections event must not leave the deck pending');
+		assert.equal(analysisSource.getAnlzEntry('real-track-b-own-grid'), undefined, 'the pending prefetch is asked again on load');
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+		unsubscribe();
+	}
+});
+
+/** How many /anlz GETs the fixture server has seen for `stableId`. */
+async function _anlzRequestCount(stableId) {
+	return (await requestLog()).filter((url) => url.includes(`/${stableId}/anlz?`)).length;
+}
+
+test('a sections event that lands while a prefetch is in flight makes it ask again, not publish the older answer (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const id = 'real-track-a-own-grid';
+	const { socket, unsubscribe } = _subscribedBus();
+	const token = analysisSource.registerAnlzConsumer(id);
+	try {
+		analysisSource.invalidateAnlzCacheEntry(id);
+		const before_ = await _anlzRequestCount(id);
+		await holdNextAnlz(id);
+		analysisSource.ensureAnlz(id);
+		assert.equal(analysisSource.getAnlzEntry(id)?.status, 'loading', 'the prefetch must be in flight');
+		// The worker finished after the server already chose to answer `pending`:
+		// the announcement beats the response to the browser.
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: [id]
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await releaseHeldAnlz();
+		await _waitForAnlzEntry(id, (e) => e?.status === 'ready', 'refetch after the sections event');
+		assert.equal(
+			(await _anlzRequestCount(id)) - before_,
+			2,
+			'the answer issued before the sections event must be discarded and asked again'
+		);
+	} finally {
+		analysisSource.unregisterAnlzConsumer(id, token);
+		unsubscribe();
+	}
+});
+
+test('a sections event that lands while a deck load is in flight makes the load ask again (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const id = 'real-track-b-own-grid';
+	const { socket, unsubscribe } = _subscribedBus();
+	try {
+		// CONTROL: a load with no sections event in flight asks exactly once.
+		let before_ = await _anlzRequestCount(id);
+		await analysisSource.fetchAnlzForDeckLoad(id);
+		assert.equal((await _anlzRequestCount(id)) - before_, 1, 'no event: one request');
+
+		before_ = await _anlzRequestCount(id);
+		await holdNextAnlz(id);
+		const load = analysisSource.fetchAnlzForDeckLoad(id);
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: [id]
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await releaseHeldAnlz();
+		await load;
+		assert.equal(
+			(await _anlzRequestCount(id)) - before_,
+			2,
+			'a load whose answer predates the sections event must not install it on the deck'
+		);
+	} finally {
+		unsubscribe();
+	}
+});
+
+test('a bus RESYNC refetches a loaded deck still pending even after the LRU evicted its cache entry (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const id = 'real-track-a-own-grid';
+	const pending = { status: 'pending', reason: 'computing', producer: 'own-fast', producer_version: '0.2.0' };
+	const { socket, unsubscribe } = _subscribedBus();
+	try {
+		analysisSource.invalidateAnlzCacheEntry(id);
+		analysisSource.ensureAnlz(id);
+		const ready = await _waitForAnlzEntry(id, (e) => e?.status === 'ready', 'prefetch');
+		analysisSource.deckStates[1].stable_id = id;
+		// CONTROL: a loaded deck whose sections settled costs no refetch.
+		analysisSource.deckStates[1].anlz = { ...ready.data, own_phrases: { ...pending, status: 'ok' } };
+		analysisSource.invalidateAnlzCacheEntry(id);
+		socket.deliverRaw('unparseable: resync');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(runnerLog, [], 'settled sections: no refetch');
+
+		analysisSource.deckStates[1].anlz = { ...ready.data, own_phrases: pending };
+		analysisSource.invalidateAnlzCacheEntry(id); // the LRU dropped it; only the deck still holds the payload
+		socket.deliverRaw('unparseable: resync again');
+		for (let i = 0; i < 200 && !runnerLog.includes('exit'); i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.deepEqual(runnerLog, ['enter', 'exit'], 'the pending deck must refetch though its cache entry is gone');
+	} finally {
+		analysisSource.deckStates[1].stable_id = null;
+		analysisSource.deckStates[1].anlz = null;
+		unsubscribe();
+	}
+});
+
+test('a bus RESYNC makes a prefetch still in flight ask again, since its sections event may be the one missed (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const id = 'real-track-a-own-grid';
+	const { socket, unsubscribe } = _subscribedBus();
+	const token = analysisSource.registerAnlzConsumer(id);
+	try {
+		analysisSource.invalidateAnlzCacheEntry(id);
+		const before_ = await _anlzRequestCount(id);
+		await holdNextAnlz(id);
+		analysisSource.ensureAnlz(id);
+		assert.equal(analysisSource.getAnlzEntry(id)?.status, 'loading', 'the prefetch must be in flight');
+		socket.deliverRaw('unparseable: resync while loading');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await releaseHeldAnlz();
+		await _waitForAnlzEntry(id, (e) => e?.status === 'ready', 'refetch after the resync');
+		for (let i = 0; i < 100 && (await _anlzRequestCount(id)) - before_ < 2; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.equal((await _anlzRequestCount(id)) - before_, 2, 'the in-flight answer predates the resync and is asked again');
+	} finally {
+		analysisSource.unregisterAnlzConsumer(id, token);
+		unsubscribe();
+	}
+});
+
+test('a sections event that lands while a hot-cue refresh read is in flight makes it ask again (STRUCT-06)', async () => {
+	await daemonSelect('rbx');
+	await daemonSelectLane('phrase', 'rbx');
+	analysisSource.analysisSourceState.features = mirrorFeatures();
+	analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+	const id = 'real-track-b-own-grid';
+	const { socket, unsubscribe } = _subscribedBus();
+	try {
+		// CONTROL: no event, one request.
+		let before_ = await _anlzRequestCount(id);
+		await analysisSource.fetchAnlzBypassingHttpCache(id);
+		assert.equal((await _anlzRequestCount(id)) - before_, 1, 'no event: one request');
+
+		before_ = await _anlzRequestCount(id);
+		await holdNextAnlz(id);
+		const read = analysisSource.fetchAnlzBypassingHttpCache(id);
+		socket.deliver('library.changed', ++busSeq, {
+			kind: 'sections',
+			ids: [id]
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await releaseHeldAnlz();
+		await read;
+		assert.equal((await _anlzRequestCount(id)) - before_, 2, 'the read that predates the event is asked again');
+	} finally {
+		unsubscribe();
 	}
 });

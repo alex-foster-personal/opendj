@@ -1111,6 +1111,13 @@ export {
 	type PausedDeckControlUpdate
 };
 
+/** The synchronous refusal engine.load starts with, for a caller that must
+ * know a load will be refused before it does anything irreversible (the
+ * dispatcher silences a sounding audition only for a load this accepts). */
+export function assertDeckLoadAllowed(deck: DeckId): void {
+	_assertCurrentDeckReplacementAllowed(deck);
+}
+
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
 	const st = deckStates[deck];
 	const rt = _rt[deck];

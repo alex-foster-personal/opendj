@@ -27,6 +27,10 @@ Acceptance tests:
   next branch's run].
 - [if] the clean step starts removing node_modules, the root .venv or a cargo
   target dir [then] this fails [⛔️ if the churn silently comes back].
+- [if] the clean step leaves a linked
+  odj-audio or odj-audio.exe in apps/audio-engine/target
+  [then] this fails [⛔️ a job that never builds the engine tests another
+  branch's binary: agbox2-6, Fri 9 Oct 2026, a full-scale sine read 0.486].
 - [if] a self-hosted job runs bare `uv venv` [then] this fails [⛔️ uv refuses
   to create over an existing venv, so a reused workspace would go red].
 - [if] a reused venv is filled any way but `ci_venv.sh --lock <committed
@@ -284,8 +288,19 @@ KEPT = (
     ".venv/bin/python",
     "apps/desktop/src-tauri/target/debug/app",
     "apps/webui/server/native/waveform/target/release/lib.so",
+    "apps/audio-engine/target/release/deps/libsymphonia.rlib",
+    # Only the linked binaries go: cargo's dep file and another crate's
+    # same-named binary stay.
+    "apps/audio-engine/target/release/odj-audio.d",
+    "apps/other/target/release/odj-audio",
 )
 REMOVED = (
+    # Runnable without a build (odj_audio_binary.find_binary), so another
+    # branch's engine must not survive into this job.
+    "apps/audio-engine/target/release/odj-audio",
+    "apps/audio-engine/target/debug/odj-audio",
+    "apps/audio-engine/target/release/odj-audio.exe",
+    "apps/audio-engine/target/debug/odj-audio.exe",
     "dist/music_dj_tools-0.0.0-cp311-abi3.whl",
     "dist/waveform-consumer/bin/python",
     "apps/webui/frontend/.svelte-kit/generated/root.js",
@@ -296,6 +311,18 @@ REMOVED = (
 )
 
 
+# The clean script is the bash post-checkout step of the Linux and macOS
+# self-hosted runners; the Windows runner service account has no bash on PATH
+# (.github/workflows/windows-parity.yml), and directory symlinks need a privilege
+# it lacks, so these run wherever a POSIX shell is the seam under test.
+BASH = shutil.which("bash")
+needs_posix_shell = pytest.mark.skipif(
+    sys.platform == "win32" or BASH is None,
+    reason="ci_clean_untracked.sh is a POSIX bash step (Linux/macOS runners only); no bash here",
+)
+
+
+@needs_posix_shell
 def test_clean_script_removes_debris_and_keeps_dependency_trees(tmp_path: Path) -> None:
     repo = tmp_path / "ws"
     repo.mkdir()
@@ -307,7 +334,7 @@ def test_clean_script_removes_debris_and_keeps_dependency_trees(tmp_path: Path) 
     _touch(repo, *KEPT, *REMOVED)
 
     result = subprocess.run(
-        ["bash", str(CLEAN_SCRIPT)], cwd=repo, capture_output=True, text=True, check=False
+        [str(BASH), str(CLEAN_SCRIPT)], cwd=repo, capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0, result.stderr
@@ -316,6 +343,33 @@ def test_clean_script_removes_debris_and_keeps_dependency_trees(tmp_path: Path) 
     assert not kept_missing, f"clean removed dependency trees it must keep: {kept_missing}"
     assert not debris_left, f"clean left build debris behind: {debris_left}"
     assert (repo / "tracked.txt").exists(), "clean must never touch tracked files"
+
+
+@needs_posix_shell
+@pytest.mark.parametrize("link", ["apps/audio-engine/target", "apps/audio-engine/target/release"])
+def test_clean_script_unlinks_symlinked_engine_dirs_without_following(
+    tmp_path: Path, link: str
+) -> None:
+    """A symlinked target or profile dir is unlinked; the binary it points at survives."""
+    repo = tmp_path / "ws"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _touch(repo, "tracked.txt")
+    _git(repo, "add", ".")
+    _git(repo, "-c", "user.email=ci@example.invalid", "-c", "user.name=ci", "commit", "-qm", "init")
+    outside = tmp_path / "outside"
+    rel = "release/odj-audio" if link.endswith("/target") else "odj-audio"
+    _touch(outside, rel)
+    (repo / link).parent.mkdir(parents=True, exist_ok=True)
+    (repo / link).symlink_to(outside, target_is_directory=True)
+
+    result = subprocess.run(
+        [str(BASH), str(CLEAN_SCRIPT)], cwd=repo, capture_output=True, text=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (outside / rel).is_file(), "clean followed a symlinked engine dir out of the checkout"
+    assert not (repo / link).is_symlink(), f"clean left the symlinked {link} in place"
 
 
 #-----------------------------------------------------------------------------

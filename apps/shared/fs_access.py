@@ -21,9 +21,26 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import threading
+import time
 from pathlib import Path
 
 from apps.shared.platform_paths import HOME, MUSIC_ROOTS
+
+#: How long one :func:`probe_all` call waits for its listings. A listing of
+#: ~/Desktop, ~/Documents or ~/Music by a process macOS has not asked about
+#: yet BLOCKS inside the kernel until the person answers the consent dialog,
+#: and a listing on a dead network mount blocks for as long as the mount
+#: does. Neither may hold an HTTP request open: /api/v1/setup/status runs
+#: these probes, and the first-run overlay gives up on it after 60 s.
+PROBE_DEADLINE_S: float = 2.0
+
+#: Most listing threads that may be blocked at once across every caller with
+#: a deadline. A blocked listing cannot be cancelled, so without a ceiling a
+#: stream of requests naming distinct paths on a dead mount would pile up
+#: threads until the process fails (Codex on #6825). A path over the ceiling
+#: is answered as no-answer (``pending``) without starting a thread.
+MAX_PROBE_THREADS: int = 256
 
 #: What a macOS operator has to do about a denied folder. Spelled once,
 #: served over HTTP, rendered verbatim -- a UI that says "access denied"
@@ -44,7 +61,14 @@ class AccessProbe:
     ``exists`` and ``readable`` are separate answers because on macOS they
     disagree constantly. ``denied`` narrows an unreadable directory to the
     permission case specifically, because that is the only one an operator
-    can fix from System Settings.
+    can fix from System Settings. ``pending`` marks the listing that gave no
+    answer before the deadline, carried in the answer itself so a listing
+    that finishes a moment later cannot change what this probe said.
+
+    ``exists`` is true only when it was established. A pending probe whose
+    path was never examined (past the thread ceiling, or still blocked on
+    the existence check itself) says ``exists=False`` with ``pending=True``:
+    not known yet, never claimed present (Sol on #6825).
     """
 
     path: str
@@ -52,6 +76,7 @@ class AccessProbe:
     readable: bool
     denied: bool
     detail: str
+    pending: bool
 
     def to_dict(self) -> dict[str, object]:
         return dataclasses.asdict(self)
@@ -74,6 +99,7 @@ def probe_readable(path: Path) -> AccessProbe:
             readable=False,
             denied=False,
             detail="not present on this machine",
+            pending=False,
         )
     if not path.is_dir():
         return AccessProbe(
@@ -82,6 +108,7 @@ def probe_readable(path: Path) -> AccessProbe:
             readable=False,
             denied=False,
             detail="exists but is not a directory",
+            pending=False,
         )
     try:
         with os.scandir(path) as entries:
@@ -93,6 +120,7 @@ def probe_readable(path: Path) -> AccessProbe:
             readable=False,
             denied=True,
             detail=f"macOS refused the listing ({exc.strerror or exc})",
+            pending=False,
         )
     except OSError as exc:
         return AccessProbe(
@@ -101,6 +129,7 @@ def probe_readable(path: Path) -> AccessProbe:
             readable=False,
             denied=False,
             detail=f"could not be listed: {exc.strerror or exc}",
+            pending=False,
         )
     return AccessProbe(
         path=str(path),
@@ -108,6 +137,7 @@ def probe_readable(path: Path) -> AccessProbe:
         readable=True,
         denied=False,
         detail="readable",
+        pending=False,
     )
 
 
@@ -147,16 +177,164 @@ def music_root_access() -> list[AccessProbe]:
     return probe_all(candidates)
 
 
-def probe_all(paths: list[Path]) -> list[AccessProbe]:
-    """Probe each path once, in order, with duplicates dropped."""
+class _InFlight:
+    """One listing running on its own thread, and its answer once it has one."""
+
+    def __init__(self, path: Path) -> None:
+        self.result: AccessProbe | None = None
+        #: Set once the existence check returns, before the listing that may block.
+        self.present: bool | None = None
+        self.thread = threading.Thread(
+            target=self._run,
+            args=(path,),
+            name=f"fs-access-probe:{path}",
+            daemon=True,
+        )
+
+    def _run(self, path: Path) -> None:
+        try:
+            self.present = path.exists()
+            self.result = probe_readable(path)
+        finally:
+            # Done: drop the map's entry now rather than when the same path is
+            # asked about again. Callers still hold this job directly (Sol on #6825).
+            with _IN_FLIGHT_LOCK:
+                if _IN_FLIGHT.get(path) is self:
+                    del _IN_FLIGHT[path]
+
+
+#: Listings still blocked from an earlier call, by path. A blocked listing
+#: cannot be cancelled from Python, so the next call waits on the SAME one
+#: rather than starting another: at most one thread per path is ever stuck,
+#: and a dialog answered in between is picked up on the next call. The
+#: threads are daemons so a wedged one never holds engine shutdown (#766).
+_IN_FLIGHT: dict[Path, _InFlight] = {}
+_IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _no_answer(path: Path, deadline_s: float, *, present: bool | None) -> AccessProbe:
+    """The UNKNOWN answer: not readable, not proven denied, and why.
+
+    ``present`` is what the listing thread established before it blocked;
+    None (never examined) reports ``exists=False``, never a guessed True.
+    """
+    if present is None:
+        return AccessProbe(
+            path=str(path),
+            exists=False,
+            readable=False,
+            denied=False,
+            pending=True,
+            detail=(
+                f"not checked within {deadline_s:g} s: other folders are still "
+                "waiting on macOS or on a volume that is not responding. Check again."
+            ),
+        )
+    return AccessProbe(
+        path=str(path),
+        exists=present,
+        readable=False,
+        denied=False,
+        pending=True,
+        detail=(
+            f"no answer within {deadline_s:g} s: macOS may be waiting on a "
+            "permission dialog for this folder, or the volume is not "
+            "responding. Answer the dialog, then check again."
+        ),
+    )
+
+
+def probe_all(
+    paths: list[Path],
+    *,
+    deadline_s: float | None = PROBE_DEADLINE_S,
+    max_threads: int = MAX_PROBE_THREADS,
+) -> list[AccessProbe]:
+    """Probe each path once, in order, with duplicates dropped.
+
+    The listings run side by side and the whole call returns within about
+    ``deadline_s``. A listing that has not answered by then is reported with
+    :func:`_no_answer`, never as readable and never as denied.
+
+    ``deadline_s=None`` waits for every answer. An import passes it: a root
+    with no answer yet is neither readable nor denied, so a deadline there
+    would drop it from the walk and report a smaller library with no error.
+
+    With a deadline, at most ``max_threads`` listings are alive at once across
+    every caller; a path past that ceiling is reported no-answer without a
+    thread. An import (no deadline) is not capped: it needs every answer.
+    """
+    # One clock from entry, so waiting on the lock and starting threads spend
+    # the same budget as the listings do (Sol on #6825).
+    give_up_at = None if deadline_s is None else time.monotonic() + deadline_s
+    ordered = _unique(paths)
+    running = _start(ordered, give_up_at=give_up_at, max_threads=max_threads)
+    _wait(running, give_up_at)
+    return _collect(ordered, running, deadline_s, give_up_at)
+
+
+def _unique(paths: list[Path]) -> list[Path]:
+    """The expanded paths in order, each once."""
     seen: set[Path] = set()
-    probes: list[AccessProbe] = []
+    ordered: list[Path] = []
     for candidate in paths:
         resolved = candidate.expanduser()
-        if resolved in seen:
+        if resolved not in seen:
+            seen.add(resolved)
+            ordered.append(resolved)
+    return ordered
+
+
+def _start(ordered: list[Path], *, give_up_at: float | None, max_threads: int) -> list[_InFlight | None]:
+    """Reuse or start one listing per path; None for a path past the thread ceiling or the deadline."""
+    timeout = -1.0 if give_up_at is None else max(0.0, give_up_at - time.monotonic())
+    if not _IN_FLIGHT_LOCK.acquire(timeout=timeout):
+        return [None] * len(ordered)
+    running: list[_InFlight | None] = []
+    try:
+        alive = len(_IN_FLIGHT)  # finished listings remove themselves
+        for path in ordered:
+            job = _IN_FLIGHT.get(path)
+            if job is None:
+                if give_up_at is not None and alive >= max_threads:
+                    running.append(None)
+                    continue
+                job = _InFlight(path)
+                _IN_FLIGHT[path] = job
+                job.thread.start()
+                alive += 1
+            running.append(job)
+    finally:
+        _IN_FLIGHT_LOCK.release()
+    return running
+
+
+def _wait(running: list[_InFlight | None], give_up_at: float | None) -> None:
+    """Join every listing, or as many as answer before the deadline."""
+    for job in running:
+        if job is None:
             continue
-        seen.add(resolved)
-        probes.append(probe_readable(resolved))
+        if give_up_at is None:
+            job.thread.join()
+        else:
+            job.thread.join(timeout=max(0.0, give_up_at - time.monotonic()))
+
+
+def _collect(
+    ordered: list[Path], running: list[_InFlight | None], deadline_s: float | None, give_up_at: float | None
+) -> list[AccessProbe]:
+    """Each path's answer, or the no-answer probe for one still blocked or never started."""
+    probes: list[AccessProbe] = []
+    for path, job in zip(ordered, running, strict=True):
+        if job is None:
+            probes.append(_no_answer(path, deadline_s or 0.0, present=None))
+            continue
+        if give_up_at is not None and job.thread.is_alive():
+            probes.append(_no_answer(path, deadline_s or 0.0, present=job.present))
+            continue
+        if job.result is None:
+            raise RuntimeError(f"the access probe for {path} ended without an answer")
+        probes.append(job.result)
     return probes
 
 
@@ -165,13 +343,39 @@ def denied_roots(probes: list[AccessProbe]) -> list[str]:
     return [probe.path for probe in probes if probe.denied]
 
 
+def pending_roots(probes: list[AccessProbe]) -> list[str]:
+    """The paths that gave no answer in time: on a consent dialog, or a mount not answering.
+
+    Neither readable nor denied yet. An import may start on them, because the
+    import itself waits for every answer (``probe_all(..., deadline_s=None)``).
+    Read from the probes, never from the live listing threads: a listing that
+    answers between :func:`probe_all` returning and this call must not turn
+    a no-answer probe into a refusal (Codex on #6825).
+    """
+    return [probe.path for probe in probes if probe.pending]
+
+
+def unreadable_roots(probes: list[AccessProbe]) -> list[str]:
+    """Every path that could not be listed: refused, broken, or no answer yet.
+
+    A superset of :func:`denied_roots`. A listing still on its consent dialog
+    is neither readable nor denied, and must not count as readable either,
+    whether or not its existence was established before the deadline.
+    """
+    return [probe.path for probe in probes if probe.pending or (probe.exists and not probe.readable)]
+
+
 __all__ = [
     "CANDIDATE_MUSIC_FOLDERS",
     "GRANT_INSTRUCTIONS",
+    "MAX_PROBE_THREADS",
+    "PROBE_DEADLINE_S",
     "AccessProbe",
     "denied_roots",
     "music_folder_candidates",
     "music_root_access",
+    "pending_roots",
     "probe_all",
     "probe_readable",
+    "unreadable_roots",
 ]

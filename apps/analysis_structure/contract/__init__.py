@@ -19,14 +19,14 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-CONTRACT_VERSION = "analysis_structure/1"
+CONTRACT_VERSION = "analysis_structure/2"  # /2: phrases_source gains "own-fast" (STRUCT-06)
 
 PhraseSourceLane = Literal["rbx", "own"]
 """The PARITY-02 phrase selection lane a request asks for."""
 
 PHRASE_SOURCE_LANES: tuple[str, ...] = ("rbx", "own")
 
-PhrasesSourceName = Literal["rekordbox", "own", "none"]
+PhrasesSourceName = Literal["rekordbox", "own", "own-fast", "none"]
 """The ``phrases_source`` value a merged payload names."""
 
 
@@ -46,9 +46,12 @@ class StructureService(Protocol):
     """The operations outside code uses on song structure today."""
 
     def merge_own_phrases(
-        self, payload: dict[str, Any], stable_id: str, data_dir: Path, *, source: str
+        self, payload: dict[str, Any], stable_id: str, data_dir: Path, *, source: str, share: bool = False
     ) -> dict[str, Any]:
         """Return ``payload`` with ``phrases``/``phrases_source`` (and ``own_phrases``) merged.
+
+        ``share`` is the request's audio audience; a share request never starts
+        own-fast work, which reads only the local copy.
 
         Raises ``ValueError`` for a ``source`` outside ``PHRASE_SOURCE_LANES``.
         """

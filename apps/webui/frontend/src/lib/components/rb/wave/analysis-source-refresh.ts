@@ -145,7 +145,15 @@ export async function refreshAnalysisSourceDecks(
 	// one other caller (`_drainPendingRecordRefresh`'s record-change refresh,
 	// which owns its own generation guard, not a source-switch race) and for
 	// every test that calls this directly.
-	isSuperseded: () => boolean = () => false
+	isSuperseded: () => boolean = () => false,
+	// SECTIONS-ONLY (STRUCT-06, own-fast sections landed for these decks'
+	// tracks): the caller holds only those decks' scopes, not the all-deck +
+	// sync barrier (discussion_r4253771060 P1). So this path leaves every
+	// other track's cache entry and in-flight fetch alone (no generation bump,
+	// no invalidate-all), publishes ONLY the phrase-owned fields, and never
+	// touches the grid sink, bpm or key: a sections landing moves no grid, so
+	// nothing here can reach sync state the caller does not hold.
+	sectionsOnly = false
 ): Promise<'rekordbox' | 'own' | null> {
 	// Checked here too, before doing any work, not only at line 182: under
 	// sustained scheduler contention a new poll can queue and supersede its
@@ -159,9 +167,12 @@ export async function refreshAnalysisSourceDecks(
 	// stays: a call that was NOT superseded when it started can still lose a
 	// race to a newer one while its own fetches are in flight.
 	if (isSuperseded()) return null;
-	bumpAnlzFetchGeneration();
+	if (!sectionsOnly) {
+		bumpAnlzFetchGeneration();
+		ports.invalidateAllAnlzCacheEntries();
+	}
+	// Sections-only still discards its answer if a switch bumps this mid-flight.
 	const generationAtBatch = currentAnlzFetchGeneration();
-	ports.invalidateAllAnlzCacheEntries();
 	const wanted = new Map<string, DeckId[]>();
 	for (const deck of deckIds) {
 		const stableId = decks[deck].stable_id;
@@ -176,6 +187,7 @@ export async function refreshAnalysisSourceDecks(
 		if (holders === undefined) wanted.set(stableId, [deck]);
 		else holders.push(deck);
 	}
+	if (sectionsOnly) return _publishSectionsOnly(wanted, decks, ports, generationAtBatch);
 	const staged = await Promise.all(
 		[...wanted].map(async ([stableId, holders]) => {
 			const [fresh, track] = await Promise.all([
@@ -254,9 +266,10 @@ export async function refreshAnalysisSourceDecks(
 	// Merge each staged fetch onto whatever payload is CURRENTLY live for its
 	// track, keeping only the fields this switch is actually authoritative
 	// for: `beatgrid`, `beatgrid_source`, `beatgrid_own_unavailable_reason`,
-	// `waveform`, and `phrases` (waveform varies with the waveform lane;
+	// `waveform`, and the phrase fields (`phrases`, `phrases_source`,
+	// `own_phrases`, `phrase_moments`) (waveform varies with the waveform lane;
 	// phrases must stay in sync with the server so an emptied PSSI list is
-	// visible on a loaded deck).
+	// visible on a loaded deck, and a section refresh must bring its moments).
 	// A concurrent hot-cue write (`refreshHotCues`, audio-engine.svelte.ts:
 	// 3053-3054) can publish newer cues/loop data onto a holder's deck.anlz
 	// and the shared cache WHILE this staged `/anlz` fetch is still in
@@ -281,14 +294,21 @@ export async function refreshAnalysisSourceDecks(
 		const anlz: AnlzData =
 			base === null
 				? fresh
-				: {
+				: // The cast: a phrase-meta key the server did not send is carried as
+					// `undefined` (absent on the wire), never the base's stale value.
+					({
 						...base,
 						beatgrid: fresh.beatgrid,
 						beatgrid_source: fresh.beatgrid_source,
 						beatgrid_own_unavailable_reason: fresh.beatgrid_own_unavailable_reason,
 						waveform: fresh.waveform,
-						phrases: fresh.phrases
-					};
+						// Phrase-owned fields travel together: sections that just landed
+						// (own-fast, STRUCT-06) bring their source, status and drop moments.
+						phrases: fresh.phrases,
+						phrases_source: fresh.phrases_source,
+						own_phrases: fresh.own_phrases,
+						phrase_moments: fresh.phrase_moments
+					} as AnlzData);
 		return { stableId, holders, anlz, track };
 	});
 	// Collected, not awaited per-iteration (would serialize what the cache
@@ -330,4 +350,56 @@ export async function refreshAnalysisSourceDecks(
 	// `?? null` rather than a default: no loaded deck means nothing was served,
 	// which is not the same claim as "the server served rekordbox".
 	return [...served][0] ?? null;
+}
+
+/** The sections-only refresh (STRUCT-06): ONE `/anlz` read per track, no
+ * `/tracks/{id}` row fetch and no cross-source provenance checks
+ * (discussion_r4260719119), so the deck scopes the caller holds are held for
+ * the least network work. Only phrase-owned fields are published onto the
+ * holding decks; the shared cache is not written (the caller already evicted
+ * the track's entry, and publishing would notify the grid sink). Returns null:
+ * a sections landing says nothing about which source is served. */
+async function _publishSectionsOnly(
+	wanted: Map<string, DeckId[]>,
+	decks: Record<DeckId, AnalysisSourceRefreshDeck>,
+	ports: AnalysisSourceRefreshPorts,
+	generationAtBatch: number
+): Promise<null> {
+	const staged = await Promise.all(
+		[...wanted].map(async ([stableId, holders]) => ({
+			stableId,
+			holders,
+			fresh: await ports.fetchAnlzBypassingHttpCache(stableId)
+		}))
+	);
+	// A source switch mid-flight owns the decks now; its own refresh republishes.
+	if (currentAnlzFetchGeneration() !== generationAtBatch) return null;
+	for (const { stableId, holders, fresh } of staged) {
+		const phrases = {
+			phrases: fresh.phrases,
+			phrases_source: fresh.phrases_source,
+			own_phrases: fresh.own_phrases,
+			phrase_moments: fresh.phrase_moments
+		};
+		for (const deck of holders) {
+			const current = decks[deck];
+			if (current.stable_id !== stableId) continue;
+			// Sections cut on another grid (another client switched the source
+			// before this tab saw it) must not land over the bars this deck draws;
+			// the source-switch refresh replaces the whole payload instead.
+			if (current.anlz !== null && !_sameBeatgrid(current.anlz, fresh)) continue;
+			current.anlz = rawAnlz(current.anlz === null ? fresh : ({ ...current.anlz, ...phrases } as AnlzData));
+		}
+	}
+	return null;
+}
+
+/** Whether ``fresh`` was served on the grid ``current`` draws: same lane and,
+ * when the deck holds a real grid, the same beats. */
+function _sameBeatgrid(current: AnlzData, fresh: AnlzData): boolean {
+	if (current.beatgrid_source !== undefined && current.beatgrid_source !== fresh.beatgrid_source)
+		return false;
+	const held = current.beatgrid;
+	if (held === undefined || held === null || !(held.beat_count > 0)) return true;
+	return JSON.stringify(held.beats) === JSON.stringify(fresh.beatgrid?.beats);
 }

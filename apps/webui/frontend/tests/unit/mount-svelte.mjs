@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { build } from 'esbuild';
+import { build } from './esbuild-tsconfig.mjs';
 import { compile } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';

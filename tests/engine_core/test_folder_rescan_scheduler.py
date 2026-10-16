@@ -3,7 +3,7 @@
 Contract: ``apps/engine_core/setup/folder_rescan_scheduler.py``. No CLI, no
 mocked reconcile in the lifecycle tests -- only the backoff and single-flight
 tests inject a test-seam ``reconcile_fn`` (the same pattern
-``tests/cloudsync/test_cloudsync_scheduler.py`` uses for its ``sync_fn``),
+``(private path)`` uses for its ``sync_fn``),
 because forcing a slow or failing REAL reconcile round deterministically
 would need its own filesystem race.
 
@@ -375,3 +375,89 @@ def test_a_malformed_setup_record_idles_rather_than_crashing_the_loop(tmp_path: 
         return scheduler.rounds_started
 
     assert asyncio.run(scenario()) == 0
+
+
+# ----- Settings > watched folders (FWATCH-01, LIBM-129) -------------------
+
+
+def _write_ui_prefs(data_dir: Path, payload: object) -> None:
+    import json
+
+    state = data_dir / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / fr_scheduler.UI_PREFS_FILENAME).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_ui_prefs_filename_matches_the_route_that_writes_it() -> None:
+    from apps.webui.server.routes import ui_prefs
+
+    assert fr_scheduler.UI_PREFS_FILENAME == ui_prefs._FILENAME
+
+
+def test_settings_watched_folders_are_watched_with_no_folder_import(tmp_path: Path) -> None:
+    """[if] Settings lists a folder on a rekordbox-only setup [then] it is a root."""
+    setup_record.write(tmp_path, setup_record.SetupRecord(dismissed=True, last_import={"kind": "rekordbox"}))
+    _write_ui_prefs(tmp_path, {"library_watcher_folders": ["/watched/a", "/watched/b"]})
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    assert scheduler._roots() == [Path("/watched/a"), Path("/watched/b")]
+
+
+def test_settings_folders_join_setup_roots_without_duplicates(tmp_path: Path) -> None:
+    _mark_folder_import(tmp_path, ["/music", "/shared"])
+    _write_ui_prefs(tmp_path, {"library_watcher_folders": ["/shared", "/extra"]})
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    assert scheduler._roots() == [Path("/music"), Path("/shared"), Path("/extra")]
+
+
+def test_no_prefs_file_leaves_the_setup_roots_alone(tmp_path: Path) -> None:
+    _mark_folder_import(tmp_path, ["/music"])
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    assert scheduler._roots() == [Path("/music")]
+
+
+def test_malformed_watched_folders_are_logged_and_setup_roots_still_watched(tmp_path: Path, caplog) -> None:
+    _mark_folder_import(tmp_path, ["/music"])
+    _write_ui_prefs(tmp_path, {"library_watcher_folders": "/not-a-list"})
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    with caplog.at_level("ERROR"):
+        assert scheduler._roots() == [Path("/music")]
+    assert "library_watcher_folders is not a list" in caplog.text
+
+
+def test_a_folder_added_in_settings_after_boot_starts_rounds(tmp_path: Path) -> None:
+    """[if] the user adds a watched folder while idle [then] rounds start, no restart."""
+    seen: list[list[Path]] = []
+
+    def counting_reconcile(writer, roots, previous_signature):
+        seen.append(list(roots))
+        return _empty_report()
+
+    music = tmp_path / "music"
+    music.mkdir()
+
+    async def scenario() -> None:
+        scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST, reconcile_fn=counting_reconcile)
+        await scheduler.start()
+        try:
+            await asyncio.sleep(4 * _FAST.BEAT_INTERVAL_S)
+            assert scheduler.rounds_started == 0
+            _write_ui_prefs(tmp_path, {"library_watcher_folders": [str(music)]})
+            await _until(scheduler, lambda: scheduler.rounds_started >= 1, "first round")
+        finally:
+            await scheduler.stop()
+
+    asyncio.run(scenario())
+    assert seen and seen[0] == [music]
+
+
+def test_a_relative_watched_folder_is_skipped_and_logged(tmp_path: Path, caplog) -> None:
+    _write_ui_prefs(tmp_path, {"library_watcher_folders": ["relative/music", "/abs/music"]})
+    scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
+
+    with caplog.at_level("ERROR"):
+        assert scheduler._roots() == [Path("/abs/music")]
+    assert "non-absolute" in caplog.text

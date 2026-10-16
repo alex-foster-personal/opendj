@@ -338,6 +338,19 @@ export async function createPlaylist(name: string): Promise<PlaylistRowWire> {
 	}
 }
 
+/** PUT /playlist-tree/order - the user's playlist tree order, top to bottom
+ * (LIBTREE-01). The tree reads it back as each playlist's `seq`. */
+export async function putPlaylistTreeOrder(order: string[]): Promise<string[]> {
+	try {
+		return (await unwrap(api.PUT('/api/v1/playlist-tree/order', { body: { order } }))).order;
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new Error(`reorder playlists failed (${error.status}): ${_messageOf(error)}`);
+		}
+		throw error;
+	}
+}
+
 export type PlaylistPatchBody = {
 	name?: string;
 	forbid_duplicates?: boolean;

@@ -58,6 +58,11 @@ export type PlaylistTreeProps = {
 	 * drop targets, same absent-means-inert convention as above.
 	 */
 	ondroptracks?: (playlistId: string, stableIds: string[]) => void;
+	/** LIBTREE-01: a playlist row dragged above or below another. Absent =
+	 * rows only drag onto the pane tab bar, as before. */
+	onmoveplaylist?: (movedId: string, targetId: string, place: import('./playlist-tree-order').DropPlace) => void;
+	/** LIBTREE-02: Playlists header menu, Sort playlists A-Z. */
+	onsortplaylists?: () => void;
 	/** Finder folder dropped on the playlist tree panel (issue #3182). */
 	onfolderdrop?: (event: DragEvent) => void | Promise<void>;
 	/** Autolists tab bucket multi-select; absent = bucket clicks are inert. */

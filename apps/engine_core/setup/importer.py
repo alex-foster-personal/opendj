@@ -138,10 +138,20 @@ def run_import(
         rekordbox_tracks=analyses["rekordbox_linked"],
         share_root=str(detect.resolve_share_root()),
         rekordbox_was_running=was_running,
-        unreadable_music_roots=detect.denied_roots(detect.music_root_access()),
+        unreadable_music_roots=_music_roots_not_read(),
     )
     record.set_last_import(data_dir, outcome.to_dict())
     return outcome
+
+
+def _music_roots_not_read() -> list[str]:
+    """Every music root this import could not read: refused, broken, or no answer in time.
+
+    Not just the denied ones: a root still on its consent dialog when the
+    import finishes was not read either, and the Done screen must say so
+    (Codex on #6825).
+    """
+    return detect.unreadable_roots(detect.music_root_access())
 
 
 @dataclasses.dataclass
@@ -224,7 +234,7 @@ def run_folder_import(
     emit(detect_at, "detect: loading state writer")
     from apps.shared.state.writer import StateWriter
     emit(detect_at, f"detect: probing {len(roots)} folder(s)")
-    probes = fs_access.probe_all(roots)
+    probes = fs_access.probe_all(roots, deadline_s=None)
     emit(detect_at, f"detect: checking {len(probes)} folder(s)")
     denied = fs_access.denied_roots(probes)
     if denied and not any(probe.readable for probe in probes):
@@ -238,6 +248,16 @@ def run_folder_import(
         raise SetupImportError(
             detect.CODE_REKORDBOX_NOT_FOUND,
             f"no such folder: {', '.join(missing)}",
+        )
+    if not any(probe.readable for probe in probes):
+        # Present but unlistable for another reason (not a directory, an I/O
+        # error from a mount that finally answered): refuse rather than record
+        # a zero-track import as a success. The enqueue preflight lets a root
+        # still on its dialog through, so this is where its late answer lands.
+        raise SetupImportError(
+            detect.CODE_REKORDBOX_NOT_FOUND,
+            "none of these folders could be read: "
+            + "; ".join(f"{probe.path} {probe.detail}" for probe in probes),
         )
 
     state_path = data_dir / "state" / detect.STATE_DB_NAME

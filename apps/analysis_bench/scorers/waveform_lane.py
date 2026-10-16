@@ -23,6 +23,8 @@ every band and increments `n_omitted`.
 from __future__ import annotations
 
 import json
+
+from apps.analysis_bench.scorers.bundle_guards import refuse_unknown
 import math
 from pathlib import Path
 from typing import Any
@@ -68,16 +70,6 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     return manifest, tracks
 
 
-def _refuse_unknown(results: dict[str, Any], stable_ids: list[str]) -> None:
-    unknown = sorted(set(results) - set(stable_ids))
-    if unknown:
-        raise ValueError(
-            f"this arm answered {len(unknown)} fixture(s) the bundle does not contain, "
-            f"first {unknown[0]!r}. It was run against a different fixture set; "
-            "scoring it here would attribute one bundle's numbers to another."
-        )
-
-
 def _finite_r(value: float) -> float:
     return value if math.isfinite(value) else _FLOOR_R
 
@@ -111,7 +103,7 @@ def _score_arm(
     bundle: Path, tracks: list[dict[str, Any]], results: dict[str, Any]
 ) -> dict[str, Any]:
     stable_ids = [track["stable_id"] for track in tracks]
-    _refuse_unknown(results, stable_ids)
+    refuse_unknown(results, stable_ids)
     per_band: dict[str, list[float]] = {name: [] for name in BAND_NAMES}
     n_omitted = 0
     for track in tracks:

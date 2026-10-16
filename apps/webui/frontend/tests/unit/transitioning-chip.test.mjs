@@ -1,5 +1,5 @@
 /**
- * TRANS-01: TopBar pill sits immediately right of the vibe meter.
+ * TRANS-01: TopBar pill sits immediately right of the feedback thumbs (vibe meter removed, R10).
  *
  * [if] decks 1 and 2 are both active and the default mixer is at xfader 0.5
  *   with faders at 1 [then] the TopBar pill shows transitioning
@@ -26,16 +26,16 @@ const LIGHT = readFileSync(
 	'utf8'
 );
 
-test('TopBar mounts TransitioningChip immediately after the vibe slot', () => {
+test('TopBar mounts TransitioningChip immediately after the thumbs slot', () => {
 	const chipAt = TOPBAR.indexOf('<TransitioningChip />');
-	const vibeSlotAt = TOPBAR.indexOf('vibe-slot');
-	const vibeMeterAt = TOPBAR.indexOf('<VibeMeter />');
+	const vibeSlotAt = TOPBAR.indexOf('thumbs-slot');
+	const vibeMeterAt = TOPBAR.indexOf('<FeedbackThumbs />');
 	const pairingAt = TOPBAR.indexOf('topbar-slot-pairing');
 	const pairingLabelAt = TOPBAR.indexOf('Create pairing');
 	assert.ok(chipAt >= 0, 'TopBar must render TransitioningChip');
-	assert.ok(vibeSlotAt >= 0 && vibeMeterAt >= 0, 'TopBar must keep the vibe slot');
-	assert.ok(chipAt > vibeSlotAt, 'chip must sit after vibe-slot');
-	assert.ok(chipAt > vibeMeterAt, 'chip must sit after VibeMeter');
+	assert.ok(vibeSlotAt >= 0 && vibeMeterAt >= 0, 'TopBar must keep the thumbs slot');
+	assert.ok(chipAt > vibeSlotAt, 'chip must sit after thumbs-slot');
+	assert.ok(chipAt > vibeMeterAt, 'chip must sit after FeedbackThumbs');
 	assert.ok(chipAt < pairingAt, 'chip must sit before the Create pairing cluster');
 	assert.ok(chipAt < pairingLabelAt, 'chip must sit before the Create pairing label');
 });

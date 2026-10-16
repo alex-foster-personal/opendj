@@ -19,6 +19,7 @@
 import type { Client } from 'openapi-fetch';
 
 import { ApiError, api, unwrap } from './api/client';
+import type { components } from './api-types';
 
 // ----------------------------------------------------------- types
 
@@ -166,6 +167,11 @@ export interface CloudSyncIdentityBacklog {
 	hash_pending: number;
 }
 
+/** The policy gate's verdict on a change set (generated from the daemon's OpenAPI). */
+export type PolicyOutcome = components['schemas']['PolicyOutcomeOut'];
+export type PolicyApplyBody = components['schemas']['PolicyApplyIn'];
+export type PolicyChanges = components['schemas']['PolicyChangesIn'];
+
 // ----------------------------------------------------------- local path table
 
 type CloudSyncPaths = {
@@ -263,4 +269,52 @@ export async function getStatus(): Promise<CloudSyncStatus> {
 
 export async function getIdentityBacklog(): Promise<CloudSyncIdentityBacklog> {
 	return unwrap(cloudSyncApi.GET('/api/v1/cloudsync/identity-backlog', {}));
+}
+
+/**
+ * Clear one policy cell back to unset (`policy unset --live` twin):
+ * DELETE /api/v1/cloudsync/policies/{machine_id}/{asset_kind}. The backend
+ * writes a synced tombstone; an unset cell then means this machine keeps that
+ * kind local-only (CLOUDSYNC-33). 404 MACHINE_NOT_FOUND / POLICY_NOT_FOUND,
+ * 409 POLICY_VIOLATION when the gate blocks. Uses the generated `paths`.
+ */
+export async function deletePolicy(machineId: string, assetKind: AssetKind): Promise<PolicyOutcome> {
+	return unwrap(
+		api.DELETE('/api/v1/cloudsync/policies/{machine_id}/{asset_kind}', {
+			params: { path: { machine_id: machineId, asset_kind: assetKind } }
+		})
+	);
+}
+
+/** Gate and (unless dry_run) write one change set: POST /policies/apply. */
+export async function applyPolicyChanges(body: PolicyApplyBody): Promise<PolicyOutcome> {
+	return unwrap(api.POST('/api/v1/cloudsync/policies/apply', { body }));
+}
+
+/** A live change set that removes exactly one playlist pin and nothing else. */
+export function pinRemovalBody(machineId: string, playlistId: string): PolicyApplyBody {
+	return {
+		changes: {
+			defaults: [],
+			excluded_tables: [],
+			pins: [],
+			policies: [],
+			removed_pins: [{ machine_id: machineId, playlist_id: playlistId }],
+			removed_policies: []
+		},
+		dry_run: false
+	};
+}
+
+/**
+ * Unpin one playlist on one machine (`policy` CLI twin via /policies/apply,
+ * dry_run false). Throws unless the backend reports the change WRITTEN: a
+ * 2xx that wrote nothing is not an unpin.
+ */
+export async function removePlaylistPin(machineId: string, playlistId: string): Promise<PolicyOutcome> {
+	const outcome = await applyPolicyChanges(pinRemovalBody(machineId, playlistId));
+	if (!outcome.written) {
+		throw new Error(`The pin for playlist ${playlistId} was not removed (the policy gate wrote nothing).`);
+	}
+	return outcome;
 }

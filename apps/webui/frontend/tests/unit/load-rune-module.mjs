@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import { build } from 'esbuild';
+import { build } from './esbuild-tsconfig.mjs';
 import { compileModule } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';

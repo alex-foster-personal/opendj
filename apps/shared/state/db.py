@@ -13,6 +13,7 @@ from __future__ import annotations
 import atexit
 import math
 import sqlite3
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -87,9 +88,46 @@ def _checked_busy_timeout_s(busy_timeout_s: float) -> float:
     return busy_timeout_s
 
 
+# Pause between attempts to switch a rollback-journal database into WAL while
+# another connection holds a write lock on it (see _switch_to_wal).
+_WAL_SWITCH_RETRY_S = 0.02
+
+
+def _switch_to_wal(conn: sqlite3.Connection, busy_timeout_s: float) -> None:
+    """Run ``PRAGMA journal_mode = WAL``, waiting out a writer for up to ``busy_timeout_s``.
+
+    On a database still in rollback-journal mode (a fresh state.db that
+    another process is creating), SQLite answers this pragma with
+    ``database is locked`` AT ONCE while another connection holds a RESERVED
+    lock: the busy handler is not consulted (measured: 0.00 s with a 2 s
+    timeout). Two processes opening a fresh data dir together, the engine
+    and its folder-import worker, hit exactly that window, and the worker
+    died with exit 1. So retry it until the same bound every other
+    statement on this handle gets, then raise as they would. Each attempt
+    gets only the time still left: a writer that upgrades to EXCLUSIVE late
+    in the window makes SQLite run its busy handler, and with the handle's
+    full timeout that one attempt would carry the wait past the bound.
+    """
+    deadline = time.monotonic() + busy_timeout_s
+    while True:
+        remaining_ms = max(1, math.ceil((deadline - time.monotonic()) * 1000))
+        conn.execute(f"PRAGMA busy_timeout = {remaining_ms}")
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.OperationalError as exc:
+            if not is_sqlite_busy(exc) or time.monotonic() >= deadline:
+                raise
+        else:
+            return
+        time.sleep(_WAL_SWITCH_RETRY_S)
+
+
 def _apply_rw_pragmas(conn: sqlite3.Connection, busy_timeout_s: float) -> None:
     for key, value in _RW_PRAGMAS:
-        conn.execute(f"PRAGMA {key} = {value}")
+        if key == "journal_mode" and value == "WAL":
+            _switch_to_wal(conn, busy_timeout_s)
+        else:
+            conn.execute(f"PRAGMA {key} = {value}")
     conn.execute(f"PRAGMA busy_timeout = {round(busy_timeout_s * 1000)}")
 
 

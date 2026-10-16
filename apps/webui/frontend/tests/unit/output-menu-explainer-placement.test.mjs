@@ -63,6 +63,31 @@ test('the I/O button still opens and closes the I/O view itself (control)', () =
 	assert.match(cluster, /\{#if ioSurface\.open\}/);
 	assert.match(cluster, /aria-label="Close audio I\/O settings" onclick=\{closeIo\}/);
 	assert.match(cluster, /function closeIo\(\): void \{[^}]*closeIoView\(\);/);
+	// Pin 5d0378165889: the second primary click outside the panel hides it.
+	// Real presses on the rendered panel: tests/e2e/io-panel-two-outside-presses.spec.ts.
+	assert.match(cluster, /onpointerdowncapture=\{onIoOutsidePointerDown\}/);
+	assert.match(cluster, /ioOutsideClicks >= 2/);
+	assert.match(cluster, /Two clicks outside, Esc, or X to dismiss/);
+});
+
+test('every press on a select arms the skip; :open decides at the root hit (Codex P1 4286568922, P2 4286965506)', () => {
+	// The skip is decided when the root hit arrives, from the select's own
+	// :open. A press that closes the menu, or a menu canceled with Escape, reads
+	// closed there and skips nothing. WebKit before Safari 26.5 (macOS 14's
+	// WKWebView) does not know :open; CSS.supports reports that up front and the
+	// armed flag decides: at worst one extra outside press. Any other failure of
+	// matches(':open') propagates instead of reading as an open menu (Sol P1
+	// 4290994508). Chromium is driven for real by
+	// tests/e2e/io-panel-two-outside-presses.spec.ts; no hermetic engine here
+	// lacks :open, so the fallback is pinned at the source.
+	assert.match(cluster, /const OPEN_PSEUDO_SUPPORTED = typeof CSS !== 'undefined' && CSS\.supports\('selector\(:open\)'\);/);
+	assert.match(cluster, /if \(!OPEN_PSEUDO_SUPPORTED\) return true;\s*return ioSelectMenuOwner\.matches\(':open'\);/);
+	assert.doesNotMatch(cluster, /catch \{\s*return true;/, 'a caught selector error must not read as an open menu');
+	assert.match(
+		cluster,
+		/const select = target instanceof Element \? target\.closest\('select'\) : null;\s*if \(select !== null\) \{\s*ioSelectMenuOpen = true;\s*ioSelectMenuOwner = select;/
+	);
+	assert.doesNotMatch(cluster, /closesOpenMenu/);
 });
 
 test('ControlExplainer accepts right placement and anchors to the real trigger rect', () => {

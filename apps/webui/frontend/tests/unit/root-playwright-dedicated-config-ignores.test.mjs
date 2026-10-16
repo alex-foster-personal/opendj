@@ -24,7 +24,10 @@
  * - [if] a spec is on the deliberate double-run allowlist
  *   [then] it is not reported, because running under both harnesses is its
  *   documented behaviour.
- * - [if] a dedicated config's testMatch is a regex or an expression
+ * - [if] a dedicated config's testMatch is a regex literal
+ *   [then] it is matched against the spec files in tests/e2e, and a regex that
+ *   matches none of them fails rather than claiming nothing.
+ * - [if] a dedicated config's testMatch is an expression
  *   [then] it is skipped rather than guessed at, and the skip is counted so a
  *   parser that silently matched nothing cannot pass as a green check.
  */
@@ -51,10 +54,19 @@ const DELIBERATE_DOUBLE_RUNS = new Set([
 	'zz-autoplay-playlist-switch.spec.ts'
 ]);
 
-/** The specs named by a config's TOP-LEVEL testMatch, or null if it is not a literal. */
+/** Every spec file in tests/e2e, which a regex testMatch is matched against. */
+const E2E_SPECS = readdirSync(E2E_DIR).filter((name) => name.endsWith('.spec.ts'));
+
+/** The specs named by a config's TOP-LEVEL testMatch, or null if it is an expression. */
 function declaredSpecs(source) {
 	const single = source.match(/^\ttestMatch: '([^']+)',$/m);
 	if (single) return [single[1]];
+	// A regex literal is matched against the real spec files, as Playwright
+	// does. Skipping it let the onboarding gauntlet run under the root
+	// harness's 30 s timeout as well as its own 240 s one, and its import
+	// wait (150 s budget) timed out there on a loaded runner, red on main.
+	const regex = source.match(/^\ttestMatch: \/(.+)\/([a-z]*),$/m);
+	if (regex) return E2E_SPECS.filter((name) => new RegExp(regex[1], regex[2]).test(name));
 	const list = source.match(/^\ttestMatch: \[\n([\s\S]*?)^\t\],$/m);
 	if (!list) return null; // a regex, or an expression such as `process.env.X ?? '...'`
 	const entries = [...list[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
@@ -88,6 +100,7 @@ test('if a dedicated Playwright config claims a spec then the root config ignore
 			unparsed.push(config);
 			continue;
 		}
+		assert.ok(specs.length > 0, `${config}'s testMatch matched no spec file, so it claims nothing this check can see`);
 		for (const spec of specs) {
 			if (DELIBERATE_DOUBLE_RUNS.has(spec)) continue;
 			if (!isIgnored.some((matches) => matches(spec))) {

@@ -107,6 +107,10 @@ export default defineConfig({
 		// start. Collected here it could only ever report ERR_CONNECTION
 		// REFUSED. Added with the spec in 1f97fe0dd (#2722), missed then.
 		'**/fresh-install-onboarding.spec.ts', // playwright.preflight-gate.config.ts (empty-library backend)
+		// Each gauntlet test boots its own packaged engine and waits up to
+		// 150 s for an import; under this config's 30 s timeout that wait was
+		// cut off on a loaded runner, red on main 9ad2544a11 (Fri 16 Oct 2026).
+		'**/onboarding-gauntlet-*.spec.ts', // playwright.onboarding.config.ts (own engine per test, 240 s timeout)
 		'**/cloudsync-ui.spec.ts', // playwright.cloudsync-ui.config.ts (real hub + spoke engines)
 		'**/savepoint-smoke.spec.ts', // playwright.savepoint.config.ts (real library)
 		'**/webkit-deckload.spec.ts', // playwright.webkit-deckload.config.ts (built artifact)

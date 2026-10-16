@@ -156,9 +156,21 @@
 		movePlaylistItems,
 		PlaylistConflictError,
 		patchPlaylist,
+		putPlaylistTreeOrder,
 		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
+	import {
+		compareTreeOrder,
+		createLatestRead,
+		createTreeOrderWriter,
+		movePlaylistInOrder,
+		nameSortedIds,
+		treeOrderIds,
+		type DropPlace
+		// Through browser-panel-support so BrowserPanel's import fan-out stays
+		// at main's figure (frontend.max_fan_out ratchet).
+	} from './browser/browser-panel-support';
 	import {
 		bootPlaylistsPrefetch,
 		bootTracksPrefetch,
@@ -636,19 +648,10 @@
 					isWithinCreateGrace(p.playlist_id) ||
 					!playlistMostlyBroken(p)
 			)
-			// Rekordbox custom tree order (djmdPlaylist Seq walk, SCREENSHOT-SPEC
-			// 5b) - NOT alphabetical. Playlists without a rekordbox order (seq
-			// null) sink below the ordered ones, name-sorted among themselves.
-			.sort((a, b) => {
-				// `seq` is optional as well as nullable in PlaylistSummary, so an
-				// absent key means the same "no rekordbox order" as a null one.
-				const aSeq = a.seq ?? null;
-				const bSeq = b.seq ?? null;
-				if (aSeq !== null && bSeq !== null) return aSeq - bSeq;
-				else if (aSeq !== null) return -1;
-				else if (bSeq !== null) return 1;
-				else return a.name.localeCompare(b.name);
-			})
+			// The user's tree order (LIBTREE-01), else the rekordbox Seq walk
+			// (SCREENSHOT-SPEC 5b) - NOT alphabetical. Playlists with neither
+			// sink below the ordered ones, name-sorted among themselves.
+			.sort(compareTreeOrder)
 			.map(
 				(p): PlaylistNode => ({
 					playlist_id: p.playlist_id,
@@ -1605,11 +1608,21 @@
 		}
 	}
 
+	// LIBTREE-01/02: only the newest playlist re-read repaints, so a slow GET
+	// from an earlier tree-order event cannot put an older order back.
+	// Every direct playlist read goes through it (refresh, blank sweep, create).
+	const _readPlaylists = createLatestRead(listPlaylistsHydrated);
+
 	async function _refreshPlaylists(): Promise<void> {
 		try {
-			playlists = await listPlaylistsHydrated();
-			_playlistsWriteEpoch += 1;
-			await _sweepBlankPlaylists(playlists);
+			await _readPlaylists(async (rows) => {
+				// Codex P2 on #6186 (r4265141178, r4266059809): rows read while a
+				// tree order write is busy can predate it; every reader keeps the
+				// newest optimistic order over them. The writer refreshes once idle.
+				playlists = _writePlaylistTreeOrder.overlay(rows);
+				_playlistsWriteEpoch += 1;
+				await _sweepBlankPlaylists(playlists);
+			});
 		} catch (exc) {
 			console.error(`[playlists] refresh failed: ${String(exc)}`);
 		}
@@ -1795,7 +1808,9 @@
 			}
 		}
 		if (deletedAny) {
-			playlists = await listPlaylistsHydrated();
+			await _readPlaylists((rows) => {
+				playlists = _writePlaylistTreeOrder.overlay(rows);
+			});
 		}
 	}
 
@@ -1805,7 +1820,9 @@
 			const created = await createPlaylist(DEFAULT_PLAYLIST_NAME);
 			markPlaylistCreateGrace(created.playlist_id);
 			// Refresh without sweeping away the brand-new blank (still in grace).
-			playlists = await listPlaylistsHydrated();
+			await _readPlaylists((rows) => {
+				playlists = _writePlaylistTreeOrder.overlay(rows);
+			});
 			return created.playlist_id;
 		} catch (exc) {
 			pushToast(`create playlist failed: ${String(exc)}`, 'error');
@@ -1837,6 +1854,29 @@
 		} catch (exc) {
 			pushToast(`forbid duplicates failed: ${String(exc)}`, 'error');
 		}
+	}
+
+	/** LIBTREE-01/02: store a new tree order. Repaints at once, then writes one
+	 * PUT at a time so the newest drag is the last order stored; a failed write
+	 * puts the pre-write ORDER back on the current rows even if the server cannot be re-read. */
+	const _writePlaylistTreeOrder = createTreeOrderWriter({
+		read: () => playlists,
+		write: (rows) => {
+			playlists = rows;
+		},
+		put: putPlaylistTreeOrder,
+		refresh: _refreshPlaylists,
+		notify: pushToast
+	});
+
+	function movePlaylistUi(movedId: string, targetId: string, place: DropPlace): void {
+		const next = movePlaylistInOrder(treeOrderIds(playlists), movedId, targetId, place);
+		// The row moving under the pointer is the confirmation; no toast.
+		if (next !== null) void _writePlaylistTreeOrder(next);
+	}
+
+	function sortPlaylistsByNameUi(): void {
+		void _writePlaylistTreeOrder(nameSortedIds(playlists), 'Playlists sorted A-Z');
 	}
 
 	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
@@ -3464,6 +3504,8 @@
 				onduplicateplaylist={(n) => void duplicatePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
 				onfolderdrop={(e) => void folderDropOnPlaylistTree(e)}
+				onmoveplaylist={movePlaylistUi}
+				onsortplaylists={sortPlaylistsByNameUi}
 			/>
 		{/if}
 	</div>

@@ -189,7 +189,8 @@ test('Remove from playlist exists only inside a playlist', () => {
 test('tree folders get no Duplicate/Forbid duplicates and the root has no dead items (rows 6-8)', () => {
 	assert.deepEqual(
 		registry.menuFor({ kind: 'playlists-root' }, {}).map((i) => i.id),
-		['new-playlist', 'new-smartlist']
+		// LIBTREE-02: Sort A-Z is a live item with a route, not a dead one.
+		['new-playlist', 'new-smartlist', 'sort-name']
 	);
 	assert.deepEqual(
 		registry.menuFor({ kind: 'playlist-folder' }, {}).map((i) => i.id),

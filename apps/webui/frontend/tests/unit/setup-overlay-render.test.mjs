@@ -287,6 +287,28 @@ test('welcome: a status that loaded offers no Try again (control)', () => {
 	assert.doesNotMatch(text, /could not be read yet/);
 });
 
+test('detect: a folder that has not answered yet shows the incomplete-count warning', () => {
+	const waiting = {
+		path: '/Users/dj/Desktop',
+		exists: true,
+		readable: false,
+		denied: false,
+		pending: true,
+		detail: 'no answer within 2 s: macOS may be waiting on a permission dialog'
+	};
+	mod.setupWizard.status = status({
+		permissions: { all_readable: false, denied: [], roots: [waiting], how_to_grant: '' }
+	});
+	mod.setupWizard.step = 'detect';
+
+	const text = assertClean(render(), 'detect');
+	assert.match(text, /have not answered yet \(1\)/);
+
+	// Control: with every folder readable the detect step shows no warning.
+	mod.setupWizard.status = status();
+	assert.doesNotMatch(visibleText(render()), /have not answered yet/);
+});
+
 test('done: counts render and the denied roots stay in the agent channel', () => {
 	mod.setupWizard.status = status({
 		library_empty: false,

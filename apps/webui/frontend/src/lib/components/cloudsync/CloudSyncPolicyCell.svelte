@@ -2,17 +2,22 @@
 	/**
 	 * One cell of the /cloudsync policy matrix. An absent row reads 'unset'
 	 * and is never shown or saved as 'stream' (the backend refuses a default).
+	 * 'unset' is offered on every cell: picking it on a stored cell clears the
+	 * row (DELETE /policies/{machine_id}/{asset_kind}), and an unset cell means
+	 * this machine keeps that kind local-only (CLOUDSYNC-33).
 	 * The budget input is live only while the STORED mode is cached.
 	 */
-	import { putPolicy, SYNC_MODES, type AssetKind, type SyncPolicy } from '$lib/api-cloudsync';
+	import { policyErrorMessage, SYNC_MODES, type AssetKind, type SyncPolicy } from '$lib/api-cloudsync';
 
 	import {
-		INERT_TOOLTIP,
 		UNSET,
+		UNSET_OPTION_TITLE,
+		commitPolicyDecision,
 		policyBudgetChange,
 		policyCellView,
+		policyClearedNote,
 		policyModeChange,
-		type PolicyPutDecision
+		type PolicyModeDecision
 	} from './cloudsync-view';
 
 	interface Props {
@@ -22,11 +27,14 @@
 		kindLabel: string;
 		policy: SyncPolicy | undefined;
 		onSaved: (saved: SyncPolicy) => void;
+		/** The stored row was cleared back to unset; `note` is info, never an error. */
+		onCleared: (machineId: string, assetKind: AssetKind, note: string) => void;
 		/** A refusal or failed save, for the page to surface (its toast). */
 		onError: (message: string) => void;
 	}
 
-	let { machineId, machineName, assetKind, kindLabel, policy, onSaved, onError }: Props = $props();
+	let { machineId, machineName, assetKind, kindLabel, policy, onSaved, onCleared, onError }: Props =
+		$props();
 
 	const view = $derived(policyCellView(policy));
 	let selectEl: HTMLSelectElement | undefined = $state();
@@ -38,16 +46,23 @@
 		if (budgetEl) budgetEl.value = policy?.cache_budget_mb?.toString() ?? '';
 	}
 
-	async function apply(decision: PolicyPutDecision, what: string): Promise<void> {
+	async function apply(decision: PolicyModeDecision, what: string): Promise<void> {
+		if (decision.kind === 'noop') return;
 		if (decision.kind === 'refuse') {
 			onError(decision.reason);
 			snapBackToStored();
 			return;
 		}
 		try {
-			onSaved(await putPolicy(decision.body));
+			const result = await commitPolicyDecision(decision);
+			if (result.kind === 'saved') {
+				onSaved(result.policy);
+			} else {
+				onCleared(result.machineId, result.assetKind, policyClearedNote(kindLabel, machineName, result.outcome));
+			}
 		} catch (exc) {
-			onError(`Failed to save ${what}: ${exc instanceof Error ? exc.message : String(exc)}`);
+			const verb = decision.kind === 'delete' ? 'clear' : 'save';
+			onError(`Failed to ${verb} ${what}: ${policyErrorMessage(exc)}`);
 			snapBackToStored();
 		}
 	}
@@ -56,7 +71,7 @@
 <td class="policy-cell" data-testid="cloudsync-policy-cell" data-asset-kind={assetKind}>
 	<select
 		bind:this={selectEl}
-		title={`Sync mode for ${kindLabel} on ${machineName}${view.mode === UNSET ? ' (no policy stored; the backend refuses to default one)' : ''}`}
+		title={`Sync mode for ${kindLabel} on ${machineName}${view.mode === UNSET ? ' (unset: no policy stored, so this machine keeps it local-only)' : ''}`}
 		value={view.mode}
 		class:unset={view.mode === UNSET}
 		onchange={(e) =>
@@ -65,13 +80,7 @@
 				'policy'
 			)}
 	>
-		{#if view.mode === UNSET}
-			<option
-				value={UNSET}
-				title={`No policy is stored for this cell. Picking a mode stores one; clearing a stored policy back to unset is ${INERT_TOOLTIP}`}
-				>{UNSET}</option
-			>
-		{/if}
+		<option value={UNSET} title={UNSET_OPTION_TITLE}>{UNSET}</option>
 		{#each SYNC_MODES as mode (mode)}
 			<option value={mode}>{mode}</option>
 		{/each}

@@ -13,7 +13,7 @@ test('the watcher-folders settings row loads in the open overlay and validates p
 	const search = page.locator('input.so-search');
 	await expect(search).toBeVisible({ timeout: 15_000 });
 	await search.fill('watcher');
-	const textarea = page.getByRole('textbox', { name: /watcher/i });
+	const textarea = page.getByRole('textbox', { name: /watched folders/i });
 	await expect(textarea).toBeVisible({ timeout: 15_000 });
 	await textarea.fill('/definitely/not/a/real/folder-4014');
 	await page.locator('.so-path-lines button', { hasText: 'Apply' }).click();

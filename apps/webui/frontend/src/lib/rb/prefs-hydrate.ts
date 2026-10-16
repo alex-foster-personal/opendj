@@ -9,6 +9,7 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import { announceDeckDefaults } from './deck-default-prefs';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
 import { APP_MODE_PREF_IDS, type AppModePrefs, type DiskAppModePatch } from './app-mode-prefs';
@@ -106,6 +107,7 @@ export type DiskPrefsPatch = {
 	auto_play_enforce_order?: boolean;
 	auto_play_maximize_reach?: boolean;
 	master_muted?: boolean;
+	deck_default_quantize?: boolean;
 	hide_broken_links?: boolean;
 	library_density?: LibraryDensity;
 	next_only_filter?: boolean;
@@ -196,6 +198,7 @@ export interface PrefsHydrateTarget {
 	auto_play_enabled: boolean;
 	auto_play_enforce_order: boolean;
 	auto_play_maximize_reach: boolean;
+	deck_default_quantize: boolean;
 	hide_broken_links: boolean;
 	library_density: LibraryDensity;
 	next_only_filter: boolean;
@@ -346,6 +349,15 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			] as const) {
 				const value = body[key];
 				if (typeof value === 'boolean') uiPrefs[key] = value;
+			}
+			// Announced only on a real change: a fresh browser's decks were seeded
+			// from the local default before this GET returned (SETSTUB-02).
+			if (
+				typeof body.deck_default_quantize === 'boolean' &&
+				body.deck_default_quantize !== uiPrefs.deck_default_quantize
+			) {
+				uiPrefs.deck_default_quantize = body.deck_default_quantize;
+				announceDeckDefaults(uiPrefs);
 			}
 			if (body.library_density === 'compact' || body.library_density === 'cosy') {
 				uiPrefs.library_density = body.library_density;

@@ -10,9 +10,7 @@ export type SettingGroupId =
 	| 'confirmations'
 	| 'sync'
 	| 'cloudsync'
-	| 'advanced'
-	| 'rekordbox'
-	| 'djay';
+	| 'advanced';
 
 export interface SettingGroup {
 	id: SettingGroupId;
@@ -43,7 +41,7 @@ export type SettingControl =
 			unit: string;
 	  }
 	// One path per line; saved via overlay Apply (async existence check on server).
-	| { kind: 'path_lines'; v2Notice: string };
+	| { kind: 'path_lines'; notice: string };
 
 /** Kinds of live preview a settings row can carry (rendered by SettingsOverlay). */
 export type SettingPreview = 'waveform';
@@ -58,7 +56,9 @@ export interface SettingDef {
 	/** Longer explanation, always visible under the row (no hover-to-expand). */
 	detail: string;
 	/** false = grayed inert todo (PARITY-TODO). Hidden unless the
-	 * "Show developer pages" pref (show_dev_ui) is on. */
+	 * "Show developer pages" pref (show_dev_ui) is on. The shipped catalog has
+	 * no such row (SETSTUB-01); the field and its render path stay so a future
+	 * placeholder is grayed and refused rather than live. */
 	implemented: boolean;
 	/** true = a developer-only row, shown only while show_dev_ui is on. */
 	devOnly?: boolean;

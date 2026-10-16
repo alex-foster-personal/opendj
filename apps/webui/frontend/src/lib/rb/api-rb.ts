@@ -829,6 +829,28 @@ function _assertListingRows(items: TrackIndexItemWire[]): void {
  * a library prefetch and a deck load do not double-hit the backend. */
 const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
 
+/** STRUCT-06: a fresh token per `sections` announcement, per track. The worker
+ * can finish just after the server answered `pending`, so the announcement may
+ * reach the browser BEFORE that answer. Every /anlz read goes through
+ * `_sinceLastSections`, so an answer issued under an older token is asked
+ * again, whichever path asked (prefetch, deck load, revalidation, hot-cue
+ * refresh: discussion_r4252592662, r4253402266, r4253438671). */
+const _sectionsAnnounced = new Map<string, object>();
+
+/** Records a `sections` announcement for these tracks; /anlz answers still in
+ * flight for them are re-asked when they settle. */
+export function noteSectionsAnnounced(ids: readonly string[]): void {
+	for (const id of ids) _sectionsAnnounced.set(id, {});
+}
+
+async function _sinceLastSections(stable_id: string, read: () => Promise<AnlzWithVocals>): Promise<AnlzWithVocals> {
+	for (;;) {
+		const seen = _sectionsAnnounced.get(stable_id);
+		const data = await read();
+		if (seen === _sectionsAnnounced.get(stable_id)) return data;
+	}
+}
+
 /** The daemon's selected source is authoritative and can outlive this
  * document, so the ordinary path never permits the browser's shared HTTP
  * cache to reuse an /anlz payload from another tab or a prior reload, whose
@@ -853,10 +875,11 @@ export async function fetchAnlz(
 		const existing = _inflightAnlz.get(key);
 		if (existing !== undefined) return existing;
 	}
-	const pending = _fetchJson<AnlzWithVocals>(
-		trackApiPath(stable_id, `/anlz?${anlzQuery(points, gen)}`),
-		'no-store'
-	).then((data) => _checkedAnlz(stable_id, data));
+	const pending = _sinceLastSections(stable_id, () =>
+		_fetchJson<AnlzWithVocals>(trackApiPath(stable_id, `/anlz?${anlzQuery(points, gen)}`), 'no-store').then(
+			(data) => _checkedAnlz(stable_id, data)
+		)
+	);
 	if (bypassCache) return pending;
 	const tracked = pending.finally(() => {
 		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
@@ -890,11 +913,15 @@ export async function fetchAnlzBypassingHttpCache(
 	stable_id: string,
 	points: number | null = defaultAnlzPoints()
 ): Promise<AnlzWithVocals> {
-	const data = await _fetchJson<AnlzWithVocals>(
-		trackApiPath(stable_id, `/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`),
-		'reload'
+	return _sinceLastSections(stable_id, async () =>
+		_checkedAnlz(
+			stable_id,
+			await _fetchJson<AnlzWithVocals>(
+				trackApiPath(stable_id, `/anlz?${anlzQuery(points, currentAnlzFetchGeneration())}`),
+				'reload'
+			)
+		)
 	);
-	return _checkedAnlz(stable_id, data);
 }
 
 /** Validates the vocals contract (priming vocalsOf's memo), and for a stick

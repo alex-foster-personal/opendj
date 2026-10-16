@@ -19,6 +19,7 @@
  */
 
 import { playbackBpm } from '$lib/rb/beat-sync-math';
+import { currentDeckDefaults, onDeckDefaultsChange } from '$lib/rb/deck-default-prefs';
 import { recordDeckStateBaseline } from '$lib/rb/perf-event-log';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { HotCueSlotState } from '$lib/rb/api-rb';
@@ -47,7 +48,8 @@ export function _emptyDeckState(deck_id: DeckId): DeckState {
 		transport_pending: false,
 		cue_ms: null,
 		pitch: 1,
-		quantize_enabled: true,
+		// SETSTUB-02 "Quantize on new decks" (default on).
+		quantize_enabled: currentDeckDefaults().deck_default_quantize,
 		quantize_grid_beats: 1,
 		beat_sync_enabled: true,
 		key_sync_enabled: false,
@@ -170,6 +172,14 @@ export const deckStates: Record<DeckId, DeckState> = $state({
 // row could then evict a deck's only state row and blind the resource probe.
 // Record it once as a durable non-ring baseline instead.
 recordDeckStateBaseline();
+
+// SETSTUB-02: a changed "Quantize on new decks" reaches every deck still
+// empty (no track); a loaded deck keeps the Q its DJ is playing with.
+onDeckDefaultsChange(({ deck_default_quantize }) => {
+	for (const st of Object.values(deckStates)) {
+		if (st.stable_id === null) st.quantize_enabled = deck_default_quantize;
+	}
+});
 
 /** Explicit audio-load error per deck (backend code or decode message);
  * null = no failed load. DeckState has no audio-error field by contract,

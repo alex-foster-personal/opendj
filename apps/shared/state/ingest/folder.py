@@ -117,14 +117,18 @@ class FolderIngestReport:
 def collect_audio(
     roots: Iterable[Path],
 ) -> tuple[list[audio_files.AudioFile], list[str], int]:
-    """Walk the READABLE roots. Returns ``(files, denied_roots, dataless)``.
+    """Walk the READABLE roots. Returns ``(files, unreadable_roots, dataless)``.
 
-    Denied roots are excluded from the walk rather than walked and silently
+    Unreadable roots are excluded from the walk rather than walked and silently
     yielding nothing, so the caller can report them instead of reporting a
-    smaller library.
+    smaller library. That covers a refused listing and a present root that
+    answered with an error (a dead mount, a file where a folder was expected):
+    either one beside a readable root must not pass as a complete import
+    (Codex P1 on #6825).
     """
-    probes = fs_access.probe_all(list(roots))
-    denied = fs_access.denied_roots(probes)
+    # Waits for every answer: a root still on a consent dialog must not drop out of the walk.
+    probes = fs_access.probe_all(list(roots), deadline_s=None)
+    denied = fs_access.unreadable_roots(probes)
     readable = [
         Path(probe.path) for probe in probes if probe.readable
     ]

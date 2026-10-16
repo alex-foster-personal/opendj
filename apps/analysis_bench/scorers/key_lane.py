@@ -9,7 +9,7 @@ hold for their lane: pure stdlib plus numpy, importable by pytest without a
 heavy dependency.
 
 MIREX WEIGHTED SCORE (1.0 / 0.5 / 0.3 / 0.2 / 0.0), ALLOWING DESCENDING FIFTHS.
-Issue #1584 and the round-0 brief (`specs/native-analysis-v1-lanes/
+Issue #1584 and the round-0 brief (`(private path)/
 nav1-key-r0.md`) both ask for "MIREX weighted (descending fifths allowed)".
 `weighted_score` below credits 0.5 for EITHER direction of the fifth
 (`(estimated_pc - reference_pc) % 12` in `{5, 7}`, same mode), which is the
@@ -31,8 +31,8 @@ against real mir_eval as a control and documents this one expected
 divergence rather than treating it as a bug.
 
 KSEA, PER THE S-KEY PAPER, CITED BY
-`docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md
-:614-618` (NOT `specs/native-analysis-v1.md`, which does not define it).
+`(private path)
+:614-618` (NOT `(private path)`, which does not define it).
 "Key Signature Estimation Accuracy": the mean, over scored fixtures, of a
 per-fixture score that ignores mode entirely -- 1.0 when the candidate's
 tonic pitch class matches the reference's exactly, 0.5 when it is a fifth
@@ -45,7 +45,7 @@ KSEA means, and gave materially different, incomparable numbers (Codex P1
 BLOCKING, PR #1620).
 
 THREE-BUCKET STRATIFICATION (spec section 5, "Agreement metric"; bucket
-definitions per `docs/research/beatgrid-and-segmentation-sota-20260906-d-
+definitions per `(private path)
 key-detection.md:698-710`). Every fixture whose bundle carries BOTH a
 rekordbox and a MIK reference is classified ONCE, by the relationship
 between those two references ALONE -- never by which key the candidate
@@ -58,7 +58,7 @@ answers, so the same reference pair lands in the same bucket for every arm:
     Only WITHIN this bucket does the candidate's answer get reported, as
     "sides with rekordbox" / "sides with MIK" / "sides with neither", NEVER
     as "correct" -- neither reference is truth
-    (`specs/native-analysis-v1-lanes/nav1-key-r0.md`: rekordbox scored
+    (`(private path)`: rekordbox scored
     79.55, MIK 74.60, against GiantSteps, so both are themselves
     imperfect). A fixture the candidate never answered (omitted, failed, or
     filtered out by `_parse_candidate`) took no side at all, so it is
@@ -128,6 +128,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from apps.analysis_bench.scorers.bundle_guards import refuse_malformed_join
 from apps.analysis_key import canon
 
 __all__ = ["SCORER_VERSION", "render_table", "score_bundle"]
@@ -136,7 +137,7 @@ SCORER_VERSION = "1.0.0"
 
 KSEA_DEFINITION = (
     "KSEA (Key Signature Estimation Accuracy, per the S-KEY paper, cited in "
-    "docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md"
+    "(private path)"
     ":614-618): the mean, over scored fixtures, of a per-fixture score that "
     "ignores mode entirely -- 1.0 when the candidate's tonic pitch class "
     "matches the reference's exactly, 0.5 when it is a fifth above or "
@@ -246,7 +247,7 @@ def _parse_candidate(result: dict[str, Any] | None) -> canon.Key | None:
        not publish its best-of-24 guess as a finding; the same signal is
        named `no_tonal_center` end to end (`flags.TonalCenterFlag
        .no_tonal_center`, `LaneResult.reason="no_tonal_center"`,
-       `specs/native-analysis-v1.md`'s own key-lane row). Checked
+       `(private path)`'s own key-lane row). Checked
        separately from `key_confidence == 0.0` above: a flagged estimate's
        confidence can be any nonzero value below `flags.CONFIDENCE_
        THRESHOLD` (or above it with a thin margin), so it would otherwise
@@ -309,39 +310,12 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], _ReferenceMap, _Reference
         raise ValueError(f"{bundle}/manifest.json declares no reads.truth for the key lane")
     truth = json.loads((bundle / truth_name).read_text(encoding="utf-8"))["keys"]
     stable_ids = [row["stable_id"] for row in manifest.get("fixtures") or []]
-    _refuse_malformed_join(bundle, truth_name, truth, stable_ids)
+    refuse_malformed_join(bundle, truth_name, truth, stable_ids)
     rekordbox = {sid: _parse_reference(truth[sid].get("rekordbox"), "rekordbox")
                  for sid in stable_ids}
     mik = {sid: _parse_reference(truth[sid].get("mik_camelot"), "mik")
            for sid in stable_ids}
     return manifest, rekordbox, mik
-
-
-def _refuse_malformed_join(
-    bundle: Path, truth_name: str, truth: dict[str, Any], stable_ids: list[str]
-) -> None:
-    """Refuse a bundle whose manifest/truth join is broken, rather than let
-    it score as two ordinary missing references or a silently shrunken
-    denominator (Codex P1 BLOCKING, PR #1620, x2): a stale or failed join
-    can list a `stable_id` the truth file has no row for at all, which
-    `truth.get(sid, {})` used to accept as an explicit per-source null, and
-    can emit the same `stable_id` twice, which the reference-map dict
-    comprehensions used to collapse into one key without saying so.
-    """
-    duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
-    if duplicates:
-        raise ValueError(
-            f"{bundle}/manifest.json lists {len(duplicates)} duplicate fixture "
-            f"stable_id(s), first {duplicates[0]!r}: a malformed join must not "
-            "silently collapse into a smaller scored set."
-        )
-    missing = sorted(sid for sid in stable_ids if sid not in truth)
-    if missing:
-        raise ValueError(
-            f"{bundle}/{truth_name} has no truth row at all for {len(missing)} "
-            f"fixture(s) the manifest declares, first {missing[0]!r}: a broken "
-            "join must not silently become ordinary missing references."
-        )
 
 
 #-----------------------------------------------------------------------------
@@ -373,7 +347,7 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
     """AGREE/DISAGREE-RELATED/DISAGREE-UNRELATED, classified by the
     rekordbox/MIK pair's OWN relationship, never by the candidate's answer.
 
-    `docs/research/beatgrid-and-segmentation-sota-20260906-d-key-detection.md
+    `(private path)
     :698-710` defines DISAGREE-RELATED as "they differ by relative, parallel,
     or fifth" and DISAGREE-UNRELATED as "they differ by something MIREX
     would score 0.0" -- both properties of the rekordbox/MIK pair alone. An
@@ -427,7 +401,7 @@ def _buckets(stable_ids: list[str], rekordbox: _ReferenceMap,
             "sides_with_neither": len(related_neither),
             # Rates, not just raw counts: the research doc's own worked
             # phrasing is "sides with MIK on X percent, with rekordbox on Y
-            # percent, with neither on Z percent" (docs/research/beatgrid-
+            # percent, with neither on Z percent" ((private path)
             # and-segmentation-sota-20260906-d-key-detection.md:702-705),
             # and its own verification discipline asks to "measure the size
             # of every bucket and report it every time" (:713-716). Named

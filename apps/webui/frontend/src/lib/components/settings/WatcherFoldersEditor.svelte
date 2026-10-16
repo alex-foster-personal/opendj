@@ -1,5 +1,5 @@
 <script lang="ts">
-	// LIBM-129: the watcher-folders path_lines row of the settings overlay. Its
+	// LIBM-129 / FWATCH-01: the watched-folders path_lines row of the settings overlay. Its
 	// own component so the overlay loads it on demand (dynamic import): the
 	// overlay itself rides the library page's first paint, and this row is only
 	// ever drawn while settings are open (bundle budget, PR #4014). Mounted
@@ -17,7 +17,7 @@
 	let draft = $state(formatWatcherFolderLines(uiPrefs.library_watcher_folders));
 	let busy = $state(false);
 	let msg = $state<string | null>(null);
-	const v2Notice = $derived(def.control.kind === 'path_lines' ? def.control.v2Notice : '');
+	const notice = $derived(def.control.kind === 'path_lines' ? def.control.notice : '');
 
 	async function apply(): Promise<void> {
 		busy = true;
@@ -37,8 +37,8 @@
 </script>
 
 <div class="so-path-lines" title={def.title}>
-	<p class="so-v2-notice" title={v2Notice}>
-		{v2Notice}
+	<p class="so-v2-notice" title={notice}>
+		{notice}
 	</p>
 	<textarea aria-label={def.label} rows={3} bind:value={draft}></textarea>
 	<button

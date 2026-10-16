@@ -53,6 +53,7 @@ this cache held before NATIVE-06 are rebuilt rather than reshaped into garbage.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -120,6 +121,7 @@ def peaks_version(profile: decode.DecodeProfile = decode.PROFILE) -> str:
     monkeypatching; Codex review, PR #1536).
     """
     return f"{PEAKS_GENERATION}:{profile.identity()}"
+
 
 _DECODE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_DECODES)
 _DECODE_ADMISSION = threading.BoundedSemaphore(MAX_DECODE_WAITERS)
@@ -229,8 +231,7 @@ def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
         entry.get("schema") == config.LOCAL_WAVEFORM_CACHE_SCHEMA
         and entry.get("peaks_version") == peaks_version()
         and all(
-            entry.get(name) == value
-            or (name == "decoder" and _auto_fallback_entry(entry, value))
+            entry.get(name) == value or (name == "decoder" and _auto_fallback_entry(entry, value))
             for name, value in key.items()
             # With no decoder on the host nothing can rebuild the entry, so the
             # last real decode of these same bytes stands, whichever decoder
@@ -253,9 +254,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 def _write_json(path: Path, entry: dict[str, Any]) -> None:
     """Publish atomically: a crash mid-write must not leave a truncated entry."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle, name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-    )
+    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
     os.close(handle)
     tmp = Path(name)
     try:
@@ -273,6 +272,48 @@ def _track_lock(stable_id: str) -> threading.Lock:
             lock = threading.Lock()
             _TRACK_LOCKS[stable_id] = lock
         return lock
+
+
+def peaks_entry_current(stable_id: str) -> bool:
+    """Whether ``ensure_local_peaks(stable_id)`` would answer from cache now. NEVER decodes.
+
+    The entry must be current for the audio the id resolves to today (same
+    bytes, same decoder, same peaks version: ``_entry_is_current``), so a
+    replaced file reads False although its old entry is still on disk. An id
+    that cannot be resolved or stat'd also reads False: the caller treats that
+    as "a decode is ahead" and ``ensure_local_peaks`` raises the real reason.
+    """
+    from apps.adapters.rekordbox.paths import resolve_playable_audio
+
+    entry = _read_json(_entry_path(stable_id))
+    if entry is None:
+        return False
+    try:
+        key = _decode_key(resolve_playable_audio(stable_id).path)
+    except (HTTPException, OSError):
+        return False
+    return _entry_is_current(entry, key)
+
+
+def audio_revision(stable_id: str, profile: decode.DecodeProfile = decode.PROFILE) -> str | None:
+    """A digest of the peaks ``stable_id`` would get now: its bytes and how they are decoded. NEVER decodes.
+
+    The same identity the peak cache checks (``_decode_key``: path, inode, size,
+    mtime, POSIX ctime, decoder) plus ``peaks_version()``, so anything that
+    rebuilds the peaks also moves this.
+    ``profile`` is the producer configuration asked about, as for
+    ``peaks_version``; callers leave it at the shipped one.
+
+    None when the id cannot be resolved or stat'd: the caller cannot tell
+    whether the audio changed, only that it is unreachable right now.
+    """
+    from apps.adapters.rekordbox.paths import resolve_playable_audio
+
+    try:
+        key = {**_decode_key(resolve_playable_audio(stable_id).path), "peaks_version": peaks_version(profile)}
+    except (HTTPException, OSError):
+        return None
+    return hashlib.sha256(json.dumps(key, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 def _cached_peaks(stable_id: str, key: dict[str, Any]) -> np.ndarray | None:
@@ -445,9 +486,7 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
     return peaks
 
 
-def local_anlz_payload(
-    stable_id: str, points: int, *, share: bool = False
-) -> dict[str, Any]:
+def local_anlz_payload(stable_id: str, points: int, *, share: bool = False) -> dict[str, Any]:
     """``/anlz`` payload for an unmapped track, with OUR peaks when we have them.
 
     Everything rekordbox owns (beatgrid, cues, phrases, PVDI vocals) stays
@@ -550,5 +589,6 @@ __all__ = [
     "local_anlz_payload",
     "local_preview_strip",
     "local_strip_ids",
+    "peaks_entry_current",
     "peaks_version",
 ]

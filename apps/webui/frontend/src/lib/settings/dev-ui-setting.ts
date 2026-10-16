@@ -8,7 +8,7 @@ export const DEV_UI_SETTING: SettingDef = {
 	keywords: ['developer', 'dev', 'debug', 'admin', 'queues', 'progress', 'ledger', 'todo', 'unbuilt'],
 	title: 'Show developer-only pages and unbuilt settings',
 	detail:
-		'When on, the sidebar shows the Admin, Progress ledger and Queues links, and the settings list shows unbuilt (todo) rows and the Rekordbox / djay Pro parity groups. Default off. Saved in this browser only.',
+		'When on, the sidebar shows the Admin, Progress ledger and Queues links, and the settings list shows unbuilt (todo) rows, if any. Default off. Saved in this browser only.',
 	implemented: true,
 	control: { kind: 'boolean' }
 };

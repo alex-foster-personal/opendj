@@ -17,6 +17,7 @@
 		endTrackDrag
 	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
+	import { dropPlaceAt, type DropPlace } from './playlist-tree-order';
 	import { trackDrag } from '$lib/rb/track-drag.svelte';
 	import { isOsFileDrag } from '$lib/rb/ingest-drop-files';
 	import { type PlaylistTint, playlistTintOf } from './pane-contract.svelte';
@@ -56,15 +57,52 @@
 		onduplicateplaylist,
 		ondroptracks,
 		oncreatesmartlist,
-		onfolderdrop
+		onfolderdrop,
+		onmoveplaylist,
+		onsortplaylists
 	}: PlaylistTreeProps & { mode?: PlaylistTreeViewMode } = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
 	let folderDropActive = $state(false);
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
+	/** LIBTREE-01: the playlist row being dragged to a new place in the tree,
+	 * and where it would land. Null while no playlist drag is in flight. */
+	let movingPlaylistId: string | null = $state(null);
+	let reorderTarget: { id: string; place: DropPlace } | null = $state(null);
+
+	function _onReorderDragOver(event: DragEvent, node: PlaylistNode): boolean {
+		// A track drag never reorders; a playlist drag whose dragend was lost
+		// must not keep track drops dead either.
+		if (trackDrag.active) movingPlaylistId = null;
+		if (movingPlaylistId === null || node.kind !== 'playlist') return false;
+		event.preventDefault();
+		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'move';
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		reorderTarget =
+			node.playlist_id === movingPlaylistId
+				? null
+				: { id: node.playlist_id, place: dropPlaceAt(event.clientY, rect.top, rect.height) };
+		return true;
+	}
+
+	function _onReorderDrop(event: DragEvent, node: PlaylistNode): boolean {
+		if (movingPlaylistId === null) return false;
+		event.preventDefault();
+		const moved = movingPlaylistId;
+		const target = reorderTarget;
+		_endReorderDrag();
+		if (target !== null && target.id === node.playlist_id) onmoveplaylist?.(moved, target.id, target.place);
+		return true;
+	}
+
+	function _endReorderDrag(): void {
+		movingPlaylistId = null;
+		reorderTarget = null;
+	}
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
+		if (_onReorderDragOver(event, node)) return;
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
 		if (ondroptracks === undefined || node.kind !== 'playlist') return;
 		// Same WKWebView rule as the deck drop targets: accept on the in-app
@@ -74,10 +112,12 @@
 	}
 
 	function _onTrackDragLeave(node: PlaylistNode): void {
+		if (reorderTarget?.id === node.playlist_id) reorderTarget = null;
 		if (dropTargetId === node.playlist_id) dropTargetId = null;
 	}
 
 	function _onTrackDrop(event: DragEvent, node: PlaylistNode): void {
+		if (_onReorderDrop(event, node)) return;
 		if (ondroptracks === undefined || node.kind !== 'playlist') return;
 		event.preventDefault();
 		dropTargetId = null;
@@ -127,7 +167,11 @@
 				kind: node.kind
 			})
 		);
-		if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'copy';
+		// A library playlist may also move within the tree (LIBTREE-01); the
+		// pane tab bar still takes the drag as a copy.
+		const reorderable = node.kind === 'playlist' && onmoveplaylist !== undefined;
+		if (reorderable) movingPlaylistId = node.playlist_id;
+		if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = reorderable ? 'copyMove' : 'copy';
 	}
 
 	/** Inline playlist rename + create-then-rename flow (tree-playlist-rename.svelte.ts). */
@@ -198,7 +242,7 @@
 </script>
 
 <div class="tree-root" data-testid="playlist-tree-panel">
-	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} />
+	<TreeContextMenu bind:this={treeContextMenu} oncreate={() => void rename.createAndRename()} {oncreatesmartlist} onrename={(node) => void rename.begin(node)} deleteNode={ondeleteplaylist} onduplicate={onduplicateplaylist} onforbidduplicates={onforbidduplicates} {onselect} {onsortplaylists} />
 	{#if columnMounted}
 		<div
 			class="tree-scroll column-mode"
@@ -286,6 +330,9 @@
 					class:broken={node.mostly_broken}
 					title={node.mostly_broken ? formatMostlyBrokenTooltip() : undefined}
 					class:drop-target={dropTargetId === node.playlist_id}
+					class:drop-before={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'before'}
+					class:drop-after={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'after'}
+					class:moving={movingPlaylistId === node.playlist_id}
 					class:tint-deck={_tintOf(node) === 'deck'}
 					class:tint-multi={_tintOf(node) === 'multi'}
 					role="button"
@@ -301,6 +348,7 @@
 					ondragover={(e) => _onTrackDragOver(e, node)}
 					ondragleave={() => _onTrackDragLeave(node)}
 					ondrop={(e) => _onTrackDrop(e, node)}
+					ondragend={_endReorderDrag}
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
@@ -440,6 +488,16 @@
 	}
 	.row.drop-target {
 		box-shadow: inset 0 0 0 1px var(--rb-accent);
+	}
+	/* LIBTREE-01: where a dragged playlist will land. */
+	.row.drop-before {
+		box-shadow: inset 0 2px 0 var(--rb-accent);
+	}
+	.row.drop-after {
+		box-shadow: inset 0 -2px 0 var(--rb-accent);
+	}
+	.row.moving {
+		opacity: 0.5;
 	}
 	.tree-scroll.folder-drop-target {
 		box-shadow: inset 0 0 0 2px var(--rb-accent);

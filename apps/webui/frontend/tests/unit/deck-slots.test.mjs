@@ -754,25 +754,31 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 	);
 	const panel = readFileSync(PANEL, 'utf8');
 
-	it("_execute's 'load' branch refuses a live-master deck only when refuseIfMaster is set", () => {
-		const fn = ipc.slice(ipc.indexOf("if (command.type === 'load') {"), ipc.indexOf('await engine.load('));
+	// One guard, ahead of BOTH engine dispatches: rust-engine.ts handles
+	// load/unload without reading refuseIfMaster, so a check inside the Web
+	// Audio branches alone let ?engine=rust replace the live master (Codex
+	// r4284599254 on #6823).
+	const execBody = ipc.slice(
+		ipc.indexOf('async function _execute('),
+		ipc.indexOf('\n}\n', ipc.indexOf('async function _execute('))
+	);
+	const guardAt = execBody.indexOf("(command.type === 'load' || command.type === 'unload') &&");
+
+	it("_execute refuses a live-master load or unload only when refuseIfMaster is set", () => {
+		assert.notEqual(guardAt, -1, 'no shared load/unload master guard in _execute');
 		assert.match(
-			fn,
-			/if \(command\.refuseIfMaster === true && getDeckState\(command\.deck\)\.is_master\) \{\s*throw new Error/,
-			'load does not gate its recheck on refuseIfMaster'
+			execBody.slice(guardAt, guardAt + 300),
+			/^\(command\.type === 'load' \|\| command\.type === 'unload'\) &&\s*command\.refuseIfMaster === true &&\s*getDeckState\(command\.deck\)\.is_master\s*\) \{\s*throw new Error\(`cannot \$\{command\.type\}: /,
+			'the guard is not gated on refuseIfMaster plus a live is_master read'
 		);
 	});
 
-	it("_execute's 'unload' branch refuses a live-master deck only when refuseIfMaster is set", () => {
-		const fn = ipc.slice(
-			ipc.indexOf("} else if (command.type === 'unload') {"),
-			ipc.indexOf('await engine.unload(')
-		);
-		assert.match(
-			fn,
-			/if \(command\.refuseIfMaster === true && getDeckState\(command\.deck\)\.is_master\) \{\s*throw new Error/,
-			'unload does not gate its recheck on refuseIfMaster'
-		);
+	it('the master guard runs before the Rust engine and the Web Audio engine see the command', () => {
+		// if the guard sits inside the Web Audio branches, ?engine=rust accepts a
+		// destructive replace of the live master -- broken.
+		assert.ok(guardAt !== -1 && guardAt < execBody.indexOf('executeInRustEngine('), 'guard after the Rust dispatch');
+		assert.ok(guardAt < execBody.indexOf('await engine.load('), 'guard after the Web Audio load');
+		assert.ok(guardAt < execBody.indexOf('await engine.unload('), 'guard after the Web Audio unload');
 	});
 
 	it('the PerformanceCommand wire type accepts refuseIfMaster as optional on load and unload', () => {

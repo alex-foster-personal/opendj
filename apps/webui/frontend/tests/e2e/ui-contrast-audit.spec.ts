@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 
 import { waitForPerformanceIpc } from './support/performance-ready';
+import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
 import {
 	renderedContrastAudit,
 	trackCanvasText,
@@ -101,8 +102,51 @@ async function _applySkin(page: Page, skin: Skin): Promise<void> {
 	);
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);
+	await _waitForMirrorLeadership(page, skin);
 	expect((await _ipcUi(page)).ui_skin, `${skin}: uiPrefs.ui_skin after reload`).toBe(want.ui_skin);
 	await _expectSkin(page, skin);
+}
+
+const MIRROR_PATH = '/api/v1/state/ui-mirror';
+
+/**
+ * Wait until THIS page leads the engine's UI mirror (AGENT-18), so the
+ * follower banner ("Another Open DJ window is in control") is not on screen
+ * when the audit samples.
+ *
+ * A freshly loaded /performance page reads the mirror lease before its first
+ * PUT; if another page still holds it (the previous spec's page, or this
+ * test's own pre-reload page, whose pagehide DELETE can lose to its last 1 Hz
+ * PUT), it starts as a follower and only claims after that 10 s lease lapses
+ * or a click lands. CI runs 37879937047 and 37876178845 (Fri 9 Oct 2026)
+ * sampled default/performance-more and -less in that window and failed on
+ * the banner's text. Only a leader PUTs, so an accepted PUT from the reloaded
+ * document is the presence signal; the engine must then name that same
+ * client as the lease holder, and the banner must be gone.
+ */
+async function _waitForMirrorLeadership(page: Page, skin: Skin): Promise<void> {
+	// The pre-reload document's in-flight requests are aborted when the
+	// reload commits, so a PUT answered from here on is this document's.
+	const accepted = await page.waitForResponse(
+		(response) =>
+			response.request().method() === 'PUT' &&
+			new URL(response.url()).pathname === MIRROR_PATH &&
+			response.status() === 202,
+		{ timeout: 30_000 }
+	);
+	const clientId = accepted.request().headers()['x-opendj-lease'];
+	expect(clientId, `${skin}: the accepted mirror PUT names its writer`).toBeTruthy();
+	await expect
+		.poll(
+			async () => {
+				const res = await page.request.get(`${MIRROR_PATH}/lease`);
+				expect(res.ok(), `GET ${MIRROR_PATH}/lease: ${res.status()}`).toBe(true);
+				return ((await res.json()) as { holder: string | null }).holder;
+			},
+			{ message: `${skin}: the engine names this page as the mirror lease holder` }
+		)
+		.toBe(clientId);
+	await expect(page.getByTestId('tab-leader-banner'), `${skin}: follower banner after leading`).toHaveCount(0);
 }
 
 /**
@@ -405,6 +449,17 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 	};
 
 	for (const skin of SKINS) {
+		// The page's rescue auto-restore (Gig posture, which earlier specs
+		// leave on) writes the newest snapshot's deck_layout once this tab
+		// wins leadership. A writer snapshot names the layout of the last
+		// load, so a restore landing after the LESS click below put MORE back
+		// (run 38673864231). Pin a snapshot with no layout first, while no
+		// /performance page (and so no ring writer) is open: the previous
+		// iteration ended on /settings, the first one on a blank page.
+		expect(new URL(page.url()).pathname, 'a /performance page is still open to write a newer snapshot').not.toBe(
+			'/performance'
+		);
+		await appendEmptyRescueSnapshot(page.request);
 		await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 		await waitForPerformanceIpc(page);
 		await _applySkin(page, skin);
@@ -446,6 +501,11 @@ test('every visible text element clears WCAG AA in every skin, or is allowlisted
 });
 
 test('controls: the audit fires on Gothic white-on-accent, and composites a translucent fill', async ({ page }) => {
+	// _applySkin waits for this page to lead the UI mirror, which can take one
+	// 10 s lease expiry when the pre-reload page wins its PUT/DELETE race, and
+	// the audits below run in sequence. The root config's 30 s cap was hit on
+	// main run 38836701046 (Fri 16 Oct 2026) before this wait existed.
+	test.setTimeout(90_000);
 	await page.setViewportSize({ width: 1600, height: 900 });
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);

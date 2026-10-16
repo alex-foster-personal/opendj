@@ -13,6 +13,7 @@ import {
 	setAutoPlayMaximizeReach,
 	setAutoSyncDestination,
 	setBeatSyncMax,
+	setDeckDefaultQuantize,
 	setPreviewBeatSync,
 	clearConfirmPref,
 	setConfirmPref,
@@ -121,6 +122,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'hide_broken_links',
 	'library_density',
 	'beat_sync_max',
+	'deck_default_quantize',
 	'preview_beat_sync',
 	'auto_play_enabled',
 	'auto_play_enforce_order',
@@ -186,6 +188,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.library_density;
 		case 'beat_sync_max':
 			return uiPrefs.beat_sync_max;
+		case 'deck_default_quantize':
+			return uiPrefs.deck_default_quantize;
 		case 'auto_play_enabled':
 			return uiPrefs.auto_play_enabled;
 		case 'auto_play_enforce_order':
@@ -307,6 +311,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'beat_sync_max':
 			setBeatSyncMax(_asBool(value, key));
+			return;
+		case 'deck_default_quantize':
+			setDeckDefaultQuantize(_asBool(value, key));
 			return;
 		case 'auto_play_enabled':
 			setAutoPlayEnabled(_asBool(value, key));

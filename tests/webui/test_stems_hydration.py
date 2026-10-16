@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import wave
+from concurrent.futures import wait
 from pathlib import Path
 
 import pytest
@@ -116,13 +117,23 @@ def _reset_hydration_module_state():
     """The route module keeps process-wide in-flight/error registries; clear
     them around every test so tests cannot leak into each other."""
     stems_module._INFLIGHT.clear()
+    stems_module._INFLIGHT_FILE_TOTALS.clear()
     stems_module._LAST_HYDRATE_ERROR.clear()
     stem_index._last_refresh_attempt_mono.clear()
     stem_index._last_refresh_error.clear()
     stems_module.stem_hydration.OPEN_DECKS._open.clear()
     stems_module.stem_hydration.OPEN_DECKS._served_at.clear()
     yield
+    # A test that only enqueues (the manifest route returns at once) leaves
+    # its hydration running on the shared executor. Wait it out before
+    # clearing: finishing later, it would write the next test's registries
+    # for the same stable_id and touch its bundle lock (an order-only flake).
+    with stems_module._INFLIGHT_LOCK:
+        pending = list(stems_module._INFLIGHT.values())
+    _, not_done = wait(pending, timeout=30)
+    assert not not_done, f"{len(not_done)} hydration(s) still running after 30 s"
     stems_module._INFLIGHT.clear()
+    stems_module._INFLIGHT_FILE_TOTALS.clear()
     stems_module._LAST_HYDRATE_ERROR.clear()
     stem_index._last_refresh_attempt_mono.clear()
     stem_index._last_refresh_error.clear()

@@ -169,7 +169,7 @@ for (const deck of [1, 2, 3, 4] as const) {
 		const saved = await page.evaluate(async ({ deck, url }) => {
 			const { buildRescueSnapshot } = await import(url) as typeof import('../../src/lib/rb/rescue-snapshot');
 			return buildRescueSnapshot(window.musicDjToolsPerformance!.query(), 'periodic', Date.now(),
-				{ 1: null, 2: null, 3: null, 4: null }).decks[deck].stems;
+				{ 1: null, 2: null, 3: null, 4: null }, 'more').decks[deck].stems;
 		}, { deck, url: '/src/lib/rb/rescue-snapshot.ts' });
 		expect(saved.bass?.muted).toBe(true);
 		expect(saved.other?.muted).toBe(true);

@@ -7,6 +7,11 @@
       "sha256": "6ee666ecd52b512bd439c98a4a4fec43b6900da78bd89c22296ea7b1807ff664",
       "bytes": 2256,
       "source": "commit 13a22177ad8b61f721e26d486f65c9472cc268df on PR #5731 (a git cherry-pick -x of 89814bcb187935a003880672c37ba544dd879b55)"
+    },
+    "aae38d8c7.msg": {
+      "sha256": "c5103fe137754a9a1aa03e7646226022d38db2372f9f84e332d9d67eda14ff61",
+      "bytes": 852,
+      "source": "commit aae38d8c7ec57f70c2d0fc795553e68a4b8062a1 on PR #7087 (a git cherry-pick -x of 922f55acbec03561aea448e1b04aee5e8aeb215f; git appended the note to the trailer block with no blank line), captured Fri 16 Oct 2026"
     }
   }
 }

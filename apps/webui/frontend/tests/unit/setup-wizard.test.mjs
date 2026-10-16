@@ -66,6 +66,7 @@ function permissions(overrides = {}) {
 				exists: true,
 				readable: true,
 				denied: false,
+				pending: false,
 				detail: 'readable'
 			}
 		],
@@ -679,6 +680,7 @@ test('loadFolderCandidates fills folderCandidates from the endpoint', async () =
 					exists: true,
 					readable: true,
 					denied: false,
+					pending: false,
 					detail: 'readable'
 				}
 			]
@@ -700,6 +702,7 @@ test('a failed folder-candidates load sets failed and keeps prior candidates', a
 			exists: true,
 			readable: true,
 			denied: false,
+			pending: false,
 			detail: 'readable'
 		}
 	];
@@ -1359,6 +1362,66 @@ test('accessCaveat names blocked folders without raw paths in operator copy', ()
 	assert.doesNotMatch(caveat, /\/Users\//);
 	assert.match(caveat, /only what was accessible/);
 	assert.equal(mod.agentAccessDetail(permissions({ all_readable: false, denied: ['/Users/dj/Music'] })), '/Users/dj/Music');
+});
+
+test('accessCaveat warns when a folder has not answered, though none was denied', () => {
+	const waiting = {
+		path: '/Users/dj/Desktop',
+		exists: true,
+		readable: false,
+		denied: false,
+		pending: true,
+		detail: 'no answer within 2 s: macOS may be waiting on a permission dialog'
+	};
+	const caveat = mod.accessCaveat(
+		permissions({ all_readable: false, roots: [...permissions().roots, waiting] })
+	);
+	assert.notEqual(caveat, null, 'a folder still on its dialog hid the caveat');
+	assert.doesNotMatch(caveat, /\/Users\//);
+	assert.match(caveat, /not answered yet \(1\)/);
+	// Control: a missing folder is not unreadable, and must not raise the caveat.
+	const missing = { ...waiting, exists: false, pending: false, detail: 'not present on this machine' };
+	// A folder not even checked yet (exists false, pending true) still counts as waiting (Sol on #6825).
+	const unchecked = { ...waiting, exists: false, detail: 'not checked within 2 s' };
+	assert.match(
+		mod.accessCaveat(permissions({ all_readable: false, roots: [...permissions().roots, unchecked] })),
+		/not answered yet \(1\)/
+	);
+	assert.equal(mod.accessCaveat(permissions({ roots: [...permissions().roots, missing] })), null);
+});
+
+test('accessCaveat says a folder that answered with an error could not be read, not that it is waiting', () => {
+	const broken = {
+		path: '/Users/dj/Music/notes.txt',
+		exists: true,
+		readable: false,
+		denied: false,
+		pending: false,
+		detail: 'exists but is not a directory'
+	};
+	const caveat = mod.accessCaveat(
+		permissions({ all_readable: false, roots: [...permissions().roots, broken] })
+	);
+	assert.notEqual(caveat, null, 'a broken folder hid the caveat');
+	assert.match(caveat, /could not be read \(1\)/);
+	assert.doesNotMatch(caveat, /not answered yet|permission/);
+});
+
+test('accessCaveat keeps the not-answered warning when another folder failed', () => {
+	const broken = {
+		path: '/Users/dj/Music/notes.txt',
+		exists: true,
+		readable: false,
+		denied: false,
+		pending: false,
+		detail: 'exists but is not a directory'
+	};
+	const waiting = { ...broken, path: '/Users/dj/Desktop', pending: true, detail: 'no answer within 2 s' };
+	const caveat = mod.accessCaveat(
+		permissions({ all_readable: false, roots: [...permissions().roots, broken, waiting] })
+	);
+	assert.match(caveat, /could not be read \(1\)/);
+	assert.match(caveat, /1 more have not answered yet/);
 });
 
 test('folderVerdict never quotes a file count for a denied folder', () => {

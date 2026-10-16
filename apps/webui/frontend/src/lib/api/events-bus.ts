@@ -56,7 +56,8 @@ export const LIBRARY_KINDS = [
 	'pairings',
 	'library_jobs',
 	'playlist_sets',
-	'midi_maps'
+	'midi_maps',
+	'sections'
 ] as const;
 
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];

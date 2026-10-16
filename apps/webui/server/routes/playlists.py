@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from apps.shared.state import db as state_db
 from apps.sync.djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 
+from .. import playlist_tree_order as tree_order
 from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state
@@ -55,6 +56,7 @@ def _playlist_summaries(
     playlists: list,
     backend: StateBackend,
     availability: AvailabilitySummary,
+    user_order: list[str] | None = None,
 ) -> list[PlaylistSummary]:
     # Rekordbox playlists carry the user's custom tree order (djmdPlaylist
     # ParentID/Seq - SCREENSHOT-SPEC 5b); resolve it once for the whole list.
@@ -68,6 +70,21 @@ def _playlist_summaries(
         for pl in playlists
     ):
         order = rb_vendor.playlist_order_index()
+    # LIBTREE-01: the user's own tree order (drag-reorder, Sort A-Z) ranks
+    # ahead of the rekordbox walk; playlists it leaves out keep their place
+    # after it (ADR-NEW-playlist-tree-order-overlay).
+    seq_by_id = tree_order.seq_for(
+        [pl.playlist_id for pl in playlists],
+        user_order or [],
+        {
+            pl.playlist_id: (
+                order.get(pl.vendor_pl_id)
+                if pl.vendor == "rekordbox" and pl.vendor_pl_id is not None
+                else None
+            )
+            for pl in playlists
+        },
+    )
 
     member_availability: Mapping[str, str] = {}
     if availability != "skip":
@@ -99,11 +116,7 @@ def _playlist_summaries(
             ),
             updated_at=pl.updated_at,
             forbid_duplicates=pl.forbid_duplicates,
-            seq=(
-                order.get(pl.vendor_pl_id)
-                if pl.vendor == "rekordbox" and pl.vendor_pl_id is not None
-                else None
-            ),
+            seq=seq_by_id[pl.playlist_id],
         )
         for pl in playlists
     ]
@@ -119,9 +132,17 @@ def list_playlists(
         ),
     ),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
 ) -> list[PlaylistSummary]:
     playlists = backend.list_playlists()
-    return _playlist_summaries(playlists, backend, availability)
+    try:
+        user_order = tree_order.load_order(tree_order.path_for(data_dir))
+    except tree_order.PlaylistTreeOrderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "playlist_tree_order_unreadable", "message": str(exc)},
+        ) from exc
+    return _playlist_summaries(playlists, backend, availability, user_order)
 
 
 @router.get(

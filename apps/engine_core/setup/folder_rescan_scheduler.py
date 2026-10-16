@@ -15,19 +15,28 @@ changed is a stat-only walk over the configured roots plus one hash -- see
 the perf-register row this PR adds for the measured cost -- so there is
 nothing here worth pausing for a playing deck over.
 
-Idle whenever setup has no folder import on record (``last_import.kind !=
-"folder"``): the scheduler is folder-import-only by design, matching the
-issue's own evidence (the one-shot ``setupWizard.checkFolder()`` call is the
-only ingest path this repo has with no watcher). A rekordbox-only setup, or
-no setup at all yet, is not this scheduler's concern.
+Roots are the union of two lists, re-read on every wake:
+
+- the setup record's folder-import roots (``folder_watch_roots``, or
+  ``last_import.roots`` when the import was a folder import), and
+- the Settings overlay's watched folders (LIBM-129, ``library_watcher_folders``
+  in ``<data_dir>/state/ui-prefs.json``), so a folder added there is watched
+  within one beat, with no restart, on a rekordbox setup too.
+
+Idle when both lists are empty. The scheduler only READS the folders: every
+write is a ``state.db`` row through ``StateWriter``; no audio file and no other
+app's library is ever written.
 """
 
 from __future__ import annotations
 
 import asyncio
 import datetime as _dt
+import json
 import logging
 import time
+
+from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -43,6 +52,10 @@ from apps.shared.state.writer import StateWriter
 from apps.sync_hub.scheduler import next_delay_s
 
 log = logging.getLogger(__name__)
+
+#: Same file the ``/api/v1/ui-prefs`` route reads and writes
+#: (``apps.webui.server.routes.ui_prefs._FILENAME``); pinned by a test.
+UI_PREFS_FILENAME = "ui-prefs.json"
 
 
 @dataclass(frozen=True)
@@ -99,6 +112,7 @@ class FolderRescanScheduler:
         self._signature = ""
         self._next_due = 0.0
         self._last_record_error: str | None = None
+        self._last_prefs_error: str | None = None
         self._stopping: asyncio.Event | None = None
         self._task: asyncio.Task[None] | None = None
         self.consecutive_failures = 0
@@ -150,12 +164,14 @@ class FolderRescanScheduler:
     # ----- the loop (event loop) ------------------------------------------
 
     async def start(self) -> None:
-        if self._task is not None:
-            raise RuntimeError("FolderRescanScheduler.start() called twice")
-        self._stopping = asyncio.Event()
-        self._next_due = time.monotonic() + self._cfg.INITIAL_DELAY_S
-        self._task = asyncio.create_task(self._loop(), name="folder-rescan-scheduler")
-        self._task.add_done_callback(_log_loop_death)
+        self._stopping, self._task, self._next_due = launch_scheduler_loop(
+            existing_task=self._task,
+            twice_message="FolderRescanScheduler.start() called twice",
+            initial_delay_s=self._cfg.INITIAL_DELAY_S,
+            loop=self._loop,
+            task_name="folder-rescan-scheduler",
+            on_death=_log_loop_death,
+        )
 
     async def stop(self, within_s: float | None = None) -> None:
         """Stop waking and wait for an in-flight round.
@@ -197,12 +213,38 @@ class FolderRescanScheduler:
             return None
         self._last_record_error = None
         last_import = saved.last_import
-        roots = saved.folder_watch_roots
+        roots = list(saved.folder_watch_roots)
         if not roots and last_import is not None and last_import.get("kind") == "folder":
-            roots = last_import.get("roots", [])
-        if not roots:
+            roots = list(last_import.get("roots", []))
+        roots += self._settings_roots()
+        unique = list(dict.fromkeys(str(Path(root).expanduser()) for root in roots))
+        if not unique:
             return None
-        return [Path(root) for root in roots]
+        return [Path(root) for root in unique]
+
+    def _settings_roots(self) -> list[str]:
+        """Settings > watched folders (LIBM-129), or ``[]`` with a logged reason.
+
+        A malformed prefs file must not stop the setup roots from being
+        watched, so it is logged once per distinct error and read as empty.
+        """
+        path = self._data_dir / "state" / UI_PREFS_FILENAME
+        value, error = _read_watched_folders(path)
+        if error is not None:
+            self._note_prefs_error(error)
+            return []
+        self._last_prefs_error = None
+        relative = [item for item in value if item.strip() and not Path(item).expanduser().is_absolute()]
+        if relative:
+            # Save-time validation refuses these; a hand-edited file must not
+            # make the engine scan a folder relative to its own working dir.
+            self._note_prefs_error(f"{path}: skipping non-absolute watched folders {relative}")
+        return [item for item in value if item.strip() and Path(item).expanduser().is_absolute()]
+
+    def _note_prefs_error(self, message: str) -> None:
+        if message != self._last_prefs_error:
+            log.error("folder-rescan: ignoring Settings watched folders: %s", message)
+        self._last_prefs_error = message
 
     async def _loop(self) -> None:
         in_flight: asyncio.Task[RoundOutcome] | None = None
@@ -227,11 +269,7 @@ class FolderRescanScheduler:
         return self._stopping is not None and self._stopping.is_set()
 
     async def _sleep(self, seconds: float) -> None:
-        assert self._stopping is not None
-        try:
-            await asyncio.wait_for(self._stopping.wait(), timeout=seconds)
-        except TimeoutError:
-            return
+        await sleep_until_stop(self._stopping, seconds)
 
     async def _drain(self, in_flight: asyncio.Task[RoundOutcome]) -> None:
         try:
@@ -287,3 +325,20 @@ __all__ = [
     "RoundOutcome",
     "folder_rescan_lifespan",
 ]
+
+
+def _read_watched_folders(path: Path) -> tuple[list[str], str | None]:
+    """``library_watcher_folders`` from the prefs file, or ``([], reason)``.
+
+    A missing file is no folders and no error.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], None
+    except (OSError, ValueError) as exc:
+        return [], f"cannot read {path}: {exc}"
+    value = raw.get("library_watcher_folders", []) if isinstance(raw, dict) else None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return [], f"{path}: library_watcher_folders is not a list of strings"
+    return value, None

@@ -9,7 +9,7 @@ from pathlib import Path
 
 STALE_MERGE_REF_MSG = "merge ref is stale, update your branch"
 FRESH_ENOUGH_MSG = "base moved since the merge ref was cut, but not under"
-DEFAULT_GATED_DIR = "docs/decisions"
+DEFAULT_GATED_DIR = "(private path)"
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,23 @@ def _git_lines(args: list[str], repo_root: Path) -> list[str]:
     return [line for line in proc.stdout.splitlines() if line.strip()]
 
 
+def _is_unnumbered_addition(path: str, added: set[str], head_names: set[str]) -> bool:
+    """True for an ``ADR-NEW-<slug>.md`` that base ADDED and the head does not carry.
+
+    Such a file has no number, so no renumber on main can have touched it, and
+    the duplicate-id scan this guard protects has nothing stale to report about
+    it. A head carrying the same file name is a possible slug collision, so that
+    case still counts as moved.
+    """
+    name = Path(path).name
+    return (
+        path in added
+        and name.startswith("ADR-NEW-")
+        and name.endswith(".md")
+        and name not in head_names
+    )
+
+
 def check_ref_freshness(
     base_ref: str,
     head_ref: str,
@@ -70,6 +87,13 @@ def check_ref_freshness(
     ancestry check failed PR #3600's adr check twice in 30 min on refs that
     carried every ADR main had, and each failure cost a branch update and a
     full CI run on a saturated pool.
+
+    An unnumbered ``ADR-NEW-<slug>.md`` that main ADDED is not counted as moved
+    either, unless the head carries the same file name: it cannot have been
+    renumbered, so it cannot leave stale duplicate ids behind. Measured Thu 15
+    Oct 2026: three direct merges in 20 min each added one ADR-NEW file and
+    failed the adr check of every open PR, which then needed a branch update
+    and a full CI run.
     """
     try:
         base_sha = _git_rev_parse(base_ref, repo_root)
@@ -100,13 +124,30 @@ def check_ref_freshness(
             moved = _git_lines(
                 ["diff", "--name-only", fork[0], base_sha, "--", gated_dir], repo_root
             )
+            added = set(
+                _git_lines(
+                    ["diff", "--name-only", "--diff-filter=A", fork[0], base_sha, "--", gated_dir],
+                    repo_root,
+                )
+            )
+            head_names = {
+                Path(p).name
+                for p in _git_lines(["ls-tree", "--name-only", head_sha, f"{gated_dir}/"], repo_root)
+            }
         except Exception as exc:
             return RefVerdict(
                 2, f"[adr-check] UNKNOWN: could not measure what moved on {base_ref} ({exc})"
             )
+        unnumbered = [p for p in moved if _is_unnumbered_addition(p, added, head_names)]
+        moved = [p for p in moved if p not in unnumbered]
         if not moved:
+            only_new = (
+                f" (only unnumbered ADR-NEW additions: {', '.join(unnumbered[:5])})"
+                if unnumbered
+                else ""
+            )
             print(
-                f"[adr-check] {FRESH_ENOUGH_MSG} {gated_dir}/: "
+                f"[adr-check] {FRESH_ENOUGH_MSG} {gated_dir}/{only_new}: "
                 f"{base_ref}={base_sha[:12]} vs fork {fork[0][:12]}; accepting {head_ref}",
             )
             return None

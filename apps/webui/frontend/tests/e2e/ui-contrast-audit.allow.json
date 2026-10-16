@@ -92,18 +92,6 @@
       "optional": true
     },
     {
-      "el": "hp-btn > span",
-      "skins": [
-        "default",
-        "mono-dev"
-      ],
-      "surfaces": [
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst default \"SET\" #d0342c on #1a1e25 = 3.35:1 (needs 4.5:1). HeadphoneCluster.svelte. Listed in the W34 findings table on #5638 for triage."
-    },
-    {
       "el": "row > span.count",
       "skins": [
         "default"
@@ -306,21 +294,6 @@
       "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"S\" #4a4f57 on #b6bbb9 = 4.23:1 (needs 4.5:1). QualityBadge.svelte inside TrackTable. Listed in the W34 findings table on #5638 for triage. The theme-light pass shows the same pair (#4a4f57 on #b6bbb9 = 4.23:1) once it is driven through the real theme pref (Codex P2 on #5727): the hovered TrackTable row is the backdrop, and TrackTable is a single-owner hotspot, so the fix is left to its owner."
     },
     {
-      "el": "tray-right-cluster > button.tray-midi",
-      "skins": [
-        "default",
-        "mono-dev",
-        "light",
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, found by the first W34 audit run (Tue 6 Oct 2026): worst light \"MIDI\" #27241f on #222a38 = 1.07:1 (needs 4.5:1). BrowserPanel.svelte tray (hotspot). Listed in the W34 findings table on #5638 for triage. At rest (opacity 0.45, measured once faint text stopped counting as inactive, Codex on #5727): default #464a51 on #14171d = 2.02:1, every skin."
-    },
-    {
       "el": "summary > span.sha.dirty",
       "skins": [
         "light",
@@ -430,21 +403,6 @@
         "performance-more"
       ],
       "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"\u25af\u25af\" #5e646b on #1a1e25 = 2.78:1 (needs 4.5:1). LoopCluster.svelte inactive loop-mode glyph, dimmed by opacity. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
-    },
-    {
-      "el": "explainer > button.hp-btn.midi-btn.st-grey",
-      "skins": [
-        "default",
-        "mono-dev",
-        "light",
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-less",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"MIDI\" #595e65 on #1a1e25 = 2.56:1 (needs 4.5:1). HeadphoneCluster.svelte .midi-btn.st-grey opacity 0.6 (no MIDI device). Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
     },
     {
       "el": "deck-btns > button.deck-target.loaded-target",

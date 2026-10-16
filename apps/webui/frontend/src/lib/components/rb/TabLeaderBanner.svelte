@@ -39,6 +39,7 @@
 		color: var(--rb-text-dim);
 		font-size: var(--rb-fs-label);
 		line-height: 16px;
+		/* No opacity: at 0.92 the dim label blended to 4.5:1 and failed UICONTRAST-01. */
 	}
 
 	.tab-leader-take {

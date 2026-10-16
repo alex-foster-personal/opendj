@@ -178,7 +178,7 @@ def test_denied_root_warns_every_cycle_and_never_mass_tombstones(
     assert len(_live_tracks(state_conn)) == 1
 
     denied_probe = fs_access.AccessProbe(
-        path=str(root), exists=True, readable=False, denied=True, detail="TCC denied (test)"
+        path=str(root), exists=True, readable=False, denied=True, detail="TCC denied (test)", pending=False
     )
     with mock.patch("apps.shared.fs_access.probe_all", return_value=[denied_probe]):
         second = folder_rescan.reconcile_folders(
@@ -451,6 +451,166 @@ def test_a_tombstone_older_than_the_reason_column_is_read_as_the_users(
 
     assert report.tracks_added == 0
     assert _tombstone(state_conn, audio_path)[0] is not None
+
+
+# ----- overlap with another source (FWATCH-02) ----------------------------
+
+
+def test_a_file_another_source_already_owns_is_not_duplicated(state_conn, tmp_path: Path) -> None:
+    """[if] a watched folder holds a file rekordbox already put in the library
+    [then] the cycle mints no folder-tier copy, [else stop].
+
+    A LIVE row under a watched root is part of the rescan inventory, so it is
+    adopted rather than counted as owned elsewhere; the counter covers the
+    rows the inventory cannot see (a user-removed row, below).
+    """
+    root = tmp_path / "music"
+    owned = root / "owned.wav"
+    _write_wav(owned)
+    _write_wav(root / "new.wav")
+    writer = _writer(state_conn)
+    writer.upsert_track(
+        stable_id="rb-owned",
+        stable_id_tier="isrc",
+        title="owned",
+        artists=[],
+        album=None,
+        isrc="GBAAA0000001",
+        duration_ms=1,
+        file_path=str(owned),
+        content_hash=None,
+        audio_hash=None,
+    )
+
+    report = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+
+    assert report.files_owned_by_other_source == 0
+    assert report.tracks_added == 1
+    paths = [path for _, path in _live_tracks(state_conn)]
+    assert paths.count(str(owned)) == 1, paths
+    assert ("rb-owned", str(owned)) in _live_tracks(state_conn)
+    assert str(root / "new.wav") in paths
+
+
+def test_a_watched_folder_with_no_other_source_adds_every_file(state_conn, tmp_path: Path) -> None:
+    """Control for the guard above: with no overlapping row, nothing is held back."""
+    root = tmp_path / "music"
+    _write_wav(root / "a.wav")
+    _write_wav(root / "b.wav")
+    report = folder_rescan.reconcile_folders(_writer(state_conn), [root], previous_signature="")
+    assert report.files_owned_by_other_source == 0
+    assert report.tracks_added == 2
+
+
+def test_a_file_relinked_away_from_its_other_source_is_picked_up_without_a_disk_change(
+    state_conn, tmp_path: Path
+) -> None:
+    """[if] the other-source row moves to another path while the file stays [then]
+    the next cycle does not cheap-skip and the folder row is minted, [else stop]."""
+    root = tmp_path / "music"
+    owned = root / "owned.wav"
+    _write_wav(owned)
+    writer = _writer(state_conn)
+    _upsert_other_source(writer, "rb-owned", owned)
+    first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+    assert first.tracks_added == 0
+    _upsert_other_source(writer, "rb-owned", tmp_path / "elsewhere.wav")
+
+    second = folder_rescan.reconcile_folders(writer, [root], previous_signature=first.signature)
+
+    assert second.skipped_no_changes is False
+    assert second.tracks_added == 1
+
+
+def test_a_track_the_user_removed_is_not_brought_back_by_a_watched_folder(
+    state_conn, tmp_path: Path
+) -> None:
+    """[if] the user removed a rekordbox row whose file sits in a watched folder
+    [then] no folder-tier copy appears, [else stop]."""
+    root = tmp_path / "music"
+    owned = root / "owned.wav"
+    _write_wav(owned)
+    writer = _writer(state_conn)
+    _upsert_other_source(writer, "rb-owned", owned)
+    writer.remove_from_library("rb-owned")
+
+    report = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+
+    assert report.tracks_added == 0
+    assert report.files_owned_by_other_source == 1
+    assert _live_tracks(state_conn) == []
+
+
+def _upsert_inferred_rekordbox(writer: StateWriter, stable_id: str, path: Path) -> None:
+    """A rekordbox track with no ISRC: ``inferred`` tier, owned via its vendor id."""
+    writer.upsert_track(
+        stable_id=stable_id,
+        stable_id_tier="inferred",
+        title="owned",
+        artists=[],
+        album=None,
+        isrc=None,
+        duration_ms=1,
+        file_path=str(path),
+        content_hash=None,
+        audio_hash=None,
+    )
+    writer.set_vendor_id(stable_id, "rekordbox", "4711")
+
+
+def test_an_inferred_rekordbox_row_the_user_removed_is_not_brought_back(
+    state_conn, tmp_path: Path
+) -> None:
+    """[if] the removed rekordbox row has no ISRC (inferred tier) [then] its
+    vendor id still marks the path as owned, so no folder row appears, [else stop]."""
+    root = tmp_path / "music"
+    owned = root / "owned.wav"
+    _write_wav(owned)
+    writer = _writer(state_conn)
+    _upsert_inferred_rekordbox(writer, "rb-inferred", owned)
+    writer.remove_from_library("rb-inferred")
+
+    report = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+
+    assert report.tracks_added == 0
+    assert report.files_owned_by_other_source == 1
+    assert _live_tracks(state_conn) == []
+
+
+def test_an_inferred_rekordbox_row_relinked_away_frees_its_file(state_conn, tmp_path: Path) -> None:
+    """[if] a removed inferred rekordbox row is restored and relinked away while
+    the file stays [then] the next cycle does not cheap-skip and the folder row
+    is minted, [else stop]."""
+    root = tmp_path / "music"
+    owned = root / "owned.wav"
+    _write_wav(owned)
+    writer = _writer(state_conn)
+    _upsert_inferred_rekordbox(writer, "rb-inferred", owned)
+    writer.remove_from_library("rb-inferred")
+    first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+    assert first.tracks_added == 0
+    writer.undelete_track("rb-inferred")
+    _upsert_inferred_rekordbox(writer, "rb-inferred", tmp_path / "elsewhere.wav")
+
+    second = folder_rescan.reconcile_folders(writer, [root], previous_signature=first.signature)
+
+    assert second.skipped_no_changes is False
+    assert second.tracks_added == 1
+
+
+def _upsert_other_source(writer: StateWriter, stable_id: str, path: Path) -> None:
+    writer.upsert_track(
+        stable_id=stable_id,
+        stable_id_tier="isrc",
+        title="owned",
+        artists=[],
+        album=None,
+        isrc="GBAAA0000002",
+        duration_ms=1,
+        file_path=str(path),
+        content_hash=None,
+        audio_hash=None,
+    )
 
 
 def _write_wav_sample(path: Path, sample: int) -> None:

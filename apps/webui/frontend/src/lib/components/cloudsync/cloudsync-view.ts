@@ -17,14 +17,23 @@
 import { api, readApiErrorStatus } from '$lib/api/client';
 import {
 	SYNC_MODES,
+	deletePolicy,
+	putPolicy,
 	type AssetKind,
+	type PolicyOutcome,
 	type CloudSyncStatus,
 	type CloudSyncUpdateRequired,
 	type SyncMode,
 	type SyncPolicy,
 	type SyncPolicyPutBody
 } from '$lib/api-cloudsync';
-import type { CloudSyncConfigBody, CloudSyncConfigOut, SyncRunBody } from '$lib/api-cloudsync-ops';
+import type {
+	CloudSyncConfigBody,
+	CloudSyncConfigOut,
+	GrantOut,
+	GrantRequest,
+	SyncRunBody
+} from '$lib/api-cloudsync-ops';
 
 export const INERT_TOOLTIP = 'not implemented - see PARITY-TODO';
 
@@ -93,18 +102,35 @@ function isSyncMode(raw: string): raw is SyncMode {
 	return (SYNC_MODES as ReadonlyArray<string>).includes(raw);
 }
 
-/** A mode pick on one cell. 'unset' is display only: no route clears a row. */
+/**
+ * Hover title of the 'unset' option, shown on EVERY cell (issue #5086,
+ * CLOUDSYNC-33): an unset cell is a real state, not a default. The machine
+ * keeps that kind local-only; nothing streams it or invents a mode for it.
+ */
+export const UNSET_OPTION_TITLE =
+	'Unset: no policy is stored for this cell, so this machine keeps this kind local-only. ' +
+	'It is never streamed or hydrated from the cloud, and no mode is invented for it ' +
+	'(CLOUDSYNC-33). Picking unset on a stored cell clears it with a synced tombstone.';
+
+export type PolicyModeDecision =
+	| PolicyPutDecision
+	| { kind: 'delete'; machineId: string; assetKind: AssetKind }
+	| { kind: 'noop' };
+
+/**
+ * A mode pick on one cell. Picking 'unset' on a stored cell clears it through
+ * DELETE /policies/{machine_id}/{asset_kind}; on a cell that is already unset
+ * it changes nothing.
+ */
 export function policyModeChange(
 	machineId: string,
 	assetKind: AssetKind,
 	existing: SyncPolicy | undefined,
 	raw: string
-): PolicyPutDecision {
+): PolicyModeDecision {
 	if (raw === UNSET) {
-		return {
-			kind: 'refuse',
-			reason: `A stored policy cannot be cleared back to unset yet (no DELETE route): ${INERT_TOOLTIP}`
-		};
+		if (existing === undefined) return { kind: 'noop' };
+		return { kind: 'delete', machineId, assetKind };
 	}
 	if (!isSyncMode(raw)) {
 		return { kind: 'refuse', reason: `Unknown sync mode ${JSON.stringify(raw)}` };
@@ -118,6 +144,44 @@ export function policyModeChange(
 			cache_budget_mb: raw === 'cached' ? (existing?.cache_budget_mb ?? null) : null
 		}
 	};
+}
+
+export type PolicyCommitResult =
+	| { kind: 'saved'; policy: SyncPolicy }
+	| { kind: 'cleared'; machineId: string; assetKind: AssetKind; outcome: PolicyOutcome };
+
+/**
+ * Carry out a 'put' or 'delete' decision against the daemon. A refusal or a
+ * noop never reaches here: the caller handles those without any request.
+ */
+export async function commitPolicyDecision(
+	decision: Extract<PolicyModeDecision, { kind: 'put' } | { kind: 'delete' }>
+): Promise<PolicyCommitResult> {
+	if (decision.kind === 'put') {
+		return { kind: 'saved', policy: await putPolicy(decision.body) };
+	}
+	const outcome = await deletePolicy(decision.machineId, decision.assetKind);
+	if (!outcome.written) {
+		throw new Error('The policy gate wrote nothing; the cell is still stored.');
+	}
+	return { kind: 'cleared', machineId: decision.machineId, assetKind: decision.assetKind, outcome };
+}
+
+/**
+ * The info line after a cell is cleared. Clearing a cell can introduce a
+ * NON-blocking completeness warning (the machine no longer has a policy for
+ * that kind). That is the expected result of the user's choice, not a
+ * failure, so it reads as information. A blocking verdict never gets here:
+ * the backend answers it with 409 POLICY_VIOLATION and writes nothing.
+ */
+export function policyClearedNote(
+	kindLabel: string,
+	machineName: string,
+	outcome: PolicyOutcome
+): string {
+	const base = `${kindLabel} on ${machineName} is now unset: this machine keeps it local-only.`;
+	const notes = outcome.violations.filter((v) => !v.blocking).map((v) => v.message);
+	return notes.length === 0 ? base : `${base} Expected note: ${notes.join('; ')}`;
 }
 
 /** A budget edit on one cell. Refused unless the STORED mode is cached. */
@@ -770,4 +834,58 @@ export const CLOUDSYNC_TABS: ReadonlyArray<{ id: CloudSyncTab; label: string }> 
 export function cloudSyncTabFromUrl(url: URL): CloudSyncTab {
 	const raw = url.searchParams.get('tab');
 	return CLOUDSYNC_TABS.find((t) => t.id === raw)?.id ?? 'status';
+}
+
+// ----------------------------------------------------------- enrollment grant
+
+/**
+ * What the newcomer runs on the JOINING machine to redeem a grant. Mirrors
+ * apps/sync_hub/maintenance_enroll.grant_lines; `--grant-file -` reads the
+ * token from stdin so it stays out of shell history and /proc.
+ */
+export const ENROLL_COMMAND_HINT =
+	'python -m apps.sync_hub enroll --data-dir <its data dir> --hub <this hub url> --name <its name> --grant-file -';
+
+export type GrantRequestDecision =
+	| { kind: 'post'; body: GrantRequest }
+	| { kind: 'refuse'; reason: string };
+
+/** The grant form's body. Refuses an empty or obviously malformed email. */
+export function grantRequest(rawEmail: string): GrantRequestDecision {
+	const email = rawEmail.trim();
+	if (email === '') {
+		return { kind: 'refuse', reason: 'Enter the email of a user who has signed in on this hub.' };
+	}
+	if (!/^[^\s@]+@[^\s@]+$/.test(email)) {
+		return { kind: 'refuse', reason: `${JSON.stringify(email)} is not an email address.` };
+	}
+	return { kind: 'post', body: { owner_email: email } };
+}
+
+/**
+ * Plain sentences for the grant route's documented refusals
+ * (apps/webui/server/routes/cloudsync_ops.py GRANT_RESPONSES). Never echoes
+ * a token: a failed mint has none.
+ */
+export function grantErrorSentence(error: unknown): string {
+	switch (readApiErrorCode(error)) {
+		case 'CLOUDSYNC_OPS_LOCAL_ONLY':
+			return 'Enrollment grants can only be created on the hub machine itself, from its own browser.';
+		case 'CLOUDSYNC_NOT_A_HUB':
+			return 'This machine is not a hub. Create the grant on the hub the new machine will join.';
+		case 'CLOUDSYNC_GRANT_OWNER_UNKNOWN':
+			return 'No one with that email has signed in on this hub yet. Sign in on the hub with that account first.';
+		case 'CLOUDSYNC_HUB_FLAG_INVALID':
+			return "This hub's MDT_IS_HUB setting is invalid (it must be 1, 0 or empty). Fix it and restart.";
+		default:
+			return `Could not create the enrollment grant: ${errorMessage(error)}`;
+	}
+}
+
+/** Hover title on the grant's expiry readout. */
+export function grantExpiryTitle(grant: GrantOut): string {
+	return (
+		'UTC time after which this single-use grant can no longer be redeemed ' +
+		`(created ${grant.created_at}). Create a new one if it lapses.`
+	);
 }

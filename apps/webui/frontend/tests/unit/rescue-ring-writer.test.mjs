@@ -79,3 +79,19 @@ test('transport event during in-flight POST schedules a follow-up snapshot', asy
 
 	writer.uninstallRescueRingWriterHooks();
 });
+
+// Regression line: if the ring writer's POST body records 'more' while the deck
+// layout is LESS then rescue restore flips every LESS user back to MORE after a crash.
+// The body is built by the same function _postSnapshot sends; no network is faked.
+test('rescue ring POST body records the live LESS deck layout, not a default', async () => {
+	const writer = await _loadWriter();
+	writer.uiPrefs.deck_layout = 'less';
+	assert.equal(JSON.parse(writer.buildRescuePostBody('transport', 1)).deck_layout, 'less');
+});
+
+// Control for the overshoot: a fix that hardcodes 'less' must fail here.
+test('rescue ring POST body records the live MORE deck layout', async () => {
+	const writer = await _loadWriter();
+	writer.uiPrefs.deck_layout = 'more';
+	assert.equal(JSON.parse(writer.buildRescuePostBody('transport', 1)).deck_layout, 'more');
+});

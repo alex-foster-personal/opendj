@@ -11,6 +11,16 @@ export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
 export { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
+// LIBTREE-01/02: the tree order rules (pure).
+export {
+	compareTreeOrder,
+	createLatestRead,
+	createTreeOrderWriter,
+	movePlaylistInOrder,
+	nameSortedIds,
+	treeOrderIds,
+	type DropPlace
+} from './playlist-tree-order';
 export {
 	resolveRowMarkerAnlz,
 	resolveRowPreviewStrip,

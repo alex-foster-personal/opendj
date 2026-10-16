@@ -3,13 +3,65 @@
 	 * /cloudsync Fleet tab: enrollment state of every machine this state DB
 	 * knows. HTTP twin of `python -m apps.sync_hub fleet --json`
 	 * (GET /api/v1/cloudsync/fleet, local operator only).
+	 *
+	 * Also the enrollment-grant form, HTTP twin of `python -m apps.sync_hub
+	 * grant` (POST /api/v1/cloudsync/enrollment-grants, hub and local operator
+	 * only). The token is shown ONCE in a read-only field: it is never logged,
+	 * toasted or persisted, and it is dropped when a new grant is requested.
 	 */
 	import { onMount } from 'svelte';
 
-	import { getCloudSyncFleet, type FleetOut } from '$lib/api-cloudsync-ops';
+	import {
+		getCloudSyncFleet,
+		mintEnrollmentGrant,
+		type FleetOut,
+		type GrantOut
+	} from '$lib/api-cloudsync-ops';
+
+	import {
+		ENROLL_COMMAND_HINT,
+		grantErrorSentence,
+		grantExpiryTitle,
+		grantRequest
+	} from './cloudsync-view';
 
 	let fleet = $state<FleetOut | null>(null);
 	let loadError = $state<string | null>(null);
+
+	let grantEmail = $state('');
+	let grantBusy = $state(false);
+	let grantError = $state<string | null>(null);
+	let grant = $state<GrantOut | null>(null);
+	let copyState = $state<'idle' | 'copied' | 'failed'>('idle');
+
+	async function createGrant(): Promise<void> {
+		grant = null;
+		grantError = null;
+		copyState = 'idle';
+		const decision = grantRequest(grantEmail);
+		if (decision.kind === 'refuse') {
+			grantError = decision.reason;
+			return;
+		}
+		grantBusy = true;
+		try {
+			grant = await mintEnrollmentGrant(decision.body);
+		} catch (exc) {
+			grantError = grantErrorSentence(exc);
+		} finally {
+			grantBusy = false;
+		}
+	}
+
+	async function copyToken(): Promise<void> {
+		if (grant === null) return;
+		try {
+			await navigator.clipboard.writeText(grant.token);
+			copyState = 'copied';
+		} catch {
+			copyState = 'failed';
+		}
+	}
 
 	async function refresh(): Promise<void> {
 		try {
@@ -77,6 +129,69 @@
 			</div>
 		{/if}
 	{/if}
+
+	<form
+		class="grant"
+		data-testid="cloudsync-grant-form"
+		aria-label="Create enrollment grant"
+		onsubmit={(e) => {
+			e.preventDefault();
+			void createGrant();
+		}}
+	>
+		<h3>Add a machine</h3>
+		<p class="muted">
+			Create a single-use enrollment grant on this hub for a user who has already signed in here,
+			then redeem it on the joining machine.
+		</p>
+		<div class="grant-row">
+			<input
+				type="email"
+				autocomplete="off"
+				placeholder="owner email"
+				title="Email of a user who has signed in on this hub; the new machine is enrolled under them"
+				bind:value={grantEmail}
+				disabled={grantBusy}
+			/>
+			<button
+				type="submit"
+				disabled={grantBusy}
+				title="Mint one single-use enrollment grant on this hub (python -m apps.sync_hub grant)"
+			>
+				{grantBusy ? 'Creating...' : 'Create enrollment grant'}
+			</button>
+		</div>
+		{#if grantError !== null}
+			<p class="err" role="alert" data-testid="cloudsync-grant-error">{grantError}</p>
+		{/if}
+		{#if grant !== null}
+			<div class="grant-out" data-testid="cloudsync-grant-out">
+				<p>
+					Grant for {grant.owner_email}. Shown once: copy it now.
+					<span title={grantExpiryTitle(grant)}>Expires {grant.expires_at}.</span>
+				</p>
+				<div class="grant-row">
+					<input
+						class="token"
+						type="text"
+						readonly
+						aria-label="Enrollment grant token"
+						title="Single-use enrollment token; only its hash is stored on the hub"
+						value={grant.token}
+					/>
+					<button type="button" title="Copy the token to the clipboard" onclick={() => copyToken()}>
+						{copyState === 'copied' ? 'Copied' : 'Copy'}
+					</button>
+				</div>
+				{#if copyState === 'failed'}
+					<p class="err" role="alert">Could not copy; select the token and copy it by hand.</p>
+				{/if}
+				<p class="muted">
+					On the joining machine, run <code>{ENROLL_COMMAND_HINT}</code> and paste the token on stdin.
+				</p>
+			</div>
+		{/if}
+	</form>
 </section>
 
 <style>
@@ -101,6 +216,36 @@
 		border-radius: 6px;
 		padding: 4px 8px;
 		cursor: pointer;
+	}
+	.grant {
+		margin-top: 1.5rem;
+		border-top: 1px solid var(--border);
+		padding-top: 0.75rem;
+	}
+	.grant h3 {
+		margin: 0 0 0.25rem;
+		font-size: 0.95rem;
+	}
+	.grant-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		align-items: center;
+	}
+	.grant input {
+		background: var(--bg);
+		color: var(--fg);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 4px 8px;
+		min-width: 16em;
+	}
+	.grant input.token {
+		font-family: monospace;
+		flex: 1;
+	}
+	.grant code {
+		word-break: break-all;
 	}
 	.muted {
 		color: var(--muted);

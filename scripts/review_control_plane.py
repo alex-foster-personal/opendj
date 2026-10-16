@@ -326,13 +326,18 @@ def author_markers(message: str) -> set[str]:
     """Harness markers from the message's trailer block only (#4361 r4137687862).
 
     A paragraph made only of exact `git cherry-pick -x` notes is skipped, so a marker above the
-    note is still read; any other paragraph that is not markers and trailers ends the walk."""
+    note is still read. An exact note inside a trailer paragraph is also accepted: when the message
+    already ends in trailers, git appends the note to that block with no blank line (#7087's
+    aae38d8c7). Any other paragraph that is not markers, trailers and notes ends the walk."""
     markers: set[str] = set()
     for paragraph in reversed(re.split(r"\n[ \t]*\n", message.strip())):
         lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
         if lines and all(GIT_CHERRY_PICK_NOTE.fullmatch(x) for x in lines):
             continue
-        if not lines or not all(AUTHOR_MARKER.fullmatch(x) or GIT_TRAILER_LINE.fullmatch(x) for x in lines):
+        if not lines or not all(
+            AUTHOR_MARKER.fullmatch(x) or GIT_TRAILER_LINE.fullmatch(x) or GIT_CHERRY_PICK_NOTE.fullmatch(x)
+            for x in lines
+        ):
             break
         markers |= {m.group(1) for x in lines if (m := AUTHOR_MARKER.fullmatch(x))}
     return markers

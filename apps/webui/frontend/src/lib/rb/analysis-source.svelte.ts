@@ -24,7 +24,10 @@ import { ApiError, api, readApiErrorCode, readApiErrorStatus, unwrap } from '../
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import {
 	evictAnlzCacheEntriesServingOtherSource,
+	anlzCacheIdsAwaitingSections,
 	invalidateAllAnlzCacheEntries,
+	invalidateAnlzCacheEntry,
+	noteSectionsAnnounced,
 	refreshAnalysisSourceDecks
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { bumpAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
@@ -48,7 +51,10 @@ export type { AnalysisSource, AnalysisSourceFeature };
 // vocabulary here is UI-facing and predates apps.analysis.lanes.
 const _LANE_OF_FEATURE = Object.fromEntries(ANALYSIS_SOURCE_FEATURES.map((feature) => [feature, feature])) as Record<AnalysisSourceFeature, string>;
 
-const _UI_SOURCE_OF_EFFECTIVE: Record<string, AnalysisSource> = { rbx: 'rekordbox', own: 'own' };
+const _UI_SOURCE_OF_EFFECTIVE: Record<string, AnalysisSource> = {
+	rbx: 'rekordbox',
+	own: 'own'
+};
 const _TOGGLE_OF_UI_SOURCE: Record<AnalysisSource, 'rbx' | 'own'> = { rekordbox: 'rbx', own: 'own' };
 
 // A poll may begin before a local PUT and settle after it. The daemon then
@@ -491,7 +497,12 @@ async function _rollBackFailedSwitch(
  * one scheduler and already imports setAnalysisSource from here, so importing
  * it back would close a module cycle. Same install-a-port shape
  * `installAuthoritativeAnlzGridSink` and `installScopedSyncRunner` use. */
-export type AnalysisSourceRefreshRunner = <T>(work: () => Promise<T>) => Promise<T>;
+export type AnalysisSourceRefreshRunner = <T>(
+	work: () => Promise<T>,
+	/** The scheduler scopes to hold; omitted means every deck plus sync. A
+	 * sections-only refresh passes just the decks holding the track. */
+	scopes?: readonly (typeof DECK_IDS)[number][]
+) => Promise<T>;
 
 let _refreshRunner: AnalysisSourceRefreshRunner | null = null;
 
@@ -607,11 +618,84 @@ export function subscribeAnalysisRecordChanges(): () => void {
 	// superseded grid indefinitely (discussion_r3969942717 P1 BLOCKING). A
 	// resync carries no ids and means "you may have missed anything", so unlike
 	// `_onTracksChanged` it always refreshes unconditionally.
-	const unsubscribeResync = subscribeResync(() => _refreshOwnGridsAfterRecordChange());
+	// The `sections` kind needs the same cover, and independently of the own-grid
+	// gate: own-fast sections fill a missing PSSI under the default rbx lanes too.
+	// After a resync every track whose cached answer is own-fast `pending` is
+	// treated as if its `sections` event arrived: evicted, and a loaded deck
+	// holding it (its payload is its cache entry) refetches. Nothing pending
+	// costs nothing, so a resync on rbx lanes triggers no blanket refetch.
+	const unsubscribeResync = subscribeResync(() => {
+		_refreshOwnGridsAfterRecordChange();
+		// A loaded deck keeps its payload after the ANLZ LRU drops its entry
+		// (discussion_r4253183590), so its own `pending` counts too.
+		_onSectionsChanged([
+			...anlzCacheIdsAwaitingSections(),
+			...DECK_IDS.flatMap((deck) => {
+				const { stable_id, anlz } = deckStates[deck];
+				return stable_id !== null && anlz?.own_phrases?.status === 'pending' ? [stable_id] : [];
+			})
+		]);
+	});
+	const unsubscribeSections = subscribeKind('sections', _onSectionsChanged);
 	return () => {
 		unsubscribeKind();
 		unsubscribeResync();
+		unsubscribeSections();
 	};
+}
+
+/** STRUCT-06: own-fast sections for these tracks just landed on the server
+ * (`fast_sidecar.py` computes them off the load path and publishes this).
+ * A loaded deck holding one of them refetches, whatever the lanes are set to,
+ * because the sections can be served under the default rbx Phrase lane too
+ * (they fill a missing PSSI). A track only cached by browsing is dropped from
+ * the cache instead, so its next load asks again rather than reusing the
+ * `pending` answer it was given. */
+function _onSectionsChanged(ids: string[]): void {
+	noteSectionsAnnounced(ids);
+	for (const id of ids) invalidateAnlzCacheEntry(id);
+	const holders = DECK_IDS.filter((deck) => {
+		const stable_id = deckStates[deck].stable_id;
+		return stable_id !== null && ids.includes(stable_id);
+	});
+	if (holders.length === 0) return;
+	void _refreshSectionsOnDecks(holders);
+}
+
+/** Retries for a failed sections refresh, each under the same deck scopes. */
+const SECTIONS_REFRESH_RETRIES = 3;
+const SECTIONS_REFRESH_RETRY_MS = 5_000;
+
+/** Refetches only the decks holding a track whose sections landed, under
+ * ONLY those decks' scheduler scopes (discussion_r4253771060 P1, #6505): a
+ * play, cue or fader command on any other deck never queues behind this
+ * network I/O. Sections-only: phrase fields are published, nothing else, so
+ * the all-deck + sync barrier the source-switch refresh needs is not. A
+ * failure retries under the SAME deck scopes, never the all-deck
+ * record-change refresh (discussion_r4260719119); after the last retry the
+ * deck keeps its `pending` answer until its next load or a bus resync. */
+async function _refreshSectionsOnDecks(
+	holders: (typeof DECK_IDS)[number][],
+	attempt = 0
+): Promise<void> {
+	const wanted = holders.map((deck) => [deck, deckStates[deck].stable_id] as const);
+	try {
+		if (_refreshRunner === null) {
+			throw new Error('no analysis source refresh runner is installed');
+		}
+		await _refreshRunner(() => refreshAnalysisSourceDecks(holders, deckStates, () => false, true), holders);
+	} catch (exc) {
+		if (attempt >= SECTIONS_REFRESH_RETRIES) {
+			console.error('[analysis-source] sections refresh failed; giving up until the next load', exc);
+			return;
+		}
+		console.error('[analysis-source] sections refresh failed; retrying on the same decks', exc);
+		setTimeout(() => {
+			// Only decks still holding the track they held when this refresh began.
+			const still = wanted.filter(([deck, id]) => id !== null && deckStates[deck].stable_id === id);
+			if (still.length > 0) void _refreshSectionsOnDecks(still.map(([deck]) => deck), attempt + 1);
+		}, SECTIONS_REFRESH_RETRY_MS);
+	}
 }
 
 /** The genuine ingest-completion signal always carries an empty `ids`; an

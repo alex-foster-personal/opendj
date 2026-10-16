@@ -19,7 +19,7 @@ export interface RunoutPhrase {
 	kind: number;
 	mood: number;
 	label?: string;
-	source?: 'own';
+	source?: 'own' | 'own-fast';
 }
 
 /** The beat fields this needs (a slice of anlz-types AnlzBeat): time in seconds, local BPM. */
@@ -44,10 +44,11 @@ export interface RunoutDeck {
 /**
  * rekordbox PSSI phrase kinds that mean "outro": kind 6 under the high mood
  * (mood 1), kind 10 under the mid and low moods (2 and 3). Own sections carry
- * kind and mood 0 and name themselves in `label` instead.
+ * (All-In-One and own-fast alike) kind and mood 0 and name themselves in
+ * `label` instead.
  */
 export function isOutroPhrase(p: RunoutPhrase): boolean {
-	if (p.source === 'own') return /outro/i.test(p.label ?? '');
+	if (p.source === 'own' || p.source === 'own-fast') return /outro/i.test(p.label ?? '');
 	if (p.mood === 1) return p.kind === 6;
 	if (p.mood === 2 || p.mood === 3) return p.kind === 10;
 	return false;

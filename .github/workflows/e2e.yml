@@ -598,7 +598,12 @@ jobs:
     # Unset, the chain is exactly the two disjuncts above and the pool.
     # Pinned by (private path).
     runs-on: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && vars.CI_RUNS_ON_E2E_TRUNK || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) && vars.CI_RUNS_ON_E2E_MAIN_FIX || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_E2E && vars.CI_RUNS_ON_E2E_MERGE_QUEUE || vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
-    timeout-minutes: 30
+    # 30 -> 40 min (Fri 9 Oct 2026): the gate now runs right at 30 minutes on a
+    # clean pass. PR #6123's run at 9d70c0f6a passed every suite (288 passed,
+    # 0 failed) on agbox3-7 and was killed one second after its last suite
+    # finished, which reads as a red verdict for a green PR. Trimming suite time
+    # is the real fix; this keeps a pass from being scored as a failure meanwhile.
+    timeout-minutes: 40
     env:
       # One native thread per process. This job's "Root Playwright suite" step
       # runs the webui refresh job, which shells out to

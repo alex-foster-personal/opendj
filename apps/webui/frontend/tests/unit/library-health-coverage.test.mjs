@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { build } from 'esbuild';
+import { build } from './esbuild-tsconfig.mjs';
 import { importBundledSource } from './import-bundled-source.mjs';
 
 const LIB = fileURLToPath(new URL('../../src/lib', import.meta.url));

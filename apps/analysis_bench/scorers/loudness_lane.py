@@ -14,7 +14,7 @@ pyloudnorm: scipy is a project dep so `_true_peak` can live in the
 pytest-imported scorer, pyloudnorm cannot.
 
 dBTP REFERENCE is `_true_peak` below, ported from
-`.planning/legacy-app-audits/pn_measure.py:117-118` and re-homed here as spec
+`(private path):117-118` and re-homed here as spec
 section 2 requires. It is not the candidate (ffmpeg `ebur128=peak=true`). It
 is not pyloudnorm, which has no true peak. Spec section 8: "if the dBTP gate
 compares against pyloudnorm (which has no true peak) then broken". This
@@ -40,6 +40,8 @@ from typing import Any
 
 import numpy as np
 from scipy import signal
+
+from apps.analysis_bench.scorers.bundle_guards import refuse_malformed_join, refuse_unknown
 
 __all__ = [
     "LUFS_TOLERANCE_LU",
@@ -87,28 +89,6 @@ def _as_float(value: Any) -> float | None:
     return None
 
 
-def _refuse_malformed_join(
-    bundle: Path, truth_name: str, truth: dict[str, Any], stable_ids: list[str]
-) -> None:
-    """Refuse a bundle whose manifest/truth join is broken, rather than let
-    it score as a silently shrunken denominator (same refusal as key_lane).
-    """
-    duplicates = sorted({sid for sid in stable_ids if stable_ids.count(sid) > 1})
-    if duplicates:
-        raise ValueError(
-            f"{bundle}/manifest.json lists {len(duplicates)} duplicate fixture "
-            f"stable_id(s), first {duplicates[0]!r}: a malformed join must not "
-            "silently collapse into a smaller scored set."
-        )
-    missing = sorted(sid for sid in stable_ids if sid not in truth)
-    if missing:
-        raise ValueError(
-            f"{bundle}/{truth_name} has no truth row at all for {len(missing)} "
-            f"fixture(s) the manifest declares, first {missing[0]!r}: a broken "
-            "join must not silently become a smaller denominator."
-        )
-
-
 def load_bundle(bundle: Path) -> tuple[dict[str, Any], dict[str, _TruthRow]]:
     """`(manifest, loudness truth by stable_id)`.
 
@@ -126,7 +106,7 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], dict[str, _TruthRow]]:
         )
     raw = json.loads((bundle / truth_name).read_text(encoding="utf-8"))["loudness"]
     stable_ids = [row["stable_id"] for row in manifest.get("fixtures") or []]
-    _refuse_malformed_join(bundle, truth_name, raw, stable_ids)
+    refuse_malformed_join(bundle, truth_name, raw, stable_ids)
     parsed: dict[str, _TruthRow] = {}
     for sid in stable_ids:
         row = raw[sid]
@@ -143,16 +123,6 @@ def load_bundle(bundle: Path) -> tuple[dict[str, Any], dict[str, _TruthRow]]:
             "mik_zvolume": _as_float(row.get("mik_zvolume")),
         }
     return manifest, parsed
-
-
-def _refuse_unknown(results: dict[str, Any], stable_ids: list[str]) -> None:
-    unknown = sorted(set(results) - set(stable_ids))
-    if unknown:
-        raise ValueError(
-            f"this arm answered {len(unknown)} fixture(s) the bundle does not contain, "
-            f"first {unknown[0]!r}. It was run against a different fixture set; "
-            "scoring it here would attribute one bundle's numbers to another."
-        )
 
 
 def _parse_candidate(
@@ -198,7 +168,7 @@ def _gate_cell(deltas: list[float], tolerance: float, *, lu: bool) -> dict[str, 
 def _score_arm(
     stable_ids: list[str], truth: dict[str, _TruthRow], results: dict[str, Any]
 ) -> dict[str, Any]:
-    _refuse_unknown(results, stable_ids)
+    refuse_unknown(results, stable_ids)
     lufs_deltas: list[float] = []
     dbtp_deltas: list[float] = []
     mik_deltas: list[float] = []

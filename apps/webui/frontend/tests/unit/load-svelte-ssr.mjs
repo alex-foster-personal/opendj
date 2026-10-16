@@ -25,7 +25,9 @@ import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { build, transform } from 'esbuild';
+import { transform } from 'esbuild';
+
+import { build } from './esbuild-tsconfig.mjs';
 import { compile, compileModule } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';

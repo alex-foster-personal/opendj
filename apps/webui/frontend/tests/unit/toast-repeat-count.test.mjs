@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { build, transformSync } from 'esbuild';
+import { transformSync } from 'esbuild';
+
+import { build } from './esbuild-tsconfig.mjs';
 import { compileModule } from 'svelte/compiler';
 
 import { importBundledSource } from './import-bundled-source.mjs';

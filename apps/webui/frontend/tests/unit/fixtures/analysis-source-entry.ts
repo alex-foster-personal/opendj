@@ -25,7 +25,12 @@ export { connect as connectEventsBus } from '$lib/api/events-bus';
 export {
 	currentAnlzFetchGeneration,
 	ensureAnlz,
+	fetchAnlzForDeckLoad,
 	getAnlzEntry,
 	invalidateAnlzCacheEntry,
-	refreshAnlzCacheEntry
+	refreshAnlzCacheEntry,
+	registerAnlzConsumer,
+	unregisterAnlzConsumer
 } from '$lib/components/rb/wave/anlz-cache.svelte';
+// The hot-cue refresh reads /anlz through this, so the sections race test drives it too.
+export { fetchAnlzBypassingHttpCache } from '$lib/rb/api-rb';

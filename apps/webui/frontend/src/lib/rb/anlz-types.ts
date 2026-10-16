@@ -167,10 +167,13 @@ export interface AnlzPhrase {
 	/** Own sections only (`source: 'own'`, kind and mood 0): the model's section label. */
 	label?: string;
 	/** Present only on own sections; PSSI phrases carry no per-phrase source. */
-	source?: 'own';
+	source?: 'own' | 'own-fast';
 	/** Own sections only, when the producer reports it: an ambient intro or
 	 * outro (no beat), painted lighter and hatched by the section overlay. */
 	ambient?: boolean;
+	/** Own sections only (STRUCT-07): a drop span right after another drop span,
+	 * the same drop cut in two, so it has no drop moment of its own. */
+	continuation?: boolean;
 	/** Own sections only, when present: the model's raw label before it was
 	 * mapped onto DJ vocabulary. Informational; `label` is what renders. */
 	model_label?: string;
@@ -178,7 +181,18 @@ export interface AnlzPhrase {
 
 /** Which producer filled `phrases`: on the rbx Phrase lane rekordbox PSSI wins when
  * present (STRUCT-02); on the own lane only own sections are served (STRUCT-04). */
-export type AnlzPhrasesSource = 'rekordbox' | 'own' | 'none';
+/** A drop, break or build moment from `apps/analysis_structure/drop_events.py`. */
+export interface AnlzPhraseMoment {
+	kind: 'drop' | 'break' | 'build';
+	time_s: number;
+	bar: number | null;
+	/** Drops only: 1, 2, ... for real drops; null for a fake drop. */
+	number?: number | null;
+	/** Drops only: under 4 bars and followed by a withdrawn section. */
+	fake?: boolean;
+}
+
+export type AnlzPhrasesSource = 'rekordbox' | 'own' | 'own-fast' | 'none';
 
 /** Optional analyzer hints for future dynamic key and tempo-aware sync. */
 export interface AnlzPerformanceHints {
@@ -250,8 +264,12 @@ export interface AnlzData {
 	phrases: AnlzPhrase[];
 	/** Which producer filled `phrases`; `none` means nothing was measured. */
 	phrases_source?: AnlzPhrasesSource;
+	/** Own sections only (STRUCT-07): drop, break and build MOMENTS (section starts on
+	 * the track's own downbeats), in time order. Absent or empty when the sections
+	 * have no DJ labels. */
+	phrase_moments?: AnlzPhraseMoment[];
 	/** Own-section sidecar status whenever one exists, including a failed one. */
-	own_phrases?: { status: 'ok' | 'failed'; reason: string | null; producer: string | null; producer_version: string | null };
+	own_phrases?: { status: 'ok' | 'failed' | 'pending'; reason: string | null; producer: string | null; producer_version: string | null };
 	/** Own beatgrid payloads only: time-stamped tempo-change markers, empty
 	 * `[]` when static. A rekordbox-sourced payload has no such key at all. */
 	tempo_changes?: AnlzTempoChange[];

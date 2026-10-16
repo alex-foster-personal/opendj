@@ -15,7 +15,8 @@
 		onrenamesmartlist,
 		onduplicatesmartlist,
 		onselect,
-		ondeletesmartlist
+		ondeletesmartlist,
+		onsortplaylists
 	}: {
 		oncreate?: (() => void) | undefined;
 		oncreatesmartlist?: (() => void) | undefined;
@@ -27,6 +28,7 @@
 		onduplicatesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
 		onselect: (node: PlaylistNode) => void;
 		ondeletesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
+		onsortplaylists?: (() => void) | undefined;
 	} = $props();
 	let menu = $state<{
 		x: number;
@@ -60,7 +62,9 @@
 				duplicate: () => onduplicatesmartlist?.(smartlist)
 			});
 		}
-		if (node === undefined) return bindMenuItems(menuFor({ kind: 'playlists-root' }, {}), news);
+		if (node === undefined) {
+			return bindMenuItems(menuFor({ kind: 'playlists-root' }, {}), { ...news, 'sort-name': onsortplaylists });
+		}
 		const nodeRunners = {
 			...news,
 			rename: () => onrename?.(node),

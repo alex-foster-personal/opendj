@@ -42,6 +42,8 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
+
+from apps.shared.async_scheduler import launch_scheduler_loop, sleep_until_stop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -216,12 +218,14 @@ class CloudSyncScheduler:
     # ----- the loop (event loop) ------------------------------------------
 
     async def start(self) -> None:
-        if self._task is not None:
-            raise RuntimeError("CloudSyncScheduler.start() called twice")
-        self._stopping = asyncio.Event()
-        self._next_due = time.monotonic() + self._cfg.INITIAL_DELAY_S
-        self._task = asyncio.create_task(self._loop(), name="cloudsync-scheduler")
-        self._task.add_done_callback(_log_loop_death)
+        self._stopping, self._task, self._next_due = launch_scheduler_loop(
+            existing_task=self._task,
+            twice_message="CloudSyncScheduler.start() called twice",
+            initial_delay_s=self._cfg.INITIAL_DELAY_S,
+            loop=self._loop,
+            task_name="cloudsync-scheduler",
+            on_death=_log_loop_death,
+        )
 
     async def stop(self, within_s: float | None = None) -> None:
         """Stop waking, wait for an in-flight round, and clear the heartbeat.
@@ -294,11 +298,7 @@ class CloudSyncScheduler:
         return self._stopping is not None and self._stopping.is_set()
 
     async def _sleep(self, seconds: float) -> None:
-        assert self._stopping is not None
-        try:
-            await asyncio.wait_for(self._stopping.wait(), timeout=seconds)
-        except TimeoutError:
-            return
+        await sleep_until_stop(self._stopping, seconds)
 
     async def _drain(self, in_flight: asyncio.Task[RoundOutcome]) -> None:
         try:

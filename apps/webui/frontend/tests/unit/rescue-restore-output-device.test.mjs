@@ -539,7 +539,8 @@ test('capture: the enumerated label is saved beside each selected sink id', () =
 		}),
 		'transport',
 		1,
-		{ 1: null, 2: null, 3: null, 4: null }
+		{ 1: null, 2: null, 3: null, 4: null },
+		'more'
 	);
 	assert.equal(snapshot.mixer.headphones.selected_output_device_label, 'Headphones (Realtek(R) Audio)');
 	assert.equal(snapshot.mixer.headphones.selected_master_output_device_label, 'Speakers (Realtek(R) Audio)');
@@ -551,14 +552,15 @@ test('capture: no selection, an unenumerated id, or a hidden label saves a null 
 		selected_output_device_id: 'x',
 		selected_master_output_device_id: 'not-listed'
 	});
-	const snapshot = snapshotMod.buildRescueSnapshot(hidden, 'transport', 1, { 1: null, 2: null, 3: null, 4: null });
+	const snapshot = snapshotMod.buildRescueSnapshot(hidden, 'transport', 1, { 1: null, 2: null, 3: null, 4: null }, 'more');
 	assert.equal(snapshot.mixer.headphones.selected_output_device_label, null);
 	assert.equal(snapshot.mixer.headphones.selected_master_output_device_label, null);
 	const none = snapshotMod.buildRescueSnapshot(
 		_captureState({ selected_output_device_id: null, selected_master_output_device_id: null }),
 		'transport',
 		1,
-		{ 1: null, 2: null, 3: null, 4: null }
+		{ 1: null, 2: null, 3: null, 4: null },
+		'more'
 	);
 	assert.equal(none.mixer.headphones.selected_output_device_label, null);
 	assert.equal(none.mixer.headphones.selected_master_output_device_label, null);

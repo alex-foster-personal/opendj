@@ -75,15 +75,22 @@ export function shouldPostPeriodicRescue(
 	return true;
 }
 
+/** The exact body the writer POSTs: live performance state plus the live deck layout. */
+export function buildRescuePostBody(reason: RescueSnapshotReason, now: number): string {
+	return serializeRescueSnapshot(
+		buildRescueSnapshot(
+			queryPerformanceState(),
+			reason,
+			now,
+			_sourcePathsFromEngine(),
+			uiPrefs.deck_layout
+		)
+	);
+}
+
 function _postSnapshot(reason: RescueSnapshotReason, now: number): void {
 	if (uiPrefs.app_posture !== 'gig') return;
-	const snapshot = buildRescueSnapshot(
-		queryPerformanceState(),
-		reason,
-		now,
-		_sourcePathsFromEngine()
-	);
-	const serialized = serializeRescueSnapshot(snapshot);
+	const serialized = buildRescuePostBody(reason, now);
 	if (serialized === _lastSuccessfulSerialized) return;
 	_inFlight = true;
 	void fetch(`${API_BASE}/api/v1/performance/rescue-snapshots`, {

@@ -125,38 +125,51 @@ test('show_dev_ui pref defaults off, accepts booleans, rejects junk, and its set
 	assert.equal(persisted, 1);
 });
 
-test('todo settings and their groups are hidden by default and revealed by show_dev_ui', async () => {
+test('a todo settings row is hidden by default and revealed by show_dev_ui', async () => {
 	const search = await loadTypeScriptModule('src/lib/settings/search.ts');
-	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
-	const todoCount = catalog.SETTINGS_CATALOG.filter((s) => !s.implemented).length;
-	assert.ok(todoCount > 0, 'control: the catalog still has todo rows to hide');
+	// The shipped catalog has no todo row (SETSTUB-01), so the visibility rule
+	// is pinned on an explicit in-test fixture row, never a production stub.
+	const TODO_ROW = {
+		id: 'fixture.todo',
+		label: 'Fixture todo',
+		group: 'advanced',
+		keywords: [],
+		title: 'not implemented - see PARITY-TODO',
+		detail: 'fixture',
+		implemented: false,
+		control: { kind: 'boolean' }
+	};
+	const BUILT_ROW = { ...TODO_ROW, id: 'fixture.built', implemented: true };
+	const visible = (prefs, showDev, row) =>
+		search.settingRowVisible(row, { hideTodo: search.effectiveHideTodo(prefs), showDev });
 
-	// Default (dev off): no todo rows, no "(todo)" groups, no dev-only rows.
-	const offPrefs = { show_dev_ui: false, hide_todo_settings: false };
-	const off = { hideTodo: search.effectiveHideTodo(offPrefs), showDev: false };
-	const offRows = search.filterSettings('', { ...off, group: null }).all;
-	assert.equal(offRows.filter((s) => !s.implemented).length, 0);
+	// Default (dev off): the todo row is hidden, a built row is not.
+	const off = { show_dev_ui: false, hide_todo_settings: false };
+	assert.equal(visible(off, false, TODO_ROW), false);
+	assert.equal(visible(off, false, BUILT_ROW), true, 'control: a built row stays visible');
+	// Dev on: the todo row comes back.
+	const on = { show_dev_ui: true, hide_todo_settings: false };
+	assert.equal(visible(on, true, TODO_ROW), true);
+	// Dev on + "Hide todo" on: hidden again.
+	const both = { show_dev_ui: true, hide_todo_settings: true };
+	assert.equal(visible(both, true, TODO_ROW), false);
+	assert.equal(visible(both, true, BUILT_ROW), true);
+
+	// The real catalog: dev-only rows follow the flag, and the flag itself is
+	// always reachable so it can be turned back off.
+	const offRows = search.filterSettings('', { hideTodo: search.effectiveHideTodo(off), showDev: false, group: null }).all;
 	assert.ok(!offRows.some((s) => s.id === 'hide_todo_settings'));
 	assert.ok(offRows.some((s) => s.id === 'show_dev_ui'), 'the flag itself is reachable');
-	const offGroups = search.visibleGroups('', off);
-	assert.ok(!offGroups.includes('rekordbox'));
-	assert.ok(!offGroups.includes('djay'));
-
-	// Dev on: every todo row and both parity groups come back.
-	const on = { hideTodo: search.effectiveHideTodo({ show_dev_ui: true, hide_todo_settings: false }), showDev: true };
-	const onRows = search.filterSettings('', { ...on, group: null }).all;
-	assert.equal(onRows.filter((s) => !s.implemented).length, todoCount);
+	const onRows = search.filterSettings('', { hideTodo: search.effectiveHideTodo(on), showDev: true, group: null }).all;
 	assert.ok(onRows.some((s) => s.id === 'hide_todo_settings'));
-	const onGroups = search.visibleGroups('', on);
-	assert.ok(onGroups.includes('rekordbox'));
-	assert.ok(onGroups.includes('djay'));
-
-	// Dev on + the existing "Hide todo" row on: todo hidden again, but the
-	// row that controls it stays reachable so it can be turned back off.
-	const both = { hideTodo: search.effectiveHideTodo({ show_dev_ui: true, hide_todo_settings: true }), showDev: true };
-	const bothRows = search.filterSettings('', { ...both, group: null }).all;
-	assert.equal(bothRows.filter((s) => !s.implemented).length, 0);
+	const bothRows = search.filterSettings('', { hideTodo: search.effectiveHideTodo(both), showDev: true, group: null }).all;
 	assert.ok(bothRows.some((s) => s.id === 'hide_todo_settings'));
+	// No "(todo)" parity groups in either mode (SETSTUB-01).
+	for (const mode of [{ hideTodo: true, showDev: false }, { hideTodo: false, showDev: true }]) {
+		const groups = search.visibleGroups('', mode);
+		assert.ok(groups.includes('performance'), 'control: groups were computed');
+		assert.ok(!groups.includes('rekordbox') && !groups.includes('djay'));
+	}
 });
 
 test('show_dev_ui is an allowlisted, readable setting the overlay can toggle', () => {

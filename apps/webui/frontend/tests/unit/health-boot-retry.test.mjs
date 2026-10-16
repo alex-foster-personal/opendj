@@ -296,8 +296,15 @@ test('_refreshLibraryRowsOnce calls the real fresh-repair read and bumps only it
 	}
 	assert.match(
 		source,
-		/playlists = await listPlaylistsHydrated\(\);\s*_playlistsWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,
+		/await _readPlaylists\(async \(rows\) => \{(?:\s*\/\/[^\n]*)*\s*playlists = _writePlaylistTreeOrder\.overlay\(rows\);\s*_playlistsWriteEpoch \+= 1;\s*await _sweepBlankPlaylists\(playlists\);/,
 		'_refreshPlaylists must bump the PLAYLISTS epoch, not the health one, and sweep with its own fresh playlists'
+	);
+	// #6186: the read goes through the latest-read guard, so a stale GET is
+	// dropped; the fresh one still writes playlists and bumps that epoch.
+	assert.match(
+		source,
+		/async function _refreshPlaylists\(\): Promise<void> \{\s*try \{\s*await _readPlaylists\(/,
+		'_refreshPlaylists must read through the latest-read guard'
 	);
 	assert.match(
 		source,

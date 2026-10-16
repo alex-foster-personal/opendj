@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const SRC = readFileSync(
-	fileURLToPath(new URL('../../src/lib/components/rb/VibeMeter.svelte', import.meta.url)),
+	fileURLToPath(new URL('../../src/lib/components/rb/FeedbackThumbs.svelte', import.meta.url)),
 	'utf8'
 );
 

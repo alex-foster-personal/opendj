@@ -76,6 +76,7 @@ export const MENU_COMMANDS = {
 	'playlist.duplicate': http('POST', '/api/v1/playlists/{playlist_id}/duplicate'),
 	'playlist.remove_items': http('POST', '/api/v1/playlists/{playlist_id}/items:remove'),
 	'playlist.select': ipc('browser_select_playlist'),
+	'playlist_tree.order': http('PUT', '/api/v1/playlist-tree/order'),
 	'smartlist.create': http('POST', '/api/v1/smartlists'),
 	'smartlist.update': http('PUT', '/api/v1/smartlists/{smartlist_id}'),
 	'smartlist.delete': http('DELETE', '/api/v1/smartlists/{smartlist_id}'),

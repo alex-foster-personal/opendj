@@ -129,6 +129,7 @@ from .routes import performance_telemetry as performance_telemetry_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
+from .routes import playlist_tree as playlist_tree_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
@@ -158,6 +159,7 @@ from .routes import stems as stems_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
+from .routes import track_handoff as track_handoff_routes
 from .routes import track_plays as track_plays_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
@@ -617,6 +619,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     api_prefix = "/api/v1"
     prefixed = (
         tracks_routes.router,
+        track_handoff_routes.router,
         beatgrid_flags_routes.router,
         client_errors_routes.router,
         telemetry_consent_routes.router,
@@ -631,6 +634,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         mytag_routes.router,
         playlists_routes.router,
         playlist_write_routes.router,
+        playlist_tree_routes.router,
         playlist_sets_routes.router,
         playlist_history_routes.router,
         play_it_routes.router,

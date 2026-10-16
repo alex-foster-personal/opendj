@@ -76,8 +76,8 @@ before(async () => {
 
 /**
  * Names of module-level constants in `source` that hold exactly INERT_TITLE.
- * Inert controls now reference the shared constant (e.g. TrackActions.svelte's
- * `title={INERT_TITLE}`, a68c83a59 UXR-02) instead of repeating the literal,
+ * Inert controls now reference the shared constant (as TrackActions.svelte's
+ * `title={INERT_TITLE}` did, a68c83a59 UXR-02) instead of repeating the literal,
  * so a literal-only scan finds none and would pass vacuously.
  */
 function inertTitleConstants(source) {
@@ -151,7 +151,7 @@ test('an inert control never gets a reworded PARITY-TODO title of its own', () =
 
 test('every module-level PARITY-TODO constant holds the identical string', () => {
 	const declarations = [];
-	for (const file of [...svelteFiles(SRC), join(SRC, 'lib/settings/catalog.ts')]) {
+	for (const file of svelteFiles(SRC)) {
 		const source = readFileSync(file, 'utf8');
 		for (const match of source.matchAll(/\bconst\s+\w+\s*=\s*(['"])([^'"\n]*PARITY[- ]?TODO[^'"\n]*)\1/gi)) {
 			declarations.push({ file: file.slice(SRC.length + 1), value: match[2] });
@@ -171,45 +171,65 @@ test('every module-level PARITY-TODO constant holds the identical string', () =>
 	);
 });
 
-test('the settings modules spell the inert title exactly like the components do', () => {
-	for (const rel of ['lib/settings/catalog.ts', 'lib/components/settings/SettingsOverlay.svelte']) {
-		const source = readFileSync(join(SRC, rel), 'utf8');
-		assert.ok(
-			source.includes(`'${INERT_TITLE}'`),
-			`${rel} must declare the canonical inert title verbatim`
-		);
-	}
+test('the settings overlay spells the inert title exactly like the components do', () => {
+	// SettingsOverlay keeps its inert-row render path for any future placeholder;
+	// catalog.ts no longer declares the title because it ships no stub (SETSTUB-01).
+	const rel = 'lib/components/settings/SettingsOverlay.svelte';
+	const source = readFileSync(join(SRC, rel), 'utf8');
+	assert.ok(source.includes(`'${INERT_TITLE}'`), `${rel} must declare the canonical inert title verbatim`);
 });
 
-// -------------------------------------------------- an unimplemented setting
+// ------------------------------------------------- SETSTUB-01: no stub rows
 
-test('every unimplemented setting shows the PARITY-TODO title', () => {
-	const stubs = catalog.SETTINGS_CATALOG.filter((def) => !def.implemented);
-	assert.ok(stubs.length > 0, 'the catalog must still carry parity stubs for this rule to mean anything');
-	for (const def of stubs) {
-		assert.equal(
-			def.title,
-			INERT_TITLE,
-			`setting ${def.id} is a stub but its title is ${JSON.stringify(def.title)}`
-		);
-	}
+test('SETSTUB-01 if a settings row ships implemented:false then a placeholder is back in the catalog', () => {
+	const stubs = catalog.SETTINGS_CATALOG.filter((def) => def.implemented !== true);
+	assert.deepEqual(
+		stubs.map((def) => def.id),
+		[],
+		'the settings catalog ships only working rows; build the setting or leave it out'
+	);
+	// Positive control: the catalog was really read, and the one stub that was
+	// built (SETSTUB-02) is present as a real row.
+	assert.ok(catalog.SETTINGS_CATALOG.length > 30, `control: catalog rows read (${catalog.SETTINGS_CATALOG.length})`);
+	const quantize = catalog.SETTINGS_CATALOG.find((def) => def.id === 'deck_default_quantize');
+	assert.ok(quantize, 'control: the built Quantize-on-new-decks row is in the catalog');
+	assert.equal(quantize.implemented, true);
+	assert.notEqual(quantize.title, INERT_TITLE);
 });
 
-test('no unimplemented setting is allowlisted, so it structurally cannot be written', () => {
-	for (const def of catalog.SETTINGS_CATALOG) {
-		if (def.implemented) continue;
-		assert.equal(
-			apply.isAllowedSettingKey(def.id),
-			false,
-			`setting ${def.id} is implemented:false but appears in ALLOWED_SETTING_KEYS - ` +
-				'a placeholder that can silently persist a value'
-		);
+test('SETSTUB-01 if a "(todo)" parity group returns then the empty Rekordbox / djay sections are back', () => {
+	const ids = catalog.SETTING_GROUPS.map((g) => g.id);
+	assert.ok(ids.includes('performance'), 'control: the group list was read');
+	assert.ok(!ids.includes('rekordbox'), 'the Rekordbox (todo) group must stay removed');
+	assert.ok(!ids.includes('djay'), 'the djay Pro (todo) group must stay removed');
+	assert.deepEqual(catalog.SETTING_GROUPS.filter((g) => /\(todo\)/i.test(g.label)), []);
+});
+
+test('the removed parity-stub ids stay structurally unwritable', () => {
+	// All 32 former stub ids: 30 removed, rb.quantize rebuilt under the new id
+	// deck_default_quantize, and rb.master_tempo removed until the engine has a
+	// seam for it. None may creep into the allowlist under its old id.
+	const RETIRED = [
+		'rb.quantize', 'rb.master_tempo', 'rb.sync_mode', 'rb.vinyl_mode', 'rb.jog_sensitivity',
+		'rb.hot_cue_colors', 'rb.pad_mode', 'rb.waveform_zoom', 'rb.grid_edit', 'rb.auto_gain',
+		'rb.karaoke', 'rb.export_usb', 'rb.analysis_quality', 'rb.phrase_analysis', 'rb.mytag_layout',
+		'rb.track_info_fields', 'rb.keyboard_map', 'rb.dual_deck_layout', 'djay.automix', 'djay.eq_kill',
+		'djay.effects_rack', 'djay.stems_ui', 'djay.library_source', 'djay.streaming', 'djay.cue_points',
+		'djay.midi_learn', 'djay.audio_device', 'djay.sample_rate', 'djay.buffer_size', 'djay.recording',
+		'djay.video', 'djay.neumann'
+	];
+	assert.equal(RETIRED.length, 32, 'control: every former stub id is listed');
+	for (const id of RETIRED) {
+		assert.equal(apply.isAllowedSettingKey(id), false, `${id} must not be allowlisted`);
 		assert.throws(
-			() => apply.applySettingChange(def.id, true),
+			() => apply.applySettingChange(id, true),
 			/unknown or disallowed setting key/,
-			`applySettingChange must refuse the unimplemented key ${def.id}`
+			`applySettingChange must refuse the retired key ${id}`
 		);
 	}
+	// Opposite direction: the built replacement IS writable, so this refusal
+	// is not just an allowlist that refuses everything.
+	assert.equal(apply.isAllowedSettingKey('deck_default_quantize'), true);
 });
 
 test('the AI apply path refuses any key outside the allowlist', () => {

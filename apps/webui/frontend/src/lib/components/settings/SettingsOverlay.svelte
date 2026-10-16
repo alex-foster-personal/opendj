@@ -586,7 +586,7 @@
 												{#await loadWatcherFoldersEditor() then { default: WatcherFoldersEditor }}
 													<WatcherFoldersEditor {def} />
 												{:catch err}
-													<span class="so-path-lines-msg" title={String(err)}>Watcher folders failed to load: {String(err)}</span>
+													<span class="so-path-lines-msg" title={String(err)}>Watched folders failed to load: {String(err)}</span>
 												{/await}
 											{/if}
 										</div>

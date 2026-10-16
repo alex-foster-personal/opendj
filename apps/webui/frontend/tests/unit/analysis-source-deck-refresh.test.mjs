@@ -87,11 +87,11 @@ let apiBase;
 /** Every URL the real server has served so far, oldest first.
  *
  * Callers that count DECK fetches filter for `/anlz?`: reaching a real grid
- * settlement lazily imports beatgrid-resync, which pulls vibe.svelte.ts and
- * costs one `/api/v1/settings` config GET the first time any settlement runs
- * in a session. That is a one-off module init, not a per-switch cost, and
- * counting it as a deck fetch would make this assertion say something other
- * than what its message claims. */
+ * settlement lazily imports beatgrid-resync, whose module graph may issue
+ * one-off init GETs (the removed vibe meter's `/api/v1/settings` read was
+ * one). A one-off module init is not a per-switch cost, and counting it as a
+ * deck fetch would make this assertion say something other than what its
+ * message claims. */
 async function requestLog() {
 	const res = await fetch(`${apiBase}/test/requests`);
 	return res.json();
@@ -787,4 +787,31 @@ test('evictAnlzCacheEntriesServingOtherSource reports nothing evicted when every
 	} finally {
 		await daemonSelect('own');
 	}
+});
+
+test('a refresh adopts every phrase-owned field the server served, not phrases alone (STRUCT-06/07)', async () => {
+	// The deck holds the answer it got while own-fast sections were still computing.
+	const stale = {
+		beatgrid: { beat_count: 4, beats: [] },
+		phrases: [],
+		phrases_source: 'none',
+		own_phrases: { status: 'pending', reason: 'computing', producer: 'own-fast', producer_version: '0.2.0' },
+		phrase_moments: [{ kind: 'drop', time_s: 1.0, bar: 0, number: 1, fake: false }]
+	};
+	audio.deckStates[1].stable_id = SID_TRACK_A;
+	audio.deckStates[1].anlz = stale;
+
+	const before_ = await requestLog();
+	await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);
+	const fetched = (await requestLog()).slice(before_.length).filter((url) => url.includes('/anlz?'));
+	assert.equal(fetched.length, 1);
+	// The server's own answer for the same URL, read directly: the truth to compare against.
+	const served = await (await fetch(new URL(fetched[0], apiBase))).json();
+	assert.notDeepEqual(served.own_phrases, stale.own_phrases, 'control: the server is not answering pending here');
+
+	const anlz = audio.deckStates[1].anlz;
+	assert.deepEqual(anlz.phrases, served.phrases);
+	assert.equal(anlz.phrases_source, served.phrases_source, 'phrases_source must move with phrases');
+	assert.deepEqual(anlz.own_phrases, served.own_phrases, 'the pending status must not outlive the refresh');
+	assert.deepEqual(anlz.phrase_moments, served.phrase_moments, 'the drop ticks must move with the sections');
 });

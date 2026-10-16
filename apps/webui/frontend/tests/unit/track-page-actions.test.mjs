@@ -16,19 +16,24 @@ import { bundleSvelteEntry, renderToHtml } from './mount-svelte.mjs';
  *   internal planning note where the actions should be
  * - if Show in Finder renders disabled or loses the reveal route then the one
  *   action that exists is a dead end
- * - if Open in Rekordbox or djay renders enabled then an unbuilt control looks live
+ * - if Open in Rekordbox or djay renders enabled before the installed-apps
+ *   probe answers then a click can reach an app this machine does not have
+ * - if an absent app's button is enabled or loses its reason then the click is
+ *   a dead end with no explanation (HANDOFF-02)
  */
 
-const INERT_TITLE = 'not implemented - see PARITY-TODO';
 let html;
+let handoff;
 let revealTitle;
 
 before(async () => {
 	const mod = await bundleSvelteEntry(
 		"export { default as TrackActions } from '$lib/components/TrackActions.svelte';\n" +
-			"export { REVEAL_TRACK_TITLE } from '$lib/components/rb/browser/track-context-menu';"
+			"export { REVEAL_TRACK_TITLE } from '$lib/components/rb/browser/track-context-menu';\n" +
+			"export { handoffButtonState, HANDOFF_ROUTE_TITLE } from '$lib/rb/api-track-handoff';"
 	);
 	revealTitle = mod.REVEAL_TRACK_TITLE;
+	handoff = mod;
 	html = await renderToHtml(mod.TrackActions, { stableId: 'rb:42' });
 });
 
@@ -45,13 +50,31 @@ test('Show in Finder renders enabled and names the reveal route it calls', () =>
 	assert.ok(tag.includes(`title="${revealTitle}"`), tag);
 });
 
-test('Open in Rekordbox and Open in djay render disabled with the PARITY-TODO tooltip', () => {
+test('Open in Rekordbox and Open in djay render disabled while the apps probe is pending', () => {
 	for (const label of ['Open in Rekordbox', 'Open in djay']) {
 		const tag = buttonTag(label);
-		assert.match(tag, /\sdisabled/, `if ${label} is enabled then an unbuilt control looks live`);
-		assert.ok(tag.includes(`title="${INERT_TITLE}"`), tag);
-		assert.ok(tag.includes(`aria-label="${label} - ${INERT_TITLE}"`), tag);
+		assert.match(tag, /\sdisabled/, `if ${label} is enabled before the probe then it can be a dead click`);
+		assert.match(tag, /title="Checking whether this app is installed/);
+		assert.doesNotMatch(tag, /not implemented - see PARITY-TODO/);
 	}
+});
+
+test('handoffButtonState enables only an installed app and names why otherwise', async () => {
+	const { handoffButtonState, HANDOFF_ROUTE_TITLE } = handoff;
+	const probe = [
+		{ app: 'rekordbox', label: 'rekordbox', available: true, reason: null },
+		{ app: 'djay', label: 'djay Pro', available: false, reason: 'djay Pro is not installed in /Applications on this Mac' }
+	];
+	const rb = handoffButtonState('rekordbox', probe);
+	assert.equal(rb.disabled, false);
+	assert.ok(rb.title.includes(HANDOFF_ROUTE_TITLE), rb.title);
+	const dj = handoffButtonState('djay', probe);
+	assert.equal(dj.disabled, true);
+	assert.equal(dj.title, 'djay Pro is not installed in /Applications on this Mac');
+	const failed = handoffButtonState('rekordbox', { error: 'HTTP 500' });
+	assert.equal(failed.disabled, true);
+	assert.match(failed.title, /Could not check installed apps: HTTP 500/);
+	assert.equal(handoffButtonState('djay', []).disabled, true);
 });
 
 test('the rendered actions carry no roadmap phase wording', () => {
