@@ -274,10 +274,16 @@ def test_open_rw_tolerates_permission_error_reading_agents_md_sidecar(
     open_rw(db_path).close()
     agents_md = tmp_path / "AGENTS.md"
     before_ino = agents_md.stat().st_ino
+    sidecar_reads = 0
 
     def deny_sidecar_read(path: Path, marker: str) -> bool:
+        nonlocal sidecar_reads
+        sidecar_reads += 1
         raise PermissionError(13, "Permission denied", str(path))
 
+    # regenerate_agents_md_cached imports sidecar_carries_cache_line inside the
+    # function body (not at agents_md_cache module scope), so the name is
+    # resolved from generate_agents_md on each call and this patch is live.
     monkeypatch.setattr(
         "apps.database.generate_agents_md.sidecar_carries_cache_line",
         deny_sidecar_read,
@@ -289,6 +295,7 @@ def test_open_rw_tolerates_permission_error_reading_agents_md_sidecar(
     finally:
         conn.close()
 
+    assert sidecar_reads == 1
     assert agents_md.stat().st_ino == before_ino
 
 
