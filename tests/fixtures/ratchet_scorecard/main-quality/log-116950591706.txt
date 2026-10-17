@@ -1,0 +1,37 @@
+2026-10-16T11:48:24.3205594Z [quality] ruff: Python lint debt by intent
+2026-10-16T11:48:24.6736910Z [quality] complexity: Python structural complexity
+2026-10-16T11:48:44.6023203Z [quality] arch: Architecture contracts and package cycles
+2026-10-16T11:48:45.9543027Z [quality] deps: Dependency declaration defects
+2026-10-16T11:48:46.4257386Z [quality] mypy: Python type debt by scored root
+2026-10-16T11:50:24.1603632Z [quality] frontend: Frontend coupling and dead code
+2026-10-16T11:50:56.2275376Z [quality] size: File bloat and duplication
+2026-10-16T11:51:08.7257844Z [quality] shell: Shell constructs that fail silently
+2026-10-16T11:51:12.4322312Z [quality] sync-drift: Sync-schema omissions that never raise
+2026-10-16T11:51:21.2699262Z [quality] latency: Declared input-to-applied latency floor
+2026-10-16T11:51:23.3241392Z [quality] report written to /home/dev/actions-runner-3/_work/music-dj-tools/music-dj-tools/ops/quality/report.md
+2026-10-16T11:51:23.3242134Z [quality] metrics written to /home/dev/actions-runner-3/_work/music-dj-tools/music-dj-tools/ops/quality/metrics.json
+2026-10-16T11:51:23.3242549Z [quality] RATCHET AVAILABLE  ruff.total: 1473 < 1490 allowed
+2026-10-16T11:51:23.3242841Z [quality] RATCHET AVAILABLE  ruff.complexity: 178 < 195 allowed
+2026-10-16T11:51:23.3243125Z [quality] RATCHET AVAILABLE  ruff.coupling: 62 < 70 allowed
+2026-10-16T11:51:23.3243400Z [quality] RATCHET AVAILABLE  ruff.safety: 364 < 380 allowed
+2026-10-16T11:51:23.3243681Z [quality] RATCHET AVAILABLE  ruff.correctness: 304 < 315 allowed
+2026-10-16T11:51:23.3244243Z [quality] RATCHET AVAILABLE  complexity.worst_block: 43 < 50 allowed
+2026-10-16T11:51:23.3244614Z [quality] RATCHET AVAILABLE  complexity.low_maintainability_files: 14 < 18 allowed
+2026-10-16T11:51:23.3245159Z [quality] RATCHET AVAILABLE  python.package_cycles: 10 < 14 allowed
+2026-10-16T11:51:23.3245466Z [quality] RATCHET AVAILABLE  mypy.errors_apps: 195 < 210 allowed
+2026-10-16T11:51:23.3245760Z [quality] RATCHET AVAILABLE  mypy.errors_scripts: 151 < 160 allowed
+2026-10-16T11:51:23.3246065Z [quality] RATCHET AVAILABLE  frontend.unknown_casts: 25 < 26 allowed
+2026-10-16T11:51:23.3246403Z [quality] RATCHET AVAILABLE  file_size.over_limit_python: 16 < 79 allowed
+2026-10-16T11:51:23.3246761Z [quality] RATCHET AVAILABLE  file_size.over_limit_frontend: 7 < 16 allowed
+2026-10-16T11:51:23.3247152Z [quality] WITHIN SLACK      ruff.style: 565 > 560 allowed, inside the 5 slack (ceiling 565)
+2026-10-16T11:51:23.3247656Z [quality] WITHIN SLACK      complexity.blocks_over_limit: 251 > 250 allowed, inside the 2 slack (ceiling 252)
+2026-10-16T11:51:23.3248107Z [quality] WITHIN SLACK      frontend.max_fan_in: 57 > 56 allowed, inside the 1 slack (ceiling 57)
+2026-10-16T11:51:23.3248528Z [quality] WITHIN SLACK      frontend.max_fan_out: 46 > 45 allowed, inside the 1 slack (ceiling 46)
+2026-10-16T11:51:23.3248961Z [quality] WITHIN SLACK      frontend.unused_exports: 126 > 125 allowed, inside the 3 slack (ceiling 128)
+2026-10-16T11:51:23.3249745Z [quality] WITHIN SLACK      file_size.max_python: 2651 > 2596 allowed, inside the 60 slack (ceiling 2656)
+2026-10-16T11:51:23.3250283Z [quality] WITHIN SLACK      file_size.max_frontend: 4432 > 4386 allowed, inside the 60 slack (ceiling 4446)
+2026-10-16T11:51:23.3250748Z [quality] WITHIN SLACK      duplication.percent: 0.24 > 0.23 allowed, inside the 0.05 slack (ceiling 0.28)
+2026-10-16T11:51:23.3251132Z [quality] REGRESSION        mypy.errors_tests: 466 > 460 allowed + 5 slack
+2026-10-16T11:51:23.3251574Z [quality] base compare: cannot check the merge-base main: HEAD is itself on main; there is no other main to inherit from
+2026-10-16T11:51:23.3252004Z [quality] base compare: 1 regression(s) reported unqualified rather than guessed
+2026-10-16T11:51:23.3252674Z [quality] TREND (non-blocking, main push/schedule -- issue #3246): 1 metric(s) above the ops/quality/baseline.json allowance; the enforced gate is the per-PR delta vs merge-base, not this absolute count.

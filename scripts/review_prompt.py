@@ -71,8 +71,11 @@ PROMPT = """You are reviewing one pull request diff for the music-dj-tools repos
 
 Repository conventions that make a finding BLOCKING here:
 - A test that cannot fail (asserts nothing real, or its subject is mocked).
-- Mocked data, hidden defaults, silent exception handling, or a fallback that
-  masks a failure. This repo is deliberately brittle and fail-fast.
+  Doubles for a test's DEPENDENCIES are allowed (AGENTS.md "Test doubles and
+  locked real fixtures"); do not flag a fake, fixture or MSW handler for that.
+- Fake or placeholder data in shipped product code, hidden defaults, silent
+  exception handling, or a fallback that masks a failure. This repo is
+  deliberately brittle and fail-fast.
 - A coverage, match-rate or accuracy number quoted against a denominator that
   is not the one being measured.
 - Contract drift: an API response, generated type, or ledger shape changed on

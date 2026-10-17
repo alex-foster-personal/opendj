@@ -15,3 +15,19 @@ regexTarget = "line"
 regexes = [
   '''(?i)(storage_key|prefs_key|skey_revision)["']?\s*[:=]''',
 ]
+
+[[allowlists]]
+description = """\
+  Fixture digest constants (API_CHANGELOG_SHA256 = "<64 hex>"): the sha256 of a \
+  committed test fixture, recomputable from the tree, not a credential. Matched only as \
+  a NAME_SHA256 assignment of exactly 64 lowercase hex digits. First hit Fri 16 Oct 2026 \
+  (PR #6833, (private path)). Scoped to that file with AND, so a \
+  real secret named *_SHA256 anywhere else is still reported. Review by Sun 13 Dec 2026."""
+condition = "AND"
+paths = [
+  '''^tests/entitlements/test_polar_source\.py$''',
+]
+regexTarget = "line"
+regexes = [
+  '''^\s*[A-Z][A-Z0-9_]*_SHA256\s*=\s*"[0-9a-f]{64}"\s*$''',
+]

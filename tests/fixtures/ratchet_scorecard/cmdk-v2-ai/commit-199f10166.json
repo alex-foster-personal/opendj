@@ -1,0 +1,17 @@
+{
+ "files": [
+  {
+   "filename": ".planning/REQUIREMENTS.md"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/components/rb/CommandBarV2.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-ai.test.mjs"
+  },
+  {
+   "filename": "reqs.json"
+  }
+ ],
+ "sha": "199f10166109092a6902e7249b7407a63d7ee7cb"
+}

@@ -1,0 +1,25 @@
+{
+	"name": "lyrics-words-wordless-track",
+	"recorded_at": "2026-10-17T05:28:25.439Z",
+	"library": "tests/e2e/support/lyrics_words_fixture.py",
+	"provenance": {
+		"manifest_sha256": "25d40d81b4e863fc5c3521420cd491fdef7ee4404f9e1e4ce16dd49db202e512",
+		"library_sha256": "ae0d7e8cf82bea41373f44329d4ba68670fc5ec30608229e906c00b529ccc357"
+	},
+	"request": {
+		"method": "GET",
+		"path": "/api/v1/tracks/cba480b8746cf41f15af6fd20db9a267cb4008b4/lyrics/words",
+		"query": {
+			"include": "lines"
+		}
+	},
+	"response": {
+		"status": 200,
+		"content_type": "application/json",
+		"body": {
+			"words": [],
+			"lines": [],
+			"available": false
+		}
+	}
+}

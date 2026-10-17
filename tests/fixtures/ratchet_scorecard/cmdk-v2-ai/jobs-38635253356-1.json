@@ -1,0 +1,299 @@
+{
+ "jobs": [
+  {
+   "conclusion": "success",
+   "id": 116096634284,
+   "name": "e2e scope (docs-only skip decision)",
+   "steps": [
+    {
+     "conclusion": "success",
+     "name": "Set up job"
+    },
+    {
+     "conclusion": "success",
+     "name": "Set up runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Reclaim workspace ownership before checkout"
+    },
+    {
+     "conclusion": "success",
+     "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    },
+    {
+     "conclusion": "success",
+     "name": "Remove untracked build debris, keeping dependency dirs"
+    },
+    {
+     "conclusion": "success",
+     "name": "Stale-install guard - the interpreter imports only this checkout"
+    },
+    {
+     "conclusion": "success",
+     "name": "Decide whether this change set is in e2e.yml's scope"
+    },
+    {
+     "conclusion": "success",
+     "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    },
+    {
+     "conclusion": "success",
+     "name": "Complete runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Complete job"
+    }
+   ]
+  },
+  {
+   "conclusion": "success",
+   "id": 116096726540,
+   "name": "e2e gate (webkit artifact + hermetic chromium)",
+   "steps": [
+    {
+     "conclusion": "success",
+     "name": "Set up job"
+    },
+    {
+     "conclusion": "success",
+     "name": "Set up runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Reclaim workspace ownership before checkout"
+    },
+    {
+     "conclusion": "success",
+     "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    },
+    {
+     "conclusion": "success",
+     "name": "Remove untracked build debris, keeping dependency dirs"
+    },
+    {
+     "conclusion": "success",
+     "name": "Derive the worktree-port lane from the runner identity"
+    },
+    {
+     "conclusion": "success",
+     "name": "Assert MUSIC_DJ_PORT_LANE is set"
+    },
+    {
+     "conclusion": "success",
+     "name": "Reclaim stale E2E servers before port claim"
+    },
+    {
+     "conclusion": "success",
+     "name": "Enable pinned pnpm"
+    },
+    {
+     "conclusion": "success",
+     "name": "Setup Node"
+    },
+    {
+     "conclusion": "success",
+     "name": "Setup Python"
+    },
+    {
+     "conclusion": "success",
+     "name": "Setup uv"
+    },
+    {
+     "conclusion": "success",
+     "name": "Stale-install guard - the interpreter imports only this checkout"
+    },
+    {
+     "conclusion": "success",
+     "name": "System deps for pyrekordbox (SQLCipher)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Install Python deps into the project venv"
+    },
+    {
+     "conclusion": "success",
+     "name": "Prove the venv is populated and is this checkout's"
+    },
+    {
+     "conclusion": "success",
+     "name": "Keep the numba JIT cache across jobs on this runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Purge and warm the numba JIT cache (#1316)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Runner preflight - node tools and disk"
+    },
+    {
+     "conclusion": "success",
+     "name": "Install frontend dependencies"
+    },
+    {
+     "conclusion": "success",
+     "name": "Resolve the Playwright version for the browser cache key"
+    },
+    {
+     "conclusion": "skipped",
+     "name": "Cache Playwright browsers"
+    },
+    {
+     "conclusion": "success",
+     "name": "Install Playwright browsers"
+    },
+    {
+     "conclusion": "success",
+     "name": "Virtual audio sink (PulseAudio null sink)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Acquire production frontend artifact from CI"
+    },
+    {
+     "conclusion": "success",
+     "name": "WebKit artifact gate (production build, named subset)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Debugger for the deck-load hang capture (#4281)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Deck-load smoke (chromium + webkit, production build)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Hermetic gate - rekordbox writeback disabled"
+    },
+    {
+     "conclusion": "success",
+     "name": "Hermetic gate - stretch quality smoke"
+    },
+    {
+     "conclusion": "success",
+     "name": "Hermetic gate - master12-cue34 output topology"
+    },
+    {
+     "conclusion": "success",
+     "name": "Comment-hotkey gate - real backend, fixture library"
+    },
+    {
+     "conclusion": "success",
+     "name": "Cmd K pick-race gate - real engine, fixture library"
+    },
+    {
+     "conclusion": "success",
+     "name": "AutoPlay stall-banner gate - real backend, fixture library"
+    },
+    {
+     "conclusion": "success",
+     "name": "Headphone device probe gate - performance config"
+    },
+    {
+     "conclusion": "success",
+     "name": "Root Playwright suite (real engine + Vite)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Library jobs ordering (chromium, dry runner)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Preflight boot gate + fresh-install onboarding (real backends)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Onboarding gauntlet (packaged engine, production build)"
+    },
+    {
+     "conclusion": "success",
+     "name": "Restore the PulseAudio server (unload our null sink, previous default back)"
+    },
+    {
+     "conclusion": "skipped",
+     "name": "Upload failure artifacts"
+    },
+    {
+     "conclusion": "success",
+     "name": "Post Setup uv"
+    },
+    {
+     "conclusion": "success",
+     "name": "Post Setup Python"
+    },
+    {
+     "conclusion": "success",
+     "name": "Post Setup Node"
+    },
+    {
+     "conclusion": "success",
+     "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    },
+    {
+     "conclusion": "success",
+     "name": "Complete runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Complete job"
+    }
+   ]
+  },
+  {
+   "conclusion": "success",
+   "id": 116105685418,
+   "name": "e2e verdict",
+   "steps": [
+    {
+     "conclusion": "success",
+     "name": "Set up job"
+    },
+    {
+     "conclusion": "success",
+     "name": "Set up runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Reclaim workspace ownership before checkout"
+    },
+    {
+     "conclusion": "success",
+     "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    },
+    {
+     "conclusion": "success",
+     "name": "Remove untracked build debris, keeping dependency dirs"
+    },
+    {
+     "conclusion": "success",
+     "name": "Stale-install guard - the interpreter imports only this checkout"
+    },
+    {
+     "conclusion": "success",
+     "name": "Aggregate the gated jobs into one verdict"
+    },
+    {
+     "conclusion": "success",
+     "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+    },
+    {
+     "conclusion": "success",
+     "name": "Complete runner"
+    },
+    {
+     "conclusion": "success",
+     "name": "Complete job"
+    }
+   ]
+  },
+  {
+   "conclusion": "skipped",
+   "id": 116105687768,
+   "name": "e2e extended (nightly)",
+   "steps": []
+  }
+ ]
+}

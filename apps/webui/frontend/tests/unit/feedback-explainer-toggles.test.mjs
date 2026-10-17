@@ -99,9 +99,12 @@ test('the topbar pins checkbox follows writes from the twin and the M reveal, no
 });
 
 test('agent pins have a topbar visibility toggle backed by the HTTP ui-prefs preference', () => {
-	assert.match(WIDGET, /show_agent_pins/);
-	assert.match(WIDGET, /setShowAgentPins/);
+	// The switch lives in the shared actions component, so the widget and the
+	// shell button both get it without importing prefs themselves.
+	assert.match(VISIBILITY_ACTIONS, /checked=\{uiPrefs\.show_agent_pins\}/);
+	assert.match(VISIBILITY_ACTIONS, /setShowAgentPins\(!uiPrefs\.show_agent_pins\)/);
 	assert.match(VISIBILITY_ACTIONS, /Show agent pins/);
+	assert.match(WIDGET, /<FeedbackPinVisibilityActions/);
 	// #3790 rewrote the filter as an early return; either spelling is the same
 	// gate. The predicate itself moved into PIN_LAYER's pagePins derivation
 	// alongside the rest of the pin-visibility gating (FB-16, #3888).

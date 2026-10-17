@@ -38,7 +38,18 @@ import pytest
 from scripts.process_census import Row, classify, snapshot
 from tests.support.process_probes import GONE_WITHIN_S, alive, orphan, wait_for
 
-pytestmark = pytest.mark.requirement("DEVOPS-17")
+pytestmark = [
+    pytest.mark.requirement("DEVOPS-17"),
+    # Every test here starts its fixture through process_probes.orphan(), which
+    # double-forks with os.fork()/os.setsid() so the kernel reparents it to init,
+    # and the in-test fixtures fork the same way. A platform without os.fork()
+    # (native Windows) cannot produce the reparented processes this module is
+    # about, so the scenario is unavailable there rather than red.
+    pytest.mark.skipif(
+        not hasattr(os, "fork"),
+        reason="fixtures are double-forked with os.fork()/os.setsid(), which this platform lacks",
+    ),
+]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAPER_MODULE = "scripts.orphan_reaper"  # run with -m from REPO_ROOT
@@ -329,3 +340,73 @@ def test_a_runner_marked_orphan_is_in_scope_and_an_unmarked_one_is_not(
     row = rows[runner_marked]
     assert (row.tree, row.attribution, row.verdict) == ("orphaned", "runner", "reapable"), row
     assert unmarked not in rows, f"an orphan with no test or runner marker is in scope: {unmarked}"
+
+
+# A root titled like the `runuser` supervisor the agentbox rollout uses. It
+# outlives the command that started it (so it is reparented to init) and hosts
+# a LIVE child. GB-6862/F13: that live child was classified orphaned/reapable
+# because `runuser` was not a known session host.
+RUNUSER_ROOT_CODE = textwrap.dedent(
+    """
+    import json, os, sys, time
+    import setproctitle
+    setproctitle.setproctitle(
+        "runuser -u ghrunner -- pytest -q tests/scripts/test_orphan_reaper.py"
+    )
+    argv, env, out = json.loads(sys.argv[1])
+    pid = os.fork()
+    if pid == 0:
+        os.execve(argv[0], argv, env)
+    with open(out + ".tmp", "w") as fh:
+        fh.write(str(pid))
+    os.replace(out + ".tmp", out)
+    while True:
+        time.sleep(1)
+    """
+)
+
+
+def test_the_census_spares_a_live_child_under_a_real_runuser_root(
+    tmp_path: Path, cleanup_pids: list[int]
+) -> None:
+    """Real processes: a ppid-1 `runuser` root with a live child under it. The
+    child is attached and must never be reapable; the reaper pointed at it must
+    kill nothing."""
+    pid_file = tmp_path / "runuser-child.pid"
+    child_argv = [sys.executable, "-c", SLEEP_600, "uvicorn-real-runuser-child"]
+    child_env = {
+        "PATH": os.environ["PATH"],
+        "HOME": os.environ.get("HOME", "/"),
+        "AF_SERVICE_ID": "com.opendj.test.runuserchild",
+    }
+    clean = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/")}
+    root = orphan(
+        [
+            sys.executable,
+            "-c",
+            RUNUSER_ROOT_CODE,
+            json.dumps([child_argv, child_env, str(pid_file)]),
+        ],
+        clean,
+        "/",
+    )
+    cleanup_pids.append(root)
+    wait_for(pid_file.exists, 30, "the runuser root to fork its live child")
+    child = int(pid_file.read_text())
+    cleanup_pids.append(child)
+    wait_for(lambda: alive(child) and alive(root), 10, "the runuser root and child to be live")
+    row = _classify_live([child])[child]
+    assert row.root_pid == root, row
+    assert row.tree == "session", row
+    assert row.verdict != "reapable", row
+    result = subprocess.run(
+        [sys.executable, "-m", REAPER_MODULE, "reap", "--min-age-s", "0", f"--only-pid={child}"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["killed"] == 0
+    assert alive(child), "the reaper killed a live child under a runuser root"

@@ -104,8 +104,10 @@ def _resolve(
     shim.mkdir()
     (shim / "python3").symlink_to(sys.executable)
     env["PATH"] = f"{shim}{os.pathsep}{env['PATH']}"
+    bash = BASH
+    assert bash is not None  # pytestmark skipif guarantees bash at runtime
     done = subprocess.run(
-        [BASH, "-c", step["run"]],
+        [bash, "-c", step["run"]],
         cwd=work,
         env=env,
         capture_output=True,

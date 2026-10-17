@@ -1,0 +1,20 @@
+{
+ "workflow_runs": [
+  {
+   "actor": {
+    "login": "trunk-io[bot]"
+   },
+   "conclusion": "success",
+   "created_at": "2026-10-16T11:29:49Z",
+   "event": "push",
+   "head_branch": "main",
+   "head_repository": {
+    "full_name": "private_owner/music-dj-tools"
+   },
+   "head_sha": "fa57078914d7c26ae04a560bffa6a25b0f1cc29d",
+   "id": 38894149191,
+   "run_attempt": 1,
+   "updated_at": "2026-10-16T11:58:43Z"
+  }
+ ]
+}

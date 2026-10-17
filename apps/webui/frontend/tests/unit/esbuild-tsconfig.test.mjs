@@ -126,8 +126,9 @@ test('TSCONFIG_RAW matches the tsconfig chain on every option it sets', () => {
 	for (const [key, value] of Object.entries(TSCONFIG_RAW.compilerOptions)) {
 		assert.equal(effective[key], value, `compilerOptions.${key}`);
 	}
-	// esbuild also acts on these; none is set in the chain, so none is pinned.
+	// esbuild also acts on these; each is pinned exactly when the chain sets it
+	// (jsx: the React twins, REACT-01), so dropping a pin fails here too.
 	for (const key of ['useDefineForClassFields', 'experimentalDecorators', 'preserveValueImports', 'importsNotUsedAsValues', 'jsx', 'alwaysStrict']) {
-		assert.equal(effective[key], undefined, `the chain now sets ${key}; pin it in TSCONFIG_RAW`);
+		assert.equal(TSCONFIG_RAW.compilerOptions[key], effective[key], `the chain sets ${key} to ${effective[key]}; pin the same in TSCONFIG_RAW`);
 	}
 });

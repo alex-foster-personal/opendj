@@ -242,9 +242,11 @@ the list may only shrink.
   comments, docs, commit messages, issue text). Use a period, a comma, a
   colon, or parentheses.
 - **Use American English spelling** (color, analyze, behavior, license).
-- **Nothing is mocked.** A control with no real data source renders inert
-  rather than showing invented data, and code fails loudly instead of falling
-  back silently.
+- **The app never shows invented data.** A control with no real data source
+  renders inert rather than showing invented data, and code fails loudly
+  instead of falling back silently. Tests and Storybook may use doubles for a
+  dependency, never for the thing under test; see "Test doubles and locked
+  real fixtures" in `AGENTS.md`.
 - **Secrets come from the environment, never from committed files.** Spotify,
   cloud replicate, Picovoice, Groq, and anything else that needs a credential
   is read from environment variables injected at run time (the Makefile

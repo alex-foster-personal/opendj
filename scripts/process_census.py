@@ -98,14 +98,19 @@ class CFG:
     AGENT_ENV_KEYS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
     # A cwd in one of these is an agent's (or a human's) checkout of the repo.
     WORKTREE_CWD_RE = re.compile(
-        r"/music-dj-tools(-[\w.-]+)?(/|$)|/\.claude/worktrees/|/lanes/|/_idd/"
+        r"/music-dj-tools(-[\w.-]+)?(/|$)|/\(private path)/|/lanes/|/_idd/"
     )
     RUNNER_WORK_RE = re.compile(r"/_work(/|$)")
     # Roots that legitimately outlive their parent and host other people's
     # live sessions. A tree hanging under one of these is attached, not
     # orphaned, even though the root itself has ppid 1.
+    # `runuser` is the one the agentbox rollout uses (`runuser -u ghrunner --
+    # ...`): the command that started it exits, so runuser itself becomes a
+    # ppid-1 root with a live child under it. Without it here, that live child
+    # was classified orphaned/reapable (GB-6862 / F13).
     SESSION_HOST_RE = re.compile(
-        r"(^|/)(tmux|screen|sshd|Runner\.Listener|runsvc\.sh|systemd|launchd|login|zellij|herdr)(\s|:|$)"
+        r"(^|/)(tmux|screen|sshd|Runner\.Listener|runsvc\.sh|systemd|launchd|login|"
+        r"zellij|herdr|runuser)(\s|:|$)"
     )
     # An agent SESSION's own id namespace (Claude profiles set one), inherited
     # by all its children, so it is AGENT provenance, never a service to protect.

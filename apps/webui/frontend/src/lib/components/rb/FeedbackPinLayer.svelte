@@ -76,8 +76,15 @@
 	let showHarvestedPins: boolean = $state(true);
 	let optionKeyHeld = $state(false);
 
+	/* Saved visibility, or a temporary look: placing/adding a comment, or
+	   hovering a comment control. Closing those hides the markers again
+	   unless the checkbox is on. */
 	const pagePins = $derived(
-		pinsVisible
+		pinsVisible ||
+		feedbackState.pinsPeek ||
+		feedbackState.placementArmed ||
+		feedbackState.pendingDraft !== null ||
+		pinDraft !== null
 			? feedbackState.pins.filter((p) => {
 					if (!isPinDrawn(p)) return false;
 					if (!isPinOnPage(p, pathname)) return false;

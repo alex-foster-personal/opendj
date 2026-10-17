@@ -17,6 +17,9 @@ from apps.cloud.stem_source import DirectR2Source
 from apps.webui.server.routes.stem_tiers import router as stem_tiers_router
 from apps.webui.server.routes.stems_assets import router as stems_assets_router
 from tests.cloudsync.conftest import InMemoryAssetS3
+from tests.webui.test_stems_hydration import (  # noqa: F401 - fixture import: drains hydrations
+    _reset_hydration_module_state,
+)
 
 
 def _cfg() -> CloudConfig:

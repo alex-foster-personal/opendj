@@ -5,11 +5,24 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-test('armPinPlacement reveals hidden pins through the shared visibility twin', async () => {
+test('armPinPlacement shows pins for the placement only and does not save visibility on', async () => {
 	const store = await readFile('src/lib/rb/feedback-store.svelte.ts', 'utf8');
-	assert.match(store, /writePinsVisible\(window\.localStorage, true\)/);
-	assert.match(store, /__mdtPinsVisible/);
-	assert.match(store, /feedbackState\.placementArmed = true/);
+	const armAt = store.indexOf('export function armPinPlacement');
+	assert.notEqual(armAt, -1);
+	const armBody = store.slice(armAt, store.indexOf('export function disarmPinPlacement'));
+	assert.match(armBody, /feedbackState\.placementArmed = true/);
+	assert.doesNotMatch(armBody, /writePinsVisible/, 'arming must not flip the saved show-pins checkbox');
+	assert.match(store, /pinsPeek/);
+	assert.match(store, /setCommentPinPeek/);
+
+	const layer = await readFile('src/lib/components/rb/FeedbackPinLayer.svelte', 'utf8');
+	const pagePinsAt = layer.indexOf('const pagePins = $derived(');
+	assert.notEqual(pagePinsAt, -1);
+	const pagePinsBody = layer.slice(pagePinsAt, pagePinsAt + 450);
+	assert.match(pagePinsBody, /pinsVisible/);
+	assert.match(pagePinsBody, /pinsPeek/);
+	assert.match(pagePinsBody, /placementArmed/);
+	assert.match(pagePinsBody, /pinDraft/);
 });
 
 test('FeedbackPinLayer keeps pagePins gated on pinsVisible for marker rendering', async () => {

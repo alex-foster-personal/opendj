@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -75,6 +76,29 @@ def call_tool(
 ) -> CallToolResult:
     """Blocking form of :func:`call_tool_async`."""
     return asyncio.run(call_tool_async(lock_path, tool, arguments, env=env))
+
+
+async def timed_call_tool_async(
+    lock_path: Path | None,
+    tool: str,
+    arguments: dict[str, Any],
+    *,
+    env: dict[str, str] | None = None,
+) -> tuple[float, CallToolResult]:
+    """Call ``tool`` once over a fresh server, timing the call and not the spawn.
+
+    The clock starts after ``ClientSession.initialize()``, so interpreter start,
+    the CLI/app import and the MCP handshake are outside it. That work dominates
+    a whole-call wall clock (measured 1.16 s of a 1.17 s call on a quiet host,
+    11.74 s on a loaded CI runner) and varies with the runner's spare capacity,
+    so a bound over the whole call asserts the machine, not the tool. A test
+    that needs to know the tool answered promptly uses this; a test that needs
+    to know the server starts at all should say so in its own name.
+    """
+    async with session(stdio_params(lock_path, env=env)) as s:
+        started = time.monotonic()
+        result = await s.call_tool(tool, arguments)
+        return time.monotonic() - started, result
 
 
 def tool_payload(result: CallToolResult) -> dict[str, Any]:

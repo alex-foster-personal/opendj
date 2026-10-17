@@ -9,12 +9,13 @@
 	 */
 	import { onMount, type Component } from 'svelte';
 	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
-	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
 		armPinPlacement,
 		commentPinSummaryBullets,
 		commentPinSummaryTitle,
+		endCommentPinPeek,
 		feedbackState,
+		setCommentPinPeek,
 		toggleFeedbackPanel
 	} from '$lib/rb/feedback-store.svelte';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
@@ -87,9 +88,9 @@
 
 	let pinsVisible = $state(false);
 
-	/* Other surfaces also write this preference (the `M` hotkey reveal in
-	 * FeedbackPinLayer, the agent-facing `__mdtPinsVisible` twin), so the
-	 * checkbox re-reads on every change rather than trusting its mount read. */
+	/* The dock comment control and the agent-facing `__mdtPinsVisible` twin
+	 * write this same preference, so the checkbox re-reads on every change
+	 * rather than trusting its mount read. */
 	function syncPinsVisible(): void {
 		pinsVisible = readPinsVisible(window.localStorage);
 	}
@@ -99,6 +100,7 @@
 		const offPinsVisibleChanged = onPinsVisibleChanged(syncPinsVisible);
 		return () => {
 			offPinsVisibleChanged();
+			setCommentPinPeek('performance-comment', false);
 		};
 	});
 
@@ -107,9 +109,6 @@
 		writePinsVisible(window.localStorage, pinsVisible);
 	}
 
-	function toggleAgentPins(): void {
-		setShowAgentPins(!uiPrefs.show_agent_pins);
-	}
 </script>
 
 <span class="fb-cluster">
@@ -137,39 +136,46 @@
 	{#snippet pinVisibilityActions()}
 		<FeedbackPinVisibilityActions
 			{pinsVisible}
-			showAgentPins={uiPrefs.show_agent_pins}
 			ontoggle={togglePinsVisible}
-			onToggleAgentPins={toggleAgentPins}
 		/>
 	{/snippet}
-	<ControlExplainer
-		title={FEEDBACK_EXPLAINER_TITLE}
-		bullets={commentPinBullets}
-		action={pinVisibilityActions}
-		placement="right"
+	<span
+		class="fb-pin-peek"
+		role="group"
+		onpointerenter={() => setCommentPinPeek('performance-comment', true)}
+		onpointerleave={() => setCommentPinPeek('performance-comment', false)}
+		onfocusin={() => setCommentPinPeek('performance-comment', true)}
+		onfocusout={(event) => endCommentPinPeek('performance-comment', event)}
 	>
-		<button
-			type="button"
-			class="fb-btn fb-place-skip"
-			class:rb-inert={unavailable}
-			class:armed={feedbackState.placementArmed}
-			disabled={unavailable}
-			title={commentPinTitle}
-			aria-label="Drop a comment pin"
-			aria-pressed={feedbackState.placementArmed}
-			onclick={armPinPlacement}
+		<ControlExplainer
+			title={FEEDBACK_EXPLAINER_TITLE}
+			bullets={commentPinBullets}
+			action={pinVisibilityActions}
+			placement="right"
 		>
-			<svg width="11" height="10" viewBox="0 0 12 11" aria-hidden="true">
-				<path
-					d="M1.5 1.5 h9 v6 h-4.5 l-2.5 2.4 v-2.4 h-2 z"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.2"
-					stroke-linejoin="round"
-				/>
-			</svg>
-		</button>
-	</ControlExplainer>
+			<button
+				type="button"
+				class="fb-btn fb-place-skip"
+				class:rb-inert={unavailable}
+				class:armed={feedbackState.placementArmed}
+				disabled={unavailable}
+				title={commentPinTitle}
+				aria-label="Drop a comment pin"
+				aria-pressed={feedbackState.placementArmed}
+				onclick={armPinPlacement}
+			>
+				<svg width="11" height="10" viewBox="0 0 12 11" aria-hidden="true">
+					<path
+						d="M1.5 1.5 h9 v6 h-4.5 l-2.5 2.4 v-2.4 h-2 z"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.2"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</button>
+		</ControlExplainer>
+	</span>
 </span>
 
 {#if FeedbackPanel}
@@ -186,6 +192,10 @@
 		align-items: center;
 		gap: 3px;
 		z-index: 2;
+	}
+	.fb-pin-peek {
+		display: inline-flex;
+		align-items: center;
 	}
 
 	.fb-btn {

@@ -2989,6 +2989,24 @@
         "title": "BeatgridScanStatus",
         "type": "object"
       },
+      "BillingUrlResponse": {
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "provider"
+        ],
+        "title": "BillingUrlResponse",
+        "type": "object"
+      },
       "Binding": {
         "additionalProperties": false,
         "properties": {
@@ -7573,6 +7591,43 @@
         "title": "DrainStatusOut",
         "type": "object"
       },
+      "EligibilityResponse": {
+        "properties": {
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "entitlement_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitlement Provider"
+          },
+          "hosted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hosted"
+          }
+        },
+        "required": [
+          "eligible",
+          "hosted",
+          "entitlement_provider"
+        ],
+        "title": "EligibilityResponse",
+        "type": "object"
+      },
       "EngineHealthOut": {
         "description": "Legacy health plus the handshake fields. Extension, not a rewrite.",
         "properties": {
@@ -8213,6 +8268,37 @@
           "note"
         ],
         "title": "FeatureEntitlementOut",
+        "type": "object"
+      },
+      "FeatureStanding": {
+        "properties": {
+          "feature_id": {
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "past_due",
+                  "read_only",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "feature_id",
+          "state"
+        ],
+        "title": "FeatureStanding",
         "type": "object"
       },
       "FeedbackStoreSyncOut": {
@@ -17005,6 +17091,65 @@
         "title": "PlaylistWriteOut",
         "type": "object"
       },
+      "PluginEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "url",
+          "sha256"
+        ],
+        "title": "PluginEntry",
+        "type": "object"
+      },
+      "PluginIndexResponse": {
+        "properties": {
+          "plugins": {
+            "items": {
+              "$ref": "#/components/schemas/PluginEntry"
+            },
+            "title": "Plugins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plugins"
+        ],
+        "title": "PluginIndexResponse",
+        "type": "object"
+      },
       "PolicyApplyIn": {
         "additionalProperties": false,
         "description": "``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.",
@@ -18789,6 +18934,27 @@
           }
         },
         "title": "RefreshIn",
+        "type": "object"
+      },
+      "RefreshResponse": {
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "standings": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureStanding"
+            },
+            "title": "Standings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider",
+          "standings"
+        ],
+        "title": "RefreshResponse",
         "type": "object"
       },
       "RefreshStatusOut": {
@@ -20922,6 +21088,28 @@
           "display_name"
         ],
         "title": "SoundcloudTracklistRowModel",
+        "type": "object"
+      },
+      "SpokeBillingBody": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SpokeBillingBody",
+        "type": "object"
+      },
+      "SpokeCheckoutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "feature_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Feature Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feature_id"
+        ],
+        "title": "SpokeCheckoutBody",
         "type": "object"
       },
       "SqlQueryIn": {
@@ -42251,6 +42439,158 @@
         ]
       }
     },
+    "/api/v1/sync/billing/checkout": {
+      "post": {
+        "operationId": "billing_checkout_api_v1_sync_billing_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpokeCheckoutBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "SYNC_BILLING_NOT_CONFIGURED or unknown feature"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Billing Checkout",
+        "tags": [
+          "sync",
+          "sync-billing"
+        ]
+      }
+    },
+    "/api/v1/sync/billing/eligibility": {
+      "get": {
+        "description": "Whether this spoke's hub is a hosted Polar hub (for the account panel).",
+        "operationId": "billing_eligibility_api_v1_sync_billing_eligibility_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Billing Eligibility",
+        "tags": [
+          "sync",
+          "sync-billing"
+        ]
+      }
+    },
+    "/api/v1/sync/billing/portal": {
+      "post": {
+        "operationId": "billing_portal_api_v1_sync_billing_portal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpokeBillingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Billing Portal",
+        "tags": [
+          "sync",
+          "sync-billing"
+        ]
+      }
+    },
+    "/api/v1/sync/billing/refresh": {
+      "post": {
+        "operationId": "billing_refresh_api_v1_sync_billing_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpokeBillingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Billing Refresh",
+        "tags": [
+          "sync",
+          "sync-billing"
+        ]
+      }
+    },
     "/api/v1/sync/digest": {
       "get": {
         "description": "Per-table digests over the sync set, tombstones included (ADR 04 c6).\n\nComputed inside one read transaction (ADR 08 point 6b): without it a\ntable read late in the walk can include a push that landed after an\nearlier table was read, and the answer describes a hub state that never\nexisted.\n\nIt answers as of request time and SAYS SO: ``seq`` is the changelog\nposition of that answer, read in the same transaction (round 2 finding\n6b). The hub cannot answer \"as of seq N\" -- the changelog records that a\nrow changed, never what it held, so there is no earlier state to\nreconstruct. Reporting the position instead lets the spoke tell a third\nmachine's push apart from a real divergence, and settle by pulling\nagain rather than halting.\n\nRequires registration like every other endpoint (round 1 finding 7b,\nclosed everywhere except here until round 3 finding R8): unlike\n``/pull``, this answer carries no per-row data, but it does carry the\nhub's live changelog position, which an unregistered caller had no\nbusiness reading either.\n\nA hub holding one row with an unorderable stored stamp no longer answers\n422 (round 5). That row is excluded from the hash and counted in\n``quarantined``: a legacy row is a fact to report, not a reason to make\nthe endpoint every sync depends on unavailable.\n\nFor a caller that did not advertise ``quarantine/v1`` it still does\n(module docstring). Such a spoke has no ``quarantined`` map to read, so\nit compares a hash over the eligible set against its own hash over\neverything, and the difference reads to it as the ADR 04 c6 CORRUPTION\nalarm -- a false one, raised on ordinary legacy data.",
@@ -42609,6 +42949,68 @@
         ]
       }
     },
+    "/api/v1/sync/plugins/index": {
+      "get": {
+        "description": "Return the configured plugin catalog for an authenticated owner.",
+        "operationId": "get_plugin_index_api_v1_sync_plugins_index_get",
+        "parameters": [
+          {
+            "description": "the calling spoke",
+            "in": "query",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "description": "the calling spoke",
+              "minLength": 1,
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginIndexResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "plugins/index refused: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. A hosted hub refuses in either credential mode; a self-hosted hub only under ENFORCE. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "403": {
+            "description": "plugins/index: the machine has no owner this hub honors, or pluginstore.access is not in plan. code: SYNC_HOSTED_UNOWNED or entitlement_not_in_plan."
+          },
+          "409": {
+            "description": "plugins/index: ``MDT_PLUGIN_CATALOG`` is unset, code SYNC_PLUGINS_NOT_CONFIGURED."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "plugins/index: catalog file missing or invalid, code SYNC_PLUGINS_CATALOG_INVALID."
+          },
+          "503": {
+            "description": "plugins/index refused: ENFORCE will not activate while any machine is unowned or holds no credential, code SYNC_ENFORCE_NOT_ACTIVE; or the hosted hub cannot decide entitlement: more than one owner (SYNC_HOSTED_MULTI_OWNER), no entitlement source (SYNC_HOSTED_NO_SOURCE), Polar without enforced credentials (SYNC_HOSTED_NOT_ENFORCED), or a provider error (SYNC_ENTITLEMENT_PROVIDER). Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Get Plugin Index",
+        "tags": [
+          "sync",
+          "sync-plugins"
+        ]
+      }
+    },
     "/api/v1/sync/pull": {
       "get": {
         "description": "One chunk of the rows the hub accepted after ``since_seq``.\n\nChunked because a first sync of a real library is megabytes of JSON held\ntwice in memory on both sides (round 1 finding A2). ``has_more`` tells\nthe client to come back with the ``seq`` this response reports.\n\nA chunk that had to leave a row out is refused outright for a caller that\ndid not advertise ``quarantine/v1`` (module docstring). The shortfall is\ninvisible to such a caller, which records the reported ``seq`` as pulled\nand can never ask for those entries again -- not even after the repair.",
@@ -42726,7 +43128,7 @@
                 }
               }
             },
-            "description": "HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
+            "description": "pull refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}. Or: HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED)."
           }
         },
         "summary": "Pull",
@@ -42787,7 +43189,7 @@
                 }
               }
             },
-            "description": "HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER)."
+            "description": "push refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}. Or: HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED)."
           },
           "507": {
             "content": {
@@ -43067,6 +43469,16 @@
           "401": {
             "description": "stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. stems/bundle-presign is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
           "404": {
             "description": "STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index"
           },
@@ -43084,7 +43496,14 @@
             "description": "STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed"
           },
           "503": {
-            "description": "stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}. Or: HOSTED hubs only. stems/bundle-presign cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED)."
           }
         },
         "summary": "Get Bundle Presign",
@@ -43126,6 +43545,16 @@
           "401": {
             "description": "stems/index refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "HOSTED hubs only. stems/index is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -43137,7 +43566,14 @@
             "description": "Validation Error"
           },
           "503": {
-            "description": "stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateErrorResponse"
+                }
+              }
+            },
+            "description": "stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}. Or: HOSTED hubs only. stems/index cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED)."
           }
         },
         "summary": "Get Stem Index",

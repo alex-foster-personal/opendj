@@ -1,0 +1,148 @@
+{
+ "merge_base_commit": {
+  "sha": "a43d5c51a08818006bddb2f06cc81d51bb8fbdc7"
+ },
+ "files": [
+  {
+   "filename": ".planning/REQUIREMENTS.md"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "PARITY-TODO.md"
+  },
+  {
+   "filename": "apps/feature_flags/store.py"
+  },
+  {
+   "filename": "apps/genre_infer/jev_search.py"
+  },
+  {
+   "filename": "apps/opendj_cli/catalog.py"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/api-types.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/components/rb/CommandBarV2.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/app-init.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-actions.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-ai-data.svelte.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-ai-toast.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-ai.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-flag.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-ai.test.mjs"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "apps/webui/openapi.json"
+  },
+  {
+   "filename": "apps/webui/server/app_wiring.py"
+  },
+  {
+   "filename": "apps/webui/server/routes/cmdk_ai.py"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "reqs.json"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "tests/genre_infer/test_jev_search.py"
+  },
+  {
+   "filename": "tests/opendj_cli/test_bus_parity.py"
+  },
+  {
+   "filename": "tests/webui/test_cmdk_ai_routes.py"
+  }
+ ]
+}

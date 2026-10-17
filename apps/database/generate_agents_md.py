@@ -9,11 +9,11 @@ Merges sqlite introspection (``sqlite_master``, ``PRAGMA table_info``,
 :mod:`apps.database.column_docs`, so the generated file cannot silently omit
 a column's meaning: a live column with no curated description makes the
 whole run fail (:class:`MissingColumnDocsError`), rather than quietly
-generating an incomplete file. That is the drift guard specs/cloudsync-
+generating an incomplete file. That is the drift guard (private path)
 spec.md D3 asks for.
 
 This is the SECOND half of the two-file AGENTS.md pattern
-(specs/cloudsync-spec.md section 2, D3). The FIRST half is
+((private path) section 2, D3). The FIRST half is
 ``apps/database/AGENTS.md`` -- authored, git-tracked prose, including the
 verbatim founding brief. This module produces the copy that travels with a
 specific machine's live DB file and is regenerated whenever migrations run,
@@ -101,7 +101,7 @@ def agents_md_cache_marker(
     script). The app's own ``SCHEMA_VERSION`` constant only advances on a
     migration and would miss all of those, silently caching a stale
     AGENTS.md past the drift guard's whole purpose
-    (:class:`MissingColumnDocsError`, specs/cloudsync-spec.md D3). It costs
+    (:class:`MissingColumnDocsError`, (private path) D3). It costs
     one pragma read, not a walk of ``sqlite_master``, so the cache still
     pays for itself against the introspect-and-render cost this exists to
     skip.
@@ -198,12 +198,25 @@ class ForeignAgentsMdError(RuntimeError):
     """
 
 
+class ExistingSidecarAccessError(OSError):
+    """Existing ``AGENTS.md`` could not be read (sharing lock, permissions)."""
+
+
+class SidecarReplacePermissionError(PermissionError):
+    """``os.replace`` onto an existing ``AGENTS.md`` was denied."""
+
+
 def _existing_is_generated_sidecar(path: Path) -> bool:
     """True when ``path`` is missing or already a generated sidecar."""
     if not path.exists():
         return True
-    with path.open("r", encoding="utf-8") as handle:
-        first = handle.readline()
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            first = handle.readline()
+    except OSError as exc:
+        raise ExistingSidecarAccessError(
+            exc.errno, exc.strerror, str(path)
+        ) from exc
     return first.startswith(_HEADER.splitlines()[0])
 
 
@@ -441,8 +454,19 @@ def write_agents_md(
     )
     try:
         tmp_path.write_text(text, encoding="utf-8")
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    try:
         os.replace(tmp_path, out_path)
-    except Exception:
+    except PermissionError as exc:
+        tmp_path.unlink(missing_ok=True)
+        if out_path.exists():
+            raise SidecarReplacePermissionError(
+                exc.errno, exc.strerror, str(out_path)
+            ) from exc
+        raise
+    except OSError:
         tmp_path.unlink(missing_ok=True)
         raise
     return text

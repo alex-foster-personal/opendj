@@ -1,0 +1,17 @@
+{
+ "files": [
+  {
+   "filename": ".planning/REQUIREMENTS.md"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-ai-data.svelte.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-ai.test.mjs"
+  },
+  {
+   "filename": "reqs.json"
+  }
+ ],
+ "sha": "86e557153b33616376a77d0740480572cda13163"
+}

@@ -5,7 +5,7 @@ plus :data:`hub_deploy.HUB_ENV`, after the same ``init`` the start script
 runs) as a real subprocess on a free loopback port. Two hubs boot side by
 side: one with ``MDT_IS_HUB=1`` and one with ``MDT_IS_HUB=0`` over an
 identically initialized data dir, so the probe's ``is_hub`` is shown to come
-from the SERVING process and able to say no (.claude/rules/verification.md).
+from the SERVING process and able to say no ((private path)).
 
 The rendered units are checked against the same argv, so a unit that starts
 something other than what this file booted fails here.
@@ -46,6 +46,8 @@ GOLDEN_FIXTURES: Path = Path(__file__).resolve().parent.parent / "fixtures" / "h
 GOLDEN_REPO: Path = Path("/golden/music-dj-tools")
 GOLDEN_UV: str = "/usr/local/bin/uv"
 BOOT_GUARD_S: float = 120.0
+# Boots tried when the hub loses its port to another process (see `_boot`).
+_BIND_ATTEMPTS = 3
 #: Ambient env a developer shell may carry that would change what the hub is.
 AMBIENT_ENV_TO_DROP: tuple[str, ...] = (
     "VIRTUAL_ENV",
@@ -147,11 +149,61 @@ def _boot(
     machine_name: str | None = None,
     machine_name_env: str | None = None,
     allowed_hosts: str | None = None,
+    first_port: int | None = None,
 ) -> BootedHub:
+    """Start a hub and wait until it answers health.
+
+    `_free_loopback_port` releases its port before the hub binds it, so another
+    process on a shared runner can take it in between: main push CI run
+    39004860947 lost that race ("address already in use", exit 3). The hub is a
+    `uv run` subprocess serving the production argv, so it cannot be handed a
+    pre-bound socket; a boot that lost the race is started again on a fresh
+    port instead, and any other failure is raised as it is. `first_port` lets a
+    test hand the first attempt a port it knows is taken.
+    """
     data_dir = root / name / hub_deploy.CFG.DATA_DIR_NAME
     data_dir.mkdir(parents=True)
     _init_data_dir(data_dir)
-    port = _free_loopback_port()
+    lost: list[int] = []
+    for _attempt in range(_BIND_ATTEMPTS):
+        port = first_port if first_port is not None and not lost else _free_loopback_port()
+        hub = _start_hub(
+            root,
+            name,
+            data_dir,
+            port,
+            is_hub_override,
+            machine_name=machine_name,
+            machine_name_env=machine_name_env,
+            allowed_hosts=allowed_hosts,
+        )
+        try:
+            _wait_for_hub(hub)
+        except AssertionError:
+            if not _lost_port_race(hub):
+                _stop_hub(hub)
+                raise
+            lost.append(port)
+            continue
+        except BaseException:
+            _stop_hub(hub)
+            raise
+        return hub
+    raise AssertionError(f"{name} lost the loopback port race {len(lost)} times: ports {lost}")
+
+
+def _start_hub(
+    root: Path,
+    name: str,
+    data_dir: Path,
+    port: int,
+    is_hub_override: str | None,
+    *,
+    machine_name: str | None = None,
+    machine_name_env: str | None = None,
+    allowed_hosts: str | None = None,
+) -> BootedHub:
+    """Launch one hub on `port` with the production argv; no wait, no retry."""
     argv = hub_deploy.hub_serve_argv(uv=_uv(), data_dir=data_dir, port=port)
     if machine_name is not None:
         argv.extend(["--machine-name", machine_name])
@@ -169,6 +221,28 @@ def _boot(
             stderr=subprocess.STDOUT,
         )
     return BootedHub(f"http://127.0.0.1:{port}", data_dir, argv, proc, log_path)
+
+
+# How uvicorn words a refused bind, lowercased: POSIX EADDRINUSE, then
+# Windows WinError 10048. Only the POSIX text is driven here (Linux CI).
+_BIND_COLLISION_TEXT = ("address already in use", "only one usage of each socket address")
+
+
+def _lost_port_race(hub: BootedHub) -> bool:
+    """True only when the hub exited because its own port was already bound.
+
+    One log line must carry both the collision text and the exact endpoint the
+    hub was given, so an unrelated failure that merely mentions a bound address
+    is raised as it is rather than retried. The exit status is not matched: the
+    same refused bind exits 3 in main CI run 39004860947 and 1 on a cloud host.
+    """
+    if hub.proc.poll() is None:
+        return False
+    port = hub.url.rsplit(":", 1)[1]
+    return any(
+        f"('127.0.0.1', {port})" in line and any(text in line.lower() for text in _BIND_COLLISION_TEXT)
+        for line in hub.log_path.read_text().splitlines()
+    )
 
 
 def _wait_for_hub(hub: BootedHub) -> None:
@@ -215,8 +289,10 @@ def booted_hubs(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, 
     root = tmp_path_factory.mktemp("hub-deploy")
     # The hub boots on HUB_ENV exactly as the units carry it; only the negative
     # control overrides MDT_IS_HUB.
-    hubs = {"hub": _boot(root, "hub", None), "not_hub": _boot(root, "not-hub", "0")}
+    hubs: dict[str, BootedHub] = {}
     try:
+        hubs["hub"] = _boot(root, "hub", None)
+        hubs["not_hub"] = _boot(root, "not-hub", "0")
         for hub in hubs.values():
             _wait_for_hub(hub)
         yield hubs
@@ -592,7 +668,7 @@ def test_hub_refuses_a_data_dir_it_does_not_own(bad_dir: str) -> None:
 @pytest.mark.parametrize("platform", ["darwin", "linux"])
 def test_default_data_dir_is_accepted_as_dedicated(platform: str) -> None:
     """if the documented default data dir is itself refused then broken"""
-    data_dir = hub_deploy.default_hub_data_dir(platform, {"HOME": "/home/maintainer"})
+    data_dir = hub_deploy.default_hub_data_dir(platform, {"HOME": "/home/user"})
     assert data_dir.name == "opendj-hub"
     hub_deploy.assert_dedicated_data_dir(data_dir)
 
@@ -944,3 +1020,41 @@ def test_hub_service_env_matches_rendered_serve_unit(tmp_path: Path) -> None:
     )
     assert env == expected
     assert ALLOWED_HOSTS_ENV in env
+
+
+def test_a_hub_that_loses_its_port_boots_again_on_a_fresh_one(tmp_path: Path) -> None:
+    """[if] another process holds the port the hub was given [then] the boot retries on a fresh port and the hub answers health there"""
+    with socket.socket() as squatter:
+        squatter.bind(("127.0.0.1", 0))
+        squatter.listen(1)
+        taken = int(squatter.getsockname()[1])
+        hub = _boot(tmp_path, "port-race", None, first_port=taken)
+        try:
+            assert hub.url != f"http://127.0.0.1:{taken}", "the hub must not claim the squatted port"
+            assert _answers_health(hub)
+        finally:
+            _stop_hub(hub)
+
+
+def test_only_a_bind_collision_counts_as_a_lost_port_race(tmp_path: Path) -> None:
+    """Control, the opposite direction: a real hub that exits for any other reason is not retried"""
+    data_dir = tmp_path / "race" / hub_deploy.CFG.DATA_DIR_NAME
+    data_dir.mkdir(parents=True)
+    _init_data_dir(data_dir)
+    with socket.socket() as squatter:
+        squatter.bind(("127.0.0.1", 0))
+        squatter.listen(1)
+        collided = _start_hub(tmp_path, "collided", data_dir, int(squatter.getsockname()[1]), None)
+        try:
+            collided.proc.wait(timeout=BOOT_GUARD_S)
+        finally:
+            _stop_hub(collided)
+    assert _lost_port_race(collided), collided.log_path.read_text()[-2000:]
+
+    stopped = _start_hub(tmp_path, "stopped", data_dir, _free_loopback_port(), None)
+    try:
+        _wait_for_hub(stopped)
+    finally:
+        _stop_hub(stopped)
+    assert stopped.proc.returncode is not None
+    assert not _lost_port_race(stopped), "a hub stopped after serving did not lose a port race"

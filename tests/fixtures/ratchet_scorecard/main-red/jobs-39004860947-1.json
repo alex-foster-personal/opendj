@@ -1,0 +1,1226 @@
+{
+  "jobs": [
+    {
+      "conclusion": "failure",
+      "id": 117315138354,
+      "name": "Trunk quarantined tests (list)",
+      "steps": []
+    },
+    {
+      "conclusion": "success",
+      "id": 117315138462,
+      "name": "ci scope (docs-only skip decision)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Decide whether this change set is in ci.yml's scope"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "PR test selection mode (decides whether the fast-tier legs add anything)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Resolve the main-side durations ledger"
+        },
+        {
+          "conclusion": "success",
+          "name": "Seam plan (shadow, skips nothing)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315148746,
+      "name": "Trunk quarantined tests (live or cached)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Restore the newest cached list"
+        },
+        {
+          "conclusion": "success",
+          "name": "Resolve the list (live, else cached and under the age cap)"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Cache the live list for runs that cannot fetch it"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315658158,
+      "name": "production frontend build",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Enable pinned pnpm"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Node"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - node tools and disk"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install frontend dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build production frontend"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stamp production frontend artifact"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload production frontend artifact"
+        },
+        {
+          "conclusion": "success",
+          "name": "Cache production frontend build"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Node"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315658214,
+      "name": "quality ratchet (lint debt, complexity, coupling, dead code)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Wipe the quality gate scratch dir"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Node"
+        },
+        {
+          "conclusion": "success",
+          "name": "Enable pinned pnpm"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - node tools and disk"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install frontend dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Frontend typing-gate unit tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Keep the mypy incremental cache across jobs on this runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "mypy cache acceptance (slow)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Quality ratchet"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload quality report"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Node"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "skipped",
+      "id": 117315659028,
+      "name": "pytest fast tier (leg ${{ matrix.leg }} of 2)",
+      "steps": []
+    },
+    {
+      "conclusion": "success",
+      "id": 117315799695,
+      "name": "reqs-check + native wheel + contract drift",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision isolated Python test environment"
+        },
+        {
+          "conclusion": "success",
+          "name": "Seam pytest selection (shadow, skips nothing)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Contract drift - dev-server registry launch.json"
+        },
+        {
+          "conclusion": "success",
+          "name": "System deps for pyrekordbox (SQLCipher) and Mach-O classification"
+        },
+        {
+          "conclusion": "success",
+          "name": "libclang for bindgen - probe, install only when none loads"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - host binaries the suite shells out to"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify FastAPI TestClient at exact minimum versions"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install sccache"
+        },
+        {
+          "conclusion": "success",
+          "name": "Point sccache at the runner's persistent local disk cache"
+        },
+        {
+          "conclusion": "success",
+          "name": "A Rust toolchain must be present before the wheel is built"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install cargo-nextest (pinned prebuilt)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Nextest JUnit regression (real cargo-nextest 0.9.146)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run desktop shell Rust tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run audio engine Rust tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Enable pinned pnpm"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - node tools and disk"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install frontend dependencies for the live-engine acceptance"
+        },
+        {
+          "conclusion": "success",
+          "name": "Drive the real odj-audio from its Python tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Build and prove the native production wheel"
+        },
+        {
+          "conclusion": "success",
+          "name": "Report sccache hit rate"
+        },
+        {
+          "conclusion": "success",
+          "name": "Prove the ABI3 wheel imports on Python 3.14"
+        },
+        {
+          "conclusion": "success",
+          "name": "JIT cache guards (#1316) - the sharded lane ignores tests/analysis"
+        },
+        {
+          "conclusion": "success",
+          "name": "Strict reqs-check (non-fatal until timestamp flake fix lands)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Regenerating reqs.json must produce no diff"
+        },
+        {
+          "conclusion": "success",
+          "name": "Contract drift - openapi.json (armed at T0)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stage Rust JUnit reports for the isolated CI Insights job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload the desktop Rust JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload the audio Rust JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "success",
+          "name": "Cargo verdict (nextest exit code, Trunk quarantine applied)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Install sccache"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315799712,
+      "name": "pytest fast lane (shard 2 of 5)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision isolated Python test environment"
+        },
+        {
+          "conclusion": "success",
+          "name": "System deps for pyrekordbox (SQLCipher) and Mach-O classification"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - host binaries the suite shells out to"
+        },
+        {
+          "conclusion": "success",
+          "name": "The interpreter must run without a borrowed LD_LIBRARY_PATH"
+        },
+        {
+          "conclusion": "success",
+          "name": "Keep the numba JIT cache across jobs on this runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Download the main-side durations ledger"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install the main-side durations ledger over the committed seed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Warm the numba JIT cache before the suite (#1316)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's measured durations"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Upload the PR test selection record (DEVOPS-20 escape measurement)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stage this shard's JUnit report for the isolated CI Insights job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "success",
+          "name": "Fast lane verdict (pytest exit code, Trunk quarantine applied)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315799714,
+      "name": "pytest fast lane (shard 5 of 5)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision isolated Python test environment"
+        },
+        {
+          "conclusion": "success",
+          "name": "System deps for pyrekordbox (SQLCipher) and Mach-O classification"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - host binaries the suite shells out to"
+        },
+        {
+          "conclusion": "success",
+          "name": "The interpreter must run without a borrowed LD_LIBRARY_PATH"
+        },
+        {
+          "conclusion": "success",
+          "name": "Keep the numba JIT cache across jobs on this runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Download the main-side durations ledger"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install the main-side durations ledger over the committed seed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Warm the numba JIT cache before the suite (#1316)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's measured durations"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Upload the PR test selection record (DEVOPS-20 escape measurement)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stage this shard's JUnit report for the isolated CI Insights job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "success",
+          "name": "Fast lane verdict (pytest exit code, Trunk quarantine applied)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "failure",
+      "id": 117315799748,
+      "name": "pytest fast lane (shard 3 of 5)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision isolated Python test environment"
+        },
+        {
+          "conclusion": "success",
+          "name": "System deps for pyrekordbox (SQLCipher) and Mach-O classification"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - host binaries the suite shells out to"
+        },
+        {
+          "conclusion": "success",
+          "name": "The interpreter must run without a borrowed LD_LIBRARY_PATH"
+        },
+        {
+          "conclusion": "success",
+          "name": "Keep the numba JIT cache across jobs on this runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Download the main-side durations ledger"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install the main-side durations ledger over the committed seed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Warm the numba JIT cache before the suite (#1316)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's measured durations"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Upload the PR test selection record (DEVOPS-20 escape measurement)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stage this shard's JUnit report for the isolated CI Insights job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "failure",
+          "name": "Fast lane verdict (pytest exit code, Trunk quarantine applied)"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315799785,
+      "name": "pytest fast lane (shard 1 of 5)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision isolated Python test environment"
+        },
+        {
+          "conclusion": "success",
+          "name": "System deps for pyrekordbox (SQLCipher) and Mach-O classification"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - host binaries the suite shells out to"
+        },
+        {
+          "conclusion": "success",
+          "name": "The interpreter must run without a borrowed LD_LIBRARY_PATH"
+        },
+        {
+          "conclusion": "success",
+          "name": "Keep the numba JIT cache across jobs on this runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Download the main-side durations ledger"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install the main-side durations ledger over the committed seed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Warm the numba JIT cache before the suite (#1316)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's measured durations"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Upload the PR test selection record (DEVOPS-20 escape measurement)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stage this shard's JUnit report for the isolated CI Insights job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "success",
+          "name": "Fast lane verdict (pytest exit code, Trunk quarantine applied)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117315799867,
+      "name": "pytest fast lane (shard 4 of 5)",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision isolated Python test environment"
+        },
+        {
+          "conclusion": "success",
+          "name": "System deps for pyrekordbox (SQLCipher) and Mach-O classification"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - host binaries the suite shells out to"
+        },
+        {
+          "conclusion": "success",
+          "name": "The interpreter must run without a borrowed LD_LIBRARY_PATH"
+        },
+        {
+          "conclusion": "success",
+          "name": "Keep the numba JIT cache across jobs on this runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Download the main-side durations ledger"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install the main-side durations ledger over the committed seed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Warm the numba JIT cache before the suite (#1316)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's measured durations"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Upload the PR test selection record (DEVOPS-20 escape measurement)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stage this shard's JUnit report for the isolated CI Insights job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload this shard's JUnit report for CI Insights"
+        },
+        {
+          "conclusion": "success",
+          "name": "Fast lane verdict (pytest exit code, Trunk quarantine applied)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv for isolated dependency contracts"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "success",
+      "id": 117316131284,
+      "name": "frontend unit + check + build",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Enable pinned pnpm"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Node"
+        },
+        {
+          "conclusion": "success",
+          "name": "Runner preflight - node tools and disk"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install frontend dependencies"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup uv for the analysis-source fixture server"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Provision minimal Python env for the fixture server"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run frontend unit tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Verify the frontend unit report was written"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload frontend unit test report"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run Svelte checks"
+        },
+        {
+          "conclusion": "success",
+          "name": "Electron desktop shell unit tests"
+        },
+        {
+          "conclusion": "success",
+          "name": "Download production frontend artifact"
+        },
+        {
+          "conclusion": "success",
+          "name": "Restore production frontend build from cache (artifact fallback)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Assert production frontend artifact matches this commit"
+        },
+        {
+          "conclusion": "success",
+          "name": "Bundle budgets (per-surface gzip ceilings)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Contract drift - TS client (armed at T0)"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup uv for the analysis-source fixture server"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Node"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "failure",
+      "id": 117321973173,
+      "name": "ci gate",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job"
+        },
+        {
+          "conclusion": "success",
+          "name": "Set up runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reclaim workspace ownership before checkout"
+        },
+        {
+          "conclusion": "success",
+          "name": "Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Remove untracked build debris, keeping dependency dirs"
+        },
+        {
+          "conclusion": "success",
+          "name": "Stale-install guard - the interpreter imports only this checkout"
+        },
+        {
+          "conclusion": "failure",
+          "name": "Aggregate the gated jobs into one verdict"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete runner"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job"
+        }
+      ]
+    },
+    {
+      "conclusion": "skipped",
+      "id": 117321974085,
+      "name": "CI Insights",
+      "steps": []
+    }
+  ]
+}

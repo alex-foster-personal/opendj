@@ -1,0 +1,10 @@
+{
+  "//": "Typechecks the React twins (*.tsx) and what they import; svelte-check does not read .tsx. Run by `pnpm check`.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["node", "vite/client", "svelte"]
+  },
+  "include": ["src/**/*.tsx", "src/**/*.contract.ts"]
+}

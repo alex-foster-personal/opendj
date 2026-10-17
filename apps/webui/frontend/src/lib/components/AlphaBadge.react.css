@@ -1,0 +1,15 @@
+/* AlphaBadge.svelte's scoped <style>, unscoped for the React twin: every rule
+ * is anchored on .release-stage so it cannot leak. Keep the two in step. */
+.release-stage {
+	display: inline-block;
+	margin-left: 4px;
+	border: none;
+	background: none;
+	color: var(--rb-text, var(--fg));
+	font-size: 0.75em;
+	font-style: italic;
+	font-weight: 400;
+	text-transform: lowercase;
+	vertical-align: middle;
+	cursor: help;
+}

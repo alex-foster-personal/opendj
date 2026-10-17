@@ -4,7 +4,7 @@
 	 * on, and exactly what is stored about you on this machine.
 	 *
 	 * SHAPE. An OVERLAY over the live app, following SetupOverlay rather than
-	 * the settings catalog (constraint 5 in specs/saas-spec.md). Account
+	 * the settings catalog (constraint 5 in (private path)). Account
 	 * management is a stateful flow that ends in an irreversible action, not a
 	 * flat searchable preference, and it is raised through the one
 	 * `openAccountOverlay()` door so more entry points cannot drift apart.
@@ -29,6 +29,9 @@
 	 *   Delete data    DELETE /api/v1/account?confirm=...
 	 */
 	import { onMount } from 'svelte';
+	import { hostedBilling } from '$lib/account/hosted-billing.svelte';
+	// Loaded on mount, off the initial bundle; the buttons render only after it answered.
+	let billingApi: typeof import('$lib/account/hosted-billing-api') | null = null;
 	import { auth, logout, refreshUser } from '$lib/auth.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import { accountStore } from '$lib/account/account-store.svelte';
@@ -76,6 +79,25 @@
 		void accountStore.load();
 		void entitlements.load();
 		void buildFlags.load();
+		void import('$lib/account/hosted-billing-api').then(
+			(api) => {
+				billingApi = api;
+				return api.loadHostedBilling();
+			},
+			(exc: unknown) => {
+				// A chunk a newer build removed: show it, never a silently missing section.
+				hostedBilling.error = exc instanceof Error ? exc.message : String(exc);
+			}
+		);
+	});
+
+	$effect(() => {
+		if (!accountOverlay.open || !hostedBilling.eligible) return;
+		const onFocus = (): void => {
+			void billingApi?.onHostedBillingWindowFocus();
+		};
+		window.addEventListener('focus', onFocus);
+		return () => window.removeEventListener('focus', onFocus);
 	});
 
 	$effect(() => {
@@ -147,6 +169,19 @@
 			pushToast(exc instanceof Error ? exc.message : 'sign-out failed', 'error');
 		} finally {
 			busy = false;
+		}
+	}
+
+	let billingBusy = $state(false);
+
+	async function runBilling(open: () => Promise<void>): Promise<void> {
+		billingBusy = true;
+		try {
+			await open();
+		} catch (exc) {
+			pushToast(exc instanceof Error ? exc.message : 'billing failed', 'error');
+		} finally {
+			billingBusy = false;
 		}
 	}
 
@@ -262,6 +297,51 @@
 						<!-- What the plan includes, read through the entitlement
 						     seam rather than from a second list here, so this
 						     panel and any gated control can never disagree. -->
+						{#if hostedBilling.eligible || hostedBilling.error !== null}
+							<section class="ac-hosted-billing" aria-label="CloudSync hosted plan">
+								<h4>CloudSync hosted hub</h4>
+								{#if hostedBilling.loading}
+									<p class="ac-muted">Reading hosted plan...</p>
+								{:else if hostedBilling.error !== null}
+									<p class="ac-muted" title={hostedBilling.error}>
+										Could not read hosted billing: {hostedBilling.error}
+									</p>
+								{:else}
+									<p class="ac-muted">Provider: {hostedBilling.provider ?? 'unknown'}</p>
+									<ul class="ac-features">
+										{#each hostedBilling.standings as row (row.feature_id)}
+											<li>
+												<span class="ac-store-label">{row.feature_id}</span>
+												<span class="ac-muted"
+													>{row.state === null ? 'No subscription' : row.state.replaceAll('_', ' ')}</span
+												>
+											</li>
+										{/each}
+									</ul>
+									<div class="ac-actions">
+										<button
+											type="button"
+											class="ac-btn"
+											disabled={busy || billingBusy}
+											onclick={() => runBilling(() => billingApi!.openHostedCheckout())}
+											title="Polar checkout via engine."
+										>
+											Subscribe
+										</button>
+										<button
+											type="button"
+											class="ac-btn"
+											disabled={busy || billingBusy}
+											onclick={() => runBilling(() => billingApi!.openHostedPortal())}
+											title="Polar portal via engine."
+										>
+											Manage
+										</button>
+									</div>
+								{/if}
+							</section>
+						{/if}
+
 						{#if entitlements.features.length === 0}
 							<p class="ac-muted">
 								No feature in this build is gated by a plan, so there is nothing here to
@@ -661,6 +741,20 @@
 		display: flex;
 		justify-content: space-between;
 		gap: 1rem;
+	}
+	.ac-hosted-billing {
+		margin: 0.75rem 0 0.5rem;
+		padding: 0.65rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg);
+	}
+	.ac-hosted-billing h4 {
+		margin: 0 0 0.45rem;
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--muted);
 	}
 	.ac-store-loc {
 		color: var(--muted);

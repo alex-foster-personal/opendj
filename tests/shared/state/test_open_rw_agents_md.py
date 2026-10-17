@@ -1,11 +1,14 @@
 """open_rw post-migration AGENTS.md hook -- real sqlite, no mocks."""
 from __future__ import annotations
 
+import errno
+import logging
 import os
 import shutil
 import sqlite3
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -243,6 +246,39 @@ def _marker_for(conn: sqlite3.Connection, owned_tables: frozenset[str], version:
     )
 
 
+def _marker_for_db(db_path: Path) -> str:
+    conn = sqlite3.connect(db_path)
+    try:
+        return _marker_for(conn, state_schema.ALL_KNOWN_TABLES, GENERATOR_VERSION)
+    finally:
+        conn.close()
+
+
+def _delete_all_markers(db_path: Path) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(f"DELETE FROM {schema_markers.MARKER_TABLE}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _record_oserror_capture(captured: list[OSError], exc: BaseException) -> None:
+    assert isinstance(exc, OSError)
+    captured.append(exc)
+
+
+def _patch_deny_agents_md_path_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_open = Path.open
+
+    def deny_agents_md_open(self: Path, *args: Any, **kwargs: Any):
+        if self.name == "AGENTS.md":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny_agents_md_open)
+
+
 def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> None:
     """if schema version, fingerprint, tables or generator differ, the marker differs - broken"""
     tracks_only = frozenset({"tracks"})
@@ -264,6 +300,227 @@ def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> 
     assert base != marker(19, tracks_only, GENERATOR_VERSION, fingerprint="bbbb")
     assert base != marker(19, tracks_and_playlists, GENERATOR_VERSION)
     assert base != marker(19, tracks_only, GENERATOR_VERSION + 1)
+
+
+def test_open_rw_tolerates_permission_error_reading_agents_md_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if the AGENTS.md sidecar cannot be read then open_rw still opens and regenerates - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    agents_md = tmp_path / "AGENTS.md"
+    before_ino = agents_md.stat().st_ino
+    sidecar_reads = 0
+
+    def deny_sidecar_read(path: Path, marker: str) -> bool:
+        nonlocal sidecar_reads
+        sidecar_reads += 1
+        raise PermissionError(13, "Permission denied", str(path))
+
+    # regenerate_agents_md_cached imports sidecar_carries_cache_line inside the
+    # function body (not at agents_md_cache module scope), so the name is
+    # resolved from generate_agents_md on each call and this patch is live.
+    monkeypatch.setattr(
+        "apps.database.generate_agents_md.sidecar_carries_cache_line",
+        deny_sidecar_read,
+    )
+
+    conn = open_rw(db_path)
+    try:
+        conn.execute("SELECT 1").fetchone()
+    finally:
+        conn.close()
+
+    assert sidecar_reads == 1
+    # write_agents_md uses os.replace; a regeneration always changes the inode.
+    assert agents_md.stat().st_ino != before_ino
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid"),
+    reason="chmod 000 sidecar test requires POSIX geteuid (unavailable on Windows)",
+)
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores chmod 000 mode bits",
+)
+def test_open_rw_tolerates_chmod_zero_agents_md_sidecar(tmp_path: Path) -> None:
+    """if AGENTS.md is unreadable then open_rw still opens without raising - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.chmod(0)
+    try:
+        conn = open_rw(db_path)
+        try:
+            assert conn.execute("SELECT 1").fetchone() == (1,)
+        finally:
+            conn.close()
+    finally:
+        agents_md.chmod(0o644)
+
+
+@pytest.mark.parametrize("marker_present", [True, False], ids=["marker-present", "marker-absent"])
+def test_open_rw_tolerates_agents_md_path_open_permission_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    marker_present: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """if Path.open on AGENTS.md is denied then open_rw still opens with a warning - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    if not marker_present:
+        _delete_all_markers(db_path)
+    _patch_deny_agents_md_path_open(monkeypatch)
+
+    with caplog.at_level(logging.WARNING, logger="apps.shared.state.agents_md_cache"):
+        conn = open_rw(db_path)
+        try:
+            assert conn.execute("SELECT 1").fetchone() == (1,)
+        finally:
+            conn.close()
+
+    assert any("AGENTS.md" in record.message for record in caplog.records)
+
+
+@pytest.mark.parametrize("marker_present", [True, False], ids=["marker-present", "marker-absent"])
+def test_open_rw_tolerates_oserror_on_agents_md_replace_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marker_present: bool
+) -> None:
+    """if os.replace onto AGENTS.md hits PermissionError then open_rw opens - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    if marker_present:
+        monkeypatch.setattr(
+            "apps.database.generate_agents_md.sidecar_carries_cache_line",
+            lambda path, marker: False,
+        )
+    else:
+        _delete_all_markers(db_path)
+
+    real_replace = os.replace
+
+    def fail_agents_md_replace(src: str | bytes, dst: str | bytes) -> None:
+        if Path(os.fsdecode(dst)).name == "AGENTS.md":
+            raise PermissionError(13, "Permission denied", os.fsdecode(dst))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fail_agents_md_replace)
+
+    conn = open_rw(db_path)
+    try:
+        assert conn.execute("SELECT 1").fetchone() == (1,)
+    finally:
+        conn.close()
+
+    assert list(tmp_path.glob(".AGENTS.md.*.tmp")) == []
+
+
+@pytest.mark.parametrize("marker_present", [True, False], ids=["marker-present", "marker-absent"])
+def test_open_rw_survives_enospc_on_agents_md_temp_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    marker_present: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """if temp write for AGENTS.md hits ENOSPC then open_rw opens and logs error - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    marker = _marker_for_db(db_path)
+    if marker_present:
+        monkeypatch.setattr(
+            "apps.database.generate_agents_md.sidecar_carries_cache_line",
+            lambda path, marker: False,
+        )
+    else:
+        _delete_all_markers(db_path)
+
+    captured: list[OSError] = []
+    monkeypatch.setattr(
+        "apps.shared.state.agents_md_cache._capture_sidecar_write_failure",
+        lambda exc: _record_oserror_capture(captured, exc),
+    )
+
+    real_write_text = Path.write_text
+
+    def fail_temp_write(self: Path, data: str, *args: Any, **kwargs: Any):
+        if self.name.startswith(".AGENTS.md.") and self.name.endswith(".tmp"):
+            raise OSError(errno.ENOSPC, "No space left on device", str(self))
+        return real_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_temp_write)
+
+    with caplog.at_level(logging.ERROR, logger="apps.shared.state.agents_md_cache"):
+        conn = open_rw(db_path)
+        try:
+            assert conn.execute("SELECT 1").fetchone() == (1,)
+        finally:
+            conn.close()
+
+    assert list(tmp_path.glob(".AGENTS.md.*.tmp")) == []
+    assert any("persistence failed" in record.message for record in caplog.records)
+    assert len(captured) == 1
+    assert captured[0].errno == errno.ENOSPC
+
+    check = sqlite3.connect(db_path)
+    try:
+        assert schema_markers.has_marker(check, marker) is marker_present
+    finally:
+        check.close()
+
+
+@pytest.mark.parametrize("marker_present", [True, False], ids=["marker-present", "marker-absent"])
+def test_open_rw_survives_eio_on_agents_md_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    marker_present: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """if os.replace onto AGENTS.md raises EIO then open_rw opens and logs error - broken"""
+    db_path = tmp_path / "state.db"
+    open_rw(db_path).close()
+    marker = _marker_for_db(db_path)
+    if marker_present:
+        monkeypatch.setattr(
+            "apps.database.generate_agents_md.sidecar_carries_cache_line",
+            lambda path, marker: False,
+        )
+    else:
+        _delete_all_markers(db_path)
+
+    captured: list[OSError] = []
+    monkeypatch.setattr(
+        "apps.shared.state.agents_md_cache._capture_sidecar_write_failure",
+        lambda exc: _record_oserror_capture(captured, exc),
+    )
+
+    real_replace = os.replace
+
+    def fail_agents_md_replace(src: str | bytes, dst: str | bytes) -> None:
+        if Path(os.fsdecode(dst)).name == "AGENTS.md":
+            raise OSError(errno.EIO, "I/O error", os.fsdecode(dst))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fail_agents_md_replace)
+
+    with caplog.at_level(logging.ERROR, logger="apps.shared.state.agents_md_cache"):
+        conn = open_rw(db_path)
+        try:
+            assert conn.execute("SELECT 1").fetchone() == (1,)
+        finally:
+            conn.close()
+
+    assert list(tmp_path.glob(".AGENTS.md.*.tmp")) == []
+    assert any("persistence failed" in record.message for record in caplog.records)
+    assert len(captured) == 1
+    assert captured[0].errno == errno.EIO
+
+    check = sqlite3.connect(db_path)
+    try:
+        assert schema_markers.has_marker(check, marker) is marker_present
+    finally:
+        check.close()
 
 
 def test_open_rw_reopen_on_unchanged_schema_skips_regeneration(tmp_path: Path) -> None:

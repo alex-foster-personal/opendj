@@ -14,7 +14,7 @@
 		</div>
 	{/if}
 	<div class="fb-dock-actions">
-		<FeedbackPinShellButton />
+		<FeedbackPinShellButton overlay />
 		<button
 			type="button"
 			class="fb-support-bubble"
@@ -31,8 +31,10 @@
 <style>
 	.fb-dock {
 		position: fixed;
-		right: 12px;
-		bottom: 12px;
+		/* Clear of the window edge and of the bottom tray, where the version
+		   number and age sit (about 18-20px). */
+		right: 20px;
+		bottom: 36px;
 		display: flex;
 		flex-direction: column;
 		align-items: flex-end;
@@ -50,23 +52,40 @@
 		gap: 8px;
 	}
 	.fb-support-bubble {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
+		width: 36px;
 		height: 32px;
-		padding: 0;
-		border-radius: 4px;
-		border: 1px solid var(--border);
-		background: var(--surface);
-		color: var(--muted);
+		padding: 0 0 1px;
+		border-radius: 14px;
+		border: 2px solid #ffb43a;
+		/* A fixed dark face, not var(--surface): the yellow glyph on the light
+		   theme's surface reads 1.74:1, below WCAG AA. Dark keeps it near 10:1
+		   and the bubble identical on every page. */
+		background: #121720;
+		color: #ffb43a;
 		font-size: 16px;
 		font-weight: 700;
 		line-height: 1;
 		cursor: pointer;
+		box-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+	}
+	.fb-support-bubble::after {
+		content: '';
+		position: absolute;
+		left: 8px;
+		bottom: -6px;
+		width: 8px;
+		height: 8px;
+		background: #121720;
+		border-right: 2px solid #ffb43a;
+		border-bottom: 2px solid #ffb43a;
+		transform: rotate(40deg);
 	}
 	.fb-support-bubble:hover {
-		color: var(--accent);
-		border-color: var(--accent);
+		color: #ffb43a;
+		border-color: #ffb43a;
 	}
 </style>

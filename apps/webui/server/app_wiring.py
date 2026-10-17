@@ -16,8 +16,9 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
@@ -157,6 +158,7 @@ from .routes import stem_cache as stem_cache_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
 from .routes import stems_assets as stems_assets_routes
+from .routes import sync_billing_proxy as sync_billing_proxy_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import track_handoff as track_handoff_routes
@@ -717,6 +719,8 @@ def _mount_api_routers(app: FastAPI) -> None:
         # Test/dev only (MDT_USB_SIMULATION=1): production apps never mount
         # the simulated-volume POST, so fake volumes cannot be injected.
         app.include_router(usb_volumes_sim_routes.router, prefix=api_prefix)
+    if not getattr(app.state, sync_hub_hosted_config.HOSTED_FLAG_ATTR, False):
+        app.include_router(sync_billing_proxy_routes.router, prefix=api_prefix)
     for router in (
         telemetry_routes.router,
         vocals_routes.router,
@@ -724,10 +728,33 @@ def _mount_api_routers(app: FastAPI) -> None:
         sync_hub_router,
     ):
         app.include_router(router, prefix=api_prefix)
+    if not getattr(app.state, sync_hub_hosted_config.HOSTED_FLAG_ATTR, False):
+        _drop_routes_shadowed_by(app, sync_billing_proxy_routes.router)
     app.include_router(sets_router)
     # SET-12: a master REC start pushes the attach to the open page.
     setattr(app.state, MASTER_TAP_CHANNEL_STATE, OrderBusMasterTap())
     app.include_router(play_analytics_router)
+
+
+def _drop_routes_shadowed_by(app: FastAPI, shadowing: APIRouter) -> None:
+    """Remove later routes that ``shadowing``'s routes already answer.
+
+    Starlette dispatches to the first matching route, so the hub billing
+    handlers behind the spoke proxy never run, but OpenAPI would still
+    describe them (and their required ``machine_id`` body) for those paths.
+    """
+    ours = {route.endpoint for route in shadowing.routes if isinstance(route, APIRoute)}
+    claimed: set[tuple[str, str]] = set()
+    kept = []
+    for route in app.router.routes:
+        if isinstance(route, APIRoute):
+            keys = {(route.path, method) for method in route.methods}
+            if route.endpoint in ours:
+                claimed |= keys
+            elif keys & claimed:
+                continue
+        kept.append(route)
+    app.router.routes[:] = kept
 
 
 def _mount_frontend_or_placeholder(

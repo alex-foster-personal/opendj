@@ -211,7 +211,7 @@
 	.popout-error {
 		position: fixed;
 		right: 12px;
-		bottom: 48px;
+		bottom: 84px;
 		z-index: 60;
 		display: flex;
 		gap: 10px;

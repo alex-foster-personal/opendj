@@ -1,12 +1,15 @@
-"""Native-analysis loudness producer over :mod:`apps.loudness`."""
+"""Native-analysis loudness producer over :mod:`apps.loudness`.
 
-from .adapter import LoudnessAnalysis, analyze_file
-from .backfill import PRODUCER_BACKEND, PRODUCER_VERSION, produce_lane_result
+Outside this package, import :mod:`apps.analysis_loudness.contract` (delivery
+layers may also use :mod:`apps.analysis_loudness.http`). This module stays
+pure: it re-exports the contract only.
+"""
+
+from .contract import CONTRACT_VERSION, PRODUCER_BACKEND, PRODUCER_VERSION, LoudnessAnalysisService
 
 __all__ = [
+    "CONTRACT_VERSION",
     "PRODUCER_BACKEND",
     "PRODUCER_VERSION",
-    "LoudnessAnalysis",
-    "analyze_file",
-    "produce_lane_result",
+    "LoudnessAnalysisService",
 ]

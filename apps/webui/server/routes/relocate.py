@@ -61,7 +61,8 @@ from typing import Literal, TypeVar
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from apps.shared import audio_files, fs_residency, paths
+from apps.reconcile.contract import RelocateQuery
+from apps.shared import fs_residency, paths
 from apps.shared.events import publish
 from apps.shared.platform_paths import is_unplayable_path
 from apps.shared.rekordbox_writeback import require_writeback_enabled
@@ -318,6 +319,19 @@ def _mutate_with_candidate_guard(
 
 # ----- candidates ------------------------------------------------------------
 
+def _relocate_query(stable_id: str, original_path: str, track: Track) -> RelocateQuery:
+    """The row ``apps.reconcile`` scores candidates against, for one track."""
+    return RelocateQuery(
+        original_path=original_path,
+        basename=Path(original_path).name,
+        title=track.title or "",
+        artist=track.artist or "",
+        duration_s=str(track.duration_ms / 1000) if track.duration_ms else "",
+        file_size="",
+        stable_id=stable_id,
+    )
+
+
 @router.get("/candidates/{stable_id}", response_model=RelocateCandidateList)
 def get_candidates(
     stable_id: str,
@@ -332,22 +346,10 @@ def get_candidates(
             total=0, candidates=[],
         )
 
-    from apps.reconcile import locate
-    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
+    from apps.reconcile.http import build_service
 
-    index = locate.FsIndex.build(audio_files.scan_music_files())
-    row: dict[str, str] = {
-        "original_path": original_path,
-        "basename": Path(original_path).name,
-        "title": track.title or "",
-        "artist": track.artist or "",
-        "duration_s": str(track.duration_ms / 1000) if track.duration_ms else "",
-        "file_size": "",
-        "stable_id": stable_id,
-    }
-    id3_cache: dict[Path, audio_files.AudioMetadata | None] = {}
-    found = locate.find_candidates(
-        row, index, id3_cache, limit=limit, fingerprints=FingerprintEvidence.open(),
+    found = build_service().find_relocate_candidates(
+        _relocate_query(stable_id, original_path, track), limit=limit,
     )
     candidates: list[RelocateCandidateOut] = []
     for found_candidate in found:
@@ -564,21 +566,10 @@ def apply_relocate(
         body.new_path, body.expected_candidate_identity,
     )
     os.close(descriptor)
-    from apps.reconcile import locate
-    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
+    from apps.reconcile.http import build_service
 
-    index = locate.FsIndex.build(audio_files.scan_music_files())
-    row = {
-        "original_path": original_path,
-        "basename": Path(original_path).name,
-        "title": track.title or "",
-        "artist": track.artist or "",
-        "duration_s": str(track.duration_ms / 1000) if track.duration_ms else "",
-        "file_size": "",
-        "stable_id": stable_id,
-    }
-    current_candidates = locate.find_candidates(
-        row, index, {}, limit=20, fingerprints=FingerprintEvidence.open(),
+    current_candidates = build_service().find_relocate_candidates(
+        _relocate_query(stable_id, original_path, track), limit=20,
     )
     if candidate.path not in {str(found.path.resolve()) for found in current_candidates}:
         raise HTTPException(status_code=409, detail={

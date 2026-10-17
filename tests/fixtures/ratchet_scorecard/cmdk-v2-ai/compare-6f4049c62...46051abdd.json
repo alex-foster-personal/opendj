@@ -1,0 +1,13 @@
+{
+ "merge_base_commit": {
+  "sha": "c72912bc3fe961600064567e6d2d0d6530678076"
+ },
+ "files": [
+  {
+   "filename": "apps/webui/frontend/src/lib/components/rb/CommandBarV2.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-pairs.test.mjs"
+  }
+ ]
+}

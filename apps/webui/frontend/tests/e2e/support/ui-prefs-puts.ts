@@ -20,6 +20,14 @@
  * went out came back non-2xx, or ended without a server answer, since then
  * nobody knows whether or when it lands: a write that did not land is a test
  * failure, never something cleanup quietly papers over.
+ *
+ * A PUT the page starts after the route is in place but before the close can
+ * still reach the close unanswered, with its route handler not yet run (seen
+ * in e2e run 38980579517: `{"midi_enabled":false}`, the WebMIDI denial's own
+ * write, "no server answer before the page closed"). Routing runs before a
+ * request is sent, so such a PUT never left the browser either: it counts as
+ * blocked, like one the route did abort. A PUT first seen BEFORE the route is
+ * in place gets no such pass, since it may already be on the wire.
  */
 import { expect, type Page, type Request } from '@playwright/test';
 
@@ -50,12 +58,17 @@ export function watchUiPrefsPuts(page: Page): UiPrefsPutWatch {
 	// PUTs settle()'s route aborted inside the browser: they never reached the
 	// engine, so they are the one unanswered outcome that is known not to land.
 	const blocked = new Set<Request>();
+	// PUTs first seen once settle()'s route was in place: every one of them has
+	// to pass that route before it is sent, so if it ends unanswered it never
+	// reached the engine, whether or not the route handler got to run.
+	const afterRoute = new Set<Request>();
+	let routeInPlace = false;
 	const record = (r: Request, status: number | null, why: string | null) => {
 		if (!inFlight.delete(r)) return;
 		const body = uiPrefsPutBody(r);
 		if (status !== null && status >= 200 && status < 300) {
 			if (body !== null) landed.push(body);
-		} else if (status !== null || !blocked.has(r)) {
+		} else if (status !== null || !(blocked.has(r) || afterRoute.has(r))) {
 			failed.push(`${JSON.stringify(body)}: ${status !== null ? `HTTP ${status}` : (why ?? 'no response')}`);
 		}
 	};
@@ -64,6 +77,7 @@ export function watchUiPrefsPuts(page: Page): UiPrefsPutWatch {
 		if (body === null) return;
 		sent.push(body);
 		inFlight.add(r);
+		if (routeInPlace) afterRoute.add(r);
 	});
 	page.on('requestfinished', async (r) => {
 		if (!inFlight.has(r)) return;
@@ -87,6 +101,7 @@ export function watchUiPrefsPuts(page: Page): UiPrefsPutWatch {
 					return route.abort('aborted');
 				}
 			);
+			routeInPlace = true;
 			// Every PUT that went out before the route gets its server answer.
 			await expect
 				.poll(() => inFlight.size, {
@@ -98,7 +113,8 @@ export function watchUiPrefsPuts(page: Page): UiPrefsPutWatch {
 			await page.close();
 			// Drain whatever was observed up to the close, snapshotted AFTER it, on
 			// the request itself, since a closed page emits no more events. Only a
-			// blocked PUT may end unanswered; any other one fails below.
+			// PUT that never left the browser (blocked, or started behind the
+			// route) may end unanswered; any other one fails below.
 			for (const r of [...inFlight]) {
 				const res = await r.response().catch(() => null);
 				record(r, res?.status() ?? null, 'no server answer before the page closed');

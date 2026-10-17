@@ -1,0 +1,498 @@
+{
+	"name": "lyrics-words-vocal-track",
+	"recorded_at": "2026-10-17T05:28:25.432Z",
+	"library": "tests/e2e/support/lyrics_words_fixture.py",
+	"provenance": {
+		"manifest_sha256": "25d40d81b4e863fc5c3521420cd491fdef7ee4404f9e1e4ce16dd49db202e512",
+		"library_sha256": "ae0d7e8cf82bea41373f44329d4ba68670fc5ec30608229e906c00b529ccc357"
+	},
+	"request": {
+		"method": "GET",
+		"path": "/api/v1/tracks/3d060f43b93d2a0c1fb34c8c36f0a65a17fcf901/lyrics/words",
+		"query": {
+			"include": "lines"
+		}
+	},
+	"response": {
+		"status": 200,
+		"content_type": "application/json",
+		"body": {
+			"verdict": {
+				"stable_id": "3d060f43b93d2a0c1fb34c8c36f0a65a17fcf901",
+				"verdict": "vocal",
+				"effective_verdict": "vocal",
+				"effective": "vocal",
+				"coverage_pct": 92.5,
+				"source": "musixmatch matcher-get",
+				"language_iso3": "eng",
+				"n_words": 40,
+				"n_lines": 7,
+				"pct_witness_red": 0.05,
+				"has_words": true,
+				"override": null,
+				"override_note": null,
+				"pipeline_version": "2026.09.09-round3a",
+				"computed_at": "2026-09-11T00:00:00.000000+00:00",
+				"updated_at": "2026-10-17T05:28:14.510676+00:00",
+				"title": null,
+				"artist": null
+			},
+			"words": [
+				{
+					"idx": 0,
+					"word": "we",
+					"start_s": 2,
+					"end_s": 2.4,
+					"score": -0.05,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 1,
+					"word": "started",
+					"start_s": 2.5,
+					"end_s": 2.9,
+					"score": -0.054,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 2,
+					"word": "at",
+					"start_s": 3,
+					"end_s": 3.4,
+					"score": -0.058,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 3,
+					"word": "the",
+					"start_s": 3.5,
+					"end_s": 3.9,
+					"score": -0.062,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 4,
+					"word": "loudest",
+					"start_s": 4,
+					"end_s": 4.4,
+					"score": -0.066,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 5,
+					"word": "hour",
+					"start_s": 4.5,
+					"end_s": 4.9,
+					"score": -0.07,
+					"witness": "agree",
+					"line_final": true
+				},
+				{
+					"idx": 6,
+					"word": "and",
+					"start_s": 6.5,
+					"end_s": 6.9,
+					"score": -0.074,
+					"witness": "drift",
+					"line_final": false
+				},
+				{
+					"idx": 7,
+					"word": "every",
+					"start_s": 7,
+					"end_s": 7.4,
+					"score": -0.078,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 8,
+					"word": "street",
+					"start_s": 7.5,
+					"end_s": 7.9,
+					"score": -0.082,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 9,
+					"word": "was",
+					"start_s": 8,
+					"end_s": 8.4,
+					"score": -0.086,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 10,
+					"word": "wide",
+					"start_s": 8.5,
+					"end_s": 8.9,
+					"score": -0.09,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 11,
+					"word": "awake",
+					"start_s": 9,
+					"end_s": 9.4,
+					"score": -0.094,
+					"witness": "agree",
+					"line_final": true
+				},
+				{
+					"idx": 12,
+					"word": "the",
+					"start_s": 11,
+					"end_s": 11.4,
+					"score": -0.098,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 13,
+					"word": "record",
+					"start_s": 11.5,
+					"end_s": 11.9,
+					"score": -0.102,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 14,
+					"word": "spins",
+					"start_s": 12,
+					"end_s": 12.4,
+					"score": -0.106,
+					"witness": "lost",
+					"line_final": false
+				},
+				{
+					"idx": 15,
+					"word": "another",
+					"start_s": 12.5,
+					"end_s": 12.9,
+					"score": -0.11,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 16,
+					"word": "slow",
+					"start_s": 13,
+					"end_s": 13.4,
+					"score": -0.114,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 17,
+					"word": "return",
+					"start_s": 13.5,
+					"end_s": 13.9,
+					"score": -0.118,
+					"witness": "agree",
+					"line_final": true
+				},
+				{
+					"idx": 18,
+					"word": "we",
+					"start_s": 15.5,
+					"end_s": 15.9,
+					"score": -0.122,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 19,
+					"word": "count",
+					"start_s": 16,
+					"end_s": 16.4,
+					"score": -0.126,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 20,
+					"word": "the",
+					"start_s": 16.5,
+					"end_s": 16.9,
+					"score": -0.13,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 21,
+					"word": "beats",
+					"start_s": 17,
+					"end_s": 17.4,
+					"score": -0.134,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 22,
+					"word": "until",
+					"start_s": 17.5,
+					"end_s": 17.9,
+					"score": -0.138,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 23,
+					"word": "dawn",
+					"start_s": 18,
+					"end_s": 18.4,
+					"score": -0.142,
+					"witness": "agree",
+					"line_final": true
+				},
+				{
+					"idx": 24,
+					"word": "a",
+					"start_s": 20,
+					"end_s": 20.4,
+					"score": -0.146,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 25,
+					"word": "chorus",
+					"start_s": 20.5,
+					"end_s": 20.9,
+					"score": -0.15,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 26,
+					"word": "rises",
+					"start_s": 21,
+					"end_s": 21.4,
+					"score": -0.154,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 27,
+					"word": "from",
+					"start_s": 21.5,
+					"end_s": 21.9,
+					"score": -0.158,
+					"witness": "contradict",
+					"line_final": false
+				},
+				{
+					"idx": 28,
+					"word": "the",
+					"start_s": 22,
+					"end_s": 22.4,
+					"score": -0.162,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 29,
+					"word": "floor",
+					"start_s": 22.5,
+					"end_s": 22.9,
+					"score": -0.166,
+					"witness": "agree",
+					"line_final": true
+				},
+				{
+					"idx": 30,
+					"word": "nobody",
+					"start_s": 24.5,
+					"end_s": 24.9,
+					"score": -0.17,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 31,
+					"word": "leaves",
+					"start_s": 25,
+					"end_s": 25.4,
+					"score": -0.174,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 32,
+					"word": "before",
+					"start_s": 25.5,
+					"end_s": 25.9,
+					"score": -0.178,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 33,
+					"word": "the",
+					"start_s": 26,
+					"end_s": 26.4,
+					"score": -0.182,
+					"witness": "drift",
+					"line_final": false
+				},
+				{
+					"idx": 34,
+					"word": "end",
+					"start_s": 26.5,
+					"end_s": 26.9,
+					"score": -0.186,
+					"witness": "agree",
+					"line_final": true
+				},
+				{
+					"idx": 35,
+					"word": "hold",
+					"start_s": 28.5,
+					"end_s": 28.9,
+					"score": -0.19,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 36,
+					"word": "the",
+					"start_s": 29,
+					"end_s": 29.4,
+					"score": -0.194,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 37,
+					"word": "last",
+					"start_s": 29.5,
+					"end_s": 29.9,
+					"score": -0.198,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 38,
+					"word": "note",
+					"start_s": 30,
+					"end_s": 30.4,
+					"score": -0.202,
+					"witness": "agree",
+					"line_final": false
+				},
+				{
+					"idx": 39,
+					"word": "steady",
+					"start_s": 30.5,
+					"end_s": 30.9,
+					"score": -0.206,
+					"witness": "agree",
+					"line_final": true
+				}
+			],
+			"lines": [
+				{
+					"first_idx": 0,
+					"last_idx": 5,
+					"text": "we started at the loudest hour",
+					"start_s": 2,
+					"end_s": 4.9,
+					"n_words": 6,
+					"n_red": 0,
+					"n_judged": 6,
+					"quality": 1,
+					"band": "good",
+					"para_final": false
+				},
+				{
+					"first_idx": 6,
+					"last_idx": 11,
+					"text": "and every street was wide awake",
+					"start_s": 6.5,
+					"end_s": 9.4,
+					"n_words": 6,
+					"n_red": 0,
+					"n_judged": 6,
+					"quality": 1,
+					"band": "good",
+					"para_final": false
+				},
+				{
+					"first_idx": 12,
+					"last_idx": 17,
+					"text": "the record spins another slow return",
+					"start_s": 11,
+					"end_s": 13.9,
+					"n_words": 6,
+					"n_red": 1,
+					"n_judged": 6,
+					"quality": 0.8333333333333334,
+					"band": "good",
+					"para_final": false
+				},
+				{
+					"first_idx": 18,
+					"last_idx": 23,
+					"text": "we count the beats until dawn",
+					"start_s": 15.5,
+					"end_s": 18.4,
+					"n_words": 6,
+					"n_red": 0,
+					"n_judged": 6,
+					"quality": 1,
+					"band": "good",
+					"para_final": false
+				},
+				{
+					"first_idx": 24,
+					"last_idx": 29,
+					"text": "a chorus rises from the floor",
+					"start_s": 20,
+					"end_s": 22.9,
+					"n_words": 6,
+					"n_red": 1,
+					"n_judged": 6,
+					"quality": 0.8333333333333334,
+					"band": "good",
+					"para_final": false
+				},
+				{
+					"first_idx": 30,
+					"last_idx": 34,
+					"text": "nobody leaves before the end",
+					"start_s": 24.5,
+					"end_s": 26.9,
+					"n_words": 5,
+					"n_red": 0,
+					"n_judged": 5,
+					"quality": 1,
+					"band": "good",
+					"para_final": false
+				},
+				{
+					"first_idx": 35,
+					"last_idx": 39,
+					"text": "hold the last note steady",
+					"start_s": 28.5,
+					"end_s": 30.9,
+					"n_words": 5,
+					"n_red": 0,
+					"n_judged": 5,
+					"quality": 1,
+					"band": "good",
+					"para_final": true
+				}
+			],
+			"available": true
+		}
+	}
+}

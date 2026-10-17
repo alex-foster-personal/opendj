@@ -18,7 +18,7 @@ from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.stem_source import STEM_BUNDLE_NOT_INDEXED, STEM_BUNDLE_PRESIGN_FAILED
 from apps.shared.stable_id import is_safe_stable_id_segment
 from apps.shared.state import db as state_db
-from apps.sync_hub import service_credentials
+from apps.sync_hub import entitlement_gate, service_credentials
 from apps.sync_hub.service_request import (
     SYNC_NO_DB_MESSAGE_ASSET_ROUTERS,
     _data_dir,
@@ -49,6 +49,20 @@ def _require_credential(
 ) -> service_credentials.CredentialVerdict:
     return service_credentials.require_credential(
         request, conn, machine_id, data_dir=_data_dir(request), endpoint=endpoint
+    )
+
+
+def _gate_stems(
+    request: Request, conn: sqlite3.Connection, machine_id: str, op: entitlement_gate.Operation
+) -> None:
+    """Hosted-hub CloudStems entitlement; no-op on a self-hosted hub."""
+    entitlement_gate.require(
+        request,
+        conn,
+        machine_id=machine_id,
+        operation=op,
+        data_dir=lambda: _data_dir(request),
+        feature_id=entitlement_gate.CLOUDSTEMS_HOSTED_FEATURE,
     )
 
 
@@ -159,7 +173,7 @@ def _validated_index_entry(
 @router.get(
     "/index",
     response_model=StemIndexResponse,
-    responses=_auth("stems/index"),
+    responses=entitlement_gate.merge_responses(_auth("stems/index"), entitlement_gate.refusals("stems/index")),
 )
 def get_stem_index(
     request: Request,
@@ -174,6 +188,7 @@ def get_stem_index(
     """
     with _hub_conn(request) as conn:
         _require_credential(request, conn, machine_id, "stems/index")
+        _gate_stems(request, conn, machine_id, "read")
     fetcher: StemIndexFetcher | None = getattr(request.app.state, "stem_index_fetcher", None)
     try:
         if fetcher is not None:
@@ -208,7 +223,9 @@ def get_stem_index(
     "/bundle-presign",
     response_model=StemBundlePresignResponse,
     responses={
-        **_auth("stems/bundle-presign"),
+        **entitlement_gate.merge_responses(
+            _auth("stems/bundle-presign"), entitlement_gate.refusals("stems/bundle-presign")
+        ),
         404: {
             "description": (
                 "STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the "
@@ -230,6 +247,7 @@ def get_bundle_presign(
     """Mint short-lived GET URLs for every file in one indexed bundle."""
     with _hub_conn(request) as conn:
         _require_credential(request, conn, machine_id, "stems/bundle-presign")
+        _gate_stems(request, conn, machine_id, "read")
     try:
         cfg, s3 = _hub_r2_clients()
         index = stem_index.fetch_index(cfg, s3)

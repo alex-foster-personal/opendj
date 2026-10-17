@@ -19,6 +19,9 @@ import * as esbuild from 'esbuild';
  *
  * Only the options esbuild acts on are here, with the values the tsconfig
  * chain sets (`target` decides the useDefineForClassFields default).
+ * `jsx` is pinned because the React twins (.tsx, REACT-01) set it in
+ * tsconfig.json; a .tsx test bundle without it would compile to classic
+ * React.createElement calls with no React in scope.
  * `$lib` resolution comes from each build's own `alias`, not tsconfig paths.
  * esbuild-tsconfig.test.mjs fails if these drift from the chain.
  */
@@ -26,7 +29,8 @@ export const TSCONFIG_RAW = Object.freeze({
 	compilerOptions: Object.freeze({
 		target: 'ES2022',
 		strict: true,
-		verbatimModuleSyntax: true
+		verbatimModuleSyntax: true,
+		jsx: 'react-jsx'
 	})
 });
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis_loudness import analyze_file
+from apps.analysis_loudness.adapter import analyze_file
 
 pytestmark = pytest.mark.requirement("NATIVE-07")
 
@@ -68,7 +68,7 @@ def test_missing_ffmpeg_raises_loudness_error(tmp_path: Path) -> None:
     input_path = _sine(tmp_path / "input.wav", 0.5)
     code = (
         "from pathlib import Path\n"
-        "from apps.analysis_loudness import analyze_file\n"
+        "from apps.analysis_loudness.adapter import analyze_file\n"
         f"analyze_file(Path({str(input_path)!r}))\n"
     )
     result = subprocess.run(

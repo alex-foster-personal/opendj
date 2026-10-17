@@ -5667,6 +5667,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Billing Checkout */
+        post: operations["billing_checkout_api_v1_sync_billing_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/billing/eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Billing Eligibility
+         * @description Whether this spoke's hub is a hosted Polar hub (for the account panel).
+         */
+        get: operations["billing_eligibility_api_v1_sync_billing_eligibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/billing/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Billing Portal */
+        post: operations["billing_portal_api_v1_sync_billing_portal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/billing/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Billing Refresh */
+        post: operations["billing_refresh_api_v1_sync_billing_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/digest": {
         parameters: {
             query?: never;
@@ -5799,6 +5870,26 @@ export interface paths {
          * @description Mint a short-lived GET URL for one ASR transcript JSON object.
          */
         get: operations["get_lyrics_asr_presign_api_v1_sync_lyrics_asr__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/plugins/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Plugin Index
+         * @description Return the configured plugin catalog for an authenticated owner.
+         */
+        get: operations["get_plugin_index_api_v1_sync_plugins_index_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8353,6 +8444,13 @@ export interface components {
              */
             state: "idle" | "running";
         };
+        /** BillingUrlResponse */
+        BillingUrlResponse: {
+            /** Provider */
+            provider: string;
+            /** Url */
+            url: string;
+        };
         /** Binding */
         Binding: {
             /** Action */
@@ -9996,6 +10094,15 @@ export interface components {
             /** Waiting On Stems */
             waiting_on_stems: number;
         };
+        /** EligibilityResponse */
+        EligibilityResponse: {
+            /** Eligible */
+            eligible: boolean;
+            /** Entitlement Provider */
+            entitlement_provider: string | null;
+            /** Hosted */
+            hosted: boolean | null;
+        };
         /**
          * EngineHealthOut
          * @description Legacy health plus the handshake fields. Extension, not a rewrite.
@@ -10250,6 +10357,13 @@ export interface components {
             quota: number | null;
             /** Server Side */
             server_side: boolean;
+        };
+        /** FeatureStanding */
+        FeatureStanding: {
+            /** Feature Id */
+            feature_id: string;
+            /** State */
+            state: ("active" | "past_due" | "read_only" | "archived") | null;
         };
         /** FeedbackStoreSyncOut */
         FeedbackStoreSyncOut: {
@@ -13647,6 +13761,24 @@ export interface components {
             /** Vendor Pl Id */
             vendor_pl_id: string;
         };
+        /** PluginEntry */
+        PluginEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sha256 */
+            sha256: string;
+            /** Url */
+            url: string;
+            /** Version */
+            version: string;
+        };
+        /** PluginIndexResponse */
+        PluginIndexResponse: {
+            /** Plugins */
+            plugins: components["schemas"]["PluginEntry"][];
+        };
         /**
          * PolicyApplyIn
          * @description ``POST /policies/apply``. Dry-run unless ``dry_run`` is false, like the CLI's ``--live``.
@@ -14383,6 +14515,13 @@ export interface components {
             scope: "library" | "unmapped" | "track";
             /** Stable Id */
             stable_id?: string | null;
+        };
+        /** RefreshResponse */
+        RefreshResponse: {
+            /** Provider */
+            provider: string;
+            /** Standings */
+            standings: components["schemas"]["FeatureStanding"][];
         };
         /**
          * RefreshStatusOut
@@ -15146,6 +15285,13 @@ export interface components {
             title: string | null;
             /** Track Stable Id */
             track_stable_id: string | null;
+        };
+        /** SpokeBillingBody */
+        SpokeBillingBody: Record<string, never>;
+        /** SpokeCheckoutBody */
+        SpokeCheckoutBody: {
+            /** Feature Id */
+            feature_id: string;
         };
         /** SqlQueryIn */
         SqlQueryIn: {
@@ -27834,6 +27980,132 @@ export interface operations {
             };
         };
     };
+    billing_checkout_api_v1_sync_billing_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpokeCheckoutBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingUrlResponse"];
+                };
+            };
+            /** @description SYNC_BILLING_NOT_CONFIGURED or unknown feature */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    billing_eligibility_api_v1_sync_billing_eligibility_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EligibilityResponse"];
+                };
+            };
+        };
+    };
+    billing_portal_api_v1_sync_billing_portal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpokeBillingBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    billing_refresh_api_v1_sync_billing_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpokeBillingBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     digest_api_v1_sync_digest_get: {
         parameters: {
             query: {
@@ -28110,6 +28382,73 @@ export interface operations {
             };
         };
     };
+    get_plugin_index_api_v1_sync_plugins_index_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginIndexResponse"];
+                };
+            };
+            /** @description plugins/index refused: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. A hosted hub refuses in either credential mode; a self-hosted hub only under ENFORCE. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description plugins/index: the machine has no owner this hub honors, or pluginstore.access is not in plan. code: SYNC_HOSTED_UNOWNED or entitlement_not_in_plan. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description plugins/index: ``MDT_PLUGIN_CATALOG`` is unset, code SYNC_PLUGINS_NOT_CONFIGURED. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description plugins/index: catalog file missing or invalid, code SYNC_PLUGINS_CATALOG_INVALID. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description plugins/index refused: ENFORCE will not activate while any machine is unowned or holds no credential, code SYNC_ENFORCE_NOT_ACTIVE; or the hosted hub cannot decide entitlement: more than one owner (SYNC_HOSTED_MULTI_OWNER), no entitlement source (SYNC_HOSTED_NO_SOURCE), Polar without enforced credentials (SYNC_HOSTED_NOT_ENFORCED), or a provider error (SYNC_ENTITLEMENT_PROVIDER). Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     pull_api_v1_sync_pull_get: {
         parameters: {
             query: {
@@ -28164,7 +28503,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
+            /** @description pull refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. pull cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -28227,7 +28566,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER). */
+            /** @description push refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. push cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -28431,6 +28770,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description HOSTED hubs only. stems/bundle-presign is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index */
             404: {
                 headers: {
@@ -28454,12 +28802,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. stems/bundle-presign cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };
@@ -28491,6 +28841,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description HOSTED hubs only. stems/index is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -28500,12 +28859,14 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            /** @description stems/index refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. stems/index cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };

@@ -704,8 +704,11 @@ fn set_beatgrid_reaches_a_loaded_deck_without_reloading() {
     say(json!({"id": "e", "cmd": {"type": "set_beatgrid", "deck": 2, "beatgrid_ms": [0, 500]}}));
     let e = until(&|v| v["id"] == "e");
     assert_eq!(e["error"]["code"], "no_track", "{e}");
+    // The periodic feed keeps sending states, so the one answering this
+    // request is the first whose number reaches the one its result names.
     say(json!({"id": "s", "cmd": {"type": "engine_state"}}));
-    let st = until(&|v| v["type"] == "state");
+    let want = until(&|v| v["id"] == "s")["state_seq"].as_u64().unwrap();
+    let st = until(&|v| v["type"] == "state" && v["state_seq"].as_u64().unwrap_or_else(|| panic!("a state with no state_seq: {v}")) >= want);
     let pos = st["decks"][0]["position_ms"].as_f64().unwrap();
     assert!((pos - 400.0).abs() < 1e-6, "the jump used the new grid: {pos}");
     drop(stdin);

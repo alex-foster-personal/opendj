@@ -1,0 +1,19 @@
+{
+	"name": "audio-head-vocal-track",
+	"recorded_at": "2026-10-17T05:28:25.482Z",
+	"library": "tests/e2e/support/lyrics_words_fixture.py",
+	"provenance": {
+		"manifest_sha256": "25d40d81b4e863fc5c3521420cd491fdef7ee4404f9e1e4ce16dd49db202e512",
+		"library_sha256": "ae0d7e8cf82bea41373f44329d4ba68670fc5ec30608229e906c00b529ccc357"
+	},
+	"request": {
+		"method": "HEAD",
+		"path": "/api/v1/tracks/3d060f43b93d2a0c1fb34c8c36f0a65a17fcf901/audio",
+		"query": {}
+	},
+	"response": {
+		"status": 200,
+		"content_type": "audio/wav",
+		"body": null
+	}
+}

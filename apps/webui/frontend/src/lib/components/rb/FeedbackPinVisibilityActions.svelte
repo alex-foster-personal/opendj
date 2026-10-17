@@ -1,18 +1,22 @@
 <script lang="ts">
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 
-	/** Interactive comment-pin controls in FeedbackWidget's explainer. */
+	/** Interactive comment-pin controls in the FeedbackWidget and shell-button
+	 * explainers. The agent-pins switch reads and writes the HTTP ui-prefs
+	 * preference here, once, so neither host imports prefs for it (prefs
+	 * fan-in ratchet). */
 	let {
 		pinsVisible,
-		showAgentPins,
-		ontoggle,
-		onToggleAgentPins
+		ontoggle
 	}: {
 		pinsVisible: boolean;
-		showAgentPins: boolean;
 		ontoggle: () => void;
-		onToggleAgentPins: () => void;
 	} = $props();
+
+	function toggleAgentPins(): void {
+		setShowAgentPins(!uiPrefs.show_agent_pins);
+	}
 </script>
 
 <label class="fb-toggle-row">
@@ -20,7 +24,7 @@
 	Show feedback comment pins
 </label>
 <label class="fb-toggle-row">
-	<input type="checkbox" checked={showAgentPins} onchange={onToggleAgentPins} />
+	<input type="checkbox" checked={uiPrefs.show_agent_pins} onchange={toggleAgentPins} />
 	Show agent pins
 </label>
 <label class="fb-toggle-row rb-inert" title={plannedTitle('feedback-pin-visibility')}>

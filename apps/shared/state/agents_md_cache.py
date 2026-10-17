@@ -24,10 +24,64 @@ and the reverse import would make the two packages a cycle.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
 from apps.shared.state import schema_markers
+
+_log = logging.getLogger(__name__)
+
+
+def _capture_sidecar_write_failure(exc: BaseException) -> None:
+    """Report sidecar persistence failures when Sentry is available."""
+    try:
+        import sentry_sdk
+    except ImportError:
+        return
+    if sentry_sdk.get_client() is None:
+        return
+    sentry_sdk.capture_exception(exc)
+
+
+def _regenerate_agents_md_tolerating_sidecar_failures(
+    conn: sqlite3.Connection,
+    state_dir: Path,
+    *,
+    owned_tables: frozenset[str] | None,
+    marker: str,
+    regenerate_agents_md_if_writable,
+) -> bool:
+    """Regenerate the doc sidecar; never abort ``open_rw`` on sidecar I/O.
+
+    Expected sharing-lock read/replace denials log at warning. Other
+    ``OSError`` during regeneration log at error and may reach Sentry, but
+    still return False so the database open continues and a later open retries.
+    """
+    from apps.database.generate_agents_md import (
+        ExistingSidecarAccessError,
+        SidecarReplacePermissionError,
+    )
+
+    try:
+        return regenerate_agents_md_if_writable(
+            conn, state_dir, owned_tables=owned_tables, cache_marker=marker
+        )
+    except (ExistingSidecarAccessError, SidecarReplacePermissionError) as exc:
+        _log.warning(
+            "AGENTS.md sidecar access failed (%s); skipping this open",
+            exc,
+        )
+        return False
+    except OSError as exc:
+        _log.error(
+            "AGENTS.md regeneration persistence failed (errno=%s path=%s): %s",
+            exc.errno,
+            getattr(exc, "filename", None),
+            exc,
+        )
+        _capture_sidecar_write_failure(exc)
+        return False
 
 
 def regenerate_agents_md_cached(
@@ -58,12 +112,26 @@ def regenerate_agents_md_cached(
         owned_tables=owned_tables,
         generator_version=GENERATOR_VERSION,
     )
-    if schema_markers.has_marker(conn, marker) and sidecar_carries_cache_line(
-        state_dir / "AGENTS.md", marker
-    ):
-        return False
-    wrote = regenerate_agents_md_if_writable(
-        conn, state_dir, owned_tables=owned_tables, cache_marker=marker
+    sidecar_path = state_dir / "AGENTS.md"
+    if schema_markers.has_marker(conn, marker):
+        try:
+            sidecar_current = sidecar_carries_cache_line(sidecar_path, marker)
+        except OSError as exc:
+            # Windows file-sharing locks (OPEN-DJ-BE-A6) and other transient
+            # read denials cannot prove the sidecar current; try regen below.
+            _log.warning(
+                "AGENTS.md sidecar cache read failed (%s); treating as cache miss",
+                exc,
+            )
+        else:
+            if sidecar_current:
+                return False
+    wrote = _regenerate_agents_md_tolerating_sidecar_failures(
+        conn,
+        state_dir,
+        owned_tables=owned_tables,
+        marker=marker,
+        regenerate_agents_md_if_writable=regenerate_agents_md_if_writable,
     )
     if wrote and schema_markers.table_exists(conn, schema_markers.MARKER_TABLE):
         _record_marker_without_waiting(conn, marker)

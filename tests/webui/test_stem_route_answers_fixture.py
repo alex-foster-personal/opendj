@@ -27,10 +27,14 @@ from typing import Any
 
 import pytest
 
-import apps.webui.server.routes.stems as stems_module
 from apps.cloud.stem_index import save_cached_index
 from tests.cloudsync.conftest import InMemoryAssetS3
-from tests.webui.test_stems_hydration import _cfg, _client, _seed_bundle
+from tests.webui.test_stems_hydration import (  # noqa: F401 - fixture import
+    _cfg,
+    _client,
+    _reset_hydration_module_state,
+    _seed_bundle,
+)
 
 pytestmark = pytest.mark.requirement("STEM-37")
 
@@ -39,15 +43,6 @@ FIXTURE = (
     / "apps/webui/frontend/tests/fixtures/stem-route-answers.json"
 )
 SID = "sid-1"
-
-
-@pytest.fixture(autouse=True)
-def _reset_hydration_module_state():
-    stems_module._INFLIGHT.clear()
-    stems_module._LAST_HYDRATE_ERROR.clear()
-    yield
-    stems_module._INFLIGHT.clear()
-    stems_module._LAST_HYDRATE_ERROR.clear()
 
 
 def _fixture() -> dict[str, Any]:

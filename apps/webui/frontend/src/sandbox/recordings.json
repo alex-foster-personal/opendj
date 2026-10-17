@@ -1,0 +1,41 @@
+{
+	"$comment": "What scripts/record-sandbox-fixtures.mjs captures from a running daemon. Each entry becomes src/sandbox/recorded/<name>.json. `library` names the fixture builder whose data dir the daemon was serving, so a recording can be re-made from scratch. `{key}` in a path is that key of the builder's --manifest JSON (a fresh build gets fresh track ids).",
+	"recordings": [
+		{
+			"name": "lyrics-words-vocal-track",
+			"library": "tests/e2e/support/lyrics_words_fixture.py",
+			"method": "GET",
+			"path": "/api/v1/tracks/{words_stable_id}/lyrics/words",
+			"query": {
+				"include": "lines"
+			}
+		},
+		{
+			"name": "lyrics-words-wordless-track",
+			"library": "tests/e2e/support/lyrics_words_fixture.py",
+			"method": "GET",
+			"path": "/api/v1/tracks/{wordless_stable_id}/lyrics/words",
+			"query": {
+				"include": "lines"
+			}
+		},
+		{
+			"name": "lyrics-lines-wordless-track",
+			"library": "tests/e2e/support/lyrics_words_fixture.py",
+			"method": "GET",
+			"path": "/api/v1/tracks/{wordless_stable_id}/lyrics"
+		},
+		{
+			"name": "audio-head-vocal-track",
+			"library": "tests/e2e/support/lyrics_words_fixture.py",
+			"method": "HEAD",
+			"path": "/api/v1/tracks/{words_stable_id}/audio"
+		},
+		{
+			"name": "audio-head-wordless-track",
+			"library": "tests/e2e/support/lyrics_words_fixture.py",
+			"method": "HEAD",
+			"path": "/api/v1/tracks/{wordless_stable_id}/audio"
+		}
+	]
+}

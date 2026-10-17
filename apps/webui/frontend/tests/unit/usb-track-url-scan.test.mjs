@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 /**
- * Play from USB, lane D (specs/usb-play-from-stick.md 4b "Frontend guards"):
+ * Play from USB, lane D ((private path) 4b "Frontend guards"):
  * a stick id must never produce a request to /api/v1/tracks/{usb-...}.
  *
  * Source scan over every src file: each place that builds a /api/v1/tracks/
@@ -139,7 +139,7 @@ function* sourceFiles(dir) {
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
 		const path = join(dir, entry.name);
 		if (entry.isDirectory()) yield* sourceFiles(path);
-		else if (/\.(ts|js|svelte)$/.test(entry.name)) yield path;
+		else if (/\.(ts|tsx|js|svelte)$/.test(entry.name)) yield path;
 	}
 }
 
@@ -148,6 +148,10 @@ function scanSrc() {
 	for (const path of sourceFiles(SRC)) {
 		const file = relative(SRC, path);
 		if (NOT_SCANNED.has(file)) continue;
+		// Storybook stories and src/sandbox/ only MATCH /api/ requests (MSW
+		// handlers); they never ship (storybook-stories.test.mjs fails any app
+		// import of src/sandbox/), so no stick id can reach a URL built there.
+		if (/\.stories\.tsx?$/.test(file) || file.startsWith('sandbox/')) continue;
 		sites.push(...trackUrlSites(file, readFileSync(path, 'utf8')));
 	}
 	return sites;

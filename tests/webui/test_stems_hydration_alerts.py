@@ -27,20 +27,16 @@ import apps.webui.server.routes.stems as stems_module
 from apps.cloud.stem_index import save_cached_index
 from apps.cloud.stem_source import STEM_HUB_INDEX_FAILED, STEM_HUB_UNREACHABLE
 from tests.cloudsync.conftest import InMemoryAssetS3
-from tests.webui.test_stems_hydration import _cfg, _client, _seed_bundle
+from tests.webui.test_stems_hydration import (  # noqa: F401 - fixture import
+    _cfg,
+    _client,
+    _reset_hydration_module_state,
+    _seed_bundle,
+)
 
 pytestmark = pytest.mark.requirement("STEM-38")
 
 LOGGER = "apps.webui.server.routes.stems"
-
-
-@pytest.fixture(autouse=True)
-def _reset_hydration_module_state():
-    stems_module._INFLIGHT.clear()
-    stems_module._LAST_HYDRATE_ERROR.clear()
-    yield
-    stems_module._INFLIGHT.clear()
-    stems_module._LAST_HYDRATE_ERROR.clear()
 
 
 def _poll_manifest(client, stable_id: str):

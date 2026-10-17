@@ -43,12 +43,13 @@ function midiValues(bodies: readonly Record<string, unknown>[]): unknown[] {
 }
 
 /** The current test's page writes, settled by afterEach before it resets the disk. */
-let activeWatch: UiPrefsPutWatch | null = null;
+let activeWatches: UiPrefsPutWatch[] = [];
 
 /** Watch the page's ui-prefs PUTs; afterEach waits for every one to be answered. */
 function watchMidiPuts(page: Page): UiPrefsPutWatch {
-	activeWatch = watchUiPrefsPuts(page);
-	return activeWatch;
+	const watch = watchUiPrefsPuts(page);
+	activeWatches.push(watch);
+	return watch;
 }
 
 async function failRuntime(page: Page): Promise<string[]> {
@@ -84,10 +85,13 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 		// Reset the disk only once every one of them has been answered: a page
 		// write that lands between this reset and the read below would make the
 		// read return the page's value instead of ours.
-		const watch = activeWatch;
-		activeWatch = null;
-		await watch?.settle();
+		const watches = activeWatches;
+		activeWatches = [];
+		// Every page is settled even when one of them fails, so a second page's
+		// write cannot land after the reset below; the first failure is rethrown.
+		const settled = await Promise.allSettled(watches.map((watch) => watch.settle()));
 		await setDiskMidi(request, false);
+		for (const result of settled) if (result.status === 'rejected') throw result.reason;
 	});
 
 	test('a failed-load disable writes off to disk, so a reload keeps it off', async ({ page, request }) => {
@@ -103,8 +107,16 @@ test.describe('MIDI setting on disk when the runtime chunk fails', () => {
 		expect(midiValues(watch.sent)).toEqual([false]);
 		await expect(toggle).not.toBeChecked();
 
-		// The reversal Codex described: disk hydration on the next load.
-		const again = await midiToggle(page);
+		// The reversal Codex described: disk hydration on the next load. It loads
+		// in a second page rather than navigating this one: the first load can
+		// still be booting /performance, and navigating away aborts the boot's
+		// own ui-prefs PUT mid-flight, so nobody knows whether it landed (e2e
+		// repro: the gig stamp sent 3 ms before the reload, then ERR_ABORTED).
+		// This page stays open, and afterEach settles both pages' writes.
+		const next = await page.context().newPage();
+		await failRuntime(next);
+		watchMidiPuts(next);
+		const again = await midiToggle(next);
 		await expect(again).not.toBeChecked();
 	});
 

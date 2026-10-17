@@ -1,0 +1,20 @@
+{
+	"$comment": "sha256 of every file under ./recorded/, written by scripts/record-sandbox-fixtures.mjs and checked by tests/unit/sandbox-replay.test.mjs and again by ./recorded.ts when it loads, which refuses a file missing here, one whose bytes do not match its pin, or one that carries no manifest and builder hashes.",
+	"files": {
+		"audio-head-vocal-track.json": {
+			"sha256": "74f4cf95aa07a44874c26fe63576ac96371dfa605421f22d23126066cb332c7b"
+		},
+		"audio-head-wordless-track.json": {
+			"sha256": "bc9a375cdd0dad642bbe7dfa05d59603dc4bbf2207c89993b98e3dee749bafc2"
+		},
+		"lyrics-lines-wordless-track.json": {
+			"sha256": "3011d06af169fb07874e7c9fb34fbe2d823cb3a221f2c3a48777b76c0dfccaa2"
+		},
+		"lyrics-words-vocal-track.json": {
+			"sha256": "d0af0761a8141e57136bbfcbece26fac504db9903ae630da919b9b23a970e754"
+		},
+		"lyrics-words-wordless-track.json": {
+			"sha256": "d463a424e3070bc0d489c99af3789dfd323d2ca9ff2465e068a5f6f6741b84b5"
+		}
+	}
+}

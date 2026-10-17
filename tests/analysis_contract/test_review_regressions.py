@@ -481,6 +481,21 @@ def test_a_combined_write_compensation_bumps_toggle_revision(tmp_path) -> None:
         selection.reset_toggles()
 
 
+def _await_request_toggle(lane: str, state: str, *, timeout_s: float = 10.0) -> None:
+    """Block until the in-flight request's own toggle write is live.
+
+    A concurrent agent's write must land AFTER that write and inside the window
+    the held lock opens, so the agent thread waits on the write itself. A fixed
+    sleep raced it: on a loaded runner the request had not yet written when the
+    sleep ended, and the agent's write landed first (shard 5, run 38991385254).
+    """
+    deadline = time.monotonic() + timeout_s
+    while selection.get_toggle(lane) != state:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"the request never wrote {lane} toggle {state!r}")
+        time.sleep(0.005)
+
+
 def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
     tmp_path,
 ) -> None:
@@ -515,7 +530,7 @@ def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
             )
 
             def _concurrent_agent() -> None:
-                time.sleep(0.3)
+                _await_request_toggle("beatgrid", "own")
                 selection.write_toggle("beatgrid", "rbx")
 
             agent = threading.Thread(target=_concurrent_agent)
@@ -575,10 +590,12 @@ def test_a_put_response_reports_its_own_write_not_a_concurrent_agents_later_one(
             agent_writes: list[selection.ToggleWrite | None] = []
 
             def _concurrent_agent_then_release() -> None:
-                time.sleep(0.3)
-                agent_writes.append(selection.write_toggle("beatgrid", "unset"))
-                locker.rollback()
-                locker.close()
+                try:
+                    _await_request_toggle("beatgrid", "own")
+                    agent_writes.append(selection.write_toggle("beatgrid", "unset"))
+                finally:
+                    locker.rollback()
+                    locker.close()
 
             agent = threading.Thread(target=_concurrent_agent_then_release)
             agent.start()

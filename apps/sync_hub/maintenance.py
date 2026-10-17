@@ -56,7 +56,7 @@ startup -- :mod:`apps.sync_hub.hosted_config`):
   user who has signed in through the webui. Hub-local, because minting a
   credential is an act of hub authority. HTTP twin: ``POST
   /api/v1/cloudsync/enrollment-grants`` (loopback-only, hub-only).
-* **enroll** is the DEV half of ``specs/design_decision_12.md``: the
+* **enroll** is the DEV half of ``(private path)``: the
   formalized single method for adding a machine to cloudsync. It is a thin
   shell over ``POST /api/v1/sync/enroll`` -- it opens no database and holds
   no enrollment logic of its own, so it cannot drift from the endpoint the
@@ -107,8 +107,10 @@ from apps.sync_hub import (
     fleet_admin,
     generation,
     hosted_config,
+    maintenance_billing,
     maintenance_enroll,
     maintenance_policy,
+    plugins_cli,
     rejected_rows,
     single_flight,
     sync_set,
@@ -214,7 +216,7 @@ def sync(
             # second process's error write land in the gap between release
             # and this write, and then get silently overwritten by this
             # round's now-stale success -- the exact "failed measurement
-            # rendered as a clean result" .claude/rules/verification.md
+            # rendered as a clean result" (private path)
             # exists to stop. A complete journaled round -- success or the
             # error path just above -- now stays atomic under one lock.
             sync_status.write_result(
@@ -235,7 +237,7 @@ def _journal_entry(
     so the tables that differ differ for a reason nobody measured. It is not
     an error (rows moved, nothing raised) and it is not ``ok`` either, and
     stamping ``ok`` on it is exactly the "failed measurement rendered as a
-    clean result" ``.claude/rules/verification.md`` exists to stop. So the
+    clean result" ``(private path)`` exists to stop. So the
     journal carries the third verdict rather than rounding to one of two.
 
     A refused push is ``error``: rows came IN, but this machine's edits did
@@ -478,6 +480,8 @@ def _parser() -> argparse.ArgumentParser:
     fleet_admin.add_subcommands(subcommands, common)
     maintenance_policy.add_policy_parser(subcommands, common)
     config_cli.add_config_parser(subcommands, common)
+    plugins_cli.add_plugins_parser(subcommands, common)
+    maintenance_billing.add_billing_parser(subcommands, common)
     subcommands.add_parser(
         "hosted",
         parents=[common],
@@ -649,7 +653,7 @@ def _print_hosted(args: argparse.Namespace) -> None:
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
 EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
-    {"sync", "status", "feedback-pins", "policy", "stale-tracks"}
+    {"sync", "status", "feedback-pins", "policy", "stale-tracks", "billing"}
 )
 
 
@@ -663,6 +667,7 @@ PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "config": config_cli.run_config,
     **fleet_admin.PRINTING_COMMANDS,
     "hosted": _print_hosted,
+    "plugins": plugins_cli.run_plugins,
 }
 
 
@@ -974,6 +979,8 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_SYNC_DEFERRED
     if args.command == "status":
         return _report_status(sync_status.read_status(args.data_dir))
+    if args.command == "billing":
+        return maintenance_billing.run_billing(args)
     if args.command == "feedback-pins":
         return _feedback_pins(args)
     if args.command == "policy":

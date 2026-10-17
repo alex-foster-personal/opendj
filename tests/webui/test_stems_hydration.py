@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
 import wave
-from concurrent.futures import wait
+from concurrent.futures import wait as futures_wait
 from pathlib import Path
 
 import pytest
@@ -113,32 +115,42 @@ def _client(
 
 
 @pytest.fixture(autouse=True)
-def _reset_hydration_module_state():
+def _reset_hydration_module_state(tmp_path: Path):
     """The route module keeps process-wide in-flight/error registries; clear
-    them around every test so tests cannot leak into each other."""
-    stems_module._INFLIGHT.clear()
-    stems_module._INFLIGHT_FILE_TOTALS.clear()
-    stems_module._LAST_HYDRATE_ERROR.clear()
+    them around every test so tests cannot leak into each other.
+
+    Clearing alone is not enough: a test that only GETs the manifest leaves its
+    hydration running on the module executor. Pytest deletes that test's
+    tmp_path at teardown (``tmp_path_retention_policy = "failed"``), the
+    worker's verify step then fails, and its late ``_LAST_HYDRATE_ERROR`` write
+    lands in the NEXT test, which answers 502 for a bundle it just seeded (B20,
+    issue #6044). So teardown first waits for every hydration the test started.
+    Requesting ``tmp_path`` orders this teardown before tmp_path's removal.
+    """
+    del tmp_path
+    _clear_hydration_state()
+    yield
+    _drain_hydrations()
+    _clear_hydration_state()
+
+
+def _clear_hydration_state() -> None:
+    with stems_module._INFLIGHT_LOCK:
+        stems_module._INFLIGHT.clear()
+        stems_module._INFLIGHT_FILE_TOTALS.clear()
+        stems_module._LAST_HYDRATE_ERROR.clear()
     stem_index._last_refresh_attempt_mono.clear()
     stem_index._last_refresh_error.clear()
     stems_module.stem_hydration.OPEN_DECKS._open.clear()
     stems_module.stem_hydration.OPEN_DECKS._served_at.clear()
-    yield
-    # A test that only enqueues (the manifest route returns at once) leaves
-    # its hydration running on the shared executor. Wait it out before
-    # clearing: finishing later, it would write the next test's registries
-    # for the same stable_id and touch its bundle lock (an order-only flake).
+
+
+def _drain_hydrations(timeout_s: float = 30.0) -> None:
+    """Wait for every hydration still in flight; fail loud if one hangs."""
     with stems_module._INFLIGHT_LOCK:
         pending = list(stems_module._INFLIGHT.values())
-    _, not_done = wait(pending, timeout=30)
-    assert not not_done, f"{len(not_done)} hydration(s) still running after 30 s"
-    stems_module._INFLIGHT.clear()
-    stems_module._INFLIGHT_FILE_TOTALS.clear()
-    stems_module._LAST_HYDRATE_ERROR.clear()
-    stem_index._last_refresh_attempt_mono.clear()
-    stem_index._last_refresh_error.clear()
-    stems_module.stem_hydration.OPEN_DECKS._open.clear()
-    stems_module.stem_hydration.OPEN_DECKS._served_at.clear()
+    _done, not_done = futures_wait(pending, timeout=timeout_s)
+    assert not not_done, f"{len(not_done)} stem hydration(s) outlived the test by {timeout_s}s"
 
 
 @pytest.mark.requirement("STEM-15")
@@ -621,3 +633,68 @@ def test_manifest_route_marks_bundle_recently_served(tmp_path: Path):
     assert resp.status_code == 200
     assert stable_id in stems_module.stem_hydration.OPEN_DECKS.open_ids()
     assert not stems_module.stem_hydration.OPEN_DECKS.is_open(stable_id)
+
+
+_LEAK_SID = "slow-leak-track"
+
+
+class _GatedFailingS3(InMemoryAssetS3):
+    """A bucket whose part fetch blocks until the test releases it, then fails.
+
+    The gate replaces a fixed sleep, so the test controls exactly when the
+    hydration it started finishes instead of racing a timer.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def get_object(self, bucket: str, key: str) -> tuple[bytes, str] | None:
+        self.entered.set()
+        if not self.release.wait(timeout=30.0):
+            raise TimeoutError("the leak test never released its gated fetch")
+        raise RuntimeError("gated fetch failed after the request that started it")
+
+
+@pytest.mark.requirement("STEM-15")
+def test_teardown_drain_waits_for_a_hydration_that_outlives_its_request(tmp_path: Path):
+    """B20 (#6044): a hydration started by one test must finish inside that test.
+
+    The manifest GET returns while the part fetch is still blocked, so the
+    hydration is registered and unfinished when the request ends. Without the
+    drain its late ``_LAST_HYDRATE_ERROR`` write landed in the NEXT test, which
+    is how a cold run's part route answered 502. One self-contained test, so a
+    shard split or a ``-k`` selection cannot leave half of it unchecked.
+
+    [if] the reset fixture's drain runs [then] the hydration is done and its error recorded before the next clear, [else stop].
+
+    MUTATION TARGET: make ``_drain_hydrations`` return without waiting.
+    """
+    cfg = _cfg()
+    s3 = _GatedFailingS3()
+    data_dir = tmp_path / "data"
+    save_cached_index(data_dir, {_LEAK_SID: _seed_bundle(s3, cfg, _LEAK_SID)})
+    with _client(
+        tmp_path / "stems", data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3
+    ) as client:
+        resp = client.get(f"/api/v1/tracks/{_LEAK_SID}/stems")
+    assert resp.status_code == 200 and resp.json().get("hydrating") is True
+    assert s3.entered.wait(timeout=10.0), "the hydration never reached the part fetch"
+    with stems_module._INFLIGHT_LOCK:
+        future = stems_module._INFLIGHT.get(_LEAK_SID)
+    assert future is not None, "the GET registered no hydration"
+    assert not future.done(), "the hydration finished before the request returned"
+
+    # Release from another thread only after the drain has started waiting.
+    threading.Timer(0.2, s3.release.set).start()
+    _drain_hydrations()
+    assert future.done(), "the drain returned while the hydration was still running"
+    with stems_module._INFLIGHT_LOCK:
+        recorded = dict(stems_module._LAST_HYDRATE_ERROR)
+    assert _LEAK_SID in recorded, f"the drained hydration recorded no error: {recorded}"
+
+    # What the next test sees: a clear after the drain stays clear.
+    _clear_hydration_state()
+    with stems_module._INFLIGHT_LOCK:
+        assert stems_module._LAST_HYDRATE_ERROR == {}

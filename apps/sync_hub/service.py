@@ -82,6 +82,7 @@ from apps.sync_hub.machine_wire_limits import (
     MACHINE_ID_MAX_LENGTH,
     clamp_machine_row_for_wire,
 )
+from apps.sync_hub.service_billing import router as billing_router
 from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
 from apps.sync_hub.service_models import (
     SYNC_VERSION_RESPONSES,
@@ -103,12 +104,15 @@ from apps.sync_hub.service_models import (
     StatusResponse,
     SyncRowSampleModel,
 )
+from apps.sync_hub.service_plugins import router as plugins_router
 from apps.sync_hub.service_request import _data_dir, _db_path
 from apps.sync_hub.service_stem_assets import router as stem_assets_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 router.include_router(stem_assets_router)
 router.include_router(lyrics_asr_assets_router)
+router.include_router(billing_router)
+router.include_router(plugins_router)
 #: The 401/503 each credential-gated route declares, per endpoint (plan X5).
 _auth = service_credentials.credential_responses
 
@@ -463,10 +467,13 @@ def enroll(
     "/push",
     response_model=PushResponse,
     responses={
-        **service_storage.PUSH_STORAGE_RESPONSES,
-        **_auth("push"),
-        **SYNC_VERSION_RESPONSES,
-        **entitlement_gate.refusals("push"),
+        **entitlement_gate.merge_responses(
+            service_storage.PUSH_STORAGE_RESPONSES,
+            _auth("push"),
+            SYNC_VERSION_RESPONSES,
+            entitlement_gate.refusals("push"),
+        ),
+        # 409 is restated whole below: its text already names the version refusals.
         409: {
             "description": (
                 f"{stale_copy.CODE}: the batch carries live tracks another "
@@ -600,7 +607,7 @@ def stale_check(request: Request, payload: StaleCheckRequest) -> StaleCheckRespo
 @router.get(
     "/pull",
     response_model=PullResponse,
-    responses={**_auth("pull"), **entitlement_gate.refusals("pull")},
+    responses=entitlement_gate.merge_responses(_auth("pull"), entitlement_gate.refusals("pull")),
 )
 def pull(
     request: Request,

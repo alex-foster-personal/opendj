@@ -36,7 +36,7 @@ import numpy as np
 import pyloudnorm  # type: ignore[import-not-found]
 from scipy import signal
 
-from apps.analysis_loudness import analyze_file
+from apps.analysis_loudness.adapter import analyze_file
 
 LUFS_TOLERANCE_LU = 0.1
 TRUE_PEAK_TOLERANCE_DB = 0.1

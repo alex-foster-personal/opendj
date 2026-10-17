@@ -132,6 +132,21 @@ FLAGS: tuple[FlagDef, ...] = (
         sandbox_gated=False,
     ),
     FlagDef(
+        flag_id="ui.react.deck",
+        default=False,
+        owner="maintainer",
+        note=(
+            "React twins for the deck's leaf controls (v2 UI migration, "
+            "REACT-01). ON renders PadStrip, PadModeMenu, StemRow, "
+            "DeckErrorBanner, SecondaryLoadBadge and HotCueProposalLabel "
+            "through their React twins via ReactIsland, with the same props "
+            "and callbacks. BeatJump stays Svelte (it reads the per-frame "
+            "position). OFF, or flags unread, keeps every Svelte original."
+        ),
+        retire_by="2027-03-01",
+        sandbox_gated=False,
+    ),
+    FlagDef(
         flag_id="cmdk.v2",
         default=False,
         owner="maintainer",

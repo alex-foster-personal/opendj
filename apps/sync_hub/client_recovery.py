@@ -3,7 +3,7 @@
 Neither is a repair pass in the ADR 04 c6 sense. Each acts only on one
 defect class whose cause is established BEFORE anything changes, and every
 other divergence still raises ``SyncDigestMismatch`` exactly as before
-(docs/decisions ADR slug ``cloudsync-identified-brick-recovery``). Both
+((private path) ADR slug ``cloudsync-identified-brick-recovery``). Both
 reproduced on the Air, Sun 27 Sep 2026:
 
 * **NFC location twins** (round 2 finding N2, round 3 finding R3). A legacy
@@ -29,6 +29,7 @@ reproduced on the Air, Sun 27 Sep 2026:
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import sqlite3
 from collections.abc import Collection, Mapping, Sequence
@@ -57,14 +58,48 @@ from apps.sync_hub.protocol import (
     sync_digest,
     table_columns,
 )
-from apps.sync_hub.transport import API_PREFIX, HubTransport
+from apps.sync_hub.transport import API_PREFIX, HubTransport, SyncTransportError
 
 #: ``table -> {pk: GET /rows sample}``, fetched once per recovery decision.
 HubRows = dict[str, dict[tuple[str, ...], digest_diff.HubRowSample]]
 #: ``(table, pk)`` of one row.
 RowKey = tuple[str, tuple[str, ...]]
 
+#: Loser ids per identity-repair ``GET /pull``. nginx's default request line
+#: is 8 KiB; 161 forty-char ids in one query (Sentry OPEN-DJ-BE-91) overflow
+#: that and either 414 or silently truncate the bundle, so recovery then
+#: keeps every remap. 32 ids stay around 2 KiB plus machine_id.
+BUNDLE_STABLE_IDS_PER_GET: int = 32
+#: Pair examples in the keep log: the full list is hundreds of hashes and
+#: hid the refusal in Sentry's title.
+_KEEP_EXAMPLES: int = 5
+
 log = logging.getLogger(__name__)
+
+
+class RecoveryProofMoved(RuntimeError):
+    """Hub or local state moved while proving stale remaps. Not corruption.
+
+    Distinct from ``SyncDigestMismatch``: a later quiet sync must retry,
+    so the scheduler must not halt (ADR 04 c6 is for a settled second cause).
+    """
+
+
+class _BundleChunksDisagree(RuntimeError):
+    """Two bundle chunks served different copies of one row: the hub moved."""
+
+
+@dataclasses.dataclass(frozen=True)
+class _Refusal:
+    """Why a retirement was refused. ``moved`` alone decides retry versus halt.
+
+    ``moved`` is set where the hub or local move is detected, never parsed
+    back out of ``reason``, which is for the log line only.
+    """
+
+    reason: str
+    #: Concurrency (a later quiet sync retries), not a second settled cause.
+    moved: bool
 
 
 @dataclasses.dataclass(frozen=True)
@@ -248,10 +283,12 @@ def retire_stale_remaps(
     write can land between the proof and the change, and a crash rolls it
     all back: no moment exists with the remap gone and a moved row left.
 
-    Anything unproven changes nothing and returns ``[]``, so the caller's
-    original outcome stands: an ordinary pull would overwrite that other
-    cause on a tie. That includes a copy the old remap made under a new key,
-    which the bundle cannot take back.
+    Anything unproven changes nothing. A second settled cause returns ``[]``
+    so the caller's original ``SyncDigestMismatch`` stands. A hub or local
+    write that landed during the proof raises :class:`RecoveryProofMoved`
+    so the scheduler retries instead of halting. That includes a copy the
+    old remap made under a new key, which the bundle cannot take back, as
+    a second cause (not a moved proof).
     """
     persisted = load_identity_remap(conn)
     if digests is None or not persisted:
@@ -265,20 +302,16 @@ def retire_stale_remaps(
     if not stale:
         return []
     hub_rows.update(_hub_rows_of(channel, machine_id, divergent, skip=hub_rows.keys()))
-    bundle = _loser_bundles(channel, machine_id, [loser for loser, _ in stale])
+    try:
+        bundle = _loser_bundles(channel, machine_id, [loser for loser, _ in stale])
+    except _BundleChunksDisagree as disagree:
+        return _keep_stale_remaps(stale, _Refusal(str(disagree), moved=True))
     refusal = _hub_moved_since(channel, machine_id, hub_digest)
     if refusal is None:
         evidence = _Evidence(persisted, measured, divergent, stale, hub_rows, bundle)
         refusal = _retire_if_every_row_is_theirs(conn, hub_machine_id, evidence)
     if refusal is not None:
-        log.error(
-            "kept %d stale identity remap(s) %s: %s. The original outcome "
-            "stands; the next sync proves it again.",
-            len(stale),
-            stale,
-            refusal,
-        )
-        return []
+        return _keep_stale_remaps(stale, refusal)
     log.warning(
         "retired %d persisted identity remap(s) the hub contradicts: it serves "
         "each loser and its survivor as two independent live tracks (ADR-0074 "
@@ -305,7 +338,7 @@ def _hub_rows_of(
 
 def _hub_moved_since(
     channel: HubTransport, machine_id: str, compared: SyncDigest
-) -> str | None:
+) -> _Refusal | None:
     """Why the hub reads may span two hub states, or ``None``.
 
     A spoke cannot lock the hub, so the reads are bracketed instead
@@ -317,12 +350,14 @@ def _hub_moved_since(
     now = _fetch_hub_digest(channel, machine_id)
     if (now.seq, now.overall) == (compared.seq, compared.overall):
         return None
-    return f"the hub moved during the proof (seq {compared.seq} -> {now.seq})"
+    return _Refusal(
+        f"the hub moved during the proof (seq {compared.seq} -> {now.seq})", moved=True
+    )
 
 
 def _retire_if_every_row_is_theirs(
     conn: sqlite3.Connection, hub_machine_id: str, evidence: _Evidence
-) -> str | None:
+) -> _Refusal | None:
     """Under ONE write lock: re-prove everything, then retire and repair.
 
     Returns why it refused, having written nothing, or ``None`` once the
@@ -343,7 +378,7 @@ def _retire_if_every_row_is_theirs(
     return None
 
 
-def _why_the_proof_fails(conn: sqlite3.Connection, evidence: _Evidence) -> str | None:
+def _why_the_proof_fails(conn: sqlite3.Connection, evidence: _Evidence) -> _Refusal | None:
     """Re-check, under the caller's write lock, everything the proof assumed.
 
     In order: the whole persisted remap map is unchanged (survivor reach and
@@ -355,25 +390,26 @@ def _why_the_proof_fails(conn: sqlite3.Connection, evidence: _Evidence) -> str |
     every divergent row is the remaps' doing.
     """
     if load_identity_remap(conn) != evidence.persisted:
-        return "the persisted remaps changed after the proof began"
+        return _Refusal("the persisted remaps changed after the proof began", moved=True)
     now = sync_digest(conn)
     if now.overall != evidence.measured.overall:
         moved = list(now.divergent_tables(evidence.measured))
-        return f"the local state moved in {moved} after the settle measured it"
+        return _Refusal(f"the local state moved in {moved} after the settle measured it", moved=True)
     losers_of = _losers_by_survivor(conn, evidence.stale)
     clobbered = _tied_rows_the_bundle_would_replace(
         conn, _rows_from(evidence.bundle, "pull"), losers_of
     )
     if clobbered:
         examples = [digest_diff.format_pk(table, pk) for table, pk in clobbered[:5]]
-        return (
+        return _Refusal(
             f"the bundle would replace {len(clobbered)} local row(s) at the same "
-            f"stamp with other bytes, a change that was never stamped: {examples}"
+            f"stamp with other bytes, a change that was never stamped: {examples}",
+            moved=False,
         )
     owned = _hub_rows_owned_by(evidence.bundle, {loser for loser, _ in evidence.stale})
     claims = _claimed_loser_rows(conn, evidence.divergent, losers_of, evidence.hub_rows)
     unexplained = [row for row, claim in claims if claim not in owned]
-    return _describe_unexplained(unexplained) if unexplained else None
+    return _Refusal(_describe_unexplained(unexplained), moved=False) if unexplained else None
 
 
 def _tied_rows_the_bundle_would_replace(
@@ -432,18 +468,113 @@ def _describe_unexplained(unexplained: list[RowKey]) -> str:
     )
 
 
+def bundle_stable_id_chunks(losers: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    """Loser ids grouped so each ``GET /pull`` stays under a proxy header budget."""
+    ordered = tuple(sorted(losers))
+    size = BUNDLE_STABLE_IDS_PER_GET
+    return tuple(ordered[index : index + size] for index in range(0, len(ordered), size))
+
+
+def _keep_stale_remaps(stale: Sequence[tuple[str, str]], refusal: _Refusal) -> list[tuple[str, str]]:
+    """Log the kept remaps, then retry a moved proof or let a settled one stand."""
+    _log_kept_stale_remaps(stale, refusal)
+    if refusal.moved:
+        raise RecoveryProofMoved(refusal.reason)
+    return []
+
+
+def _log_kept_stale_remaps(stale: Sequence[tuple[str, str]], refusal: _Refusal) -> None:
+    """WARNING, refusal first, sampled pairs: ERROR used to flood Sentry.
+
+    The closing advice follows ``moved``, as the caller does: only a move
+    is retried, and a settled refusal halts until someone looks.
+    """
+    examples = list(stale[:_KEEP_EXAMPLES])
+    extra = len(stale) - len(examples)
+    more = f" (+{extra} more)" if extra else ""
+    advice = (
+        "a later quiet sync retries the proof"
+        if refusal.moved
+        else "nothing moved, so sync halts here until the divergence is investigated"
+    )
+    log.warning(
+        "kept %d stale identity remap(s): %s. Examples: %s%s. The original outcome stands; %s.",
+        len(stale),
+        refusal.reason,
+        examples,
+        more,
+        advice,
+    )
+
+
 def _loser_bundles(
     channel: HubTransport, machine_id: str, losers: Sequence[str]
 ) -> Mapping[str, Any]:
-    """The hub's identity-repair bundle for ``losers``: rows plus machines."""
-    return channel.get(
-        f"{API_PREFIX}/pull",
-        {
-            "machine_id": machine_id,
-            "bundle_stable_ids": sorted(losers),
-            "capabilities": capabilities.QUARANTINE_V1,
-        },
-    )
+    """The hub's identity-repair bundle for ``losers``: rows plus machines.
+
+    Chunked: one GET with every loser overflows reverse-proxy header limits
+    on a library-scale remap set (OPEN-DJ-BE-91, 161 pairs).
+    """
+    rows: list[Any] = []
+    machines: list[Any] = []
+    seen: set[str] = set()
+    # Losers in two chunks can share a playlist, and each response carries
+    # that playlist's whole membership: keep one copy, not one per chunk.
+    # Only an identical copy is dropped; a different one means the hub
+    # answered two chunks from two states, and no bundle can stand on that.
+    seen_rows: dict[tuple[str, str], Any] = {}
+    for chunk in bundle_stable_id_chunks(losers):
+        payload = channel.get(
+            f"{API_PREFIX}/pull",
+            {
+                "machine_id": machine_id,
+                "bundle_stable_ids": list(chunk),
+                "capabilities": capabilities.QUARANTINE_V1,
+            },
+        )
+        for row in _wire_list(payload, "rows"):
+            key = _wire_row_key(row)
+            if key is not None:
+                if key in seen_rows:
+                    if seen_rows[key] != row:
+                        raise _BundleChunksDisagree(
+                            f"pull chunks disagree on {key[0]} {key[1]}: the hub moved "
+                            "between bundle reads"
+                        )
+                    continue
+                seen_rows[key] = row
+            rows.append(row)
+        for machine in _wire_list(payload, "machines"):
+            machine_id_of = (
+                machine.get("machine_id") if isinstance(machine, Mapping) else None
+            )
+            if isinstance(machine_id_of, str):
+                if machine_id_of in seen:
+                    continue
+                seen.add(machine_id_of)
+            machines.append(machine)
+    return {"rows": rows, "machines": machines}
+
+
+def _wire_row_key(row: Any) -> tuple[str, str] | None:
+    """``(table, pk)`` of a wire row, or None for a malformed one parsing rejects later.
+
+    The pk is keyed as the JSON the hub sent, not stringified, so ``1`` and
+    ``"1"`` never collapse into one row here.
+    """
+    if not isinstance(row, Mapping):
+        return None
+    table, pk = row.get("table"), row.get("pk")
+    if not isinstance(table, str) or not isinstance(pk, list):
+        return None
+    return table, json.dumps(pk)
+
+
+def _wire_list(payload: Mapping[str, Any], key: str) -> list[Any]:
+    raw = payload.get(key)
+    if not isinstance(raw, list):
+        raise SyncTransportError(f"pull response lacks a {key!r} array")
+    return raw
 
 
 def _hub_rows_owned_by(bundle: Mapping[str, Any], losers: Collection[str]) -> set[RowKey]:
@@ -525,6 +656,9 @@ def _moved_from_a_loser(
 
 
 __all__ = [
+    "BUNDLE_STABLE_IDS_PER_GET",
+    "RecoveryProofMoved",
+    "bundle_stable_id_chunks",
     "collapse_location_twins",
     "retire_stale_remaps",
     "stale_identity_remaps",

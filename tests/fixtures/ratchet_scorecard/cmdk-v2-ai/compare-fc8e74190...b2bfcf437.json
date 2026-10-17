@@ -1,0 +1,31 @@
+{
+ "merge_base_commit": {
+  "sha": "46051abdd4489baa65c11f0ea36519589afeba89"
+ },
+ "files": [
+  {
+   "filename": ".planning/REQUIREMENTS.md"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/components/rb/CommandBarV2.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/performance-ipc.svelte.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/src/routes/performance/+page.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-actions.test.mjs"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-pairs.test.mjs"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/fixtures/cmdk-ipc-entry.ts"
+  },
+  {
+   "filename": "reqs.json"
+  }
+ ]
+}

@@ -73,12 +73,31 @@ not; a rule other components will be expected to follow does. If you find
 yourself explaining a convention in a PR comment, that is the signal it
 belongs here instead, where the next person will find it.
 
-### Scope: presentational components only
+### Two kinds of story
 
-Stories cover components that render entirely from props. Anything that
-fetches is deliberately out of scope, because the house rule forbids mocked
-APIs and wiring MSW to satisfy Storybook would break it. Extract the
-presentational part first, then story that.
+**Reference stories** (any title outside `Contracts/`) back the decision docs.
+They cover components that render entirely from props, so the example shows
+exactly what its args control.
+
+**Contract stories** (title `Contracts/...`) are the UI sandbox: real
+components, exactly as the app renders them, fed by fixtures instead of the
+daemon, engine and IPC. Each story's `play` function is a saved behavior.
+Use this loop to define how a feature should behave:
+
+1. Write or edit a story with a `play` function that states the behavior.
+2. Run it in real Chromium: `pnpm test:contracts src/path/X.stories.ts`
+   (about 10 s cold; `pnpm test:contracts:watch` reruns on save). Set
+   `PW_CHROMIUM_PATH` to an installed Chromium if Playwright's own is not
+   downloaded.
+3. Look at it in `pnpm storybook` when a human needs to see it.
+
+Fixtures, in order of preference: props and seams (TrackTable's
+`RowProvider`); daemon responses recorded by
+`scripts/record-sandbox-fixtures.mjs` into `src/sandbox/recorded/` and
+replayed with `replay(name)` from `src/sandbox/recorded.ts`; hand-written MSW
+handlers for states no fixture library produces (say so in a comment). An
+unhandled `/api/` request fails the story. App code never imports
+`src/sandbox/`. Rules: AGENTS.md "Test doubles and locked real fixtures".
 
 Two constraints worth knowing before adding stories:
 

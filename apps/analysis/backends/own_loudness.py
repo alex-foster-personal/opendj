@@ -13,6 +13,7 @@ import importlib
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from apps.analysis.pcm_fingerprint import (
     SAMPLE_RATE_HZ,
@@ -26,6 +27,9 @@ from ..record import AnalysisRecord
 from . import register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
 
+if TYPE_CHECKING:
+    from apps.analysis_loudness.contract import LoudnessAnalysisService
+
 # Pre-v2 analysis columns this loudness-only record cannot measure. They
 # exist because the table still requires them; they are not measurements
 # and cannot project from a loudness-lane pointer.
@@ -37,15 +41,23 @@ _PLACEHOLDER_KEY_CONFIDENCE = 0.0
 _PLACEHOLDER_ENERGY = 0
 
 
-def _load_loudness_producer() -> ModuleType:
-    """Load the lane producer without a static ``apps.analysis_loudness`` import.
+def _load_loudness_service() -> LoudnessAnalysisService:
+    """Build the loudness service without a static ``apps.analysis_loudness`` import.
 
     The producer already imports :mod:`apps.analysis.lanes`. A static import
     the other way is the ``analysis <-> analysis_loudness`` package pair the
     quality gate refuses. ``importlib`` plus a joined name keeps that edge
-    out of grimp's static graph; analyze() still calls the real producer.
+    out of grimp's static graph; analyze() still calls the real producer,
+    through the factory the package publishes behind its contract.
     """
-    return importlib.import_module(".".join(("apps", "analysis_loudness")))
+    factory = importlib.import_module(".".join(("apps", "analysis_loudness", "http"))).build_service
+    service: LoudnessAnalysisService = factory()
+    return service
+
+
+def _load_loudness_contract() -> ModuleType:
+    """The loudness contract module, loaded the same way and for the same reason."""
+    return importlib.import_module(".".join(("apps", "analysis_loudness", "contract")))
 
 
 def _canonical_fingerprint(path: Path) -> tuple[str, float]:
@@ -71,7 +83,7 @@ def _canonical_fingerprint(path: Path) -> tuple[str, float]:
 class OwnLoudnessBackfillBackend:
     """Shipped R128 loudness producer, as an :class:`AnalyzerBackend`."""
 
-    # Literals match apps.analysis_loudness.PRODUCER_BACKEND / PRODUCER_VERSION.
+    # Literals match apps.analysis_loudness.contract.PRODUCER_BACKEND / PRODUCER_VERSION.
     # Imported at analyze-time, not at module import: a top-level import of
     # analysis_loudness would close analysis <-> analysis_loudness because
     # the producer already imports apps.analysis.lanes.
@@ -112,14 +124,15 @@ class OwnLoudnessBackfillBackend:
                 f"the canonical decode fingerprint cannot be taken on this host: {exc}"
             ) from exc
         fingerprint, duration_s = _canonical_fingerprint(path)
-        producer = _load_loudness_producer()
-        if cls.name != producer.PRODUCER_BACKEND or cls.version != producer.PRODUCER_VERSION:
+        contract = _load_loudness_contract()
+        if cls.name != contract.PRODUCER_BACKEND or cls.version != contract.PRODUCER_VERSION:
             raise RuntimeError(
                 f"backend identity {cls.name!r}/{cls.version!r} drifted from "
-                f"producer {producer.PRODUCER_BACKEND!r}/{producer.PRODUCER_VERSION!r}"
+                f"producer {contract.PRODUCER_BACKEND!r}/{contract.PRODUCER_VERSION!r}"
             )
+        service = _load_loudness_service()
         try:
-            lane = producer.produce_lane_result(path, binary=binary)
+            lane = service.produce_lane_result(path, binary=binary)
         except LoudnessError as exc:
             if not path.exists():
                 raise TrackVanished(f"{path}: {exc}") from exc

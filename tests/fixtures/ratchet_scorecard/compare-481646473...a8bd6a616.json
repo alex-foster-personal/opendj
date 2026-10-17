@@ -1,0 +1,91 @@
+{
+ "files": [
+  {
+   "filename": ".github/workflows/lockfile-check.yml"
+  },
+  {
+   "filename": ".github/workflows/main-control.yml"
+  },
+  {
+   "filename": ".github/workflows/security.yml"
+  },
+  {
+   "filename": ".github/zizmor.yml"
+  },
+  {
+   "filename": "apps/desktop/src-tauri/Cargo.lock"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "docs/security/ci-supply-chain.md"
+  },
+  {
+   "filename": "docs/security/routine-scanning.md"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "osv-scanner.toml"
+  },
+  {
+   "filename": "pylock.ci.toml"
+  },
+  {
+   "filename": "pylock.release-check.toml"
+  },
+  {
+   "filename": "pyproject.toml"
+  },
+  {
+   "filename": "requirements.txt"
+  },
+  {
+   "filename": "scripts/runner_toolset_scan.py"
+  },
+  {
+   "filename": "scripts/security/lib.sh"
+  },
+  {
+   "filename": "scripts/security/scan_deps.sh"
+  },
+  {
+   "filename": "scripts/security/scan_secrets.sh"
+  },
+  {
+   "filename": "scripts/security/scan_workflows.sh"
+  },
+  {
+   "filename": "scripts/security/secscan.py"
+  },
+  {
+   "filename": "scripts/security/workflow-yaml-requirements.txt"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "tests/scripts/sast_control_fixtures.py"
+  },
+  {
+   "filename": "tests/scripts/test_lockfile_check_gate.py"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "tests/scripts/test_secscan_trufflehog_summary.py"
+  },
+  {
+   "filename": "uv.lock"
+  }
+ ]
+}

@@ -1,0 +1,31 @@
+{
+  "builder_sha256": "ae0d7e8cf82bea41373f44329d4ba68670fc5ec30608229e906c00b529ccc357",
+  "fixture_playlist_name": "E2E Fixture Set",
+  "line_cache_first_line": "Zorvik, Plimba, Tavrex, Quonel, Mirdax, Selvup, Kexalo, Wumbra, Fenvul, Yaskor, Brimlo, Jottex, Nuvrak,",
+  "line_cache_lines": [
+    {
+      "start_ms": 0,
+      "text": "Zorvik, Plimba, Tavrex, Quonel, Mirdax, Selvup, Kexalo, Wumbra, Fenvul, Yaskor, Brimlo, Jottex, Nuvrak,"
+    },
+    {
+      "start_ms": 4500,
+      "text": "neon signs above the river bend"
+    },
+    {
+      "start_ms": 9000,
+      "text": "we meet again at quarter past ten"
+    }
+  ],
+  "line_cache_n_lines": 3,
+  "line_cache_source": "e2e-fixture:line-cache",
+  "line_cache_stable_id": "cba480b8746cf41f15af6fd20db9a267cb4008b4",
+  "vocals_filter_min_lines": 6,
+  "wordless_stable_id": "cba480b8746cf41f15af6fd20db9a267cb4008b4",
+  "wordless_title": "webkit-fixture-b-124bpm (Remix)",
+  "words_first_line": "we started at the loudest hour",
+  "words_n_lines": 7,
+  "words_n_words": 40,
+  "words_stable_id": "3d060f43b93d2a0c1fb34c8c36f0a65a17fcf901",
+  "words_sync_quality_pct": 95,
+  "words_title": "webkit-fixture-a-128bpm"
+}

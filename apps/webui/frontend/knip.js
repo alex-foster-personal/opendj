@@ -127,7 +127,16 @@ export default {
 		// tests/unit/context-menu-registry.test.mjs; never shipped in the UI.
 		'src/lib/context-menu/permutations.ts'
 	],
-	project: ['src/**/*.{js,ts,svelte}', 'tests/**/*.{js,ts,mjs}', 'scripts/**/*.{js,ts,mjs}'],
+	// Both Storybooks (Svelte in .storybook/, React twins in .storybook-react/):
+	// knip's storybook plugin reads each main.ts for stories, addons and the
+	// framework, so story files, the sandbox they mock and the addon packages
+	// count as used. Named explicitly because the plugin only looks in
+	// .storybook/ by default and would miss the React config.
+	storybook: {
+		config: ['.storybook/main.ts', '.storybook-react/main.ts'],
+		entry: ['.storybook/preview.ts', '.storybook-react/preview.ts', 'src/**/*.stories.{ts,tsx}']
+	},
+	project: ['src/**/*.{js,ts,tsx,svelte}', 'tests/**/*.{js,ts,mjs}', 'scripts/**/*.{js,ts,mjs}'],
 	ignoreBinaries: ['uv'],
 	ignoreExportsUsedInFile: true,
 	compilers: { svelte: svelteImports }

@@ -1,6 +1,6 @@
 """The ``own_loudness.backfill`` producer: adapts a scan into a LaneResult.
 
-Adapter half of NATIVE-07 (specs/native-analysis-v1-lanes/nav1-loudness.md).
+Adapter half of NATIVE-07 ((private path)).
 This module maps :func:`apps.analysis_loudness.adapter.analyze_file` onto the
 ``loudness`` lane's payload shape (``apps.analysis.lane_payloads``) under
 :data:`PRODUCER_BACKEND`, the canonical own-producer name for this lane.
@@ -16,18 +16,10 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from apps.analysis.lanes import LaneResult, own_backend
+from apps.analysis.lanes import LaneResult
 
 from .adapter import analyze_file
-
-#: The canonical own-producer name for this lane, per the backend naming
-#: scheme in apps.analysis.lanes (own_<lane>.<producer>).
-PRODUCER_BACKEND: str = own_backend("loudness", "backfill")
-
-#: Semver stamped on both ``AnalysisRecord.backend_version`` and
-#: ``AnalysisRecord.producer_version``. The own-record validator requires
-#: those two to agree; canonical selection ranks them as semver.
-PRODUCER_VERSION: str = "1.0.0"
+from .contract import PRODUCER_BACKEND, PRODUCER_VERSION
 
 #: The four loudness payload measurements, checked for finiteness below.
 _MEASUREMENT_FIELDS = ("integrated_lufs", "true_peak_dbtp", "loudness_range_lu", "rms_db")

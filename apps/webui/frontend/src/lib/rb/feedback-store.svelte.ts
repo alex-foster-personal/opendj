@@ -44,7 +44,6 @@
 
 import type { components } from "../api-types";
 import { API_BASE, ApiError, api, unwrap } from "../api/client";
-import { writePinsVisible } from "./feedback-pin-visibility";
 import { describeFleetCorrelation, describePinOperatorSummary, type CommentSummary } from "./feedback-pin-operator-summary";
 import { describePinStatusSummary, makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
@@ -76,6 +75,9 @@ interface FeedbackState {
   general: FeedbackGeneralNote | null;
   panelOpen: boolean;
   placementArmed: boolean;
+  /** True while a comment control's hover explainer is open. Pins draw for
+   * that peek without writing the saved visibility preference. */
+  pinsPeek: boolean;
   /** One-shot pin-draft handoff for QuickDraw; the widget consumes it. */
   pendingDraft: PinDraft | null;
   /** Last daemon refusal, verbatim; null while everything saves clean. */
@@ -91,9 +93,32 @@ export const feedbackState: FeedbackState = $state({
   general: null,
   panelOpen: false,
   placementArmed: false,
+  pinsPeek: false,
   pendingDraft: null,
   error: null,
 });
+
+const pinPeekSources = new Set<string>();
+
+/** Hover/focus on a comment control (top bar or the bottom-right overlay).
+ * Several controls can peek at once; pins stay up until the last one leaves. */
+export function setCommentPinPeek(source: string, active: boolean): void {
+  if (active) pinPeekSources.add(source);
+  else pinPeekSources.delete(source);
+  feedbackState.pinsPeek = pinPeekSources.size > 0;
+}
+
+/** Focus left a comment control. Ignore moves that stay inside that control,
+ * so tabbing from the button onto its visibility checkbox does not hide pins. */
+export function endCommentPinPeek(
+  source: string,
+  event: { relatedTarget: EventTarget | null; currentTarget: EventTarget | null }
+): void {
+  const next = event.relatedTarget;
+  const current = event.currentTarget;
+  if (next instanceof Node && current instanceof Node && current.contains(next)) return;
+  setCommentPinPeek(source, false);
+}
 
 /** Total + breakdown for the comment-pin controls (FB-20): the daemon's operator
  * buckets when it serves /comments/summary, else lifecycle counts from `pins`. */
@@ -168,22 +193,10 @@ export function toggleFeedbackPanel(): void {
 
 export function armPinPlacement(): void {
   if (feedbackState.availability !== "ok") return;
-  _revealPinsIfHidden();
+  // Markers draw while placement or the draft is open (FeedbackPinLayer),
+  // then hide again. Arming must not flip the saved "show comment pins"
+  // preference: that stays the checkbox in the comment hover and the top bar.
   feedbackState.placementArmed = true;
-}
-
-function _revealPinsIfHidden(): void {
-  if (typeof window === "undefined") return;
-  // review r3549 P2: a swallowed storage error used to let armPinPlacement
-  // still set placementArmed = true below, opening the placement overlay
-  // over a board whose markers stayed hidden - exactly the "⛔️ if the key
-  // fails silently behind hidden markers" clause A11Y-02 adds in this same
-  // PR. This repo is fail-fast: let a blocked/throwing localStorage write
-  // propagate so armPinPlacement never reaches placementArmed = true on a
-  // reveal that did not actually happen, instead of failing silently.
-  writePinsVisible(window.localStorage, true);
-  const w = window as Window & { __mdtPinsVisible?: { set?: (value: boolean) => void } };
-  w.__mdtPinsVisible?.set?.(true);
 }
 
 export function disarmPinPlacement(): void {

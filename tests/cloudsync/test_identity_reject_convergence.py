@@ -10,6 +10,7 @@ re-pull hub survivors and re-offer former local survivors.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,8 +42,12 @@ from tests.cloudsync.test_hub_sync import (
     _DEV_A,
     _DEV_B,
     _T0,
+    _T1,
     _insert_playlist,
+    _log,
+    _open,
     _set_members,
+    _sync,
     _TestClientTransport,
 )
 from tests.cloudsync.test_track_identity_collapse import (
@@ -454,6 +459,227 @@ def test_http_transport_repeated_bundle_stable_ids() -> None:
     )
     assert "bundle_stable_ids=" in url
     assert url.count("bundle_stable_ids=") == 2
+
+
+def test_library_scale_bundle_ids_are_chunked_under_8kib() -> None:
+    """[if] 161 loser ids in one GET exceed 8KiB [then] fail, [else stop]."""
+    from apps.sync_hub.client_recovery import BUNDLE_STABLE_IDS_PER_GET, bundle_stable_id_chunks
+
+    losers = [f"{index:040x}" for index in range(161)]
+    transport = HttpTransport("http://hub.example.invalid")
+    envelope = {
+        "machine_id": "spoke",
+        "capabilities": list(capabilities.THIS_BUILD),
+    }
+    whole = transport._url(
+        f"{API_PREFIX}/pull",
+        {**envelope, "bundle_stable_ids": losers},
+    )
+    assert len(whole.encode()) > 8190, "control: the unchunked query must overflow nginx"
+    chunks = bundle_stable_id_chunks(losers)
+    assert sum(len(chunk) for chunk in chunks) == 161
+    assert all(len(chunk) <= BUNDLE_STABLE_IDS_PER_GET for chunk in chunks)
+    for chunk in chunks:
+        url = transport._url(
+            f"{API_PREFIX}/pull",
+            {**envelope, "bundle_stable_ids": list(chunk)},
+        )
+        assert len(url.encode()) < 4096, url
+
+
+def test_a_playlist_shared_across_bundle_chunks_is_kept_once(
+    hub: _TestClientTransport, spoke_b: Path
+) -> None:
+    """[if] each bundle chunk adds its own copy of a shared playlist [then] fail, [else stop].
+
+    Real hub, real ``GET /pull``: one more loser than a chunk holds, all in
+    one playlist, so two chunks each bring that playlist's whole membership.
+    """
+    from apps.shared.state import machine_identity
+    from apps.sync_hub import client_recovery
+
+    losers = [f"{index:040x}" for index in range(client_recovery.BUNDLE_STABLE_IDS_PER_GET + 1)]
+    playlist = "f" * 40
+    conn = _open(spoke_b)
+    try:
+        for index, stable_id in enumerate(losers):
+            _insert_identified_track(
+                conn, stable_id, title=f"loser {index}", updated_at=_T0, origin=_DEV_B,
+                content_hash=f"{index:064x}",
+            )
+        _insert_playlist(conn, playlist, name="shared", updated_at=_T0, origin=_DEV_B)
+        _set_members(conn, playlist, tuple(losers), updated_at=_T0, origin=_DEV_B)
+        conn.commit()
+    finally:
+        conn.close()
+    _sync(spoke_b, hub, "spoke-b")
+    machine_id = machine_identity.get_or_create_machine_id(spoke_b)
+    assert len(client_recovery.bundle_stable_id_chunks(losers)) == 2, (
+        "control: the losers must span two chunks"
+    )
+
+    bundle = client_recovery._loser_bundles(hub, machine_id, losers)
+
+    keys = [(row["table"], tuple(row["pk"])) for row in bundle["rows"]]
+    assert keys.count(("playlists", (playlist,))) == 1, (
+        f"the shared playlist arrived {keys.count(('playlists', (playlist,)))} times"
+    )
+    assert sorted(key[1][0] for key in keys if key[0] == "tracks") == sorted(losers), (
+        "a loser's own row was dropped or duplicated"
+    )
+    assert len(keys) == len(set(keys)), "a bundle row arrived twice"
+
+
+class _RenamesBetweenChunks:
+    """A hub link that, after the first loser-bundle read, lets the spoke push a rename."""
+
+    def __init__(self, inner: _TestClientTransport, rename: Any) -> None:
+        self._inner = inner
+        self._rename = rename
+        self.bundle_reads = 0
+        self.fired = False
+
+    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        return self._inner.post(path, payload)
+
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
+        answer = self._inner.get(path, params)
+        if path.endswith("/pull") and params.get("bundle_stable_ids"):
+            self.bundle_reads += 1
+            if self.bundle_reads == 1:
+                self._rename()
+                self.fired = True
+        return answer
+
+
+def test_a_playlist_that_changes_between_bundle_chunks_is_refused(
+    hub: _TestClientTransport, spoke_b: Path
+) -> None:
+    """[if] two chunks disagree on a shared row and the first copy is kept [then] fail, [else stop].
+
+    Real hub, real ``GET /pull``, real push: the spoke renames the shared
+    playlist and syncs it between the two chunk reads, so the second chunk
+    carries a different playlist row than the first.
+    """
+    from apps.shared.state import machine_identity
+    from apps.sync_hub import client_recovery
+
+    losers = [f"{index:040x}" for index in range(client_recovery.BUNDLE_STABLE_IDS_PER_GET + 1)]
+    playlist = "f" * 40
+    conn = _open(spoke_b)
+    try:
+        for index, stable_id in enumerate(losers):
+            _insert_identified_track(
+                conn, stable_id, title=f"loser {index}", updated_at=_T0, origin=_DEV_B,
+                content_hash=f"{index:064x}",
+            )
+        _insert_playlist(conn, playlist, name="shared", updated_at=_T0, origin=_DEV_B)
+        _set_members(conn, playlist, tuple(losers), updated_at=_T0, origin=_DEV_B)
+        conn.commit()
+    finally:
+        conn.close()
+    _sync(spoke_b, hub, "spoke-b")
+    machine_id = machine_identity.get_or_create_machine_id(spoke_b)
+
+    def rename_and_push() -> None:
+        renaming = _open(spoke_b)
+        try:
+            stamped = _log(renaming, "playlists", (playlist,), _DEV_B, _T1)
+            renaming.execute(
+                "UPDATE playlists SET name = ?, updated_at = ? WHERE playlist_id = ?",
+                ("renamed mid-read", stamped, playlist),
+            )
+            renaming.commit()
+        finally:
+            renaming.close()
+        _sync(spoke_b, hub, "spoke-b")
+
+    moving = _RenamesBetweenChunks(hub, rename_and_push)
+    with pytest.raises(client_recovery._BundleChunksDisagree, match="chunks disagree on playlists"):
+        client_recovery._loser_bundles(moving, machine_id, losers)
+
+    assert moving.fired, "control: the rename never landed between the chunk reads"
+    assert moving.bundle_reads == 2, "control: the losers did not span two chunk reads"
+
+
+def test_bundle_chunks_that_disagree_are_a_moved_proof_the_scheduler_retries(
+    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path
+) -> None:
+    """[if] chunks that disagree halt or crash the sync instead of retrying [then] fail, [else stop].
+
+    End to end over the real hub: 33 stale remaps, so the losers' bundle
+    takes two reads, and the shared playlist is renamed and pushed between
+    them. A hub that moved mid-proof is concurrency, so ``run_sync`` must
+    raise ``SyncStillMoving`` with every remap kept, and the next quiet
+    sync must retire them all.
+    """
+    from apps.shared.state.ids import stable_id
+    from apps.sync_hub import client_recovery
+    from apps.sync_hub.engine_identity_map import prepare_spoke_identity
+
+    count = client_recovery.BUNDLE_STABLE_IDS_PER_GET + 1
+    pairs = [
+        (stable_id(isrc=f"XXFAK27{index:05d}")[0], f"{index + 1:040x}") for index in range(count)
+    ]
+    playlist = "f" * 40
+    conn = _open(spoke_b)
+    try:
+        for index, (loser, survivor) in enumerate(pairs):
+            _insert_identified_track(
+                conn, survivor, title=f"survivor {index}", updated_at=_T0, origin=_DEV_B,
+                content_hash=f"{index:064x}",
+            )
+            _insert_identified_track(
+                conn, loser, title=f"loser {index}", updated_at=_T0, origin=_DEV_B,
+                isrc=f"XXFAK27{index:05d}", tier="isrc",
+            )
+        _insert_playlist(conn, playlist, name="shared", updated_at=_T0, origin=_DEV_B)
+        members = tuple(track for pair in pairs for track in pair)
+        _set_members(conn, playlist, members, updated_at=_T0, origin=_DEV_B)
+        conn.commit()
+    finally:
+        conn.close()
+    _sync(spoke_b, hub, "spoke-b")
+    _sync(spoke_a, hub, "spoke-a")
+    conn = _open(spoke_a)
+    try:
+        for loser, survivor in pairs:
+            record_identity_remap(conn, {}, loser, survivor)
+        conn.commit()
+        prepare_spoke_identity(conn)
+        conn.executemany("DELETE FROM tracks WHERE stable_id = ?", [(loser,) for loser, _ in pairs])
+        conn.commit()
+    finally:
+        conn.close()
+
+    def rename_and_push() -> None:
+        renaming = _open(spoke_b)
+        try:
+            stamped = _log(renaming, "playlists", (playlist,), _DEV_B, _T1)
+            renaming.execute(
+                "UPDATE playlists SET name = ?, updated_at = ? WHERE playlist_id = ?",
+                ("renamed mid-read", stamped, playlist),
+            )
+            renaming.commit()
+        finally:
+            renaming.close()
+        _sync(spoke_b, hub, "spoke-b")
+
+    moving = _RenamesBetweenChunks(hub, rename_and_push)
+    with pytest.raises(client.SyncStillMoving, match="chunks disagree on playlists"):
+        client.run_sync(spoke_a, "http://hub.invalid", transport=moving, name="spoke-a")
+
+    assert moving.fired, "control: the rename never landed between the chunk reads"
+    assert moving.bundle_reads == 2, "control: the losers did not span two chunk reads"
+    kept = _open(spoke_a)
+    try:
+        assert set(load_identity_remap(kept)) == {loser for loser, _ in pairs}, "a remap was retired"
+    finally:
+        kept.close()
+
+    healed = _sync(spoke_a, hub, "spoke-a")
+
+    assert healed.stale_identity_remaps_dropped == count, "the quiet sync did not retire them"
 
 
 def test_spoke_apply_defers_drop_until_repair_offer(tmp_path: Path) -> None:

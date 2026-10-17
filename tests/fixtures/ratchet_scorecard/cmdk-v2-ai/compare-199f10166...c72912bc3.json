@@ -1,0 +1,19 @@
+{
+ "merge_base_commit": {
+  "sha": "4b6bd873a5cbe542e4b4a538059c0d12257f74e5"
+ },
+ "files": [
+  {
+   "filename": ".planning/REQUIREMENTS.md"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/components/rb/cmdk/CmdkDeckPicker.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-preview.test.mjs"
+  },
+  {
+   "filename": "reqs.json"
+  }
+ ]
+}

@@ -23,7 +23,8 @@ from apps.analysis.backends.base import (
 )
 from apps.analysis.pcm_fingerprint import canonical_decode_fingerprint
 from apps.analysis.record import AnalysisRecord
-from apps.analysis_loudness import PRODUCER_BACKEND, PRODUCER_VERSION, analyze_file
+from apps.analysis_loudness.adapter import analyze_file
+from apps.analysis_loudness.contract import PRODUCER_BACKEND, PRODUCER_VERSION
 
 pytestmark = pytest.mark.requirement("NATIVE-07")
 

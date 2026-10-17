@@ -5,7 +5,7 @@ Two kinds of hub, one rule each:
   * SELF-HOSTED -- the only kind that exists today: a user's own daemon with
     ``MDT_IS_HUB`` set, on their own tailnet, against their own bucket. It is
     ALWAYS entitled and NEVER consults a source. Gating it would be the
-    client-side DRM ``specs/saas-spec.md`` rejects permanently: the operator
+    client-side DRM ``(private path)`` rejects permanently: the operator
     is the user, and the flag is one line in source they already hold.
   * HOSTED -- a hub we operate (``MDT_SYNC_HUB_HOSTED=1``, default off, read
     strictly at startup by :mod:`apps.sync_hub.hosted_config` into
@@ -47,6 +47,7 @@ so a hosted hub refuses to serve a DB holding more than one owner (503
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -58,6 +59,7 @@ from pydantic import BaseModel
 from apps import entitlements
 from apps.entitlements import EntitlementSource, Operation
 from apps.entitlements.lifecycle import allows
+from apps.entitlements.polar import PolarEntitlementSource
 from apps.shared.state import machine_identity
 from apps.sync_hub import enrollment, hosted_config
 from apps.sync_hub.hosted_config import HOSTED_FLAG_ATTR, SOURCE_ATTR
@@ -68,6 +70,14 @@ from apps.sync_hub.hosted_config import HOSTED_FLAG_ATTR, SOURCE_ATTR
 #: "Included", which is fabricated product state (saas-spec section 6,
 #: decision 1). It moves to the catalog when the hosted hub can meter.
 HOSTED_HUB_FEATURE: str = "cloudsync.hosted_hub"
+#: Hosted CloudStems (hub stem index and bundle presign reads). Polar maps a
+#: product id to this feature via ``MDT_POLAR_PRODUCTS`` (see
+#: ``(private path)``).
+CLOUDSTEMS_HOSTED_FEATURE: str = "cloudstems.hosted"
+
+#: Paid plugin catalog access on a hosted hub (CSPAY-06). Polar maps a product
+#: id to this feature via ``MDT_POLAR_PRODUCTS``.
+PLUGINSTORE_ACCESS_FEATURE: str = "pluginstore.access"
 
 #: 403: the caller's machine has no owner this hub honors, so there is no
 #: subject to ask a source about -- and a source is never asked about nobody.
@@ -81,6 +91,9 @@ PROVIDER_CODE: str = "SYNC_ENTITLEMENT_PROVIDER"
 FLAG_INVALID_CODE: str = "SYNC_HOSTED_FLAG_INVALID"
 #: 503: the hub DB holds more than one owner, and pull is not owner-scoped.
 MULTI_OWNER_CODE: str = "SYNC_HOSTED_MULTI_OWNER"
+#: 503: a paid (Polar) source is configured but credentials are not ENFORCEd,
+#: so the caller's machine_id is only a claim.
+NOT_ENFORCED_CODE: str = "SYNC_HOSTED_NOT_ENFORCED"
 
 
 class GateErrorBody(BaseModel):
@@ -98,8 +111,13 @@ class GateErrorResponse(BaseModel):
 
 
 #: The gated endpoints, and whether each takes data out or puts it in.
-GatedEndpoint = Literal["push", "pull"]
-_OPERATION_OF: dict[GatedEndpoint, Operation] = {"push": "write", "pull": "read"}
+GatedEndpoint = Literal["push", "pull", "stems/index", "stems/bundle-presign"]
+_OPERATION_OF: dict[GatedEndpoint, Operation] = {
+    "push": "write",
+    "pull": "read",
+    "stems/index": "read",
+    "stems/bundle-presign": "read",
+}
 
 #: The lifecycle states that refuse each operation, for the declared docs.
 _REFUSED_IN: dict[Operation, str] = {
@@ -133,7 +151,8 @@ def refusals(endpoint: GatedEndpoint) -> dict[int | str, dict[str, object]]:
                 f"entitlement source is configured ({NO_SOURCE_CODE}), the "
                 f"entitlement provider refused to answer ({PROVIDER_CODE}), "
                 f"the hosted flag is not a bool ({FLAG_INVALID_CODE}), or the "
-                f"hub DB holds more than one owner ({MULTI_OWNER_CODE})."
+                f"hub DB holds more than one owner ({MULTI_OWNER_CODE}), or a "
+                f"paid source runs without ENFORCEd credentials ({NOT_ENFORCED_CODE})."
             ),
         },
     }
@@ -179,9 +198,21 @@ def _source(request: Request) -> EntitlementSource:
     return cast(EntitlementSource, source)
 
 
-def _refusal(
-    status_code: int, code: str, message: str, *, ui_title: str | None = None
-) -> HTTPException:
+def require_enforced(source: EntitlementSource) -> None:
+    """503 when a paid source would be trusting an unauthenticated machine_id.
+
+    Startup checks this too (:func:`hosted_config.require_enforce_for_polar`),
+    but the credential mode is read per request, so a flip back to observe
+    after startup must stop paid service rather than hand it out.
+    """
+    if not isinstance(source, PolarEntitlementSource):
+        return
+    reason = hosted_config.require_enforce_for_polar(os.environ)
+    if reason is not None:
+        raise _refusal(503, NOT_ENFORCED_CODE, reason)
+
+
+def _refusal(status_code: int, code: str, message: str, *, ui_title: str | None = None) -> HTTPException:
     detail: dict[str, str] = {"code": code, "message": message}
     if ui_title is not None:
         detail["ui_title"] = ui_title
@@ -195,6 +226,7 @@ def require(
     machine_id: str,
     operation: Operation,
     data_dir: Callable[[], Path],
+    feature_id: str = HOSTED_HUB_FEATURE,
 ) -> None:
     """Refuse ``operation`` for ``machine_id`` unless its owner is entitled.
 
@@ -208,6 +240,7 @@ def require(
     if not is_hosted(request):
         return
     source = _source(request)
+    require_enforced(source)
     shared = hosted_config.too_many_owners(hosted_config.owner_count(conn))
     if shared is not None:
         raise _refusal(503, MULTI_OWNER_CODE, shared)
@@ -222,7 +255,7 @@ def require(
             "with POST /api/v1/sync/enroll; entitlement is checked per owner.",
         )
     try:
-        found = entitlements.standing(HOSTED_HUB_FEATURE, subject=owner.google_sub, source=source)
+        found = entitlements.standing(feature_id, subject=owner.google_sub, source=source)
     except entitlements.EntitlementProviderError as exc:
         raise _refusal(503, PROVIDER_CODE, str(exc)) from exc
     if found is not None and allows(found.state, operation):
@@ -232,7 +265,7 @@ def require(
         403,
         entitlements.NOT_IN_PLAN_CODE,
         f"{operation} refused for machine {machine_id}: its owner has {where} "
-        f"for {HOSTED_HUB_FEATURE} (source {source.provider}). Nothing on "
+        f"for {feature_id} (source {source.provider}). Nothing on "
         f"the hub was removed. {entitlements.NOT_IN_PLAN_MESSAGE}",
         ui_title=entitlements.UI_REFUSAL_TITLE,
     )
@@ -246,12 +279,45 @@ def status_fields(request: Request) -> dict[str, bool | str | None]:
     return {"hosted": hosted, "entitlement_provider": provider}
 
 
+def merge_responses(*parts: dict[int | str, dict[str, object]]) -> dict[int | str, dict[str, object]]:
+    """Compose OpenAPI ``responses`` dicts without losing a colliding status.
+
+    ``{**a, **b}`` keeps only ``b``'s entry for a status both declare, which
+    silently drops a refusal the route can still return. Colliding entries keep
+    both descriptions and every other field either declares; a field both
+    declare with different values (two body models, say) is a contract error
+    and raises.
+    """
+    merged: dict[int | str, dict[str, object]] = {}
+    for part in parts:
+        for key, entry in part.items():
+            # 503 and "503" are one OpenAPI status, so they must collide here too.
+            status: int | str = int(key) if isinstance(key, str) and key.isdigit() else key
+            prior = merged.get(status)
+            if prior is None:
+                merged[status] = dict(entry)
+                continue
+            combined = dict(prior)
+            for field, value in entry.items():
+                if field == "description":
+                    continue
+                if field in combined and combined[field] != value:
+                    raise ValueError(f"status {status} declares two different values for {field!r}")
+                combined[field] = value
+            combined["description"] = f"{prior.get('description', '')} Or: {entry.get('description', '')}".strip()
+            merged[status] = combined
+    return merged
+
+
 __all__ = [
+    "CLOUDSTEMS_HOSTED_FEATURE",
     "FLAG_INVALID_CODE",
     "HOSTED_FLAG_ATTR",
     "HOSTED_HUB_FEATURE",
     "MULTI_OWNER_CODE",
+    "NOT_ENFORCED_CODE",
     "NO_SOURCE_CODE",
+    "PLUGINSTORE_ACCESS_FEATURE",
     "PROVIDER_CODE",
     "SOURCE_ATTR",
     "UNOWNED_CODE",
@@ -260,7 +326,9 @@ __all__ = [
     "GatedEndpoint",
     "Operation",
     "is_hosted",
+    "merge_responses",
     "refusals",
     "require",
+    "require_enforced",
     "status_fields",
 ]

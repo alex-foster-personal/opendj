@@ -275,6 +275,8 @@ test('every pointer/mouse enter handler on /performance is classified', () => {
 		'lib/components/rb/deck/HotCueBank.svelte#cue-col',
 		'lib/components/rb/deck/LoopCluster.svelte#loop-cluster',
 		'lib/components/rb/mixer/Knob.svelte#knob',
+		// Hover peeks the comment pins on the page; it opens no card of its own.
+		'lib/components/rb/FeedbackWidget.svelte#fb-pin-peek',
 		'lib/components/rb/mixer/ChannelStrip.svelte#strip',
 		'lib/components/rb/browser/AutoPlayRankCell.svelte#ap-rank'
 	]);

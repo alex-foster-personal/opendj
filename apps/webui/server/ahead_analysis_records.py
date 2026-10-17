@@ -88,11 +88,11 @@ def producer_version(backend: str) -> str:
     (importing the backend itself would pull model code into the engine)."""
     from apps.analysis_beatgrid import version as beatgrid_version
     from apps.analysis_key import version as key_version
-    from apps.analysis_loudness import backfill as loudness_backfill
+    from apps.analysis_loudness import contract as loudness_contract
     from apps.analysis_waveform import version as waveform_version
 
     versions = {
-        "own_loudness.backfill": loudness_backfill.PRODUCER_VERSION,
+        "own_loudness.backfill": loudness_contract.PRODUCER_VERSION,
         "own_waveform.backfill": waveform_version.PRODUCER_VERSION,
         "own_beatgrid.backfill": beatgrid_version.PRODUCER_VERSION,
         "own_key.backfill": key_version.PRODUCER_VERSION,

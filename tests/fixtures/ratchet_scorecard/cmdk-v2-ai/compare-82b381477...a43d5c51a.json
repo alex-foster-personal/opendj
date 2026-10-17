@@ -1,0 +1,28 @@
+{
+ "merge_base_commit": {
+  "sha": "b2bfcf437d79be318aeb86fba49bac02383ec305"
+ },
+ "files": [
+  {
+   "filename": ".planning/REQUIREMENTS.md"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/components/rb/CommandBarV2.svelte"
+  },
+  {
+   "filename": "apps/webui/frontend/src/lib/rb/cmdk-load.ts"
+  },
+  {
+   "filename": "apps/webui/frontend/tests/unit/command-bar-v2-actions.test.mjs"
+  },
+  {
+   "filename": "(private path)"
+  },
+  {
+   "filename": "reqs.json"
+  }
+ ]
+}

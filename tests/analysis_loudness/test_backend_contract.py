@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from apps.analysis.lanes import validate_lane_result
-from apps.analysis_loudness import PRODUCER_BACKEND, produce_lane_result
+from apps.analysis_loudness.backfill import produce_lane_result
+from apps.analysis_loudness.contract import PRODUCER_BACKEND
 
 
 def _require_ffmpeg() -> None:

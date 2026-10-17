@@ -25,6 +25,8 @@ merged to a side branch and never to main), fitted to main:
   beat, never the config alone.
 * ``SyncDigestMismatch`` HALTS the loop (ADR 04 c6: settled and still
   diverged, no repair attempted), exactly as the 9a1438b8 design did.
+  ``SyncStillMoving`` does not: the fleet was still writing, including a
+  stale-remap proof that spanned a hub write, so the next round retries.
 * Never started on the hub (``MDT_IS_HUB=1``): the hub is the peer.
 
 Not carried over from 9a1438b8: cache eviction, which belongs to the
@@ -193,6 +195,16 @@ class CloudSyncScheduler:
             self.halted_reason = f"digests diverged after settling: {exc}"
             log.error("cloudsync scheduler HALTED, no repair attempted (ADR 04 c6): %s", exc)
             return "halted"
+        except sync_client.SyncStillMoving as exc:
+            # Concurrency, including a stale-remap proof that spanned a hub
+            # write (OPEN-DJ-BE-91). Back off and retry; do not halt.
+            self.consecutive_failures += 1
+            log.warning(
+                "cloudsync round still moving (%d in a row): %s",
+                self.consecutive_failures,
+                exc,
+            )
+            return "error"
         except SyncDeferredError as exc:
             # maintenance.sync's cross-process flock (single_flight.
             # sync_flock_for) is invisible to run_round's own in-process

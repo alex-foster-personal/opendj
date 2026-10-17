@@ -76,6 +76,36 @@ def test_a_subreaper_adoptee_is_orphaned_and_a_tmux_child_is_not() -> None:
     assert (rows[40].tree, rows[40].verdict) == ("session", "active"), rows[40]
 
 
+def test_a_live_child_under_a_runuser_root_is_attached_and_never_reapable() -> None:
+    """A `runuser` supervisor outlives the command that started it, so it is a
+    ppid-1 SESSION HOST (the agentbox rollout runs `runuser -u ghrunner -- ...`).
+    A live child under it is attached, never reapable; the control, a test
+    server reparented to init with no live ancestor, stays orphaned/reapable."""
+    procs = {
+        1: _proc(1, 0, "/sbin/init"),
+        60: _proc(
+            60,
+            1,
+            "runuser -u ghrunner -- pytest -q tests/scripts/test_orphan_reaper.py",
+        ),
+        61: _proc(
+            61,
+            60,
+            "uvicorn apps.engine_core",
+            env={"AF_SERVICE_ID": "com.opendj.test.runuserchild"},
+        ),
+        70: _proc(
+            70,
+            1,
+            "uvicorn apps.engine_core",
+            env={"AF_SERVICE_ID": "com.opendj.test.trueorphan"},
+        ),
+    }
+    rows = {r.pid: r for r in classify(procs)}
+    assert (rows[61].tree, rows[61].verdict) == ("session", "active"), rows[61]
+    assert (rows[70].tree, rows[70].verdict) == ("orphaned", "reapable"), rows[70]
+
+
 def test_reap_reports_a_target_that_vanished_before_its_signal_as_not_killed() -> None:
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()

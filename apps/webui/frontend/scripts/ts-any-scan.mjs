@@ -372,7 +372,12 @@ function main() {
       if (result.hasScript) svelteFilesWithScript += 1;
       for (const hit of result.hits) hits.push({ file, ...hit });
     } else {
-      const scriptKind = file.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+      // .tsx (the React twins) parses as TSX: as plain TS its JSX is a syntax error.
+      const scriptKind = file.endsWith('.ts')
+        ? ts.ScriptKind.TS
+        : file.endsWith('.tsx')
+          ? ts.ScriptKind.TSX
+          : ts.ScriptKind.JS;
       const { lines, error } = _anyHits(raw, 0, scriptKind);
       if (error) {
         _fail(`${file} failed to parse as TypeScript: ${error}`);
