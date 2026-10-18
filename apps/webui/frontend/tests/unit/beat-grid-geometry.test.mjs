@@ -43,3 +43,21 @@ test('visible beat lines span the full row and retain stronger downbeat caps', (
 	assert.ok(downbeat.capHeight > ordinaryBeat.capHeight);
 	assert.ok(downbeat.capAlpha > ordinaryBeat.capAlpha);
 });
+
+test('a tempo jump just past the right edge does not thin the visible grid', () => {
+	// Window is 0 to 1.0 s at 100 px/s. The 1.0 to 1.01 s gap starts in view but
+	// ends outside it, so it must not set the stride: the three beats in view
+	// (0.0, 0.5, 1.0 s) are 50 px apart and all keep a line.
+	const beats = [
+		{ n: 1, bpm: 120, t: 0 },
+		{ n: 2, bpm: 120, t: 0.5 },
+		{ n: 3, bpm: 120, t: 1.0 },
+		{ n: 4, bpm: 120, t: 1.01 },
+		{ n: 1, bpm: 120, t: 1.02 }
+	];
+	const lines = visibleBeatLines(beats, 0, 100, 100, 40);
+	assert.deepEqual(
+		lines.map((line) => line.x),
+		[0, 50, 100]
+	);
+});

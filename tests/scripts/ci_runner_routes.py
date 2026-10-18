@@ -29,6 +29,13 @@ LIGHT_RUNS_ON = (
     f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}}}"
 )
 
+#: The two Trunk upload jobs (ADR-NEW-trunk-token-jobs-self-hosted): the light route
+#: with NO hosted fallback. The Actions budget refuses hosted jobs, so an unset
+#: `CI_RUNS_ON_LINUX` must fail the job loudly rather than send it back there.
+TOKEN_RUNS_ON = f"${{{{ fromJSON({MERGE_QUEUE_DISJUNCT} || vars.CI_RUNS_ON_LINUX) }}}}"
+#: The token route minus its merge-queue disjunct.
+PRE_ROUTE_TOKEN = "${{ fromJSON(vars.CI_RUNS_ON_LINUX) }}"
+
 #: The `quality` ratchet job (Tue 6 Oct 2026): the light chain with the opt-in
 #: `CI_RUNS_ON_QUALITY` pool ahead of `CI_RUNS_ON_LINUX`, keeping its mypy cache
 #: acceptance step off cold-cache megamac VMs. Unset, it is the light chain exactly.

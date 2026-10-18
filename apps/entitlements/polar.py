@@ -97,6 +97,36 @@ KNOWN_STATUSES: frozenset[str] = _ACTIVE | _PAST_DUE | _LAPSED | _NEVER_PAID
 _RANK: dict[LifecycleState, int] = {"active": 3, "past_due": 2, "read_only": 1, "archived": 0}
 
 
+def _granted_features(raw: Mapping[str, str | Sequence[str]]) -> dict[str, tuple[str, ...]]:
+    """Normalize ``product -> feature`` / ``product -> [features]`` to ``product -> tuple``.
+
+    Both forms are accepted so an existing one-feature ``MDT_POLAR_PRODUCTS`` table keeps
+    working verbatim, while the CloudSync product can grant ``cloudsync.hosted_hub`` AND
+    ``pluginstore.access`` without a second product id (the launch plan sells them together).
+    A feature listed twice under one product is a configuration mistake, not a second grant.
+    """
+    normalized: dict[str, tuple[str, ...]] = {}
+    for product, grants in raw.items():
+        if not (isinstance(product, str) and product.strip()):
+            raise ValueError(f"empty Polar product id in {product!r}")
+        if isinstance(grants, str):
+            features: tuple[str, ...] = (grants,)
+        elif isinstance(grants, (list, tuple)):
+            features = tuple(grants)
+        else:
+            raise ValueError(f"product {product!r} must map to a feature id or a list of them, got {grants!r}")
+        if not features:
+            raise ValueError(f"product {product!r} grants no feature")
+        for feature in features:
+            if not (isinstance(feature, str) and feature.strip()):
+                raise ValueError(f"empty feature id in {product!r} -> {grants!r}")
+        if len(set(features)) != len(features):
+            raise ValueError(f"product {product!r} lists a feature twice: {grants!r}")
+        normalized[product] = features
+    return normalized
+
+
+
 class PolarError(EntitlementProviderError):
     """Polar could not answer, or answered something this module refuses to read.
 
@@ -130,8 +160,11 @@ class PolarConfig:
 
     access_token: str
     server: PolarServer
-    #: Polar product id -> feature id it grants. Many products may map to one feature.
-    product_features: Mapping[str, str]
+    #: Polar product id -> the feature ids it grants. Many products may map to one
+    #: feature, and one product may grant several: the CloudSync product opens both
+    #: ``cloudsync.hosted_hub`` and ``pluginstore.access``. A bare string is accepted
+    #: as the one-feature form and normalized to a tuple.
+    product_features: Mapping[str, str | Sequence[str]]
     read_only_days: int
     #: Where Polar sends the browser after checkout; ``{CHECKOUT_ID}`` allowed.
     success_url: str
@@ -144,9 +177,8 @@ class PolarConfig:
             raise ValueError(f"Polar server must be one of {sorted(BASE_URLS)}, got {self.server!r}")
         if not self.product_features:
             raise ValueError("at least one Polar product must map to a feature")
-        for product, feature in self.product_features.items():
-            if not (product.strip() and feature.strip()):
-                raise ValueError(f"empty product or feature id in {product!r} -> {feature!r}")
+        # Normalize once, here: every reader below may then assume a tuple per product.
+        object.__setattr__(self, "product_features", _granted_features(self.product_features))
         if not 0 <= self.read_only_days <= MAX_READ_ONLY_DAYS:
             raise ValueError(f"read_only_days must be 0 to {MAX_READ_ONLY_DAYS}, got {self.read_only_days}")
         parsed = urlsplit(self.success_url)
@@ -168,7 +200,11 @@ class PolarConfig:
         return f"{self.server}:{digest[:16]}"
 
     def products_for(self, feature_id: str) -> list[str]:
-        return sorted(p for p, f in self.product_features.items() if f == feature_id)
+        return sorted(p for p, features in self.product_features.items() if feature_id in features)
+
+    def sold_features(self) -> list[str]:
+        """Every feature id any product grants, sorted: what this hub sells."""
+        return sorted({feature for features in self.product_features.values() for feature in features})
 
 
 # ----- the pure mapping -----------------------------------------------------
@@ -235,7 +271,7 @@ def standing_from_subscriptions(
     subscriptions: Sequence[Mapping[str, Any]],
     *,
     feature_id: str,
-    product_features: Mapping[str, str],
+    product_features: Mapping[str, str | Sequence[str]],
     now: datetime,
     read_only_days: int,
 ) -> Standing | None:
@@ -244,9 +280,12 @@ def standing_from_subscriptions(
     Quota is None (unlimited): the hosted hub is a boolean feature today, and
     byte metering (``cloudsync.hosted_assets``) is not built.
     """
+    # Accept the raw (string-valued) table too: this function is the unit under test for
+    # the mapping, and normalizing keeps "one product, several features" working there.
+    grants = _granted_features(product_features)
     best: LifecycleState | None = None
     for sub in subscriptions:
-        if product_features.get(_product_id(sub)) != feature_id:
+        if feature_id not in grants.get(_product_id(sub), ()):
             continue
         state = state_of(sub, now, read_only_days)
         if state is not None and (best is None or _RANK[state] > _RANK[best]):

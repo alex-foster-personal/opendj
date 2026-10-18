@@ -246,7 +246,12 @@ const BUDGETS = [
   // (+89, 2 over; CI read 278,529 to 278,532 on the PRs it blocked).
   // Payback, not yet measured: the isRawAnlz probe and the brand comment are the
   // only parts not needed on first paint.
-  { name: 'library', limit: 279552, measured: 278530, note: 'initial load of "/"' },
+  // RAISED Fri 16 Oct 2026 (+1 KiB, PR #6786 wave zoom): 279,552 -> 280,576 for the
+  // band cache's tiled render in render.ts and the beat-line thinning in wave-math.ts,
+  // both on "/" through the waveform component. CI measured 280,107 on 625d26b57 (main
+  // alone 278,530). PR #6786 adds no zoom control, glide or settings; those land in
+  // PR 2. Rounded up to the next KiB. No second raise.
+  { name: 'library', limit: 280576, measured: 280107, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second

@@ -202,12 +202,24 @@ interface BandNorms {
 const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
 
 interface WaveBandImage {
-	canvas: HTMLCanvasElement;
+	/** Tiles of the whole-track image, built on first sight (WAVEZOOM-01). */
+	tiles: Map<number, HTMLCanvasElement>;
+	/** Width in px of the whole-track image the tiles cut up. */
+	fullW: number;
 	key: string;
 	/** px per track-second the image was built at; draw scales from this. */
 	pxPerS: number;
 	/** Section spans baked under the bands (memoized per phrases array), or null. */
 	sections: readonly SectionSpan[] | null;
+	/** 'blocks' heights and shares for the whole width, computed once per
+	 * image so every tile cuts the same bars (contrast and onset variants
+	 * read neighbours across tile edges). */
+	blocks: BlockColumns | null;
+}
+
+interface BlockColumns {
+	heights: Float32Array;
+	shares: { low: Float32Array; mid: Float32Array; high: Float32Array } | null;
 }
 
 /**
@@ -222,7 +234,14 @@ interface WaveBandImage {
  * select their own image.
  */
 export const BAND_CACHE_CFG = {
-	PITCH_TOLERANCE: 0.03
+	PITCH_TOLERANCE: 0.03,
+	/** Tile width of the cached band image (WAVEZOOM-01). One canvas the
+	 * width of the whole track grew past what Chromium will paint: at 4 bars
+	 * on a 5-minute track it is about 45,000 px and the row drew as a flat
+	 * band. Tiles also mean a new zoom or tempo builds only the visible
+	 * span. A multiple of BLOCK_PITCH_PX so 'blocks' bars never straddle a
+	 * tile edge. */
+	TILE_PX: 4095
 } as const;
 
 /**
@@ -514,26 +533,51 @@ function _drawCachedBands(
 		!bandImageScaleReusable(image.pxPerS, pxPerS)
 	) {
 		image = {
-			canvas: _buildBandImage(waveform, sectionsApi, sections, pxPerS, durS, h, palette, design, blocks),
+			tiles: new Map(),
+			fullW: Math.max(1, Math.ceil(durS * pxPerS)),
 			key,
 			pxPerS,
-			sections
+			sections,
+			blocks: null
 		};
 		_bandImages.set(waveform, image);
 	}
-	if (image.pxPerS === pxPerS) {
-		ctx.drawImage(image.canvas, -tLeft * pxPerS, 0);
-		return;
-	}
-	// Scaled blit of only the visible track span, clipped to the image.
+	// The visible span in image px, then each tile it touches.
 	const scale = pxPerS / image.pxPerS;
 	const tStart = Math.max(0, tLeft);
 	const tEnd = Math.min(durS, tLeft + w / pxPerS);
 	if (!(tEnd > tStart)) return;
-	const sx = tStart * image.pxPerS;
-	const sw = Math.min(image.canvas.width, tEnd * image.pxPerS) - sx;
-	if (!(sw > 0)) return;
-	ctx.drawImage(image.canvas, sx, 0, sw, image.canvas.height, (tStart - tLeft) * pxPerS, 0, sw * scale, image.canvas.height);
+	const tile = BAND_CACHE_CFG.TILE_PX;
+	const first = Math.floor((tStart * image.pxPerS) / tile);
+	// The last tile is the one holding the final visible image px. Ceiling minus
+	// one keeps a tEnd that lands exactly on a tile edge from allocating the
+	// zero-width tile that starts there (Sol P1 on PR #6786).
+	const last = Math.min(Math.ceil(image.fullW / tile) - 1, Math.ceil((tEnd * image.pxPerS) / tile) - 1);
+	for (let i = first; i <= last; i++) {
+		let canvas = image.tiles.get(i);
+		if (canvas === undefined) {
+			canvas = _buildBandTile(image, i, waveform, sectionsApi, sections, durS, h, palette, design, blocks);
+			image.tiles.set(i, canvas);
+		}
+		const x0 = i * tile;
+		// Destination edges snap to whole px: two tiles blitted at a fractional
+		// x each anti-alias the shared column to part coverage, and a real
+		// canvas shows that as a seam (Sentry on PR #6786, caught by
+		// tests/e2e/wave-band-tiles.spec.ts). Every tile shares the same
+		// fractional offset, so rounding moves them together, edge to edge.
+		if (scale === 1) {
+			ctx.drawImage(canvas, Math.round(x0 - tLeft * pxPerS), 0);
+			continue;
+		}
+		// Scaled blit of only the visible part of this tile.
+		const sx = Math.max(x0, tStart * image.pxPerS);
+		const sxEnd = Math.min(x0 + canvas.width, tEnd * image.pxPerS);
+		const sw = sxEnd - sx;
+		if (!(sw > 0)) continue;
+		const dLeft = Math.round((sx / image.pxPerS - tLeft) * pxPerS);
+		const dRight = Math.round((sxEnd / image.pxPerS - tLeft) * pxPerS);
+		if (dRight > dLeft) ctx.drawImage(canvas, sx - x0, 0, sw, canvas.height, dLeft, 0, dRight - dLeft, canvas.height);
+	}
 }
 
 /** True when an image built at `builtPxPerS` may be drawn at `livePxPerS`. */
@@ -541,11 +585,14 @@ export function bandImageScaleReusable(builtPxPerS: number, livePxPerS: number):
 	return Math.abs(livePxPerS / builtPxPerS - 1) <= BAND_CACHE_CFG.PITCH_TOLERANCE;
 }
 
-function _buildBandImage(
+/** Paint tile `index` of the whole-track band image: the same pixels the
+ * whole image had at x in [index * TILE_PX, +TILE_PX). */
+function _buildBandTile(
+	image: WaveBandImage,
+	index: number,
 	waveform: AnlzWaveform,
 	sectionsApi: SectionsApi | null,
 	sections: readonly SectionSpan[] | null,
-	pxPerS: number,
 	durS: number,
 	h: number,
 	palette: WavePalette,
@@ -555,16 +602,24 @@ function _buildBandImage(
 	if (typeof document === 'undefined') {
 		throw new Error('wave band cache requires a browser canvas');
 	}
+	const x0 = index * BAND_CACHE_CFG.TILE_PX;
+	const tileW = Math.min(BAND_CACHE_CFG.TILE_PX, image.fullW - x0);
 	const canvas = document.createElement('canvas');
-	const w = Math.max(1, Math.ceil(durS * pxPerS));
-	canvas.width = w;
+	canvas.width = tileW;
 	canvas.height = h;
 	const ctx = canvas.getContext('2d');
 	if (ctx === null) throw new Error('wave band cache: 2d context unavailable');
 	if (sectionsApi !== null && sections !== null) {
-		sectionsApi.drawSectionBands(ctx, sections, 0, pxPerS, w, h, palette.sections, MARKER_BAND_PX);
+		sectionsApi.drawSectionBands(ctx, sections, x0 / image.pxPerS, image.pxPerS, tileW, h, palette.sections, MARKER_BAND_PX);
 	}
-	_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design, blocks);
+	if (design === 'blocks' && image.blocks === null) {
+		image.blocks = _blockColumns(waveform, image.pxPerS, image.fullW, design, blocks);
+	}
+	_drawBands(ctx, waveform, image.pxPerS, durS, image.fullW, h, palette, design, blocks, MARKER_BAND_PX, {
+		x0,
+		x1: x0 + tileW,
+		blockColumns: image.blocks
+	});
 	return canvas;
 }
 
@@ -601,11 +656,15 @@ function _drawBands(
 	palette: BandPalette,
 	design: WaveformDesign,
 	blocks: BlocksSpec = { curve: 'true-peak', variant: BLOCKS_CFG.VARIANT_DEFAULT, beatPeriodS: null, mirrored: true },
-	topPx: number = MARKER_BAND_PX
+	topPx: number = MARKER_BAND_PX,
+	span: BandSpan | null = null
 ): void {
 	const bands = waveform.detail;
 	const n = bands.length;
 	if (n === 0) return;
+	// A tile paints columns [x0, x1) of the full-width image at its own x 0.
+	const x0 = span === null ? 0 : span.x0;
+	const x1 = span === null ? w : Math.min(w, span.x1);
 	const centerY = topPx + (h - topPx) / 2;
 	const halfH = (h - topPx) / 2 - 1;
 	const mono = design === 'mono' || waveform.kind === 'mono';
@@ -618,13 +677,10 @@ function _drawBands(
 	if (design === 'blocks') {
 		// True peaks, not p99 (B5), for rekordbox waveforms: a block is a bucket
 		// MAX of several points, so p99 puts loud sections past full scale.
-		const divisors = _blocksDivisors(blocks.curve, waveform, norms);
-		const blocksPerBeat =
-			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
-		const heights = blockHeights(bands, w, divisors, blocks.variant, blocksPerBeat, blocks.curve);
-		const shares = mono ? null : blockBandShares(bands, w, divisors);
-		if (blocks.mirrored) paintStackedBlocks(ctx, heights, shares, centerY, halfH, palette, true);
-		else paintStackedBlocks(ctx, heights, shares, h, h - topPx - 1, palette, false);
+		const cols = span?.blockColumns ?? _blockColumns(waveform, pxPerS, w, design, blocks);
+		const range = { from: Math.floor(x0 / BLOCK_PITCH_PX), to: Math.ceil(x1 / BLOCK_PITCH_PX), offsetPx: x0 };
+		if (blocks.mirrored) paintStackedBlocks(ctx, cols.heights, cols.shares, centerY, halfH, palette, true, range);
+		else paintStackedBlocks(ctx, cols.heights, cols.shares, h, h - topPx - 1, palette, false, range);
 		return;
 	}
 
@@ -633,28 +689,38 @@ function _drawBands(
 	const highPath = new Path2D();
 	const linePath = new Path2D();
 	let lineStarted = false;
-
-	for (let x = 0; x < w; x++) {
+	/** The line design's top and bottom y at image column x. */
+	const lineYs = (x: number): [number, number] => {
 		const p0 = Math.max(0, Math.floor((x / w) * n));
 		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
+		const v = _amp(
+			Math.max(_bucketMax(bands.low, p0, p1), _bucketMax(bands.mid, p0, p1), _bucketMax(bands.high, p0, p1)),
+			monoNorm
+		);
+		return [centerY - v * halfH, centerY + v * halfH];
+	};
+	// A tile's line joins its neighbors: it starts from the previous column's
+	// bottom and (below) runs on into the next column's top, exactly the
+	// segments the whole-track path draws across the tile edge, so the two
+	// tiles overlap there instead of each stopping short (WAVEZOOM-01).
+	if (line && x0 > 0) {
+		linePath.moveTo(-1, lineYs(x0 - 1)[1]);
+		lineStarted = true;
+	}
+
+	for (let x = x0; x < x1; x++) {
+		const p0 = Math.max(0, Math.floor((x / w) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + 1) / w) * n) - 1));
+		const px = x - x0;
 		if (line) {
-			const v = _amp(
-				Math.max(
-					_bucketMax(bands.low, p0, p1),
-					_bucketMax(bands.mid, p0, p1),
-					_bucketMax(bands.high, p0, p1)
-				),
-				monoNorm
-			);
-			const yTop = centerY - v * halfH;
-			const yBot = centerY + v * halfH;
+			const [yTop, yBot] = lineYs(x);
 			if (!lineStarted) {
-				linePath.moveTo(x, yTop);
+				linePath.moveTo(px, yTop);
 				lineStarted = true;
 			} else {
-				linePath.lineTo(x, yTop);
+				linePath.lineTo(px, yTop);
 			}
-			linePath.lineTo(x, yBot);
+			linePath.lineTo(px, yBot);
 			continue;
 		}
 		if (mono) {
@@ -668,18 +734,19 @@ function _drawBands(
 				),
 				monoNorm
 			);
-			if (v > 0) _mirrorRect(lowPath, x, centerY, v * halfH);
+			if (v > 0) _mirrorRect(lowPath, px, centerY, v * halfH);
 			continue;
 		}
 		const lo = _amp(_bucketMax(bands.low, p0, p1), norms.low);
 		const mi = _amp(_bucketMax(bands.mid, p0, p1), norms.mid);
 		const hi = _amp(_bucketMax(bands.high, p0, p1), norms.high);
-		if (lo > 0) _mirrorRect(lowPath, x, centerY, lo * halfH);
-		if (mi > 0) _mirrorRect(midPath, x, centerY, mi * halfH * MID_BAND_SCALE);
-		if (hi > 0) _mirrorRect(highPath, x, centerY, hi * halfH * HIGH_BAND_SCALE);
+		if (lo > 0) _mirrorRect(lowPath, px, centerY, lo * halfH);
+		if (mi > 0) _mirrorRect(midPath, px, centerY, mi * halfH * MID_BAND_SCALE);
+		if (hi > 0) _mirrorRect(highPath, px, centerY, hi * halfH * HIGH_BAND_SCALE);
 	}
 
 	if (line) {
+		if (lineStarted && x1 < w) linePath.lineTo(x1 - x0, lineYs(x1)[0]);
 		ctx.strokeStyle = palette.mono;
 		ctx.lineWidth = 1.5;
 		// linePath, not lowPath: the line loop never adds to lowPath, so the
@@ -702,6 +769,29 @@ function _drawBands(
 	ctx.fillStyle = palette.high;
 	ctx.fill(highPath);
 	ctx.globalAlpha = 1;
+}
+
+interface BandSpan {
+	x0: number;
+	x1: number;
+	/** The image's memoized block columns; null computes them here. */
+	blockColumns: BlockColumns | null;
+}
+
+function _blockColumns(
+	waveform: AnlzWaveform,
+	pxPerS: number,
+	w: number,
+	design: WaveformDesign,
+	blocks: BlocksSpec
+): BlockColumns {
+	const mono = design === 'mono' || waveform.kind === 'mono';
+	const divisors = _blocksDivisors(blocks.curve, waveform, bandNormsFor(waveform));
+	const blocksPerBeat = blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
+	return {
+		heights: blockHeights(waveform.detail, w, divisors, blocks.variant, blocksPerBeat, blocks.curve),
+		shares: mono ? null : blockBandShares(waveform.detail, w, divisors)
+	};
 }
 
 function _blocksDivisors(curve: BlocksCurve, waveform: AnlzWaveform, norms: BandNorms): BandNorms {
@@ -878,8 +968,12 @@ export function paintStackedBlocks(
 	anchorY: number,
 	maxBarH: number,
 	palette: Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>,
-	mirrored: boolean
+	mirrored: boolean,
+	range: { from: number; to: number; offsetPx: number } | null = null
 ): void {
+	const from = range === null ? 0 : Math.max(0, range.from);
+	const to = range === null ? heights.length : Math.min(heights.length, range.to);
+	const offsetPx = range === null ? 0 : range.offsetPx;
 	const layers: [string, Float32Array | null, number][] =
 		shares === null
 			? [[palette.mono, null, 1]]
@@ -890,10 +984,10 @@ export function paintStackedBlocks(
 				];
 	for (const [color, share, scale] of layers) {
 		const path = new Path2D();
-		for (let b = 0; b < heights.length; b++) {
+		for (let b = from; b < to; b++) {
 			const frac = share === null ? 1 : share[b] * scale;
 			const barH = Math.round(heights[b] * frac * maxBarH);
-			if (barH > 0) path.rect(b * BLOCK_PITCH_PX, anchorY - barH, BLOCK_BAR_PX, mirrored ? barH * 2 : barH);
+			if (barH > 0) path.rect(b * BLOCK_PITCH_PX - offsetPx, anchorY - barH, BLOCK_BAR_PX, mirrored ? barH * 2 : barH);
 		}
 		ctx.fillStyle = color;
 		ctx.fill(path);

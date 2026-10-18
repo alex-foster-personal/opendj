@@ -2,10 +2,14 @@
 
 ADR-NEW-trunk-flaky-quarantine-on. The root step records its exit code and
 JUnit report; the following verdict passes that step only when every failed
-testcase is on Trunk collection L3VoLxNK. The list is fetched by a hosted
-ubuntu-latest job that never checks out and never runs a repository file;
-the token never appears on a self-hosted job or on the gate job. The report is
-uploaded by another hosted job that is not a merge gate.
+testcase is on Trunk collection L3VoLxNK. The list is fetched by a job on the
+self-hosted light pool (no hosted fallback) that never checks out and never
+runs a repository file;
+the token never appears on a job that checks out or on the gate job. The report
+is uploaded by a job on the self-hosted light pool (no hosted fallback,
+ADR-NEW-trunk-token-jobs-self-hosted) that is not a merge gate, never checks
+out, and stages the report under runner.temp, which the runner empties at the
+start of each job.
 
   - [if] an unlisted root test fails [then] the e2e gate fails, [else stop].
 
@@ -14,11 +18,15 @@ Regression lines:
   - if a failure whose every failed test is listed still fails then quarantine does nothing
   - if a cancelled or skipped root step passes then a suite that never ran reads green
   - if the verdict step loses always() or gains continue-on-error then a red root suite reads green
-  - if the list job leaves ubuntu-latest or the token appears on a self-hosted
-    job or the gate job then the org token meets a shared runner
+  - if the list job regains a hosted runner or fallback then the budget refuses it
+  - if the token appears on a checkout job or the gate job then the org token meets
+    PR code
   - if the token appears in the gate job then the suite can read the org token
   - if the list job checks out or runs a repository file then the org token meets PR code
   - if e2e-trunk-upload is in verdict.needs then an upload failure reddens the merge gate
+  - if e2e-trunk-upload regains a hosted runner or fallback then the budget refuses it
+  - if e2e-trunk-upload stages its report outside runner.temp then an earlier run's report
+    is recorded under this SHA
   - if the e2e or ci list client calls /v2/test-cases then the fetch 404s and excuses nothing
 """
 
@@ -35,6 +43,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 E2E = REPO_ROOT / ".github" / "workflows" / "e2e.yml"
@@ -159,10 +169,10 @@ def _run_verdict_step(tmp_path: Path, outcome: str, rc: str, quarantine: str) ->
 
 
 # ----- the list job ----------------------------------------------------------
-def test_the_list_job_is_hosted_and_never_checks_out() -> None:
+def test_the_list_job_is_self_hosted_and_never_checks_out() -> None:
     job = _jobs()[LIST_JOB]
     assert job["name"] == "Trunk quarantined tests (list)"
-    assert job["runs-on"] == "ubuntu-latest"
+    assert job["runs-on"] == TOKEN_RUNS_ON
     assert job["timeout-minutes"] == 3
     assert job["if"] == (
         "${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request'"
@@ -200,10 +210,10 @@ def test_the_e2e_list_client_is_python_and_ci_runs_it_too() -> None:
 
 
 def test_the_inlined_list_fetch_fails_closed_without_a_checkout(tmp_path: Path) -> None:
-    """The hosted run block is the fetch: no workspace files, fail-closed on a dead API."""
+    """The run block is the fetch: no workspace files, fail-closed on a dead API."""
     if shutil.which("bash") is None or shutil.which("python3") is None:
         pytest.skip(
-            "runs the ubuntu-latest step as written (bash, python3 on PATH); this host lacks "
+            "runs the list step as written (bash, python3 on PATH); this host lacks "
             "one. The portable twin is test_ci_trunk_quarantine.py's list-client tests."
         )
     fetch = _step(LIST_JOB, step_id="fetch")
@@ -279,7 +289,7 @@ def test_the_token_never_appears_in_the_gate_or_any_checkout_job() -> None:
     assert "TRUNK_API_TOKEN" not in gate_source
     assert "TRUNK_API_TOKEN" not in yaml.safe_dump(_jobs()["gate"])
     list_job = _jobs()[LIST_JOB]
-    assert list_job["runs-on"] == "ubuntu-latest"
+    assert list_job["runs-on"] == TOKEN_RUNS_ON
     assert not _checks_out(list_job)
     for name, job in _jobs().items():
         if name == LIST_JOB:
@@ -288,14 +298,17 @@ def test_the_token_never_appears_in_the_gate_or_any_checkout_job() -> None:
             assert "TRUNK_API_TOKEN" not in yaml.safe_dump(job), name
 
 
-def test_the_upload_job_is_hosted_and_not_a_verdict_need() -> None:
+def test_the_upload_job_stages_in_runner_temp_and_is_not_a_verdict_need() -> None:
     verdict = _jobs()["verdict"]
     assert _needs(verdict) == ["scope", "gate"]
     assert UPLOAD_JOB not in _needs(verdict)
     assert LIST_JOB not in _needs(verdict)
 
     job = _jobs()[UPLOAD_JOB]
-    assert job["runs-on"] == "ubuntu-latest"
+    assert job["runs-on"] == TOKEN_RUNS_ON
+    # The workspace persists on self-hosted runners; runner.temp is emptied per job.
+    find = _step(UPLOAD_JOB, step_id="e2e-root-report")
+    assert '"$RUNNER_TEMP/staged-e2e-root/junit-e2e-root.xml"' in find["run"], "Find reads the persistent workspace"
     assert _needs(job) == ["gate"]
     assert job["if"] == "always() && needs.gate.result != 'skipped'"
     assert not _checks_out(job)
@@ -305,6 +318,7 @@ def test_the_upload_job_is_hosted_and_not_a_verdict_need() -> None:
     download = _step(UPLOAD_JOB, step_id="download-e2e-root")
     assert str(download["uses"]).startswith(DOWNLOAD_SHA)
     assert download["with"]["name"] == "e2e-trunk-junit-attempt-${{ github.run_attempt }}"
+    assert download["with"]["path"] == "${{ runner.temp }}/staged-e2e-root"
     assert download.get("continue-on-error") is True
     assert "steps.trunk-token.outputs.present == 'true'" in download["if"]
 
@@ -317,7 +331,7 @@ def test_the_upload_job_is_hosted_and_not_a_verdict_need() -> None:
     assert upload["with"]["use-uncloned-repo"] is True
     assert upload["with"]["quarantine"] is False
     assert upload["with"]["token"] == "${{ secrets.TRUNK_API_TOKEN }}"
-    assert upload["with"]["junit-paths"] == "staged-e2e-root/junit-e2e-root.xml"
+    assert upload["with"]["junit-paths"] == "${{ runner.temp }}/staged-e2e-root/junit-e2e-root.xml"
     shard = next(step for step in _jobs(CI)["ci-insights"]["steps"] if step.get("id") == "trunk-flaky-tests-1")
     for key in (
         "gh-repo-url",

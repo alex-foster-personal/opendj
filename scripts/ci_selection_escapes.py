@@ -18,11 +18,13 @@ cannot be read makes the run exit 3 (UNKNOWN), and the escape count is then prin
 lower bound. Exit 0 means every failing module in the window was judged; the escape count
 is a metric, not a failure, so a measured escape still exits 0.
 
-Records are kept three days (the repo's ceiling for a per-run byproduct), so measure a
-window within three days of its end: a member head older than that reads UNKNOWN, loudly.
+Records are kept one day on GitHub (the maintainer, Sat 17 Oct 2026), so measure a window within one
+day of its end: a member head older than that reads UNKNOWN, loudly. Every artifact is also
+archived to bifrost2 D:/ci-artifacts/<repo>/<day>/ for 30 days (fleet-af
+ci-lane--artifact-archive, per-day INDEX.tsv), which is where an older record now lives.
 
 Draft RUN conclusions are not read: a draft run concludes `cancelled` even when Trunk
-recorded the test as failed or passed (docs/research/trunk-mq-optimizations-2026-10-01.md,
+recorded the test as failed or passed ((private path),
 section 01), so the shard JOB conclusion is the signal.
 
 Usage:

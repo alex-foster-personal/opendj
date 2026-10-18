@@ -410,7 +410,11 @@ jobs:
           # The selection below runs INSIDE this budget (pytest gets what is
           # left of it), so the job-cap arithmetic pinned in
           # (private path) is unchanged by it.
+          #
+          # A FULL run gets its own, larger budget (the `full)` arm below):
+          # (private path).
           MDT_PYTEST_TIMEOUT_S=1440
+          MDT_PYTEST_FULL_TIMEOUT_S=1440
           started=$(date +%s)
           # The lane's ignores, ONE list: the full lane passes it to pytest,
           # and the selector drops these paths from a selection, because a
@@ -456,6 +460,7 @@ jobs:
               echo "[selection] AFFECTED: shard ${{ matrix.shard }} runs ${#MODE_ARGS[@]} selected module(s); the queue runs the full suite"
               ;;
             full)
+              MDT_PYTEST_TIMEOUT_S=$MDT_PYTEST_FULL_TIMEOUT_S
               MODE_ARGS=(
                 --collect-floor 3181
                 --ledger-coverage-min 0.85 --ledger-coverage-warn 0.95
@@ -471,7 +476,7 @@ jobs:
           set +e
           timeout --kill-after=60 "$budget_left" \
             .venv/bin/pytest \
-              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-shard-${{ matrix.shard }}" \
+              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-shard-${{ matrix.shard }}-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}" \
               --junitxml="${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
               "${MODE_ARGS[@]}" \
               --durations=25 \
@@ -528,7 +533,7 @@ jobs:
               echo "| exit code | ${rc} |"
               echo "| killed by | ${kill_note} |"
               echo "| elapsed | ${elapsed}s |"
-              echo "| job cap | 30m, the runner backstop, which is not what fired |"
+              echo "| job cap | this job's timeout-minutes, the runner backstop, which is not what fired |"
               echo
               echo "A run superseded by a newer push and a fail-fast cascade both report CANCELLED. This reports FAILURE, so the three are distinguishable without pulling per-job timings."
             } >> "$GITHUB_STEP_SUMMARY"

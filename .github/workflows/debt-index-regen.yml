@@ -1,28 +1,64 @@
 name: Debt index regen (main)
 
-# Regenerate the committed `.planning/TECH-DEBT.md` after a merge lands a
-# `.planning/debt/*.md` file (issue #1415). A PR never regenerates the index:
-# two PRs rewriting the same generated file is exactly the concurrent-merge
-# conflict this workflow exists to remove. The index is therefore a main-side
-# artifact and this workflow is what keeps it current after every merge.
+# Regenerate the committed `(private path)` after a merge lands a
+# `(private path)/*.md` file (issue #1415). A feature PR never regenerates the
+# index: two PRs rewriting the same generated file is exactly the concurrent
+# merge conflict this workflow exists to remove. This workflow is the only
+# writer.
 #
-# The bot commit is pushed with the GITHUB_TOKEN, and a push made by that token
-# does not create new workflow runs, so this cannot loop; `[skip ci]` in the
-# message is belt-and-braces for the same reason.
+# It used to push that commit to main with the GITHUB_TOKEN (`github.token`,
+# github-actions[bot]). Ruleset "main mergeability (queue admission)" requires
+# a pull request, and that token is not a bypass actor, so the push is
+# rejected with GH013. The job now commits the index onto the fixed branch
+# `af--bot-debt-index-regen`, opens or updates one pull request against main,
+# labels it `queue` and `chore`, and enables auto-merge with the merge method.
+# No pull request is opened when the regenerated index already matches main;
+# an open one left from an earlier run is closed.
 #
-# The job fails loudly when regeneration raises. That is deliberate: a debt
-# file that reaches main through a docs-only PR skips the pytest lane, so this
-# post-merge regeneration is the first place its malformed metadata is seen.
+# Pushing or opening with the GITHUB_TOKEN does not start pull_request or push
+# workflows, so those events cannot loop back into this job. workflow_dispatch
+# is the exception that token may trigger. After the branch is pushed and the
+# pull request is opened or updated, the job dispatches ci.yml and e2e.yml on
+# af--bot-debt-index-regen at that commit. ci.yml's default tier is full: that
+# is the run that creates the `ci gate` check (tier fast skips the job; see
+# the workflow_dispatch comment in ci.yml). e2e.yml creates `e2e verdict`.
+# Those are Trunk's requiredStatuses (ci/trunk-merge-queue.json). On the
+# proof run the Checks API listed the bot pull request on each of those
+# runs. The commit status rollup `gh pr checks` reads did not list them.
+# A dispatch checks out the branch head, not a pull_request merge ref, and a
+# non-pull_request event is always in scope (scripts/ci_required_gate.py), so
+# these runs are the full lanes rather than the docs-only skip. They do not
+# push to main, so this workflow does not re-enter. A failed dispatch fails
+# the job.
+#
+# opendj/review-triage is not one of those workflows. Ruleset 24100802 requires
+# that status, and the nucbox trunk-bridge posts it every two minutes for a PR
+# labeled queue. This pull request is not a draft, its base is main, and its
+# labels are queue and chore, so the bridge can post success while the trunk
+# checkpoint is green and the PR has no unresolved blocking review thread.
+# `just review-triage` is a separate gate. Its only changed file is
+# (private path), which scripts/review_docs_only.py classifies as
+# docs-only, so reviewer coverage is waived. That pass does not need a change
+# outside this workflow.
+#
+# The job fails loudly when regeneration raises or the pull request cannot be
+# opened. That is deliberate: a debt file that reaches main through a docs-only
+# PR skips the pytest lane, so this post-merge regeneration is the first place
+# its malformed metadata is seen.
 
 on:
   push:
     branches: [main]
     paths:
-      - ".planning/debt/**"
-      - ".planning/TECH-DEBT.md"
+      - "(private path)/**"
+      - "(private path)"
 
 permissions:
   contents: write
+  pull-requests: write
+  # workflow_dispatch of ci.yml and e2e.yml. The default token permission is
+  # read, which the dispatch API rejects.
+  actions: write
 
 concurrency:
   group: debt-index-regen
@@ -109,45 +145,219 @@ jobs:
 
       # scripts/debt_index imports only the standard library, so this runs on
       # the runner's plain interpreter: no venv, no uv, no provisioning.
-      - name: Regenerate and commit the index
+      # There is no actions/create-github-app-token step in this workflow, so
+      # the push and the pull request both use the job's GITHUB_TOKEN.
+      - name: Regenerate and open or update the index PR
         env:
-          TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          push_url="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          branch="af--bot-debt-index-regen"
+          push_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # The checkout is pinned to the pushed SHA, but main can advance while
-          # this job queues (a merge lane pushing the next debt file). Re-base
-          # on the live branch each attempt so the bot commit stays a clean
-          # push. `reset --hard` here touches only this runner's own checkout,
-          # never a shared agent worktree.
-          for attempt in 1 2 3; do
-            git fetch origin main
-            git reset --hard origin/main
-            python3 -m scripts.debt_index
-            if git diff --quiet -- .planning/TECH-DEBT.md; then
-              echo "[regen] .planning/TECH-DEBT.md is already current"
-              exit 0
-            fi
-            git add .planning/TECH-DEBT.md
-            git commit -m "chore(debt): regenerate .planning/TECH-DEBT.md [skip ci]"
-            if git push "$push_url" HEAD:main; then
-              echo "[regen] committed the regenerated index"
-              exit 0
-            fi
-            echo "[regen] push attempt $attempt rejected (main moved); re-basing and retrying"
-          done
-          echo "::error::could not push the regenerated index after 3 attempts"
-          exit 1
+          # this job queues. Rebuild from the live tip. `reset --hard` here
+          # touches only this runner's own checkout, never a shared agent worktree.
+          git fetch origin main
+          git reset --hard origin/main
+          python3 -m scripts.debt_index
 
-      # Wires the documented main-side guard (.planning/DEBT-POLICY.md) into the
-      # workflow that is supposed to satisfy it: the previous step either pushed
-      # a fresh regeneration or found the index already current, and either way
-      # the local checkout now holds exactly what main has (or is about to
-      # have). Fail loudly if that state is not actually current over every
-      # debt file - a silent gap here is exactly the bug this check exists to
-      # catch.
+          # `--head owner:branch` selects a fork head. This branch is pushed to
+          # this repository, and that form lists nothing (the create URL came
+          # back, then the list was empty, and the job exited before dispatch).
+          # The bare `--head` also matches a fork PR whose branch has the same
+          # name (cli/cli#10945), so only a same-repository head is reused:
+          # labeling or auto-merging someone's fork PR would stall this job.
+          open_pr_number() {
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --head "$branch" \
+              --base main \
+              --state open \
+              --json number,isCrossRepository \
+              --jq 'map(select(.isCrossRepository == false)) | .[0].number // empty'
+          }
+
+          if git diff --quiet -- (private path); then
+            echo "[regen] (private path) is already current"
+            pr="$(open_pr_number)"
+            if [ -n "$pr" ]; then
+              gh pr close "$pr" --repo "$GITHUB_REPOSITORY" \
+                --comment "The regenerated index matches main, so this pull request is not needed."
+              echo "[regen] closed #${pr}"
+            fi
+            remote_rc=0
+            git ls-remote --exit-code --heads "$push_url" "refs/heads/${branch}" >/dev/null || remote_rc=$?
+            if [ "$remote_rc" -eq 0 ]; then
+              git push "$push_url" --delete "$branch"
+              echo "[regen] deleted ${branch}"
+            elif [ "$remote_rc" -eq 2 ]; then
+              echo "[regen] no ${branch} on the remote"
+            else
+              echo "::error::ls-remote for ${branch} failed (rc=${remote_rc})"
+              exit 1
+            fi
+            exit 0
+          fi
+
+          dispatch_workflow() {
+            local workflow="$1"
+            shift
+            local rc=0
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$branch" "$@" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::could not dispatch ${workflow} on ${branch} at ${pushed_sha} (rc=${rc})"
+              exit 1
+            fi
+            echo "[regen] dispatched ${workflow} on ${branch} at ${pushed_sha}"
+          }
+
+          confirm_dispatched() {
+            local pending="ci.yml e2e.yml"
+            local deadline=$((SECONDS + 75))
+            local workflow run_id still
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              still=""
+              for workflow in $pending; do
+                run_id="$(gh run list \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --workflow "$workflow" \
+                  --branch "$branch" \
+                  --limit 10 \
+                  --json databaseId,headSha,event \
+                  --jq "map(select(.event == \"workflow_dispatch\" and .headSha == \"${pushed_sha}\")) | .[0].databaseId // empty")" \
+                  || { echo "::error::could not list runs of ${workflow} for ${branch}"; exit 1; }
+                if [ -n "$run_id" ]; then
+                  echo "[regen] ${workflow} run ${run_id} is on ${pushed_sha}"
+                else
+                  still="${still} ${workflow}"
+                fi
+              done
+              pending="${still# }"
+              [ -z "$pending" ] && return 0
+              sleep 5
+            done
+            echo "::error::no workflow_dispatch run on ${pushed_sha} for: ${pending}"
+            exit 1
+          }
+
+          git add -f (private path)
+          git commit -m "chore(debt): regenerate (private path)"
+
+          remote_rc=0
+          remote_line="$(git ls-remote --exit-code --heads "$push_url" "refs/heads/${branch}")" || remote_rc=$?
+          if [ "$remote_rc" -eq 2 ]; then
+            git push "$push_url" "HEAD:refs/heads/${branch}"
+          elif [ "$remote_rc" -eq 0 ]; then
+            expected="${remote_line%%$'\t'*}"
+            [ -n "$expected" ] || { echo "::error::ls-remote returned no sha for ${branch}"; exit 1; }
+            # Bot-owned branch only. Never force-updates main. Rebuilt from
+            # the live tip so the one open pull request stays a single commit.
+            git push --force-with-lease="refs/heads/${branch}:${expected}" \
+              "$push_url" "HEAD:refs/heads/${branch}"
+          else
+            echo "::error::ls-remote for ${branch} failed (rc=${remote_rc})"
+            exit 1
+          fi
+          echo "[regen] pushed ${branch}"
+          pushed_sha="$(git rev-parse HEAD)"
+          echo "[regen] head ${pushed_sha}"
+
+          pr="$(open_pr_number)"
+          if [ -z "$pr" ]; then
+            url="$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$branch" \
+              --title "chore(debt): regenerate (private path)" \
+              --label queue \
+              --label chore \
+              --body "Regenerated by the debt index workflow after a merge to main. Feature branches do not edit this file. This is the one pull request that lands it.")" \
+              || { echo "::error::could not open the debt index pull request"; exit 1; }
+            pr="$(open_pr_number)"
+            if [ -z "$pr" ]; then
+              # The create call already returned the pull request URL. The list
+              # can lag. Read that pull request directly instead of treating a
+              # lagging list as "no pull request".
+              pr="${url##*/}"
+              case "$pr" in
+                ''|*[!0-9]*)
+                  echo "::error::pull request creation returned ${url:-<no url>}, which has no pull request number"
+                  exit 1
+                  ;;
+              esac
+              seen="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" \
+                --json state,headRefName,baseRefName,isCrossRepository \
+                --jq 'select(.state=="OPEN" and .baseRefName=="main" and .isCrossRepository==false) | .headRefName')" \
+                || { echo "::error::could not read pull request #${pr} created at ${url}"; exit 1; }
+              if [ "$seen" != "$branch" ]; then
+                echo "::error::pull request creation returned ${url} but #${pr} is not an open pull request for ${branch} onto main (head=${seen:-<none>})"
+                exit 1
+              fi
+              echo "[regen] opened #${pr} from ${url}; the list had not caught up"
+            else
+              echo "[regen] opened #${pr} (${url})"
+            fi
+          else
+            # Trunk never re-queues a PR it failed, and a label that is
+            # already present fires no event ((private path)).
+            # So a reused PR sitting in trunk-failed with `queue` still on it
+            # needs the label removed and re-added to be submitted again.
+            failed="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json labels \
+              --jq 'any(.labels[]; .name == "trunk-failed") and any(.labels[]; .name == "queue")')" \
+              || { echo "::error::could not read labels on #${pr}"; exit 1; }
+            if [ "$failed" = "true" ]; then
+              gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --remove-label queue \
+                || { echo "::error::could not remove queue from failed #${pr}"; exit 1; }
+              echo "[regen] #${pr} was trunk-failed; re-submitting"
+            fi
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --add-label queue --add-label chore
+            echo "[regen] reusing #${pr}"
+          fi
+
+          # Armed before the dispatch and its visibility poll below, so a poll
+          # that times out leaves the PR armed to land on its own once the
+          # required checks report, not open and unarmed (Sol P1 on #5943).
+          # A reused PR can already be armed with another method (squash or
+          # rebase, set by hand or by another tool). Only MERGE counts as armed;
+          # anything else is disarmed and re-armed, never left as found.
+          method="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest \
+            --jq '.autoMergeRequest.mergeMethod // "NONE"')" \
+            || { echo "::error::could not read auto-merge state on #${pr}"; exit 1; }
+          case "$method" in
+            MERGE)
+              echo "[regen] auto-merge already enabled on #${pr} (merge)"
+              ;;
+            NONE)
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge \
+                || { echo "::error::could not enable auto-merge on #${pr}"; exit 1; }
+              echo "[regen] auto-merge enabled on #${pr} (merge)"
+              ;;
+            *)
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --disable-auto \
+                || { echo "::error::could not disable ${method} auto-merge on #${pr}"; exit 1; }
+              gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --merge \
+                || { echo "::error::could not re-arm auto-merge on #${pr} as merge"; exit 1; }
+              echo "[regen] auto-merge on #${pr} was ${method}; re-armed as merge"
+              ;;
+          esac
+
+          # GITHUB_TOKEN does not start pull_request or push workflows for the
+          # push and the pull request above. Dispatch is the event it may start.
+          # ci.yml with no tier input uses full, which is the run that reports
+          # `ci gate`. e2e.yml reports `e2e verdict`.
+          dispatch_workflow ci.yml
+          # extended=false: only `gate` and `verdict` are needed here. The
+          # nightly 45 minute `extended` suite would hold an e2e runner on
+          # every regeneration and leave its own check on the bot PR.
+          dispatch_workflow e2e.yml -f extended=false
+          confirm_dispatched
+
+      # The previous step either found the index already current or committed a
+      # regeneration onto af--bot-debt-index-regen. Either way this checkout
+      # holds that index. Fail loudly if it is not current over every debt
+      # file. Main receives the file when the pull request merges.
       - name: Verify the regenerated index is current
         run: |
           set -euo pipefail

@@ -23,7 +23,12 @@ name: E2E
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, af--b2b-link]
+    # af--b2b-link is a batching branch: feature PRs merge into it and it lands
+    # on main as one PR. With main as the only base, those PRs never ran E2E and
+    # product reds accumulated unseen until the branch was dispatched by hand. A
+    # pull_request run reads this file from its merge commit, so the branch picks
+    # this up once it merges main.
     # EVERY pull request to main triggers this workflow (issue #4168); the
     # docs-only skip moved inside the run. The `scope` job evaluates
     # E2E_PATHS_IGNORE in scripts/ci_pr_scope.py against the merge commit and
@@ -56,6 +61,14 @@ on:
     # the hour, where GitHub's scheduler queues are busiest.
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      extended:
+        # The debt index bot dispatches with false: it needs `e2e verdict`,
+        # not the 45 minute nightly suite. A manual dispatch keeps running it.
+        description: "Also run the nightly extended suite"
+        required: false
+        type: boolean
+        default: true
 
 # Concurrency uses the SAME shape as ci.yml, deliberately, so this repo has one
 # house pattern rather than a third variant to reason about.
@@ -219,8 +232,10 @@ jobs:
   # job never checks out or executes a repository file while TRUNK_API_TOKEN
   # is in scope; (private path) drives this exact
   # block against a localhost server, so there is no second copy to drift.
-  # The token never enters a self-hosted job. The org token can change
-  # merge-queue settings, so it stays on this ephemeral ubuntu-latest runner.
+  # The org token can change merge-queue settings, so it never enters a job that
+  # checks out or the gate job. The job runs on the self-hosted light pool with
+  # no hosted fallback (ADR-NEW-trunk-token-jobs-self-hosted): the Actions budget
+  # refuses the GitHub-hosted runner.
   #
   # A fetch error exits the interpreter nonzero and writes no list, so the
   # gate's verdict excuses nothing; continue-on-error on the fetch step stops
@@ -233,7 +248,7 @@ jobs:
   trunk-quarantine-list:
     name: Trunk quarantined tests (list)
     if: ${{ vars.TRUNK_QUARANTINE_CI == 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX) }}
     timeout-minutes: 3
     outputs:
       list: ${{ steps.fetch.outputs.list }}
@@ -245,6 +260,11 @@ jobs:
       # collection, while GET /v2/tests with an unknown testCollectionId answers
       # 200 with an empty list, so the collection is read first and a typo can
       # never pass as "nothing quarantined". https://docs.trunk.io/flaky-tests/reference/api-reference
+      # -I -S: a hermetic stdlib interpreter. The self-hosted workspace persists,
+      # so -I keeps the current directory, PYTHON* variables and the user site off
+      # sys.path, and -S skips site-packages and its .pth hooks. Nothing outside
+      # the stdlib can load beside the token, so the stale-install guard (which
+      # needs a checkout this job must never have) has nothing to inspect.
       - name: Fetch the quarantined-test list from Trunk
         id: fetch
         continue-on-error: true
@@ -256,7 +276,7 @@ jobs:
         run: |
           # Resolved once, never a bare python3 in argv (AGENTS.md, "Portable by default").
           py="$(command -v python3)" || { echo "::error title=Trunk quarantine list::no python3 on PATH"; exit 1; }
-          "$py" <<'PY'
+          "$py" -I -S <<'PY'
           import json
           import os
           import sys
@@ -1346,7 +1366,7 @@ jobs:
             apps/webui/frontend/playwright-report/**
             apps/webui/frontend/tests/e2e/fixtures/*-data/logs/**
           if-no-files-found: ignore
-          retention-days: 2
+          retention-days: 1
 
       # Stage the root JUnit for the hosted uploader (ADR-NEW-trunk-flaky-quarantine-on).
       # This job checks out the repo, so the token stays in e2e-trunk-upload.
@@ -1430,7 +1450,7 @@ jobs:
     needs: gate
     if: >-
       !cancelled()
-      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.extended))
     # See the `gate` job above for the runner-selection and --with-deps note.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_E2E || '"ubuntu-latest"') }}
     timeout-minutes: 45
@@ -1994,7 +2014,7 @@ jobs:
     name: Trunk e2e root report
     needs: gate
     if: always() && needs.gate.result != 'skipped'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX) }}
     timeout-minutes: 10
     steps:
       - name: Is a Trunk API token provisioned
@@ -2009,6 +2029,10 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Self-hosted light pool, no hosted fallback (ADR-NEW-trunk-token-jobs-self-hosted).
+      # The workspace persists between jobs there, so the report is staged under
+      # runner.temp, which the runner empties at the start of each job: a failed
+      # download reads as missing, never as an earlier run's report.
       - name: Download the root Playwright JUnit report
         id: download-e2e-root
         if: always() && steps.trunk-token.outputs.present == 'true'
@@ -2016,13 +2040,13 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: e2e-trunk-junit-attempt-${{ github.run_attempt }}
-          path: staged-e2e-root
+          path: ${{ runner.temp }}/staged-e2e-root
 
       - name: Find the root Playwright report
         id: e2e-root-report
         if: always() && steps.trunk-token.outputs.present == 'true'
         run: |
-          if [ -f "staged-e2e-root/junit-e2e-root.xml" ]; then
+          if [ -f "$RUNNER_TEMP/staged-e2e-root/junit-e2e-root.xml" ]; then
             echo "report=true" >> "$GITHUB_OUTPUT"
           else
             echo "report=false" >> "$GITHUB_OUTPUT"
@@ -2034,7 +2058,7 @@ jobs:
         continue-on-error: true
         uses: trunk-io/analytics-uploader@14c0f18990953eecd01c9c5afe3cc63a73b6c371 # v2.1.5
         with:
-          junit-paths: staged-e2e-root/junit-e2e-root.xml
+          junit-paths: ${{ runner.temp }}/staged-e2e-root/junit-e2e-root.xml
           org-slug: seat-a-org
           token: ${{ secrets.TRUNK_API_TOKEN }}
           test-collection-id: L3VoLxNK

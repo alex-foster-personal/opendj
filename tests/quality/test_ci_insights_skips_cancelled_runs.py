@@ -16,13 +16,18 @@ Regression lines:
     shard's test health is the data most worth recording)
   - if no job is gated on vars.CI_INSIGHTS_ENABLED, then broken (this test would
     be proving a property of a job that no longer exists)
+  - if the upload job stages a report outside runner.temp, then broken (a report an
+    earlier run left in the persistent workspace is recorded under this SHA)
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
+
+from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
 
 REPO = Path(__file__).resolve().parents[2]
 CI = REPO / ".github" / "workflows" / "ci.yml"
@@ -42,11 +47,13 @@ def _upload_job() -> tuple[str, dict]:
     return next(iter(gated.items()))
 
 
-def test_the_upload_job_is_the_hosted_job_downstream_of_the_shards() -> None:
-    """CONTROL: the cancellation assertions below only save money while the gated
-    job is the hosted one that waits on the pytest shards."""
+def test_the_upload_job_is_the_light_pool_job_downstream_of_the_shards() -> None:
+    """CONTROL: the cancellation assertions below are about the gated job that
+    waits on the pytest shards, now on the self-hosted light pool
+    (ADR-NEW-trunk-token-jobs-self-hosted), where a skipped start saves a runner
+    seat instead of a hosted minute."""
     job_id, job = _upload_job()
-    assert job.get("runs-on") == "ubuntu-latest", f"{job_id} is no longer hosted"
+    assert job.get("runs-on") == TOKEN_RUNS_ON, f"{job_id} left the light pool route"
     assert "test" in (job["needs"] if isinstance(job["needs"], list) else [job["needs"]]), (
         f"{job_id} no longer waits on the pytest shards"
     )
@@ -71,3 +78,19 @@ def test_the_upload_job_still_runs_when_a_shard_fails() -> None:
     assert "success()" not in condition.replace("!cancelled()", ""), (
         f"{job_id} requires success(), so a red shard's test health is dropped"
     )
+
+
+def test_the_upload_job_stages_reports_where_the_runner_empties_them() -> None:
+    """The workspace persists on self-hosted runners, but runner.temp is emptied at
+    the start of each job, so a failed download cannot leave an earlier run's report."""
+    job_id, job = _upload_job()
+    downloads = [s for s in job["steps"] if "download-artifact" in str(s.get("uses"))]
+    uploads = [s for s in job["steps"] if "analytics-uploader" in str(s.get("uses"))]
+    finds = [s for s in job["steps"] if re.fullmatch(r"(shard|rust)-report-.+", str(s.get("id")))]
+    assert len(downloads) == len(uploads) == len(finds) == 7, (len(downloads), len(uploads), len(finds))
+    for step in downloads:
+        assert step["with"]["path"].startswith("${{ runner.temp }}/staged-"), f"{job_id}: {step['with']['path']}"
+    for step in uploads:
+        assert step["with"]["junit-paths"].startswith("${{ runner.temp }}/staged-"), f"{job_id}: {step['with']['junit-paths']}"
+    for step in finds:
+        assert '"$RUNNER_TEMP/staged-' in step["run"], f"{step['id']} looks in the persistent workspace"

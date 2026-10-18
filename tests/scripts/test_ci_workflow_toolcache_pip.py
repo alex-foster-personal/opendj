@@ -96,7 +96,7 @@ _VENV_PATH = re.compile(r"(?i)(?:^|/)[^/\s]*venv[^/\s]*/bin/")
 
 WAVEFORM_JOB = "periodic-checks.yml:perf-bench-waveform-render"
 WAVEFORM_STEP = "Install waveform native extension"
-HOSTED_JOB = "ci.yml:ci-insights"  # macos-packaging moved self-hosted Thu 15 Oct 2026 (#5638)
+HOSTED_JOB = "security.yml:semgrep"  # hosted on purpose; the Trunk jobs moved self-hosted (#6890)
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,8 @@ Regression lines:
   - if a cached list dated in the future or unreadable is used then a bad clock or a torn file excuses
   - if a file left in a shared workspace is read without a cache hit then another job's list is trusted
   - if the cache job holds the token or leaves the self-hosted pool then the fix moved the secret or the bill
-  - if pull requests start the hosted fetch again then every PR run bills a hosted minute again
+  - if pull requests start the token fetch again then the org token runs on every PR run
+  - if the fetch regains a hosted runner or fallback then the budget refuses it and main reads red
   - if the resolver goes back to inline shell then CI depends on bash and jq again (AGENTS.md)
   - if a pull request run saves the cache then a branch could seed a list (it is PR-scoped, but pointless)
 """
@@ -31,6 +32,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.scripts.ci_runner_routes import TOKEN_RUNS_ON
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = {
@@ -319,7 +322,8 @@ def test_only_the_default_branch_fetches_the_live_list(workflow: str) -> None:
 
 
 @pytest.mark.parametrize("workflow", sorted(WORKFLOWS))
-def test_pull_requests_do_not_start_the_hosted_fetch(workflow: str) -> None:
+def test_pull_requests_do_not_start_the_token_fetch(workflow: str) -> None:
+    # Self-hosted, no hosted fallback (ADR-NEW-trunk-token-jobs-self-hosted).
     job = _jobs(workflow)[LIST_JOB]
-    assert job["runs-on"] == "ubuntu-latest"
+    assert job["runs-on"] == TOKEN_RUNS_ON
     assert "github.event_name != 'pull_request'" in job["if"]

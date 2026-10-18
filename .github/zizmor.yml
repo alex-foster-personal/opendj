@@ -19,5 +19,5 @@ rules:
       # (periodic-checks preview-drift, on a runner with no other
       # credential for this private repo) or git fetch + push (debt-index-regen).
       # None of these jobs uploads the checkout as an artifact.
-      - debt-index-regen.yml:91
+      - debt-index-regen.yml:127
       - periodic-checks.yml:1055

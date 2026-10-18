@@ -27,7 +27,14 @@ THE RULES, per self-hosted job:
      itself. A job that guards one interpreter, switches with a second setup step,
      and launches again is red: every interpreter it uses is checked before use.
   R3 a job with NO checkout launches no Python at all, because the guard cannot run
-     there. Today those jobs only call ``gh``.
+     there, with ONE exception: a step whose every interpreter call is the hermetic
+     stdlib form ``"$py" -I -S`` (and whose only other launch token is the
+     ``command -v python3`` that resolves ``$py``). ``-I`` keeps the working
+     directory, ``PYTHON*`` variables and the user site off ``sys.path`` and ``-S``
+     skips site-packages and its ``.pth`` hooks, so no install of any kind can load
+     and the guard would have nothing to inspect. The Trunk list jobs need this:
+     they hold the org token, so they must never check out
+     (ADR-NEW-trunk-token-jobs-self-hosted).
   A guard with ``continue-on-error: true`` does not count.
 
 WHAT R2 COUNTS AS A LAUNCH. A ``run:`` (shell comments ignored) naming ``python``,
@@ -56,6 +63,9 @@ Regression lines:
   - if scripts/ci_clean_untracked.sh before the guard is flagged then broken
   - if a guard step with continue-on-error: true counts as a guard then broken
   - if a job on a literal ubuntu-latest runner is flagged then broken
+  - if a no-checkout "$py" launch missing -I or -S is accepted then broken
+  - if a no-checkout step with a hermetic launch plus any other launch is accepted then broken
+  - if the hermetic "$py" -I -S stdlib launch in a no-checkout job is flagged then broken
   - if a vars.CI_RUNS_ON_* expression or a [self-hosted, ...] list is treated as hosted
     then broken
   - if the enumeration stops finding the jobs the reviews named then broken
@@ -84,6 +94,16 @@ REPO_SHELL_SCRIPT = re.compile(r"(?:\./)?(?P<path>scripts/[\w./-]+\.sh)")
 GUARD_CALL = re.compile(r"\bscripts/ci_(?:runner_preflight\.sh|stale_install_guard\.py)\b")
 SETUP_ACTIONS = ("actions/setup-python@", "astral-sh/setup-uv@")
 CHECKOUT_ACTION = "actions/checkout@"
+#: R3's exception: `"$py"` invocations, and the resolution that sets `$py`.
+PY_INVOCATION = re.compile(r'"\$py"(?P<args>[^\n]*)')
+#: The whole resolution line, its failure branch limited to a literal echo + exit.
+PY_RESOLUTION_LINE = re.compile(
+    r'^\s*py="\$\(command -v python3\)" \|\| '
+    r'(?:exit 1|\{ echo "[^"$`]*"; exit 1; \})\s*$',
+    re.M,
+)
+HERMETIC_HEREDOC = re.compile(r"""^\s*"\$py" -I -S <<'PY'\n.*?^\s*PY\s*$""", re.M | re.S)
+HERMETIC_ARGS = re.compile(r"^\s+-I -S(?:\s|$)")
 
 #: Jobs the reviews of PR #4251 named: two that ran `python` unguarded, and one
 #: that reaches Python only through wrappers (uv sync, then pnpm/Playwright). The
@@ -158,6 +178,19 @@ def launch_tokens(step: dict, job: dict) -> list[str]:
     return tokens + ["shell: python"] * shell.startswith("python")
 
 
+def is_hermetic_stdlib_step(step: dict) -> bool:
+    """True when the step is only the `command -v python3` resolution of `$py` plus
+    `"$py" -I -S` heredocs (R3's one exception): with both removed, nothing launches."""
+    code = _shell_code(step.get("run"))
+    invocations = [m["args"] for m in PY_INVOCATION.finditer(code)]
+    if not invocations or not all(HERMETIC_ARGS.match(args) for args in invocations):
+        return False
+    if len(PY_RESOLUTION_LINE.findall(code)) != 1:
+        return False
+    rest = HERMETIC_HEREDOC.sub("", PY_RESOLUTION_LINE.sub("", code))
+    return not LAUNCH_TOKEN.search(rest) and "$py" not in rest and step.get("shell") in (None, "bash")
+
+
 def self_hosted_jobs(workflows: dict[str, dict]) -> dict[str, dict]:
     return {
         f"{name}:{job_id}": job
@@ -169,6 +202,7 @@ def self_hosted_jobs(workflows: dict[str, dict]) -> dict[str, dict]:
 
 def job_violations(job: dict) -> list[str]:
     steps = job["steps"]
+    checkouts = [i for i, step in enumerate(steps) if _is_checkout(step)]
     found: list[str] = []
     last_setup = -1
     last_guard = -1
@@ -177,13 +211,14 @@ def job_violations(job: dict) -> list[str]:
             last_setup = i
         elif _is_guard(step):
             last_guard = i
+        elif not checkouts and is_hermetic_stdlib_step(step):
+            continue
         elif (tokens := launch_tokens(step, job)) and not last_setup < last_guard:
             since = f"setup step #{last_setup}" if last_setup >= 0 else "job start"
             found.append(
                 f"R2 step #{i} ({step.get('name')!r}) launches {sorted(set(tokens))} "
                 f"with no guard since {since}"
             )
-    checkouts = [i for i, step in enumerate(steps) if _is_checkout(step)]
     if not checkouts:
         if found:
             found.append("R3 launches Python but never checks out the repo, so no guard can run")
@@ -354,6 +389,46 @@ def test_python_free_repo_script_before_the_guard_is_green() -> None:
 def test_a_job_without_checkout_may_not_launch_python() -> None:
     assert any(why.startswith("R3") for why in job_violations({"steps": [_launch("python3 -c 1")]}))
     assert job_violations({"steps": [_launch("gh issue list")]}) == []
+
+
+HERMETIC = 'py="$(command -v python3)" || exit 1\n"$py" -I -S <<\'PY\'\nimport json\nPY\n'
+
+
+def test_a_hermetic_stdlib_launch_without_checkout_is_green() -> None:
+    assert job_violations({"steps": [_launch(HERMETIC)]}) == []
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        HERMETIC.replace("-I -S", "-I"),
+        HERMETIC.replace("-I -S", "-S"),
+        HERMETIC.replace("-I -S", "-I -Sx"),
+        HERMETIC.replace("-I -S", ""),
+        HERMETIC + "make test\n",
+        HERMETIC + '"$py" -m scripts.anything\n',
+        HERMETIC + "python3 -c 1\n",
+        HERMETIC.replace("|| exit 1", "|| python3 -c 1"),
+        HERMETIC.replace("|| exit 1", '|| { echo "$(make x)"; exit 1; }'),
+    ],
+)
+def test_a_no_checkout_launch_that_is_not_hermetic_goes_red(run: str) -> None:
+    assert any(why.startswith("R3") for why in job_violations({"steps": [_launch(run)]})), run
+
+
+def test_the_hermetic_exception_never_excuses_a_checkout_job() -> None:
+    found = job_violations({"steps": [CHECKOUT, _launch(HERMETIC)]})
+    assert any(why.startswith("R2") for why in found), found
+
+
+def test_the_trunk_list_jobs_are_self_hosted_and_hermetic() -> None:
+    workflows = _workflows()
+    for name in ("ci.yml", "e2e.yml"):
+        key = f"{name}:trunk-quarantine-list"
+        job = self_hosted_jobs(workflows)[key]
+        fetch = next(step for step in job["steps"] if step.get("id") == "fetch")
+        assert is_hermetic_stdlib_step(fetch), key
+        assert not any(_is_checkout(step) for step in job["steps"]), key
 
 
 # ---------------------------------------------------------------------------

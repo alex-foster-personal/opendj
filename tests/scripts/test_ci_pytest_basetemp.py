@@ -29,6 +29,10 @@ Regression lines:
     workflow can pass the variable and have it silently ignored
   - if the Makefile joins PYTEST_BASETEMP and $@ with '/' then pytest's
     tmp_path setup errors on a freshly wiped RUNNER_TEMP (issue #3162)
+  - if a self-hosted pytest shard or fast-tier leg reuses a basetemp name
+    across runs then one leftover dir the runner user cannot remove fails every
+    later run on that runner with FileExistsError (agbox3-3, Fri 9 Oct 2026:
+    19,394 errors on #6216; bifrost/nucbox shard-2 before it)
     """
 
 from __future__ import annotations
@@ -245,7 +249,7 @@ def test_every_make_pytest_invocation_in_workflows_forwards_runner_temp() -> Non
 
 # ---------------------------------------------------------------------------
 # Controls. A check that has never been shown to fire on a real defect, in
-# both directions, has not been validated -- see .claude/rules/verification.md.
+# both directions, has not been validated -- see (private path).
 # ---------------------------------------------------------------------------
 
 
@@ -336,3 +340,28 @@ def test_control_does_not_false_positive_on_non_invocation_pytest_mentions() -> 
         f"the scanner misread a non-invocation mention of 'pytest' as a real "
         f"invocation: {found}"
     )
+
+
+# The two self-hosted matrix steps whose basetemp a leftover once poisoned for every later run on
+# the same runner. Named here so the check cannot pass by matching nothing.
+_PER_RUN_BASETEMP_STEPS = {
+    ("ci.yml", "pytest-basetemp-shard-"),
+    ("ci.yml", "pytest-basetemp-fast-"),
+    ("runner-canary.yml", "pytest-basetemp-shard-"),
+}
+_PER_RUN_SUFFIX = '-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"'
+
+
+def test_self_hosted_matrix_basetemps_are_unique_per_run() -> None:
+    """[if] a shard or fast-tier basetemp is not unique to its run and attempt [then] a leftover
+    another uid wrote, which pytest cannot clear, fails every later run on that runner."""
+    seen: set[tuple[str, str]] = set()
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            for workflow, stem in _PER_RUN_BASETEMP_STEPS:
+                if path.name != workflow or f"/{stem}" not in line or "--basetemp=" not in line:
+                    continue
+                seen.add((workflow, stem))
+                assert line.endswith(_PER_RUN_SUFFIX + " \\"), (workflow, line.strip())
+                assert line.count("${GITHUB_RUN_ID:?}") == 1, ("suffix applied twice", workflow, line.strip())
+    assert seen == _PER_RUN_BASETEMP_STEPS, f"steps not found, check is vacuous: {seen}"

@@ -1,5 +1,5 @@
 """Checkers for `.github/workflows/runner-canary.yml`, each returning the problems it finds,
-plus a minimal GitHub expression evaluator. tests/scripts/test_runner_canary_workflow.py
+plus a minimal GitHub expression evaluator. (private path)
 runs them against the real files and against mutations of them, so every checker is shown
 able to go red."""
 
@@ -79,6 +79,12 @@ CI_ONLY_PYTEST_KEYS = ("continue-on-error",)
 
 #: The one in-step difference: the shard's own wall budget, sized under the 30-minute cap.
 PYTEST_BUDGET_SUBSTITUTION = ("MDT_PYTEST_TIMEOUT_S=2400\n", "MDT_PYTEST_TIMEOUT_S=1440\n")
+#: Its FULL-mode twin (Sat 17 Oct 2026): ci.yml gives a FULL shard a larger budget, and the
+#: canary keeps both at 1440 s so either still fits under its 30-minute cap.
+PYTEST_FULL_BUDGET_SUBSTITUTION = (
+    "MDT_PYTEST_FULL_TIMEOUT_S=3600\n",
+    "MDT_PYTEST_FULL_TIMEOUT_S=1440\n",
+)
 
 
 #: Round 1 (Thu 1 Oct 2026). Two declared ADDITIONS the canary carries that ci.yml's
@@ -282,10 +288,10 @@ def _canary_expected_steps(ci_doc: dict[str, Any]) -> list[dict[str, Any]]:
         assert len(found) == 1, f"declared CI-only step {name!r} appears {len(found)} times in ci.yml"
         assert found[0] < pytest_index, f"declared CI-only step {name!r} moved after pytest"
     kept = [s for s in kept if s.get("name") not in CI_ONLY_PRE_PYTEST_STEPS]
-    old, new = PYTEST_BUDGET_SUBSTITUTION
     pytest_step = next(s for s in kept if s.get("name") == CONFIG["pytest_step_name"])
-    assert pytest_step["run"].count(old) == 1, "ci.yml's shard budget line moved"
-    pytest_step["run"] = pytest_step["run"].replace(old, new)
+    for old, new in (PYTEST_BUDGET_SUBSTITUTION, PYTEST_FULL_BUDGET_SUBSTITUTION):
+        assert pytest_step["run"].count(old) == 1, f"ci.yml's shard budget line {old!r} moved"
+        pytest_step["run"] = pytest_step["run"].replace(old, new)
     for key in CI_ONLY_PYTEST_KEYS:
         assert key in pytest_step, f"declared CI-only pytest key {key!r} no longer in ci.yml"
         del pytest_step[key]

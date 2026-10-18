@@ -38,7 +38,7 @@
  *   clickable (loading deck 2 through its own button), proving the fix is a
  *   TIMING guard and not a removal of the feature.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
 
@@ -53,6 +53,22 @@ const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const WITHIN_GUARD_MS = 200;
 /** Comfortably past the guard, for the "intentional dwell" control. */
 const PAST_GUARD_MS = 700;
+
+/**
+ * Row 0, pinned by its stable id. `locator(TRACK_ROW).first()` is lazy:
+ * Playwright re-resolves it on every action, so if the list re-orders after
+ * the id is read (a late library refresh), the next click lands on whatever
+ * row is first THEN, and the deck loads a different track than the one the
+ * assertion expects. Pinning by id keeps every action on the row under test.
+ */
+async function _pinFirstRow(page: Page): Promise<{ row: Locator; stableId: string | null }> {
+	const stableId = await page.locator(TRACK_ROW).first().getAttribute('data-stable-id');
+	const row =
+		stableId === null
+			? page.locator(TRACK_ROW).first()
+			: page.locator(`${TRACK_ROW}[data-stable-id="${stableId}"]`);
+	return { row, stableId };
+}
 
 async function _query(page: Page): Promise<PerformanceState> {
 	return page.evaluate(() => {
@@ -130,8 +146,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 	}) => {
 		test.setTimeout(120_000);
 		await _openAllTracks(page);
-		const row = page.locator(TRACK_ROW).first();
-		const stableId = await row.getAttribute('data-stable-id');
+		const { row, stableId } = await _pinFirstRow(page);
 		expect(stableId, 'row 0 has no data-stable-id').not.toBeNull();
 
 		// A genuine double-click: Playwright's dblclick fires both clicks back
@@ -162,8 +177,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 	}) => {
 		test.setTimeout(120_000);
 		await _openAllTracks(page);
-		const row = page.locator(TRACK_ROW).first();
-		const stableId = await row.getAttribute('data-stable-id');
+		const { row, stableId } = await _pinFirstRow(page);
 		expect(stableId).not.toBeNull();
 
 		// Select first, as a SEPARATE prior action - not part of the
@@ -195,8 +209,7 @@ test.describe('quick-load box does not hijack a double-click on a selected row (
 	}) => {
 		test.setTimeout(120_000);
 		await _openAllTracks(page);
-		const row = page.locator(TRACK_ROW).first();
-		const stableId = await row.getAttribute('data-stable-id');
+		const { row, stableId } = await _pinFirstRow(page);
 		expect(stableId).not.toBeNull();
 
 		await row.locator('td.c-title').click();

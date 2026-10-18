@@ -203,7 +203,7 @@ def checkout(request: Request, payload: CheckoutRequest) -> BillingUrlResponse:
                 "code": UNKNOWN_FEATURE_CODE,
                 "message": (
                     f"feature {payload.feature_id!r} is not sold on this hub; sold: "
-                    f"{sorted(set(source.config.product_features.values()))}"
+                    f"{source.config.sold_features()}"
                 ),
             },
         )
@@ -241,7 +241,7 @@ def refresh(request: Request, payload: BillingRequest) -> RefreshResponse:
                 feature_id=feature_id,
                 state=None if found is None else cast(LifecycleState, found.state),
             )
-            for feature_id in sorted(set(source.config.product_features.values()))
+            for feature_id in source.config.sold_features()
             for found in [source.standing_in(subscriptions, feature_id)]
         ]
     except PolarError as exc:

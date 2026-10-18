@@ -33,8 +33,64 @@ export interface BeatLineGeometry {
 	isDownbeat: boolean;
 }
 
+/** Closest two grid lines may sit, in CSS px, before the grid thins itself
+ * (WAVEZOOM-02). At today's 24 s window beats sit about 22 px apart, so
+ * nothing thins; zoomed out to a whole track they would be under 2 px, and
+ * bar lines at 7 px still read as a wall, so the whole track shows every
+ * 4 bars. */
+export const BEAT_LINE_MIN_GAP_PX = 10;
+
+/** Beat strides the grid thins through: every beat, every bar, then every
+ * 4, 16 and 32 bars (in beats, for 4/4). */
+const BEAT_STRIDES = [1, 4, 16, 64, 128] as const;
+
+/** Beats per drawn line at this zoom: the smallest stride whose spacing is
+ * at least BEAT_LINE_MIN_GAP_PX. 0 means nothing fits (draw no grid). */
+export function beatLineStride(beatSpacingPx: number): number {
+	if (!(beatSpacingPx > 0)) return 1;
+	for (const stride of BEAT_STRIDES) {
+		if (beatSpacingPx * stride >= BEAT_LINE_MIN_GAP_PX) return stride;
+	}
+	return 0;
+}
+
+/** Bar number of every beat (count of downbeats at or before it, from 0),
+ * so thinned bar lines stay on the same bars as the window scrolls. */
+const _barIndexMemo = new WeakMap<AnlzBeat[], { length: number; bars: Int32Array }>();
+function _barIndexes(beats: AnlzBeat[]): Int32Array {
+	const memo = _barIndexMemo.get(beats);
+	if (memo !== undefined && memo.length === beats.length) return memo.bars;
+	const bars = new Int32Array(beats.length);
+	let bar = -1;
+	for (let i = 0; i < beats.length; i++) {
+		if (beats[i].n === 1) bar += 1;
+		bars[i] = Math.max(0, bar);
+	}
+	_barIndexMemo.set(beats, { length: beats.length, bars });
+	return bars;
+}
+
+/** Closest two consecutive beats sit anywhere in the window, in px. The
+ * stride is picked from this, not the first interval, so a faster tempo
+ * section later in the same window still keeps BEAT_LINE_MIN_GAP_PX. */
+function _minVisibleBeatSpacingPx(beats: AnlzBeat[], start: number, tRightSec: number, pxPerSec: number): number {
+	let minS = Infinity;
+	const from = Math.max(0, Math.min(start, beats.length - 2));
+	for (let i = from; i + 1 < beats.length; i++) {
+		// Check the right edge before the gap: an interval that starts in view but
+		// ends past the window is not visible spacing, and it must not thin the grid.
+		if (beats[i + 1].t > tRightSec) break;
+		const gap = beats[i + 1].t - beats[i].t;
+		if (gap > 0 && gap < minS) minS = gap;
+	}
+	return Number.isFinite(minS) ? minS * pxPerSec : 0;
+}
+
 /** Project ordered, real PQTZ beats into the visible canvas window.
- * Downbeats are wider and brighter; every returned line spans rowHeight. */
+ * Downbeats are wider and brighter; every returned line spans rowHeight.
+ * When beats would sit closer than BEAT_LINE_MIN_GAP_PX the grid keeps
+ * only every bar, then every 4, 16 or 32 bars (WAVEZOOM-02). Without a
+ * trusted bar phase it keeps every Nth beat instead. */
 export function visibleBeatLines(
 	beats: AnlzBeat[],
 	tLeftSec: number,
@@ -46,12 +102,29 @@ export function visibleBeatLines(
 	if (beats.length === 0) return [];
 	const tRightSec = tLeftSec + widthCss / pxPerSec;
 	const lines: BeatLineGeometry[] = [];
-	for (let i = firstBeatAtOrAfter(beats, tLeftSec); i < beats.length; i++) {
+	const start = firstBeatAtOrAfter(beats, tLeftSec);
+	const stride = beatLineStride(_minVisibleBeatSpacingPx(beats, start, tRightSec, pxPerSec));
+	if (stride === 0) return [];
+	const bars = stride >= 4 ? _barIndexes(beats) : null;
+	for (let i = start; i < beats.length; i++) {
 		const beat = beats[i];
 		if (beat.t > tRightSec) break;
-		const isDownbeat = beat.n === 1 && !barPhaseUntrusted && beat.bar_phase_untrusted !== true;
+		const trustedBar = !barPhaseUntrusted && beat.bar_phase_untrusted !== true;
+		if (stride >= 4) {
+			if (trustedBar) {
+				if (beat.n !== 1 || bars === null || bars[i] % (stride / 4) !== 0) continue;
+			} else if (i % stride !== 0) {
+				continue;
+			}
+		}
+		const isDownbeat = beat.n === 1 && trustedBar;
+		const x = Math.round((beat.t - tLeftSec) * pxPerSec);
+		// A trusted bar and an untrusted beat can each pass their own stride yet sit
+		// one beat apart, so every candidate is checked against the last line drawn.
+		const prev = lines[lines.length - 1];
+		if (prev !== undefined && x - prev.x < BEAT_LINE_MIN_GAP_PX) continue;
 		lines.push({
-			x: Math.round((beat.t - tLeftSec) * pxPerSec),
+			x,
 			y: 0,
 			width: isDownbeat ? 2 : 1,
 			height: rowHeight,

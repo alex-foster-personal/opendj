@@ -63,6 +63,12 @@ Requirements (mini-PRD):
     [then] it is marked ``no_source`` before any job runs
     [if] a step is switched off [then] it never runs; the others still do
     [if] memory pressure is high [then] analysis waits, vocals and lyrics run
+  ✔︎ ✅ 🎯 a quit is not a failure (INSTALL-36, OPEN-DJ-BE-A7)
+    [if] the engine has begun to quit [then] the loop starts no new tick
+    [if] the quit refuses a tick's process [then] the loop ends, logged at INFO
+      and never as an error, so no Sentry event
+    [if] the quit refuses a job's process [then] nothing is recorded and no
+      attempt is spent on the track
   ✔︎ ✅ 🎯 agent parity
     [if] start / stop / status / setting [then] HTTP route and CLI verb exist
 """
@@ -75,6 +81,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from apps.shared.shutdown_bound import SpawnAfterQuit, quit_started
 from apps.webui.server import coverage_cloud_vocals as cloud_vocals_mod
 from apps.webui.server import coverage_drain_analysis as analysis_step
 from apps.webui.server import coverage_outcomes as outcomes_mod
@@ -453,6 +460,10 @@ class CoverageDrain:
             log.warning("coverage drain %s step unavailable: %s", step, unavailable)
             self._status.unavailable_steps[step] = str(unavailable)
             return self._settle("blocked", f"{step} cannot run here: {unavailable}")
+        except SpawnAfterQuit:
+            # About the engine's quit, not this track: record nothing and spend
+            # no attempt. The loop ends cleanly on it (debt 5844).
+            raise
         except Exception as failure:  # noqa: BLE001 - recorded, backed off, surfaced in status
             log.warning("coverage drain %s job failed for %s: %s", step, stable_id, failure)
             error = f"{type(failure).__name__}: {failure}"
@@ -499,6 +510,11 @@ class CoverageDrain:
             thread.join(timeout=STOP_JOIN_S)
         self._thread = None
 
+    def _quit(self, detail: str) -> None:
+        """End the loop for the engine's quit: logged at INFO, never as an error."""
+        log.info("coverage drain stopped, the engine is quitting: %s", detail)
+        self._settle("stopped", "the engine is quitting")
+
     def _loop(self) -> None:
         interval = ACTIVE_INTERVAL_S
         while not self._halt.is_set():
@@ -506,8 +522,19 @@ class CoverageDrain:
             self._wake.clear()
             if self._halt.is_set():
                 return
+            if quit_started():
+                # The halt is set only at lifespan teardown, after the quit
+                # began. Start no tick in between: no snapshot, no probe.
+                self._quit("no new tick")
+                return
             try:
                 outcome = self.tick()
+            except SpawnAfterQuit as refused:
+                # The quit began mid-tick and the spawn guard refused this
+                # tick's process. That is the shutdown working, not a failed
+                # tick, so it is no error and no Sentry event (OPEN-DJ-BE-A7).
+                self._quit(str(refused))
+                return
             except Exception:
                 log.exception("coverage drain tick failed")
                 self._status.state = "blocked"

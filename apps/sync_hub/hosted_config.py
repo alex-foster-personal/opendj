@@ -14,6 +14,8 @@ required, none defaulted::
     POLAR_ACCESS_TOKEN          organization access token (Doppler, never .env)
     MDT_POLAR_SERVER            "sandbox" or "production"
     MDT_POLAR_PRODUCTS          JSON {"<polar product id>": "<feature id>", ...}
+                                or {"<polar product id>": ["<feature id>", ...], ...}
+                                when one product grants several features
     MDT_POLAR_READ_ONLY_DAYS    days a lapsed owner keeps pull before archived
     MDT_POLAR_SUCCESS_URL       https URL Polar returns the browser to
 
@@ -162,14 +164,37 @@ def _require_env(env: Mapping[str, str], key: str) -> str:
     return raw
 
 
-def polar_config(env: Mapping[str, str], *, snapshot_dir: Path) -> PolarConfig:
-    """Read every Polar setting strictly, or raise naming the first bad one."""
+def _refuse_bad_grant(product: object, grants: object) -> None:
+    """Refuse one product -> grants entry that is not a feature id or a list of them."""
+    ids = [grants] if isinstance(grants, str) else grants
+    if not (isinstance(product, str) and product.strip()) or not (
+        isinstance(ids, list) and ids and all(isinstance(f, str) and f.strip() for f in ids)
+    ):
+        raise HostedConfigError(
+            f"{POLAR_PRODUCTS_ENV} entry {product!r} -> {grants!r} is not a feature id "
+            "or a non-empty list of them"
+        )
+
+
+def _polar_product_fee_map(env: Mapping[str, str]) -> dict[str, Any]:
+    """The product -> feature(s) map, every entry validated before it is trusted."""
     try:
         products = json.loads(_require_env(env, POLAR_PRODUCTS_ENV))
     except json.JSONDecodeError as exc:
         raise HostedConfigError(f"{POLAR_PRODUCTS_ENV} is not JSON: {exc}") from exc
-    if not (isinstance(products, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in products.items())):
-        raise HostedConfigError(f'{POLAR_PRODUCTS_ENV} must be a JSON object {{"<product id>": "<feature id>"}}')
+    if not (isinstance(products, dict) and products):
+        raise HostedConfigError(
+            f'{POLAR_PRODUCTS_ENV} must be a JSON object mapping Polar product ids to '
+            'a feature id or a list of feature ids, e.g. {"<product id>": "<feature id>"}'
+        )
+    for product, grants in products.items():
+        _refuse_bad_grant(product, grants)
+    return products
+
+
+def polar_config(env: Mapping[str, str], *, snapshot_dir: Path) -> PolarConfig:
+    """Read every Polar setting strictly, or raise naming the first bad one."""
+    products = _polar_product_fee_map(env)
     raw_days = _require_env(env, POLAR_READ_ONLY_DAYS_ENV)
     if not raw_days.isdigit():
         raise HostedConfigError(f"{POLAR_READ_ONLY_DAYS_ENV} must be a whole number, got {raw_days!r}")
