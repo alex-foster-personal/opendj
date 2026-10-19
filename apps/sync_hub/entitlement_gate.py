@@ -111,12 +111,13 @@ class GateErrorResponse(BaseModel):
 
 
 #: The gated endpoints, and whether each takes data out or puts it in.
-GatedEndpoint = Literal["push", "pull", "stems/index", "stems/bundle-presign"]
+GatedEndpoint = Literal["push", "pull", "stems/index", "stems/bundle-presign", "stems/bundle-size"]
 _OPERATION_OF: dict[GatedEndpoint, Operation] = {
     "push": "write",
     "pull": "read",
     "stems/index": "read",
     "stems/bundle-presign": "read",
+    "stems/bundle-size": "read",
 }
 
 #: The lifecycle states that refuse each operation, for the declared docs.
@@ -219,6 +220,16 @@ def _refusal(status_code: int, code: str, message: str, *, ui_title: str | None 
     return HTTPException(status_code=status_code, detail=detail)
 
 
+def _unowned(machine_id: str) -> HTTPException:
+    return _refusal(
+        403,
+        UNOWNED_CODE,
+        f"machine {machine_id} has no owner this hosted hub honors "
+        "(never enrolled, revoked, or enrolled by another hub). Enroll it "
+        "with POST /api/v1/sync/enroll; entitlement is checked per owner.",
+    )
+
+
 def require(
     request: Request,
     conn: sqlite3.Connection,
@@ -227,8 +238,13 @@ def require(
     operation: Operation,
     data_dir: Callable[[], Path],
     feature_id: str = HOSTED_HUB_FEATURE,
-) -> None:
+) -> str | None:
     """Refuse ``operation`` for ``machine_id`` unless its owner is entitled.
+
+    Returns the subject of the owner whose entitlement passed, or None on a
+    self-hosted hub. A caller that bills must bill THIS subject: reading
+    enrollment a second time can see a different owner after a concurrent
+    reassignment, who was never checked (Sol review of f9e7f65676, P1).
 
     A no-op on a self-hosted hub, and it returns BEFORE touching the source,
     the ownership table or the hub's data dir -- so a self-hosted hub answers
@@ -238,7 +254,7 @@ def require(
     stamped onto every owner row, so the hub-binding guard applies here too.
     """
     if not is_hosted(request):
-        return
+        return None
     source = _source(request)
     require_enforced(source)
     shared = hosted_config.too_many_owners(hosted_config.owner_count(conn))
@@ -247,19 +263,13 @@ def require(
     hub_machine_id = machine_identity.get_or_create_machine_id(data_dir())
     owner = enrollment.owner_for(conn, machine_id, hub_machine_id=hub_machine_id)
     if owner is None:
-        raise _refusal(
-            403,
-            UNOWNED_CODE,
-            f"machine {machine_id} has no owner this hosted hub honors "
-            "(never enrolled, revoked, or enrolled by another hub). Enroll it "
-            "with POST /api/v1/sync/enroll; entitlement is checked per owner.",
-        )
+        raise _unowned(machine_id)
     try:
         found = entitlements.standing(feature_id, subject=owner.google_sub, source=source)
     except entitlements.EntitlementProviderError as exc:
         raise _refusal(503, PROVIDER_CODE, str(exc)) from exc
     if found is not None and allows(found.state, operation):
-        return
+        return owner.google_sub
     where = "no plan on record" if found is None else f"state {found.state}"
     raise _refusal(
         403,

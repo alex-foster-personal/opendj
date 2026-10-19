@@ -307,10 +307,10 @@ def live_writeback(
     fields: tuple[str, ...],
     flag_ok: bool,
 ) -> int:
-    from apps.sync.apply_analysis import (
-        _SUPPORTED_RB_WRITE_FIELDS,
-        UnsupportedRbFieldError,
+    from apps.sync.analysis_fields import (
+        SUPPORTED_RB_WRITE_FIELDS as _SUPPORTED_RB_WRITE_FIELDS,
     )
+    from apps.sync.analysis_fields import UnsupportedRbFieldError
 
     writable_rows = [
         row

@@ -18,7 +18,7 @@ from apps.cloud.asset_store import AssetS3Client
 from apps.cloud.config import CloudConfig
 from apps.shared.state.machine_identity import get_or_create_machine_id
 from apps.sync_hub import config as sync_config
-from apps.sync_hub import spoke_credential
+from apps.sync_hub import spoke_credential, stem_meter
 from apps.sync_hub.transport import HttpTransport, HubTransport, SyncTransportError
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,15 @@ STEM_HUB_INDEX_FAILED = "STEM_HUB_INDEX_FAILED"
 STEM_BUNDLE_NOT_INDEXED = "STEM_BUNDLE_NOT_INDEXED"
 STEM_BUNDLE_PRESIGN_FAILED = "STEM_BUNDLE_PRESIGN_FAILED"
 STEM_HYDRATION_NOT_ARMED = "STEM_HYDRATION_NOT_ARMED"
+#: A hosted hub refused the bundle because this owner has spent the month's
+#: CloudStems allowance. The code is the hub's own wire code, preserved end to
+#: end so the stems route can answer 429 rather than a generic 502 (Codex
+#: round 3, P2). It is NOT a transport failure: retrying cannot help before the
+#: month rolls over, and bulk hydration must fail loud rather than degrade.
+STEM_MONTHLY_CAP_REACHED = stem_meter.CAP_EXCEEDED_CODE
+#: A hosted hub meters CloudStems but was never told the cap. Also a refusal,
+#: not a transport failure: the hub answered, deliberately, with 503.
+STEM_MONTHLY_CAP_UNSET = stem_meter.CAP_UNSET_CODE
 
 SourceMode = Literal["direct_r2", "hub_presigned"]
 UnarmedKind = Literal["transient", "structural"]
@@ -201,6 +210,10 @@ class HubPresignedSource:
                 STEM_HUB_AUTH_REFUSED,
                 f"{label}: hub refused sync credential ({exc})",
             )
+        if exc.code == stem_meter.CAP_EXCEEDED_CODE:
+            return StemSourceError(STEM_MONTHLY_CAP_REACHED, str(exc))
+        if exc.code == stem_meter.CAP_UNSET_CODE:
+            return StemSourceError(STEM_MONTHLY_CAP_UNSET, str(exc))
         if exc.status_code is not None:
             if exc.code == STEM_BUNDLE_NOT_INDEXED:
                 return StemSourceError(STEM_BUNDLE_NOT_INDEXED, str(exc))
@@ -239,19 +252,19 @@ class HubPresignedSource:
     def bundle_remote_size(
         self, _file_hashes: dict[str, str], *, stable_id: str | None = None
     ) -> int | None:
-        from apps.cloud.hub_stem_client import fetch_hub_bundle_presign
+        from apps.cloud.hub_stem_client import fetch_hub_bundle_size
 
         if stable_id is None:
             return None
         try:
-            presign = fetch_hub_bundle_presign(
+            sized = fetch_hub_bundle_size(
                 self._transport(),
                 machine_id=self.machine_id,
                 stable_id=stable_id,
             )
         except SyncTransportError as exc:
-            raise self._map_transport_error(exc, label="bundle presign") from exc
-        return sum(int(entry["size_bytes"]) for entry in presign["files"])
+            raise self._map_transport_error(exc, label="bundle size") from exc
+        return sum(int(entry["size_bytes"]) for entry in sized["files"])
 
     def fetch_bundle_files(
         self,
@@ -448,6 +461,8 @@ __all__ = [
     "STEM_HUB_INDEX_FAILED",
     "STEM_HUB_UNREACHABLE",
     "STEM_HYDRATION_NOT_ARMED",
+    "STEM_MONTHLY_CAP_REACHED",
+    "STEM_MONTHLY_CAP_UNSET",
     "DirectR2Source",
     "HubPresignedSource",
     "StemHydrationArmResult",

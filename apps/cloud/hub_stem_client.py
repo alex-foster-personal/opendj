@@ -8,6 +8,7 @@ from apps.sync_hub.transport import API_PREFIX, HubTransport
 
 STEM_INDEX_PATH = f"{API_PREFIX}/stems/index"
 STEM_BUNDLE_PRESIGN_PATH = f"{API_PREFIX}/stems/bundle-presign"
+STEM_BUNDLE_SIZE_PATH = f"{API_PREFIX}/stems/bundle-size"
 
 
 def fetch_hub_stem_index(transport: HubTransport, *, machine_id: str) -> StemAssetIndex:
@@ -36,9 +37,33 @@ def fetch_hub_bundle_presign(
     return body
 
 
+def fetch_hub_bundle_size(
+    transport: HubTransport,
+    *,
+    machine_id: str,
+    stable_id: str,
+) -> dict[str, Any]:
+    """Return the file sizes and digests of one indexed bundle, with no URLs.
+
+    Hits the unmetered size probe, never the charged presign: a caller that
+    only needs ``sum(size_bytes)`` must not spend one of the owner's monthly
+    tracks.
+    """
+    body = transport.get(
+        STEM_BUNDLE_SIZE_PATH,
+        {"machine_id": machine_id, "stable_id": stable_id},
+    )
+    files = body.get("files")
+    if not isinstance(files, list) or not files:
+        raise RuntimeError(f"{STEM_BUNDLE_SIZE_PATH} returned no files list")
+    return body
+
+
 __all__ = [
     "STEM_BUNDLE_PRESIGN_PATH",
+    "STEM_BUNDLE_SIZE_PATH",
     "STEM_INDEX_PATH",
     "fetch_hub_bundle_presign",
+    "fetch_hub_bundle_size",
     "fetch_hub_stem_index",
 ]

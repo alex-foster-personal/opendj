@@ -6042,6 +6042,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/stems/bundle-size": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Bundle Size
+         * @description Measure one indexed bundle without minting URLs or spending a track.
+         *
+         *     Same credential and entitlement gates as ``bundle-presign`` and the same
+         *     index entry, but this route does NOT call ``_meter_plan`` and never
+         *     charges: it is unmetered even when the owner's month is spent, and it
+         *     answers no ``url`` for any file, so nothing it returns can be downloaded.
+         *     ``HubPresignedSource.bundle_remote_size`` uses it before ``bulk_hydrate``
+         *     decides whether a bundle fits ``byte_budget`` (Codex round 3, P1).
+         */
+        get: operations["get_bundle_size_api_v1_sync_stems_bundle_size_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/stems/index": {
         parameters: {
             query?: never;
@@ -11277,6 +11304,25 @@ export interface components {
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
         /**
+         * HubErrorBody
+         * @description A structured stems refusal; ``endpoint`` is set only on SYNC_HUB_UNREACHABLE.
+         */
+        HubErrorBody: {
+            /** Code */
+            code: string;
+            /** Endpoint */
+            endpoint?: string | null;
+            /** Message */
+            message: string;
+        };
+        /**
+         * HubErrorResponse
+         * @description FastAPI wraps an ``HTTPException`` detail under ``detail``.
+         */
+        HubErrorResponse: {
+            detail: components["schemas"]["HubErrorBody"];
+        };
+        /**
          * HubStorageErrorBody
          * @description The ``detail`` object a storage-full push carries.
          */
@@ -15435,6 +15481,13 @@ export interface components {
             /** Stable Id */
             stable_id: string;
         };
+        /** StemBundleSizeResponse */
+        StemBundleSizeResponse: {
+            /** Files */
+            files: components["schemas"]["StemSizeFileOut"][];
+            /** Stable Id */
+            stable_id: string;
+        };
         /** StemCacheEnforceIn */
         StemCacheEnforceIn: {
             /**
@@ -15721,6 +15774,18 @@ export interface components {
              * @default false
              */
             dry_run: boolean;
+        };
+        /**
+         * StemSizeFileOut
+         * @description One indexed file, measured but not made readable: there is no ``url``.
+         */
+        StemSizeFileOut: {
+            /** Content Hash */
+            content_hash: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
         };
         /**
          * StemStateOut
@@ -27470,6 +27535,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused because the owner has used every CloudStems track in the current UTC month; the allowance resets at the start of the next month */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Local stem bundle index cache is present but unreadable (STEM_INDEX_CORRUPT) or other hub index/presign failure */
             502: {
                 headers: {
@@ -27477,12 +27551,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error), or the hub refused with CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was never given MDT_CLOUDSTEMS_MONTHLY_CAP */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HubErrorResponse"] | components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };
@@ -28763,6 +28839,15 @@ export interface operations {
                     "application/json": components["schemas"]["StemBundlePresignResponse"];
                 };
             };
+            /** @description STEM_BUNDLE_PRESIGN_FAILED when the stable_id is not a safe bundle id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description stems/bundle-presign refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
             401: {
                 headers: {
@@ -28784,7 +28869,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -28795,14 +28882,111 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description CLOUDSTEMS_MONTHLY_CAP_REACHED when this owner has used every CloudStems track in the current UTC month; the MDT_CLOUDSTEMS_MONTHLY_CAP allowance resets at the start of the next month, and bundles already taken this month keep serving */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description STEM_BUNDLE_PRESIGN_FAILED when presigning or HEAD failed */
             502: {
                 headers: {
                     [name: string]: unknown;
                 };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. stems/bundle-presign cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). Or: CLOUDSTEMS_MONTHLY_CAP_UNSET when this hub meters CloudStems but MDT_CLOUDSTEMS_MONTHLY_CAP is unset, non-ASCII, or not a whole number >= 1 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+        };
+    };
+    get_bundle_size_api_v1_sync_stems_bundle_size_get: {
+        parameters: {
+            query: {
+                /** @description the calling spoke */
+                machine_id: string;
+                /** @description track stable_id */
+                stable_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemBundleSizeResponse"];
+                };
+            };
+            /** @description STEM_BUNDLE_PRESIGN_FAILED when the stable_id is not a safe bundle id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description stems/bundle-size refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content?: never;
             };
-            /** @description stems/bundle-presign refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. stems/bundle-presign cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). */
+            /** @description HOSTED hubs only. stems/bundle-size is refused with entitlement_not_in_plan when the calling machine's owner is archived (never read_only: a lapsed user can always pull), or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description STEM_BUNDLE_NOT_INDEXED when the stable_id is absent from the published index */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description STEM_BUNDLE_PRESIGN_FAILED when the index or a HEAD failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
+            /** @description stems/bundle-size refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. Or: HOSTED hubs only. stems/bundle-size cannot be decided: no entitlement source is configured (SYNC_HOSTED_NO_SOURCE), the entitlement provider refused to answer (SYNC_ENTITLEMENT_PROVIDER), the hosted flag is not a bool (SYNC_HOSTED_FLAG_INVALID), or the hub DB holds more than one owner (SYNC_HOSTED_MULTI_OWNER), or a paid source runs without ENFORCEd credentials (SYNC_HOSTED_NOT_ENFORCED). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -29889,6 +30073,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused this bundle because the owner has used every CloudStems track in the current UTC month. The allowance resets at the start of the next month; retrying before then only repeats the refusal. Bundles already taken this month keep serving. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
             502: {
                 headers: {
@@ -29896,12 +30089,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error), or the hub refused with CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was never given MDT_CLOUDSTEMS_MONTHLY_CAP */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HubErrorResponse"] | components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };
@@ -30000,6 +30195,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused this bundle because the owner has used every CloudStems track in the current UTC month. The allowance resets at the start of the next month; retrying before then only repeats the refusal. Bundles already taken this month keep serving. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
             502: {
                 headers: {
@@ -30007,12 +30211,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error), or the hub refused with CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was never given MDT_CLOUDSTEMS_MONTHLY_CAP */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HubErrorResponse"] | components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };
@@ -30075,6 +30281,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused this bundle because the owner has used every CloudStems track in the current UTC month. The allowance resets at the start of the next month; retrying before then only repeats the refusal. Bundles already taken this month keep serving. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
             502: {
                 headers: {
@@ -30082,12 +30297,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error), or the hub refused with CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was never given MDT_CLOUDSTEMS_MONTHLY_CAP; or STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HubErrorResponse"] | components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };
@@ -30121,6 +30338,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused this bundle because the owner has used every CloudStems track in the current UTC month. The allowance resets at the start of the next month; retrying before then only repeats the refusal. Bundles already taken this month keep serving. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GateErrorResponse"];
+                };
+            };
             /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
             502: {
                 headers: {
@@ -30128,12 +30354,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error), or the hub refused with CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was never given MDT_CLOUDSTEMS_MONTHLY_CAP; or STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within STEM_PART_HYDRATE_WAIT_S; retry the request */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HubErrorResponse"] | components["schemas"]["GateErrorResponse"];
+                };
             };
         };
     };

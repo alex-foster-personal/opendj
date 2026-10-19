@@ -94,7 +94,10 @@ def build_analysis_diff(
             )
         if rb_a is None and djay_a is None:
             continue
-        for field in ("bpm", "manual_bpm", "key_camelot", "energy", "tags"):
+        # ``color_index`` is deliberately absent: djay keeps colorIndex as a
+        # schema-indexed uint8 that neither the reader nor the patcher decodes,
+        # so a color row would read djay as empty and overwrite its schema.
+        for field in ("bpm", "manual_bpm", "key_camelot", "tags"):
             rb_v = getattr(rb_a, field, None) if rb_a else None
             djay_v = getattr(djay_a, field, None) if djay_a else None
             if rb_v is None and djay_v is None:

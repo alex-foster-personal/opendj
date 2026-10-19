@@ -1,7 +1,7 @@
 """SYNC-05 regression: ``apply_analysis`` refuses to partial-apply.
 
 Codex P04-02: ``_write_rb_field`` only implements ``bpm`` and
-``energy``; for ``manual_bpm`` / ``key_camelot`` / ``tags`` it used to
+``energy`` (a mislabeled color label, no longer synced); for ``manual_bpm`` / ``key_camelot`` / ``tags`` it used to
 return ``False`` and the CLI still exited 0, reporting success for a
 no-op. This test locks in the non-zero exit behaviour.
 """
@@ -20,6 +20,7 @@ from apps.shared import paths
 from apps.sync import apply_analysis
 from apps.sync.apply_analysis import (
     _SUPPORTED_RB_WRITE_FIELDS,
+    UnsupportedDjayFieldError,
     UnsupportedRbFieldError,
     _write_rb_field,
     live_run,
@@ -90,7 +91,7 @@ def test_write_rb_field_refuses_unsupported(field: str) -> None:
 @pytest.mark.requirement("SYNC-05")
 def test_supported_fields_include_key_and_loudness() -> None:
     assert _SUPPORTED_RB_WRITE_FIELDS == frozenset({
-        "bpm", "energy", "key", "loudness_lufs", "loudness_dbtp", "pqtz",
+        "bpm", "key", "loudness_lufs", "loudness_dbtp", "pqtz",
     })
 
 
@@ -115,6 +116,37 @@ def test_live_run_raises_on_unsupported_rb_field(tmp_path: Path) -> None:
             rb_db_path=tmp_path / "rb.db",
             djay_db_path=tmp_path / "djay.db",
             open_rb_db=lambda _p: None,
+        )
+
+
+@pytest.mark.requirement("SYNC-05")
+def test_live_run_refuses_unsupported_djay_field_before_any_write(tmp_path: Path) -> None:
+    """[if] a djay-side row live_run cannot write (a stale pre-rename ``energy``
+    row) is found only mid-run [then] earlier rows were already applied, [else stop]."""
+    rows = [
+        {
+            "rb_content_id": "1", "djay_uuid": "uuid-1", "field": "bpm",
+            "rb_value": "120.0", "djay_value": "128.0",
+            "resolution": "accept_djay", "action_hint": "write djay -> RB",
+        },
+        {
+            "rb_content_id": "2", "djay_uuid": "uuid-2", "field": "energy",
+            "rb_value": "3", "djay_value": "",
+            "resolution": "accept_rb", "action_hint": "write RB -> djay",
+        },
+    ]
+
+    def _must_not_open(_p: Path) -> None:
+        raise AssertionError("RB db opened before the djay-side refusal")
+
+    with pytest.raises(UnsupportedDjayFieldError, match="energy"):
+        live_run(
+            rows,
+            fields=None,
+            flag_ok=True,
+            rb_db_path=tmp_path / "rb.db",
+            djay_db_path=tmp_path / "djay.db",
+            open_rb_db=_must_not_open,
         )
 
 
@@ -398,7 +430,7 @@ def test_every_supported_field_has_verifier(tmp_path: Path) -> None:
             return _One()
 
     assert _verify_rb_field(_Fake(), "rb-1", "bpm", 128.0)
-    assert _verify_rb_field(_Fake(), "rb-1", "energy", 3)
+    assert not _verify_rb_field(_Fake(), "rb-1", "color_index", 3)
 
     dat_path = tmp_path / "pqtz.DAT"
     beats = [{"n": 1, "bpm": 128.0, "t": 0.0}, {"n": 2, "bpm": 128.0, "t": 0.469}]
@@ -859,3 +891,18 @@ def test_writeback_live_does_not_touch_track_fields(
         "SELECT COUNT(*) FROM track_field_history"
     ).fetchone()[0] == 0
     check.close()
+
+
+@pytest.mark.requirement("SYNC-05")
+def test_module_run_catches_the_same_refusal_classes_live_run_raises() -> None:
+    """[if] a fresh execution of ``apps.sync.apply_analysis`` (what
+    ``python -m`` does, as ``__main__``) defines its own refusal classes [then]
+    ``main()`` cannot catch what ``live_run`` raises and the CLI exits with a
+    traceback instead of 4, [else stop]."""
+    import runpy
+
+    from apps.sync import analysis_csv_live
+
+    fresh = runpy.run_module("apps.sync.apply_analysis", run_name="fresh_main")
+    assert fresh["UnsupportedDjayFieldError"] is analysis_csv_live.UnsupportedDjayFieldError
+    assert fresh["UnsupportedRbFieldError"] is analysis_csv_live.UnsupportedRbFieldError

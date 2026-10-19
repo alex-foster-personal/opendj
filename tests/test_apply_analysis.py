@@ -192,10 +192,10 @@ class TestVerifyRBField:
             _FakeRBDB({"5": row}), "5", "bpm", 128.0,
         )
 
-    def test_energy_match(self) -> None:
+    def test_color_label_is_not_a_synced_field(self) -> None:
         row = _FakeContent("5", color_id=3)
-        assert _verify_rb_field(
-            _FakeRBDB({"5": row}), "5", "energy", 3,
+        assert not _verify_rb_field(
+            _FakeRBDB({"5": row}), "5", "color_index", 3,
         )
 
     def test_unknown_field_returns_false(self) -> None:

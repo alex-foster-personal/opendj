@@ -1,0 +1,18 @@
+/* PerfMeterSpark.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .perf-spark so it cannot leak. Keep the two in step. */
+.perf-spark {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 120px;
+}
+.perf-spark .perf-spark-label {
+	font-size: 9px;
+	color: var(--rb-text-dim);
+	letter-spacing: 0.02em;
+}
+.perf-spark .perf-spark-svg {
+	width: 120px;
+	height: 32px;
+	color: var(--rb-text-dim);
+}

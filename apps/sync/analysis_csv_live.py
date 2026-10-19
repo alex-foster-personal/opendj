@@ -6,8 +6,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from apps.sync.analysis_fields import (
+    SUPPORTED_RB_WRITE_FIELDS,
+    UnsupportedDjayFieldError,
+    UnsupportedRbFieldError,
+)
 from apps.sync.djay_writer import (
-    patch_color_index,
     patch_key_signature_index,
     patch_manual_bpm,
     patch_tags,
@@ -26,6 +30,9 @@ def _camelot_to_djay_key_idx(camelot: str) -> int | None:
         except ValueError:
             continue
     return None
+
+
+_SUPPORTED_DJAY_WRITE_FIELDS = frozenset({"manual_bpm", "key_camelot", "tags"})
 
 
 def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
@@ -52,11 +59,6 @@ def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
             if idx is None:
                 return False
             new_blob = patch_key_signature_index(blob, idx)
-        elif field == "energy":
-            try:
-                new_blob = patch_color_index(blob, int(value))
-            except (TypeError, ValueError):
-                return False
         elif field == "tags":
             new_blob = patch_tags(blob, str(value))
         else:
@@ -103,8 +105,6 @@ def live_run(
     open_rb_db: Callable[[Path], Any],
 ) -> int:
     from apps.sync.apply_analysis import (
-        _SUPPORTED_RB_WRITE_FIELDS,
-        UnsupportedRbFieldError,
         _verify_rb_field,
         _write_rb_field,
     )
@@ -128,14 +128,25 @@ def live_run(
 
     unsupported_rb = sorted({
         fld for _cid, fld, _val in rb_plan
-        if fld not in _SUPPORTED_RB_WRITE_FIELDS
+        if fld not in SUPPORTED_RB_WRITE_FIELDS
     })
     if unsupported_rb:
         raise UnsupportedRbFieldError(
             "Refusing to apply: RB-side writes not implemented for "
             f"fields {unsupported_rb}. Re-run with --fields limited to "
-            f"{sorted(_SUPPORTED_RB_WRITE_FIELDS)} or resolve those "
+            f"{sorted(SUPPORTED_RB_WRITE_FIELDS)} or resolve those "
             "rows on the djay side first."
+        )
+
+    unsupported_djay = sorted({
+        fld for _uuid, fld, _val in djay_plan
+        if fld not in _SUPPORTED_DJAY_WRITE_FIELDS
+    })
+    if unsupported_djay:
+        raise UnsupportedDjayFieldError(
+            "Refusing to apply: djay-side writes not implemented for "
+            f"fields {unsupported_djay}. Re-run with --fields limited to "
+            f"{sorted(_SUPPORTED_DJAY_WRITE_FIELDS)} or regenerate the diff."
         )
 
     if rb_plan:

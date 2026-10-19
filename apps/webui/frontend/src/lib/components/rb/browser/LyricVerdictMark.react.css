@@ -1,0 +1,6 @@
+/* LyricVerdictMark.svelte's scoped <style>, unscoped for the React twin:
+ * anchored on .lyr-mark-icon so it cannot leak. Keep the two in step. */
+.lyr-mark-icon {
+	display: inline-block;
+	vertical-align: -1px;
+}

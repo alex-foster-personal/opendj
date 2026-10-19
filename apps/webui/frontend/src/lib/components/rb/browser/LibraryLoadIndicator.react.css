@@ -1,0 +1,72 @@
+/* LibraryLoadIndicator.svelte's scoped <style>, unscoped for the React twin:
+ * every rule is anchored on .lli-root so it cannot leak. Keep the two in step. */
+.lli-root {
+	--lli-strip-h: 18px;
+	flex: 0 0 var(--lli-strip-h);
+	height: var(--lli-strip-h);
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 0 8px;
+	overflow: hidden;
+	color: var(--rb-text-dim);
+	font-family: var(--rb-font);
+	font-size: 10px;
+	line-height: 1.2;
+}
+.lli-root .lli-mark {
+	flex: 0 0 auto;
+	width: 12px;
+	height: 12px;
+	background: currentColor;
+	mask: url('/favicon.svg') center / contain no-repeat;
+	animation: library-mark-reveal 180ms step-end both, library-mark-spin 420ms linear infinite;
+}
+.lli-root .lli-search {
+	white-space: nowrap;
+}
+.lli-root .lli-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lli-root .lli-rate {
+	opacity: 0.8;
+}
+.lli-root .lli-track {
+	position: relative;
+	flex: 0 1 220px;
+	min-width: 60px;
+	height: 2px;
+	background: color-mix(in srgb, #4fb2ff 18%, transparent);
+	outline: 1px solid color-mix(in srgb, #4fb2ff 70%, transparent);
+	overflow: hidden;
+}
+.lli-root .lli-bar {
+	height: 100%;
+	background: #4fb2ff;
+	transition: width 0.15s linear;
+}
+.lli-root .lli-indeterminate .lli-bar {
+	position: absolute;
+	inset: 0 auto 0 -45%;
+	width: 45%;
+	animation: library-load-sweep 800ms ease-in-out infinite;
+}
+@keyframes library-mark-reveal {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+@keyframes library-mark-spin {
+	to { transform: rotate(360deg); }
+}
+@keyframes library-load-sweep {
+	to { transform: translateX(325%); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.lli-root .lli-mark { animation: library-mark-reveal 180ms step-end both; }
+	.lli-root .lli-indeterminate .lli-bar { animation: none; inset-inline-start: 28%; }
+}

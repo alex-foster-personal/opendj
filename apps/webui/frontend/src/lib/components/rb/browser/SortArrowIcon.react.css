@@ -1,0 +1,7 @@
+/* SortArrowIcon.svelte's scoped <style>, unscoped for the React twin: anchored
+ * on .sort-arrow so it cannot leak. Keep the two in step. */
+.sort-arrow {
+	display: inline-block;
+	vertical-align: middle;
+	margin-left: 2px;
+}

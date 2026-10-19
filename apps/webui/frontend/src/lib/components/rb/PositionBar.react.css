@@ -1,0 +1,14 @@
+/* PositionBar.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .position-bar so it cannot leak. Keep the two in step. */
+.position-bar {
+	width: 100%;
+	height: 0.35rem;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--text) 18%, transparent);
+	overflow: hidden;
+}
+.position-bar .position-fill {
+	height: 100%;
+	background: var(--accent, #4ea1ff);
+	transition: width 120ms linear;
+}

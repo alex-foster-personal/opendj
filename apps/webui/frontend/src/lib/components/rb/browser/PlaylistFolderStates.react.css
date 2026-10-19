@@ -1,0 +1,32 @@
+/* PlaylistFolderStates.svelte's scoped <style>, unscoped for the React twin.
+ * .row is a common class name, so every rule is anchored on this component's
+ * own data-testid prefix (same specificity as the Svelte-scoped rules) and
+ * cannot leak. Keep the two in step. */
+.row[data-testid^='playlists-'] {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	height: 20px;
+	padding: 0 6px;
+	color: var(--rb-text);
+	white-space: nowrap;
+}
+.row.child[data-testid^='playlists-'] {
+	padding-left: 22px;
+}
+.row.rb-inert[data-testid^='playlists-'] {
+	opacity: 0.5;
+	cursor: default;
+}
+.empty-cta[data-testid='playlists-empty-cta'] {
+	width: 100%;
+	border: none;
+	background: transparent;
+	color: var(--rb-accent);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.empty-cta[data-testid='playlists-empty-cta']:hover {
+	background: var(--rb-panel-raised);
+}

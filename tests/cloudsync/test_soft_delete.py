@@ -1,7 +1,7 @@
 """Round 2 hardening: soft delete actually used (finding 4a/4b), permanent.
 
-Contract under test: ``specs/design_decision_08.md`` point 5, answering round
-1 findings 4a and 4b (``.planning/cloudsync-round1-adversarial.md``).
+Contract under test: ``(private path)`` point 5, answering round
+1 findings 4a and 4b (``(private path)``).
 
 - finding 4a -- ``StateWriter.delete_playlist`` issued real ``DELETE FROM``
   statements against ``playlists`` and ``playlist_memberships``. On a spoke
@@ -17,7 +17,7 @@ Contract under test: ``specs/design_decision_08.md`` point 5, answering round
   across the webui backend, ``PlaylistStore``, and the other list/get paths
   audited in this round (see the lane's final report for the full list).
 
-Round 3 addendum (.planning/cloudsync-round2-adversarial.md Part 3 item 8):
+Round 3 addendum ((private path) Part 3 item 8):
 round 2 fixed 12 of 19 files that read ``tracks``/``playlists`` without a
 ``deleted_at`` filter and left five outstanding --
 ``apps/smartlists/evaluator.py``, ``apps/stems/cli.py``,
@@ -438,6 +438,14 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     # local_changelog entries for the row just dropped above. Neither
     # changelog table is itself a synced table.
     ("apps/sync_hub/engine_apply.py", "dynamic:changelog"),
+    # apps.sync_hub.stem_meter.reserve's same-transaction rollback of a track
+    # it has just refused. The row it deletes is one THIS call inserted, in
+    # THIS transaction, and only when the insert actually happened
+    # (cursor.rowcount == 1) -- there is nothing to tombstone, because the
+    # row never survived the request and a deleted_at stamp on it would
+    # itself count against the owner's month. The table is the hub's own
+    # quota ledger and is not a protocol.SYNC_TABLES member.
+    ("apps/sync_hub/stem_meter.py", "dynamic:USAGE_TABLE"),
     # apps.sync_hub.engine_retention.prune_changelog's own DELETE, against
     # whichever changelog table the caller named -- the retention mechanism
     # itself (round 2 finding N6), not a synced-row delete. Round 3's
@@ -454,7 +462,7 @@ _ALLOWED_HARD_DELETES: frozenset[tuple[str, str]] = frozenset({
     ("apps/reconcile/remove_track.py", "dynamic:tbl"),
     # apps/adapters/rekordbox/writer.py restores odjAnalysisScalar, a sidecar
     # table inside rekordbox's OWN master.plain.db (this module's docstring
-    # says so explicitly), never data/state/state.db. Same reasoning as the
+    # says so explicitly), never (private path). Same reasoning as the
     # remove_track.py entry above: the DELETE never touches a synced table.
     ("apps/adapters/rekordbox/writer.py", "dynamic:_SCALAR_TABLE"),
     # apps/shared/state/normalize_locations.py collapses an NFD/NFC duplicate

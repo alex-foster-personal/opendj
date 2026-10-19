@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
-import type { ComponentProps } from 'svelte';
 
+import { contracts } from './QualityBadge.contract';
 import QualityBadge from './QualityBadge.svelte';
 
 /**
@@ -10,27 +10,10 @@ import QualityBadge from './QualityBadge.svelte';
  *
  * Shapes mirror apps/shared/audio_quality.py, the backend that actually
  * measures these. Nothing here is a mock of a network call: QualityBadge is
- * pure props, so the args ARE the contract.
- *
- * The rung shape is read back off the component's own props rather than
- * imported from $lib/rb/library-types. A story should be pinned to the
- * contract of the thing it documents, so stories are not the place to widen
- * a shared type module's importer count.
+ * pure props, so the args ARE the contract. The args and the `play`
+ * assertions live in QualityBadge.contract.ts, shared with the React twin
+ * (QualityBadge.stories.tsx), which keeps this same literal title.
  */
-type TrackQuality = NonNullable<ComponentProps<typeof QualityBadge>['quality']>;
-
-const rung = (over: Partial<TrackQuality>): TrackQuality => ({
-	venue: 'club',
-	label: 'Club',
-	rank: 3,
-	of: 6,
-	blurb: 'holds up on a club rig',
-	kbps: 256,
-	container: '.mp3',
-	lossless: false,
-	...over
-});
-
 const meta = {
 	title: 'Components/QualityBadge',
 	component: QualityBadge,
@@ -44,56 +27,25 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /** Top rung: lossless, so the rung comes from format not bitrate. */
-export const Stadium: Story = {
-	args: {
-		quality: rung({
-			venue: 'stadium',
-			label: 'Stadium',
-			rank: 5,
-			blurb: 'survives the biggest room',
-			kbps: 1411,
-			container: '.flac',
-			lossless: true
-		})
-	}
-};
+export const Stadium: Story = contracts.Stadium;
 
-export const Club: Story = { args: { quality: rung({}) } };
+export const Club: Story = contracts.Club;
 
 /** Bottom rung: the badge is meant to look wrong at a glance. */
-export const NaughtyStep: Story = {
-	args: {
-		quality: rung({
-			venue: 'naughty_step',
-			label: 'Naughty step',
-			rank: 0,
-			blurb: 'too lossy for anywhere',
-			kbps: 96
-		})
-	}
-};
+export const NaughtyStep: Story = contracts.NaughtyStep;
 
 /**
  * venue null: the backend could not measure it. The badge says Unknown and
  * the hover carries the backend's REASON. It never guesses a rung, because
  * a guessed rung would be mocked data.
  */
-export const Unknown: Story = {
-	args: {
-		quality: rung({
-			venue: null,
-			label: 'Unknown',
-			rank: null,
-			blurb: 'duration missing, cannot derive effective bitrate',
-			kbps: null
-		})
-	}
-};
+export const Unknown: Story = contracts.Unknown;
 
 /** quality null: the row exists but its audio quality has not loaded yet. */
-export const NotLoaded: Story = { args: { quality: null } };
+export const NotLoaded: Story = contracts.NotLoaded;
 
 /** Tight rows drop the container suffix; the hover still carries it. */
-export const WithoutContainer: Story = {
-	args: { quality: rung({}), showContainer: false }
-};
+export const WithoutContainer: Story = contracts.WithoutContainer;
+
+/** The track table's tight column: the rung's initial, the rest on hover. */
+export const Compact: Story = contracts.Compact;

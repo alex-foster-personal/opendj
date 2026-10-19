@@ -75,7 +75,7 @@ from apps.shared.playlist_sets import schema as playlist_sets_schema
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.spotify import state_aux as spotify_aux
-from apps.sync_hub import engine_identity_map
+from apps.sync_hub import engine_identity_map, stem_meter
 from apps.webui.server import pairings_sqlite
 
 #: Name of the production-shaped, migrated state DB inside :class:`Scan`.
@@ -341,6 +341,13 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
     Authority(
         "apps/sync_hub/engine_identity_map.py",
         lambda conn, _path: engine_identity_map.ensure_identity_remap_table(conn),
+    ),
+    # The CloudStems monthly meter (CSPAY-07): the hub's own table, additive on
+    # the same state.db, created by the first presign of a month. A hub that
+    # never sells CloudStems never creates it.
+    Authority(
+        "apps/sync_hub/stem_meter.py",
+        lambda conn, _path: stem_meter.ensure_usage_table(conn),
     ),
 )
 """Every writer of DDL into ``state.db``, in the order production runs them.

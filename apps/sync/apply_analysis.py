@@ -10,6 +10,11 @@ from apps.analysis.selection import SelectionError
 from apps.shared import paths
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.analysis_csv_live import live_run
+from apps.sync.analysis_fields import (
+    SUPPORTED_RB_WRITE_FIELDS,
+    UnsupportedDjayFieldError,
+    UnsupportedRbFieldError,
+)
 from apps.sync.analysis_writeback_diff import (
     WRITEBACK_FIELDS,
     WRITEBACK_LANES,
@@ -17,14 +22,9 @@ from apps.sync.analysis_writeback_diff import (
 )
 from apps.sync.safety import SafetyAbort
 
-# Codex P04-02: RB-side writes are only implemented for these fields.
-# ``apply_analysis`` used to silently skip any other field and still
-# exit 0, which made the CLI report success after a partial apply.
 # See ``_write_rb_field`` and ``live_run`` below: unsupported RB fields
-# now fail the run with a non-zero exit instead of being dropped.
-_SUPPORTED_RB_WRITE_FIELDS = frozenset({
-    "bpm", "energy", "key", "loudness_lufs", "loudness_dbtp", "pqtz",
-})
+# fail the run with a non-zero exit instead of being dropped.
+_SUPPORTED_RB_WRITE_FIELDS = SUPPORTED_RB_WRITE_FIELDS
 
 
 # ----- Path resolution (mirrors apply_ratings._live_*_db_path) ----------
@@ -178,16 +178,6 @@ def _run_writeback_undo(preimage_path: Path) -> int:
         _close_rb_connection(handle, conn)
 
 
-class UnsupportedRbFieldError(RuntimeError):
-    """RB-side write scheduled for a field we can't safely write.
-
-    Codex P04-02: ``_write_rb_field`` previously returned ``False`` for
-    ``manual_bpm`` / ``key_camelot`` / ``tags`` and the CLI still exited
-    ``0``. This exception is how we now refuse unsupported fields
-    loudly; ``main()`` converts it to a non-zero exit.
-    """
-
-
 def _write_rb_field(db, content_id: str, field: str, value) -> bool:
     if field not in _SUPPORTED_RB_WRITE_FIELDS:
         # Refuse rather than silently skip. See P04-02 note above.
@@ -232,11 +222,6 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
             content.BPM = round(float(value) * 100)
         except (TypeError, ValueError):
             return False
-    elif field == "energy":
-        try:
-            content.ColorID = int(value)
-        except (TypeError, ValueError):
-            return False
     db.commit()
     return True
 
@@ -276,14 +261,12 @@ def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
     try:
         if field == "bpm":
             return int(getattr(content, "BPM", -1)) == round(float(value) * 100)
-        if field == "energy":
-            return int(getattr(content, "ColorID", -1)) == int(value)
     except (TypeError, ValueError):
         return False
     return False
 
 
-_LIVE_DEFAULT_FIELDS = "bpm,manual_bpm,key_camelot,energy,tags"
+_LIVE_DEFAULT_FIELDS = "bpm,manual_bpm,key_camelot,tags"
 _WRITEBACK_DEFAULT_FIELDS = "bpm,key,loudness_lufs,loudness_dbtp,pqtz"
 
 
@@ -416,6 +399,9 @@ def main(argv: list[str] | None = None) -> int:
         except UnsupportedRbFieldError as e:
             print(f"[apply_analysis] UnsupportedRbField: {e}", file=sys.stderr)
             return 4
+        except UnsupportedDjayFieldError as e:
+            print(f"[apply_analysis] UnsupportedDjayField: {e}", file=sys.stderr)
+            return 4
 
     csv_path = args.diff_csv
     rows = _load_diff(csv_path)
@@ -455,6 +441,9 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     except UnsupportedRbFieldError as e:
         print(f"[apply_analysis] UnsupportedRbField: {e}", file=sys.stderr)
+        return 4
+    except UnsupportedDjayFieldError as e:
+        print(f"[apply_analysis] UnsupportedDjayField: {e}", file=sys.stderr)
         return 4
 
     if rc == 0 and only_tracks and not args.bulk:

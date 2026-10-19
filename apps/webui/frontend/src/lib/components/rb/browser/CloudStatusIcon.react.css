@@ -1,0 +1,26 @@
+/* CloudStatusIcon.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .cloud-status-icon so it cannot leak. Keep the two in step. */
+.cloud-status-icon {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.cloud-status-icon .tick-overlay {
+	position: absolute;
+	right: -2px;
+	bottom: -1px;
+}
+.cloud-status-icon.on-cloud-not-local {
+	color: #e5484d;
+}
+/* Local and on cloud reads in plain text color, not the column's dim one. */
+.cloud-status-icon.on-cloud-and-local {
+	color: var(--rb-text);
+}
+.cloud-status-icon .tidal {
+	fill: #fff;
+}
+html:is([data-theme='light'], [data-skin='light']) .cloud-status-icon .tidal {
+	fill: #000;
+}

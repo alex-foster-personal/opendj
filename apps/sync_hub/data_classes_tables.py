@@ -315,6 +315,18 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         (logical("library-tracks"),),
     ),
     fixed(
+        "cloudstems-monthly-meter",
+        "CloudStems monthly bundle meter",
+        state_tables("stem_bundle_usage"),
+        "machine_local",
+        "Billing bookkeeping for a hosted hub's own month: one row per "
+        "(owner_sub, UTC month, stable_id) this hub presigned a bundle for "
+        "(apps/sync_hub/stem_meter.py, CSPAY-08). A hub's quota is not "
+        "replicated -- a spoke's copy would charge a peer's downloads against "
+        "its own cap -- and self-hosted daemons never create the table.",
+        (),
+    ),
+    fixed(
         "file-fingerprint-cache",
         "Fingerprint and file-hash cache",
         (Location("cache_db_table", "fingerprints"), Location("cache_db_table", "file_hashes")),

@@ -13,8 +13,23 @@ import logging
 from typing import NoReturn
 
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
+
+
+class HubErrorBody(BaseModel):
+    """A structured stems refusal; ``endpoint`` is set only on SYNC_HUB_UNREACHABLE."""
+
+    code: str
+    message: str
+    endpoint: str | None = None
+
+
+class HubErrorResponse(BaseModel):
+    """FastAPI wraps an ``HTTPException`` detail under ``detail``."""
+
+    detail: HubErrorBody
 
 
 def raise_sync_hub_unreachable(endpoint: str, exc: BaseException) -> NoReturn:

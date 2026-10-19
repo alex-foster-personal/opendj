@@ -1,0 +1,20 @@
+/* SpinnerIcon.svelte's scoped <style>, unscoped for the React twin: anchored
+ * on .spinner-icon (and its own keyframes name) so it cannot leak. Keep the
+ * two in step. */
+.spinner-icon {
+	flex: none;
+	animation: spinner-icon-spin 0.9s linear infinite;
+}
+@keyframes spinner-icon-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.spinner-icon {
+		animation: none;
+	}
+}

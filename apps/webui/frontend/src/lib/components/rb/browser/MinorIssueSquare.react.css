@@ -1,0 +1,15 @@
+/* MinorIssueSquare.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .minor-issue-square so it cannot leak. Keep the two in step. */
+.minor-issue-square {
+	display: inline-flex;
+	margin-left: 2px;
+	vertical-align: middle;
+}
+/* Skin hooks (theme.css): Gothic (mono-dev) paints a light gray square with a
+ * black '!'. In CSS, not SVG attributes, so the var() resolves everywhere. */
+.minor-issue-square .mis-fill {
+	fill: var(--rb-issue-square, #e8a838);
+}
+.minor-issue-square .mis-ink {
+	stroke: var(--rb-issue-square-ink, #1a1a1a);
+}

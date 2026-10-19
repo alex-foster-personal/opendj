@@ -8,6 +8,7 @@ import hashlib
 import json
 import wave
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from fastapi import FastAPI
@@ -21,8 +22,13 @@ from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
     STEM_BUNDLE_PRESIGN_FAILED,
     STEM_HYDRATION_NOT_ARMED,
+    STEM_MONTHLY_CAP_REACHED,
+    STEM_MONTHLY_CAP_UNSET,
     DirectR2Source,
     HubPresignedSource,
+    SourceMode,
+    StemSourceError,
+    hub_transport_failure_kind,
 )
 from apps.shared.state import db as state_db
 from apps.sync_hub import client
@@ -626,3 +632,272 @@ def test_r2_first_worker_indexed_fetch_failure_never_falls_through_to_compute(
     assert exc_info.value.code != 0
     assert compute_calls == []
     assert not (spoke_dir / "state" / "stems" / stable_id).exists()
+
+
+class _MonthlyCapSource:
+    """A hub source whose hub refused with 429 CLOUDSTEMS_MONTHLY_CAP_REACHED."""
+
+    mode = "hub_presigned"
+
+    def __init__(self, code: str = STEM_MONTHLY_CAP_REACHED, message: str | None = None):
+        self._code = code
+        self._message = message or (
+            "bundle presign: hub answered HTTP 429 (CLOUDSTEMS_MONTHLY_CAP_REACHED)"
+        )
+
+    def _refuse(self) -> NoReturn:
+        raise StemSourceError(self._code, self._message)
+
+    def refresh_index(self, data_dir: Path, *, force: bool = False) -> bool:
+        self._refuse()
+
+    def refresh_error(self, data_dir: Path) -> str | None:
+        return None
+
+    def bundle_remote_size(
+        self, file_hashes: dict[str, str], *, stable_id: str
+    ) -> int | None:
+        self._refuse()
+
+    def fetch_bundle_files(
+        self, *, stable_id: str, file_hashes: dict[str, str], tmp_dir: Path
+    ) -> int:
+        self._refuse()
+
+
+def test_a_monthly_cap_refusal_is_not_a_transport_failure() -> None:
+    """Codex round 3, P2: the cap code must not be read as "hub is down".
+
+    ``hub_transport_failure_kind`` drives bulk hydration's degrade-and-continue
+    and the route's 502/503 mapping. A spent month is neither: retrying cannot
+    help before the month rolls over, so classification must be None.
+    """
+    assert (
+        hub_transport_failure_kind(
+            StemSourceError(STEM_MONTHLY_CAP_REACHED, "hub answered HTTP 429")
+        )
+        is None
+    )
+    assert (
+        hub_transport_failure_kind(
+            StemSourceError(STEM_MONTHLY_CAP_UNSET, "hub answered HTTP 503")
+        )
+        is None
+    )
+
+
+def test_spoke_route_answers_429_with_the_cap_code_preserved(
+    tmp_path: Path,
+) -> None:
+    """[if] the spoke answers 502 for a spent month [then] broken.
+
+    The hub's 429 used to be flattened to STEM_HUB_INDEX_FAILED (502) at the
+    stems route, which a client reads as a broken hub and retries. It must
+    answer 429 and keep CLOUDSTEMS_MONTHLY_CAP_REACHED as the code.
+    """
+    app = FastAPI()
+    app.state.stems_dir = tmp_path / "stems"
+    app.state.stem_hydration_data_dir = tmp_path
+    app.state.stem_hydration_source = _MonthlyCapSource()
+    app.include_router(stems_router, prefix="/api/v1")
+    with TestClient(app) as client:
+        manifest = client.get("/api/v1/tracks/capped-track/stems")
+        manifest_data = client.get("/api/v1/tracks/capped-track/stems/state")
+    assert manifest.status_code == 429, manifest.text
+    assert manifest.json()["detail"]["code"] == STEM_MONTHLY_CAP_REACHED
+    # A stateless read still names the state rather than raising.
+    assert manifest_data.status_code == 200
+
+
+def test_spoke_route_keeps_the_unset_cap_refusal_distinct(tmp_path: Path) -> None:
+    """CLOUDSTEMS_MONTHLY_CAP_UNSET is an operator fix, not a 502 either."""
+    app = FastAPI()
+    app.state.stems_dir = tmp_path / "stems"
+    app.state.stem_hydration_data_dir = tmp_path
+    app.state.stem_hydration_source = _MonthlyCapSource(
+        STEM_MONTHLY_CAP_UNSET,
+        "bundle presign: hub answered HTTP 503 (CLOUDSTEMS_MONTHLY_CAP_UNSET)",
+    )
+    app.include_router(stems_router, prefix="/api/v1")
+    with TestClient(app) as client:
+        response = client.get("/api/v1/tracks/capped-track/stems")
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == STEM_MONTHLY_CAP_UNSET
+
+
+def test_an_expired_cap_refusal_is_forgotten_at_the_utc_reset() -> None:
+    """[if] a cached 429 outlives the month it names [then] broken.
+
+    Codex round 4 on #7322: a background hydration records
+    CLOUDSTEMS_MONTHLY_CAP_REACHED in _LAST_HYDRATE_ERROR, and the manifest
+    and part routes raise a recorded error before re-enqueueing. With no
+    expiry an app kept open across 00:00 UTC on the 1st kept answering the
+    previous month's 429 for that track until an explicit hydrate POST or a
+    restart. The record now carries an expiry and a stale one is dropped.
+    """
+    from datetime import UTC, datetime
+
+    from apps.webui.server.routes import stems as stems_module
+
+    stable = "reset-track"
+    stems_module._LAST_HYDRATE_ERROR.pop(stable, None)
+    stems_module._remember_hydrate_error(stable, STEM_MONTHLY_CAP_REACHED, "spent")
+    recorded = stems_module._recorded_hydration_error(stable)
+    assert recorded is not None
+    assert recorded.code == STEM_MONTHLY_CAP_REACHED
+    # Text naming no month is not guessed into one: it is rechecked soon.
+    assert recorded.expires_at is not None
+    assert recorded.expires_at <= datetime.now(UTC).timestamp() + (
+        stems_module.CAP_UNNAMED_RECHECK_S
+    )
+    december = datetime(2026, 12, 15, 12, 0, tzinfo=UTC)
+    december_text = "CloudStems monthly cap reached for 2026-12: 200 of 200 tracks"
+    assert stems_module._cap_refusal_expiry(
+        STEM_MONTHLY_CAP_REACHED, december, december_text
+    ) == datetime(2027, 1, 1, tzinfo=UTC).timestamp()
+
+    # The month the HUB refused decides the expiry, not when the spoke read
+    # it: a refusal for December read on 1 January is already expired, while
+    # the receipt-time fallback alone would cache it until 1 February (Sol
+    # review of 61dd5ee997, P1).
+    new_year = datetime(2027, 1, 1, 0, 0, 5, tzinfo=UTC)
+    hub_text = "CloudStems monthly cap reached for 2026-12: 200 of 200 tracks"
+    assert stems_module._cap_refusal_expiry(
+        STEM_MONTHLY_CAP_REACHED, new_year, hub_text
+    ) == datetime(2027, 1, 1, tzinfo=UTC).timestamp()
+    # A refusal whose text names no month (or an impossible one) is NOT cached
+    # to the end of the receipt month: just after midnight that would replay a
+    # previous month's refusal for the whole new month (Sol review of
+    # 27f9acf396, P1). It is asked again after a short recheck instead.
+    for unnamed in ("spent", "CloudStems monthly cap reached for 2026-13: x"):
+        assert stems_module._cap_refusal_expiry(
+            STEM_MONTHLY_CAP_REACHED, new_year, unnamed
+        ) == new_year.timestamp() + stems_module.CAP_UNNAMED_RECHECK_S
+
+    # An expired record is not returned and is dropped, so the next request
+    # asks the hub again instead of replaying last month's refusal.
+    stems_module._LAST_HYDRATE_ERROR[stable] = stems_module._HydrateError(
+        STEM_MONTHLY_CAP_REACHED, "spent last month", expires_at=0.0
+    )
+    assert stems_module._recorded_hydration_error(stable) is None
+    assert stable not in stems_module._LAST_HYDRATE_ERROR
+
+    # An UNSET-allowance refusal is rechecked sooner: an operator can fix it.
+    stems_module._LAST_HYDRATE_ERROR[stable] = stems_module._HydrateError(
+        STEM_MONTHLY_CAP_UNSET, "no cap", expires_at=0.0
+    )
+    assert stems_module._recorded_hydration_error(stable) is None
+
+    # A non-time-bound failure keeps the old behaviour: no expiry, still loud.
+    stems_module._remember_hydrate_error(stable, STEM_BUNDLE_PRESIGN_FAILED, "bad")
+    still = stems_module._recorded_hydration_error(stable)
+    assert still is not None and still.expires_at is None
+    stems_module._LAST_HYDRATE_ERROR.pop(stable, None)
+
+
+class _CachedIndexCapSource:
+    """A warm-cache hub source: index already present, the presign refuses."""
+
+    mode: SourceMode = "hub_presigned"
+
+    def __init__(self, code: str) -> None:
+        self._code = code
+
+    def refresh_index(self, data_dir: Path, *, force: bool = False) -> bool:
+        return True
+
+    def refresh_error(self, data_dir: Path) -> str | None:
+        return None
+
+    def bundle_remote_size(
+        self, file_hashes: dict[str, str], *, stable_id: str
+    ) -> int | None:
+        return None
+
+    def fetch_bundle_files(
+        self, *, stable_id: str, file_hashes: dict[str, str], tmp_dir: Path
+    ) -> int:
+        raise StemSourceError(
+            self._code, f"bundle presign: hub answered 429 ({self._code})"
+        )
+
+
+def test_cached_index_presign_refusal_still_answers_429(tmp_path: Path) -> None:
+    """[if] a warm cache turns a spent month into a 502 [then] broken.
+
+    Codex round 5: with the index already cached, the refusal happens inside
+    ``fetch_bundle_files``; ``hydrate_one`` used to return a CODE-LESS
+    ``HydrationOutcome(status="error")``, so ``_run_hydration`` recorded
+    STEM_BUNDLE_HYDRATION_FAILED and the part route answered 502. The code now
+    survives the outcome.
+    """
+    entry = {"manifest.json": "a" * 64}
+    app = FastAPI()
+    data_dir = tmp_path / "spoke"
+    data_dir.mkdir()
+    stem_index.save_cached_index(data_dir, {"capped-track": entry})
+    app.state.stems_dir = tmp_path / "stems"
+    app.state.stem_hydration_data_dir = data_dir
+    app.state.stem_hydration_source = _CachedIndexCapSource(STEM_MONTHLY_CAP_REACHED)
+    app.include_router(stems_router, prefix="/api/v1")
+    with TestClient(app) as client:
+        manifest = client.get("/api/v1/tracks/capped-track/stems")
+        assert manifest.status_code == 200, manifest.text
+        assert manifest.json().get("hydrating") is True
+        part = client.get("/api/v1/tracks/capped-track/stems/vocals")
+    assert part.status_code == 429, part.text
+    assert part.json()["detail"]["code"] == STEM_MONTHLY_CAP_REACHED
+
+
+def test_cached_index_cap_refusal_stops_a_bulk_run(tmp_path: Path) -> None:
+    """A spent month must abort bulk hydration, not skip track by track."""
+    from apps.cloud.stem_hydration import bulk_hydrate
+
+    entry = {"manifest.json": "a" * 64}
+    data_dir = tmp_path / "spoke"
+    data_dir.mkdir()
+    source = _CachedIndexCapSource(STEM_MONTHLY_CAP_REACHED)
+    with pytest.raises(StemSourceError) as raised:
+        bulk_hydrate(
+            ["track-a", "track-b"],
+            data_dir=data_dir,
+            source=source,
+            index={"track-a": entry, "track-b": entry},
+            byte_budget=10_000,
+            stems_dir=tmp_path / "stems",
+        )
+    assert raised.value.code == STEM_MONTHLY_CAP_REACHED
+
+
+def test_part_route_contract_keeps_the_cap_unset_refusal() -> None:
+    """[if] the part route's 503 forgets CLOUDSTEMS_MONTHLY_CAP_UNSET [then] broken.
+
+    Codex round 5: ``STEM_PART_RESPONSES`` spread the hydration responses and
+    then REPLACED the 503 entry, so the operator-fixable cap refusal vanished
+    from openapi.json and api-types.ts. The entry is now merged.
+    """
+    from apps.webui.server.routes.stems import STEM_PART_RESPONSES
+
+    description = str(STEM_PART_RESPONSES[503]["description"])
+    assert STEM_MONTHLY_CAP_UNSET in description
+    assert "SYNC_HUB_UNREACHABLE" in description
+    assert "STEM_BUNDLE_HYDRATING" in description
+
+
+def test_a_monthly_cap_refusal_is_logged_below_error(caplog: pytest.LogCaptureFixture) -> None:
+    """[if] a spent allowance is logged as an ERROR (Sentry noise) [then] broken.
+
+    Sol on f9e7f65676 (P2): a capped track was logged under the generic
+    STEM_BUNDLE_HYDRATION_FAILED code at ERROR. A cap refusal is an answer
+    from the hub; a real fetch failure must still be an ERROR (the control).
+    """
+    import logging
+
+    from apps.webui.server.routes import stems as stems_module
+
+    with caplog.at_level(logging.WARNING, logger=stems_module.log.name):
+        stems_module._log_hydration_failure("t", STEM_MONTHLY_CAP_REACHED, "spent")
+        stems_module._log_hydration_failure("t", STEM_MONTHLY_CAP_UNSET, "no cap")
+        stems_module._log_hydration_failure("t", "STEM_BUNDLE_HYDRATION_FAILED", "boom")
+    levels = [r.levelno for r in caplog.records]
+    assert levels == [logging.WARNING, logging.WARNING, logging.ERROR], levels

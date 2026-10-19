@@ -368,6 +368,10 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
         # and no docs run had heard of it.
         "apps/launcher/src-tauri/src/state.rs": "launcher_meta",
         "apps/sync_hub/engine_identity_map.py": "sync_identity_remap",
+        # The CloudStems monthly meter (CSPAY-08): the hub's own table,
+        # additive on the same state.db, created by the first presign of a
+        # month on a hosted hub.
+        "apps/sync_hub/stem_meter.py": "stem_bundle_usage",
         "apps/webui/server/pairings_sqlite.py": "http_pairings",
     }
     assert {a.name for a in subject.STATE_AUTHORITIES} == set(per_authority)

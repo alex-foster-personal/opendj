@@ -378,6 +378,32 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
             "matches the hub's remapped bundle (ADR 04 c6)."
         ),
     },
+    "stem_bundle_usage": {
+        "owner_sub": (
+            "The paying owner's OIDC subject, as the hub authenticated it. "
+            "Part of the primary key, so one owner's month is counted apart "
+            "from every other owner's (apps/sync_hub/stem_meter.py)."
+        ),
+        "month": (
+            "UTC month key, '%Y-%m'. Part of the primary key: the cap is a "
+            "monthly rate, so a new month starts at zero rather than "
+            "accumulating a lifetime total. Derivable from counted_at, kept "
+            "explicit so the count is one indexed GROUP BY and not a string "
+            "slice per row."
+        ),
+        "stable_id": (
+            "The track whose bundle was presigned. Part of the primary key, "
+            "which is what makes a retry, a reload or a second machine "
+            "re-fetching the same bundle free: it is the same row, not a "
+            "second track against the cap."
+        ),
+        "counted_at": (
+            "RFC 3339 UTC timestamp of the first presign for this "
+            "(owner, month, stable_id). Informational: the row is deleted "
+            "again if the presign itself fails, so a counted track is one the "
+            "owner could actually download."
+        ),
+    },
 }
 
 __all__ = ["SIBLING_APP_COLUMN_DOCS"]

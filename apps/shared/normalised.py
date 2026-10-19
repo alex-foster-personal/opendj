@@ -4,7 +4,7 @@ These dataclasses are the lingua franca between Rekordbox and djay Pro readers
 and writers. They mirror the open-dj C5 strawman intent so Phase 15/16
 adapters won't need to re-map.
 
-See ``.planning/phases/04-cue-beatgrid-metadata-sync/04-RESEARCH.md`` §9.
+See ``(private path)`` §9.
 """
 from __future__ import annotations
 
@@ -52,7 +52,9 @@ class NormalisedAnalysis:
     bpm: float | None = None
     manual_bpm: float | None = None
     key_camelot: str | None = None
-    energy: int | None = None
+    # The user's color label (RB ``ColorID`` / djay ``colorIndex``). Neither
+    # library analyzes energy, so there is deliberately no energy field here.
+    color_index: int | None = None
     tags: str | None = None
     is_straight_grid: bool | None = None
     # Per-side last-modified timestamp used by the newest-wins conflict

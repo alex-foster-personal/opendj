@@ -1,0 +1,50 @@
+/* EditSuiteModal.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .es-overlay so it cannot leak. Keep the two in step. */
+.es-overlay {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.55);
+	z-index: 200;
+}
+.es-overlay .es-panel {
+	width: min(560px, 92vw);
+	max-height: 82vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--rb-panel-raised, #1c1f24);
+	border: 1px solid var(--rb-border, #333);
+	border-radius: 4px;
+	color: var(--rb-text, #ddd);
+	font-family: var(--rb-font, inherit);
+}
+.es-overlay .es-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--rb-border, #333);
+}
+.es-overlay .es-header h2 {
+	font-family: var(--rb-font-brand);
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+}
+.es-overlay .es-close {
+	background: transparent;
+	border: none;
+	color: var(--rb-text-dim, #999);
+	font-size: 14px;
+	cursor: pointer;
+	padding: 2px 6px;
+}
+.es-overlay .es-close:hover {
+	color: var(--rb-text, #ddd);
+}
+.es-overlay .es-body {
+	padding: 12px 14px;
+	overflow: auto;
+}

@@ -137,6 +137,10 @@ export function triggerFloatingAction(
 	function place(): void {
 		const trigger = config.getTrigger();
 		if (trigger === null) return;
+		// Out of flow BEFORE measuring: on a first open the node is still in
+		// flow beside its trigger, which can stretch the trigger, and nothing
+		// re-places it once the node leaves flow and the trigger shrinks back.
+		node.style.position = 'fixed';
 		const triggerRect = trigger.getBoundingClientRect();
 		const width = node.offsetWidth;
 		const height = node.offsetHeight;
@@ -153,7 +157,6 @@ export function triggerFloatingAction(
 			preferred: config.preferred ?? 'below',
 			gap: config.gap ?? DEFAULT_FLOAT_GAP_PX
 		});
-		node.style.position = 'fixed';
 		node.style.left = `${Math.round(box.x)}px`;
 		node.style.top = `${Math.round(box.y)}px`;
 	}

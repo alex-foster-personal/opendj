@@ -57,6 +57,8 @@ from apps.cloud.stem_bundles import pin_for_hydrate, unpin_hydrate
 from apps.cloud.stem_source import (
     STEM_HUB_INDEX_FAILED,
     STEM_HUB_UNREACHABLE,
+    STEM_MONTHLY_CAP_REACHED,
+    STEM_MONTHLY_CAP_UNSET,
     StemHydrationSource,
     StemSourceError,
     hub_transport_failure_kind,
@@ -112,7 +114,7 @@ def load_reserved_ids(data_dir: Path) -> frozenset[str]:
 #: route last served it, with no explicit deck-open call required. Chosen
 #: as a generous multiple of a normal DJ set length so a long-running
 #: session's decks are never evicted between two real loads of the same
-#: track; see docs/decisions/ADR-0024-stem-bundle-hydration-index.md
+#: track; see (private path)
 #: Addendum 3 for the full rationale.
 OPEN_DECK_SERVED_TTL_S: float = 6 * 3600.0  # 6 hours
 
@@ -227,6 +229,17 @@ class HydrationOutcome:
     status: HydrationStatus
     bytes_fetched: int = 0
     reason: str | None = None
+    #: The ``StemSourceError.code`` that produced this outcome, when there was
+    #: one. Without it a monthly-cap refusal became a code-less "error" and
+    #: every caller re-labelled it STEM_BUNDLE_HYDRATION_FAILED, so the stems
+    #: route answered 502 and bulk hydration treated a spent month as an
+    #: ordinary skip and kept asking for more tracks (Codex round 5).
+    code: str | None = None
+
+
+#: Source codes that mean "no more bundles this month", not "this bundle
+#: failed": hydration outcomes carrying one stop a bulk run.
+_MONTHLY_CAP_CODES = frozenset({STEM_MONTHLY_CAP_REACHED, STEM_MONTHLY_CAP_UNSET})
 
 
 @dataclass(frozen=True)
@@ -363,7 +376,9 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 if hub_transport_failure_kind(exc) is not None
                 else "error"
             )
-            return HydrationOutcome(stable_id, status, reason=exc.message)
+            return HydrationOutcome(
+                stable_id, status, reason=exc.message, code=exc.code
+            )
         except (
             HydrationError,
             asset_store.AssetStoreError,
@@ -512,6 +527,11 @@ def bulk_hydrate(
                 skipped=skipped,
             )
             break
+        if outcome.code in _MONTHLY_CAP_CODES:
+            # A spent (or unconfigured) month is not this track's problem: no
+            # further bundle can be served, so stop asking the hub instead of
+            # reporting a capped track as an ordinary skip (Codex round 5).
+            raise StemSourceError(outcome.code, outcome.reason or outcome.code)
         if outcome.status in ("hydrated", "already_local"):
             bytes_used += outcome.bytes_fetched
             fetched.append(outcome)

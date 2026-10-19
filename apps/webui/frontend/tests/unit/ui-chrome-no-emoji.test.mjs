@@ -135,6 +135,9 @@ const EMOJI_CODEPOINT_RE = /\p{Extended_Pictographic}/u;
 // a literal ▾, which the list did not name. Grandfathered on the same terms.
 const KNOWN_DEBT = new Map([
 	['src/lib/components/rb/browser/TreeCurrentFold.svelte', new Set(['▲', '▼'])],
+	// Its Storybook contract asserts the label the component renders today, so it
+	// carries the same two glyphs; both go when the component's glyphs go.
+	['src/lib/components/rb/browser/TreeCurrentFold.contract.ts', new Set(['▲', '▼'])],
 	['src/lib/components/rb/deck/DeckHeader.svelte', new Set(['⏏'])],
 	['src/lib/components/rb/deck/StripWaveform.svelte', new Set(['▶'])],
 	['src/lib/components/rb/wave/WaveRow.svelte', new Set(['⏏'])],
@@ -157,7 +160,7 @@ const KNOWN_DEBT = new Map([
 	// Third group: BUTTON_GLYPHS already used as controls when the button-scoped
 	// ban landed (Codex BLOCKING 4133648260). Only the two components Codex
 	// named (LibrarySourceTabs undo/redo, MidiLearnLogPopout window controls)
-	// were converted; the rest are tracked in .planning/debt/3896.md. Lines are
+	// were converted; the rest are tracked in (private path). Lines are
 	// where each glyph sat at that commit, for finding them, not for matching.
 	['src/lib/components/lyrics/StageOverlay.svelte', new Set(['×'])], // 282
 	['src/lib/components/rb/CreatePairingSheet.svelte', new Set(['×'])], // 141, 162

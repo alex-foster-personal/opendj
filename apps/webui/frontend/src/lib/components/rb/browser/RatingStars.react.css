@@ -1,0 +1,18 @@
+/* RatingStars.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .rb-stars so it cannot leak. Keep the two in step. */
+.rb-stars {
+	display: inline-flex;
+	flex-wrap: nowrap;
+	max-width: 100%;
+	gap: var(--rb-star-gap, 1px);
+}
+.rb-stars.unrated {
+	gap: calc(3 * var(--rb-star-gap, 1px));
+}
+.rb-stars button {
+	padding: 0;
+	margin: 0;
+	background: transparent;
+	border: none;
+	cursor: pointer;
+}

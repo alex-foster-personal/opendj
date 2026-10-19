@@ -19,11 +19,13 @@ from apps.cloud.asset_store import AssetStoreError
 from apps.cloud.eviction import HydrationError
 from apps.lyrics import stems_sync
 from apps.stems.external_roots import EXTERNAL_ROOTS_ENV
+from apps.sync_hub.entitlement_gate import GateErrorResponse
 from apps.vocals.errors import UnknownPlaylistError
 from apps.webui.server.routes.stems_parity_guard import (
     guard_stems_parity_call,
     unknown_playlist_response,
 )
+from apps.webui.server.routes.sync_hub_route_errors import HubErrorResponse
 
 router = APIRouter(tags=["stems"])
 
@@ -55,9 +57,20 @@ STEM_BULK_HYDRATE_RESPONSES: dict[int | str, dict[str, Any]] = {
         )
     },
     503: {
+        "model": HubErrorResponse | GateErrorResponse,
         "description": (
             "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint "
-            "and underlying error)"
+            "and underlying error), or the hub refused with "
+            "CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was "
+            "never given MDT_CLOUDSTEMS_MONTHLY_CAP"
+        )
+    },
+    429: {
+        "model": GateErrorResponse,
+        "description": (
+            "CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused because the "
+            "owner has used every CloudStems track in the current UTC month; "
+            "the allowance resets at the start of the next month"
         )
     },
 }
@@ -148,10 +161,15 @@ def _raise_hydrate_error(exc: BaseException) -> NoReturn:
 
 def _raise_stem_source_error(exc: BaseException, *, endpoint: str) -> NoReturn:
     from apps.cloud.stem_source import StemSourceError, hub_transport_failure_kind
+    from apps.webui.server.routes.stems import _raise_monthly_cap_refusal
     from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
 
     if not isinstance(exc, StemSourceError):
         raise exc
+    # A spent (or unconfigured) month keeps its own refusal here too: it is an
+    # answer, not a broken hub, and flattening it to 502 makes a client retry
+    # a refusal that cannot change until the month rolls over (Codex round 6).
+    _raise_monthly_cap_refusal(exc)
     if hub_transport_failure_kind(exc) == "unreachable":
         raise_sync_hub_unreachable(endpoint, exc)
     raise HTTPException(
@@ -260,7 +278,7 @@ def bulk_hydrate_stems(body: StemBulkHydrateIn) -> StemBulkHydrateOut | JSONResp
 def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
     from apps.cloud import stem_hydration, stem_index
     from apps.cloud.eviction import HydrationError
-    from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
+    from apps.cloud.hub_stem_client import STEM_INDEX_PATH
     from apps.cloud.stem_source import StemSourceError, resolve_stem_hydration_source
     from apps.shared.paths import DATA_DIR
     from apps.stems.cli import stems_dir as _stems_dir_for
@@ -312,7 +330,15 @@ def _bulk_hydrate_stems_impl(body: StemBulkHydrateIn) -> StemBulkHydrateOut:
             stems_dir=_stems_dir_for(data_dir),
         )
     except StemSourceError as exc:
-        _raise_stem_source_error(exc, endpoint=STEM_BUNDLE_PRESIGN_PATH)
+        # Name the operation that actually failed: a hosted bulk run may fail
+        # in the unmetered SIZE probe (bundle_remote_size) before any presign
+        # is asked for, and reporting the presign endpoint there misleads
+        # whoever reads the 503 (Codex round 7).
+        from apps.webui.server.routes.stems import _hub_endpoint_from_message
+
+        _raise_stem_source_error(
+            exc, endpoint=_hub_endpoint_from_message(exc.message)
+        )
     except HydrationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return StemBulkHydrateOut(

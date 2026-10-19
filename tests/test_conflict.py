@@ -102,7 +102,7 @@ def test_unknown_field_still_resolves():
 
 
 def test_prefer_rb_default_when_no_timestamps():
-    res = resolve_conflict("energy", 3, 5, prefer="rb")
+    res = resolve_conflict("color_index", 3, 5, prefer="rb")
     assert res == "accept_rb"
 
 

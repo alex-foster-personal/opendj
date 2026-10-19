@@ -525,14 +525,20 @@ def run_analysis_apply(
     from apps.shared.rekordbox_db import open_db  # noqa: PLC0415
     from apps.sync.analysis_csv_live import live_run  # noqa: PLC0415
 
-    rc = live_run(
-        rows,
-        fields=field_set,
-        flag_ok=i_understand_the_risks,
-        rb_db_path=paths.REKORDBOX_LIVE_DB,
-        djay_db_path=paths.DJAY_LIVE_DB,
-        open_rb_db=open_db,
-    )
+    try:
+        rc = live_run(
+            rows,
+            fields=field_set,
+            flag_ok=i_understand_the_risks,
+            rb_db_path=paths.REKORDBOX_LIVE_DB,
+            djay_db_path=paths.DJAY_LIVE_DB,
+            open_rb_db=open_db,
+        )
+    except (
+        apply_analysis.UnsupportedRbFieldError,
+        apply_analysis.UnsupportedDjayFieldError,
+    ) as exc:
+        raise RbDjaySyncError(str(exc), code="UNSUPPORTED_FIELD") from exc
     return {"dry_run": False, "exit_code": rc, "row_count": len(rows)}
 
 

@@ -1,0 +1,39 @@
+/* MissingTracksFolder.svelte's scoped <style>, unscoped for the React twin:
+ * every rule is anchored on the root's data-testid so it cannot leak (.row
+ * alone is too generic a class). Keep the two in step. */
+.row[data-testid='playlist-missing-tracks'] {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	height: 20px;
+	padding: 0 6px;
+	color: var(--rb-text);
+	cursor: pointer;
+	white-space: nowrap;
+}
+.row[data-testid='playlist-missing-tracks']:hover {
+	background: var(--rb-panel-raised);
+}
+.row[data-testid='playlist-missing-tracks'].selected {
+	background: var(--rb-select);
+}
+.row[data-testid='playlist-missing-tracks'] svg {
+	flex: none;
+	color: var(--rb-text-dim);
+}
+.row[data-testid='playlist-missing-tracks'] .name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.row[data-testid='playlist-missing-tracks'] .count {
+	flex: none;
+	min-width: 4ch;
+	align-self: stretch;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	color: var(--rb-text-dim);
+	font-variant-numeric: tabular-nums;
+}

@@ -360,6 +360,18 @@ TABLE_DOCS: dict[str, str] = {
         "updated_at/origin_device_id/deleted_at -- and does not drop the "
         "loser's tracks row (apps/sync_hub/engine_identity_map.py)."
     ),
+    "stem_bundle_usage": (
+        "The CloudStems monthly bundle meter (CSPAY-08): one row per "
+        "(owner_sub, UTC month, stable_id) that a HOSTED hub has presigned a "
+        "stem bundle for. A stable_id is counted once a month, so a reload, a "
+        "retry or a second machine re-downloading the same bundle is not a "
+        "second track; a new UTC month starts at zero because the cap is a "
+        "monthly rate, not a lifetime total. Created lazily by the first "
+        "presign of a month and never by a self-hosted daemon "
+        "(apps/sync_hub/stem_meter.py :: ensure_usage_table), so it is "
+        "billing bookkeeping rather than library data and is not in the sync "
+        "set."
+    ),
     # ----- apps/shared/pairings/schema_sql.py, its SECOND ladder ---------
     # apply_pairing_capture_migrations, applied lazily by the webui capture
     # routes on the daemon's writable state.db. Column docs live in

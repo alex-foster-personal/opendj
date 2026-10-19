@@ -124,3 +124,15 @@ def test_unknown_field_resolution_hint_mapped():
     rows = [DiffRow("1", "a", "foo", "x", "y", "conflict", "manual review")]
     out = summarise(rows)
     assert out["foo"]["conflict"] == 1
+
+
+def test_build_analysis_diff_never_plans_a_color_label_write():
+    """[if] an RB color label with no decodable djay counterpart yields a
+    ``color_index`` (or ``energy``) diff row [then] apply would overwrite the
+    djay blob's schema bytes, [else stop]. Control: the bpm row still appears."""
+    rb_an = {"1": NormalisedAnalysis(uuid_or_id="1", source="rb", bpm=128.0, color_index=3)}
+    dj_an = {"a": NormalisedAnalysis(uuid_or_id="a", source="djay", bpm=130.0)}
+    ans, _ratings = build_analysis_diff(rb_an, dj_an, {}, {}, [("1", "a")])
+    fields = {r.field for r in ans}
+    assert "bpm" in fields
+    assert not fields & {"color_index", "energy"}

@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import stat
 import threading
+import time
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from io import BufferedReader
 from pathlib import Path
 from typing import Any, Literal
@@ -26,11 +29,17 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.cloud import stem_cache_budget, stem_hydration, stem_index
-from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
+from apps.cloud.hub_stem_client import (
+    STEM_BUNDLE_PRESIGN_PATH,
+    STEM_BUNDLE_SIZE_PATH,
+    STEM_INDEX_PATH,
+)
 from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
     STEM_HUB_INDEX_FAILED,
     STEM_HUB_UNREACHABLE,
+    STEM_MONTHLY_CAP_REACHED,
+    STEM_MONTHLY_CAP_UNSET,
     DirectR2Source,
     StemHydrationSource,
     StemSourceError,
@@ -43,7 +52,11 @@ from apps.stems.artifacts import (
     StemBundleNotFoundError,
     load_stem_bundle,
 )
-from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
+from apps.sync_hub.entitlement_gate import GateErrorResponse
+from apps.webui.server.routes.sync_hub_route_errors import (
+    HubErrorResponse,
+    raise_sync_hub_unreachable,
+)
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
 
@@ -72,11 +85,29 @@ _INFLIGHT_FILE_TOTALS: dict[str, int] = {}
 class _HydrateError:
     code: str
     message: str
+    #: Epoch seconds after which this record is forgotten; None never expires.
+    #: A time-bound refusal (a spent month, an unset allowance) must not be
+    #: cached forever: an app left open across the UTC reset would keep
+    #: answering 429 for a track the hub serves again (Codex round 4).
+    expires_at: float | None = None
 
 
 _LAST_HYDRATE_ERROR: dict[str, _HydrateError] = {}
 
 STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    429: {
+        # A model, not just a description: description-only entries regenerate
+        # into api-types.ts with no content, so a typed client cannot read
+        # detail.code (Codex round 8). The 429 body is {"detail": {code, message}}.
+        "model": GateErrorResponse,
+        "description": (
+            "CLOUDSTEMS_MONTHLY_CAP_REACHED: the sync hub refused this bundle "
+            "because the owner has used every CloudStems track in the current "
+            "UTC month. The allowance resets at the start of the next month; "
+            "retrying before then only repeats the refusal. Bundles already "
+            "taken this month keep serving."
+        )
+    },
     502: {
         "description": (
             "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when "
@@ -93,9 +124,16 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
         )
     },
     503: {
+        # Every 503 here is {"detail": {code, message[, endpoint]}}; a model lets
+        # a typed client read detail.code (Codex round 9, Sol on 91035ad). The
+        # unreachable-hub body and the relayed cap refusal are different models,
+        # so the contract names both (Sol on 27f9acf396, P1).
+        "model": HubErrorResponse | GateErrorResponse,
         "description": (
             "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint "
-            "and underlying error)"
+            "and underlying error), or the hub refused with "
+            "CLOUDSTEMS_MONTHLY_CAP_UNSET because it meters CloudStems but was "
+            "never given MDT_CLOUDSTEMS_MONTHLY_CAP"
         )
     },
 }
@@ -103,7 +141,13 @@ STEM_HYDRATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 STEM_PART_RESPONSES: dict[int | str, dict[str, Any]] = {
     **STEM_HYDRATION_ERROR_RESPONSES,
     503: {
+        # MERGED, not replaced: the base mapping already declares the
+        # unreachable-hub and CLOUDSTEMS_MONTHLY_CAP_UNSET refusals, and
+        # overwriting the entry silently dropped the operator-fixable cap
+        # refusal from the committed contract (Codex round 5).
+        "model": HubErrorResponse | GateErrorResponse,
         "description": (
+            f"{STEM_HYDRATION_ERROR_RESPONSES[503]['description']}; or "
             "STEM_BUNDLE_HYDRATING: a fresh R2 hydration did not finish within "
             "STEM_PART_HYDRATE_WAIT_S; retry the request"
         )
@@ -267,7 +311,10 @@ def _hydration_deps(request: Request) -> tuple[StemHydrationSource, Path] | None
 
 
 def _hub_endpoint_from_message(message: str) -> str:
-    if "bundle presign" in message or "presign" in message.casefold():
+    lowered = message.casefold()
+    if "bundle size" in lowered:
+        return STEM_BUNDLE_SIZE_PATH
+    if "bundle presign" in lowered or "presign" in lowered:
         return STEM_BUNDLE_PRESIGN_PATH
     return STEM_INDEX_PATH
 
@@ -282,6 +329,7 @@ def _stem_source_error_from_hub_reason(reason: str) -> StemSourceError:
 
 def _raise_hydrate_error(error: _HydrateError) -> None:
     exc = StemSourceError(error.code, error.message)
+    _raise_monthly_cap_refusal(exc)
     if hub_transport_failure_kind(exc) == "unreachable":
         raise_sync_hub_unreachable(_hub_endpoint_from_message(error.message), exc)
     if hub_transport_failure_kind(exc) is not None:
@@ -292,7 +340,30 @@ def _raise_hydrate_error(error: _HydrateError) -> None:
     _raise_hydration_failed(error)
 
 
+def _raise_monthly_cap_refusal(exc: StemSourceError) -> None:
+    """Preserve the hub's own refusal for a spent (or unconfigured) month.
+
+    A 429 from the hub is an answer, not a failure: it means this owner has
+    used the month's CloudStems allowance. Without this branch the code fell
+    through to ``STEM_HUB_INDEX_FAILED`` and the stems route answered 502,
+    which a client reads as "the hub broke" and retries -- spending the same
+    refusal again (Codex round 3, P2). 503 UNSET keeps its own code for the
+    same reason: the operator can fix a missing allowance, a retry cannot.
+    """
+    if exc.code == STEM_MONTHLY_CAP_REACHED:
+        raise HTTPException(
+            status_code=429,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    if exc.code == STEM_MONTHLY_CAP_UNSET:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
 def _raise_source_error(exc: StemSourceError) -> None:
+    _raise_monthly_cap_refusal(exc)
     if hub_transport_failure_kind(exc) == "unreachable":
         raise_sync_hub_unreachable(_hub_endpoint_from_message(exc.message), exc)
     raise HTTPException(
@@ -320,8 +391,7 @@ def _run_hydration(
             hand_off_to_deck=True,  # the deck polls for this bundle next
         )
     except StemSourceError as exc:
-        with _INFLIGHT_LOCK:
-            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(exc.code, exc.message)
+        _remember_hydrate_error(stable_id, exc.code, exc.message)
         _log_hydration_failure(stable_id, exc.code, exc.message)
         return stem_hydration.HydrationOutcome(
             stable_id=stable_id,
@@ -329,37 +399,25 @@ def _run_hydration(
             reason=exc.message,
         )
     except Exception as exc:
-        with _INFLIGHT_LOCK:
-            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
-                "STEM_BUNDLE_HYDRATION_FAILED",
-                str(exc),
-            )
+        _remember_hydrate_error(stable_id, "STEM_BUNDLE_HYDRATION_FAILED", str(exc))
         _log_hydration_failure(stable_id, "STEM_BUNDLE_HYDRATION_FAILED", str(exc))
         raise
-    with _INFLIGHT_LOCK:
-        if outcome.status == "error":
-            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
-                "STEM_BUNDLE_HYDRATION_FAILED",
-                outcome.reason or "hydration failed",
-            )
-        elif outcome.status == "hub_error":
-            hub_exc = _stem_source_error_from_hub_reason(
-                outcome.reason or "hub transport failure"
-            )
-            _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(
-                hub_exc.code,
-                hub_exc.message,
-            )
-        else:
-            _LAST_HYDRATE_ERROR.pop(stable_id, None)
     if outcome.status == "error":
-        _log_hydration_failure(
-            stable_id, "STEM_BUNDLE_HYDRATION_FAILED", outcome.reason or "hydration failed"
-        )
+        # The outcome carries the source's own code when it had one; without
+        # it a monthly-cap refusal was re-labelled STEM_BUNDLE_HYDRATION_FAILED
+        # and answered 502 instead of 429/503 (Codex round 5).
+        code = outcome.code or "STEM_BUNDLE_HYDRATION_FAILED"
+        reason = outcome.reason or "hydration failed"
+        _remember_hydrate_error(stable_id, code, reason)
+        _log_hydration_failure(stable_id, code, reason)
     elif outcome.status == "hub_error":
-        _log_hydration_failure(
-            stable_id, hub_exc.code, outcome.reason or "hub transport failure"
-        )
+        reason = outcome.reason or "hub transport failure"
+        hub_exc = _stem_source_error_from_hub_reason(reason)
+        _remember_hydrate_error(stable_id, hub_exc.code, hub_exc.message)
+        _log_hydration_failure(stable_id, hub_exc.code, reason)
+    else:
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR.pop(stable_id, None)
     return outcome
 
 
@@ -370,13 +428,17 @@ def _log_hydration_failure(stable_id: str, code: str, reason: str) -> None:
     never becomes a Sentry event (``failed_request_status_codes=set()``), and
     the deck that asked may be mid-set, where the client report is held back.
     ERROR reaches the error sink and Sentry through the engine warning log;
-    an unreachable hub stays WARNING, because a laptop offline at a venue is
-    an expected state, not a defect.
+    an unreachable hub and a monthly-cap refusal stay WARNING, because a
+    laptop offline at a venue and a spent allowance are expected states, not
+    defects.
     """
     exc = StemSourceError(code, reason)
+    # A spent or unconfigured monthly allowance is an answer from the hub,
+    # not a defect: WARNING, so it never reaches Sentry (Sol, P2).
+    expected = code in (STEM_MONTHLY_CAP_REACHED, STEM_MONTHLY_CAP_UNSET)
     level = (
         logging.WARNING
-        if hub_transport_failure_kind(exc) == "unreachable"
+        if expected or hub_transport_failure_kind(exc) == "unreachable"
         else logging.ERROR
     )
     log.log(
@@ -439,9 +501,74 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
         return future
 
 
-def _recorded_hydration_error(stable_id: str) -> _HydrateError | None:
+#: How long an UNSET-allowance refusal is remembered: long enough to stop a hot
+#: loop hammering the hub, short enough that fixing the env is felt.
+CAP_UNSET_RECHECK_S: float = 900.0
+#: How long a cap refusal whose text names no month is trusted before asking again.
+CAP_UNNAMED_RECHECK_S: float = 900.0
+
+
+#: The billed month the hub names in a cap refusal: ``StemCapExceeded`` words
+#: it "CloudStems monthly cap reached for YYYY-MM", and every relay of that
+#: refusal (transport error, source error, outcome reason) keeps that text.
+_CAP_MONTH_RE = re.compile(r"monthly cap reached for (\d{4})-(\d{2})\b")
+
+
+def _cap_refusal_expiry(code: str, now: datetime, message: str = "") -> float | None:
+    """When a time-bound refusal stops being true, in epoch seconds.
+
+    ``CLOUDSTEMS_MONTHLY_CAP_REACHED`` expires at 00:00 UTC on the first of the
+    month after the one the HUB refused, which is when its allowance resets.
+    The month comes from the hub's own refusal text, not from when this spoke
+    received it, so a refusal sent at 23:59 on the 31st and read at 00:00 on
+    the 1st is already expired rather than cached for a whole month (Sol review
+    of 61dd5ee997, P1). A refusal that names no valid month is not guessed
+    into a month: it expires after :data:`CAP_UNNAMED_RECHECK_S`, so a
+    refusal from a hub whose text changed is asked again soon rather than
+    cached past a reset it cannot see (Sol review of 27f9acf396, P1).
+    ``..._UNSET`` expires after :data:`CAP_UNSET_RECHECK_S`, because an
+    operator can fix the env at any time. Every other code is not time-bound
+    and is recorded with no expiry.
+    """
+    if code == STEM_MONTHLY_CAP_REACHED:
+        named = _CAP_MONTH_RE.search(message)
+        if named is None or not 1 <= int(named.group(2)) <= 12:
+            return now.timestamp() + CAP_UNNAMED_RECHECK_S
+        year, month = int(named.group(1)), int(named.group(2))
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return datetime(year, month, 1, tzinfo=UTC).timestamp()
+    if code == STEM_MONTHLY_CAP_UNSET:
+        return now.timestamp() + CAP_UNSET_RECHECK_S
+    return None
+
+
+def _remember_hydrate_error(stable_id: str, code: str, message: str) -> None:
+    """Record a failed hydration, with an expiry for a time-bound refusal."""
+    error = _HydrateError(
+        code,
+        message,
+        expires_at=_cap_refusal_expiry(code, datetime.now(UTC), message),
+    )
     with _INFLIGHT_LOCK:
-        return _LAST_HYDRATE_ERROR.get(stable_id)
+        _LAST_HYDRATE_ERROR[stable_id] = error
+
+
+def _recorded_hydration_error(stable_id: str) -> _HydrateError | None:
+    """The recorded failure for ``stable_id``, forgetting an expired one.
+
+    A refusal that has expired is dropped rather than returned, so the next
+    request re-enqueues a fresh hydration and asks the hub again. That is what
+    makes a month's reset (or an operator fixing the cap) visible without a
+    restart or an explicit hydrate POST.
+    """
+    with _INFLIGHT_LOCK:
+        error = _LAST_HYDRATE_ERROR.get(stable_id)
+        if error is None:
+            return None
+        if error.expires_at is not None and error.expires_at <= time.time():
+            _LAST_HYDRATE_ERROR.pop(stable_id, None)
+            return None
+        return error
 
 
 def _raise_hydration_failed(error: _HydrateError | str) -> None:
@@ -876,7 +1003,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
         except Exception as exc:  # noqa: BLE001 - any escaping exception from the hydration future must still answer the same 502 contract, never an unclassified 500
             recorded = _recorded_hydration_error(stable_id)
             if recorded is not None:
-                _raise_hydration_failed(recorded)
+                _raise_hydrate_error(recorded)
             _raise_hydration_failed(str(exc))
         if outcome.status == "hub_error":
             hub_exc = _stem_source_error_from_hub_reason(
@@ -886,7 +1013,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
         if outcome.status == "error":
             recorded = _recorded_hydration_error(stable_id)
             if recorded is not None:
-                _raise_hydration_failed(recorded)
+                _raise_hydrate_error(recorded)
             _raise_hydration_failed(outcome.reason or "hydration failed")
         bundle = _load_or_http_error(stable_id, request)
     if part not in bundle.parts:

@@ -284,6 +284,14 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     # apps/sync_hub/client.py runs it directly against the shared state.db
     # connection returned by state_db.open_rw.
     "sync_identity_remap",
+    # apps/sync_hub/stem_meter.py :: ensure_usage_table -- the CloudStems
+    # monthly bundle meter (CSPAY-08). Created lazily by the first presign of
+    # a month on a HOSTED hub, outside the sync set (no updated_at/
+    # origin_device_id/deleted_at; it is billing bookkeeping, not library
+    # data), and never created by a self-hosted daemon. Declared here by its
+    # own authority, not by the ladder, for the same reason as
+    # sync_identity_remap above: it really is provisioned in state.db.
+    "stem_bundle_usage",
 )
 """Tables this module does NOT create but that legitimately live in the same
 file, written by the other three schema authorities (spec section 1.3 of

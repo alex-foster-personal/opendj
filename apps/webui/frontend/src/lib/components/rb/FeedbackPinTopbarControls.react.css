@@ -1,0 +1,14 @@
+/* FeedbackPinTopbarControls.svelte's scoped <style>, unscoped for the React
+ * twin: every rule is anchored on .fb-shell-pins-toggle. Keep the two in step. */
+.fb-shell-pins-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--muted);
+	cursor: pointer;
+	white-space: nowrap;
+}
+.fb-shell-pins-toggle input {
+	margin: 0;
+}

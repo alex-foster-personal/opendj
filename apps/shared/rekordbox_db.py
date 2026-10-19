@@ -6,8 +6,8 @@ rough edges (nullable relationships, BPM×100 storage, streaming FolderPaths).
 
 This module also owns the one SQLCipher decrypt routine in the repo
 (:func:`decrypt_to_plain` / :func:`ensure_plain_db`): the live ``master.db``
-and its ``data/master.db.copy`` snapshot are encrypted, while every reader
-here consumes the decrypted ``data/master.plain.db``.
+and its ``(private path)`` snapshot are encrypted, while every reader
+here consumes the decrypted ``(private path)``.
 """
 from __future__ import annotations
 
@@ -146,8 +146,8 @@ def ensure_plain_db(
 
     ``decrypted`` is True when this call did the decryption, False when an
     existing ``plain`` copy was reused. Reuse is the documented convention:
-    ``data/master.plain.db`` is static, and refreshing it means re-decrypting
-    on purpose (``refresh=True``) plus clearing ``data/state/anlz-cache/``.
+    ``(private path)`` is static, and refreshing it means re-decrypting
+    on purpose (``refresh=True``) plus clearing ``(private path)/``.
 
     Raises
     ------
@@ -445,8 +445,9 @@ def iter_analysis(db: Rekordbox6Database) -> "Iterator":
     """Yield ``NormalisedAnalysis`` for every RB track.
 
     BPM is read from ``DjmdContent.BPM`` (stored as BPM×100). Key is
-    resolved through the harmonic module's Camelot mapping. Energy uses
-    ``ColorID`` as the one-to-one proxy (see 04-RESEARCH §1). Write-back
+    resolved through the harmonic module's Camelot mapping. ``ColorID`` is
+    carried as ``color_index``, the user's color label, which syncs one-to-one
+    with djay's ``colorIndex``; it is not an energy score. Write-back
     converts BPM only at ``djmdContent.BPM``; PQTZ tempo is a separate x100
     at the ANLZ tag (``analysis_writeback_pqtz``). Key is a ``KeyID`` foreign
     key, never a scale name on ``djmdContent``; loudness has no rekordbox column.
@@ -471,7 +472,7 @@ def iter_analysis(db: Rekordbox6Database) -> "Iterator":
             bpm=bpm,
             manual_bpm=None,
             key_camelot=camelot,
-            energy=color_id,
+            color_index=color_id,
             tags=None,
             is_straight_grid=None,
         )
