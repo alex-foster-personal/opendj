@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.analysis_beatgrid.activations import require_activations_for_fit
-from apps.analysis_beatgrid.bpm import least_squares_bpm
+from apps.analysis_beatgrid.bpm import confidence_from_fit_residual, least_squares_bpm
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 
@@ -31,14 +31,6 @@ class TempoAnchor:
 @dataclass(frozen=True)
 class TempoMap:
     anchors: tuple[TempoAnchor, ...]
-
-
-def _confidence_from_residual(residual_rms_s: float, bpm: float) -> float:
-    # Same mapping as bpm._confidence_from_residual without the octave halving.
-    period_s = 60.0 / bpm
-    scatter = residual_rms_s / period_s if period_s > 0 else 1.0
-    score = max(0.0, 1.0 - scatter / 0.25)
-    return round(score, 4)
 
 
 def _ls_intercept(segment_times: Sequence[float], bpm: float) -> float:
@@ -65,7 +57,7 @@ def _fit_segment_anchor(
         at_s=at_s,
         beat_index=lo,
         bpm=bpm,
-        confidence=_confidence_from_residual(residual_rms_s, bpm),
+        confidence=confidence_from_fit_residual(residual_rms_s, bpm),
         residual_rms_s=residual_rms_s,
     )
 

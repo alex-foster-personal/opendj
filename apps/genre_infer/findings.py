@@ -55,6 +55,8 @@ STATUS_UNKNOWN = "unknown"
 # shows one genre in the Beatport taxonomy, which our guess supplies).
 DEFAULT_PRECEDENCE: tuple[str, ...] = (PROVIDER_USER, "beatport", PROVIDER_FUSED, PROVIDER_LIBRARY_TAG)
 
+_ID_CHUNK = 500
+
 
 class GenreInputError(ValueError):
     """A finding, provider id or config value that fails validation (HTTP 422)."""
@@ -238,8 +240,8 @@ def findings_for(
             out.setdefault(row[0], []).append(_finding_from_row(row))
         return out
     ids = list(dict.fromkeys(stable_ids))
-    for start in range(0, len(ids), 500):
-        chunk = ids[start : start + 500]
+    for start in range(0, len(ids), _ID_CHUNK):
+        chunk = ids[start : start + _ID_CHUNK]
         marks = ",".join("?" * len(chunk))
         for row in conn.execute(
             f"SELECT {_COLUMNS} FROM genre_findings WHERE stable_id IN ({marks}){only} ORDER BY created_at DESC",

@@ -1,7 +1,7 @@
 """Per-set SQLite shim (session + event timeline).
 
 Plan 12-01 Step 1. By default this shim lives in its own file
-(``data/sets/sets.db``) so Phase 12 can ship without a hard dep on
+(``(private path)``) so Phase 12 can ship without a hard dep on
 Phase 5's ``apps.shared.state``. Event shape is per CONTEXT D3:
 
     {session_id, timestamp_s, wall_clock, deck, track_stable_id,
@@ -34,11 +34,11 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from . import paths as sets_paths
+from .manifest import now_iso
 
 # ---------------------------------------------------------------------------
 # schema
@@ -144,10 +144,6 @@ class Event:
 # ---------------------------------------------------------------------------
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds")
-
-
 def _ensure_schema(conn: sqlite3.Connection, *, events_table: str = "events") -> None:
     schema = _PHASE5_SCHEMA_SQL if events_table == "set_events" else SCHEMA_SQL
     for stmt in schema:
@@ -226,7 +222,7 @@ class SetsState:
         exists. The caller owns collision handling (see
         ``record.resolve_session_id``).
         """
-        started = started_at or _now_iso()
+        started = started_at or now_iso()
         with self._rw() as conn:
             conn.execute(
                 """
@@ -246,7 +242,7 @@ class SetsState:
 
     def end_session(self, session_id: str, *, ended_at: str | None = None) -> None:
         """Stamp ``ended_at`` on an existing session."""
-        stamp = ended_at or _now_iso()
+        stamp = ended_at or now_iso()
         with self._rw() as conn:
             conn.execute(
                 "UPDATE sets SET ended_at = ? WHERE session_id = ?",

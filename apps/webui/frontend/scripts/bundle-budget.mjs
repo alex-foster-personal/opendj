@@ -413,7 +413,15 @@ const BUDGETS = [
   // Library-mode guards in BrowserPanel, TrackTable and TrackContextMenu. The raise is the
   // measured size ceiled to KiB (273,408) plus 2 KiB headroom. Payback: none open; the
   // browser is this route's UI and stays eager.
-  { name: 'performance', limit: 275456, measured: 272784, note: '/performance and children' },
+  // RAISED Fri 16 Oct 2026 (+3,072 B, part C of #6211, REACT-01 `ui.react.deck`; within the V1
+  // rule of up to 4 KiB per V1 PR). Local, one clean build each: part A 479c89602 (main
+  // a7a1ef3fb plus the tooling) measured 274,759 over 24 files; this head 275,958 over 24, +1,199
+  // (502 over the old limit). The weight is ReactIsland, the flag read in Deck and HotCueBank, and
+  // the seven twin loader stubs; react, react-dom and the twins themselves stay lazy in
+  // other-lazy, so a build with the flag off fetches none of them. The raise is the measured size
+  // ceiled to KiB (276,480) plus 2 KiB headroom. Payback: when the v2 shell is React, the islands
+  // and the Svelte originals they wrap leave this route together.
+  { name: 'performance', limit: 278528, measured: 275958, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -571,7 +579,17 @@ const BUDGETS = [
   // branch 267,525 over 85, +8,105 (the lazy Crate Desk chunk, as the source measured
   // +8,073), inside the unchanged 303,104 ceiling. The "/" library budget fell 2,263
   // (269,671 -> 267,408): VirtualTable/TrackRow left the eager closure.
-  { name: 'other-lazy', limit: 303104, measured: 302097, note: 'all other routes plus deferred shell' },
+  // RAISED Fri 16 Oct 2026: 296 -> 361 KiB for REACT-01 (part C of #6211, `ui.react.deck`, the
+  // React deck twins behind ReactIsland). Local, one clean build each: part A 479c89602 measured
+  // 286,607 over 90 files; this head 351,420 over 101, +64,813. Nearly all of it is react +
+  // react-dom/client (about 60 KB gzip), plus the seven twins and their CSS chunks. ReactIsland
+  // imports react, react-dom/client and the twin dynamically, and Deck.svelte mounts an island
+  // only when the daemon declares `ui.react.deck` on (default OFF), so none of this is fetched by
+  // a build with the flag off. This is the documented "lazy raise" case: the ceiling follows the
+  // +5% ceil-to-KiB rule on 351,420 (=> 368,991, 361 KiB = 369,664). Payback: when the v2 shell
+  // itself is React, react-dom moves to that shell's own budget and this bucket gives the ~60 KB
+  // back.
+  { name: 'other-lazy', limit: 369664, measured: 351420, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

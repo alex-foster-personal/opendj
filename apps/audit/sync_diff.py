@@ -5,10 +5,11 @@ import argparse
 import csv
 import sys
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.audit.matches_csv import DEFAULT_MIN_MATCH_CONFIDENCE, iter_match_pairs
 from apps.shared import paths
 from apps.shared.normalised import NormalisedAnalysis
 from apps.sync.conflict import resolve_conflict
@@ -31,24 +32,6 @@ _ACTION_HINTS = {
     "conflict": "manual review",
     "no_change": "skip",
 }
-
-
-def iter_match_pairs(
-    matches_csv: Path, *, min_confidence: float = 0.70
-) -> Iterator[tuple[str, str]]:
-    with matches_csv.open("r", newline="", encoding="utf-8") as fp:
-        reader = csv.DictReader(fp)
-        for rec in reader:
-            try:
-                conf = float(rec.get("confidence", "0") or 0)
-            except ValueError:
-                conf = 0.0
-            if conf < min_confidence:
-                continue
-            rb_id = rec.get("rb_content_id") or rec.get("rb_id") or ""
-            djay_uuid = rec.get("djay_uuid") or ""
-            if rb_id and djay_uuid:
-                yield rb_id, djay_uuid
 
 
 def build_analysis_diff(
@@ -166,7 +149,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="apps.audit.sync_diff")
     parser.add_argument("--matches", type=Path, default=paths.DATA_DIR / "sync" / "matches.csv")
     parser.add_argument("--out-dir", type=Path, default=paths.DATA_DIR / "sync")
-    parser.add_argument("--min-confidence", type=float, default=0.70)
+    parser.add_argument(
+        "--min-confidence", type=float, default=DEFAULT_MIN_MATCH_CONFIDENCE
+    )
     parser.add_argument("--prefer", choices=["rb", "djay", "newest"], default="newest")
     parser.add_argument("--include-cues", action="store_true")
     args = parser.parse_args(argv)

@@ -1,7 +1,7 @@
 # Pin ledger export corpus
 
-Locked feedback store snapshot used to regenerate `docs/threads/user-prompts-pins.jsonl`
-without a live engine lane. Sources:
+Locked feedback store snapshot used to regenerate `user-prompts-pins.jsonl` (in a
+provenance store, published to `odj-private/threads/`) without a live engine lane. Sources:
 
 - `comments.json` and `archive-*.json` from silver `com.opendj.desktop` feedback
   (rsync `~/Library/Application Support/com.opendj.desktop/feedback/`).
@@ -13,7 +13,6 @@ Refresh:
 
 ```sh
 uv run --no-sync python -m scripts.feedback_prompts_export \
-  --repo . \
   --feedback-dir tests/fixtures/feedback/pin-ledger-corpus \
-  --output docs/threads/user-prompts-pins.jsonl
+  --out-dir <provenance store outside the checkout>
 ```

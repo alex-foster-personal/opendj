@@ -16,6 +16,8 @@ from apps.spotify.client import SpotifyTrack
 
 from .config import CFG
 
+_TRACK_URN_PREFIX = "soundcloud:tracks:"
+
 
 class SoundCloudError(RuntimeError):
     """SoundCloud configuration, wire, or HTTP failure."""
@@ -32,10 +34,9 @@ class SoundCloudTrack:
 
     @property
     def numeric_id(self) -> int:
-        prefix = "soundcloud:tracks:"
-        if not self.urn.startswith(prefix) or not self.urn[len(prefix) :].isdigit():
+        if not self.urn.startswith(_TRACK_URN_PREFIX) or not self.urn[len(_TRACK_URN_PREFIX) :].isdigit():
             raise SoundCloudError(f"invalid SoundCloud track URN: {self.urn!r}")
-        return int(self.urn[len(prefix) :])
+        return int(self.urn[len(_TRACK_URN_PREFIX) :])
 
 
 def _required_string(row: dict[str, Any], field: str) -> str:
@@ -114,8 +115,8 @@ class SoundCloudClient:
         timeout = httpx.Timeout(
             connect=CFG.connect_timeout_s,
             read=CFG.read_timeout_s,
-            write=30.0,
-            pool=10.0,
+            write=CFG.write_timeout_s,
+            pool=CFG.pool_timeout_s,
         )
         self._client = httpx.Client(
             base_url=CFG.soundcloud_api_base,

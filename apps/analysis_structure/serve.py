@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any
 
 from . import fast_sidecar
+from .contract import PHRASE_SOURCE_LANES
 from .drop_events import mark_drops
 from .pipeline import load_sidecar
 
@@ -83,7 +84,7 @@ def _own_phrase(section: dict[str, Any], source: str = "own") -> dict[str, Any]:
 def merge_own_phrases(
     payload: dict[str, Any], stable_id: str, data_dir: Path, *, source: str, share: bool = False
 ) -> dict[str, Any]:
-    if source not in ("rbx", "own"):
+    if source not in PHRASE_SOURCE_LANES:
         raise ValueError(f"unknown phrase source {source!r}")
     if source == "rbx" and payload.get("phrases"):
         return {**payload, "phrases_source": "rekordbox"}

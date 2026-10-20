@@ -15,28 +15,29 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from .asset_store import HASH_SHARD_LEN
 from .config import CloudConfig
 from .lock import S3Client
+
+AUDIO_PREFIX: str = "audio"
+_HASH_CHUNK_BYTES: int = 1 << 20
 
 
 class AudioUploadError(RuntimeError):
     """Raised when an upload fails."""
 
 
-def compute_content_hash(path: Path, chunk_size: int = 1 << 20) -> str:
+def compute_content_hash(path: Path, chunk_size: int = _HASH_CHUNK_BYTES) -> str:
     """Return a hex SHA-256 of the file at ``path``.
 
     Kept simple: full-file hash. Good enough for 16 GB of audio at ~400
     MB/s on an M-series SSD. Streaming reads keep memory flat.
     """
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        while True:
-            chunk = fh.read(chunk_size)
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def audio_object_key(stable_id: str, extension: str) -> str:
@@ -48,7 +49,9 @@ def audio_object_key(stable_id: str, extension: str) -> str:
     """
     if not extension.startswith("."):
         extension = "." + extension
-    return f"audio/{stable_id[:2]}/{stable_id}{extension}"
+    return (
+        f"{AUDIO_PREFIX}/{stable_id[:HASH_SHARD_LEN]}/{stable_id}{extension}"
+    )
 
 
 def upload_audio(
@@ -82,6 +85,7 @@ def upload_audio(
 
 
 __all__ = [
+    "AUDIO_PREFIX",
     "AudioUploadError",
     "audio_object_key",
     "compute_content_hash",

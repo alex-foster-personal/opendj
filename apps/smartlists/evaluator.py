@@ -248,14 +248,11 @@ def evaluate(
     if eav_order_field is not None:
         # ORDER BY is a reader too: sorting a promoted lane by the
         # rekordbox column would order the list by a value no cell shows.
-        if eav_order_field in PROJECTION_FIELDS:
-            order_col = field_column_sql(eav_order_field, selection)
-        else:
-            order_col = (
-                "(SELECT json_extract(tf_o.value_json, '$') FROM track_fields tf_o "
-                "WHERE tf_o.stable_id = tracks.stable_id AND tf_o.field_name = "
-                f"{_sql_literal(eav_order_field)} LIMIT 1)"
-            )
+        order_col = (
+            field_column_sql(eav_order_field, selection)
+            if eav_order_field in PROJECTION_FIELDS
+            else _eav_scalar(eav_order_field)
+        )
         select = f"SELECT tracks.stable_id, {order_col} AS _{eav_order_field} "
     else:
         select = "SELECT tracks.stable_id "

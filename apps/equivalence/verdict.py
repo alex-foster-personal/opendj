@@ -54,6 +54,19 @@ from apps.equivalence.verdict_types import (
 # ------------------------------------------------------------- the gate
 
 
+def _cluster_coverage_phrase(cluster: OffsetCluster, *, include_subset: bool) -> str:
+    """Parenthetical share stats for mapping-bug and suspect-cluster reason lines."""
+    phrase = (
+        f"({cluster.share:.1%} of disagreements, "
+        f"{cluster.population_share:.1%} of the comparable population"
+    )
+    if include_subset and cluster.subset_coverage is not None:
+        phrase += (
+            f", {cluster.subset_coverage:.0%} of all {cluster.subset_form} rows"
+        )
+    return phrase + ")"
+
+
 def _structural_check(
     verdict: PairVerdict, spec: FieldPair, left: Probe, right: Probe
 ) -> bool:
@@ -125,14 +138,7 @@ def _mechanical_failures(
         verdict.suite_status = SUITE_MAPPING_BUG
         verdict.reasons.extend(
             f"MAPPING BUG: systematic offset {c.signature!r} on {c.count} rows "
-            f"({c.share:.1%} of disagreements, {c.population_share:.1%} of the "
-            f"comparable population"
-            + (
-                f", {c.subset_coverage:.0%} of all {c.subset_form} rows"
-                if c.subset_coverage is not None
-                else ""
-            )
-            + f") - {c.interpretation}"
+            f"{_cluster_coverage_phrase(c, include_subset=True)} - {c.interpretation}"
             for c in proven
         )
 
@@ -176,8 +182,7 @@ def _evidence_check(
         )
         verdict.reasons.extend(
             f"SUSPECT CLUSTER {c.signature!r}: {c.count} rows "
-            f"({c.share:.1%} of disagreements, {c.population_share:.1%} of the "
-            f"comparable population) - {c.interpretation}"
+            f"{_cluster_coverage_phrase(c, include_subset=False)} - {c.interpretation}"
             for c in suspects
         )
         return

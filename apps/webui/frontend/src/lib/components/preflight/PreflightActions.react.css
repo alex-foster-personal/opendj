@@ -1,0 +1,36 @@
+/* PreflightActions.svelte's scoped <style>, unscoped for the React twin. The
+ * component has no single root, so each rule is anchored on a class only it
+ * uses, and the generic .note on being a sibling after the status line.
+ * Keep the two in step. */
+.preflight-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+/* Click feedback without hover feedback: the button visibly depresses on
+   press and stays dimmed while its action runs. */
+.preflight-actions .preflight-action:active:not(:disabled) {
+	transform: translateY(1px);
+	filter: brightness(0.85);
+}
+.preflight-actions .preflight-action.pending {
+	filter: brightness(0.85);
+	cursor: progress;
+}
+.preflight-action-status {
+	margin: 0;
+	min-height: 1.3em;
+	font-size: 0.85em;
+}
+.preflight-action-status ~ .note {
+	color: var(--muted);
+	font-size: 0.85em;
+	margin: 0;
+}
+.preflight-action-status ~ .preflight-explainers {
+	list-style: none;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}

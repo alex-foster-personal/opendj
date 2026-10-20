@@ -11,11 +11,10 @@ import io
 import json
 import sys
 from collections.abc import Iterable
-from pathlib import Path
 
 from apps.shared.pairings.models import SOURCES, PairingEdge
 
-from ._common import build_repo
+from ._common import add_db_argument, build_repo
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="filter by provenance")
     p.add_argument("--format", default="table",
                    choices=["table", "csv", "json"])
-    p.add_argument("--db", type=Path, default=None)
+    add_db_argument(p)
     return p
 
 

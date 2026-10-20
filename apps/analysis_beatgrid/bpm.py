@@ -7,7 +7,7 @@ the derived tempo snaps to whatever `60 / (k * 0.02)` happens to be nearest and
 lands a clean fraction of a BPM away from the truth. A least-squares fit of
 beat TIME against beat INDEX averages the quantization out across the whole
 window instead of inheriting it from one interval. Measured in round 0 of
-specs/beat-mapping-bench.md on identical committed beat times: 47.0 percent of
+(private path) on identical committed beat times: 47.0 percent of
 fixed grids within 1.0 BPM by median interval, 82.5 percent by least squares.
 The estimator, not the model, was 35 points of the answer.
 
@@ -18,7 +18,7 @@ estimate carries `octave_reason`, a short string naming which rule fired, and
 `octave_ambiguous`, the spec's uncertainty flag for this lane.
 
 THE REKORDBOX PRIOR IS A SCORING-ONLY INPUT AND THE CODE ENFORCES THAT.
-specs/native-analysis-v1.md demotes rekordbox from source to reference: an own
+(private path) demotes rekordbox from source to reference: an own
 producer that consulted rekordbox's stored BPM at runtime would not be an own
 producer, it would be rekordbox laundered through a neural network, and the
 whole benchmark would be measuring agreement with an input it was given. So
@@ -158,7 +158,7 @@ def choose_octave(
     if prior_bpm is not None and not scoring:
         raise ValueError(
             "prior_bpm is a scoring-only input: the own producer must never consult "
-            "rekordbox's stored BPM at runtime (specs/native-analysis-v1.md section 2). "
+            "rekordbox's stored BPM at runtime ((private path) section 2). "
             "Pass scoring=True to use it for benchmark octave attribution."
         )
     if raw_bpm <= 0:
@@ -215,7 +215,13 @@ def _band_octave(
 # ----- The public entry point ---------------------------------------------
 
 
-def _confidence_from_residual(residual_rms_s: float, bpm: float, ambiguous: bool) -> float:
+# Scatter of a quarter of a beat period maps confidence to zero.
+_FIT_CONFIDENCE_SCATTER_REF = 0.25
+
+
+def confidence_from_fit_residual(
+    residual_rms_s: float, bpm: float, *, octave_ambiguous: bool = False
+) -> float:
     """Residual as a fraction of one beat, inverted into a 0-1 rank score.
 
     NOT a probability, and named so nobody reads it as one: it is the fraction
@@ -223,11 +229,14 @@ def _confidence_from_residual(residual_rms_s: float, bpm: float, ambiguous: bool
     grid reads 1.0 and a grid whose beats scatter by a quarter of a beat reads
     0.0. An ambiguous octave halves it, because a confident reading at the
     wrong metrical level is still the wrong number.
+
+    ``tempo_map`` uses the same mapping without octave halving
+    (``octave_ambiguous=False``).
     """
     period_s = 60.0 / bpm
     scatter = residual_rms_s / period_s if period_s > 0 else 1.0
-    score = max(0.0, 1.0 - scatter / 0.25)
-    return round(score * (0.5 if ambiguous else 1.0), 4)
+    score = max(0.0, 1.0 - scatter / _FIT_CONFIDENCE_SCATTER_REF)
+    return round(score * (0.5 if octave_ambiguous else 1.0), 4)
 
 
 def estimate_bpm(
@@ -258,5 +267,7 @@ def estimate_bpm(
         octave_ambiguous=ambiguous,
         n_beats=len(beat_times),
         residual_rms_s=residual_rms_s,
-        confidence=_confidence_from_residual(residual_rms_s, bpm, ambiguous),
+        confidence=confidence_from_fit_residual(
+            residual_rms_s, bpm, octave_ambiguous=ambiguous
+        ),
     )

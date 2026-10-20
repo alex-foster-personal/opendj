@@ -17,7 +17,9 @@ from .matcher_adapter import MatchedPair
 
 __all__ = [
     "SOURCE_TEMPLATES",
+    "SOURCE_KEYS",
     "AcquisitionEntry",
+    "build_search_urls",
     "build_acquisition_entries",
     "render_markdown",
     "render_markdown_file",
@@ -33,6 +35,8 @@ SOURCE_TEMPLATES: tuple[tuple[str, str, str], ...] = (
     ("Apple Music", "apple_music", "https://music.apple.com/us/search?term={q}"),
     ("Discogs", "discogs", "https://www.discogs.com/search?q={q}&type=release"),
 )
+
+SOURCE_KEYS: tuple[str, ...] = tuple(key for _name, key, _ in SOURCE_TEMPLATES)
 
 
 @dataclass(frozen=True)
@@ -56,7 +60,8 @@ def format_duration(ms: int) -> str:
     return f"{m}:{s:02d}"
 
 
-def _search_urls(artist: str, title: str) -> dict[str, str]:
+def build_search_urls(artist: str, title: str) -> dict[str, str]:
+    """Deep-link search URLs for acquisition CSV/MD and pending-track JSON."""
     q = quote_plus(f"{artist} {title}".strip())
     return {key: template.format(q=q) for _name, key, template in SOURCE_TEMPLATES}
 
@@ -80,7 +85,7 @@ def build_acquisition_entries(
                 isrc=src.isrc,
                 spotify_uri=src.spotify_uri,
                 confidence=pair.confidence,
-                sources=_search_urls(src.artists_joined, src.title),
+                sources=build_search_urls(src.artists_joined, src.title),
             )
         )
     entries.sort(key=lambda e: (e.confidence, e.title.casefold()))

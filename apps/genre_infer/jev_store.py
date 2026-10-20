@@ -27,6 +27,7 @@ from . import store
 
 # track_fields that can help a guess. A genre tag is deliberately absent.
 _FIELD_NAMES = ("bpm", "key", "comments", "label", "year")
+_ID_CHUNK = 500
 
 
 def suggestions_path(data_dir: Path) -> Path:
@@ -97,8 +98,8 @@ def track_facts(conn: sqlite3.Connection, stable_ids: Iterable[str]) -> dict[str
     """stable_id -> the fields :func:`apps.genre_infer.jev.build_state` reads."""
     ids = list(stable_ids)
     out: dict[str, dict[str, Any]] = {}
-    for start in range(0, len(ids), 500):
-        chunk = ids[start : start + 500]
+    for start in range(0, len(ids), _ID_CHUNK):
+        chunk = ids[start : start + _ID_CHUNK]
         marks = ",".join("?" * len(chunk))
         for sid, title, artists_json, album, file_path in conn.execute(
             f"SELECT stable_id, title, artists_json, album, file_path FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})",

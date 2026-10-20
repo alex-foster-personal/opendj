@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .watermark import PRIVACY_NOTE_DEFAULT
+
 
 @dataclass
 class AudioSegment:
@@ -38,9 +40,7 @@ class Manifest:
     event_count: int = 0
     deck_sources: list[str] = field(default_factory=list)
     mp3_segments: list[AudioSegment] = field(default_factory=list)
-    watermark: str = (
-        "personal-review-only; contains copyrighted audio; do not distribute"
-    )
+    watermark: str = PRIVACY_NOTE_DEFAULT
     schema_version: int = 1
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,10 +74,7 @@ def read_manifest(session_dir: Path) -> Manifest:
     data.setdefault("event_count", 0)
     data.setdefault("deck_sources", [])
     data.setdefault("schema_version", 1)
-    data.setdefault(
-        "watermark",
-        "personal-review-only; contains copyrighted audio; do not distribute",
-    )
+    data.setdefault("watermark", PRIVACY_NOTE_DEFAULT)
     return Manifest(mp3_segments=segments, **data)
 
 

@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from apps.analysis_bench.lanes import REQUIRED_CONTROL_ROLES
+
 # The one greppable shape. `scan` and `append` must never disagree about it, so
 # both go through these two constants.
 HEADING = "### {lane} bench round {number}"
@@ -45,6 +47,15 @@ def next_round_number(text: str, lane: str, *, floor: int) -> int:
     return max([floor, *[n + 1 for n in posted]])
 
 
+def _separator_before_append(text: str) -> str:
+    """Blank lines between an existing log and a newly appended round block."""
+    if text.endswith("\n\n"):
+        return ""
+    if text.endswith("\n"):
+        return "\n"
+    return "\n\n"
+
+
 def _utc_day() -> str:
     """`Wed 9 Sep 2026`, built without the POSIX-only unpadded-day directive.
 
@@ -61,7 +72,7 @@ def render_round(lane: str, number: int, report: dict[str, Any], *, host: str) -
     """The markdown block for one round, or a refusal when it cannot be read."""
     arms = report.get("arms") or {}
     roles = {arm.get("role") for arm in arms.values()}
-    missing = [role for role in ("positive_control", "negative_control") if role not in roles]
+    missing = [role for role in REQUIRED_CONTROL_ROLES if role not in roles]
     if missing:
         raise RoundError(
             f"{lane} round {number} carries no {' and no '.join(missing)}. "
@@ -112,6 +123,5 @@ def append_round(
             apply_fixed_tempo_f_guard(report)
         except FixedTempoFRegression as exc:
             raise RoundError(str(exc)) from exc
-    separator = "" if text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
-    log_path.write_text(text + separator + block, encoding="utf-8")
+    log_path.write_text(text + _separator_before_append(text) + block, encoding="utf-8")
     return number

@@ -34,6 +34,15 @@ _ALLOWED_SOURCES = frozenset({
     "open-dj-tool", "manual", "inferred",
 })
 
+# Keys compared when diffing or walking a ProvenanceValue envelope (schema
+# $defs/ProvenanceValue). ``confidence`` is optional on the wire.
+PROVENANCE_ENVELOPE_KEYS: tuple[str, ...] = (
+    "value",
+    "source",
+    "confidence",
+    "modified_at",
+)
+
 
 def wrap(
     value: Any,

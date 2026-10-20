@@ -31,6 +31,15 @@ BUILD_PROFILE_ENV: str = "MDT_BUILD_PROFILE"
 
 PROFILES_DIR: Path = Path(__file__).resolve().parent / "profiles"
 
+_PROFILE_JSON_SUFFIX: str = ".json"
+_PROFILE_JSON_GLOB: str = f"*{_PROFILE_JSON_SUFFIX}"
+
+
+def _profile_json_path(stem: str) -> Path:
+    """Shipped profile JSON for ``stem`` (not including :data:`DEFAULT_PROFILE`)."""
+    return PROFILES_DIR / f"{stem}{_PROFILE_JSON_SUFFIX}"
+
+
 #: The name meaning "no profile, ship everything". Not a file: the full build
 #: is the ABSENCE of overrides, and giving it an empty json file would create
 #: a second way to spell the default that could silently disagree.
@@ -51,7 +60,7 @@ class UnknownProfileError(ValueError):
 
 def available_profiles() -> tuple[str, ...]:
     """Every selectable profile name, including :data:`DEFAULT_PROFILE`."""
-    shipped = sorted(p.stem for p in PROFILES_DIR.glob("*.json"))
+    shipped = sorted(p.stem for p in PROFILES_DIR.glob(_PROFILE_JSON_GLOB))
     return (DEFAULT_PROFILE, *shipped)
 
 
@@ -64,7 +73,7 @@ def profile_path(name: str) -> Path | None:
     """
     if name == DEFAULT_PROFILE:
         return None
-    path = PROFILES_DIR / f"{name}.json"
+    path = _profile_json_path(name)
     if not path.is_file():
         raise UnknownProfileError(
             f"unknown build profile {name!r}. Available: "

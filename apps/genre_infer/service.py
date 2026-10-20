@@ -32,8 +32,8 @@ def _require_tracks(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> list
     if not ids or len(ids) > MAX_IDS:
         raise findings.GenreInputError(f"give 1 to {MAX_IDS} stable_ids, got {len(ids)}")
     live: set[str] = set()
-    for start in range(0, len(ids), 500):
-        chunk = ids[start : start + 500]
+    for start in range(0, len(ids), MAX_IDS):
+        chunk = ids[start : start + MAX_IDS]
         marks = ",".join("?" * len(chunk))
         live.update(
             r[0]

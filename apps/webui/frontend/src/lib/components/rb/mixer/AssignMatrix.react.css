@@ -1,0 +1,25 @@
+/* AssignMatrix.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .matrix[aria-label$='assign matrix'], because a bare
+ * .matrix also matches the CloudSync policy table. Keep the two in step. */
+.matrix[aria-label$='assign matrix'] {
+	display: grid;
+	grid-template-columns: repeat(2, 15px);
+	grid-auto-rows: 13px;
+	gap: 2px;
+}
+.matrix[aria-label$='assign matrix'] .cell {
+	background: var(--rb-panel-raised);
+	border: 1px solid var(--rb-border);
+	border-radius: 2px;
+	color: var(--rb-text-dim);
+	font-family: var(--rb-font);
+	font-size: 9px;
+	line-height: 1;
+	padding: 0;
+	cursor: pointer;
+}
+.matrix[aria-label$='assign matrix'] .cell.lit {
+	color: var(--rb-on-accent, #fff);
+	background: var(--rb-accent);
+	box-shadow: 0 0 4px var(--rb-accent-glow);
+}

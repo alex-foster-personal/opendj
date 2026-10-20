@@ -4,11 +4,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from apps.shared.harmonic import TrackFeature
+from apps.shared.harmonic import (
+    TrackFeature,
+    camelot_distance,
+    key_to_camelot,
+)
 
 from .set_goal import SetGoal
 
 PEAK_WINDOW_FRAC = 0.15
+_OPENER_ENERGY_DIST_UNKNOWN = 10.0
+_OPENER_KEY_MISMATCH_DEFAULT = 1
+_OPENER_KEY_MISMATCH_INVALID = 12
 
 
 def _avg_track_minutes() -> float:
@@ -37,6 +44,32 @@ class SlotReservation:
     occurrence: int
     stable_id: str
     role: PinRole
+
+
+def _opener_occurrence_rank_key(
+    position: int,
+    track: TrackFeature,
+    *,
+    floor_energy: int,
+    open_on_key: str | None,
+) -> tuple[float, int, str, int]:
+    """Deterministic opener/start pick: energy distance, then key, then id."""
+    e_dist = (
+        abs(float(track.energy) - float(floor_energy))
+        if track.energy is not None
+        else _OPENER_ENERGY_DIST_UNKNOWN
+    )
+    key_mismatch = _OPENER_KEY_MISMATCH_DEFAULT
+    if open_on_key is not None and track.key_camelot is not None:
+        try:
+            key_mismatch = int(
+                camelot_distance(
+                    key_to_camelot(open_on_key), key_to_camelot(track.key_camelot)
+                )
+            )
+        except ValueError:
+            key_mismatch = _OPENER_KEY_MISMATCH_INVALID
+    return (e_dist, key_mismatch, track.stable_id, position)
 
 
 def _first_occurrence(tracks: list[TrackFeature], stable_id: str) -> int | None:
@@ -84,29 +117,14 @@ def _best_opener_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
             "pin_not_in_playlist", missing=tuple(goal.opener_pins)
         )
 
-    target_energy = float(goal.floor_energy)
-    open_key = goal.open_on_key
-
     def key(occurrence: tuple[int, TrackFeature]) -> tuple[float, int, str, int]:
         position, track = occurrence
-        e_dist = (
-            abs(float(track.energy) - target_energy)
-            if track.energy is not None
-            else 10.0
+        return _opener_occurrence_rank_key(
+            position,
+            track,
+            floor_energy=goal.floor_energy,
+            open_on_key=goal.open_on_key,
         )
-        key_mismatch = 1
-        if open_key is not None and track.key_camelot is not None:
-            from apps.shared.harmonic import camelot_distance, key_to_camelot
-
-            try:
-                key_mismatch = int(
-                    camelot_distance(
-                        key_to_camelot(open_key), key_to_camelot(track.key_camelot)
-                    )
-                )
-            except ValueError:
-                key_mismatch = 12
-        return (e_dist, key_mismatch, track.stable_id, position)
 
     candidates = [(i, tracks[i]) for i in allowed]
     return min(candidates, key=key)[0]

@@ -1,7 +1,7 @@
 """Phase 4 audit: per-track RB vs djay cue comparison.
 
-Reads ``data/sync/matches.csv`` (from Phase 2's matcher), loads cues from
-both sides, and emits ``data/sync/cue-diff.csv`` with per-track summary
+Reads ``(private path)`` (from Phase 2's matcher), loads cues from
+both sides, and emits ``(private path)`` with per-track summary
 columns. Position tolerance: ±20 ms per D6.
 
 Run via ``python -m apps.audit.cue_comparison``.
@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.audit.matches_csv import DEFAULT_MIN_MATCH_CONFIDENCE, iter_match_pairs
 from apps.shared import paths
 from apps.shared.normalised import NormalisedCue
 
@@ -88,42 +89,32 @@ def build_diff_rows(
     rb_db,  # pyrekordbox Rekordbox6Database
     djay_db_path: Path,
     *,
-    min_confidence: float = 0.70,
+    min_confidence: float = DEFAULT_MIN_MATCH_CONFIDENCE,
 ) -> list[CueDiffRow]:
     """Walk matches.csv and produce per-track diff rows."""
     from apps.shared.djay_db import iter_cues as iter_djay_cues
     from apps.shared.rekordbox_db import iter_cues as iter_rb_cues
 
     rows: list[CueDiffRow] = []
-    with matches_csv.open("r", newline="", encoding="utf-8") as fp:
-        reader = csv.DictReader(fp)
-        for rec in reader:
-            try:
-                confidence = float(rec.get("confidence", "0") or 0)
-            except ValueError:
-                confidence = 0.0
-            if confidence < min_confidence:
-                continue
-            rb_id = rec.get("rb_content_id") or rec.get("rb_id") or ""
-            djay_uuid = rec.get("djay_uuid") or ""
-            if not rb_id or not djay_uuid:
-                continue
-            rb_cues = iter_rb_cues(rb_db, rb_id)
-            djay_cues = iter_djay_cues(djay_db_path, djay_uuid)
-            rb_only, djay_only, conflicts = compare_cue_lists(rb_cues, djay_cues)
-            union_count = len(rb_cues) + len(djay_only)
-            rows.append(
-                CueDiffRow(
-                    rb_content_id=rb_id,
-                    djay_uuid=djay_uuid,
-                    rb_cue_count=len(rb_cues),
-                    djay_cue_count=len(djay_cues),
-                    rb_only_positions=tuple(rb_only),
-                    djay_only_positions=tuple(djay_only),
-                    conflicting_positions=tuple(conflicts),
-                    union_count=union_count,
-                )
+    for rb_id, djay_uuid in iter_match_pairs(
+        matches_csv, min_confidence=min_confidence
+    ):
+        rb_cues = iter_rb_cues(rb_db, rb_id)
+        djay_cues = iter_djay_cues(djay_db_path, djay_uuid)
+        rb_only, djay_only, conflicts = compare_cue_lists(rb_cues, djay_cues)
+        union_count = len(rb_cues) + len(djay_only)
+        rows.append(
+            CueDiffRow(
+                rb_content_id=rb_id,
+                djay_uuid=djay_uuid,
+                rb_cue_count=len(rb_cues),
+                djay_cue_count=len(djay_cues),
+                rb_only_positions=tuple(rb_only),
+                djay_only_positions=tuple(djay_only),
+                conflicting_positions=tuple(conflicts),
+                union_count=union_count,
             )
+        )
     return rows
 
 
@@ -220,8 +211,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--min-confidence",
         type=float,
-        default=0.70,
-        help="Confidence threshold for matches.csv rows (default 0.70).",
+        default=DEFAULT_MIN_MATCH_CONFIDENCE,
+        help=(
+            "Confidence threshold for matches.csv rows "
+            f"(default {DEFAULT_MIN_MATCH_CONFIDENCE})."
+        ),
     )
     args = parser.parse_args(argv)
 

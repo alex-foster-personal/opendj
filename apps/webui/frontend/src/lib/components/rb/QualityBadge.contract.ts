@@ -133,6 +133,22 @@ export const contracts = {
 			);
 		}
 	},
+	/**
+	 * venue set but rank null: the backend named a rung without its position.
+	 * The title says the rung number is unknown rather than inventing one
+	 * (a missing rank used to read as "Rung 1", a fake value).
+	 */
+	RankMissing: {
+		args: { quality: rung({ rank: null }) } satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const el = badge(canvasElement);
+			await expect(el).toHaveClass('q-club');
+			await expect(el).toHaveAttribute(
+				'title',
+				'Club -- holds up on a club rig. Effective 256 kbps, mp3. Rung unknown of 6.'
+			);
+		}
+	},
 	/** quality null: the row exists but its audio quality has not loaded yet. */
 	NotLoaded: {
 		args: { quality: null } satisfies Args,

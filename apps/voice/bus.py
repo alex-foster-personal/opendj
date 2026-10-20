@@ -17,10 +17,10 @@ import logging
 import sqlite3
 import threading
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from apps.voice.jsonlog import append_jsonl, now_iso
 from apps.voice.settings import voice_data_dir
 
 log = logging.getLogger(__name__)
@@ -37,10 +37,6 @@ class EventBus(Protocol):
         """Return the most recent events of ``kind`` (best-effort)."""
 
 
-def _now_iso() -> str:
-    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
 @dataclass
 class JsonlStubBus:
     """Fallback event bus: append JSON lines to ``<data dir>/voice/events.jsonl``."""
@@ -53,14 +49,11 @@ class JsonlStubBus:
 
     def publish(self, event: dict) -> int:
         enriched = dict(event)
-        enriched.setdefault("ts", _now_iso())
+        enriched.setdefault("ts", now_iso())
         enriched.setdefault("source", "voice")
         enriched["id"] = self._next_id
         self._next_id += 1
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(enriched, sort_keys=True))
-            fh.write("\n")
+        append_jsonl(self.path, enriched)
         # Keep a bounded in-memory tail for ``recent`` lookups.
         self._cache.append(enriched)
         if len(self._cache) > 256:
@@ -81,7 +74,7 @@ class InMemoryBus:
 
     def publish(self, event: dict) -> int:
         enriched = dict(event)
-        enriched.setdefault("ts", _now_iso())
+        enriched.setdefault("ts", now_iso())
         enriched.setdefault("source", "voice")
         enriched["id"] = self._next_id
         self._next_id += 1
@@ -130,7 +123,7 @@ class StateBackedBus:
 
     def publish(self, event: dict) -> int:
         enriched = dict(event)
-        enriched.setdefault("ts", _now_iso())
+        enriched.setdefault("ts", now_iso())
         enriched.setdefault("source", "voice")
         kind = str(enriched.get("kind", ""))
         stable_id = enriched.get("stable_id")

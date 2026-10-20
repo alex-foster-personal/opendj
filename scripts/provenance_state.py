@@ -1,11 +1,10 @@
 """Durable local state for the prompt provenance sweep.
 
-The gitignored, per-checkout side of the sweep: the freshness watermark, the
-lock that keeps overlapping runs from clobbering each other, and the atomic
-replace every tracked write goes through. Separate from
-:mod:`scripts.provenance_sweep` because this is the part that is NOT versioned
-with the repo, and the mismatch between it and the tracked ledger is exactly
-what caused the loss the sweep now guards against.
+Everything here lives in the LEDGER STORE, a directory outside every tracked
+working tree (the provenance-ledger-off-tree ADR): the freshness watermark, the lock that keeps
+overlapping runs from clobbering each other, and the atomic replace every
+ledger write goes through. Every function takes that directory as `store`, so
+nothing in this module can name a path inside a checkout by accident.
 """
 
 from __future__ import annotations
@@ -15,7 +14,9 @@ import errno
 import hashlib
 import json
 import os
+import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime
@@ -26,7 +27,7 @@ from scripts.provenance_probe import generation_conflict
 # Advisory whole-file locking, which POSIX and Windows spell differently and
 # neither of which is importable on the other. Imported at module scope, and
 # branched on explicitly, because `import fcntl` alone raised ModuleNotFoundError
-# on every Windows checkout - and `.claude/settings.json` runs this module from
+# on every Windows checkout - and `(private path)` runs this module from
 # the Stop hook, so the sweep died before argument parsing on bifrost2 rather
 # than reporting anything. Codex found it on #708.
 if sys.platform == "win32":
@@ -34,10 +35,133 @@ if sys.platform == "win32":
 else:
     import fcntl
 
-OUT_DIRNAME = "docs/threads"
 LEDGER = "prompts.jsonl"
 WATERMARK = ".provenance-watermark.json"
 LOCKFILE = ".provenance-lock"
+
+
+def tracked_tree_defect(store: Path) -> str | None:
+    """Why `store` may not hold the ledger, or None when it may.
+
+    The one rule this store exists for: a session hook never writes a tracked
+    working tree. A path inside a git work tree is allowed only when git
+    ignores the store DIRECTORY, because the sweep and the pin export write
+    several files there (ledger, index, watermark, locks, pin ledger, temp
+    files) and an unignored one dirties `git status --porcelain` exactly as a
+    modified tracked file does. Asking about one file let a checkout that
+    ignored only `prompts.jsonl` pass while the index dirtied it (Codex and
+    Sol, #7403). Asked of git rather than guessed from path names, starting
+    from the nearest directory that exists.
+    """
+    git = shutil.which("git")
+    if git is None:
+        # Unmeasured is a refusal: without git nothing can prove the store is
+        # outside a work tree, and a FileNotFoundError here would kill the
+        # hook before its refusal path (Codex, #7403).
+        return "git is not on PATH, so --out-dir cannot be proved outside every git work tree"
+    probe = store
+    while not probe.exists():
+        probe = probe.parent
+    # Resolved, so a symlinked ancestor is judged by where it points: walking
+    # a symlink's lexical parents would miss a checkout it leads into (Codex, #7403).
+    probe = probe.resolve()
+    # No `.git` entry at or above the store: nothing for git to discover, so
+    # the store is outside every work tree. Decided from the filesystem, not
+    # from git's (localised) error text.
+    if not any((parent / ".git").exists() for parent in (probe, *probe.parents)):
+        return None
+    top = subprocess.run(
+        (git, "-C", str(probe), "rev-parse", "--show-toplevel"),
+        capture_output=True, text=True, check=False,
+    )
+    if top.returncode != 0:
+        # A `.git` is there and git will not describe it (safe.directory
+        # refusing another user's checkout, a malformed .git): refused, never
+        # read as "outside" (Codex, #7403).
+        return f"cannot tell whether {store} is inside a git work tree: {top.stderr.strip()}"
+    root = Path(top.stdout.strip()).resolve()
+    relative = store.resolve().relative_to(root).as_posix()
+    if relative != ".":
+        ignored = subprocess.run(
+            (git, "-C", str(root), "check-ignore", "-q", "--", f"{relative}/"),
+            capture_output=True, text=True, check=False,
+        )
+        # Index-aware on purpose (no `--no-index`): an ignore rule never
+        # untracks a file already in the index, and check-ignore reports a
+        # directory that still holds tracked files as NOT ignored, so an
+        # ignored `/docs/threads/` whose ledger is still tracked is refused
+        # (Sol, #7403). The test pins this; `--no-index` turns it red.
+        if ignored.returncode == 0:
+            return None
+    return (
+        f"--out-dir {store} is inside the git work tree {root} and that directory is "
+        "not ignored there, or still holds tracked files; a session hook must never write a tracked working tree "
+        "(the provenance-ledger-off-tree ADR). Use a directory such as "
+        "${XDG_STATE_HOME:-~/.local/state}/music-dj-tools/provenance/<checkout>."
+    )
+
+
+CHECKOUT_FILE = ".provenance-checkout"
+
+
+def store_owner_defect(store: Path, checkout: Path) -> str | None:
+    """Why `store` belongs to a different checkout than `checkout`, or None.
+
+    The watermark is scoped to the session STORES it read, not to the checkout
+    whose sessions it kept, so two clones sharing one store would each honour
+    the other's cutoff and skip their own older sessions for good (Codex,
+    #7403). One store per main checkout is the rule; the first sweep records
+    its owner with `claim_store`, and any other checkout is refused.
+    """
+    owner_file = store / CHECKOUT_FILE
+    if not owner_file.exists():
+        return None
+    try:
+        owner = owner_file.read_text(encoding="utf-8").strip()
+    except (UnicodeDecodeError, OSError) as exc:
+        # A defect, not a traceback: this runs before the lock and the error
+        # recorder, so an exception would disable the hook in silence (Codex, #7403).
+        return f"{owner_file} cannot be read ({exc}); repair or remove it"
+    if owner == str(checkout):
+        return None
+    return (
+        f"--out-dir {store} holds the ledger of checkout {owner}, not {checkout}; "
+        "use one store per main checkout"
+    )
+
+
+class StoreOwnedElsewhere(RuntimeError):
+    """The store's recorded owner is a different checkout than this run's."""
+
+
+def claim_store(store: Path, checkout: Path) -> None:
+    """Record, or confirm, which main checkout this store's watermark speaks for.
+
+    Called UNDER the store lock. The pre-lock `store_owner_defect` is a fast
+    refusal only: two checkouts racing on a new store could both pass it, and
+    the second must not then sweep under the first one's claim (Sol, #7403).
+    """
+    owner_file = store / CHECKOUT_FILE
+    if not owner_file.exists():
+        _write_atomic(owner_file, f"{checkout}\n")
+    defect = store_owner_defect(store, checkout)
+    if defect is not None:
+        raise StoreOwnedElsewhere(defect)
+
+
+def make_store(store: Path) -> None:
+    """Create the store owner-only (0700) if it does not exist yet.
+
+    Only a directory this call CREATES is restricted; an existing one, such as
+    a publish destination inside a git checkout, keeps its mode. `mkdir`'s
+    mode is masked by the umask, which can only REMOVE bits, so the result is
+    never wider than 0700 and needs no chmod after it.
+    """
+    store.parent.mkdir(parents=True, exist_ok=True)
+    # FileExistsError: another detached hook created it first, which is
+    # neither an error nor ours to re-permission (Codex, #7403).
+    with contextlib.suppress(FileExistsError):
+        store.mkdir(mode=0o700)
 
 
 class LockUnavailable(RuntimeError):
@@ -79,14 +203,13 @@ def _write_atomic(path: Path, text: str) -> None:
         with os.fdopen(fd, "w") as handle:
             handle.write(text)
         # MODE, restored before the replace. mkstemp creates 0600 and
-        # os.replace carries the SOURCE inode's mode to the destination, so
-        # the mkstemp fix above would have turned the tracked ledger and index
-        # owner-only on the first changing sweep, unreadable to any other user
-        # or service until a checkout recreated them. Codex found it on #708.
-        # An existing file keeps the mode it already had; a new one gets the
-        # 0644 that git checks these out with, stated rather than inherited
-        # from whatever umask the calling process happens to hold.
-        os.chmod(tmp, stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644)
+        # os.replace carries the SOURCE inode's mode to the destination, so an
+        # existing file (a published ledger in odj-private, say) keeps the mode
+        # it already had (Codex, #708). A NEW file is owner-only: the store
+        # holds the operator's whole prompt history and session paths, and on
+        # a shared host it must not be readable by other accounts (Codex,
+        # #7403). Stated rather than inherited from the caller's umask.
+        os.chmod(tmp, stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -94,8 +217,8 @@ def _write_atomic(path: Path, text: str) -> None:
 
 
 @contextlib.contextmanager
-def sweep_lock(repo: Path, *, lockfile: str = LOCKFILE, directory: Path | None = None):
-    """Hold an exclusive per-checkout lock, or yield False if one is already held.
+def sweep_lock(store: Path, *, lockfile: str = LOCKFILE):
+    """Hold an exclusive lock on the ledger store, or yield False if one is already held.
 
     Every Stop detaches a sweep, and a full sweep takes minutes, so turns overlap
     routinely. Two processes that both read the ledger before either writes would
@@ -104,8 +227,8 @@ def sweep_lock(repo: Path, *, lockfile: str = LOCKFILE, directory: Path | None =
     arriving by a different door. A skipped run costs nothing: the next sweep
     reads the same sources.
     """
-    path = (repo / OUT_DIRNAME if directory is None else directory) / lockfile
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = store / lockfile
+    make_store(store)
     try:
         handle = path.open("w")
     except OSError as exc:
@@ -185,13 +308,24 @@ def _lock_exclusive_nonblocking(handle) -> None:
 
 
 def _fingerprint(ledger: Path) -> tuple[int, str]:
+    """(line count, digest) of the ledger; (-1, "") when it exists but cannot be read.
+
+    An unreadable ledger must not escape as an OSError here: this runs before
+    the lock and the error recorder, so the detached hook would die in silence
+    (Codex, #7403). (-1, "") never matches a banked fingerprint, so the run
+    goes to a full harvest and the write path refuses the unreadable ledger
+    with a recorded LedgerUnreadable.
+    """
     if not ledger.exists():
         return 0, ""
-    raw = ledger.read_bytes()
+    try:
+        raw = ledger.read_bytes()
+    except OSError:
+        return -1, ""
     return raw.count(b"\n"), hashlib.sha256(raw).hexdigest()[:16]
 
 
-def read_banked_cutoff(repo: Path, sources_id: str) -> float | None:
+def read_banked_cutoff(store: Path, sources_id: str) -> float | None:
     """The cutoff a previous sweep for THIS source set recorded, or None.
 
     Exposed because a store's GENERATION is only meaningful relative to a
@@ -201,7 +335,7 @@ def read_banked_cutoff(repo: Path, sources_id: str) -> float | None:
     cheaper and clearer than teaching this module what a source is - the same
     reason `sources_id` arrives as an opaque token.
     """
-    wm_path = repo / OUT_DIRNAME / WATERMARK
+    wm_path = store / WATERMARK
     if not wm_path.exists():
         return None
     try:
@@ -255,7 +389,7 @@ def _source_claim_defect(wm: dict, sources_id: str, generations: dict[str, str])
     return None
 
 
-def read_watermark(repo: Path, sources_id: str, generations: dict[str, str]) -> tuple[float, str]:
+def read_watermark(store: Path, sources_id: str, generations: dict[str, str]) -> tuple[float, str]:
     """(since, reason). `since` is 0 whenever the checkout cannot be trusted.
 
     The watermark says "every source older than T is already recorded". That
@@ -297,7 +431,7 @@ def read_watermark(repo: Path, sources_id: str, generations: dict[str, str]) -> 
     would not - a machine whose store is legitimately replaced would then never
     sweep again. Codex found it on #708, one round after the mid-run half.
     """
-    wm_path = repo / OUT_DIRNAME / WATERMARK
+    wm_path = store / WATERMARK
     if not wm_path.exists():
         return 0.0, "no watermark: full harvest"
     try:
@@ -305,7 +439,7 @@ def read_watermark(repo: Path, sources_id: str, generations: dict[str, str]) -> 
         since = float(wm.get("swept_at", 0))
     except (json.JSONDecodeError, ValueError, TypeError, OSError):
         return 0.0, "unreadable watermark: full harvest"
-    rows, digest = _fingerprint(repo / OUT_DIRNAME / LEDGER)
+    rows, digest = _fingerprint(store / LEDGER)
     if wm.get("ledger_rows") is None or wm.get("ledger_digest") is None:
         return 0.0, "watermark predates fingerprinting: full harvest"
     stale = _source_claim_defect(wm, sources_id, generations)
@@ -320,7 +454,7 @@ def read_watermark(repo: Path, sources_id: str, generations: dict[str, str]) -> 
 
 
 def write_watermark(
-    repo: Path,
+    store: Path,
     cutoff: float,
     sources_id: str,
     present: set[str],
@@ -349,9 +483,9 @@ def write_watermark(
     reader can say WHICH store changed, and so a replacement re-scans instead
     of invalidating the whole watermark's provenance. See `read_watermark`.
     """
-    rows, digest = _fingerprint(repo / OUT_DIRNAME / LEDGER)
+    rows, digest = _fingerprint(store / LEDGER)
     _write_atomic(
-        repo / OUT_DIRNAME / WATERMARK,
+        store / WATERMARK,
         json.dumps(
             {
                 "swept_at": cutoff,
@@ -366,7 +500,7 @@ def write_watermark(
     )
 
 
-def read_sources_present(repo: Path, sources_id: str) -> set[str] | None:
+def read_sources_present(store: Path, sources_id: str) -> set[str] | None:
     """Which stores a previous sweep for THIS source set actually found on disk.
 
     Absence has two meanings and only one of them is a measurement. A machine
@@ -392,7 +526,7 @@ def read_sources_present(repo: Path, sources_id: str) -> set[str] | None:
     skipped for good. Codex found it on #708, one round after the appearance
     check itself landed.
     """
-    wm_path = repo / OUT_DIRNAME / WATERMARK
+    wm_path = store / WATERMARK
     if not wm_path.exists():
         return None
     try:
@@ -405,7 +539,7 @@ def read_sources_present(repo: Path, sources_id: str) -> set[str] | None:
     return set(seen) if isinstance(seen, list) else None
 
 
-def record_error(repo: Path, message: str) -> None:
+def record_error(store: Path, message: str) -> None:
     """Leave a readable trace of a refused write, without advancing freshness.
 
     The Stop hook sends stdout and stderr to /dev/null, so an abort that only
@@ -414,12 +548,12 @@ def record_error(repo: Path, message: str) -> None:
     back, and the watermark is deliberately NOT advanced, so the next run
     retries rather than treating the skipped work as done.
     """
-    wm_path = repo / OUT_DIRNAME / WATERMARK
+    wm_path = store / WATERMARK
     try:
         wm = json.loads(wm_path.read_text()) if wm_path.exists() else {}
     except (json.JSONDecodeError, OSError):
         wm = {}
     wm["last_error"] = message
     wm["last_error_at"] = datetime.now(UTC).isoformat()
-    wm_path.parent.mkdir(parents=True, exist_ok=True)
+    make_store(store)
     _write_atomic(wm_path, json.dumps(wm, indent=2))

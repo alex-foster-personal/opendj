@@ -82,6 +82,12 @@ def test_a_missing_log_is_refused_rather_than_created(tmp_path: Path) -> None:
         rounds.append_round(tmp_path / "absent.md", "key", _REPORT, floor=0, host="h")
 
 
+def test_separator_before_append_preserves_markdown_spacing() -> None:
+    assert rounds._separator_before_append("## log\n\n### round 0\n\n") == ""
+    assert rounds._separator_before_append("## log\n\n### round 0\n") == "\n"
+    assert rounds._separator_before_append("## log") == "\n\n"
+
+
 def test_the_round_date_is_portable_to_windows() -> None:
     """`%-d` is POSIX only; Microsoft's strftime raises on it and nothing posts."""
     assert re.fullmatch(r"[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} \d{4}", rounds._utc_day())

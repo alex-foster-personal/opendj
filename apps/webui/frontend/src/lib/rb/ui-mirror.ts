@@ -19,6 +19,7 @@ import {
 	classifyMirrorPublishGap,
 	mirrorStallMessage
 } from './mirror-publish-stall';
+import { startMirrorPublishTicker } from './mirror-publish-ticker';
 import { countVisibleTrackRows } from './track-row-visibility';
 import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-mirror-controls';
 
@@ -30,7 +31,7 @@ export const UI_MIRROR_SCHEMA = 2;
 
 const MIRROR_CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-/** `buildUiMirror` runs inside `window.setInterval`, so an uncaught throw
+/** `buildUiMirror` runs on the mirror publish tick, so an uncaught throw
  * here would abort the whole publish - every sibling field (decks, audio
  * health, toasts, the agent-order poll gate) goes dark, not just this one
  * integer, and every `/api/v1/commands` route starts answering 409 (see
@@ -225,7 +226,7 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 		lastRole = snapshot.role;
 	});
 	mirror.publish();
-	const interval = window.setInterval(mirror.publish, 1000);
+	const stopPublishTicker = startMirrorPublishTicker(mirror.publish);
 	// The operator's latest touch makes this the operator's tab (see the claim rules).
 	const noteGesture = (): void => mirror.noteGesture();
 	window.addEventListener('pointerdown', noteGesture, { capture: true, passive: true });
@@ -255,7 +256,7 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 		window.removeEventListener('keydown', noteGesture, { capture: true });
 		mirror.forget();
 		uninstallOrderPoll();
-		window.clearInterval(interval);
+		stopPublishTicker();
 		closeMirrorIfLeader();
 		unsubscribeLeadership();
 	};

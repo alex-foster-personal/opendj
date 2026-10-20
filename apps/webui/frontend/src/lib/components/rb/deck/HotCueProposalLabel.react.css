@@ -1,0 +1,17 @@
+/* HotCueProposalLabel.svelte's <style>, unscoped for the React twin: the
+ * scoped rule is anchored on .proposal-label; the original's
+ * :global(.slot.proposal) rule is global there too, so it stays global here.
+ * Keep the two in step. */
+.proposal-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 400;
+	font-style: italic;
+}
+.slot.proposal {
+	opacity: 0.8;
+	border-left: 3px dashed var(--rb-accent);
+}

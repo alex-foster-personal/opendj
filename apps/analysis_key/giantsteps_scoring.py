@@ -1,11 +1,11 @@
 """Boundary-F@1bar scoring for the NATIVE-05 GiantSteps+ measurement.
 
-WHAT THIS IS. `specs/native-analysis-v1.md` section 5's key-change arm (a):
+WHAT THIS IS. `(private path)` section 5's key-change arm (a):
 "boundary F at 1 bar ONLY on verified timestamped annotations". This module is
 the scorer, pure and audio-free -- it takes detected and annotated boundary
 TIMES plus a real bar grid, and answers whether they align. The real audio,
 the real `own_beatgrid`/`own_key` producers and the fixture live in
-`tests/analysis_key/test_giantsteps_plus_boundary.py`; this module is
+`(private path)`; this module is
 unit-tested on plain floats in `test_giantsteps_scoring.py` so its own
 correctness (does "within 1 bar" mean what it claims) is never entangled with
 whether the shipping analyzer currently gets a boundary right.
@@ -62,6 +62,18 @@ from dataclasses import dataclass
 from apps.analysis_key.segments import BarGrid
 
 
+def _bar_extent_seconds(grid: BarGrid, index: int) -> float:
+    return grid.ends[index] - grid.starts[index]
+
+
+def _covering_bar_index(grid: BarGrid, t: float) -> int | None:
+    """Bar index when ``start <= t < end``, else ``None`` (extrapolation zone)."""
+    for index, (start, end) in enumerate(zip(grid.starts, grid.ends, strict=True)):
+        if start <= t < end:
+            return index
+    return None
+
+
 def bar_duration_at(grid: BarGrid, t: float) -> float:
     """The duration in seconds of the bar covering time `t`.
 
@@ -74,12 +86,12 @@ def bar_duration_at(grid: BarGrid, t: float) -> float:
     """
     if grid.n_bars == 0:
         raise ValueError("a bar grid with zero bars has no bar duration")
+    index = _covering_bar_index(grid, t)
+    if index is not None:
+        return _bar_extent_seconds(grid, index)
     if t < grid.starts[0]:
-        return grid.ends[0] - grid.starts[0]
-    for start, end in zip(grid.starts, grid.ends, strict=True):
-        if start <= t < end:
-            return end - start
-    return grid.ends[-1] - grid.starts[-1]
+        return _bar_extent_seconds(grid, 0)
+    return _bar_extent_seconds(grid, grid.n_bars - 1)
 
 
 def bar_position_at(grid: BarGrid, t: float) -> float:
@@ -97,14 +109,15 @@ def bar_position_at(grid: BarGrid, t: float) -> float:
     """
     if grid.n_bars == 0:
         raise ValueError("a bar grid with zero bars has no bar position")
+    index = _covering_bar_index(grid, t)
+    if index is not None:
+        start, end = grid.starts[index], grid.ends[index]
+        return index + (t - start) / (end - start)
     if t < grid.starts[0]:
-        first_bar_s = grid.ends[0] - grid.starts[0]
+        first_bar_s = _bar_extent_seconds(grid, 0)
         return (t - grid.starts[0]) / first_bar_s
-    for index, (start, end) in enumerate(zip(grid.starts, grid.ends, strict=True)):
-        if start <= t < end:
-            return index + (t - start) / (end - start)
     last_index = grid.n_bars - 1
-    last_bar_s = grid.ends[last_index] - grid.starts[last_index]
+    last_bar_s = _bar_extent_seconds(grid, last_index)
     return last_index + (t - grid.starts[last_index]) / last_bar_s
 
 

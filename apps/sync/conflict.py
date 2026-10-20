@@ -22,6 +22,8 @@ from typing import Any, Literal
 ConflictResolution = Literal["accept_rb", "accept_djay", "conflict", "no_change"]
 
 DEFAULT_WINDOW_DAYS = 7
+_SECONDS_PER_DAY = 24 * 60 * 60
+_FLOAT_TOLERANCE = 1e-6
 
 
 @dataclass(slots=True, frozen=True)
@@ -46,7 +48,7 @@ def _is_empty(value: Any) -> bool:
 def _equal(a: Any, b: Any) -> bool:
     if isinstance(a, float) or isinstance(b, float):
         try:
-            return abs(float(a) - float(b)) < 1e-6
+            return abs(float(a) - float(b)) < _FLOAT_TOLERANCE
         except (TypeError, ValueError):
             return a == b
     return a == b
@@ -58,7 +60,7 @@ def _within_window(
     if a is None or b is None:
         return False
     delta = abs((a - b).total_seconds())
-    return delta <= window_days * 24 * 3600
+    return delta <= window_days * _SECONDS_PER_DAY
 
 
 def _newer(a: datetime | None, b: datetime | None) -> Literal["rb", "djay", "tie"]:
@@ -86,48 +88,67 @@ def resolve_conflict(
     newest_window_days: int = DEFAULT_WINDOW_DAYS,
 ) -> ConflictResolution:
     """Return the resolution for a single scalar field."""
-    if _equal(rb_value, djay_value):
+    return resolve_conflict_input(
+        ConflictInput(
+            field=field,
+            rb_value=rb_value,
+            djay_value=djay_value,
+            rb_modified_at=rb_modified_at,
+            djay_modified_at=djay_modified_at,
+            prefer=prefer,
+            newest_window_days=newest_window_days,
+        )
+    )
+
+
+def resolve_conflict_input(inp: ConflictInput) -> ConflictResolution:
+    """Resolve using a bundled :class:`ConflictInput` (same rules as
+    :func:`resolve_conflict`).
+    """
+    if _equal(inp.rb_value, inp.djay_value):
         return "no_change"
 
-    if field == "rating":
-        rb_zero = not bool(rb_value) if rb_value is not None else True
-        djay_zero = not bool(djay_value) if djay_value is not None else True
+    if inp.field == "rating":
+        rb_zero = not bool(inp.rb_value) if inp.rb_value is not None else True
+        djay_zero = not bool(inp.djay_value) if inp.djay_value is not None else True
         if rb_zero and not djay_zero:
             return "accept_djay"
         if djay_zero and not rb_zero:
             return "accept_rb"
 
-    if field in ("bpm", "manual_bpm"):
-        if _is_empty(rb_value) and not _is_empty(djay_value):
+    if inp.field in ("bpm", "manual_bpm"):
+        if _is_empty(inp.rb_value) and not _is_empty(inp.djay_value):
             return "accept_djay"
-        if _is_empty(djay_value) and not _is_empty(rb_value):
+        if _is_empty(inp.djay_value) and not _is_empty(inp.rb_value):
             return "accept_rb"
 
-    if _is_empty(rb_value) and not _is_empty(djay_value):
+    if _is_empty(inp.rb_value) and not _is_empty(inp.djay_value):
         return "accept_djay"
-    if _is_empty(djay_value) and not _is_empty(rb_value):
+    if _is_empty(inp.djay_value) and not _is_empty(inp.rb_value):
         return "accept_rb"
 
-    if prefer == "rb":
-        side = _newer(rb_modified_at, djay_modified_at)
+    if inp.prefer == "rb":
+        side = _newer(inp.rb_modified_at, inp.djay_modified_at)
         if side == "djay":
             return "conflict"
         return "accept_rb"
-    if prefer == "djay":
-        side = _newer(rb_modified_at, djay_modified_at)
+    if inp.prefer == "djay":
+        side = _newer(inp.rb_modified_at, inp.djay_modified_at)
         if side == "rb":
             return "conflict"
         return "accept_djay"
 
-    if _within_window(rb_modified_at, djay_modified_at, newest_window_days):
-        side = _newer(rb_modified_at, djay_modified_at)
+    if _within_window(
+        inp.rb_modified_at, inp.djay_modified_at, inp.newest_window_days
+    ):
+        side = _newer(inp.rb_modified_at, inp.djay_modified_at)
         if side == "rb":
             return "accept_rb"
         if side == "djay":
             return "accept_djay"
         return "conflict"
 
-    side = _newer(rb_modified_at, djay_modified_at)
+    side = _newer(inp.rb_modified_at, inp.djay_modified_at)
     if side == "djay":
         return "conflict"
     return "accept_rb"
@@ -220,6 +241,7 @@ __all__ = [
     "ConflictInput",
     "CueArrayResolution",
     "resolve_conflict",
+    "resolve_conflict_input",
     "resolve_cue_array",
     "DEFAULT_WINDOW_DAYS",
 ]

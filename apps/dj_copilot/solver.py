@@ -342,27 +342,16 @@ def _result(
 
 
 def _best_start_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
-    target_energy = float(goal.floor_energy)
-    open_key = goal.open_on_key
+    from .pinning import _opener_occurrence_rank_key
 
     def key(occurrence: tuple[int, TrackFeature]) -> tuple[float, int, str, int]:
         position, track = occurrence
-        e_dist = (
-            abs(float(track.energy) - target_energy)
-            if track.energy is not None
-            else 10.0
+        return _opener_occurrence_rank_key(
+            position,
+            track,
+            floor_energy=goal.floor_energy,
+            open_on_key=goal.open_on_key,
         )
-        key_mismatch = 1
-        if open_key is not None and track.key_camelot is not None:
-            try:
-                key_mismatch = int(
-                    _camelot_distance(
-                        key_to_camelot(open_key), key_to_camelot(track.key_camelot)
-                    )
-                )
-            except ValueError:
-                key_mismatch = 12
-        return (e_dist, key_mismatch, track.stable_id, position)
 
     return min(enumerate(tracks), key=key)[0]
 

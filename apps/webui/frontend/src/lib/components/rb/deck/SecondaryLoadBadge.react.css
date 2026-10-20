@@ -1,0 +1,51 @@
+/* SecondaryLoadBadge.svelte's scoped <style>, unscoped for the React twin:
+ * every rule is anchored on .secondary-load so it cannot leak. Keep the two
+ * in step (the comments explaining the geometry live in the original). */
+.secondary-load {
+	position: absolute;
+	left: 6px;
+	bottom: 4px;
+	height: 16px;
+	max-width: 32px;
+	z-index: 3;
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 3px;
+	overflow: hidden;
+	border: 1px solid var(--rb-border, #23282f);
+	border-radius: 2px;
+	background: var(--rb-panel-raised, #1a1e25);
+	font-size: 8px;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	color: var(--rb-blue, #4aa3ff);
+	pointer-events: auto;
+	user-select: none;
+	animation: secondary-pulse 1.1s ease-in-out infinite;
+}
+
+.secondary-load.failed {
+	color: #ff8e87;
+	border-color: var(--rb-red, #d0342c);
+	animation: none;
+}
+
+@keyframes secondary-pulse {
+	0%,
+	100% {
+		opacity: 0.45;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.secondary-load {
+		animation: none;
+		opacity: 0.9;
+	}
+}

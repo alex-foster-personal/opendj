@@ -1,0 +1,76 @@
+/* DeckErrorBanner.svelte's scoped <style>, unscoped for the React twin:
+ * every rule is anchored on .deck-error so it cannot leak. Keep the two in step. */
+.deck-error {
+	display: flex;
+	align-items: center;
+	position: absolute;
+	z-index: 4;
+	left: 8px;
+	right: 8px;
+	bottom: 3px;
+	padding: 2px 5px;
+	border: 1px solid var(--rb-red);
+	background: rgba(30, 5, 5, 0.94);
+	color: #ff8e87;
+	font-size: var(--rb-fs-label);
+}
+
+.deck-error .deck-error-body {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	padding: 0;
+	cursor: pointer;
+}
+
+.deck-error .deck-error-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 100%;
+}
+
+.deck-error .deck-error-copy-hint {
+	font-size: 0.85em;
+	opacity: 0.75;
+}
+
+.deck-error .deck-error-copy-note {
+	font-size: 0.85em;
+	opacity: 0.9;
+}
+
+/* Dimmer and monospace: the id is a search term a reader copies. */
+.deck-error .deck-error-id {
+	flex: 0 0 auto;
+	margin-left: 6px;
+	font-family: var(--rb-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+	font-size: var(--rb-fs-label);
+	opacity: 0.75;
+	user-select: all;
+	cursor: text;
+}
+
+.deck-error .deck-error-dismiss {
+	flex: 0 0 auto;
+	margin-left: 6px;
+	padding: 0 4px;
+	border: 1px solid var(--rb-red);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.deck-error .deck-error-dismiss:hover {
+	background: var(--rb-red);
+	color: #fff;
+}

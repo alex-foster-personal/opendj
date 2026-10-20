@@ -16,15 +16,20 @@ import sys
 from dataclasses import dataclass
 
 # The counter each lane's rounds continue. Beatgrid's rounds 0 and 1 are already
-# published (specs/beat-mapping-bench.md, PR #1514), so its next round is 2; the
+# published ((private path), PR #1514), so its next round is 2; the
 # other three lanes have posted nothing through this harness and start at 0.
 BEATGRID_ROUND_FLOOR = 2
 
-DEFAULT_LOG = "specs/native-analysis-v1.md"
+DEFAULT_LOG = "(private path)"
 
 # Issue that owns the lanes still missing a scorer, quoted in the refusal so a
 # reader is sent somewhere real rather than told "not implemented".
 FOLLOW_UP = "#1477"
+
+# Spec section 6: every scored table names these two arms. `rounds.render_round`
+# refuses a report that omits either; the lane registry test checks every lane
+# declares candidates for both.
+REQUIRED_CONTROL_ROLES = ("positive_control", "negative_control")
 
 _CONTROLS = "apps.analysis_bench.controls"
 
@@ -114,7 +119,7 @@ LANES: dict[str, Lane] = {
         name="key",
         log_path=DEFAULT_LOG,
         # Round 0's log block already exists (`### Key lane round 0` in
-        # specs/native-analysis-v1.md). The scored table is continued in
+        # (private path)). The scored table is continued in
         # place there, not via `run --post` (that heading does not match
         # rounds.py). Floor stays 0 until a scored table is actually posted
         # into that block so a later `--post` cannot skip the measurement.

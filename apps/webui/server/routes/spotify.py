@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, HttpUrl, TypeAdapter, ValidationError, field_validator
 
 from apps.shared.state import db as state_db
-from apps.spotify.state_writer import SUGGESTED_SOURCE_KEYS
+from apps.spotify.acquisition import SOURCE_KEYS
 
 from ..backend import NotFoundError, StateBackend
 from ..deps import get_read_state
@@ -116,10 +116,10 @@ def _to_pending_track(row: sqlite3.Row) -> PendingTrackOut:
         suggested_sources = json.loads(row["suggested_sources_json"])
         if not isinstance(suggested_sources, dict):
             raise ValueError("suggested_sources_json must decode to an object")
-        if set(suggested_sources) != set(SUGGESTED_SOURCE_KEYS):
+        if set(suggested_sources) != set(SOURCE_KEYS):
             raise ValueError(
                 "suggested_sources_json must contain exactly the canonical "
-                f"keys {SUGGESTED_SOURCE_KEYS!r}"
+                f"keys {SOURCE_KEYS!r}"
             )
         return PendingTrackOut(
             pending_id=row["pending_id"],

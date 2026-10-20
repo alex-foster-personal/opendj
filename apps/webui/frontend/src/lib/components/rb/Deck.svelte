@@ -71,6 +71,8 @@
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import ReactIsland from '$lib/react/ReactIsland.svelte';
+	import { reactDeckEnabled } from '$lib/react/react-deck-flag';
 
 	let { deckId }: { deckId: DeckId } = $props();
 
@@ -122,6 +124,19 @@
 	});
 
 	const controlErrorId: string | null = $derived(deckErrorIds[deckId]);
+
+	// REACT-01 (`ui.react.deck`, default OFF): the deck's leaf controls render
+	// through their React twins only when the daemon declares the flag on.
+	// BeatJump stays Svelte either way: it reads deck.position_ms, which the
+	// rAF clock writes every frame, and per-frame values never go through React.
+	const reactDeck: boolean = $derived(reactDeckEnabled());
+	// StemRow's twin reads only deck_id and stems. A plain snapshot of exactly
+	// those keeps React re-renders to stem changes; passing the live deck would
+	// re-render on nothing (React cannot see rune reads) or, spread, every frame.
+	const stemRowDeck: Pick<DeckState, 'deck_id' | 'stems'> = $derived({
+		deck_id: deck.deck_id,
+		stems: $state.snapshot(deck.stems)
+	});
 	const keySyncAvailable: boolean = $derived(
 		deck.stable_id !== null &&
 		parseCamelotKey(deck.key) !== null &&
@@ -434,7 +449,11 @@
 	ondragleave={onTrackDragLeave}
 	ondrop={(e) => void onTrackDrop(e)}
 >
-	<PadStrip />
+	{#if reactDeck}
+		<ReactIsland load={() => import('./deck/PadStrip.tsx')} props={{}} />
+	{:else}
+		<PadStrip />
+	{/if}
 
 	<DeckHeader
 		{deck}
@@ -466,7 +485,11 @@
 			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-shift')} aria-label={`grid shift deck ${deckId}`} data-testid={`grid-shift-deck-${deckId}`}>
 				<span class="ticks">&#9478;&#9478;&#9478;</span>
 			</button>
-			<PadModeMenu {deckId} stacked />
+			{#if reactDeck}
+				<ReactIsland load={() => import('./deck/PadModeMenu.tsx')} props={{ deckId, stacked: true }} />
+			{:else}
+				<PadModeMenu {deckId} stacked />
+			{/if}
 		</div>
 
 		<!-- The cue column absorbs spare width to preserve control alignment.
@@ -528,24 +551,45 @@
 		/>
 	</div>
 
-	<StemRow
-		{deck}
-		{pending}
-		onMute={toggleStemMute}
-		onSolo={toggleStemSolo}
-		onLoad={loadStems}
-	/>
-
-	{#if controlError !== null}
-		<DeckErrorBanner
-			{deckId}
-			error={controlError}
-			errorId={controlErrorId}
-			onDismiss={() => dismissPerformanceDeckError(deckId)}
+	{#if reactDeck}
+		<ReactIsland
+			load={() => import('./deck/StemRow.tsx')}
+			props={{ deck: stemRowDeck, pending, onMute: toggleStemMute, onSolo: toggleStemSolo, onLoad: loadStems }}
+		/>
+	{:else}
+		<StemRow
+			{deck}
+			{pending}
+			onMute={toggleStemMute}
+			onSolo={toggleStemSolo}
+			onLoad={loadStems}
 		/>
 	{/if}
 
-	<SecondaryLoadBadge status={deck.stems.status} error={deck.stems.error} phase={deck.stems.load?.phase ?? null} />
+	{#if controlError !== null}
+		{#if reactDeck}
+			<ReactIsland
+				load={() => import('./deck/DeckErrorBanner.tsx')}
+				props={{ deckId, error: controlError, errorId: controlErrorId, onDismiss: () => dismissPerformanceDeckError(deckId) }}
+			/>
+		{:else}
+			<DeckErrorBanner
+				{deckId}
+				error={controlError}
+				errorId={controlErrorId}
+				onDismiss={() => dismissPerformanceDeckError(deckId)}
+			/>
+		{/if}
+	{/if}
+
+	{#if reactDeck}
+		<ReactIsland
+			load={() => import('./deck/SecondaryLoadBadge.tsx')}
+			props={{ status: deck.stems.status, error: deck.stems.error, phase: deck.stems.load?.phase ?? null }}
+		/>
+	{:else}
+		<SecondaryLoadBadge status={deck.stems.status} error={deck.stems.error} phase={deck.stems.load?.phase ?? null} />
+	{/if}
 
 	{#if deck.last_load_latency_ms !== null}
 		<span

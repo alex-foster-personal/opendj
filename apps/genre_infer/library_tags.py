@@ -77,8 +77,8 @@ def genre_text(value_json: str | None) -> str | None:
 def field_genres(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str, tuple[str | None, str | None]]:
     """stable_id -> (user genre typed in the library, imported tag genre) from ``track_fields``."""
     out: dict[str, tuple[str | None, str | None]] = {}
-    for start in range(0, len(stable_ids), 500):
-        chunk = list(stable_ids[start : start + 500])
+    for start in range(0, len(stable_ids), _CHUNK):
+        chunk = list(stable_ids[start : start + _CHUNK])
         marks = ",".join("?" * len(chunk))
         for sid, value_json, source in conn.execute(
             f"SELECT stable_id, value_json, source FROM track_fields "

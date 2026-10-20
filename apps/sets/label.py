@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from . import paths as sets_paths
 from .classify import CLASS_LIST, read_transitions
+from .manifest import now_iso
 
 # Single-key prompts per Plan 12-02 Step 4.
 _KEYMAP: dict[str, str | None] = {
@@ -66,7 +67,7 @@ def append_label(
         raise ValueError(f"unknown class {class_!r}; expected one of {CLASS_LIST}")
     path = labels_path(session_id, sets_root=sets_root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    stamp = (now or datetime.now(UTC)).isoformat(timespec="milliseconds")
+    stamp = now.isoformat(timespec="milliseconds") if now is not None else now_iso()
     row = {
         "idx": int(idx),
         "class": class_,
@@ -151,8 +152,8 @@ def label_session(
 
 
 __all__ = [
-    "labels_path",
-    "read_labels",
     "append_label",
     "label_session",
+    "labels_path",
+    "read_labels",
 ]

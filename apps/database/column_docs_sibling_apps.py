@@ -220,7 +220,7 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "suggested_sources_json": (
             "JSON object with exactly the 5 fixed keys in "
-            "apps.spotify.state_writer_tracks.SUGGESTED_SOURCE_KEYS "
+            "apps.spotify.acquisition.SOURCE_KEYS "
             "(beatport, bandcamp, qobuz, apple_music, discogs), mapping to "
             "generated search-query URLs built from the track's title and "
             "artist. These are search links for a human to click, NOT "

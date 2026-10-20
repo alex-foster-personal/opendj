@@ -21,8 +21,8 @@ def test_every_lane_declares_both_controls() -> None:
     """A lane that cannot name its controls cannot post a round (spec section 6)."""
     for name, lane in lanes.LANES.items():
         roles = {candidate.role for candidate in lane.candidates}
-        assert "positive_control" in roles, name
-        assert "negative_control" in roles, name
+        for role in lanes.REQUIRED_CONTROL_ROLES:
+            assert role in roles, name
 
 
 def test_beatgrid_continues_its_own_counter() -> None:

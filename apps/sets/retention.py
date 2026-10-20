@@ -13,6 +13,9 @@ from pathlib import Path
 
 from . import paths as sets_paths
 
+DEFAULT_RETENTION_DAYS = 90
+SECONDS_PER_DAY = 86400.0
+
 
 @dataclass
 class PruneCandidate:
@@ -22,7 +25,7 @@ class PruneCandidate:
 
 
 def find_candidates(
-    retention_days: int = 90,
+    retention_days: int = DEFAULT_RETENTION_DAYS,
     *,
     root: Path | None = None,
     now: float | None = None,
@@ -34,7 +37,7 @@ def find_candidates(
     """
     base = Path(root) if root is not None else sets_paths.SETS_DIR
     wall_now = now if now is not None else time.time()
-    cutoff = wall_now - retention_days * 86400.0
+    cutoff = wall_now - retention_days * SECONDS_PER_DAY
     out: list[PruneCandidate] = []
     if not base.exists():
         return out
@@ -44,7 +47,7 @@ def find_candidates(
         for seg_path in sets_paths.segment_files(session_dir):
             mtime = seg_path.stat().st_mtime
             if mtime < cutoff:
-                age = max(0.0, (wall_now - mtime) / 86400.0)
+                age = max(0.0, (wall_now - mtime) / SECONDS_PER_DAY)
                 out.append(
                     PruneCandidate(
                         path=seg_path,
@@ -56,7 +59,7 @@ def find_candidates(
 
 
 def prune(
-    retention_days: int = 90,
+    retention_days: int = DEFAULT_RETENTION_DAYS,
     *,
     dry_run: bool = True,
     root: Path | None = None,
@@ -73,4 +76,10 @@ def prune(
     return candidates
 
 
-__all__ = ["PruneCandidate", "find_candidates", "prune"]
+__all__ = [
+    "DEFAULT_RETENTION_DAYS",
+    "SECONDS_PER_DAY",
+    "PruneCandidate",
+    "find_candidates",
+    "prune",
+]

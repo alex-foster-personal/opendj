@@ -35,6 +35,7 @@ from apps.shared.state import paths as state_paths
 from apps.shared.state import sync_stamp
 from apps.shared.state.writer import next_playlist_revision
 
+from .acquisition import build_search_urls
 from .client import SpotifyPlaylist
 from .matcher_adapter import MatchResult
 from .state_aux import (
@@ -53,10 +54,8 @@ from .state_aux import (
     open_state_rw_with_aux,
 )
 from .state_writer_tracks import (
-    SUGGESTED_SOURCE_KEYS,
     _set_track_vendor_id,
     _spotify_vendor_track_id,
-    _suggested_sources,
     _upsert_synthetic_track,
     synthetic_stable_id,
 )
@@ -64,7 +63,6 @@ from .state_writer_tracks import (
 __all__ = [
     "AUX_MIGRATIONS",
     "ODJ_VENDOR",
-    "SUGGESTED_SOURCE_KEYS",
     "VENDOR",
     "PendingRow",
     "PlaylistLink",
@@ -247,7 +245,10 @@ def _build_membership(
                     src.artists_joined,
                     src.album,
                     src.duration_ms,
-                    json.dumps(_suggested_sources(src), ensure_ascii=False),
+                    json.dumps(
+                        build_search_urls(src.artists_joined, src.title),
+                        ensure_ascii=False,
+                    ),
                     "pending",
                     now,
                 )

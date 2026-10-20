@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from apps.open_dj.provenance import PROVENANCE_ENVELOPE_KEYS
+
 PROVENANCE_FIELDS: frozenset[str] = frozenset(
     {"bpm", "key", "energy", "rating"}
 )
@@ -74,7 +76,7 @@ def _diff_provenance(
         return out
     if a is None or b is None:
         return [FieldChange(field_name=field_name, before=a, after=b)]
-    for sub in ("value", "source", "confidence", "modified_at"):
+    for sub in PROVENANCE_ENVELOPE_KEYS:
         av = a.get(sub)
         bv = b.get(sub)
         if av != bv:

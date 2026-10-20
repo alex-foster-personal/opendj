@@ -34,6 +34,8 @@
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
+	import ReactIsland from '$lib/react/ReactIsland.svelte';
+	import { reactDeckEnabled } from '$lib/react/react-deck-flag';
 	import { createLyricsFetchState } from '../wave/lyrics-fetch.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
 
@@ -61,6 +63,10 @@
 		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
 		onRestore: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
 	} = $props();
+
+	// REACT-01 (`ui.react.deck`, default OFF): the proposal caption renders
+	// through its React twin only when the daemon declares the flag on.
+	const reactDeck: boolean = $derived(reactDeckEnabled());
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
@@ -293,7 +299,11 @@
 						>
 							<span class="letter">{entry.slot}</span>
 							{#if visible !== null}
-								<HotCueProposalLabel kind={visible.kind} />
+								{#if reactDeck}
+									<ReactIsland load={() => import('./HotCueProposalLabel.tsx')} props={{ kind: visible.kind }} />
+								{:else}
+									<HotCueProposalLabel kind={visible.kind} />
+								{/if}
 							{/if}
 							{#if entry.cue !== null}
 								<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>

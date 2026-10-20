@@ -4,7 +4,7 @@ WHY THIS EXISTS. A segmentation model (All-In-One today) emits section
 boundaries in seconds. A DJ reads structure in bars and phrases, and the
 research behind this lane found bar alignment worth more than several years of
 model progress on bar-regular music
-(`docs/research/beatgrid-and-segmentation-sota-20260906-b-segmentation.md`,
+(`(private path)`,
 Q2 and Q5 Tier 0). So the model's own beats and downbeats are DISCARDED: only
 its boundaries and labels survive, and each boundary is snapped to the
 downbeat grid the beatgrid lane already measured, then to a phrase multiple.
@@ -47,6 +47,8 @@ SPARSE_WINDOW_S = 360.0
 SPARSE_MIN_BOUNDARIES = 3
 # A first boundary this close to 0 s already is the opening section.
 LEAD_MIN_S = 0.05
+TIME_S_DECIMALS = 3
+LOCAL_BAR_HALF_WINDOW = 4
 
 
 @dataclass(frozen=True)
@@ -88,7 +90,7 @@ class Structure:
             out.append(
                 {
                     "start_s": 0.0,
-                    "end_s": round(first.time_s, 3),
+                    "end_s": round(first.time_s, TIME_S_DECIMALS),
                     "label": self.lead_label,
                     "start_bar": None,
                     "bars": None,
@@ -102,8 +104,8 @@ class Structure:
             )
             out.append(
                 {
-                    "start_s": round(b.time_s, 3),
-                    "end_s": round(end_s, 3),
+                    "start_s": round(b.time_s, TIME_S_DECIMALS),
+                    "end_s": round(end_s, TIME_S_DECIMALS),
                     "label": b.label,
                     "start_bar": b.bar,
                     "bars": bars,
@@ -131,7 +133,9 @@ def _nearest(grid: Sequence[float], t: float) -> int:
     return i if grid[i] - t < t - grid[i - 1] else i - 1
 
 
-def _local_bar(grid: Sequence[float], i: int, fallback: float, half_window: int = 4) -> float:
+def _local_bar(
+    grid: Sequence[float], i: int, fallback: float, half_window: int = LOCAL_BAR_HALF_WINDOW
+) -> float:
     """Median bar length around downbeat ``i``.
 
     A median over the neighboring bars, not the two gaps touching ``i``: a

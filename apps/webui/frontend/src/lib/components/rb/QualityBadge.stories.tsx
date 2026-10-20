@@ -40,6 +40,7 @@ export const NaughtyStep: Story = contracts.NaughtyStep;
  * a guessed rung would be mocked data.
  */
 export const Unknown: Story = contracts.Unknown;
+export const RankMissing: Story = contracts.RankMissing;
 
 /** quality null: the row exists but its audio quality has not loaded yet. */
 export const NotLoaded: Story = contracts.NotLoaded;

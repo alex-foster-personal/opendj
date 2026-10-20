@@ -6,13 +6,14 @@ for post-set analysis (CONTEXT success criterion 7).
 """
 from __future__ import annotations
 
-import json
 import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from apps.voice.jsonlog import READ_ONLY_LATENCY_BUDGET_MS, append_jsonl
 
 
 @dataclass
@@ -21,7 +22,6 @@ class Timings:
 
     stages: dict[str, float] = field(default_factory=dict)
     started_at: float = field(default_factory=time.perf_counter)
-    _open: dict[str, float] = field(default_factory=dict, repr=False)
 
     @contextmanager
     def measure(self, stage: str) -> Iterator[None]:
@@ -45,15 +45,9 @@ class Timings:
         return out
 
 
-def append_jsonl(path: Path, entry: dict) -> None:
-    """Append a single JSON line to ``path`` (creating parent dir)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, sort_keys=True))
-        fh.write("\n")
-
-
-def budget_warning(total_ms: float, budget_ms: float = 1_800.0) -> str | None:
+def budget_warning(
+    total_ms: float, budget_ms: float = READ_ONLY_LATENCY_BUDGET_MS
+) -> str | None:
     """Return a warning string if ``total_ms`` exceeds the read-only budget."""
     if total_ms > budget_ms:
         return (
@@ -75,3 +69,6 @@ def default_log_path(env: dict[str, str] | None = None) -> Path:
     from apps.voice.settings import voice_data_dir
 
     return voice_data_dir() / "timings.jsonl"
+
+
+__all__ = ["Timings", "append_jsonl", "budget_warning", "default_log_path"]

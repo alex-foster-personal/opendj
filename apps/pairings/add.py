@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from apps.shared.pairings import PairingsError
 from apps.shared.pairings.models import DIRECTIONS, SOURCES
 
-from ._common import build_repo
+from ._common import add_db_argument, build_repo
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,8 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="free-text note describing the transition")
     p.add_argument("--confidence", type=float, default=None,
                    help="optional confidence score in [0,1]")
-    p.add_argument("--db", type=Path, default=None,
-                   help="override state DB path (default: apps.shared.paths.STATE_DB)")
+    add_db_argument(p)
     return p
 
 

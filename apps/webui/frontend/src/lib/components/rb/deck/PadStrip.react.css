@@ -1,0 +1,16 @@
+/* PadStrip.svelte's scoped <style>, unscoped for the React twin: every rule
+ * is anchored on .pad-strip so it cannot leak. Keep the two in step. */
+.pad-strip {
+	/* Toggle: set --rb-pad-strip-display: none on .perf-root to hide. */
+	display: var(--rb-pad-strip-display, flex);
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	font-size: var(--rb-fs-label);
+	color: var(--rb-text-dim);
+	line-height: 1;
+	flex: 0 0 auto;
+}
+.pad-strip .pad-sep {
+	color: var(--rb-border);
+}

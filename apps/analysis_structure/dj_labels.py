@@ -74,6 +74,12 @@ RISE_DB = 3.0  # second half over first half, for a buildup
 NO_DRUMS_DB = -15.0  # drums at or below: an ambient intro or outro
 SILENT_LANE_DB = -70.0  # a lane whose reference is below this has nothing to normalize
 FLOOR_DB = -120.0
+ENERGY_LANES = ("drums", "bass", "mix")
+MIN_MEASURABLE_FRAMES = 2  # fewer frames cannot produce a rise split
+
+
+def _dec1(value: float) -> float:
+    return round(value, 1)
 
 
 def _power(db: float) -> float:
@@ -108,15 +114,15 @@ def _section_energy(
     hop = float(env["hop_s"])
     n = min(len(env[lane]) for lane in refs)
     lo, hi = _frame_span(float(section["start_s"]), float(section["end_s"]), hop, n)
-    if hi - lo < 2:
+    if hi - lo < MIN_MEASURABLE_FRAMES:
         return None
     mid = (lo + hi) // 2
     out: dict[str, float] = {}
     for lane, ref in refs.items():
         frames = env[lane]
-        out[f"{lane}_db"] = round(_mean_db(frames[lo:hi]) - ref, 1)
-        out[f"{lane}_rise_db"] = round(_mean_db(frames[mid:hi]) - _mean_db(frames[lo:mid]), 1)
-        out[f"{lane}_late_db"] = round(_mean_db(frames[mid:hi]) - ref, 1)
+        out[f"{lane}_db"] = _dec1(_mean_db(frames[lo:hi]) - ref)
+        out[f"{lane}_rise_db"] = _dec1(_mean_db(frames[mid:hi]) - _mean_db(frames[lo:mid]))
+        out[f"{lane}_late_db"] = _dec1(_mean_db(frames[mid:hi]) - ref)
     out["score_db"] = min(out["drums_db"], out["bass_db"])
     out["seconds"] = round(float(section["end_s"]) - float(section["start_s"]), 3)
     return out
@@ -155,11 +161,10 @@ def _unlabeled(reason: str, **extra: Any) -> dict[str, Any]:
 
 def _references(env: dict[str, Any]) -> tuple[dict[str, float] | None, str | None]:
     hop = float(env.get("hop_s") or 0.0)
-    lanes = ("drums", "bass", "mix")
-    if hop <= 0 or any(not env.get(lane) for lane in lanes):
+    if hop <= 0 or any(not env.get(lane) for lane in ENERGY_LANES):
         return None, "malformed_envelopes"
-    refs = {lane: _reference_db(env[lane], hop) for lane in lanes}
-    silent = [lane for lane in lanes if refs[lane] < SILENT_LANE_DB]
+    refs = {lane: _reference_db(env[lane], hop) for lane in ENERGY_LANES}
+    silent = [lane for lane in ENERGY_LANES if refs[lane] < SILENT_LANE_DB]
     if silent:
         return None, f"silent_lane:{','.join(silent)}"
     return refs, None
@@ -216,7 +221,7 @@ def _apply_rules(energies: list[dict[str, float]], refs: dict[str, float]) -> di
 
 
 def _rounded(refs: dict[str, float]) -> dict[str, float]:
-    return {k: round(v, 1) for k, v in refs.items()}
+    return {k: _dec1(v) for k, v in refs.items()}
 
 
 __all__ = ["DJ_LABELS", "RULES", "label_sections"]

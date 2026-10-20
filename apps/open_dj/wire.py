@@ -31,6 +31,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from apps.open_dj import SCHEMA_VERSION
 from apps.open_dj.provenance import wrap
 from apps.open_dj.schema import (
     BeatGridPoint,
@@ -42,8 +43,6 @@ from apps.open_dj.schema import (
 
 __all__ = ["library_to_wire_document"]
 
-
-SCHEMA_VERSION = "0.2"
 _DEFAULT_SOURCE = "open-dj-tool"
 
 

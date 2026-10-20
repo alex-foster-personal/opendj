@@ -1,0 +1,20 @@
+/* FaderRejoinGuidance.svelte's scoped <style>, unscoped for the React twin:
+ * anchored on .rejoin-guidance; the keyframes name carries a twin suffix
+ * because Svelte scopes its own. Keep the two in step. */
+.rejoin-guidance {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 4;
+	animation: rejoin-fade-twin 3s ease-in-out infinite;
+}
+@keyframes rejoin-fade-twin {
+	0%,
+	15% {
+		opacity: 1;
+	}
+	70%,
+	100% {
+		opacity: 0;
+	}
+}

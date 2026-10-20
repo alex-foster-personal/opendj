@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 
@@ -11,7 +11,18 @@ from apps.analysis_waveform.bands import _downsample_max
 from apps.analysis_waveform.decode import BAND_NAMES
 from apps.analysis_waveform.score import POSITIVE_CONTROL_TOLERANCE, pearson
 
+_T = TypeVar("_T")
+
 _EXACT_TOLERANCE = POSITIVE_CONTROL_TOLERANCE
+
+
+def _primary_with_secondary_fallback(
+    primary: _T | None, secondary: _T | None
+) -> tuple[_T | None, _T | None]:
+    """Use secondary rekordbox tag only when the primary tag is absent."""
+    if primary is None and secondary is not None:
+        return secondary, None
+    return primary, secondary
 
 
 def is_non_empty_list(value: Any) -> bool:
@@ -53,9 +64,7 @@ def preview_truth_tags(row: dict[str, Any]) -> tuple[list[float] | None, list[fl
     rb_pwv2 = row.get("rb_pwv2")
     primary = rb_pwav if is_non_empty_list(rb_pwav) else None
     secondary = rb_pwv2 if is_non_empty_list(rb_pwv2) else None
-    if primary is None and secondary is not None:
-        primary, secondary = secondary, None
-    return primary, secondary
+    return _primary_with_secondary_fallback(primary, secondary)
 
 
 def detail_truth_tag(row: dict[str, Any]) -> list[float] | None:
@@ -73,9 +82,7 @@ def triband_truth_tags(
     rb_pwv7 = row.get("rb_pwv7")
     primary = rb_pwv6 if has_full_triband(rb_pwv6) else None
     secondary = rb_pwv7 if has_full_triband(rb_pwv7) else None
-    if primary is None and secondary is not None:
-        primary, secondary = secondary, None
-    return primary, secondary
+    return _primary_with_secondary_fallback(primary, secondary)
 
 
 def preview_ungradable_bucket(row: dict[str, Any]) -> str | None:

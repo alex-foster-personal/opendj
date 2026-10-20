@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from apps.shared.pairings import PairingsError
 from apps.shared.pairings.models import DIRECTIONS
 
-from ._common import build_repo
+from ._common import add_db_argument, build_repo
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--from", dest="from_id", required=True)
     p.add_argument("--to", dest="to_id", required=True)
     p.add_argument("--direction", required=True, choices=list(DIRECTIONS))
-    p.add_argument("--db", type=Path, default=None)
+    add_db_argument(p)
     return p
 
 

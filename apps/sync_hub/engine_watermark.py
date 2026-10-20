@@ -101,12 +101,15 @@ def write_watermark(conn: sqlite3.Connection, watermark: Watermark) -> None:
 # ----- sequences -------------------------------------------------------------
 
 
+def _max_changelog_seq(conn: sqlite3.Connection, table: str) -> int:
+    """Greatest ``seq`` in ``table``; 0 when the table has no rows."""
+    row = conn.execute(f"SELECT COALESCE(MAX(seq), 0) FROM {table}").fetchone()
+    return 0 if row is None else int(row[0])
+
+
 def current_seq(conn: sqlite3.Connection) -> int:
     """Greatest ``hub_changelog.seq``; 0 on a machine that has never been a hub."""
-    row = conn.execute(
-        f"SELECT COALESCE(MAX(seq), 0) FROM {HUB_CHANGELOG_TABLE}"
-    ).fetchone()
-    return 0 if row is None else int(row[0])
+    return _max_changelog_seq(conn, HUB_CHANGELOG_TABLE)
 
 
 def local_seq(conn: sqlite3.Connection) -> int:
@@ -118,10 +121,7 @@ def local_seq(conn: sqlite3.Connection) -> int:
     offered on the next sync, instead of falling into the gap that lost rows
     in round 1.
     """
-    row = conn.execute(
-        f"SELECT COALESCE(MAX(seq), 0) FROM {LOCAL_CHANGELOG_TABLE}"
-    ).fetchone()
-    return 0 if row is None else int(row[0])
+    return _max_changelog_seq(conn, LOCAL_CHANGELOG_TABLE)
 
 
 def settled_push_seq(

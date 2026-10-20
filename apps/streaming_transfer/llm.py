@@ -21,6 +21,28 @@ class LlmMatchError(RuntimeError):
     """The LLM matcher is unconfigured or violates its wire contract."""
 
 
+_WEB_SEARCH_BATCH_ID_HEX_LEN = 64
+_CANONICAL_JSON_SEPARATORS = (",", ":")
+
+
+def _is_http_url(url: object) -> bool:
+    return isinstance(url, str) and url.startswith(("https://", "http://"))
+
+
+def _escalation_prompt_batch(escalations: Sequence[Escalation]) -> list[dict[str, Any]]:
+    return [row.as_prompt_dict() for row in escalations]
+
+
+def _canonical_batch_digest(batch: Sequence[dict[str, Any]]) -> str:
+    canonical = json.dumps(
+        batch,
+        ensure_ascii=False,
+        separators=_CANONICAL_JSON_SEPARATORS,
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class LlmDecision:
     source_id: str
@@ -45,15 +67,9 @@ class LlmDecision:
         ):
             raise LlmMatchError(f"invalid LLM confidence: {self.confidence!r}")
         object.__setattr__(self, "confidence", float(self.confidence))
-        if (
-            not self.evidence_urls
-            or any(
-                not isinstance(url, str) or not url.startswith(("https://", "http://"))
-                for url in self.evidence_urls
-            )
-        ):
+        if not self.evidence_urls or any(not _is_http_url(url) for url in self.evidence_urls):
             raise LlmMatchError("LLM decision requires HTTP evidence URLs")
-        if len(self.web_search_batch_id) != 64:
+        if len(self.web_search_batch_id) != _WEB_SEARCH_BATCH_ID_HEX_LEN:
             raise LlmMatchError("LLM decision requires a SHA-256 web-search batch id")
         if (
             not isinstance(self.web_search_requests, int)
@@ -92,9 +108,7 @@ _DECISION_SCHEMA: dict[str, Any] = {
 
 
 def batch_id_for(escalations: Sequence[Escalation]) -> str:
-    batch = [row.as_prompt_dict() for row in escalations]
-    canonical = json.dumps(batch, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return _canonical_batch_digest(_escalation_prompt_batch(escalations))
 
 
 def build_batch_request(escalations: Sequence[Escalation], *, model: str) -> dict[str, Any]:
@@ -102,8 +116,8 @@ def build_batch_request(escalations: Sequence[Escalation], *, model: str) -> dic
         raise LlmMatchError("cannot build an empty LLM match batch")
     if not model.strip():
         raise LlmMatchError("LLM model must be explicitly configured")
-    batch = [row.as_prompt_dict() for row in escalations]
-    batch_id = batch_id_for(escalations)
+    batch = _escalation_prompt_batch(escalations)
+    batch_id = _canonical_batch_digest(batch)
     return {
         "model": model.strip(),
         "messages": [
@@ -165,11 +179,7 @@ def parse_batch_response(payload: object, *, expected_batch_id: str) -> tuple[Ll
         for annotation in annotations
         if isinstance(annotation, dict) and annotation.get("type") == "url_citation"
     }
-    citation_urls = {
-        url
-        for url in citation_urls
-        if isinstance(url, str) and url.startswith(("http://", "https://"))
-    }
+    citation_urls = {url for url in citation_urls if _is_http_url(url)}
     if not citation_urls:
         raise LlmMatchError("OpenRouter response contains no URL citation evidence")
     if not isinstance(rows, list):
@@ -215,14 +225,17 @@ class OpenRouterBatchMatcher:
 
     def resolve(self, escalations: Sequence[Escalation]) -> tuple[LlmDecision, ...]:
         timeout = httpx.Timeout(
-            connect=CFG.connect_timeout_s, read=CFG.read_timeout_s, write=30.0, pool=10.0
+            connect=CFG.connect_timeout_s,
+            read=CFG.read_timeout_s,
+            write=CFG.write_timeout_s,
+            pool=CFG.pool_timeout_s,
         )
         response = httpx.post(
             f"{CFG.openrouter_api_base}/chat/completions",
             json=build_batch_request(escalations, model=self._model),
             headers={
                 "Authorization": f"Bearer {self._api_key}",
-                "HTTP-Referer": "https://github.com/former-work-account/music-dj-tools",
+                "HTTP-Referer": "https://github.com/private_owner/music-dj-tools",
                 "X-Title": "Open DJ",
             },
             timeout=timeout,

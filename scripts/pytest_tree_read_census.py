@@ -255,6 +255,7 @@ class _State:
     git: ClassVar[str | None] = None  # the git the census runs and trusts, pinned before any test runs
     carrier: ClassVar[tuple[str, str] | None] = None  # the hook directory and the children's reads directory
     older_threads: ClassVar[set[threading.Thread]] = set()  # alive before this module phase, besides its own
+    fork: ClassVar[threading.local] = threading.local()  # `.unplaced`, set by each forking thread for its child
     lineage_unknown: ClassVar[bool] = False  # an older thread lives: a thread born in this phase may be its descendant
     own_spawn: ClassVar[threading.local] = threading.local()  # `.active` while the census runs its own git
 
@@ -1204,11 +1205,14 @@ def _remember_the_carrier() -> None:
 def _record_a_fork_launch() -> None:
     """In the parent, before the child exists: a fork is a launch, as a spawned Python is, so a child
     scheduled only after the report loads leaves its module PARTIAL. A fork while no module runs (a conftest
-    as it is imported, a session hook) is unplaced: its child, once out of repository code, has no module."""
-    if _State.module is None:
+    as it is imported, a session hook) is unplaced: its child, once out of repository code, has no module. So is
+    one from a pool thread or a thread of unknown lineage, whose work may be another module's."""
+    _State.fork.module = _State.module  # read once: another thread may move the phase before the fork happens
+    _State.fork.unplaced = _State.fork.module is None or _a_pool_thread_runs_this()  # per thread: two may fork
+    if _State.fork.unplaced:
         _record_reads(SESSION_READS, ["."])
-    elif _State.module is not None:
-        _write_launches(1)
+    elif not _State.fork.unplaced:
+        _write_launches(1, _State.fork.module)
 
 
 def _mark_an_unread_child() -> None:
@@ -1285,7 +1289,13 @@ def _write_reads_from_a_forked_child() -> None:
     if _State.carrier is None:  # forked before the census configured: the parent marked it unplaced
         return
     _State.child_reads = Path(_State.carrier[1]) / f"{os.getpid()}-{uuid.uuid4().hex}.jsonl"
-    if _State.module is not None:
+    _State.module = _State.fork.module  # the module the parent wrote the launch for, not the one running now
+    if _State.module is None:  # perhaps forked between a phase clearing the module and resetting the environment
+        os.environ[CHILD_MODULE_ENV] = SESSION_READS  # so its Python children never credit a finished test
+    elif _State.fork.unplaced:  # decided in the parent; the child cannot tell
+        _State.module = os.environ[CHILD_MODULE_ENV] = SESSION_READS  # and its own Python children's
+    elif not _State.fork.unplaced:
+        os.environ[CHILD_MODULE_ENV] = _State.module
         _mark_this_child_started()
 
 
@@ -1410,15 +1420,15 @@ def _record_python_launches(commands: list[list[str]], cwd: SpawnCwd, env: objec
     whose hook an earlier sitecustomize shadows, never reads as measured."""
     launches = sum(1 for command in commands if _starts_a_python(command, cwd, env))
     if launches:
-        _write_launches(launches)
+        _write_launches(launches, _State.module or SESSION_READS)
 
 
-def _write_launches(count: int) -> None:
-    """A `.launched` marker: one line naming the current module (`<session>` for repository code) per Python
-    about to start."""
+def _write_launches(count: int, module: str) -> None:
+    """A `.launched` marker: one line naming `module` per Python about to start. The caller decides it (the
+    fork hook passes the module it read before the fork), so this never re-reads `_State.module`."""
     assert _State.carrier is not None
     marker = Path(_State.carrier[1]) / f"{os.getpid()}-{uuid.uuid4().hex}.launched"
-    marker.write_text(f"{_State.module or SESSION_READS}\n" * count, encoding="utf-8", newline="\n")
+    marker.write_text(f"{module}\n" * count, encoding="utf-8", newline="\n")
 
 
 UV_OPTIONS_WITH_VALUES = frozenset(  # `uv run --with pytest ruff` runs ruff: pytest is an operand. Every option
@@ -1579,13 +1589,14 @@ def _record_a_multiprocessing_start(path: Any, args: Any) -> None:
     `.started` marker pairs, except a long-lived helper's (the resource tracker, the forkserver), which loads
     the hook under `<session>`. One started while no module runs, or on a pool thread, is unplaced even when
     hooked (a hooked Popen started while no module runs is measured under `<session>`): unplaced errs safe."""
+    module = _State.module  # read once: another thread may move the phase between this check and the marker
     argv = _argv_as_run(path, [os.fsdecode(word) for word in args])
-    if _State.module is None or _a_pool_thread_runs_this():  # its child carries no module, or the wrong one
+    if module is None or _a_pool_thread_runs_this():  # its child carries no module, or the wrong one
         _record_reads(SESSION_READS, ["."])  # unplaced: the report says UNKNOWN, hooked or not
     elif _python_without_the_hook(argv) or not _starts_a_hooked_python(argv, None, None):
         _mark_an_unread_child()
     elif _multiprocessing_start(argv) != "helper":
-        _write_launches(1)
+        _write_launches(1, module)
 
 
 def _track_forks() -> None:

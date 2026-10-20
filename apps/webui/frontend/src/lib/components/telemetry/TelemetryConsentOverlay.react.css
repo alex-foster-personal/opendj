@@ -1,0 +1,77 @@
+/* TelemetryConsentOverlay.svelte's scoped <style>, unscoped for the React
+ * twin: every rule is anchored on .tc-backdrop so it cannot leak. Keep the two in step. */
+.tc-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 9990;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgb(0 0 0 / 0.55);
+}
+.tc-backdrop .tc-panel {
+	width: min(34rem, calc(100vw - 2rem));
+	max-height: calc(100vh - 2rem);
+	overflow: auto;
+	padding: 1.25rem 1.5rem;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	background: var(--surface);
+	color: var(--text);
+	box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.35);
+}
+.tc-backdrop .tc-title {
+	margin: 0;
+	font-size: 1.1rem;
+	font-weight: 600;
+}
+.tc-backdrop .tc-lead {
+	margin: 0.75rem 0;
+	font-size: 0.9rem;
+}
+.tc-backdrop .tc-list {
+	margin: 0 0 0.75rem;
+	padding-left: 1.1rem;
+	font-size: 0.85rem;
+	line-height: 1.4;
+}
+.tc-backdrop .tc-list li + li {
+	margin-top: 0.4rem;
+}
+.tc-backdrop .tc-details {
+	margin: 0 0 1rem;
+	font-size: 0.8rem;
+	color: var(--muted, #888);
+}
+.tc-backdrop .tc-details summary {
+	cursor: pointer;
+	color: var(--text);
+}
+.tc-backdrop .tc-failure {
+	margin: 0 0 0.75rem;
+	font-size: 0.8rem;
+	color: var(--danger, #e5484d);
+}
+.tc-backdrop .tc-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+}
+.tc-backdrop .tc-btn {
+	padding: 0.4rem 0.9rem;
+	border: 1px solid var(--border);
+	border-radius: 0.25rem;
+	background: var(--surface-2, var(--surface));
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.tc-backdrop .tc-btn:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+.tc-backdrop .tc-accept {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: var(--accent-contrast, #fff);
+}

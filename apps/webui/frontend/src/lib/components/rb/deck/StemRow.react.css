@@ -1,0 +1,74 @@
+/* StemRow.svelte's scoped <style>, unscoped for the React twin: every rule
+ * is anchored on .stems so it cannot leak. Keep the two in step. */
+.stems {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+}
+.stems .mute {
+	font-size: var(--rb-fs-label);
+	color: var(--rb-text-dim);
+	font-weight: 600;
+	margin-right: 2px;
+}
+.stems .chip {
+	background: color-mix(in srgb, var(--chip-color) 15%, transparent);
+	border: 1px solid var(--chip-color);
+	border-radius: 2px;
+	color: var(--chip-color);
+	font-family: var(--rb-font);
+	font-size: var(--rb-fs-label);
+	font-weight: 600;
+	padding: 1px 8px;
+	cursor: pointer;
+}
+.stems .chip.muted {
+	background: transparent;
+	color: var(--rb-text-dim);
+	border-color: var(--rb-border);
+	text-decoration: line-through;
+}
+.stems .chip.solo {
+	box-shadow: 0 0 6px var(--chip-color);
+}
+.stems .chip:disabled {
+	background: transparent;
+	color: var(--rb-text-dim);
+	border-color: var(--rb-border);
+	cursor: default;
+	opacity: 0.6;
+}
+/* STEM-48: names what the stems are doing whenever the chips are not live. */
+.stems .status {
+	max-width: 190px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--rb-font);
+	font-size: var(--rb-fs-label);
+	font-weight: 600;
+	color: var(--rb-text-dim);
+	margin-left: 4px;
+}
+.stems .status.busy {
+	color: var(--rb-blue, #4aa3ff);
+}
+.stems .status.action {
+	background: transparent;
+	border: 1px solid var(--rb-blue, #4aa3ff);
+	border-radius: 2px;
+	color: var(--rb-blue, #4aa3ff);
+	padding: 1px 6px;
+	cursor: pointer;
+}
+.stems .status.action.failed {
+	border-color: var(--rb-red, #d0342c);
+	color: #ff8e87;
+}
+/* Dimmer than merely-disabled: this control does not exist for this bundle. */
+.stems .chip.unavailable {
+	opacity: 0.3;
+	border-style: dashed;
+	cursor: not-allowed;
+}

@@ -5,6 +5,7 @@ entrypoints (``add`` / ``remove`` / ``list``) stay thin.
 """
 from __future__ import annotations
 
+import argparse
 import sqlite3
 from pathlib import Path
 
@@ -18,7 +19,7 @@ def _default_state_db() -> Path:
         from apps.shared.paths import STATE_DB
         return Path(STATE_DB)
     except Exception:  # pragma: no cover - very early bootstraps
-        return Path("data/state/state.db")
+        return Path("(private path)")
 
 
 def open_state_db(path: Path | None = None) -> sqlite3.Connection:
@@ -42,4 +43,14 @@ def build_repo(path: Path | None = None) -> tuple[PairingsRepo, sqlite3.Connecti
     return PairingsRepo(conn, ensure_schema=False), conn
 
 
-__all__ = ["open_state_db", "build_repo"]
+def add_db_argument(parser: argparse.ArgumentParser) -> None:
+    """Register the shared ``--db`` override used by all pairings CLIs."""
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="override state DB path (default: apps.shared.paths.STATE_DB)",
+    )
+
+
+__all__ = ["add_db_argument", "open_state_db", "build_repo"]

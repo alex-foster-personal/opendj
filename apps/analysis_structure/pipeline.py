@@ -41,7 +41,7 @@ from apps.analysis.record import AnalysisRecord
 
 from .dj_labels import label_sections
 from .drop_events import mark_drops
-from .quantize import quantize
+from .quantize import TIME_S_DECIMALS, quantize
 
 SCHEMA = "structure-sidecar/v1"
 PRODUCER = "allin1"
@@ -135,7 +135,7 @@ def build_sidecar(
         "versions": raw.get("versions"),
         "analyzed_at": _now(),
         "grid": {**grid, "downbeats": len(downbeats)},
-        "duration_s": round(duration_s, 3),
+        "duration_s": round(duration_s, TIME_S_DECIMALS),
         "sections": sections,
         "quantize": q.to_dict(),
         "dj_labels": dj,

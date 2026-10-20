@@ -11,10 +11,10 @@ import pytest
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
 from apps.shared.state.writer import StateWriter
+from apps.spotify.acquisition import SOURCE_KEYS
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import LocalTrack, MatchedPair, MatchResult
 from apps.spotify.state_writer import (
-    SUGGESTED_SOURCE_KEYS,
     WriteSummary,
     _state_playlist_id,
     already_imported_snapshot,
@@ -167,7 +167,7 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
     assert set(suggested.keys()) == {
         "beatport", "bandcamp", "qobuz", "apple_music", "discogs",
     }
-    assert tuple(suggested) == SUGGESTED_SOURCE_KEYS
+    assert tuple(suggested) == SOURCE_KEYS
 
     synth = synthetic_stable_id("spotify:track:t2")
     assert summary.synthetic_tracks_written == 1

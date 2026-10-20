@@ -328,7 +328,7 @@ def resolve_transfer(
         )
         if accepted:
             matched.append(record)
-        elif not accepted:
+        else:
             unmatched.append(record)
     return TransferReport(
         source_service=plan.source_service,

@@ -16,6 +16,8 @@ class TransferConfig:
     search_limit: int = 5
     connect_timeout_s: float = 10.0
     read_timeout_s: float = 180.0
+    write_timeout_s: float = 30.0
+    pool_timeout_s: float = 10.0
 
     def require_secret(self, env_name: str) -> str:
         value = os.environ.get(env_name, "").strip()

@@ -2,7 +2,7 @@
 
 Split out of :mod:`scripts.provenance_sweep` when that module crossed the
 600-line limit for the second time, on the seam the TESTS had already been
-split on: `tests/scripts/test_provenance_cli.py` starts a subprocess and
+split on: `(private path)` starts a subprocess and
 asserts on exit codes and stderr, while `test_provenance_sweep.py` calls
 functions in-process. This is that same line drawn through the production
 code - argument parsing, the refusal protocol and the stats report on one
@@ -12,11 +12,16 @@ This module owns the ENTRY POINT. `scripts.provenance_sweep` no longer has a
 `__main__` block, because a module that imported this one back to get it would
 be loaded twice under `python -m` and quietly hand out two copies of itself.
 
-    uv run --no-project python -m scripts.provenance_cli --repo <path>
+    uv run --no-project python -m scripts.provenance_cli --repo <path> --out-dir <store>
 
-Exit codes are the whole interface: `.claude/settings.json` runs this from the
-Stop hook with stdout and stderr sent to /dev/null, so 0 clean, 1 bad repo,
-2 regression refused, 3 UNAVAILABLE is all a caller can observe.
+`--repo` names the checkout whose sessions are harvested; `--out-dir` names the
+ledger store, which must be outside every tracked working tree (the
+provenance-ledger-off-tree ADR). There is no default for either.
+
+Exit codes are the whole interface: `(private path)` runs this from the
+Stop hook with stdout and stderr sent to /dev/null, so 0 clean, 1 bad repo or
+store inside a tracked tree, 2 regression refused, 3 UNAVAILABLE is all a
+caller can observe.
 """
 
 from __future__ import annotations
@@ -43,23 +48,26 @@ from scripts.provenance_probe import (
 )
 from scripts.provenance_sources import SourceRoots, harvest_all, main_worktree
 from scripts.provenance_state import (
-    OUT_DIRNAME,
     WATERMARK,
     LockUnavailable,
+    StoreOwnedElsewhere,
+    claim_store,
     read_banked_cutoff,
     read_sources_present,
     read_watermark,
     record_error,
+    store_owner_defect,
     sweep_lock,
+    tracked_tree_defect,
     write_watermark,
 )
-from scripts.provenance_sweep import INDEX_PATH, RegressionError, committed_rows, write_out
+from scripts.provenance_sweep import INDEX, LedgerUnreadable, RegressionError, stored_rows, write_out
 
 
-def _refuse(repo: Path, why: str, *, record: bool) -> int:
+def _refuse(store: Path, why: str, *, record: bool) -> int:
     """Report a refusal, optionally persisting it, and return the exit code.
 
-    Printing alone made these paths invisible. `.claude/settings.json` runs the
+    Printing alone made these paths invisible. `(private path)` runs the
     sweep from the Stop hook detached with both streams redirected, so the
     shell sees a successful launch and never observes the child's output or
     exit status - every turn could stop harvesting in silence, and `--stats`,
@@ -79,35 +87,47 @@ def _refuse(repo: Path, why: str, *, record: bool) -> int:
     dropped, and the next real run records it anyway. Codex found it on #708.
     """
     if record:
-        record_error(repo, why)
+        record_error(store, why)
     print(f"[UNAVAILABLE] {why}", file=sys.stderr)
     return 3
 
 
-def _export_feedback_pins(repo: Path, feedback_dir: Path) -> int:
-    """Publish the validated pin projection after a successful prompt sweep."""
+def _export_feedback_pins(store: Path, feedback_dir: Path) -> int:
+    """Write the validated pin projection into the store after a successful prompt sweep."""
     try:
-        path = write_export(repo, feedback_dir)
+        path = write_export(feedback_dir, store)
     except (LockUnavailable, ValueError, TypeError, OSError) as exc:
-        return _refuse(repo, f"configured feedback source failed: {exc}", record=True)
+        return _refuse(store, f"configured feedback source failed: {exc}", record=True)
     print(f"[OK] feedback pins -> {path}")
     return 0
 
 
-def _finish_with_pin_export(repo: Path, feedback_dir: Path | None) -> int:
+def _finish_with_pin_export(store: Path, feedback_dir: Path | None) -> int:
     """Export pins when configured without making their local source a prompt-sweep prerequisite."""
     if feedback_dir is None:
         message = (
             "pin export UNAVAILABLE: no --feedback-dir was configured; prompt provenance "
             "completed, but no user-prompt pin ledger was written"
         )
-        record_error(repo, message)
+        record_error(store, message)
         print(f"[UNAVAILABLE] {message}", file=sys.stderr)
         return 0
-    return _export_feedback_pins(repo, feedback_dir)
+    return _export_feedback_pins(store, feedback_dir)
 
 
-def _report_stats(repo: Path, prompts: list[dict], since: float, why: str) -> int:
+def _invocation_defect(repo: Path, store: Path) -> str | None:
+    """Why this invocation names the wrong places, or None.
+
+    Answered before anything is read or written, including the error record:
+    a store inside a tracked tree is refused BEFORE `record_error`, because
+    recording the refusal there would be the very write being refused.
+    """
+    if not (repo / ".git").exists():
+        return f"not a git repo: {repo.resolve()}"
+    return tracked_tree_defect(store) or store_owner_defect(store, main_worktree(repo.resolve()))
+
+
+def _report_stats(store: Path, prompts: list[dict], since: float, why: str) -> int:
     """Print what a sweep WOULD do, and what the last one refused to do.
 
     The last refusal is read back out of the watermark file rather than a log,
@@ -118,12 +138,15 @@ def _report_stats(repo: Path, prompts: list[dict], since: float, why: str) -> in
     by: dict[str, int] = {}
     for prompt in prompts:
         by[prompt["tool"]] = by.get(prompt["tool"], 0) + 1
-    prior = committed_rows(repo)
+    try:
+        prior = stored_rows(store)
+    except LedgerUnreadable as exc:
+        return _refuse(store, f"the stored ledger cannot be read: {exc}", record=False)
     print(
         f"[stats] {why} (since={since:.0f}) new prompts: {by or 'none'}; "
-        f"{len(prior)} rows guarded from HEAD/trunk"
+        f"{len(prior)} rows guarded in {store}"
     )
-    wm_path = repo / OUT_DIRNAME / WATERMARK
+    wm_path = store / WATERMARK
     if wm_path.exists():
         try:
             last = json.loads(wm_path.read_text()).get("last_error")
@@ -138,7 +161,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--repo", type=Path, required=True)
+    ap.add_argument("--repo", type=Path, required=True, help="checkout whose sessions are harvested")
+    ap.add_argument(
+        "--out-dir", type=Path, required=True,
+        help="ledger store, outside every tracked working tree",
+    )
     ap.add_argument(
         "--feedback-dir", type=Path, default=None,
         help="feedback directory containing comments.json and archive-*.json",
@@ -178,23 +205,25 @@ def main() -> int:
         cursor_db=args.cursor_db or default_roots.cursor_db,
     )
 
-    if not (args.repo / ".git").exists():
-        print(f"[ERROR] not a git repo: {args.repo.resolve()}", file=sys.stderr)
+    store = args.out_dir.expanduser().resolve()
+    defect = _invocation_defect(args.repo, store)
+    if defect is not None:
+        print(f"[ERROR] {defect}", file=sys.stderr)
         return 1
-    # The ledger, index, watermark and lock live in the MAIN checkout only. The
-    # Stop hook passes $CLAUDE_PROJECT_DIR, which in a worktree session is the
-    # worktree, and writing the tracked ledger there left every archived thread
-    # warning about uncommitted docs/threads changes (Tue 15 Sep 2026). The
-    # harvest is already scoped by the main checkout, so nothing is lost, and
-    # one lock now serializes every checkout's sweep instead of one per tree.
+    # Sessions are scoped by the MAIN checkout: the Stop hook passes
+    # $CLAUDE_PROJECT_DIR, which in a worktree session is the worktree, and a
+    # worktree-scoped harvest found 0 rows against 689 (Mon 31 Aug 2026).
     repo = main_worktree(args.repo.resolve())
 
     if args.feedback_dir is not None:
         try:
             exportable_rows(args.feedback_dir)
-        except ValueError as exc:
+        # TypeError too: a pin with a wrongly typed field fails validation with
+        # it, and escaping here would kill the hook before `_refuse` records
+        # anything (Codex, #7403). Same pair `_export_feedback_pins` catches.
+        except (ValueError, TypeError) as exc:
             return _refuse(
-                repo,
+                store,
                 f"configured feedback source cannot be exported: {exc}",
                 record=not args.stats,
             )
@@ -202,12 +231,12 @@ def main() -> int:
     # Refusing before the watermark is read, so the refusal cannot move it.
     # Resolved AFTER `repo`, because `_refuse` needs somewhere to persist to.
     sources_id = roots.identity()
-    was_present = read_sources_present(repo, sources_id)
+    was_present = read_sources_present(store, sources_id)
     named = (args.claude_root, args.codex_root, args.cursor_db)
     defects, present, identities = _unreadable_stores(roots, named, was_present)
     if defects:
         return _refuse(
-            repo,
+            store,
             "configured source(s) cannot be read: "
             + "; ".join(defects)
             + ". Refusing to harvest: an unreadable store is unmeasured, not "
@@ -250,9 +279,9 @@ def main() -> int:
         # Computed against the BANKED cutoff so both sides of the comparison
         # count the same population. See `_store_generations`.
         since, why = read_watermark(
-            repo,
+            store,
             sources_id,
-            _store_generations(roots, present, read_banked_cutoff(repo, sources_id)),
+            _store_generations(roots, present, read_banked_cutoff(store, sources_id)),
         )
 
     # Captured BEFORE the first source is read. See write_watermark.
@@ -274,12 +303,13 @@ def main() -> int:
         # misnames it and routes it past `record_error`. Codex found that on
         # #708, one round after the contention fix introduced it.
         try:
-            with sweep_lock(repo) as acquired:
+            with sweep_lock(store) as acquired:
                 if not acquired:
                     print("[skip] another sweep holds the lock; its run covers these sources")
                     return 0
                 result = _sweep(
                     repo,
+                    store,
                     since,
                     why,
                     cutoff,
@@ -294,10 +324,10 @@ def main() -> int:
                     # `generation_conflict` tests containment between them.
                     Probe(present, named, identities, _store_generations(roots, present, None)),
                 )
-                return result if result else _finish_with_pin_export(repo, args.feedback_dir)
+                return result if result else _finish_with_pin_export(store, args.feedback_dir)
         except LockUnavailable as exc:
             return _refuse(
-                repo,
+                store,
                 f"{exc}. Refusing to harvest: this is not lock contention, so "
                 "no other run covers these sources, and skipping would leave "
                 "the sweep silently disabled on this checkout.",
@@ -312,7 +342,7 @@ def main() -> int:
         # sweep dies on makes the diagnostic useless exactly when it is needed.
         # `record=False` because this command's contract is "report only, write
         # nothing", and its refusal is not a fact about the sweep's freshness.
-        return _refuse(repo, f"reading a configured source failed: {exc!r}", record=False)
+        return _refuse(store, f"reading a configured source failed: {exc!r}", record=False)
     # Same guard, same reason, as the one in `_sweep`: `pr_map` shells out to
     # `gh`, so an EMPTY harvest on a machine without it raised
     # FileNotFoundError and killed the READ-ONLY stats command outright - the
@@ -328,9 +358,9 @@ def main() -> int:
             # absence of `gh` is not a fact about the sweep's freshness. It
             # still has to say so rather than crash - diagnosing exactly this
             # is what --stats is for.
-            return _refuse(repo, str(exc), record=False)
+            return _refuse(store, str(exc), record=False)
 
-    result = _report_stats(repo, prompts, since, why)
+    result = _report_stats(store, prompts, since, why)
     if args.feedback_dir is None:
         print("[UNAVAILABLE] pin export: no --feedback-dir was configured", file=sys.stderr)
     return result
@@ -338,6 +368,7 @@ def main() -> int:
 
 def _sweep(
     repo: Path,
+    store: Path,
     since: float,
     why: str,
     cutoff: float,
@@ -378,7 +409,7 @@ def _sweep(
         # raise, and anything else is a defect in this program that must not be
         # dressed up as an unavailable source. Codex found it on #708.
         return _refuse(
-            repo,
+            store,
             f"reading a configured source failed part way through: {exc!r}. "
             "Refusing to bank a watermark: the harvest is incomplete, and "
             "advancing it would hide every source this run did not reach.",
@@ -402,16 +433,18 @@ def _sweep(
             attach_links(prompts, branch_windows(repo), pr_map(repo))
         except GhUnavailable as exc:
             return _refuse(
-                repo,
+                store,
                 f"{exc}. Refusing to bank a watermark: the rows this run "
                 "would write carry no PR link, and a later run would read "
                 "them as prompts that belong to none.",
                 record=True,
             )
     try:
-        fresh, total = write_out(repo, prompts, committed_rows(repo))
-    except RegressionError as exc:
-        record_error(repo, str(exc))
+        claim_store(store, repo)
+        fresh, total = write_out(store, prompts, stored_rows(store))
+    # LedgerUnreadable is a RegressionError: a damaged ledger is refused, not shortened.
+    except (RegressionError, StoreOwnedElsewhere) as exc:
+        record_error(store, str(exc))
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 2
     # RE-MEASURED under the lock, not reused. The snapshot above was taken
@@ -433,7 +466,7 @@ def _sweep(
     )
     if gone:
         return _refuse(
-            repo,
+            store,
             "source(s) became unreadable during the harvest: "
             + "; ".join(gone)
             + ". Refusing to bank a watermark: this run's harvest cannot "
@@ -454,7 +487,7 @@ def _sweep(
     appeared = still_here - banked
     if appeared:
         return _refuse(
-            repo,
+            store,
             "source(s) became readable during the harvest: "
             + "; ".join(sorted(appeared))
             + ". Refusing to bank a watermark: this run harvested that store "
@@ -484,7 +517,7 @@ def _sweep(
     )
     if replaced:
         return _refuse(
-            repo,
+            store,
             "source(s) were replaced at the same path during the harvest: "
             + "; ".join(replaced)
             + ". Refusing to bank a watermark: this run read the store that "
@@ -514,7 +547,7 @@ def _sweep(
     )
     if changed:
         return _refuse(
-            repo,
+            store,
             "source(s) changed underneath the harvest: "
             + ", ".join(changed)
             + ". Refusing to bank a watermark: history arrived or was replaced "
@@ -527,8 +560,8 @@ def _sweep(
     # pre-lock probe: the historical digest is a claim relative to that number,
     # and recording one measured against the previous sweep's cutoff would
     # compare two different populations next time.
-    write_watermark(repo, cutoff, sources_id, still_here, generations_now)
-    print(f"[OK] {why}: +{fresh} new, {total} total -> {repo / INDEX_PATH}")
+    write_watermark(store, cutoff, sources_id, still_here, generations_now)
+    print(f"[OK] {why}: +{fresh} new, {total} total -> {store / INDEX}")
     return 0
 
 

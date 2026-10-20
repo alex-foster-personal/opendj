@@ -3,17 +3,15 @@
 Split out of :mod:`apps.spotify.state_writer` (issue #1583) following the
 existing ODJ-twin-mirror seam: these helpers write placeholder ``tracks``
 rows and ``track_vendor_ids`` entries for Spotify tracks that have no local
-match yet, plus the suggested-search-link helpers shown alongside a pending
-row. ``state_writer.py`` re-imports and re-exports ``synthetic_stable_id``
-and ``SUGGESTED_SOURCE_KEYS`` (its only externally-imported names) and calls
-the rest directly.
+match yet. ``state_writer.py`` re-imports and re-exports ``synthetic_stable_id``
+(its only externally-imported name) and calls the rest directly; pending-row
+search URLs use :func:`apps.spotify.acquisition.build_search_urls`.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
-from urllib.parse import quote_plus
 
 from apps.shared.state import sync_stamp
 
@@ -153,21 +151,3 @@ def _set_track_vendor_id(
         "origin_device_id=excluded.origin_device_id, deleted_at=NULL",
         (stable_id, VENDOR, vendor_id, stamp.updated_at, stamp.origin_device_id),
     )
-
-
-_SUGGESTED_SOURCES_TEMPLATE: tuple[tuple[str, str], ...] = (
-    ("beatport", "https://www.beatport.com/search?q={q}"),
-    ("bandcamp", "https://bandcamp.com/search?q={q}&item_type=t"),
-    ("qobuz", "https://www.qobuz.com/us-en/search?q={q}"),
-    ("apple_music", "https://music.apple.com/us/search?term={q}"),
-    ("discogs", "https://www.discogs.com/search?q={q}&type=release"),
-)
-
-SUGGESTED_SOURCE_KEYS: tuple[str, ...] = tuple(
-    source_name for source_name, _ in _SUGGESTED_SOURCES_TEMPLATE
-)
-
-
-def _suggested_sources(track: SpotifyTrack) -> dict[str, str]:
-    q = quote_plus(f"{track.artists_joined} {track.title}".strip())
-    return {name: tmpl.format(q=q) for name, tmpl in _SUGGESTED_SOURCES_TEMPLATE}

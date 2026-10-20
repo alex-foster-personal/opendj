@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from apps.sync.conflict import resolve_conflict
+from apps.sync.conflict import ConflictInput, resolve_conflict, resolve_conflict_input
 
 pytestmark = [pytest.mark.requirement("SYNC-05"), pytest.mark.requirement("SYNC-06")]
 
@@ -126,3 +126,94 @@ def test_rating_both_nonzero_newest_tie():
         "rating", 5, 3, rb_modified_at=now, djay_modified_at=now, prefer="newest"
     )
     assert res == "conflict"
+
+
+def test_resolve_conflict_input_returns_explicit_decisions():
+    """The ConflictInput entrypoint decides each case on the resolver's rules.
+
+    Asserted against literal expected decisions rather than against
+    :func:`resolve_conflict`: the wrapper delegates straight to
+    ``resolve_conflict_input`` (apps/sync/conflict.py:91), so comparing the two
+    entrypoints agrees with itself and passes whatever the rules do.
+    """
+    now = datetime(2026, 4, 17, tzinfo=UTC)
+    older = now - timedelta(days=3)
+
+    # Inside the 7-day window the newer side wins: djay 5 (now) beats rb 2 (3 days older).
+    assert (
+        resolve_conflict_input(
+            ConflictInput(
+                field="rating",
+                rb_value=2,
+                djay_value=5,
+                rb_modified_at=older,
+                djay_modified_at=now,
+            )
+        )
+        == "accept_djay"
+    )
+    # A tie on timestamps under prefer="newest" is a conflict, not a winner.
+    assert (
+        resolve_conflict_input(
+            ConflictInput(
+                field="rating",
+                rb_value=5,
+                djay_value=3,
+                rb_modified_at=now,
+                djay_modified_at=now,
+                prefer="newest",
+            )
+        )
+        == "conflict"
+    )
+    # rating zero-is-unrated: 0 loses to a non-zero rating even when it is newer.
+    assert (
+        resolve_conflict_input(
+            ConflictInput(
+                field="rating",
+                rb_value=0,
+                djay_value=5,
+                rb_modified_at=now,
+                djay_modified_at=older,
+            )
+        )
+        == "accept_djay"
+    )
+    # An empty side accepts the populated one before any timestamp rule runs.
+    assert (
+        resolve_conflict_input(ConflictInput(field="bpm", rb_value=None, djay_value=128.0))
+        == "accept_djay"
+    )
+    # Outside the window prefer="newest" falls back to rb unless djay is newer.
+    assert (
+        resolve_conflict_input(
+            ConflictInput(
+                field="bpm",
+                rb_value=128.0,
+                djay_value=130.0,
+                rb_modified_at=now,
+                djay_modified_at=now - timedelta(days=30),
+            )
+        )
+        == "accept_rb"
+    )
+    # Identical values are no_change regardless of which side is newer.
+    assert (
+        resolve_conflict_input(
+            ConflictInput(
+                field="rating",
+                rb_value=4,
+                djay_value=4,
+                rb_modified_at=older,
+                djay_modified_at=now,
+            )
+        )
+        == "no_change"
+    )
+
+
+def test_resolve_conflict_wrapper_pins_a_concrete_decision():
+    """The positional entrypoint returns the same literal decision, resolved independently."""
+    now = datetime(2026, 4, 17, tzinfo=UTC)
+    older = now - timedelta(days=3)
+    assert resolve_conflict("rating", 2, 5, older, now) == "accept_djay"

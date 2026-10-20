@@ -2,7 +2,7 @@
 
 Split out of :mod:`scripts.provenance_sweep` when that module crossed the
 600-line python ratchet. The seam is one the test suite had already drawn -
-`tests/scripts/test_provenance_index.py` existed before this module did - and
+`(private path)` existed before this module did - and
 it is a real one: everything here is PRESENTATION over rows somebody else
 decided to keep, while the sweep module is about DURABILITY, deciding what may
 be written at all. They fail differently. A defect here renders a misleading
@@ -30,10 +30,8 @@ from datetime import datetime
 
 from scripts.provenance_sources import KEY_PREFIX, _clean
 
-OUT_DIRNAME = "docs/threads"
 LEDGER = "prompts.jsonl"
 INDEX = "PROMPT-INDEX.md"
-INDEX_PATH = f"{OUT_DIRNAME}/{INDEX}"
 
 # How many rows the markdown table renders. The ledger is the complete store; the
 # index is a newest-first WINDOW over it, and says so in its own header so the

@@ -30,7 +30,7 @@ function _title(q: TrackQuality | null): string {
 	}
 	const measured = q.kbps === null ? 'bitrate not measurable' : `Effective ${q.kbps} kbps`;
 	const lossless = q.lossless ? ' Lossless container, so the rung is set by format, not bitrate.' : '';
-	return `${q.label} -- ${q.blurb}. ${measured}${ext ? `, ${ext}` : ''}.` + ` Rung ${(q.rank ?? 0) + 1} of ${q.of}.${lossless}`;
+	return `${q.label} -- ${q.blurb}. ${measured}${ext ? `, ${ext}` : ''}.` + ` Rung ${q.rank === null ? 'unknown' : q.rank + 1} of ${q.of}.${lossless}`;
 }
 
 export default function QualityBadge({ quality, showContainer = true, compact = false }: QualityBadgeProps) {

@@ -1,0 +1,66 @@
+/* BrandLaunch.svelte's scoped <style>, unscoped for the React twin: every
+ * rule is anchored on .brand-launch so it cannot leak. Keyframe names carry a
+ * brand-launch prefix for the same reason. Keep the two in step. */
+.brand-launch {
+	position: fixed;
+	inset: 0;
+	z-index: 1200;
+	display: grid;
+	place-items: center;
+	background: #050505;
+	pointer-events: none;
+	animation: brand-launch-fade var(--brand-fade-ms) ease-out forwards;
+	animation-delay: calc(var(--brand-slide-ms) + var(--brand-hold-ms));
+}
+.brand-launch .brand-mark {
+	width: clamp(7rem, 20vw, 12rem);
+	aspect-ratio: 1;
+}
+.brand-launch .brand-mark-svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.brand-launch .brand-half-dark,
+.brand-launch .brand-half-light {
+	animation-duration: var(--brand-slide-ms);
+	animation-timing-function: ease-out;
+	animation-fill-mode: both;
+}
+.brand-launch .brand-half-dark {
+	animation-name: brand-launch-half-slide-dark;
+}
+.brand-launch .brand-half-light {
+	animation-name: brand-launch-half-slide-light;
+}
+@keyframes brand-launch-half-slide-dark {
+	from {
+		transform: translate(-28%, 28%);
+	}
+	to {
+		transform: translate(0, 0);
+	}
+}
+@keyframes brand-launch-half-slide-light {
+	from {
+		transform: translate(28%, -28%);
+	}
+	to {
+		transform: translate(0, 0);
+	}
+}
+@keyframes brand-launch-fade {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.brand-launch .brand-half-dark,
+	.brand-launch .brand-half-light {
+		animation: none;
+		transform: none;
+	}
+}

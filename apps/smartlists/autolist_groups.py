@@ -54,24 +54,12 @@ def rating_bucket_key(rating: float | None) -> str:
     return str(int(rating))
 
 
-def _genre_col_sql() -> str:
+def _eav_scalar_sql(field_name: str) -> str:
+    """Correlated subquery for one ``track_fields`` scalar column."""
     return (
         "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
-        "WHERE tf.stable_id = tracks.stable_id AND tf.field_name = 'genre' LIMIT 1)"
-    )
-
-
-def _bpm_col_sql() -> str:
-    return (
-        "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
-        "WHERE tf.stable_id = tracks.stable_id AND tf.field_name = 'bpm' LIMIT 1)"
-    )
-
-
-def _rating_col_sql() -> str:
-    return (
-        "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
-        "WHERE tf.stable_id = tracks.stable_id AND tf.field_name = 'rating' LIMIT 1)"
+        "WHERE tf.stable_id = tracks.stable_id AND tf.field_name = "
+        f"'{field_name}' LIMIT 1)"
     )
 
 
@@ -100,7 +88,7 @@ _VALID_BPM_IDS = frozenset(b.id for b in static_bpm_buckets())
 
 
 def genre_buckets(conn: sqlite3.Connection) -> list[Bucket]:
-    col = _genre_col_sql()
+    col = _eav_scalar_sql("genre")
     rows = conn.execute(
         f"SELECT {col} AS genre, COUNT(*) AS cnt "
         "FROM tracks WHERE tracks.deleted_at IS NULL "
@@ -211,7 +199,7 @@ def bucket_counts_for_group(
 ) -> dict[str, int]:
     if group == "genre":
         return {b.id: (b.count or 0) for b in genre_buckets(conn)}
-    col = _rating_col_sql() if group == "rating" else _bpm_col_sql()
+    col = _eav_scalar_sql("rating" if group == "rating" else "bpm")
     key_fn = rating_bucket_key if group == "rating" else bpm_bucket_key
     rows = conn.execute(
         f"SELECT {col} AS val, COUNT(*) AS cnt "
@@ -235,9 +223,9 @@ def buckets_with_counts(conn: sqlite3.Connection, group: AutolistGroupId) -> lis
 
 def compact_index_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Compact {stable_id, genre, rating, bpm} rows for the client worker."""
-    genre_col = _genre_col_sql()
-    rating_col = _rating_col_sql()
-    bpm_col = _bpm_col_sql()
+    genre_col = _eav_scalar_sql("genre")
+    rating_col = _eav_scalar_sql("rating")
+    bpm_col = _eav_scalar_sql("bpm")
     rows = conn.execute(
         f"SELECT tracks.stable_id, {genre_col}, {rating_col}, {bpm_col} "
         "FROM tracks WHERE tracks.deleted_at IS NULL"

@@ -1,0 +1,6 @@
+/* MidiStatusGlyph.svelte's scoped <style>, unscoped for the React twin:
+ * anchored on .midi-glyph so it cannot leak. Keep the two in step. */
+.midi-glyph {
+	margin-left: 3px;
+	vertical-align: middle;
+}

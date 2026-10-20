@@ -2,12 +2,13 @@
 
 Usage:
   uv run --no-project python -m scripts.feedback_prompts_export \\
-    --repo <checkout> --feedback-dir <data-dir>/feedback
+    --feedback-dir <data-dir>/feedback --out-dir <provenance store>
 
 The feedback directory is deliberately explicit. An absent or unreadable store
 is not evidence of no user prompts, so this exporter refuses instead of writing
-an empty ledger. Output defaults to the repository's main worktree, rather
-than a linked worktree, matching the provenance sweep's session scope.
+an empty ledger. The output directory is explicit too, and is the same ledger
+store the provenance sweep writes: outside every tracked working tree (the
+provenance-ledger-off-tree ADR).
 """
 
 from __future__ import annotations
@@ -20,14 +21,12 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.provenance_sources import main_worktree
+    from scripts.provenance_state import _write_atomic, make_store, sweep_lock, tracked_tree_defect
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.feedback_prompts_export") from None
     raise
-from scripts.provenance_state import _write_atomic, sweep_lock
 
-OUT_DIRNAME = "docs/threads"
 LEDGER = "user-prompts-pins.jsonl"
 COMMENTS = "comments.json"
 LOCKFILE = ".feedback-prompts-export.lock"
@@ -171,10 +170,11 @@ def exportable_rows(feedback_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def write_export(repo: Path, feedback_dir: Path, output: Path | None = None) -> Path:
-    """Write a deterministic JSONL projection, atomically, without touching its source."""
-    target = output or main_worktree(repo) / OUT_DIRNAME / LEDGER
-    with sweep_lock(main_worktree(repo), lockfile=LOCKFILE, directory=target.parent) as acquired:
+def write_export(feedback_dir: Path, store: Path) -> Path:
+    """Write a deterministic JSONL projection into `store`, atomically, without touching its source."""
+    target = store / LEDGER
+    make_store(store)
+    with sweep_lock(store, lockfile=LOCKFILE) as acquired:
         if not acquired:
             raise ValueError(f"pin ledger is already being replaced: {target}")
         return _write_export(target, feedback_dir)
@@ -211,16 +211,15 @@ def _write_export(target: Path, feedback_dir: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--feedback-dir", type=Path, required=True)
-    parser.add_argument("--output", type=Path, default=None, help="explicit disposable output path")
+    parser.add_argument("--out-dir", type=Path, required=True, help="the provenance ledger store")
     args = parser.parse_args(argv)
-    repo = args.repo.resolve()
-    if not (repo / ".git").exists():
-        parser.error(f"not a git checkout: {repo}")
-    output = args.output.resolve() if args.output else None
+    store = args.out_dir.expanduser().resolve()
+    defect = tracked_tree_defect(store)
+    if defect is not None:
+        parser.error(defect)
     try:
-        print(write_export(repo, args.feedback_dir.resolve(), output))
+        print(write_export(args.feedback_dir.resolve(), store))
     except (ValueError, TypeError, OSError) as exc:
         parser.error(str(exc))
     return 0

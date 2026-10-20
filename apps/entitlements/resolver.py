@@ -35,7 +35,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from apps.entitlements import lifecycle
+from apps.entitlements.lifecycle import allows
 from apps.entitlements.source import EntitlementSource, Standing
 from apps.shared.wire_codes import NOT_IN_PLAN_CODE
 
@@ -105,7 +105,7 @@ class EntitlementProviderError(RuntimeError):
 def _runbook(raw: str) -> str:
     return (
         f"{PROVIDER_ENV}={raw!r} but no entitlement provider is implemented in "
-        "this build. Every BILL-* requirement in specs/saas-spec.md is "
+        "this build. Every BILL-* requirement in (private path) is "
         "DEFERRED on purpose: there is no paid feature to gate, and payment "
         "plumbing built before one exists is a toll booth before a road. "
         f"RUNBOOK: unset {PROVIDER_ENV} (or set it to an empty string) to run "
@@ -205,7 +205,7 @@ def has(
     if source is None:
         return True
     found = standing(feature_id, subject=subject, source=source)
-    return found is not None and lifecycle.allows(found.state, "write")
+    return found is not None and allows(found.state, "write")
 
 
 def quota(

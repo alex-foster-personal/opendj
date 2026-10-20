@@ -14,15 +14,14 @@ a real mic or daemon.
 """
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from apps.voice.jsonlog import append_jsonl, now_iso
 from apps.voice.settings import voice_data_dir
 
 YES_PATTERN = re.compile(
@@ -50,10 +49,6 @@ def parse_yes_no(text: str) -> bool | None:
     return None
 
 
-def _now_iso() -> str:
-    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
 def append_confirmation_log(
     path: Path,
     prompt: str,
@@ -63,16 +58,13 @@ def append_confirmation_log(
 ) -> None:
     """Append a JSONL confirmation audit row."""
     entry = {
-        "ts": _now_iso(),
+        "ts": now_iso(),
         "prompt": prompt,
         "transcript": transcript,
         "decision": decision,
         **(meta or {}),
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, sort_keys=True))
-        fh.write("\n")
+    append_jsonl(path, entry)
 
 
 @dataclass
