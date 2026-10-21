@@ -1,7 +1,7 @@
 """Central dev-server registry and generated Claude launch configuration.
 
 Requirements (issue #2558):
-- [if] `.claude/dev-servers.json` changes [then] `.claude/launch.json` is
+- [if] `(private path)` changes [then] `(private path)` is
   regenerated from it instead of hand-edited, [else stop]
 - [if] CI or `just launch-json-check` runs on a clean checkout [then] the
   committed launch file matches the registry's default Web UI port profile,
@@ -359,7 +359,7 @@ def check_launch_json(
     if not launch_path.is_file():
         raise DevServerRegistryError(
             f"missing generated launch file at {launch_path}; "
-            f"run `just launch-json --profile {profile}`"
+            f"run `just launch-json {profile}`"
         )
     expected = generate_launch_text(
         registry_path=registry_path,
@@ -371,7 +371,7 @@ def check_launch_json(
         raise DevServerRegistryError(
             f"{launch_path} is stale for profile {profile!r}. "
             f"Refresh from {registry_path} with "
-            f"`just launch-json --profile {profile}` or "
+            f"`just launch-json {profile}` or "
             f"`uv run --no-sync python -m scripts.dev_server_registry --write --profile {profile}`"
         )
 
@@ -382,7 +382,7 @@ def check_launch_json(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m scripts.dev_server_registry",
-        description="generate or check .claude/launch.json from .claude/dev-servers.json",
+        description="generate or check (private path) from (private path)",
     )
     parser.add_argument(
         "--registry",

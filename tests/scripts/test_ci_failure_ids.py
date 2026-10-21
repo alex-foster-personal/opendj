@@ -95,6 +95,27 @@ def test_a_clean_log_has_no_identities():
     assert failed_identities(f"{TS}12 passed in 3.1s\n") == frozenset()
 
 
+def test_a_colored_marker_and_node_id_still_read_as_an_identity():
+    """GB-6870: a log read with `--allow-escape-sequences` carries pytest's colors, which sit
+    BETWEEN `FAILED` and the path and INSIDE the node id. Nothing matching here reads as a shard
+    that named no failure at all, so a readable log leaves the run unscorable."""
+    log = (
+        f"{TS}\x1b[31mFAILED\x1b[0m tests/webui/test_x.py::\x1b[1mtest_y\x1b[0m - assert 1 == 2\n"
+        f"{TS}\x1b[31;1mERROR\x1b[0m tests/a/test_z.py::test_w\n"
+    )
+    assert failed_identities(log) == {
+        "FAILED tests/webui/test_x.py::test_y",
+        "ERROR tests/a/test_z.py::test_w",
+    }
+
+
+def test_control_sequences_other_than_numeric_sgr_do_not_reach_an_identity():
+    """The colon form and a private mode are CSI too; a strip that only knows `[0-9;]*m` leaves
+    them inside the identity it hands the scorecard as a gate key."""
+    log = f"{TS}\x1b[?25lFAILED tests/a/test_x.py::test_one\x1b[38:2::255:0:0m - boom\n"
+    assert failed_identities(log) == {"FAILED tests/a/test_x.py::test_one"}
+
+
 ONE = frozenset({"FAILED tests/a/test_x.py::test_one"})
 
 

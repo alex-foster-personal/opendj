@@ -37,7 +37,10 @@ BUILD_SHA_ENV: str = "OPENDJ_BUILD_SHA"
 
 KINDS: frozenset[str] = frozenset({"engine", "client", "build"})
 
-_NUCBOX_SINK = Path.home() / "jobs" / "logs" / "opendj-error-sink.jsonl"
+#: Under the home directory: the job host's sink (nucbox), chosen when its directory
+#: exists. Stage-1 default of issue #5639; a host that wants another path sets
+#: OPENDJ_ERROR_SINK_LOG, the one documented variable (.env.sample).
+JOB_HOST_SINK_REL: Path = Path("jobs") / "logs" / "opendj-error-sink.jsonl"
 
 
 @dataclass(frozen=True)
@@ -73,17 +76,23 @@ def current_build_sha() -> str:
     return "unknown"
 
 
-def sink_path() -> Path:
-    """The one greppable JSONL. Override with OPENDJ_ERROR_SINK_LOG."""
-    override = (os.environ.get(ERROR_SINK_ENV) or "").strip()
+def sink_path(environ: Mapping[str, str] | None = None, home: Path | None = None) -> Path:
+    """The one greppable JSONL. Override with OPENDJ_ERROR_SINK_LOG.
+
+    ``environ`` and ``home`` default to the process environment and home directory.
+    """
+    env = os.environ if environ is None else environ
+    home = Path.home() if home is None else home
+    override = (env.get(ERROR_SINK_ENV) or "").strip()
     if override:
         return Path(override)
-    if _NUCBOX_SINK.parent.is_dir():
-        return _NUCBOX_SINK
-    mac_logs = Path.home() / "Library" / "Logs"
+    job_host_sink = home / JOB_HOST_SINK_REL
+    if job_host_sink.parent.is_dir():
+        return job_host_sink
+    mac_logs = home / "Library" / "Logs"
     if sys.platform == "darwin" or mac_logs.is_dir():
         return mac_logs / "opendj" / "error-sink.jsonl"
-    return Path.home() / ".local" / "share" / "opendj" / "error-sink.jsonl"
+    return home / ".local" / "share" / "opendj" / "error-sink.jsonl"
 
 
 def client_source_site(kind: str, url: str) -> str:

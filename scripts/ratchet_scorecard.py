@@ -58,9 +58,11 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 from scripts.ci_failure_ids import failed_identities, failure_beyond_tests
+from scripts.gh_version_guard import MIN_GH_VERSION, GhVersionError, parse_gh_version
 from scripts.quality_gate import HARD_ZERO
 
 REPO = "private_owner/music-dj-tools"
@@ -710,14 +712,95 @@ def render_markdown(scores: Mapping[str, GateScore], meta: Mapping[str, object])
 # ----- GitHub collection ---------------------------------------------------------------
 
 
+# A job log is the one body that legitimately carries terminal escape sequences: the runner
+# colors its step echo, so `gh api` refuses to print the log unless told to keep them, and a
+# refusal is indistinguishable from an expired log to the caller -- every such log on main read
+# as unreadable and voided the window it belonged to (GB-6870). The flag arrives with gh 2.97.0,
+# the release that also neutralized escape sequences in `gh api` bodies; asking an older gh for
+# it fails with `unknown flag`, which reads as an unread log for the wrong reason, so the local
+# gh's own version is measured once and an older gh keeps main's unflagged read.
+_JOB_LOG_PATH = re.compile(r"^repos/[^/]+/[^/]+/actions/jobs/\d+/logs$")
+_ESCAPE_SEQUENCES_MIN_GH: tuple[int, int, int] = (2, 97, 0)
+
+
+class GhReadError(Exception):
+    """A read the scorecard must fail on rather than score through.
+
+    Two shapes: a local gh that cannot be asked to keep a job log's escape sequences, and a body
+    that is not valid UTF-8. `_job_log` reads any `RuntimeError` as an unreadable log (expired,
+    or refused by the API), which is right for a 404 and wrong for both of these -- an unreadable
+    job log voids the window it belongs to, so a cause the run could have refused up front must
+    not be laundered into one. Deliberately not a `RuntimeError`, so that fallback cannot swallow
+    it, and deliberately not `SystemExit`, so a caller can name it.
+    """
+
+
+def _fmt_version(version: tuple[int, int, int]) -> str:
+    return ".".join(str(part) for part in version)
+
+
+@lru_cache(maxsize=8)
+def _job_log_escape_flags(gh: str) -> tuple[str, ...]:
+    """The flag that keeps a job log's escapes, or a named failure when this gh lacks it.
+
+    Measured once per binary from its own `--version`, parsed by the same seam
+    `scripts/gh_version_guard.py` uses. The shared floor there stays 2.64.0: `--slurp` still
+    works on 2.64-2.96, and raising a floor is a decision, not a side effect of this read. What
+    is not allowed is the fallback this used to take -- an older or unmeasurable gh reading the
+    log WITHOUT the flag, which gh's own escape guard refuses, which `_job_log` then counts as an
+    unreadable log, which voids the window (GB-6870, exactly the defect being fixed). So 2.97.0
+    is required for THIS read and a gh below it, or one whose version cannot be measured, is a
+    `GhReadError` naming the measured version and the fix.
+    """
+    proc = subprocess.run([gh, "--version"], capture_output=True, text=True, check=False)
+    detail = proc.stderr.strip() or proc.stdout.strip() or "<no output>"
+    if proc.returncode != 0:
+        raise GhReadError(
+            f"`{gh} --version` failed ({proc.returncode}): {detail[:200]}. A job log can only be "
+            f"read with --allow-escape-sequences, added in gh {_fmt_version(_ESCAPE_SEQUENCES_MIN_GH)}; "
+            f"refusing to fall back to the unflagged read that reads as an unreadable log."
+        )
+    try:
+        version = parse_gh_version(proc.stdout)
+    except GhVersionError as exc:
+        raise GhReadError(
+            f"cannot measure the gh at {gh}, so cannot tell whether it keeps a job log's escape "
+            f"sequences: {exc}. Refusing to fall back to the unflagged read that reads as an "
+            f"unreadable log."
+        ) from exc
+    if version < _ESCAPE_SEQUENCES_MIN_GH:
+        raise GhReadError(
+            f"gh {_fmt_version(version)} at {gh} cannot read a job log for the scorecard: "
+            f"--allow-escape-sequences arrived in gh {_fmt_version(_ESCAPE_SEQUENCES_MIN_GH)}, and "
+            f"without it gh refuses a colored log, which only counts as an unreadable log and voids "
+            f"the window. Upgrade gh on this runner to "
+            f"{_fmt_version(_ESCAPE_SEQUENCES_MIN_GH)} or newer (the shared --slurp floor of "
+            f"{_fmt_version(MIN_GH_VERSION)} is unchanged)."
+        )
+    return ("--allow-escape-sequences",)
+
+
 def _gh_api(path: str) -> str:
     gh = shutil.which("gh")
     if gh is None:
         raise SystemExit("[ERROR] gh is not on PATH; the scorecard reads GitHub through `gh api`")
-    proc = subprocess.run([gh, "api", path], capture_output=True, text=True, check=False)
+    # The flag belongs on the job-log fetch ONLY: on any other path it disables gh's own
+    # protection against control bytes for a body that has no legitimate use for them.
+    flags = _job_log_escape_flags(gh) if _JOB_LOG_PATH.match(path) else ()
+    proc = subprocess.run([gh, "api", *flags, path], capture_output=True, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"gh api {path} failed: {proc.stderr.strip()[:200]}")
-    return proc.stdout
+        detail = proc.stderr.decode("utf-8", "replace").strip()[:200]
+        raise RuntimeError(f"gh api {path} failed: {detail}")
+    try:
+        # Strict: `errors="replace"` rewrote undecodable bytes into U+FFFD before
+        # `failed_identities` parsed them, which can mint or mangle a gate key out of bytes no run
+        # ever printed. A log that will not decode is a collection failure, not a log.
+        return proc.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise GhReadError(
+            f"gh api {path} returned bytes that are not valid UTF-8 ({exc.reason} at byte "
+            f"{exc.start}); refusing to rewrite them into a gate key this run never measured"
+        ) from exc
 
 
 def _iso(at: str) -> dt.datetime:
@@ -811,7 +894,12 @@ def _in_main_window(run: Mapping, main_window: tuple[dt.datetime, dt.datetime] |
 
 
 def _job_log(api: Api, job: Mapping) -> tuple[int, str | None]:
-    """One job's log, or None when it cannot be read (expired, or the API refused)."""
+    """One job's log, or None when it cannot be read (expired, or the API refused).
+
+    `GhReadError` is not one of those: it says this run's own read is impossible (a gh that
+    cannot keep a log's escapes, or bytes that will not decode), so it propagates and the run
+    fails instead of scoring a window it could not read.
+    """
     try:
         return job["id"], api(f"repos/{REPO}/actions/jobs/{job['id']}/logs") or None
     except RuntimeError:
@@ -1252,4 +1340,10 @@ def main(argv: Sequence[str] | None = None, api: Api = _gh_api) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # A read this run cannot make is a named failure, not a traceback and not a window scored
+    # from logs it could not read: exit 3 already means "the window is UNKNOWN", so this is 4.
+    try:
+        raise SystemExit(main())
+    except GhReadError as exc:
+        sys.stderr.write(f"[ratchet-scorecard] ERROR: {exc}\n")
+        raise SystemExit(4) from None

@@ -61,7 +61,11 @@ RATCHET_JOBS = re.compile(r"quality ratchet")
 
 _RUNNER_PREFIX = re.compile(r"^[^\t]*\t[^\t]*\t")
 _TIMESTAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?")
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+#: Any CSI sequence, not just numeric SGR. pytest's short summary wraps the marker and the node
+#: id SEPARATELY -- `\x1b[31mFAILED\x1b[0m tests/x.py::\x1b[1mtest_y\x1b[0m` -- and a color-aware
+#: renderer also emits the colon form (`38:2::255:0:0m`) and private modes (`?25l`). Narrowing
+#: this to `[0-9;]*m` leaves bytes inside the identity being parsed.
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _PYTEST_START = re.compile(r"(?:FAILED|ERROR) tests/(?=\S)")
 _TAP = re.compile(r"not ok [0-9]+ - .*\S")
 _SPEC = re.compile(r"^ *✖ (.*[^ ]) \([0-9.]+m?s\)$")
@@ -161,7 +165,10 @@ def _pytest_identities(line: str) -> list[str]:
 
 def failed_identities(log: str) -> frozenset[str]:
     """Every failing test identity in one job log."""
-    lines = [_strip_prefixes(line) for line in log.split("\n")]
+    # The escapes are stripped once, here, before any format matches: a log read with
+    # `--allow-escape-sequences` (GB-6870) carries them, and a colored marker or node id would
+    # otherwise match nothing -- the run then looks like a shard that named no failure at all.
+    lines = [_ANSI.sub("", _strip_prefixes(line)) for line in log.split("\n")]
     found: set[str] = set()
     for line in lines:
         found.update(_pytest_identities(line))
@@ -270,7 +277,7 @@ def ratchet_breach(log: str) -> bool:
 
     Sol's P1 on #3293. RATCHET_DEBT is the only mergeable zero-identity verdict there is, and
     it was granted on a job NAME plus the ABSENCE of contrary evidence, which is the exact
-    shape `.claude/rules/verification.md` exists to forbid: a truncated log, a runner killed
+    shape `(private path)` exists to forbid: a truncated log, a runner killed
     before it wrote its terminal line, or any failure whose text this module does not
     recognize all present as "no evidence against", and an unmeasured infrastructure failure
     took the debt path. The breach is a thing the ratchet SAYS, so it can be required.

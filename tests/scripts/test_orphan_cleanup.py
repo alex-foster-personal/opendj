@@ -106,6 +106,7 @@ def _inner_pytest(tmp_path: Path, body: str) -> subprocess.Popen[str]:
 INNER_TEMPLATE = """
 import sys, textwrap, time
 from pathlib import Path
+from tests.support.process_probes import GONE_WITHIN_S, alive, wait_for
 SERVER_CODE = {server_code!r}
 INFO = Path({info!r})
 
@@ -118,13 +119,13 @@ def test_spawns(spawned_server):
     {tail}
 
 def test_previous_server_died_at_its_own_teardown():
-    import json, os
+    import json
     pid = json.loads(INFO.read_text())["pid"]
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return
-    raise AssertionError(f"server {{pid}} outlived the fixture that spawned it")
+    # A pid its parent has not waited on yet is a ZOMBIE: nothing is executing, and the
+    # repo's own alive() already calls it gone (process_start_time -> None for a zombie).
+    # A raw os.kill(pid, 0) still succeeds for the corpse, so checking the corpse that way
+    # turned a completed teardown into "outlived the fixture" on a loaded host.
+    wait_for(lambda: not alive(pid), GONE_WITHIN_S, f"server {{pid}} to die at its fixture teardown")
 """
 
 
