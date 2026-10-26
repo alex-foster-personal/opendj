@@ -13,7 +13,7 @@ a state -- may this subject READ, and may it WRITE.
     read_only --resubscribed---------> active
     archived  --resubscribed---------> active
 
-WHY THESE FOUR (specs/cloudsync-paid-tier.md).  The one rule a lapse must obey
+WHY THESE FOUR ((private path)).  The one rule a lapse must obey
 is NEVER DESTROY A USER'S DATA.  A first implementation without explicit
 states tends to refuse everything the moment a card fails, pull included, and
 that strands a user's library on a server they can no longer read from.
@@ -92,14 +92,14 @@ class LifecycleTransitionError(ValueError):
     """An event was applied to a state it has no transition from."""
 
 
-def _assert_state(state: str) -> None:
+def assert_state(state: str) -> None:
     if state not in STATES:
         raise ValueError(f"unknown lifecycle state {state!r}; expected one of {list(STATES)}")
 
 
 def transition(state: LifecycleState, event: LifecycleEvent) -> LifecycleState:
     """The state ``event`` moves ``state`` to. Raises on an undefined pair."""
-    _assert_state(state)
+    assert_state(state)
     if event not in EVENTS:
         raise ValueError(f"unknown lifecycle event {event!r}; expected one of {list(EVENTS)}")
     target = TRANSITIONS.get((state, event))
@@ -115,7 +115,7 @@ def transition(state: LifecycleState, event: LifecycleEvent) -> LifecycleState:
 
 def allows(state: LifecycleState, operation: Operation) -> bool:
     """May a subject in ``state`` perform ``operation``?"""
-    _assert_state(state)
+    assert_state(state)
     if operation not in OPERATIONS:
         raise ValueError(f"unknown operation {operation!r}; expected one of {list(OPERATIONS)}")
     return operation in _ALLOWED[state]
@@ -131,5 +131,6 @@ __all__ = [
     "LifecycleTransitionError",
     "Operation",
     "allows",
+    "assert_state",
     "transition",
 ]

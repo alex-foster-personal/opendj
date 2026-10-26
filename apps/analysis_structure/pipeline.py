@@ -32,13 +32,13 @@ import sqlite3
 import subprocess
 import tempfile
 from collections.abc import Iterable, Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from apps.analysis.canonical import canonical_pointer
 from apps.analysis.record import AnalysisRecord
 
+from ._io import atomic_write_json, utc_now_iso_seconds
 from .dj_labels import label_sections
 from .drop_events import mark_drops
 from .quantize import TIME_S_DECIMALS, quantize
@@ -85,10 +85,6 @@ def own_downbeats(
     return downbeats, {"backend": pointer[0], "backend_version": pointer[1]}
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
 def _failed(stable_id: str, reason: str, **extra: Any) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
@@ -97,7 +93,7 @@ def _failed(stable_id: str, reason: str, **extra: Any) -> dict[str, Any]:
         "reason": reason,
         "producer": PRODUCER,
         "producer_version": PRODUCER_VERSION,
-        "analyzed_at": _now(),
+        "analyzed_at": utc_now_iso_seconds(),
         **extra,
     }
 
@@ -133,7 +129,7 @@ def build_sidecar(
         "producer": PRODUCER,
         "producer_version": PRODUCER_VERSION,
         "versions": raw.get("versions"),
-        "analyzed_at": _now(),
+        "analyzed_at": utc_now_iso_seconds(),
         "grid": {**grid, "downbeats": len(downbeats)},
         "duration_s": round(duration_s, TIME_S_DECIMALS),
         "sections": sections,
@@ -164,9 +160,7 @@ def attach_dj_labels(sections: list[dict[str, Any]], raw: dict[str, Any]) -> dic
 def write_sidecar(data_dir: Path, doc: dict[str, Any]) -> Path:
     path = sidecar_path(data_dir, doc["stable_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(doc))
-    os.replace(tmp, path)
+    atomic_write_json(path, doc)
     return path
 
 

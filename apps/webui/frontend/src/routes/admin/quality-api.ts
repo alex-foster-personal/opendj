@@ -57,7 +57,7 @@ export async function fetchQualityRatchet(): Promise<QualityRatchet> {
 		return parseQualityRatchet(data);
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			throw new Error(
 				`GET /api/v1/admin/quality-ratchet failed (HTTP ${error.status}): ${bodyText}`
 			);

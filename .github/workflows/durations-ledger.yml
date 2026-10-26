@@ -1,23 +1,24 @@
 name: Durations ledger (main)
 
-# The shard durations ledger is built on main, published as an artifact, and
-# installed by ci.yml before the fast lane splits (scripts/ci_durations_ledger.py
+# The shard durations ledger is built on main, stored on the `ci-data` branch,
+# and installed by ci.yml before the fast lane splits (scripts/ci_durations_ledger.py
 # has the whole contract). A PR never commits `.test_durations` to refresh it:
 # that was the only route until Fri 2 Oct 2026, every refresh PR (#4699, #5048)
 # conflicted with every other one, and a stale ledger bounced the whole merge
 # queue (#5063). The committed file stays as the seed a run falls back to when
 # no published ledger exists.
 #
-# No bot commit: only the Trunk app may write main (debt-index-regen.yml fails
-# for exactly that reason), so the ledger travels as an artifact. Retention is
-# 7 days; a schedule that stops for longer degrades CI to the committed seed,
-# loudly (ci.yml's scope job warns), never to a smaller run.
+# Not on main (only the Trunk app may write main) and, since Mon 26 Oct 2026, not
+# an artifact either: from Sat 17 Oct the shard artifacts expired and Actions
+# storage was full, this workflow failed 37 runs in a row, and the stale ledger
+# locked main red. `ci-data` holds one parentless commit, force-moved on every
+# publish, so it never grows. When no fresh ledger can be built the published one
+# is kept, with a warning, until it is 14 days old; only then does this go red.
 #
-# Supersedes: the hand-made refresh PR that committed a new `.test_durations`
-# (the "Refresh procedure" in ops/test-latency/README.md, round 4; #4699, #5048).
-# That section now redirects here and keeps the recipe only to refresh the seed
-# when no published ledger exists. Decision record:
-# docs/decisions/ADR-NEW-durations-ledger-built-on-main-as-an-artifact.md.
+# Supersedes: the artifact publish (`test-durations-ledger`, 7-day retention) and,
+# before it, the hand-made refresh PR ((private path), round 4).
+# Decision records: (private path),
+# (private path).
 
 on:
   schedule:
@@ -27,9 +28,10 @@ on:
 env:
   PYTHONDONTWRITEBYTECODE: "1"
 
+# contents: write moves the ci-data ref (the git data API); nothing else is written.
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 concurrency:
   group: durations-ledger
@@ -117,17 +119,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Resolved once (the guard above proved it is this checkout's), never a bare
-          # python3 in argv (AGENTS.md, "Portable by default").
+          # python3 in argv (AGENTS.md, "Portable by default"). With no fresh run this
+          # writes nothing and keeps the published ledger (red only past 14 days).
           py="$(command -v python3)"
           "$py" -m scripts.ci_durations_ledger build \
             --repo "$GITHUB_REPOSITORY" \
             --out "$RUNNER_TEMP/durations-ledger/.test_durations"
 
-      - name: Publish the ledger for ci.yml
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: test-durations-ledger
-          path: ${{ runner.temp }}/durations-ledger/.test_durations
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
+      - name: Publish the ledger to the ci-data branch
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ledger="$RUNNER_TEMP/durations-ledger/.test_durations"
+          [ -f "$ledger" ] || { echo "[durations-ledger] nothing fresh built; the published ledger stays"; exit 0; }
+          py="$(command -v python3)"
+          "$py" -m scripts.ci_durations_ledger publish --repo "$GITHUB_REPOSITORY" --ledger "$ledger"

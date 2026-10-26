@@ -12,6 +12,9 @@ features (folder picker, open in browser, quit, updater) through
 `window.opendjShell`, and the web UI's `src/lib/shell/native-shell.ts` picks
 whichever shell is present.
 
+Known quirks and gotchas (data dirs, signing, permissions, CDP, CI): see
+[`(private path)`](../../../docs/desktop/electron-quirks.md).
+
 ## Layout
 
 | File | Port of (`../src-tauri/src/`) |

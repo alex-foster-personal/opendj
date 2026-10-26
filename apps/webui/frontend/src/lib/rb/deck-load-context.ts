@@ -418,7 +418,14 @@ function _shortReason(cause: unknown): string {
  */
 export function libraryTrackLookupError(error: unknown): unknown {
 	if (error instanceof ApiError && error.status === 404 && error.code === 'HTTP_404') {
-		return new ApiError(404, 'TRACK_NOT_FOUND', error.message, error.response, error.body);
+		return new ApiError(
+			404,
+			'TRACK_NOT_FOUND',
+			error.message,
+			error.response,
+			error.body,
+			error.bodyText
+		);
 	}
 	return error;
 }

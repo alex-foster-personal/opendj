@@ -18,7 +18,7 @@ Heuristic (pure-function + deterministic):
    * rest -> unlabelled (empty string)
 6. Cap at ``max_cues_per_track``.
 
-Output: ``data/analysis/cue-proposals.json`` + a ``cue.proposal`` event
+Output: ``(private path)`` + a ``cue.proposal`` event
 per track.  Read-only on audio files and RB / djay.
 """
 from __future__ import annotations
@@ -32,7 +32,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import numpy as np
+# numpy is imported inside the two helpers that use it (`_rms_at_times`,
+# `_label_cues`). This module is on the webui server's import path
+# (`routes/analysis.py` imports `propose_cues`), so a module-scope numpy made
+# the whole server unimportable in a venv without the optional analysis extra --
+# including every test that only needs `create_app`. Neither helper is touched
+# by the server except when a cue proposal is actually requested.
 from rich.console import Console
 from rich.table import Table
 
@@ -76,6 +81,8 @@ def _rms_at_times(
     sr: int = 44100,  # noqa: ARG001
 ) -> list[float]:
     """Sample the (downsampled) RMS envelope at ``times_s``."""
+    import numpy as np  # lazy: see the module note above the rich imports
+
     if not rms or not times_s:
         return [0.0] * len(times_s)
     arr = np.asarray(rms, dtype=float)
@@ -153,6 +160,8 @@ def _label_cues(
     rms_dbfs_values: list[float],
     bin_count: int,
 ) -> list[CueProposal]:
+    import numpy as np  # lazy: see the module note above the rich imports
+
     if not cues:
         return []
     bin_width = duration_s / bin_count

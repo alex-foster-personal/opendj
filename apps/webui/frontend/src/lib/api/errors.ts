@@ -12,7 +12,9 @@ export class ApiError extends Error {
 		/** The failing response with headers intact (ETag on a 409, x-bind-warning, ...). */
 		public readonly response: Response,
 		/** The parsed error body, or null when the body was empty or not JSON. */
-		public readonly body: unknown = null
+		public readonly body: unknown = null,
+		/** Full raw response text read when the error was constructed; empty when none. */
+		public readonly bodyText: string = ''
 	) {
 		super(message);
 		this.name = 'ApiError';
@@ -26,17 +28,17 @@ interface ErrorEnvelope {
 	detail?: { code?: string; message?: string } | string | unknown[];
 }
 
-/** Read the error body without consuming the caller's copy of the stream.
- * Returns null for the bodyless error responses the API documents (dedup 409,
- * relocate 428), which is the one place this diverges from
- * `_throwRbApiError`: that helper assumes every error carries JSON. */
-async function _decodeErrorBody(response: Response): Promise<unknown> {
-	const raw = await response.clone().text();
-	if (raw === '') return null;
+/** Consume the original response body once and return raw text plus parsed JSON.
+ * Empty text yields `body: null` and `bodyText: ''`; invalid JSON keeps the raw
+ * text while `body` is null. Bodyless documented errors (dedup 409, relocate 428)
+ * are the one place this diverges from `_throwRbApiError`, which assumes JSON. */
+async function _decodeErrorBody(response: Response): Promise<{ body: unknown; bodyText: string }> {
+	const bodyText = await response.text();
+	if (bodyText === '') return { body: null, bodyText: '' };
 	try {
-		return JSON.parse(raw) as unknown;
+		return { body: JSON.parse(bodyText) as unknown, bodyText };
 	} catch {
-		return null;
+		return { body: null, bodyText };
 	}
 }
 
@@ -45,7 +47,7 @@ async function _decodeErrorBody(response: Response): Promise<unknown> {
  * (`getTrack` for a stick id, spec 4b), so its failures carry the same
  * `code` a typed call would. */
 export async function apiErrorFrom(response: Response): Promise<ApiError> {
-	const body = await _decodeErrorBody(response);
+	const { body, bodyText } = await _decodeErrorBody(response);
 	const detail = (body as ErrorEnvelope | null)?.detail;
 	const structured =
 		typeof detail === 'object' && detail !== null && !Array.isArray(detail) ? detail : undefined;
@@ -54,7 +56,7 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
 		structured?.message ??
 		(typeof detail === 'string' ? detail : undefined) ??
 		(response.statusText === '' ? `HTTP ${response.status}` : response.statusText);
-	return new ApiError(response.status, code, message, response, body);
+	return new ApiError(response.status, code, message, response, body, bodyText);
 }
 
 /** Read an ApiError's HTTP status without relying on `instanceof` alone.

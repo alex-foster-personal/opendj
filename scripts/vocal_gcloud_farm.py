@@ -44,7 +44,6 @@ Typical loop:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -55,6 +54,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.paths import DATA_DIR
 from apps.vocals import cache as vcache
 from apps.vocals.cli import (
@@ -497,14 +497,6 @@ def cmd_down(cfg: GceCfg) -> int:
 # ----- Mac-side stage + import ----------------------------------------------
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def cmd_stage_playlist(
     playlist: str,
     dest: Path,
@@ -525,7 +517,7 @@ def cmd_stage_playlist(
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
-    worker_sha = _sha256_file(WORKER_SCRIPT)
+    worker_sha = sha256_file_hex(WORKER_SCRIPT)
     manifest_path = dest / "manifest.jsonl"
     with manifest_path.open("w", encoding="utf-8") as mf:
         for tr in batch:

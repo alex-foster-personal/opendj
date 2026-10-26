@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from . import taxonomy
+from .probability import unit_probability as _prob
 
 # ----------------------------------------------------------------- config
 OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
@@ -205,12 +206,6 @@ class GenreProvider(Protocol):
 
 def _unknown(provider: str, reason: str, *, model: str | None = None, cost: float | None = None) -> Answer:
     return Answer(provider, None, None, None, model, cost, reason)
-
-
-def _prob(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value <= 1:
-        return None
-    return float(value)
 
 
 class JevProvider:

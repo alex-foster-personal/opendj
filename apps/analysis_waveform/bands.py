@@ -7,7 +7,7 @@ or a PMAI container -- it takes an already-parsed tag (or a band dict) and does
 numpy work, which is also what makes the native/Python equivalence tests cheap.
 
 Homed in ``apps.analysis_waveform`` rather than ``apps.webui`` since the own
-tri-band lane landed (NATIVE-06, specs/native-analysis-v1.md D5). Both the
+tri-band lane landed (NATIVE-06, (private path) D5). Both the
 rekordbox ANLZ path and this repo's own ffmpeg decoder shape their bands with
 these functions, and a domain package importing the delivery layer to reach
 them would have closed an ``apps.analysis_waveform <-> apps.webui`` package
@@ -74,7 +74,7 @@ def _tri_bands(tag: Any) -> dict[str, np.ndarray]:
 
 # What rekordbox writes into PWV6 for a full-scale sine in each band, (low,
 # mid, high), parsed from rekordcrate's public sweep fixture
-# (docs/research/dj-waveform-display-sota-20260922.md section 7). rekordbox
+# ((private path) section 7). rekordbox
 # does not encode its three bands on one scale: a sine that fills our low band
 # to 255 is a 69 there, and a high one is 176. Kept as the reference fact; the
 # gains below are what own peaks are actually scaled by.
@@ -83,15 +83,26 @@ PWV6_FULL_SCALE_SINE: tuple[int, int, int] = (69, 86, 176)
 # above drew real music with no blue at all (demon-llama check on 487fa677d, Fri
 # 2 Oct 2026: 0% blue on 5 own rows), because our 200 Hz / 4 kHz bands do not
 # split broadband music the way rekordbox's do. Re-fitted on real music: the
-# approved rekordbox rows (specs/ui-contracts/library-preview-waveform) are
+# approved rekordbox rows ((private path)) are
 # about 10% blue, 4% amber and 86% white by drawn area, and these gains give
 # 10.6 / 3.7 / 85.6 on the repo's one full-mix clip
-# (scripts/bench/clips-edge/am-contra-heart-peripheral-mixture.m4a). One clip:
+# ((private path)). One clip:
 # a fit over the Mac bench bundle against real PWV6 bytes can replace it.
 PWV6_MUSIC_GAIN: tuple[int, int, int] = (83, 56, 176)
 #: Bumped whenever the bytes ``pwv6_scale`` writes for the same peaks change.
 PWV6_SCALE_VERSION: str = "pwv6-music-1"
 _OWN_PEAK_FULL_SCALE: float = 255.0
+
+
+def unit_float_peaks(peaks: np.ndarray) -> np.ndarray:
+    """``(n, 3)`` uint8 peak columns as float64 in 0..1 (detail lane / scorer)."""
+    return np.clip(peaks.astype(np.float64) / _OWN_PEAK_FULL_SCALE, 0.0, 1.0)
+
+
+def measured_peak_bands(peaks: np.ndarray) -> dict[str, np.ndarray]:
+    """Own uint8 peak columns as three measured 0..1 envelopes (not PWV6-scaled)."""
+    scaled = unit_float_peaks(peaks)
+    return {name: scaled[:, col] for name, col in _BAND_COLUMNS}
 
 
 def pwv6_scale(peaks: np.ndarray) -> np.ndarray:

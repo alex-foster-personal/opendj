@@ -40,12 +40,12 @@ from apps.shared.equivalence import EquivalenceGate
 from apps.shared.state import provenance as _prov
 
 from . import SOURCE
-from .load import (
+from .load import record_verification
+from .load_types import (
     KEY_CONFIDENCE_FLOOR,
     KEY_CONFIDENCE_MIK_WINS,
     OUTRANKS_MIK,
     SEGMENTS_FIELD,
-    record_verification,
 )
 from .match import TIER_ORDER, TIER_RANK, Tier, TrackIndex
 

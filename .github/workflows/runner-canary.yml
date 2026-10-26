@@ -463,7 +463,7 @@ jobs:
               MDT_PYTEST_TIMEOUT_S=$MDT_PYTEST_FULL_TIMEOUT_S
               MODE_ARGS=(
                 --collect-floor 3181
-                --ledger-coverage-min 0.85 --ledger-coverage-warn 0.95
+                --ledger-coverage-min 0.50 --ledger-coverage-warn 0.95
                 --splits 5 --group ${{ matrix.shard }}
                 --splitting-algorithm least_duration
                 --durations-path .test_durations

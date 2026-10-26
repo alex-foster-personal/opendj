@@ -37,7 +37,7 @@ Semantics:
     Phase 8 schema (direction "->" -> "into", "<->" -> "either"), so
     ``pair_manual`` / ``pair_learned`` / ``pair_ai`` rationale tags work
     against both the InMemory and Sqlite backends. Real data, no mocks.
-  * Keys are normalised via :func:`key_to_camelot`; an unparseable key
+  * Keys are normalized to Camelot notation; an unparseable key
     is treated as missing (surfaces in the 422 when it is the current
     track's key).
   * Energy comes from track provenance (``_EAV_FIELDS`` includes
@@ -61,11 +61,12 @@ from apps.dj_copilot.peak_pressure import PeakPlay, compute_peak_pressure
 from apps.dj_copilot.play_it import InsufficientDataError
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.dj_copilot.suggester import RankedSuggestion, suggest_next
-from apps.shared.harmonic import TrackFeature, key_to_camelot
+from apps.shared.harmonic import TrackFeature
 
 from ..backend import MAX_LIMIT, NotFoundError, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
 from ..errors import ErrorBody
+from ..track_features import camelot_or_none, energy_of, track_to_feature
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 _read_state = Depends(get_read_state)
@@ -134,41 +135,13 @@ class SuggestNextOut(BaseModel):
 # ----------------------------------------------------------- _helpers
 
 
-def _camelot_or_none(key: str | None) -> str | None:
-    """Normalise any key notation to Camelot; unparseable -> missing."""
-    if key is None or not key.strip():
-        return None
-    try:
-        return str(key_to_camelot(key))
-    except ValueError:
-        return None
-
-
-def _energy_of(track: Track) -> int | None:
-    """Energy (MIK 1-10) from the provenance envelope; no rating fallback."""
-    prov = (track.provenance or {}).get("energy")
-    if prov is None or prov.value is None:
-        return None
-    return int(prov.value)
-
-
-def _track_to_feature(track: Track) -> TrackFeature:
-    return TrackFeature(
-        stable_id=track.stable_id,
-        artist=track.artist,
-        bpm=track.bpm,
-        key_camelot=_camelot_or_none(track.key),
-        energy=_energy_of(track),
-    )
-
-
 def _load_library(backend: StateBackend) -> list[TrackFeature]:
     """Every track in the backend, paged at MAX_LIMIT until exhausted."""
     features: list[TrackFeature] = []
     cursor: str | None = None
     while True:
         page = backend.list_tracks(TrackFilter(cursor=cursor, limit=MAX_LIMIT))
-        features.extend(_track_to_feature(t) for t in page.items)
+        features.extend(track_to_feature(t) for t in page.items)
         if page.next_cursor is None:
             return features
         cursor = page.next_cursor
@@ -282,7 +255,7 @@ def _plays_from_tracks(tracks: list[Track]) -> list[PeakPlay]:
     return [
         PeakPlay(
             stable_id=t.stable_id,
-            energy=_energy_of(t),
+            energy=energy_of(t),
             tags=tuple(t.tags or ()),
         )
         for t in tracks
@@ -321,7 +294,7 @@ def suggest_next_route(
     current_track = backend.get_track(body.stable_id)
     session_tracks = _resolve_session_tracks(backend, body.session_ids)
 
-    current_feature = _track_to_feature(current_track)
+    current_feature = track_to_feature(current_track)
     try:
         _preflight_current(current_feature)
     except InsufficientDataError as exc:
@@ -342,8 +315,8 @@ def suggest_next_route(
                     stable_id=t.stable_id,
                     artist=t.artist,
                     bpm=t.bpm,
-                    key_camelot=_camelot_or_none(t.key),
-                    energy=_energy_of(t),
+                    key_camelot=camelot_or_none(t.key),
+                    energy=energy_of(t),
                     played_at=now,
                     tags=tuple(t.tags or ()),
                 )

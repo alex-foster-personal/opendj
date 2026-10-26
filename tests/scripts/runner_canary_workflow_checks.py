@@ -65,10 +65,7 @@ CI_ONLY_STEPS = (
 #: durations ledger the scope job resolved (scripts/ci_durations_ledger.py). The canary has
 #: no scope job and runs in the vendors' repositories, where no ledger is published, so it
 #: splits on the committed seed. Removed by name, each required exactly once before pytest.
-CI_ONLY_PRE_PYTEST_STEPS = (
-    "Download the main-side durations ledger",
-    "Install the main-side durations ledger over the committed seed",
-)
+CI_ONLY_PRE_PYTEST_STEPS = ("Install the main-side durations ledger over the committed seed",)
 
 
 #: Keys ci.yml's pytest step carries that the canary's must NOT: continue-on-error defers

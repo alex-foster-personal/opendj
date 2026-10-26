@@ -158,7 +158,7 @@ export async function fetchSqlQuery(sql: string, limit: number): Promise<SqlQuer
 		return parseSqlQueryResult(data);
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			throw new Error(`POST /api/v1/admin/sql-query failed (HTTP ${error.status}): ${bodyText}`);
 		}
 		throw error;

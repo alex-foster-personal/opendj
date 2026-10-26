@@ -144,7 +144,7 @@ export async function fetchPlayAnalytics(
 		);
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			if (isNoEventStore(error.status, bodyText)) throw new NoEventStoreError();
 			throw new Error(
 				`GET /api/play-analytics failed: ${error.status} ${bodyText.slice(0, 300)}`

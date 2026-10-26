@@ -9,7 +9,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 
-from apps.webui.server.headphone_reports import client_id_of, headphone_reports
+from apps.webui.server.headphone_reports import (
+    _deep_merge,
+    client_id_of,
+    headphone_reports,
+)
 
 from .commands import page_is_open, submit_single_command
 
@@ -160,16 +164,6 @@ def _best_headphone_state_out(request: Request) -> HeadphoneStateOut:
             "report_age_ms": round(reports.age_ms(report), 1),
         }
     )
-
-
-def _deep_merge(base: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
-    merged = deepcopy(base)
-    for key, value in changes.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge(merged[key], value)
-        else:
-            merged[key] = deepcopy(value)
-    return merged
 
 
 def _merge_mirror_delta(request: Request, result: dict[str, Any]) -> None:

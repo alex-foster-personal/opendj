@@ -169,6 +169,15 @@ def _assert_subject(subject: str | None, source: EntitlementSource) -> str:
     return subject
 
 
+def _consult_source(
+    feature_id: str,
+    *,
+    subject: str | None,
+    source: EntitlementSource,
+) -> Standing | None:
+    return source.standing(_assert_subject(subject, source), feature_id)
+
+
 def standing(feature_id: str, *, subject: str | None, source: EntitlementSource) -> Standing | None:
     """Where ``subject`` stands for ``feature_id`` according to ``source``.
 
@@ -179,7 +188,7 @@ def standing(feature_id: str, *, subject: str | None, source: EntitlementSource)
     """
     _assert_feature_id(feature_id)
     configured_provider()
-    return source.standing(_assert_subject(subject, source), feature_id)
+    return _consult_source(feature_id, subject=subject, source=source)
 
 
 def has(
@@ -204,7 +213,7 @@ def has(
     configured_provider()
     if source is None:
         return True
-    found = standing(feature_id, subject=subject, source=source)
+    found = _consult_source(feature_id, subject=subject, source=source)
     return found is not None and allows(found.state, "write")
 
 
@@ -224,7 +233,7 @@ def quota(
     configured_provider()
     if source is None:
         return None
-    found = standing(feature_id, subject=subject, source=source)
+    found = _consult_source(feature_id, subject=subject, source=source)
     return 0 if found is None else found.quota
 
 

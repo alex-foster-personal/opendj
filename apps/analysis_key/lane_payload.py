@@ -48,12 +48,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from apps.analysis_key import canon
 from apps.analysis_key.beatgrid_digest import beatgrid_record_digest
-from apps.analysis_key.flags import TonalCenterFlag
-from apps.analysis_key.profiles import KeyEstimate
+
+if TYPE_CHECKING:  # annotation only: profiles pulls numpy, and the record validator imports this module
+    from apps.analysis_key.flags import TonalCenterFlag
+    from apps.analysis_key.profiles import KeyEstimate
 
 #: The lane's named failure reason for a track with no publishable tonal
 #: center (spec section 3's own example list; `ProvenanceOut.reason` carries it

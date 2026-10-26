@@ -5,7 +5,7 @@ separate`` writes flat ``<key>-vocals/<key>-instrumental`` files into the
 lyrics-eval corpora with no ``manifest.json``, so the app's strict loader
 (``apps/stems/artifacts.py``) cannot see them - stems on disk,
 lost to the product. Registration here = write a schema-v3 ``roformer2``
-bundle under ``data/state/stems-roformer-spike/<stable_id>/`` (the canonical
+bundle under ``(private path)/<stable_id>/`` (the canonical
 RoFormer root ``stem_roots()`` already searches) and then RE-LOAD it with the
 strict loader as a self-check. Nothing is registered that the app cannot
 actually read back.
@@ -29,7 +29,6 @@ mixes the overlap, never invented samples).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -43,6 +42,7 @@ from apps.cloud import asset_store, hydration_core, policy
 from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import HydrationError
 from apps.lyrics.artifacts import asset_clients_for_mode
+from apps.shared.hashing import sha256_file_hex
 from apps.shared.paths import STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import sync_stamp
@@ -100,14 +100,6 @@ def _probe_audio(path: Path) -> AudioProbe:
     if sample_rate <= 0 or channels <= 0 or frame_count <= 0:
         raise ValueError(f"ffprobe returned non-positive audio metadata for {path}")
     return AudioProbe(sample_rate=sample_rate, channels=channels, frame_count=frame_count)
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _push_bundle_parts(
@@ -224,7 +216,7 @@ def register_pair(
         "model": {"name": model_name, "version": model_version},
         "source": {
             "path": source_path,
-            "sha256": _sha256(src) if src.is_file() else "0" * 64,
+            "sha256": sha256_file_hex(src) if src.is_file() else "0" * 64,
         },
         "files": {
             "vocals": f"vocals{vocals.suffix.lower()}",
@@ -247,7 +239,7 @@ def register_pair(
         shutil.copy2(vocals, tmp_dir / manifest["files"]["vocals"])
         shutil.copy2(instrumental, tmp_dir / manifest["files"]["instrumental"])
         manifest["files_sha256"] = {
-            part: _sha256(tmp_dir / rel) for part, rel in manifest["files"].items()
+            part: sha256_file_hex(tmp_dir / rel) for part, rel in manifest["files"].items()
         }
         (tmp_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"

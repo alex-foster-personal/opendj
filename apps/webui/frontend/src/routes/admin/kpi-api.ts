@@ -1,7 +1,7 @@
 /**
  * Route-local fetch helper for GET /api/v1/bench/kpi.
  *
- * The browser never reads scripts/bench/kpi_ledger.json off disk - the daemon
+ * The browser never reads (private path) off disk - the daemon
  * serves it, so an agent can curl exactly what the panel renders.
  *
  * Fail-fast: the response is structurally validated before render. A missing
@@ -116,14 +116,14 @@ function parseLedger(raw: unknown): KpiLedger {
 }
 
 /**
- * The perf ledger (docs/perf/kpi-ledger.json) as served by GET
+ * The perf ledger ((private path)) as served by GET
  * /api/v1/bench/perf-kpi: the same cards shape, plus the first measurement
  * date and any KPI the ledger records that has no card declaration yet.
  */
 export interface PerfKpiLedger extends KpiLedger {
 	/** First perf measurement, weekday-stamped, e.g. "Wed 22 Jul 2026". */
 	sinceLabel: string;
-	/** Ledger KPIs missing from docs/perf/kpi-cards.json - rendered as a warning, never dropped quietly. */
+	/** Ledger KPIs missing from (private path) - rendered as a warning, never dropped quietly. */
 	undeclared: string[];
 }
 
@@ -149,7 +149,7 @@ async function readOrExplain(path: string, request: () => Promise<unknown>): Pro
 		return await request();
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			throw new Error(`GET ${path} failed (HTTP ${error.status}): ${bodyText}`);
 		}
 		throw error;

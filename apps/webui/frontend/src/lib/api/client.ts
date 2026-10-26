@@ -17,9 +17,9 @@
  *    `const { data } = await api.GET(...)` with no `if (error)` branch, and a
  *    forgotten error check can never surface as `undefined` data.
  * 2. The error body contract is the backend's `{"detail": {code, message}}`
- *    envelope. `ApiError` also carries `response` and the parsed `body`, so a
- *    call site can reach a header (the ETag on a 409 CAS conflict) or a
- *    conflict payload without re-reading an already-consumed stream.
+ *    envelope. Non-2xx responses are consumed once in `apiErrorFrom`; `ApiError`
+ *    retains `bodyText` (full raw payload), `body` (parsed JSON or null), and
+ *    `response` (headers only after the body is consumed).
  *
  * See `src/lib/api/CONVERSION-PATTERN.md` for the module-by-module recipe.
  */

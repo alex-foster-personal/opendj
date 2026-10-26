@@ -46,6 +46,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .probability import unit_probability as _prob
+
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_MODEL = "~typesafe/jev-latest"
 KEY_ENV = "OPENROUTER_API_KEY"
@@ -177,15 +179,6 @@ def _http_post(body: dict[str, Any], key: str) -> dict[str, Any]:
 
 def _unknown(reason: str) -> dict[str, Any]:
     return {"status": "unknown", "reason": reason}
-
-
-def _prob(value: Any) -> float | None:
-    """A probability in [0, 1], or None. Compared before float() so a huge JSON
-    integer is rejected instead of overflowing; JSON true/false are ints in
-    Python, and a boolean is not a probability."""
-    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value <= 1:
-        return None
-    return float(value)
 
 
 def _tag_answers(answers: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[str, float] | str:

@@ -7,7 +7,7 @@ tags stripped for mp3, so a repaired, relinked or re-encoded track changes
 the identity even when its rekordbox row does not. This file pins the
 ID3-stripping logic itself, independent of the bundle builder, against
 synthetic mp3 bytes built the same way
-``data/reference/mik/20260908/payload_hash.py`` (the reference
+``(private path)`` (the reference
 implementation this reuses) constructs its ID3v2/ID3v1 envelope.
 
   - [if] the same audio payload is wrapped in two DIFFERENT tag sets [then]
@@ -28,7 +28,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from apps.shared.hashing import sha256_audio_payload, sha256_file
+from apps.shared.hashing import HASH_PREFIX, sha256_audio_payload, sha256_file, sha256_file_hex
 
 
 def _sha256_of_bytes(payload: bytes) -> str:
@@ -131,3 +131,15 @@ def test_the_result_carries_the_shared_sha256_prefix(tmp_path: Path) -> None:
     path = tmp_path / "clip.mp3"
     path.write_bytes(b"\xff\xfb" + b"\x66" * 50)
     assert sha256_audio_payload(path).startswith("sha256:")
+
+
+def test_sha256_file_hex_matches_hashlib_and_prefixes_sha256_file(tmp_path: Path) -> None:
+    payload = b"known bytes for bare hex helper"
+    path = tmp_path / "blob.bin"
+    path.write_bytes(payload)
+    expected = hashlib.sha256(payload).hexdigest()
+    bare = sha256_file_hex(path)
+    assert bare == expected
+    assert len(bare) == 64
+    assert all(c in "0123456789abcdef" for c in bare)
+    assert sha256_file(path) == HASH_PREFIX + bare

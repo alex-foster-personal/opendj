@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from apps.entitlements.lifecycle import LifecycleState, _assert_state
+from apps.entitlements.lifecycle import LifecycleState, assert_state
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class Standing:
     quota: int | None
 
     def __post_init__(self) -> None:
-        _assert_state(self.state)
+        assert_state(self.state)
         if self.quota is not None and self.quota < 0:
             raise ValueError(f"quota must be None (unlimited) or >= 0, got {self.quota}")
 

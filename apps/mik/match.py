@@ -50,7 +50,13 @@ Tier = Literal["exact_path", "basename", "artist_title"]
 
 TIER_ORDER: tuple[Tier, ...] = ("exact_path", "basename", "artist_title")
 TIER_RANK: dict[Tier, int] = {tier: rank for rank, tier in enumerate(TIER_ORDER)}
-FUZZY_TIERS: frozenset[str] = frozenset({"basename", "artist_title"})
+FUZZY_TIERS: frozenset[Tier] = frozenset({"basename", "artist_title"})
+
+ARTIST_TITLE_SEP = "\x1f"
+
+
+def zero_tier_counts() -> dict[str, int]:
+    return {tier: 0 for tier in TIER_ORDER}
 
 UnmatchedReason = Literal["no_candidate", "ambiguous_candidates", "lost_collision"]
 
@@ -83,7 +89,7 @@ class MatchReport:
     unmatched: dict[int, Unmatched] = field(default_factory=dict)
 
     def by_tier(self) -> dict[str, int]:
-        counts: dict[str, int] = {tier: 0 for tier in TIER_ORDER}
+        counts = zero_tier_counts()
         for match in self.matches.values():
             counts[match.tier] += 1
         return counts
@@ -136,7 +142,7 @@ def artist_title_key(artist: str | None, title: str | None) -> str | None:
     title_key = norm_loose(title)
     if not artist_key or not title_key:
         return None
-    return f"{artist_key}\x1f{title_key}"
+    return f"{artist_key}{ARTIST_TITLE_SEP}{title_key}"
 
 
 def _first_artist(artists_json: str | None) -> str | None:
@@ -153,6 +159,20 @@ def _first_artist(artists_json: str | None) -> str | None:
 
 
 # ------------------------------------------------------------- indices
+
+
+def _index_path(
+    by_path: dict[str, list[str]],
+    path: str | None,
+    stable_id: str,
+    *,
+    skip_key: str | None = None,
+) -> str | None:
+    """Register ``path`` under ``stable_id``. Returns the normalised key."""
+    path_key = norm_path(path)
+    if path_key and path_key != skip_key:
+        by_path.setdefault(path_key, []).append(stable_id)
+    return path_key
 
 
 @dataclass
@@ -174,9 +194,7 @@ class TrackIndex:
         alt_paths = list_location_paths(conn, [row[0] for row in tracks])
         for stable_id, title, artists_json, file_path in tracks:
             index.track_count += 1
-            path_key = norm_path(file_path)
-            if path_key:
-                index.by_path.setdefault(path_key, []).append(stable_id)
+            path_key = _index_path(index.by_path, file_path, stable_id)
             # A recovered copy can live only in track_locations (this
             # machine's relocated/alternate path), never touching the legacy
             # tracks.file_path -- see apps.mik.availability.probe, which
@@ -184,9 +202,7 @@ class TrackIndex:
             # a staged row whose source_path exactly equals the alternate
             # stays stranded in staging past its documented relocate trigger.
             for alt in alt_paths.get(stable_id, []):
-                alt_key = norm_path(alt)
-                if alt_key and alt_key != path_key:
-                    index.by_path.setdefault(alt_key, []).append(stable_id)
+                _index_path(index.by_path, alt, stable_id, skip_key=path_key)
             base_key = basename_key(file_path)
             if base_key:
                 index.by_basename.setdefault(base_key, []).append(stable_id)
@@ -331,7 +347,7 @@ def match_songs(
     songs = list(songs)
     report = MatchReport()
     tiers: tuple[Tier, ...] = TIER_ORDER if allow_fuzzy else ("exact_path",)
-    tier_candidates: dict[str, int] = {tier: 0 for tier in TIER_ORDER}
+    tier_candidates = zero_tier_counts()
 
     provisional = _best_tier_per_song(
         songs, index, tiers, tier_candidates, report, allow_fuzzy

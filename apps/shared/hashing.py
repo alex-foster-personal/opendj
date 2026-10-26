@@ -17,6 +17,9 @@ Contract
 ``sha256_file(path)`` -> ``"sha256:<64-hex>"`` (lowercase). Reads the
 file in 1 MiB chunks via :func:`hashlib.file_digest` (Python 3.11+).
 
+``sha256_file_hex(path)`` -> bare lowercase 64-hex (no ``sha256:`` prefix).
+Same bytes as :func:`sha256_file`; use when callers expect unprefixed digests.
+
 ``sha256_audio_payload(path)`` -> ``"sha256:<64-hex>"``. Same shape, but it
 hashes audio payload bytes while excluding tag/container metadata for MP3,
 AIFF, FLAC, M4A and WAV. Unknown or malformed formats hash whole.
@@ -69,6 +72,15 @@ def sha256_file(path: Path | str) -> str:
     return HASH_PREFIX + digest.hexdigest()
 
 
+def sha256_file_hex(path: Path | str) -> str:
+    """Compute bare lowercase SHA-256 hex for ``path`` (no ``sha256:`` prefix).
+
+    Raises :class:`FileNotFoundError` if the file is missing. Delegates to
+    :func:`sha256_file` so file reads use one implementation.
+    """
+    return sha256_file(path).removeprefix(HASH_PREFIX)
+
+
 def content_hash_bytes(data: bytes) -> str:
     """Small helper for tests / in-memory payloads."""
     return HASH_PREFIX + hashlib.sha256(data).hexdigest()
@@ -105,7 +117,7 @@ def sha256_audio_payload(path: Path | str) -> str:
     every other format (wav, flac, aiff, m4a, ...) is hashed whole, because
     their metadata lives in dedicated chunks/atoms this repo does not rewrite
     and does not need to look inside to skip. Same ID3-stripping convention as
-    ``data/reference/mik/20260908/payload_hash.py``. Handles nested leading
+    ``(private path)``. Handles nested leading
     ID3v2 tags (a second tagger writing after one already did leaves two).
     """
     p = Path(path)
@@ -300,4 +312,5 @@ __all__ = [
     "content_hash_bytes",
     "sha256_audio_payload",
     "sha256_file",
+    "sha256_file_hex",
 ]

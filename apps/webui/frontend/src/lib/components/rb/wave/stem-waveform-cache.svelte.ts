@@ -3,6 +3,8 @@
  *
  * Fetches server-produced mono peaks only - never stem PCM or decodeAudioData.
  */
+import { untrack } from 'svelte';
+
 import { fetchRbJson, RbApiError } from '$lib/rb/api-rb-json';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import { refuseStickRead } from '$lib/rb/track-source';
@@ -55,7 +57,14 @@ function _publishReady(key: string, envelope: readonly number[]): void {
 	applyStemWaveformCaps();
 }
 
+/** Untracked: callers run this inside `$effect`, and the LRU retouch below
+ * writes the entry it just read, so a tracked read re-runs the caller forever
+ * (effect_update_depth_exceeded freezes the whole page). */
 export function ensureStemWaveform(stable_id: string, part: string): void {
+	untrack(() => _ensureStemWaveform(stable_id, part));
+}
+
+function _ensureStemWaveform(stable_id: string, part: string): void {
 	const key = _cacheKey(stable_id, part);
 	const existing = _cache[key];
 	if (existing !== undefined) {

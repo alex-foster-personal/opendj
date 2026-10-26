@@ -145,9 +145,16 @@ test('the command dispatcher routes a failed load through the deck-load reporter
 });
 
 test("the track lookup's bare 404 reads as TRACK_NOT_FOUND, and nothing else is rewritten", () => {
-	const response = new Response(null, { status: 404 });
-	const lookup = harness.libraryTrackLookupError(new harness.ApiError(404, 'HTTP_404', 'Not Found', response));
+	const rawText = '{"detail":{"code":"HTTP_404","message":"Not Found"}}';
+	const response = new Response(rawText, { status: 404, headers: { 'content-type': 'application/json' } });
+	const parsedBody = JSON.parse(rawText);
+	const lookup = harness.libraryTrackLookupError(
+		new harness.ApiError(404, 'HTTP_404', 'Not Found', response, parsedBody, rawText)
+	);
 	assert.equal(lookup.code, 'TRACK_NOT_FOUND');
+	assert.equal(lookup.bodyText, rawText);
+	assert.deepEqual(lookup.body, parsedBody);
+	assert.equal(lookup.response, response);
 	assert.equal(harness.deckLoadFailureHeadline(1, lookup), 'Deck 1: This track is no longer in the library.');
 	// Controls: a coded 404 (a stick), another status, and a non-ApiError pass through as the same object.
 	const stick = new harness.ApiError(404, 'USB_TRACK_NOT_FOUND', 'gone', response);

@@ -431,12 +431,32 @@ function _migrateSkinDefaults(
 	};
 }
 
-function _load(): RbUiPrefs {
-	const storage = _storage();
-	if (storage === null) return { ...DEFAULTS };
-	const raw = storage.getItem(STORAGE_KEY);
-	if (raw === null) return { ...DEFAULTS }; // first run - the one real default
-	const parsed = JSON.parse(raw) as Partial<RbUiPrefs>; // malformed JSON throws - intended
+type LibraryPrefsValidated = {
+	hide_broken_links: boolean;
+	library_density?: RbUiPrefs['library_density'] | undefined;
+	playlist_tree_width?: number | undefined;
+};
+
+type ThemePrefsValidated = {
+	theme?: RbUiPrefs['theme'] | undefined;
+};
+
+type SkinMixerDeckPrefsParsed = {
+	skinLook: SkinLookPrefs;
+	waveSplitMaster: ReturnType<typeof parseWaveSplitMaster>;
+	crossfadeCurve: RbUiPrefs['crossfade_curve'] | undefined;
+	horizontalWheelKnob: RbUiPrefs['horizontal_wheel_knob'] | undefined;
+	deckLayout: ReturnType<typeof validateDeckLayoutFields>['deck_layout'];
+	deckLayoutAnimate: ReturnType<typeof validateDeckLayoutFields>['deck_layout_animate'];
+	deckLayoutDurationMs: ReturnType<typeof validateDeckLayoutFields>['deck_layout_duration_ms'];
+	deckRightMirror: ReturnType<typeof validateDeckLayoutFields>['deck_right_mirror'];
+	deckLeftMirror: boolean;
+	playlistTreeView: ReturnType<typeof validatePlaylistTreeViewField>;
+	lastPlaylist: ReturnType<typeof parseLastPlaylist>;
+	autoSync: ReturnType<typeof parseAutoSync>;
+};
+
+function _validateLibraryPrefs(parsed: Partial<RbUiPrefs>): LibraryPrefsValidated {
 	if (typeof parsed.hide_broken_links !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (hide_broken_links is not a boolean) - ` +
@@ -464,6 +484,14 @@ function _load(): RbUiPrefs {
 				`${PLAYLIST_TREE_WIDTH_MIN} through ${PLAYLIST_TREE_WIDTH_MAX}) - clear the localStorage key to recover`
 		);
 	}
+	return {
+		hide_broken_links: parsed.hide_broken_links,
+		library_density: density,
+		playlist_tree_width: treeWidth
+	};
+}
+
+function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 	if (parsed.beat_sync_max !== undefined && typeof parsed.beat_sync_max !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (beat_sync_max is not a boolean) - ` +
@@ -509,6 +537,9 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+}
+
+function _validateThemeAndDevicePrefs(parsed: Partial<RbUiPrefs>): ThemePrefsValidated {
 	const theme = parsed.theme;
 	if (theme !== undefined && theme !== 'dark' && theme !== 'light') {
 		throw new Error(
@@ -557,6 +588,10 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	return { theme };
+}
+
+function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 	if (
 		parsed.preview_beat_sync !== undefined &&
 		parsed.preview_beat_sync !== 'off' &&
@@ -585,6 +620,9 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+}
+
+function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckPrefsParsed {
 	const skinLook = _migrateSkinDefaults(
 		parseUiSkin(parsed.ui_skin),
 		parseWaveformDesignPref(parsed.waveform_design),
@@ -631,6 +669,23 @@ function _load(): RbUiPrefs {
 	const playlistTreeView = validatePlaylistTreeViewField(parsed.playlist_tree_view, STORAGE_KEY);
 	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
+	return {
+		skinLook,
+		waveSplitMaster,
+		crossfadeCurve,
+		horizontalWheelKnob,
+		deckLayout,
+		deckLayoutAnimate,
+		deckLayoutDurationMs,
+		deckRightMirror,
+		deckLeftMirror,
+		playlistTreeView,
+		lastPlaylist,
+		autoSync
+	};
+}
+
+function _parseConfirmPrefs(parsed: Partial<RbUiPrefs>): RbUiPrefs['confirm'] {
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
 	if (confirm !== null && typeof confirm !== 'object') {
 		throw new Error(
@@ -645,10 +700,35 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	return confirm as RbUiPrefs['confirm'];
+}
+
+function _assembleLoadedPrefs(
+	parsed: Partial<RbUiPrefs>,
+	library: LibraryPrefsValidated,
+	themePrefs: ThemePrefsValidated,
+	skinMixerDeck: SkinMixerDeckPrefsParsed,
+	confirm: RbUiPrefs['confirm']
+): RbUiPrefs {
+	const { theme } = themePrefs;
+	const {
+		skinLook,
+		waveSplitMaster,
+		crossfadeCurve,
+		horizontalWheelKnob,
+		deckLayout,
+		deckLayoutAnimate,
+		deckLayoutDurationMs,
+		deckRightMirror,
+		deckLeftMirror,
+		playlistTreeView,
+		lastPlaylist,
+		autoSync
+	} = skinMixerDeck;
 	return {
-		playlist_tree_width: treeWidth ?? DEFAULTS.playlist_tree_width,
-		hide_broken_links: parsed.hide_broken_links,
-		library_density: density ?? DEFAULTS.library_density,
+		playlist_tree_width: library.playlist_tree_width ?? DEFAULTS.playlist_tree_width,
+		hide_broken_links: library.hide_broken_links,
+		library_density: library.library_density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
@@ -672,7 +752,7 @@ function _load(): RbUiPrefs {
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		...skinLook,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
-		confirm: { ...(confirm as RbUiPrefs['confirm']) },
+		confirm: { ...confirm },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
@@ -707,6 +787,21 @@ function _load(): RbUiPrefs {
 		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY),
 		...mergeDeckDefaultPrefsFromParsed(parsed, STORAGE_KEY)
 	};
+}
+
+function _load(): RbUiPrefs {
+	const storage = _storage();
+	if (storage === null) return { ...DEFAULTS };
+	const raw = storage.getItem(STORAGE_KEY);
+	if (raw === null) return { ...DEFAULTS }; // first run - the one real default
+	const parsed = JSON.parse(raw) as Partial<RbUiPrefs>; // malformed JSON throws - intended
+	const library = _validateLibraryPrefs(parsed);
+	_validateAutomationPrefs(parsed);
+	const themePrefs = _validateThemeAndDevicePrefs(parsed);
+	_validatePerformanceTogglePrefs(parsed);
+	const skinMixerDeck = _parseSkinMixerAndDeckPrefs(parsed);
+	const confirm = _parseConfirmPrefs(parsed);
+	return _assembleLoadedPrefs(parsed, library, themePrefs, skinMixerDeck, confirm);
 }
 
 function _persist(): void {

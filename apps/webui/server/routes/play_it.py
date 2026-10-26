@@ -39,12 +39,13 @@ from pydantic import BaseModel, Field
 from apps.dj_copilot.pinning import PinUnsatisfiableError
 from apps.dj_copilot.set_goal import SetGoal
 from apps.dj_copilot.solver import suggest_order
-from apps.shared.harmonic import TrackFeature, key_to_camelot
+from apps.shared.harmonic import TrackFeature
 
-from ..backend import StateBackend, Track
+from ..backend import StateBackend
 from ..deps import get_read_state
 from ..errors import ErrorBody
 from ..etag import compute_etag
+from ..track_features import track_to_feature
 
 router = APIRouter(prefix="/play-it", tags=["play-it"])
 
@@ -92,32 +93,6 @@ class PlayItSolveOut(BaseModel):
     steps: list[PlayItStepOut]
     constraints_unmet: list[PlayItUnmetOut]
     solve_ms: float
-
-
-def _camelot_or_none(key: str | None) -> str | None:
-    if key is None or not key.strip():
-        return None
-    try:
-        return str(key_to_camelot(key))
-    except ValueError:
-        return None
-
-
-def _energy_of(track: Track) -> int | None:
-    prov = (track.provenance or {}).get("energy")
-    if prov is None or prov.value is None:
-        return None
-    return int(prov.value)
-
-
-def _track_to_feature(track: Track) -> TrackFeature:
-    return TrackFeature(
-        stable_id=track.stable_id,
-        artist=track.artist,
-        bpm=track.bpm,
-        key_camelot=_camelot_or_none(track.key),
-        energy=_energy_of(track),
-    )
 
 
 def _missing_fields(features: list[TrackFeature]) -> dict[str, list[str]] | None:
@@ -168,7 +143,7 @@ def solve_play_it(
         )
 
     ordered_tracks = [tracks_map[sid] for sid in playlist.items]
-    features = [_track_to_feature(t) for t in ordered_tracks]
+    features = [track_to_feature(t) for t in ordered_tracks]
 
     missing = _missing_fields(features)
     if missing is not None:

@@ -21,9 +21,6 @@ hosted or whose source is not Polar (a self-hosted hub sells nothing), and
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request
@@ -31,13 +28,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from apps.entitlements.lifecycle import LifecycleState
 from apps.entitlements.polar import PolarClient, PolarEntitlementSource, PolarError, PolarNoCustomer
-from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.sync_hub import enrollment, entitlement_gate, hosted_config, service_credentials
 from apps.sync_hub.enrollment import OwnerIdentity
 from apps.sync_hub.hosted_config import SOURCE_ATTR
 from apps.sync_hub.machine_wire_limits import MACHINE_ID_MAX_LENGTH
-from apps.sync_hub.service_request import _data_dir, _db_path
+from apps.sync_hub.service_request import _data_dir, _hub_conn
 
 router = APIRouter(prefix="/billing", tags=["sync-billing"])
 
@@ -106,15 +102,6 @@ class RefreshResponse(BaseModel):
 
     provider: str
     standings: list[FeatureStanding]
-
-
-@contextmanager
-def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    conn = state_db.open_rw(_db_path(request))
-    try:
-        yield conn
-    finally:
-        conn.close()
 
 
 def _polar_source(request: Request) -> PolarEntitlementSource:

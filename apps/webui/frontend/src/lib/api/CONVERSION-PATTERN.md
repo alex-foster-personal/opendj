@@ -32,7 +32,8 @@ import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
 
 The client throws on every non-2xx, so converted code has no `if (error)`
 branch. `ApiError` carries `status`, `code`, `message`, the raw `response`
-(headers intact) and the parsed `body`.
+(headers intact), the parsed `body`, and `bodyText` (full raw payload read at
+construction; the stream on `response` is already consumed).
 
 ## The recipe
 
@@ -105,6 +106,7 @@ branch. `ApiError` carries `status`, `code`, `message`, the raw `response`
    | `if (!r.ok) throw new Error(...)` | delete it; the client threw already |
    | `if (r.status === 409) { ... r.headers.get('etag') }` | `if (error instanceof ApiError && error.status === 409) { ... error.response.headers.get('etag') }` |
    | `const body = await r.json(); body.current` | `error.body` (already parsed) |
+   | `const text = await r.text()` on an error | `error.bodyText` (already read) |
    | `try { await fetch(...) } catch { throw new Error('daemon unreachable') }` | keep the try/catch, but check `instanceof ApiError` first so a real HTTP answer is not mislabelled as unreachable |
 
 6. **Run the gates** (below) and commit.

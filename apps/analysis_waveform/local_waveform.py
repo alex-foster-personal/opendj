@@ -72,12 +72,12 @@ from apps.analysis_waveform.bands import (
     STRIP_COLUMNS,
     _bands_payload,
     _downsample_max,
+    measured_peak_bands,
     pwv6_scale,
     pwv6_scaled_bands,
 )
 from apps.analysis_waveform.decode import (
     BAND_COUNT,
-    BAND_NAMES,
     OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
     decode_peaks_used,
@@ -91,7 +91,6 @@ from apps.analysis_waveform.decode import (
 
 log = logging.getLogger(__name__)
 
-_PEAK_SCALE: int = 255  # int16 |amplitude| >> 7, so a full-scale sine hits 255
 # ffmpeg is CPU-bound. Two decoders keep a deck load quick without turning a
 # burst of selects into a fork bomb.
 MAX_CONCURRENT_DECODES: int = 2
@@ -399,23 +398,12 @@ def _strip_from_peaks(peaks: np.ndarray) -> tuple[str | None, int | None]:
     return base64.b64encode(strip.tobytes()).decode("ascii"), int(strip.max())
 
 
-def _bands_from_peaks(peaks: np.ndarray) -> dict[str, np.ndarray]:
-    """The three MEASURED envelopes, 0..1, under their band keys.
-
-    ``kind="tri"`` tells the client these are real per-band heights, the same
-    claim a rekordbox PWV6/PWV7 lane makes - so unlike the mono fallback this
-    one has to be earned by the decoder, not by duplicating one array.
-    """
-    scaled = np.clip(peaks.astype(np.float64) / _PEAK_SCALE, 0.0, 1.0)
-    return {name: scaled[:, index] for index, name in enumerate(BAND_NAMES)}
-
-
 def _waveform_payload(peaks: np.ndarray, points: int) -> dict[str, Any]:
     overview = _downsample_max(peaks, OVERVIEW_COLUMNS)
     return {
         "kind": "tri",
         "preview": _bands_payload(pwv6_scaled_bands(overview), points),
-        "detail": _bands_payload(_bands_from_peaks(peaks), points),
+        "detail": _bands_payload(measured_peak_bands(peaks), points),
     }
 
 

@@ -1,8 +1,8 @@
 """Per-band agreement between OUR tri-band peaks and rekordbox PWV6 truth.
 
-``python -m apps.analysis_waveform.score --bundle data/bench/waveform/v1``
+``python -m apps.analysis_waveform.score --bundle (private path)``
 
-A tiny CLI on purpose. ``apps/analysis_bench/`` (specs/native-analysis-v1.md
+A tiny CLI on purpose. ``apps/analysis_bench/`` ((private path)
 section 6) is the shared harness this scorer belongs in, and it is being built
 in another lane; until it exists, this module owns the waveform lane's scorer so
 NATIVE-06 can be measured rather than asserted. Moving it under the bench later
@@ -54,7 +54,7 @@ from typing import Any
 import numpy as np
 
 from apps.analysis_waveform import decode
-from apps.analysis_waveform.bands import _downsample_max
+from apps.analysis_waveform.bands import _downsample_max, unit_float_peaks
 from apps.analysis_waveform.bundle_identity import (
     compute_bundle_id,
     verify_bundle_id_matches_its_own_contents,
@@ -273,7 +273,7 @@ def pearson(a: np.ndarray, b: np.ndarray) -> float:
 
 def align_to_truth(peaks: np.ndarray, truth_columns: int) -> np.ndarray:
     """Our uint8 ``(n, 3)`` detail peaks, peak-max reduced to the truth's width."""
-    return _downsample_max(peaks.astype(np.float64) / 255.0, truth_columns)
+    return _downsample_max(unit_float_peaks(peaks), truth_columns)
 
 
 def resolve_audio_root(manifest: dict[str, Any], audio_root: Path | None) -> Path | None:
@@ -336,7 +336,7 @@ def _audio_identity_mismatch(track: dict[str, Any], audio: Path) -> str | None:
 
     ``payload_sha256`` (tags stripped for mp3) is the canonical, retag-tolerant
     check. A manifest with no such field at all - the round 0-2 bundle in
-    ``specs/native-analysis-v1.md``, which predates even the FIRST
+    ``(private path)``, which predates even the FIRST
     payload-hashing fix on this PR (Codex P1 BLOCKING, thread on
     ``score.py:358``: canonical fixture inputs must stay reproducible, not
     raise ``KeyError`` on a field never recorded) - falls back to the

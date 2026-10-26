@@ -24,6 +24,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from . import store
+from .library_tags import genre_text
 
 # track_fields that can help a guess. A genre tag is deliberately absent.
 _FIELD_NAMES = ("bpm", "key", "comments", "label", "year")
@@ -85,11 +86,7 @@ def local_genre_ids(conn: sqlite3.Connection) -> set[str]:
     for sid, value_json in conn.execute(
         "SELECT stable_id, value_json FROM track_fields WHERE field_name = 'genre' AND deleted_at IS NULL"
     ):
-        try:
-            value = json.loads(value_json) if value_json else None
-        except ValueError:
-            value = value_json
-        if isinstance(value, str) and value.strip():
+        if genre_text(value_json):
             out.add(str(sid))
     return out
 

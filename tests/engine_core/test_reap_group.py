@@ -55,6 +55,14 @@ def _kill_pid(pid: int) -> None:
         return
 
 
+def _pid_is_running(pid: int) -> bool:
+    """True only while ``pid`` is a live process, not a zombie waiting on init."""
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
 def _leaderless_group() -> tuple[int, int, float]:
     """Return (pgid, surviving child pid, spawn wall-clock).
 
@@ -119,8 +127,12 @@ def test_a_dead_leader_with_live_children_still_gets_reaped(leaderless) -> None:
     assert result.group_cleared, result.outcome
     assert "reap:" in result.outcome, result.outcome
     assert not group_has_live_member(pgid), result.outcome
-    assert not psutil.pid_exists(child_pid), (
-        f"the orphaned child survived the reap: {result.outcome}"
+    wait_for_external_state(
+        lambda: not _pid_is_running(child_pid),
+        what=(
+            f"orphaned child {child_pid} gone or zombie after reap "
+            f"({result.outcome})"
+        ),
     )
 
 

@@ -8,7 +8,7 @@ candidates, never "none") would misrepresent a guess as a finding. This flag
 is how that decline survives to the reader, following the same contract as
 apps.analysis_beatgrid.flags.PulseFlag: a low-confidence result must go
 inert with a reason, not silently pass as `status: ok`
-(specs/native-analysis-v1.md section 3).
+((private path) section 3).
 
 TWO INDEPENDENT SYMPTOMS, EITHER SUFFICIENT, mirroring PulseFlag's shape:
 
@@ -32,7 +32,7 @@ and lifts agreement 15 points over publishing everything.
 CONFIDENCE_THRESHOLD IS STILL AN UNCALIBRATED PLACEHOLDER. Unlike
 ACTIVATION_PEAK_THRESHOLD in apps/analysis_beatgrid/flags.py (set from a
 round-0 measurement over 137 tracks), nav1-key-r0 did not run a scored round
-against real chroma before this file was written -- see specs/native-
+against real chroma before this file was written -- see (private path)
 analysis-v1.md's key-lane experiment log for why. Round 1 should replace
 CONFIDENCE_THRESHOLD and MARGIN_THRESHOLD below with round-0-measured
 thresholds once real confidence/margin distributions exist.
@@ -55,8 +55,10 @@ check CAPABLE of firing before round-0 measurement replaces it outright.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from apps.analysis_key.profiles import KeyEstimate
+if TYPE_CHECKING:  # annotation only: see the import-cost note in lane_payloads._validate_key
+    from apps.analysis_key.profiles import KeyEstimate
 
 CONFIDENCE_THRESHOLD = 0.5
 MARGIN_THRESHOLD = 0.005

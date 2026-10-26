@@ -70,11 +70,15 @@ test('a non-2xx throws ApiError carrying the detail code and message', async () 
 	assert.equal(caught.code, 'RELOCATE_STALE');
 	assert.equal(caught.message, 'path moved');
 	assert.equal(caught.response.headers.get('etag'), '"rev-2"');
+	const payload = JSON.stringify({ detail: { code: 'RELOCATE_STALE', message: 'path moved' } });
+	assert.equal(caught.bodyText, payload);
+	assert.deepEqual(caught.body, JSON.parse(payload));
+	assert.equal(caught.response.bodyUsed, true);
 });
 
 test('a bodyless error keeps the status, the statusText and the headers', async () => {
 	globalThis.fetch = async () =>
-		new Response(null, { status: 409, statusText: 'Conflict', headers: { etag: '"rev-3"' } });
+		new Response('', { status: 409, statusText: 'Conflict', headers: { etag: '"rev-3"' } });
 
 	const caught = await clientModule.api.GET('/api/v1/health').then(
 		() => null,
@@ -85,7 +89,9 @@ test('a bodyless error keeps the status, the statusText and the headers', async 
 	assert.equal(caught.code, 'HTTP_409');
 	assert.equal(caught.message, 'Conflict');
 	assert.equal(caught.body, null);
+	assert.equal(caught.bodyText, '');
 	assert.equal(caught.response.headers.get('etag'), '"rev-3"');
+	assert.equal(caught.response.bodyUsed, true);
 });
 
 test('a FastAPI string detail becomes the error message', async () => {
@@ -122,6 +128,8 @@ test('a non-JSON error body does not mask the failure', async () => {
 	assert.equal(caught.code, 'HTTP_502');
 	assert.equal(caught.message, 'Bad Gateway');
 	assert.equal(caught.body, null);
+	assert.equal(caught.bodyText, '<html>502 upstream</html>');
+	assert.equal(caught.response.bodyUsed, true);
 });
 
 test('unwrap narrows a success body to a non-optional value', async () => {

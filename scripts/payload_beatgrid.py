@@ -65,7 +65,6 @@ Acceptance tests (tests/scripts/test_engine_payload_beatgrid.py):
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shutil
@@ -76,6 +75,7 @@ import urllib.request
 from pathlib import Path
 
 from apps.analysis_beatgrid import weights
+from apps.shared.hashing import sha256_file_hex
 from scripts.payload_launchers import write_payload_launcher
 
 RUNNER_SCRIPT_RELATIVE = Path("apps/analysis_beatgrid/beat_this_runner.py")
@@ -270,14 +270,6 @@ def runner_locked_export(repo_root: Path) -> str:
 # checkpoint
 #-----------------------------------------------------------------------------
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def fetch_checkpoint(
     cache_dir: Path,
     *,
@@ -293,7 +285,7 @@ def fetch_checkpoint(
     """
     cached = cache_dir / f"{expected_sha256}.ckpt"
     if cached.is_file():
-        actual = _sha256(cached)
+        actual = sha256_file_hex(cached)
         if actual != expected_sha256:
             raise PayloadBeatgridError(
                 f"cached checkpoint {cached} has sha256 {actual}, expected "
@@ -309,7 +301,7 @@ def fetch_checkpoint(
         except OSError as exc:
             partial.unlink(missing_ok=True)
             raise PayloadBeatgridError(f"could not download {url}: {exc}") from exc
-    actual = _sha256(partial)
+    actual = sha256_file_hex(partial)
     if actual != expected_sha256:
         partial.unlink()
         raise PayloadBeatgridError(
@@ -350,7 +342,7 @@ def verify_bundled_beatgrid_runner(payload_dir: Path, repo_root: Path) -> dict[s
     checkpoint = payload_dir / CHECKPOINT_RELATIVE
     if not checkpoint.is_file():
         raise PayloadBeatgridError(f"beatgrid checkpoint missing at {checkpoint}")
-    digest = _sha256(checkpoint)
+    digest = sha256_file_hex(checkpoint)
     if digest != weights.CHECKPOINT_SHA256:
         raise PayloadBeatgridError(
             f"staged checkpoint {checkpoint} has sha256 {digest}, expected "

@@ -645,17 +645,27 @@ def test_busy_retries_are_coalesced_and_bounded(
 def test_a_finished_cut_cancels_the_sleeping_retry(
     track: float, tmp_path: Path, decoder_saturated: None, monkeypatch: pytest.MonkeyPatch, announced: list[str]
 ):
-    """A retry left sleeping by a busy attempt must not cut and announce again once another attempt succeeded."""
-    # The shipped 5 s timer (discussion_r4264558053): only module state is reset.
+    """A retry left sleeping by a busy attempt must not cut and announce again once another attempt succeeded.
+
+    Deterministic: the shipped first-retry delay is asserted as a constant control, then the
+    sleeping retry is held far past the cut's own duration. The assertion being made is
+    "the cut cancelled the retry before it fired", and how long the host needs to decode +
+    segment is not this test's business — a loaded host can take longer than the 5 s
+    production timer, which made the old wall-clock read of the margin fail under load.
+    """
+    # The shipped 5 s timer (discussion_r4264558053): the constant is the control, only
+    # module state is reset, and the held interval keeps the race off the wall clock.
+    assert fast_sidecar.BUSY_RETRY_S == 5.0, "control: the shipped first-retry delay"
+    assert fast_sidecar.BUSY_RETRIES == 3, "control: the shipped retry schedule length"
+    monkeypatch.setattr(fast_sidecar, "BUSY_RETRY_S", 600.0)  # held: the cut's duration belongs to the host
     monkeypatch.setattr(fast_sidecar, "_RETRY_TIMERS", {})
     downbeats = fast_sidecar.downbeats_of(_payload())
     key = (SID, fast_sidecar.grid_digest(downbeats))
     try:
         assert fast_sidecar.compute(SID, downbeats, tmp_path)["status"] == "pending"
-        armed = time.monotonic()
         timer = fast_sidecar._RETRY_TIMERS[key]
         assert timer.is_alive(), "control: the busy attempt left a retry sleeping"
-        assert timer.interval == fast_sidecar.BUSY_RETRY_S == 5.0, "control: the shipped first-retry delay"
+        assert timer.interval == fast_sidecar.BUSY_RETRY_S == 600.0, "control: armed from the shipped constant"
         for _ in range(local_waveform.MAX_DECODE_WAITERS):
             local_waveform._DECODE_ADMISSION.release()
         try:
@@ -664,7 +674,6 @@ def test_a_finished_cut_cancels_the_sleeping_retry(
             for _ in range(local_waveform.MAX_DECODE_WAITERS):
                 local_waveform._DECODE_ADMISSION.acquire()
         assert key not in fast_sidecar._RETRY_TIMERS
-        assert time.monotonic() - armed < timer.interval, "control: cancelled before the real timer was due"
         timer.join(timeout=5)
         assert not timer.is_alive() and timer.finished.is_set(), "cancelled, not left to fire"
         assert announced == [SID], "announced once, by the attempt that finished"

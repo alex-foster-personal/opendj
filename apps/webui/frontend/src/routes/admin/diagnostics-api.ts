@@ -47,7 +47,7 @@ export async function fetchWorktreePorts(): Promise<WorktreePorts> {
 		return parseWorktreePorts(data);
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			throw new Error(`GET /api/v1/admin/ports failed (HTTP ${error.status}): ${bodyText}`);
 		}
 		throw error;

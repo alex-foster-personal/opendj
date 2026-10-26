@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from apps.shared.hashing import sha256_file_hex
+
 # ----------------------------------------------------- running-process gate
 
 
@@ -69,14 +71,6 @@ class BackupRecord:
     timestamp_iso: str
 
 
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fp:
-        for chunk in iter(lambda: fp.read(1 << 16), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def backup_file(target: Path, backup_dir: Path) -> BackupRecord:
     """Copy ``target`` into ``backup_dir`` with a timestamped name.
 
@@ -94,7 +88,7 @@ def backup_file(target: Path, backup_dir: Path) -> BackupRecord:
     return BackupRecord(
         original_path=target,
         backup_path=backup_path,
-        sha256_before=_sha256(target),
+        sha256_before=sha256_file_hex(target),
         timestamp_iso=timestamp,
     )
 

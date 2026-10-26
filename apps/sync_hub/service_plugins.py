@@ -15,8 +15,6 @@ import json
 import os
 import sqlite3
 import urllib.parse
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -24,9 +22,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
 from apps import entitlements
-from apps.shared.state import db as state_db
 from apps.sync_hub import entitlement_gate, service_billing, service_credentials
-from apps.sync_hub.service_request import _data_dir, _db_path
+from apps.sync_hub.service_request import _data_dir, _hub_conn
 
 router = APIRouter(prefix="/plugins", tags=["sync-plugins"])
 
@@ -95,15 +92,6 @@ def _responses(endpoint: str) -> dict[int | str, dict[str, object]]:
         409: {"description": (f"{endpoint}: ``{CATALOG_ENV}`` is unset, code {NOT_CONFIGURED_CODE}.")},
         502: {"description": (f"{endpoint}: catalog file missing or invalid, code {CATALOG_INVALID_CODE}.")},
     }
-
-
-@contextmanager
-def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    conn = state_db.open_rw(_db_path(request))
-    try:
-        yield conn
-    finally:
-        conn.close()
 
 
 def _catalog_path() -> Path:

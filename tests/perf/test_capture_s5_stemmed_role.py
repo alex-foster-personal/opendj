@@ -142,8 +142,18 @@ class _SilentHub:
             conn.close()
 
 
-def _closed_port_url() -> str:
-    return f"http://127.0.0.1:{_free_port()}"
+@contextmanager
+def _closed_port_url() -> Iterator[str]:
+    """A URL nothing answers, held that way for the whole block.
+
+    The socket stays bound but never listens, so a connect is refused and no
+    other server on a shared runner can take the port meanwhile. A port that is
+    merely probed free and released can be reused before the test dials it,
+    which turned "hub down" into another server's HTTP 404.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+        held.bind(("127.0.0.1", 0))
+        yield f"http://127.0.0.1:{held.getsockname()[1]}"
 
 
 def _index_real_bundle(tmp_path: Path, data_dir: Path, stable_id: str) -> None:
@@ -246,7 +256,8 @@ def test_a_hydration_that_fails_is_reported_loud_not_as_no_bundle(tmp_path: Path
     """[if] HYDRATING is followed by a failed fetch [then] the error names the HTTP failure, [else stop]."""
     stable_id = "track-hydrating-then-hub-down"
     with (
-        _hydrating_engine(tmp_path, stable_id, _closed_port_url()) as url,
+        _closed_port_url() as hub_url,
+        _hydrating_engine(tmp_path, stable_id, hub_url) as url,
         pytest.raises(ProbeError) as raised,
     ):
         require_stem_bundle(url, stable_id, **FAST_POLL)

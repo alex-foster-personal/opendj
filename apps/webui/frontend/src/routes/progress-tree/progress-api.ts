@@ -267,7 +267,7 @@ export async function fetchProgress(): Promise<ProgressResponse> {
 		data = await unwrap(ledgerApi.GET('/api/v1/progress', {}));
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			throw new Error(`GET /api/v1/progress failed: ${error.status} ${bodyText.slice(0, 300)}`);
 		}
 		throw new Error(

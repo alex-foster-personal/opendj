@@ -90,14 +90,7 @@ def _parse_timestamp(value: str, context: str) -> datetime:
         raise AnalyticsSchemaError(f"invalid {context} timestamp: {exc}") from exc
 
 
-def _event_audible_s(value_json: str | None) -> float | None:
-    """Audible dwell recorded on this play row, or None if it carries none.
-
-    None is NOT zero. A row without ``audible_s`` came from a source whose
-    upstream app already made the played/not-played call (rekordbox
-    HISTORY, djay history), so the read-time dwell filter must let it
-    through untouched rather than treat a missing value as "never heard".
-    """
+def _decode_value_json(value_json: str | None) -> dict[str, Any] | None:
     if value_json is None:
         return None
     try:
@@ -106,6 +99,20 @@ def _event_audible_s(value_json: str | None) -> float | None:
         raise AnalyticsSchemaError(f"invalid set_events value_json: {exc}") from exc
     if not isinstance(value, dict):
         raise AnalyticsSchemaError("set_events value_json must decode to an object")
+    return value
+
+
+def _event_audible_s(value_json: str | None) -> float | None:
+    """Audible dwell recorded on this play row, or None if it carries none.
+
+    None is NOT zero. A row without ``audible_s`` came from a source whose
+    upstream app already made the played/not-played call (rekordbox
+    HISTORY, djay history), so the read-time dwell filter must let it
+    through untouched rather than treat a missing value as "never heard".
+    """
+    value = _decode_value_json(value_json)
+    if value is None:
+        return None
     audible = value.get("audible_s")
     if audible is None:
         return None
@@ -117,14 +124,9 @@ def _event_audible_s(value_json: str | None) -> float | None:
 
 
 def _event_metadata(value_json: str | None) -> tuple[str | None, str | None]:
-    if value_json is None:
+    value = _decode_value_json(value_json)
+    if value is None:
         return None, None
-    try:
-        value = json.loads(value_json)
-    except json.JSONDecodeError as exc:
-        raise AnalyticsSchemaError(f"invalid set_events value_json: {exc}") from exc
-    if not isinstance(value, dict):
-        raise AnalyticsSchemaError("set_events value_json must decode to an object")
     title = value.get("title")
     artist = value.get("artist")
     if title is not None and not isinstance(title, str):

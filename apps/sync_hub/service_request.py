@@ -7,9 +7,14 @@ DB per request from ``app.state.state_db_path``; a missing path is 503
 """
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import HTTPException, Request
+
+from apps.shared.state import db as state_db
 
 # Preserved from pre-#5304 routers: main sync vs asset sub-routers used different text.
 SYNC_NO_DB_MESSAGE_MAIN = (
@@ -42,3 +47,12 @@ def _data_dir(request: Request) -> Path:
     if configured is not None:
         return Path(str(configured))
     return _db_path(request).resolve().parent.parent
+
+
+@contextmanager
+def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
+    conn = state_db.open_rw(_db_path(request))
+    try:
+        yield conn
+    finally:
+        conn.close()

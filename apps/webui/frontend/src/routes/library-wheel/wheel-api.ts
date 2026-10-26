@@ -129,7 +129,7 @@ export async function fetchLibraryWheel(axis: AxisKey): Promise<LibraryWheelResp
 		data = await unwrap(api.GET('/api/v1/library/wheel', { params: { query: { axis } } }));
 	} catch (error) {
 		if (error instanceof ApiError) {
-			const bodyText = await error.response.text();
+			const bodyText = error.bodyText;
 			throw new Error(
 				`GET /api/v1/library/wheel failed: ${error.status} ${bodyText.slice(0, 300)}`
 			);

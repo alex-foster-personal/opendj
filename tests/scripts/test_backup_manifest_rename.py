@@ -375,7 +375,18 @@ def test_concurrent_create_of_the_current_name_is_not_clobbered(tmp_path: Path, 
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """Land ``text`` at ``path`` the way a real writer does: replace, don't truncate."""
+    """Simulate an adversarial atomic-replace writer in the migration's race tests.
+
+    This helper is NOT what the shipped backup writer does. It is deliberately
+    harder: a staging file plus ``os.replace`` splits ``path`` from the inode
+    the migration hardlinked, which is the race these tests must refuse.
+
+    The real writer, ``scripts/backup_music_to_bifrost2._write_manifest``, calls
+    ``MANIFEST_PATH.write_text(...)``: open-with-truncate on the same inode. That
+    keeps the retained hardlink intact, so after an ordinary backup run the
+    legacy and current names are still one file and the next
+    ``migrate_music_manifest`` is a clean no-op.
+    """
     staging = path.with_name(path.name + ".staging")
     staging.write_text(text, encoding="utf-8", newline="\n")
     os.replace(staging, path)
@@ -388,8 +399,10 @@ def _replace_legacy_after_link(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, 
 
     def link_then_the_writer_lands(*args: Any, **kwargs: Any) -> None:
         real_link(*args, **kwargs)
-        # The old writer's atomic replace lands after migrate linked the file it
-        # opened and before migrate finishes: the window Sol's P1 names.
+        # An atomic-replace writer (the simulated worst case, not the shipped
+        # ``_write_manifest``, which truncates in place) lands after migrate
+        # linked the file it opened and before migrate finishes: the window
+        # Sol's P1 names.
         _atomic_write(legacy, fresh)
 
     monkeypatch.setattr(backup_manifest.os, "link", link_then_the_writer_lands)

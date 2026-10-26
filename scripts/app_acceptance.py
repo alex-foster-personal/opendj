@@ -110,6 +110,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+try:  # run as `python -m scripts.app_acceptance` or imported by tests
+    from scripts.app_acceptance_harness import _restore_negative_carrier, _write_fd_all
+except ImportError:  # run as a file, `python scripts/app_acceptance.py`
+    from app_acceptance_harness import _restore_negative_carrier, _write_fd_all  # type: ignore[no-redef]
+
 # ----- CFG ------------------------------------------------------------------
 SCHEMA = "opendj-app-acceptance/v1"
 FIXTURE_SCHEMA = "opendj-acceptance-fixture/v1"
@@ -1953,7 +1958,7 @@ def _replace_truncated(run: Run, track: dict[str, Any]) -> str | None:
     except OSError as exc:
         return f"analysis: negative: {title}: could not replace {dest.name}: {exc}"
     try:
-        os.write(fd, payload)
+        _write_fd_all(fd, payload)
     except OSError as exc:
         os.close(fd)
         return f"analysis: negative: {title}: could not replace {dest.name}: {exc}"
@@ -2083,6 +2088,11 @@ def check_analysis(run: Run) -> Check:
         check.numbers.update({"analysis_seconds": elapsed, "analysis_budget_s": ANALYSIS_BUDGET_S,
                               "refresh_phase": phase, "refresh_error": error,
                               "tracks": {title: _compact_observation(obs) for title, obs in observations.items()}})
+        if elapsed > ANALYSIS_BUDGET_S:
+            check.numbers["analysis_budget_exceeded"] = True
+            check.evidence.append(
+                f"analysis exceeded budget: {elapsed}s > {ANALYSIS_BUDGET_S}s"
+            )
         check.evidence.append(f"refresh phase {phase} is recorded and is not a pass; error={str(error)[:200]}")
         missing = [subject["title"] for subject in subjects
                    if not (observations.get(subject["title"]) or {}).get("bpm")
@@ -2113,6 +2123,22 @@ def check_analysis(run: Run) -> Check:
         for subject in subjects
     )
     return check.set(PASS, f"analyzed in {elapsed}s (budget {ANALYSIS_BUDGET_S}s); {summary}")
+
+
+def _restore_negative_carrier_for_analysis(run: Run, analysis: Check) -> None:
+    """Put the verified carrier back after pending-scope stems judged the truncation."""
+    replaced_path = analysis.numbers.get("negative_replaced")
+    if not isinstance(replaced_path, str) or not replaced_path:
+        return
+    restore_problem = _restore_negative_carrier(run, replaced_path)
+    if restore_problem:
+        analysis.defects.append(restore_problem)
+        if analysis.verdict == PASS:
+            analysis.set(FAIL, restore_problem)
+        else:
+            analysis.summary = f"{analysis.summary}; {restore_problem}"
+        return
+    analysis.numbers["negative_restored"] = replaced_path
 
 
 def check_clean_quit(run: Run) -> Check:
@@ -2409,13 +2435,15 @@ def _launch_and_check(run: Run, result: dict[str, Any], checks: list[Check],
     # The stems job is scope=pending, so the truncated file is in it and the
     # local worker must fail the job. The other tracks still need bundles.
     # clean_quit stays last.
-    checks.append(_guarded(check_analysis, run))
+    analysis_check = _guarded(check_analysis, run)
+    checks.append(analysis_check)
     stems_deadline = time.monotonic() + max(run.stems_timeout_s, run.lyrics_timeout_s)
     _guarded_call(start_stems_lyrics, run, stems_check)
     checks.extend(_guarded(fn, run) for fn in (check_deck_load, check_audio_plays))
     checks.append(_guarded(lambda r: check_memory(r) if r.memory_boot.get("total_mb") else
                            Check("memory").set(UNKNOWN, f"boot RSS unmeasured: {r.memory_boot.get('error')}"), run, "memory"))
     checks.append(_guarded(lambda r: check_stems_lyrics(r, stems_check, stems_deadline), run, "stems_lyrics"))
+    _restore_negative_carrier_for_analysis(run, analysis_check)
     checks.append(_guarded(check_clean_quit, run))
     return _finish(result, checks, run, real_before)
 

@@ -12,17 +12,15 @@ from typing import Any
 
 import numpy as np
 
-from apps.analysis_waveform.bands import _bands_payload, _downsample_max, pwv6_scaled_bands
-from apps.analysis_waveform.decode import BAND_NAMES, OVERVIEW_COLUMNS
+from apps.analysis_waveform.bands import (
+    _bands_payload,
+    _downsample_max,
+    measured_peak_bands,
+    pwv6_scaled_bands,
+)
+from apps.analysis_waveform.decode import OVERVIEW_COLUMNS
 
 REASON_NOT_DECODED = "not_decoded"
-_PEAK_SCALE = 255.0
-
-
-def _bands_from_peaks(peaks: np.ndarray) -> dict[str, np.ndarray]:
-    """Three measured envelopes, 0..1, under their band keys."""
-    scaled = np.clip(peaks.astype(np.float64) / _PEAK_SCALE, 0.0, 1.0)
-    return {name: scaled[:, index] for index, name in enumerate(BAND_NAMES)}
 
 
 def build_waveform_payload(peaks: np.ndarray) -> dict[str, Any]:
@@ -31,7 +29,7 @@ def build_waveform_payload(peaks: np.ndarray) -> dict[str, Any]:
     # The overview is drawn like a rekordbox PWV6 preview; the detail keeps
     # the measured peaks, which the scrolling lane normalizes per band anyway.
     preview_bands = pwv6_scaled_bands(overview)
-    detail_bands = _bands_from_peaks(peaks)
+    detail_bands = measured_peak_bands(peaks)
     preview_len = int(preview_bands["low"].shape[0])
     detail_len = int(detail_bands["low"].shape[0])
     return {

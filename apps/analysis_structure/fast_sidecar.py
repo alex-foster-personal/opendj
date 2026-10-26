@@ -47,6 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeGuard
 
+from ._io import atomic_write_json, utc_now_iso_seconds
 from .fast_segment import PRODUCER, PRODUCER_VERSION, segment
 from .pipeline import cache_dir
 
@@ -92,10 +93,6 @@ def downbeats_of(payload: dict[str, Any]) -> list[float]:
 def grid_digest(downbeats: list[float]) -> str:
     text = ",".join(f"{t:.3f}" for t in downbeats)
     return hashlib.sha256(text.encode("ascii")).hexdigest()[:16]
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class CacheUnreadable(Exception):
@@ -226,9 +223,7 @@ def _doc_problem(doc: dict[str, Any], stable_id: str) -> str | None:
 def _write(data_dir: Path, doc: dict[str, Any]) -> None:
     path = fast_path(data_dir, doc["stable_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    atomic_write_json(path, doc, encoding="utf-8", newline="\n")
 
 
 def _base(stable_id: str, digest: str) -> dict[str, Any]:
@@ -238,7 +233,7 @@ def _base(stable_id: str, digest: str) -> dict[str, Any]:
         "producer": PRODUCER,
         "producer_version": PRODUCER_VERSION,
         "grid_digest": digest,
-        "analyzed_at": _now(),
+        "analyzed_at": utc_now_iso_seconds(),
     }
 
 
