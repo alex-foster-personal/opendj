@@ -1,6 +1,6 @@
 """SQLite-backed :class:`StateBackend` implementation (Phase 5 wiring).
 
-Reads are served from Phase 5's shared-state DB (``data/state/state.db``)
+Reads are served from Phase 5's shared-state DB (``(private path)``)
 via :func:`apps.shared.state.db.open_ro`. The webui's ``Track`` / ``Playlist``
 shape is projected from the normalized Phase 5 schema:
 
@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis.selection import EffectiveField
+from apps.analysis_key.canon import canonical_key_text
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.state import db as _state_db
 from apps.shared.state import queries as _state_queries
@@ -82,6 +83,7 @@ from .backend import (
     TrackUpdate,
     compute_library_revision_summary,
     compute_mytag_catalog_revision,
+    resolve_auto_gain_user_db_write,
     resolve_grid_flag_dismissed_write,
     resolve_tempo_pref_write,
 )
@@ -215,7 +217,7 @@ def _reset_warnings_for_tests() -> None:
 # name listed here is JSON-decoded on the way out.
 _EAV_FIELDS: tuple[str, ...] = (
     "bpm", "key", "rating", "tags", "notes", "last_played_at", "genre", "comments",
-    "energy", "tempo_pref", "grid_flag_dismissed",
+    "energy", "tempo_pref", "grid_flag_dismissed", "auto_gain_user_db",
 )
 
 _TRACKS_PROJECTION = (
@@ -379,6 +381,22 @@ def _delete_graph_pairing(
     )
 
 
+def _served_key(value: Any) -> str | None:
+    """A stored key as every reader sees it: text, then canonical Camelot.
+
+    Track.key and the key's provenance both come through here, so the two can
+    never disagree (a stored numeric 0 is "0", a no-key sentinel, on both).
+    """
+    if value is None:
+        return None
+    return canonical_key_text(value if isinstance(value, str) else str(value))
+
+
+def _served_field_value(field_name: str, value: Any) -> Any:
+    """A field value as readers see it: a stored key in canonical Camelot."""
+    return _served_key(value) if field_name == "key" else value
+
+
 def _row_to_track(
     row: sqlite3.Row,
     fields: dict[str, EffectiveField],
@@ -435,8 +453,9 @@ def _row_to_track(
         comments = str(comments)
     if last_played_at is not None and not isinstance(last_played_at, str):
         last_played_at = str(last_played_at)
-    if key is not None and not isinstance(key, str):
-        key = str(key)
+    # ONE notation on every reader: whatever a source stored ("Am", "1m",
+    # "8A"), the track serves canonical Camelot (canon.canonical_key_text).
+    key = _served_key(key)
     if isinstance(tempo_pref_val, dict):
         tempo_pref: dict[str, float | None] | None = {
             "regular": tempo_pref_val.get("regular"),
@@ -449,7 +468,7 @@ def _row_to_track(
     provenance: dict[str, Provenance] = {}
     for fname, view in fields.items():
         provenance[fname] = Provenance(
-            value=view.value, source=view.source, confidence=view.confidence,
+            value=_served_field_value(fname, view.value), source=view.source, confidence=view.confidence,
             modified_at=view.modified_at, status=view.status, reason=view.reason,
         )
 
@@ -469,12 +488,22 @@ def _row_to_track(
         last_played_at=last_played_at,
         tempo_pref=tempo_pref,
         grid_flag_dismissed=_val("grid_flag_dismissed") is True,
+        auto_gain_user_db=_auto_gain_user_db(_val("auto_gain_user_db")),
         file_path=row["file_path"],
         created_at=row["created_at"],
         updated_at=_effective_updated_at(row["updated_at"], fields),
         selection_tag=_selection_tag(fields),
         provenance=provenance,
     )
+
+
+def _auto_gain_user_db(value: Any) -> float | None:
+    """A stored user auto gain offset, or None (never set, or cleared)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BackendError(f"stored auto_gain_user_db is not a number: {value!r}")
+    return float(value)
 
 
 def _fetch_fields(
@@ -549,7 +578,7 @@ def _matches_track_filter(track: Track, flt: TrackFilter) -> bool:
         track.bpm is not None and track.bpm <= flt.bpm_max
     ):
         return False
-    if flt.key and track.key != flt.key:
+    if flt.key and track.key != canonical_key_text(flt.key):
         return False
     if flt.rating_min is not None and not (
         track.rating is not None and track.rating >= flt.rating_min
@@ -577,6 +606,10 @@ def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
     if "grid_flag_dismissed" in patch:
         writes["grid_flag_dismissed"] = resolve_grid_flag_dismissed_write(
             patch["grid_flag_dismissed"]
+        )
+    if "auto_gain_user_db" in patch:
+        writes["auto_gain_user_db"] = resolve_auto_gain_user_db_write(
+            patch["auto_gain_user_db"]
         )
     if "tags_add" in patch or "tags_remove" in patch:
         tags = list(current.tags or [])

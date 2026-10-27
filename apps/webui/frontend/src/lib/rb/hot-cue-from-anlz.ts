@@ -23,3 +23,8 @@ export function hotCuesFromAnlz(cues: AnlzCue[]): HotCue[] {
     }))
     .sort((a, b) => a.slot.localeCompare(b.slot));
 }
+
+/** The hot-cue bank from per-slot state rows (deck load, both engines). */
+export function hotCuesFromSlots(slots: ReadonlyArray<{ cue: AnlzCue | null }>): HotCue[] {
+  return hotCuesFromAnlz(slots.flatMap((slot) => (slot.cue === null ? [] : [slot.cue])));
+}

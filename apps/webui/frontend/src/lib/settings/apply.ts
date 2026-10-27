@@ -36,6 +36,7 @@ import {
 	setUiSkin,
 	setWaveSplitMaster,
 	setLibraryDensity,
+	setKeyNotation,
 	setLyricsDeckLine,
 	setLyricsGlobal,
 	setLyricsHoverScrub,
@@ -63,6 +64,7 @@ import {
 	type PreviewBeatSync,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
+import { isKeyNotation, KEY_NOTATIONS } from '$lib/rb/key-notation';
 import {
 	setStoredEngineChoice,
 	storedEngineChoice,
@@ -82,6 +84,8 @@ import {
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
 import { syncDiskPrefs } from '$lib/rb/prefs-hydrate';
+import { autoGainPrefs, autoGainPrefsUnavailable, saveAutoGainPrefs } from '$lib/rb/auto-gain.svelte';
+import { AUTO_GAIN_TARGET_MAX_LUFS, AUTO_GAIN_TARGET_MIN_LUFS } from '$lib/rb/auto-gain';
 import { dropModePrefFromSetting, dropModeSettingValue } from './confirm-drop-mode';
 
 // How a MIDI runtime load failure reaches the user. app-init wires the error
@@ -121,6 +125,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'theme',
 	'hide_broken_links',
 	'library_density',
+	'key_notation',
 	'beat_sync_max',
 	'deck_default_quantize',
 	'preview_beat_sync',
@@ -166,6 +171,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'perf_tier',
 	'app_posture',
 	'rb.midi_enabled',
+	'auto_gain.enabled',
+	'auto_gain.target_lufs',
 	'gig_helper',
 	'audio_engine'
 ] as const;
@@ -178,6 +185,14 @@ export function isAllowedSettingKey(key: string): key is AllowedSettingKey {
 
 export type SettingValue = boolean | string;
 
+/** Why a setting's shown value is not the saved one right now, or null.
+ * The overlay prints it under the row instead of passing a fallback off as read. */
+export function settingUnavailable(key: string): string | null {
+	if (key !== 'auto_gain.enabled' && key !== 'auto_gain.target_lufs') return null;
+	const why = autoGainPrefsUnavailable();
+	return why === null ? null : `Auto gain settings ${why}.`;
+}
+
 export function readSettingValue(key: AllowedSettingKey): SettingValue {
 	switch (key) {
 		case 'theme':
@@ -186,6 +201,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.hide_broken_links;
 		case 'library_density':
 			return uiPrefs.library_density;
+		case 'key_notation':
+			return uiPrefs.key_notation;
 		case 'beat_sync_max':
 			return uiPrefs.beat_sync_max;
 		case 'deck_default_quantize':
@@ -276,6 +293,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.app_posture;
 		case 'rb.midi_enabled':
 			return midiEnabledPersisted();
+		case 'auto_gain.enabled':
+			return autoGainPrefs.enabled;
+		case 'auto_gain.target_lufs':
+			return String(autoGainPrefs.target_lufs);
 		case 'gig_helper':
 			return uiPrefs.gig_helper;
 		case 'audio_engine':
@@ -307,6 +328,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				throw new Error(`library_density must be compact|cosy, got ${String(value)}`);
 			}
 			setLibraryDensity(value as LibraryDensity);
+			return;
+		}
+		case 'key_notation': {
+			if (!isKeyNotation(value)) {
+				throw new Error(`key_notation must be ${KEY_NOTATIONS.join('|')}, got ${String(value)}`);
+			}
+			setKeyNotation(value);
 			return;
 		}
 		case 'beat_sync_max':
@@ -466,6 +494,17 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				setConfirmPref('playlist_drop_mode', remembered);
 			}
 			return;
+		case 'auto_gain.enabled':
+			void saveAutoGainPrefs({ enabled: _asBool(value, key) });
+			return;
+		case 'auto_gain.target_lufs': {
+			const target = _asFactor(value, key);
+			if (target < AUTO_GAIN_TARGET_MIN_LUFS || target > AUTO_GAIN_TARGET_MAX_LUFS) {
+				throw new RangeError(`${key} must be ${AUTO_GAIN_TARGET_MIN_LUFS}..${AUTO_GAIN_TARGET_MAX_LUFS} LUFS, got ${target}`);
+			}
+			void saveAutoGainPrefs({ target_lufs: target });
+			return;
+		}
 		case 'wheel_sensitivity.mouse':
 		case 'wheel_sensitivity.trackpad': {
 			// setWheelSensitivity owns the range check and throws RangeError

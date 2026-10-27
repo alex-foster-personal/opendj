@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey, shownKeyNotation } from '$lib/rb/key-notation';
 	// CMDK-01..03: Cmd-K (Ctrl-K off macOS) command bar over the browser.
 	// Searches the open playlist as you type; Tab widens it to the whole
 	// library (the same FTS5 search the browser's "whole collection" mode
@@ -270,7 +271,13 @@
 				<span class="cmdk-hint">Left/Right deck, Enter load, Shift+Enter vocals only, Tab scope</span>
 			</div>
 
-			<ul class="cmdk-list" id="cmdk-list" role="listbox" data-testid="command-bar-results">
+			<ul
+				class="cmdk-list"
+				id="cmdk-list"
+				role="listbox"
+				data-testid="command-bar-results"
+				style={`--cmdk-key-w: ${shownKeyNotation() === 'camelot_musical' ? '6.5em' : '44px'}`}
+			>
 				{#each shown as row, i (row.stable_id)}
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<li
@@ -287,7 +294,7 @@
 					>
 						<span class="t">{row.title ?? '(untitled)'}</span>
 						<span class="a">{row.artist ?? ''}</span>
-						<span class="k" title="Key">{row.key ?? ''}</span>
+						<span class="k" title={shownKey(row.key) ?? 'Key'}>{shownKey(row.key) ?? ''}</span>
 						<span class="b" title="Tempo in beats per minute">{fmtBpm(row.bpm)}</span>
 					</li>
 				{/each}
@@ -420,7 +427,8 @@
 	}
 	.cmdk-row {
 		display: grid;
-		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) 44px 52px;
+		/* The key slot fits `12A • Dbm` in the combined notation (6.5em at 13px). */
+		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) var(--cmdk-key-w, 44px) 52px;
 		gap: 10px;
 		padding: 5px 12px;
 		font-size: 13px;

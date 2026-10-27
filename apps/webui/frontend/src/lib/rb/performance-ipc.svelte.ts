@@ -90,6 +90,8 @@ import {
 	pitchRanges,
 	reattachingDecks,
 	setMasterMuted,
+	setAutoGainLiveGuard,
+	deckAutoGain,
 	assertDeckLoadAllowed,
 	type DeckTransportClock,
 	type PitchRange
@@ -287,6 +289,8 @@ export type PerformanceCommand =
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
+	/** AUTOGAIN-04: the user's own auto gain dB for the loaded track (null = use the analysed one). */
+	| { type: 'auto_gain_offset'; deck: DeckId; offset_db: number | null; stable_id: string }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
 	| { type: 'filter'; deck: DeckId; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
@@ -451,6 +455,8 @@ export interface PerformanceState {
 	command_pending: boolean;
 	command_queued: number;
 	load_play_intent: Record<DeckId, { generation: number; desired_play: boolean } | null>;
+	/** AUTOGAIN-02: what each deck's trim stage applies now (ready, error at 0 dB, or empty). */
+	auto_gain: typeof deckAutoGain;
 	decks: Record<DeckId, PerformanceDeckSnapshot>;
 	mixer: {
 		crossfader: number;
@@ -876,6 +882,9 @@ export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueD
 }
 
 let _presetClaim: { id: string } | null = null;
+// AUTOGAIN: Settings and event-driven auto gain refreshes change live gain
+// outside this dispatcher, so they ask the same lock first.
+const _drainHeldAutoGain = setAutoGainLiveGuard(() => (_presetClaim === null ? null : `performance preset ${_presetClaim.id} owns controls`));
 type PersistenceScope = `persistence-${DeckId}`;
 type CommandScope = DeckId | PersistenceScope | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
@@ -1089,6 +1098,15 @@ function _exactKeys(record: UnknownRecord, keys: readonly string[]): void {
 	if (unexpected.length > 0) {
 		throw new TypeError(`performance command has unexpected fields: ${unexpected.join(', ')}`);
 	}
+}
+
+/** The range (-12..12 dB) is the setter's and the server's to refuse. */
+function _autoGainOffset(value: unknown): number | null {
+	if (value === null) return null;
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		throw new TypeError(`offset_db must be null or a finite number of dB, got ${String(value)}`);
+	}
+	return value;
 }
 
 function _deck(value: unknown): DeckId {
@@ -1591,6 +1609,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`mode must be "beat" or "bar"; got ${String(record.mode)}`);
 		}
 		return { type, deck, mode: record.mode };
+	} else if (type === 'auto_gain_offset') {
+		_exactKeys(record, ['type', 'deck', 'offset_db', 'stable_id']);
+		if (typeof record.stable_id !== 'string' || record.stable_id.length === 0) {
+			throw new TypeError(`auto_gain_offset stable_id must name the track meant; got ${String(record.stable_id)}`);
+		}
+		return { type, deck, offset_db: _autoGainOffset(record.offset_db), stable_id: record.stable_id };
 	} else if (type === 'trim' || type === 'fader' || type === 'filter') {
 		_exactKeys(record, ['type', 'deck', 'value']);
 		return { type, deck, value: _unit('value', record.value) };
@@ -1947,6 +1971,7 @@ export function queryPerformanceState(): PerformanceState {
 				pending === null ? null : { generation: pending.generation, desired_play: pending.desiredPlay }
 			])
 		) as Record<DeckId, { generation: number; desired_play: boolean } | null>,
+		auto_gain: $state.snapshot(deckAutoGain),
 		decks: {
 			1: _deckSnapshot(1),
 			2: _deckSnapshot(2),
@@ -2120,8 +2145,11 @@ export function performanceCommandQueueScopes(
 	}
 	if (command.type === 'analysis_source') return [...DECK_IDS, 'sync'];
 	const deck = _commandDeck(command);
-	if (command.type === 'channel_cue') {
-		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
+	// AUTOGAIN-04: an awaited server write then a trim-stage apply. It holds
+	// its deck's scope for the whole await, so a preset's all-scope barrier
+	// waits for it instead of overlapping it.
+	if (command.type === 'channel_cue' || command.type === 'auto_gain_offset') {
+		if (deck === null) throw new Error(`${command.type} has no deck command queue scope`);
 		return [deck];
 	}
 	if (
@@ -2442,6 +2470,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setCrossfader(command.value, pressT0Ms);
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
+	} else if (command.type === 'auto_gain_offset') {
+		await engine.setAutoGainOffset(command.deck, command.offset_db, command.stable_id);
 	} else if (command.type === 'master_mute') {
 		// persist:false is the MCP safety rail's mute: silence this page now,
 		// but never store it where another browser would start muted.
@@ -2831,6 +2861,7 @@ function _releasePreset(id: string, phase: 'idle' | 'ready' | 'error', error: st
 		throw new Error(`performance preset ${id} cannot release an unowned lifecycle lock`);
 	}
 	_presetClaim = null;
+	_drainHeldAutoGain();
 	performancePresetLifecycle.phase = phase;
 	performancePresetLifecycle.active = false;
 	performancePresetLifecycle.error = error;

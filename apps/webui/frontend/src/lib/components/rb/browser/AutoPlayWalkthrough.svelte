@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	// Thin view over the pure autoplay-walkthrough.ts timeline - no timing
 	// or compatibility logic lives here, only a requestAnimationFrame loop
 	// copied from WaveRow.svelte's own pattern (mount starts, unmount stops)
@@ -97,7 +98,7 @@
 				style={_rankStyle(row.id)}
 			>
 				<span class="ap-walk-art" style={_tileStyle(row.id)} aria-hidden="true"></span>
-				<span class="ap-walk-meta">{row.key} - {row.bpm} BPM</span>
+				<span class="ap-walk-meta">{shownKey(row.key) ?? '--'} - {row.bpm} BPM</span>
 				{#if _rowEmoji(row.id) !== null}
 					<span class="ap-walk-emoji">{_rowEmoji(row.id)}</span>
 				{/if}

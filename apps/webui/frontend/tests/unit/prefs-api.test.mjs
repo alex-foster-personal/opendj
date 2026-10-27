@@ -26,8 +26,10 @@ function installPrefsStorage(raw = null) {
 	};
 }
 
+/** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
+ * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, init = {}) {
-	return new Response(JSON.stringify(body), {
+	return new Response(JSON.stringify({ key_notation: 'camelot', ...body }), {
 		status: 200,
 		...init,
 		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
@@ -122,7 +124,7 @@ test('hydrateConfirmPrefsFromDisk applies library-browser prefs from GET', async
 	assert.equal(prefs.uiPrefs.vocals_filter, true);
 });
 
-test('hydrateConfirmPrefsFromDisk resolves quietly on non-2xx', async () => {
+test('hydrateConfirmPrefsFromDisk rejects on non-2xx and changes nothing (PR #7483)', async () => {
 	prefs.uiPrefs.theme = 'dark';
 	prefs.uiPrefs.hide_todo_settings = false;
 	const beforeConfirm = { ...prefs.uiPrefs.confirm };
@@ -134,14 +136,14 @@ test('hydrateConfirmPrefsFromDisk resolves quietly on non-2xx', async () => {
 			headers: { 'content-type': 'application/json' }
 		});
 
-	await prefs.hydrateConfirmPrefsFromDisk();
+	await assert.rejects(prefs.hydrateConfirmPrefsFromDisk());
 
 	assert.equal(prefs.uiPrefs.theme, 'dark');
 	assert.equal(prefs.uiPrefs.hide_todo_settings, false);
 	assert.deepEqual(prefs.uiPrefs.confirm, beforeConfirm);
 });
 
-test('hydrateConfirmPrefsFromDisk resolves quietly when the daemon is unreachable', async () => {
+test('hydrateConfirmPrefsFromDisk rejects when the daemon is unreachable and changes nothing', async () => {
 	prefs.uiPrefs.theme = 'dark';
 	prefs.uiPrefs.hide_todo_settings = false;
 
@@ -149,7 +151,7 @@ test('hydrateConfirmPrefsFromDisk resolves quietly when the daemon is unreachabl
 		throw new TypeError('fetch failed');
 	};
 
-	await prefs.hydrateConfirmPrefsFromDisk();
+	await assert.rejects(prefs.hydrateConfirmPrefsFromDisk(), /fetch failed/);
 
 	assert.equal(prefs.uiPrefs.theme, 'dark');
 	assert.equal(prefs.uiPrefs.hide_todo_settings, false);

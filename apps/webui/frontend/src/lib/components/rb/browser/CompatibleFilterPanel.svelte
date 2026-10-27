@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { CAMELOT_RULES, type CamelotRuleId } from '$lib/player/key/camelot-rules.generated';
 	import { patchCompatibleFilter, uiPrefs } from '$lib/rb/prefs.svelte';
 
 	// Loaded on first hover by CompatibleFilterPopover, so the range buttons stay
@@ -17,9 +18,39 @@
 		});
 	}
 
-	function _setCamelot(steps: 0 | 1 | 2): void {
-		_patch({ camelot_steps: steps });
+	// The rules list sent but not yet committed (uiPrefs changes only once the PUT
+	// lands). A second tick before then builds on this, not on the stale committed
+	// list, so two quick toggles both survive (PR #7557, Sol P1).
+	// Cleared by a scalar request number, not by array identity: $state proxies arrays.
+	let pendingRules = $state<readonly CamelotRuleId[] | null>(null);
+	let rulesRequest = 0;
+	const shownRules = $derived<readonly CamelotRuleId[]>(pendingRules ?? uiPrefs.compatible_filter.rules);
+
+	/** Tick or untick one rule; the stored list keeps the table's order. */
+	function _toggleRule(id: CamelotRuleId, on: boolean): void {
+		const enabled = new Set(shownRules);
+		if (on) enabled.add(id);
+		else enabled.delete(id);
+		const next = CAMELOT_RULES.map((rule) => rule.id).filter((rid) => enabled.has(rid));
+		pendingRules = next;
+		const request = ++rulesRequest;
+		saveError = null;
+		patchCompatibleFilter({ rules: next })
+			.catch((err: unknown) => {
+				// Only the newest list matters: it replaces any earlier one in full.
+				if (request !== rulesRequest) return;
+				const detail = err instanceof Error ? err.message : String(err);
+				saveError = `Could not save compatible filter: ${detail}`;
+			})
+			.finally(() => {
+				if (request === rulesRequest) pendingRules = null;
+			});
 	}
+
+	const ruleSummary = $derived.by(() => {
+		const on = CAMELOT_RULES.filter((rule) => shownRules.includes(rule.id));
+		return on.length === 0 ? 'key not checked' : on.map((rule) => rule.label).join(', ');
+	});
 
 	function _setBpmWindow(n: number): void {
 		_patch({ bpm_window_bpm: n, bpm_enabled: true });
@@ -46,11 +77,19 @@
 		key and BPM): Camelot key family (including half/double BPM folds) and inside the BPM window.
 		Shortcut: Tab
 	</p>
-	<p class="compat-filter-heading">Camelot steps</p>
-	<div class="compat-filter-row">
-		<button type="button" onclick={() => _setCamelot(0)}>same key</button>
-		<button type="button" onclick={() => _setCamelot(1)}>±1</button>
-		<button type="button" onclick={() => _setCamelot(2)}>±2</button>
+	<p class="compat-filter-heading">Camelot rules (from the reference key; none ticked = key not checked)</p>
+	<div class="compat-filter-rules" role="group" aria-label="Camelot rules">
+		{#each CAMELOT_RULES as rule (rule.id)}
+			<label class="compat-filter-rule" title={rule.example} data-testid={`compat-rule-${rule.id}`}>
+				<input
+					type="checkbox"
+					checked={shownRules.includes(rule.id)}
+					onchange={(e) => _toggleRule(rule.id, e.currentTarget.checked)}
+				/>
+				<span>{rule.label}</span>
+				<span class="compat-filter-rule-example">{rule.example}</span>
+			</label>
+		{/each}
 	</div>
 	<p class="compat-filter-heading">BPM window</p>
 	<div class="compat-filter-row">
@@ -66,7 +105,7 @@
 		<button type="button" onclick={() => _setDirection('same')}>same</button>
 	</div>
 	<p class="compat-filter-summary" title="Current compatible filter settings">
-		Camelot ±{uiPrefs.compatible_filter.camelot_steps},
+		Camelot: {ruleSummary};
 		{uiPrefs.compatible_filter.bpm_enabled
 			? `BPM ±${uiPrefs.compatible_filter.bpm_window_bpm} (${uiPrefs.compatible_filter.bpm_direction})`
 			: 'BPM off'}
@@ -107,6 +146,21 @@
 	.compat-filter-row button {
 		font-size: 0.7rem;
 		padding: 0.15rem 0.35rem;
+	}
+	.compat-filter-rules {
+		display: grid;
+		gap: 0.1rem;
+	}
+	.compat-filter-rule {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.7rem;
+	}
+	.compat-filter-rule-example {
+		margin-left: auto;
+		opacity: 0.65;
+		font-variant-numeric: tabular-nums;
 	}
 	.compat-filter-error {
 		margin: 0.35rem 0 0;

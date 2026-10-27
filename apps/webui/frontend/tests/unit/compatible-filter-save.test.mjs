@@ -10,7 +10,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const API_BASE = 'https://compat-filter-save.example.test';
 const BEFORE = {
-	camelot_steps: 1,
+	rules: ['same_key', 'adjacent', 'relative'],
 	bpm_enabled: true,
 	bpm_window_bpm: 10,
 	bpm_direction: 'both'
@@ -50,11 +50,11 @@ test('a 2xx PUT commits the new range after the write and sends the full object'
 		return jsonResponse({});
 	};
 
-	await prefs.patchCompatibleFilter({ camelot_steps: 2 });
+	await prefs.patchCompatibleFilter({ rules: ['same_key', 'diagonal'] });
 
-	assert.deepEqual(body, { compatible_filter: { ...BEFORE, camelot_steps: 2 } });
+	assert.deepEqual(body, { compatible_filter: { ...BEFORE, rules: ['same_key', 'diagonal'] } });
 	assert.deepEqual(committedDuringPut, BEFORE, 'the pref must not commit before the PUT lands');
-	assert.deepEqual(prefs.uiPrefs.compatible_filter, { ...BEFORE, camelot_steps: 2 });
+	assert.deepEqual(prefs.uiPrefs.compatible_filter, { ...BEFORE, rules: ['same_key', 'diagonal'] });
 });
 
 test('an HTTP error rejects and keeps the committed range', async () => {
@@ -112,13 +112,13 @@ test('two quick range clicks compose, and a failed click never rides on a queued
 		return jsonResponse({});
 	};
 	await Promise.all([
-		prefs.patchCompatibleFilter({ camelot_steps: 0 }),
+		prefs.patchCompatibleFilter({ rules: ['relative'] }),
 		prefs.patchCompatibleFilter({ bpm_enabled: false })
 	]);
 	assert.deepEqual(prefs.uiPrefs.compatible_filter, {
 		...BEFORE,
 		bpm_direction: 'below',
-		camelot_steps: 0,
+		rules: ['relative'],
 		bpm_enabled: false
 	});
 });

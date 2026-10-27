@@ -29,6 +29,7 @@ import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
 import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
 import type { DiskConfirmPatch } from './verified-pref-writes';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
+import { isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
 
 export type UiTheme = 'dark' | 'light';
 
@@ -43,6 +44,7 @@ export type LibraryDensity = 'compact' | 'cosy';
 export type LibraryBrowserDiskPrefKey =
 	| 'hide_broken_links'
 	| 'library_density'
+	| 'key_notation'
 	| 'next_only_filter'
 	| 'remixes_filter'
 	| 'vocals_filter';
@@ -110,6 +112,7 @@ export type DiskPrefsPatch = {
 	deck_default_quantize?: boolean;
 	hide_broken_links?: boolean;
 	library_density?: LibraryDensity;
+	key_notation?: KeyNotation;
 	next_only_filter?: boolean;
 	remixes_filter?: boolean;
 	vocals_filter?: boolean;
@@ -201,6 +204,7 @@ export interface PrefsHydrateTarget {
 	deck_default_quantize: boolean;
 	hide_broken_links: boolean;
 	library_density: LibraryDensity;
+	key_notation: KeyNotation;
 	next_only_filter: boolean;
 	remixes_filter: boolean;
 	vocals_filter: boolean;
@@ -239,143 +243,155 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		// This PR's confirm and compatible-filter hydration loads with the GET, not
 		// at first paint (library bundle budget, PR #4014).
 		const late = import('./verified-pref-writes');
-		try {
-			const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
-			const { hydrateConfirmFromDisk, hydrateCompatibleFilter } = await late;
-			if (body.confirm !== undefined && typeof body.confirm === 'object') {
-				hydrateConfirmFromDisk(uiPrefs, body.confirm, isConfirmUnsaved);
-			}
-			if (body.theme === 'dark' || body.theme === 'light') {
-				uiPrefs.theme = body.theme;
-				applyThemeDom(body.theme);
-			}
-			if (typeof body.hide_todo_settings === 'boolean') {
-				uiPrefs.hide_todo_settings = body.hide_todo_settings;
-			}
-			if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
-				uiPrefs.auto_sync = parseAutoSync(body.auto_sync, storageKey, defaults.auto_sync);
-			}
-			if (typeof body.technically_working_animate === 'boolean') {
-				uiPrefs.technically_working_animate = body.technically_working_animate;
-			}
-			if (typeof body.show_agent_pins === 'boolean') {
-				uiPrefs.show_agent_pins = body.show_agent_pins;
-			}
-			if (typeof body.show_stems === 'boolean') {
-				uiPrefs.show_stems = body.show_stems;
-			}
-			if (typeof body.show_sections === 'boolean') {
-				uiPrefs.show_sections = body.show_sections;
-			}
-			if (typeof body.jog_radial_waveform === 'boolean') {
-				uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
-			}
-			if (body.deck_layout === 'more' || body.deck_layout === 'less') {
-				uiPrefs.deck_layout = body.deck_layout;
-			}
-			if (typeof body.deck_layout_animate === 'boolean') {
-				uiPrefs.deck_layout_animate = body.deck_layout_animate;
-			}
-			if (
-				typeof body.deck_layout_duration_ms === 'number' &&
-				(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
-			) {
-				uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
-			}
-			if (typeof body.deck_right_mirror === 'boolean') {
-				uiPrefs.deck_right_mirror = body.deck_right_mirror;
-			}
-			if (body.playlist_tree_view === 'tree' || body.playlist_tree_view === 'column') {
-				uiPrefs.playlist_tree_view = body.playlist_tree_view;
-			}
-			if (body.level_calibration !== undefined && typeof body.level_calibration === 'object') {
-				uiPrefs.level_calibration = parseLevelCalibration(
-					body.level_calibration,
-					storageKey,
-					defaults.level_calibration
-				);
-			}
-			_hydrateLyrics(uiPrefs, body);
-			if (
-				body.perf_tier !== undefined &&
-				(PERF_TIER_PREFS as readonly string[]).includes(body.perf_tier)
-			) {
-				uiPrefs.perf_tier = body.perf_tier;
-			}
-			if (
-				body.app_posture !== undefined &&
-				(APP_POSTURE_PREFS as readonly string[]).includes(body.app_posture)
-			) {
-				uiPrefs.app_posture = body.app_posture;
-				setResolvedPosture(body.app_posture);
-				applyAllCaps();
-			}
-			if (
-				body.gig_helper !== undefined &&
-				(GIG_HELPER_PREFS as readonly string[]).includes(body.gig_helper)
-			) {
-				uiPrefs.gig_helper = body.gig_helper;
-			}
-			if (body.app_mode !== undefined) {
-				const diskAppMode = body.app_mode;
-				if (typeof diskAppMode === 'string') {
-					if ((APP_MODE_PREF_IDS as readonly string[]).includes(diskAppMode)) {
-						uiPrefs.app_mode = diskAppMode;
-					}
-				} else if (typeof diskAppMode === 'object' && diskAppMode !== null) {
-					const modeId = diskAppMode.id;
-					if (
-						typeof modeId === 'string' &&
-						(APP_MODE_PREF_IDS as readonly string[]).includes(modeId)
-					) {
-						uiPrefs.app_mode = modeId;
-					}
-					const lastGigAt = diskAppMode.last_gig_at;
-					if (typeof lastGigAt === 'string') {
-						writeBootStampMirror(lastGigAt);
-					}
+		// No blanket catch (review P1, PR #7483): a failed GET, an unreadable
+		// body or a contract violation rejects, so the boot path can show it
+		// instead of running on stale or default prefs without saying so.
+		let contractError: Error | null = null;
+		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
+		const { hydrateConfirmFromDisk, hydrateCompatibleFilter } = await late;
+		if (body.confirm !== undefined && typeof body.confirm === 'object') {
+			hydrateConfirmFromDisk(uiPrefs, body.confirm, isConfirmUnsaved);
+		}
+		if (body.theme === 'dark' || body.theme === 'light') {
+			uiPrefs.theme = body.theme;
+			applyThemeDom(body.theme);
+		}
+		if (typeof body.hide_todo_settings === 'boolean') {
+			uiPrefs.hide_todo_settings = body.hide_todo_settings;
+		}
+		if (body.auto_sync !== undefined && typeof body.auto_sync === 'object') {
+			uiPrefs.auto_sync = parseAutoSync(body.auto_sync, storageKey, defaults.auto_sync);
+		}
+		if (typeof body.technically_working_animate === 'boolean') {
+			uiPrefs.technically_working_animate = body.technically_working_animate;
+		}
+		if (typeof body.show_agent_pins === 'boolean') {
+			uiPrefs.show_agent_pins = body.show_agent_pins;
+		}
+		if (typeof body.show_stems === 'boolean') {
+			uiPrefs.show_stems = body.show_stems;
+		}
+		if (typeof body.show_sections === 'boolean') {
+			uiPrefs.show_sections = body.show_sections;
+		}
+		if (typeof body.jog_radial_waveform === 'boolean') {
+			uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
+		}
+		if (body.deck_layout === 'more' || body.deck_layout === 'less') {
+			uiPrefs.deck_layout = body.deck_layout;
+		}
+		if (typeof body.deck_layout_animate === 'boolean') {
+			uiPrefs.deck_layout_animate = body.deck_layout_animate;
+		}
+		if (
+			typeof body.deck_layout_duration_ms === 'number' &&
+			(DECK_LAYOUT_DURATIONS_MS as readonly number[]).includes(body.deck_layout_duration_ms)
+		) {
+			uiPrefs.deck_layout_duration_ms = body.deck_layout_duration_ms;
+		}
+		if (typeof body.deck_right_mirror === 'boolean') {
+			uiPrefs.deck_right_mirror = body.deck_right_mirror;
+		}
+		if (body.playlist_tree_view === 'tree' || body.playlist_tree_view === 'column') {
+			uiPrefs.playlist_tree_view = body.playlist_tree_view;
+		}
+		if (body.level_calibration !== undefined && typeof body.level_calibration === 'object') {
+			uiPrefs.level_calibration = parseLevelCalibration(
+				body.level_calibration,
+				storageKey,
+				defaults.level_calibration
+			);
+		}
+		_hydrateLyrics(uiPrefs, body);
+		if (
+			body.perf_tier !== undefined &&
+			(PERF_TIER_PREFS as readonly string[]).includes(body.perf_tier)
+		) {
+			uiPrefs.perf_tier = body.perf_tier;
+		}
+		if (
+			body.app_posture !== undefined &&
+			(APP_POSTURE_PREFS as readonly string[]).includes(body.app_posture)
+		) {
+			uiPrefs.app_posture = body.app_posture;
+			setResolvedPosture(body.app_posture);
+			applyAllCaps();
+		}
+		if (
+			body.gig_helper !== undefined &&
+			(GIG_HELPER_PREFS as readonly string[]).includes(body.gig_helper)
+		) {
+			uiPrefs.gig_helper = body.gig_helper;
+		}
+		if (body.app_mode !== undefined) {
+			const diskAppMode = body.app_mode;
+			if (typeof diskAppMode === 'string') {
+				if ((APP_MODE_PREF_IDS as readonly string[]).includes(diskAppMode)) {
+					uiPrefs.app_mode = diskAppMode;
+				}
+			} else if (typeof diskAppMode === 'object' && diskAppMode !== null) {
+				const modeId = diskAppMode.id;
+				if (
+					typeof modeId === 'string' &&
+					(APP_MODE_PREF_IDS as readonly string[]).includes(modeId)
+				) {
+					uiPrefs.app_mode = modeId;
+				}
+				const lastGigAt = diskAppMode.last_gig_at;
+				if (typeof lastGigAt === 'string') {
+					writeBootStampMirror(lastGigAt);
 				}
 			}
-			for (const key of [
-				'beat_sync_max',
-				'auto_play_enabled',
-				'auto_play_enforce_order',
-				'auto_play_maximize_reach',
-				'hide_broken_links',
-				'next_only_filter',
-				'remixes_filter',
-				'vocals_filter',
-				'available_offline_filter'
-			] as const) {
-				const value = body[key];
-				if (typeof value === 'boolean') uiPrefs[key] = value;
-			}
-			// Announced only on a real change: a fresh browser's decks were seeded
-			// from the local default before this GET returned (SETSTUB-02).
-			if (
-				typeof body.deck_default_quantize === 'boolean' &&
-				body.deck_default_quantize !== uiPrefs.deck_default_quantize
-			) {
-				uiPrefs.deck_default_quantize = body.deck_default_quantize;
-				announceDeckDefaults(uiPrefs);
-			}
-			if (body.library_density === 'compact' || body.library_density === 'cosy') {
-				uiPrefs.library_density = body.library_density;
-			}
-			hydrateWheelSensitivityFromDisk(body);
-			hydrateMidiEnabledFromDisk(body);
-			if (typeof body.master_muted === 'boolean') {
-				hydrateMasterMutedFromDisk(body.master_muted);
-			}
-			if (Array.isArray(body.library_watcher_folders)) {
-				uiPrefs.library_watcher_folders = body.library_watcher_folders.filter(
-					(p): p is string => typeof p === 'string'
-				);
-			}
-			hydrateCompatibleFilter(uiPrefs, body);
-			persist();
-		} catch {
-			/* ignore */
 		}
+		for (const key of [
+			'beat_sync_max',
+			'auto_play_enabled',
+			'auto_play_enforce_order',
+			'auto_play_maximize_reach',
+			'hide_broken_links',
+			'next_only_filter',
+			'remixes_filter',
+			'vocals_filter',
+			'available_offline_filter'
+		] as const) {
+			const value = body[key];
+			if (typeof value === 'boolean') uiPrefs[key] = value;
+		}
+		// Announced only on a real change: a fresh browser's decks were seeded
+		// from the local default before this GET returned (SETSTUB-02).
+		if (
+			typeof body.deck_default_quantize === 'boolean' &&
+			body.deck_default_quantize !== uiPrefs.deck_default_quantize
+		) {
+			uiPrefs.deck_default_quantize = body.deck_default_quantize;
+			announceDeckDefaults(uiPrefs);
+		}
+		if (body.library_density === 'compact' || body.library_density === 'cosy') {
+			uiPrefs.library_density = body.library_density;
+		}
+		// The contract requires a valid key_notation (review P1, PR #7483).
+		// A missing or invalid one fails hydration: it is recorded here and
+		// thrown once the rest of this response has hydrated, so one bad
+		// field does not strand the others and the caller still sees it.
+		if (isKeyNotation(body.key_notation)) {
+			uiPrefs.key_notation = body.key_notation;
+		} else {
+			contractError = new Error(
+				`GET /api/v1/ui-prefs: key_notation must be ${KEY_NOTATIONS.join('|')}, got ${JSON.stringify(body.key_notation)}`
+			);
+		}
+		hydrateWheelSensitivityFromDisk(body);
+		hydrateMidiEnabledFromDisk(body);
+		if (typeof body.master_muted === 'boolean') {
+			hydrateMasterMutedFromDisk(body.master_muted);
+		}
+		if (Array.isArray(body.library_watcher_folders)) {
+			uiPrefs.library_watcher_folders = body.library_watcher_folders.filter(
+				(p): p is string => typeof p === 'string'
+			);
+		}
+		hydrateCompatibleFilter(uiPrefs, body);
+		persist();
+		if (contractError !== null) throw contractError;
 	};
 }

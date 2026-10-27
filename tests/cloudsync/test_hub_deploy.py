@@ -16,6 +16,7 @@ something other than what this file booted fails here.
 from __future__ import annotations
 
 import functools
+import http.server
 import json
 import os
 import plistlib
@@ -23,6 +24,8 @@ import shlex
 import shutil
 import socket
 import subprocess
+import sys
+import threading
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -129,16 +132,40 @@ def _init_data_dir(data_dir: Path) -> None:
     assert result.returncode == 0, f"init failed: {result.stderr}"
 
 
+def _logged_boot_id(hub: BootedHub) -> str | None:
+    """The boot_id this hub printed on its `[OK] opendj engine` line, once it has."""
+    for line in hub.log_path.read_text().splitlines():
+        if line.startswith("[OK] opendj engine ") and " boot_id=" in line:
+            return line.split(" boot_id=", 1)[1].split()[0]
+    return None
+
+
 def _answers_health(hub: BootedHub) -> bool:
+    """True only when THIS hub answers: health must carry the boot_id it logged.
+
+    A 200 alone is not enough. Main push CI run 40413411224 (Mon 26 Oct 2026,
+    shard 3) booted a hub whose free port another process on the shared runner
+    had already taken: that other process answered health, so the boot passed,
+    and this hub then exited 3 with "address already in use" before the first
+    test ran. Matching the boot_id keeps waiting on an impostor's answer until
+    this hub exits, which `_boot` then retries as a lost port race.
+    """
     if hub.proc.poll() is not None:
         raise AssertionError(
             f"hub exited {hub.proc.returncode}: {hub.log_path.read_text()[-2000:]}"
         )
+    boot_id = _logged_boot_id(hub)
+    if boot_id is None:
+        return False
     try:
         with urllib.request.urlopen(f"{hub.url}/api/v1/health", timeout=2) as resp:
-            return resp.status == 200
-    except OSError:
+            if resp.status != 200:
+                return False
+            body = json.loads(resp.read())
+    except (OSError, ValueError):
+        # ValueError covers a non-JSON 200 from whatever else holds the port.
         return False
+    return isinstance(body, dict) and body.get("boot_id") == boot_id
 
 
 def _boot(
@@ -1058,3 +1085,47 @@ def test_only_a_bind_collision_counts_as_a_lost_port_race(tmp_path: Path) -> Non
         _stop_hub(stopped)
     assert stopped.proc.returncode is not None
     assert not _lost_port_race(stopped), "a hub stopped after serving did not lose a port race"
+
+
+# ----- an impostor on the hub's port ----------------------------------------------
+
+
+def test_health_from_another_process_on_the_port_is_not_this_hub(tmp_path: Path) -> None:
+    """if a 200 from whatever holds the port counts as the hub booting then broken"""
+    class _Impostor(http.server.BaseHTTPRequestHandler):
+        boot_id = "someone-else"
+        raw: bytes | None = None
+
+        def do_GET(self) -> None:
+            body = self.raw if self.raw is not None else json.dumps({"status": "ok", "boot_id": self.boot_id}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args: object) -> None:
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Impostor)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        log_path = tmp_path / "hub.log"
+        log_path.write_text("[OK] opendj engine 1.0.0 boot_id=mine contract_rev=x data_dir=/d http://127.0.0.1:1\n")
+        hub = BootedHub(f"http://127.0.0.1:{server.server_address[1]}", tmp_path, [], sleeper, log_path)
+        assert _answers_health(hub) is False
+        # Control: the same answer carrying this hub's own boot_id is the hub.
+        _Impostor.boot_id = "mine"
+        assert _answers_health(hub) is True
+        # A 200 that is not JSON (some other service on the port) is not the hub either.
+        _Impostor.boot_id = "mine"
+        _Impostor.raw = b"<html>not json</html>"
+        assert _answers_health(hub) is False
+        _Impostor.raw = None
+        # Before the hub logs its boot_id there is nothing to match yet.
+        log_path.write_text("")
+        assert _answers_health(hub) is False
+    finally:
+        sleeper.terminate()
+        sleeper.wait(timeout=10)
+        server.shutdown()

@@ -31,7 +31,7 @@
 		type Vocals
 	} from '$lib/rb/api-rb';
 	import { artworkFetchAllowed, artworkRetry, artworkRetrySrc } from '$lib/rb/artwork-retry';
-	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
+	import { autoMusicalWidths, COL_DEFAULTS, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
 	import { isPairedRow } from '$lib/rb/pairing-row';
 	import {
@@ -49,6 +49,7 @@
 		type LibraryColTipId,
 		masterFoldCenterPx,
 		highlightSpans,
+		keyCellSpans,
 		rowMatchesFind,
 		buildCurveSegments,
 		segmentPath,
@@ -56,11 +57,16 @@
 		installTrackDragGhost,
 		removeTrackDragGhost,
 		trackDragRefusal,
-		bpmHeatColor,
 		bpmHeatLabel,
 		classifyBpmHeat,
 		genreHoverColor,
 		columnExplainer,
+		displayKey,
+		canvasMeasureText,
+		fitMusicalColumns,
+		renderedTableFont,
+		bpmCellText,
+		hasUsableBpm,
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
@@ -223,8 +229,6 @@
 	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
 	const masterKey = $derived(masterDeck?.key ?? null);
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
-	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
-	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
 	const masterStableId = $derived(masterDeck?.stable_id ?? null);
 	const hoverStableId = $derived(
 		deckHoverUi.deckId === null ? null : (deckStates[deckHoverUi.deckId].stable_id ?? null)
@@ -245,12 +249,20 @@
 		return row.key_status === 'failed' || row.key_status === 'missing';
 	}
 
+	/** ONE notation for every row (ui-prefs key_notation), never the stored spelling. */
+	function keyCellDisplay(row: BrowserRow) {
+		return displayKey(row.key, uiPrefs.key_notation);
+	}
+
 	function keyCellTitle(row: BrowserRow): string {
 		if (row.key_status === 'failed') {
 			return row.key_reason ?? 'key analysis failed';
 		}
 		if (row.key_status === 'missing') {
 			return row.key_reason ?? 'key not analyzed yet';
+		}
+		if (keyCellDisplay(row)?.parsed === false) {
+			return `Unrecognised key notation, shown as stored: ${row.key}`;
 		}
 		return `${camelotKeyHoverLabel(row.key) ?? 'Key not analyzed'} Dynamic key, musical mode, and chord progression analysis: not analyzed.`;
 	}
@@ -269,11 +281,7 @@
 	}
 
 	function bpmCellInert(row: BrowserRow): boolean {
-		return (
-			row.bpm_status === 'failed' ||
-			row.bpm_status === 'missing' ||
-			row.bpm_status === 'available-not-selected'
-		);
+		return bpmCellText(row).kind !== 'value';
 	}
 
 	function bpmCellTitle(row: BrowserRow): string {
@@ -283,12 +291,13 @@
 		if (row.bpm_status === 'missing') {
 			return row.bpm_reason ?? 'bpm not analyzed yet';
 		}
-		if (row.bpm_status === 'available-not-selected') {
-			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
-		}
 		// buildBpmCellTitle carries method and confidence (LIBUX-34). The grid
 		// sentence stays inline so the hover still names the stored verdict.
-		return `${buildBpmCellTitle(row, masterBpm)} ${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row, gridProvenanceFor(row.stable_id))}`;
+		const notSelected =
+			row.bpm_status === 'available-not-selected'
+				? ` ${row.bpm_reason ?? 'beatgrid analysis available but not selected'}.`
+				: '';
+		return `${buildBpmCellTitle(row, masterBpm)} ${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${hasUsableBpm(row.bpm) ? ` Exact BPM: ${row.bpm.toFixed(1)}.` : ''}${notSelected} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row, gridProvenanceFor(row.stable_id))}`;
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer
@@ -784,14 +793,26 @@
 	const maxRowOrder = $derived(rows.reduce((max, row) => Math.max(max, row.order), 0));
 	$effect(() => {
 		const compact = compactUtilityWidths(maxRowOrder);
-		const musical = compactMusicalWidths(rows);
+		void uiPrefs.ui_skin; // a skin switch changes the rendered font
+		// K/B are measured in the font the table renders with, once it is in the DOM. Table
+		// fonts are local system faces (app.css loads only the brand face), so nothing
+		// arrives later to re-measure for.
+		const musical = wrapEl === null ? null : fitMusicalColumns({
+			rows,
+			notation: uiPrefs.key_notation,
+			font: renderedTableFont(wrapEl),
+			padX: uiPrefs.library_density === 'cosy' ? 8 : 6,
+			keyHeader: 'Key',
+			bpmHeader: 'BPM',
+			measure: canvasMeasureText
+		});
 		void wrapWidth;
 		// Manual K/B drags stay authoritative; other utility widths reflow with data.
 		const current = untrack(() => colWidths);
 		colWidths = {
 			...current,
 			...compact,
-			...autoMusicalWidths(current, musical, manuallyResizedColumns)
+			...(musical === null ? {} : autoMusicalWidths(current, musical, manuallyResizedColumns))
 		};
 	});
 	const selectedOrderSet = $derived(new Set(selectedOrders));
@@ -1746,9 +1767,7 @@
 						use:columnExplainer={{
 							text: columnHeaderTitle(
 								'key',
-								masterKey !== null
-									? `Master key ${masterKey} - sort by key (asc → desc → clear)`
-									: 'Sort by key (asc → desc → clear)'
+								'Key - sort by key (asc → desc → clear)'
 							)
 						}}
 						onclick={(e) => {
@@ -1757,14 +1776,8 @@
 						}}
 					>
 						<span class="th-label">
-							{#if masterKey !== null}
-								<span
-									class="th-master-val"
-									style={masterKeyColor !== null ? `color:${masterKeyColor}` : undefined}
-								>{masterKey}</span>
-							{:else}
-								<span>K</span>
-							{/if}
+							<!-- Always the column's name, never the master's value (the maintainer, Tue 27 Oct 2026: "clarity"). -->
+							<span>Key</span>
 							{#if sortKey === 'key'}
 								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
@@ -1786,9 +1799,7 @@
 						use:columnExplainer={{
 							text: columnHeaderTitle(
 								'bpm',
-								masterBpm !== null
-									? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
-									: 'Sort by BPM (asc → desc → clear)'
+								'BPM - sort by BPM (asc → desc → clear)'
 							)
 						}}
 						onclick={(e) => {
@@ -1797,14 +1808,7 @@
 						}}
 					>
 						<span class="th-label">
-							{#if masterBpm !== null}
-								<span
-									class="th-master-val"
-									style={masterBpmColor !== null ? `color:${masterBpmColor}` : undefined}
-								>{_fmtBpm(masterBpm)}</span>
-							{:else}
-								<span>B</span>
-							{/if}
+							<span>BPM</span>
 							{#if sortKey === 'bpm'}
 								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
@@ -2197,6 +2201,7 @@
 							class="c-key"
 							class:key-compat={keyCompat(row.key)}
 							class:key-inert={keyCellInert(row)}
+							class:key-unparsed={keyCellDisplay(row)?.parsed === false}
 							style={keyCompatStyle(row.key)}
 							title={keyCellTitle(row)}
 						>
@@ -2204,9 +2209,9 @@
 								<span class="key-status">{row.key_status === 'failed' ? 'failed' : 'missing'}</span>
 							{:else}
 								{#snippet keyCharacters(text: string)}
-									{#each text as character}<span class:camelot-suffix={character === 'A' || character === 'B'}>{character}</span>{/each}
+									{#each text as character}<span class:camelot-suffix={uiPrefs.key_notation === 'camelot' && (character === 'A' || character === 'B')}>{character}</span>{/each}
 								{/snippet}
-								{#each hl(row.key) as part, i (i)}
+								{#each keyCellSpans(row.key, uiPrefs.key_notation, findQuery) as part, i (i)}
 									{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
 								{/each}
 							{/if}
@@ -2225,12 +2230,10 @@
 							title={bpmCellTitle(row)}
 							onpointerenter={() => requestGridProvenance(row.stable_id)}
 						>
-							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
-								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
-							{:else if row.bpm_status === 'available-not-selected'}
-								<span class="bpm-status" title={bpmCellTitle(row)}>alt</span>
+							{#if bpmCellText(row).kind === 'value'}
+								{bpmCellText(row).text}
 							{:else}
-								{_fmtBpm(row.bpm)}
+								<span class="bpm-status" title={bpmCellTitle(row)}>{bpmCellText(row).text}</span>
 							{/if}
 						</td>
 						<td
@@ -2627,10 +2630,6 @@
 	th.sortable:hover {
 		color: var(--rb-text);
 		background: color-mix(in srgb, var(--rb-panel-raised) 70%, #2a3140);
-	}
-	.th-master-val {
-		font-variant-numeric: tabular-nums;
-		font-weight: 700;
 	}
 	.th-label {
 		display: flex;
@@ -3038,6 +3037,13 @@
 		color: var(--rb-text-dim);
 		box-sizing: border-box;
 	}
+	/* Key and BPM are auto-fit to their widest text in the skin font
+	 * (musical-column-fit.ts), so a narrower column is a user drag: clip it,
+	 * never trade two characters for an ellipsis (Gothic showed "8…"). */
+	.c-key,
+	.c-bpm {
+		text-overflow: clip;
+	}
 	.camelot-suffix { font-size: 0.67em; }
 	.c-key.key-compat {
 		border-radius: 2px;
@@ -3068,6 +3074,12 @@
 		color: var(--rb-text-dim);
 		font-size: 0.85em;
 		text-transform: lowercase;
+	}
+	/* A stored key in no notation we parse: shown as stored, never guessed,
+	 * and marked so it reads as a data problem rather than a key. */
+	.c-key.key-unparsed {
+		text-decoration: underline dotted;
+		font-style: italic;
 	}
 	.key-status,
 	.bpm-status {

@@ -1,9 +1,16 @@
-/** Compatible-filter range prefs (LIBUX-32). */
+/** Compatible-filter range prefs (LIBUX-32) and Camelot rule checkboxes. */
+
+import {
+  DEFAULT_CAMELOT_RULE_IDS,
+  isCamelotRuleId,
+  type CamelotRuleId,
+} from "$lib/player/key/camelot";
 
 export type CompatibleBpmDirection = "both" | "above" | "below" | "same";
 
 export interface CompatibleFilterPrefs {
-  camelot_steps: 0 | 1 | 2;
+  /** Enabled rule ids (player/key/camelot-rules.generated.ts). Empty = key not checked. */
+  rules: CamelotRuleId[];
   bpm_window_bpm: number;
   bpm_enabled: boolean;
   allow_half_double: boolean;
@@ -11,11 +18,17 @@ export interface CompatibleFilterPrefs {
 }
 
 export const COMPATIBLE_FILTER_DEFAULTS: CompatibleFilterPrefs = {
-  camelot_steps: 1,
+  rules: [...DEFAULT_CAMELOT_RULE_IDS],
   bpm_window_bpm: 20,
   bpm_enabled: true,
   allow_half_double: true,
   bpm_direction: "both",
+};
+
+const LEGACY_CAMELOT_STEPS_RULES: Record<0 | 1 | 2, readonly CamelotRuleId[]> = {
+  0: ["same_key", "relative"],
+  1: DEFAULT_CAMELOT_RULE_IDS,
+  2: [...DEFAULT_CAMELOT_RULE_IDS, "energy_boost", "energy_drop"],
 };
 
 const isBool = (v: unknown): boolean => typeof v === "boolean";
@@ -25,7 +38,10 @@ const FIELD_CHECKS: Record<
   keyof CompatibleFilterPrefs,
   (v: unknown) => boolean
 > = {
-  camelot_steps: (v) => v === 0 || v === 1 || v === 2,
+  rules: (v) =>
+    Array.isArray(v) &&
+    v.every(isCamelotRuleId) &&
+    new Set(v).size === v.length,
   bpm_window_bpm: (v) => typeof v === "number" && !(v < 0),
   bpm_enabled: isBool,
   allow_half_double: isBool,
@@ -43,6 +59,15 @@ export function validateCompatibleFilterPrefs(
   }
   const obj = raw as Record<string, unknown>;
   const out: Record<string, unknown> = {};
+  // Before rule checkboxes (Tue 27 Oct 2026) the filter stored letter-blind
+  // camelot_steps; read it once as the nearest rule set (ui_prefs.py does the same).
+  // A legacy value other than 0, 1 or 2 is corrupt and throws, like any field.
+  const legacy = obj["camelot_steps"];
+  if (obj["rules"] === undefined && legacy !== undefined) {
+    if (legacy !== 0 && legacy !== 1 && legacy !== 2)
+      throw new Error(`${storageKey}: compatible_filter.camelot_steps invalid`);
+    out["rules"] = [...LEGACY_CAMELOT_STEPS_RULES[legacy]];
+  }
   for (const [key, ok] of Object.entries(FIELD_CHECKS)) {
     const value = obj[key];
     if (value === undefined) continue;

@@ -152,6 +152,112 @@ def camelot_distance(k1: CamelotKey, k2: CamelotKey) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Camelot mixing rules (the compatible filter's checkboxes)
+# ---------------------------------------------------------------------------
+# ONE rule list for the server (ui-prefs validation, this module) and the
+# browser (player/key/camelot-rules.generated.ts, written from this table by
+# scripts/gen_camelot_rules_ts.py; tests/shared/test_camelot_rules.py fails
+# when the two differ). Each rule is a set of moves FROM the reference key TO
+# a candidate. A move names which reference letter it applies to ("*" = both),
+# whether the candidate keeps the letter ("same") or switches it ("other"),
+# and the signed Camelot-number step, wrapping 12 <-> 1. Every rule respects
+# the A/B letter: no rule matches by number alone.
+#
+# Definitions follow Mixed In Key, "Use Advanced Harmonic Mixing Techniques"
+# (https://mixedinkey.com/Book/Use-Advanced-Harmonic-Mixing-Techniques/) and
+# DJ.Studio, "How To DJ using compatible Keys"
+# (https://dj.studio/blog/compatible-keys):
+# - diagonal: Mixed In Key's diagonal move, B to A one number UP (8B -> 9A)
+#   and A to B one number DOWN (8A -> 7B).
+# - energy boost / drop: two numbers up / down on the same letter (8A -> 10A
+#   / 6A), DJ.Studio's "Energy Boost +2".
+# - Jaws: Mixed In Key's -5 move (8A -> 3A), which is the same wheel position
+#   as DJ.Studio's +7 (each wheel step is a fifth, so it is one semitone up).
+# - pay attention: Mixed In Key's -3 move (8A -> 5A, the same position as +9).
+#   Usable but mood-changing, so it is off by default.
+
+
+@dataclass(frozen=True, slots=True)
+class CamelotMove:
+    """One reference -> candidate move on the wheel."""
+
+    from_letter: str  # "A", "B" or "*" (either)
+    to_letter: str  # "same" or "other"
+    step: int  # signed Camelot-number step, applied mod 12
+
+
+@dataclass(frozen=True, slots=True)
+class CamelotRule:
+    id: str
+    label: str
+    example: str
+    default_on: bool
+    moves: tuple[CamelotMove, ...]
+
+
+CAMELOT_RULES: tuple[CamelotRule, ...] = (
+    CamelotRule("same_key", "Same key", "8A \u2192 8A", True, (CamelotMove("*", "same", 0),)),
+    CamelotRule(
+        "adjacent",
+        "\u00b11 same letter",
+        "8A \u2192 7A / 9A",
+        True,
+        (CamelotMove("*", "same", 1), CamelotMove("*", "same", -1)),
+    ),
+    CamelotRule("relative", "Relative (A/B)", "8A \u2192 8B, 8B \u2192 8A", True, (CamelotMove("*", "other", 0),)),
+    CamelotRule(
+        "diagonal",
+        "Diagonal",
+        "8B \u2192 9A, 8A \u2192 7B",
+        False,
+        (CamelotMove("B", "other", 1), CamelotMove("A", "other", -1)),
+    ),
+    CamelotRule("energy_boost", "Energy boost +2", "8A \u2192 10A", False, (CamelotMove("*", "same", 2),)),
+    CamelotRule("energy_drop", "Energy drop \u22122", "8A \u2192 6A", False, (CamelotMove("*", "same", -2),)),
+    CamelotRule("jaws", "Jaws \u22125 (= +7)", "8A \u2192 3A", False, (CamelotMove("*", "same", -5),)),
+    CamelotRule("pay_attention", "Pay attention \u22123", "8A \u2192 5A", False, (CamelotMove("*", "same", -3),)),
+)
+
+CAMELOT_RULE_IDS: tuple[str, ...] = tuple(rule.id for rule in CAMELOT_RULES)
+DEFAULT_CAMELOT_RULE_IDS: tuple[str, ...] = tuple(rule.id for rule in CAMELOT_RULES if rule.default_on)
+_CAMELOT_RULES_BY_ID: dict[str, CamelotRule] = {rule.id: rule for rule in CAMELOT_RULES}
+
+
+def _move_matches(move: CamelotMove, reference: CamelotKey, candidate: CamelotKey) -> bool:
+    if move.from_letter not in ("*", reference.letter):
+        return False
+    same_letter = candidate.letter == reference.letter
+    if same_letter != (move.to_letter == "same"):
+        return False
+    return (reference.number - 1 + move.step) % 12 == candidate.number - 1
+
+
+def camelot_rule_matches(rule_id: str, reference: str, candidate: str) -> bool:
+    """True when ``candidate`` is ``rule_id``'s move away from ``reference``.
+
+    Raises ValueError for an unknown rule id or an unparseable key: a filter
+    that silently treated either as "no match" would hide the bad input.
+    """
+    rule = _CAMELOT_RULES_BY_ID.get(rule_id)
+    if rule is None:
+        raise ValueError(f"unknown Camelot rule {rule_id!r}; known: {', '.join(CAMELOT_RULE_IDS)}")
+    ref = key_to_camelot(reference)
+    cand = key_to_camelot(candidate)
+    return any(_move_matches(move, ref, cand) for move in rule.moves)
+
+
+def camelot_rules_allow(reference: str, candidate: str, rule_ids: tuple[str, ...] | list[str]) -> bool:
+    """True when any enabled rule takes ``reference`` to ``candidate``.
+
+    Every rule id is checked before any is tried, so an unknown one always raises.
+    """
+    unknown = [rule_id for rule_id in rule_ids if rule_id not in _CAMELOT_RULES_BY_ID]
+    if unknown:
+        raise ValueError(f"unknown Camelot rule {unknown[0]!r}; known: {', '.join(CAMELOT_RULE_IDS)}")
+    return any(camelot_rule_matches(rule_id, reference, candidate) for rule_id in rule_ids)
+
+
+# ---------------------------------------------------------------------------
 # Compatibility Scorers
 # ---------------------------------------------------------------------------
 

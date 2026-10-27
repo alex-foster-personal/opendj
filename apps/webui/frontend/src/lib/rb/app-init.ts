@@ -11,6 +11,7 @@
  * module can, and does.
  */
 
+import { startAutoGainSync } from '$lib/rb/auto-gain.svelte';
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { applyExplicitPerfTierPref, fetchPerfTier } from './perf-tier-client';
 import {
@@ -168,6 +169,8 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		applyExplicitPerfTierPref(uiPrefs.perf_tier);
 	}
 	scheduler.defer('perf-tier:fetch', () => fetchPerfTier());
+	// AUTOGAIN-05: follow the auto_gain pref and user offsets set elsewhere (CLI, Settings).
+	scheduler.defer('auto-gain:sync', () => startAutoGainSync());
 	// Diagnostics consent (OBS-05) and, after acceptance, session replay
 	// (OBS-06). Deferred like every other boot request, and gated on the same
 	// live-transport read as error reporting so a replay never records a mix.

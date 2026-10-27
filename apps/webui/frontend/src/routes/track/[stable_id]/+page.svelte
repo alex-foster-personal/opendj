@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getTrack, patchTrack, ConflictError, type Track } from '$lib/api';
@@ -133,7 +134,7 @@
 	<a href="/">&larr; back to library</a>
 	<h2><ProvenanceTooltip {track} field="title">{track.title ?? '(untitled)'}</ProvenanceTooltip></h2>
 	<p><ProvenanceTooltip {track} field="artist">{track.artist ?? ''}</ProvenanceTooltip></p>
-	<p>BPM: {track.bpm ?? '?'} · Key: {track.key ?? '?'}</p>
+	<p>BPM: {track.bpm ?? '?'} · Key: {shownKey(track.key) ?? '?'}</p>
 	{#if quality}<p><QualityBadge {quality} /></p>{/if}
 	<p>Rating: <RatingStars rating={track.rating ?? 0} onrate={(n) => applyPatch({ rating: n })} /></p>
 

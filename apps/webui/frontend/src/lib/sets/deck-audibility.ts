@@ -9,6 +9,7 @@
 
 import { TRIM_MAX_GAIN } from '$lib/player/constants';
 import { isMasterMuted } from '$lib/player/master-mute.svelte';
+import { autoGainLinear } from '$lib/rb/auto-gain.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { stemPartGains } from '$lib/rb/stem-graph';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
@@ -71,7 +72,7 @@ export const SILENCE_GAIN_EPSILON = 1e-4;
  * STILL NOT GATED: EQ. Three knobs fully cut also silences a channel, but the
  * EQ is dB shelving rather than a linear multiplier, so "cut enough to be
  * silent" is a genuine threshold and this refuses to invent one. Consequence
- * while it stays open, recorded in `.planning/TECH-DEBT.md`: a deck killed
+ * while it stays open, recorded in `(private path)`: a deck killed
  * purely on EQ still accrues `audible_s`.
  */
 
@@ -120,7 +121,7 @@ export function externallyRoutedDecks(search: string): ReadonlySet<DeckId> {
 /**
  * Linear gain from this deck's channel to the speakers, per the engine graph.
  *
- * The chain is `trim -> EQ -> fader -> crossfader -> master`
+ * The chain is `trim (knob x auto gain) -> EQ -> fader -> crossfader -> master`
  * (`audio-engine.svelte.ts`). EQ is excluded on purpose, see above.
  *
  * `?extroute=` splits the graph in two, and the second half is easy to get
@@ -137,12 +138,14 @@ export function externallyRoutedDecks(search: string): ReadonlySet<DeckId> {
  * 1 reaches the room through USB, and decks 2 to 4 reach nothing.
  */
 export function masterPathGain(
-	state: PerformanceState,
+	state: Pick<PerformanceState, 'mixer'>,
 	deckId: DeckId,
 	routedDecks: ReadonlySet<DeckId> = new Set()
 ): number {
 	const channel = state.mixer.channels[deckId];
-	const chain = channel.trim * TRIM_MAX_GAIN * channel.fader;
+	// The trim stage as heard: the TRIM knob times the deck's auto gain, which
+	// can move a deck by up to 12 dB either way (AUTOGAIN-02).
+	const chain = channel.trim * TRIM_MAX_GAIN * autoGainLinear(deckId) * channel.fader;
 	// A routed deck leaves at the fader; crossfader and master are not its path.
 	if (routedDecks.has(deckId)) return chain;
 	// Unmapped, but external routing is live: headphone monitor only.

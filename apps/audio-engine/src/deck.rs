@@ -284,6 +284,8 @@ pub struct Deck {
     pub loop_beats: Option<f64>,
     // Knob values as the sender set them, for the state feed and for ramps.
     pub trim: f64,
+    /// Auto gain in dB under the TRIM knob (AUTOGAIN-02); 0 until the page sends one.
+    pub auto_gain_db: f64,
     pub eq: [f64; 3],
     pub filter: f64,
     pub fader: f64,
@@ -470,6 +472,7 @@ impl Deck {
             looping: None,
             loop_beats: None,
             trim: 0.5,
+            auto_gain_db: 0.0,
             eq: [0.5; 3],
             filter: 0.5,
             fader: 1.0,
@@ -902,7 +905,12 @@ impl Deck {
 
     pub fn set_trim(&mut self, v: f64) {
         self.trim = v;
-        self.strip.trim.set(mixer::trim_gain_from_knob(v));
+        self.strip.trim.set(mixer::trim_stage_gain(v, self.auto_gain_db));
+    }
+
+    pub fn set_auto_gain_db(&mut self, db: f64) {
+        self.auto_gain_db = db;
+        self.strip.trim.set(mixer::trim_stage_gain(self.trim, db));
     }
 
     pub fn set_eq(&mut self, band: usize, v: f64) {
@@ -1445,6 +1453,21 @@ mod tests {
         let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * 48000.0)).exp();
         let want = from + (to - from) * k;
         assert!((d.strip.lp_hz.value - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.value);
+    }
+
+    #[test]
+    fn auto_gain_and_trim_share_one_stage() {
+        let mut d = Deck::new(48000.0);
+        d.set_auto_gain_db(-6.0);
+        d.set_trim(0.75);
+        let want = mixer::trim_stage_gain(0.75, -6.0);
+        for _ in 0..48000 {
+            let mut buf = vec![0.0f32; 2];
+            d.render_add(&mut buf, 48000.0);
+        }
+        assert!((d.strip.trim.value - want).abs() < 1e-6, "{} vs {want}", d.strip.trim.value);
+        d.set_auto_gain_db(0.0);
+        assert_eq!((d.trim, d.auto_gain_db), (0.75, 0.0));
     }
 
     #[test]

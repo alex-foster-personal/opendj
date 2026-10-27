@@ -22,7 +22,7 @@ export interface CmdkFilterPrefs {
 	vocals_filter: boolean;
 	next_only_filter: boolean;
 	available_offline_filter: boolean;
-	compatible_filter: Parameters<typeof isAppropriateNext>[2];
+	compatible_filter: NonNullable<Parameters<typeof isAppropriateNext>[2]>;
 }
 
 /** The row fields the filters read; index rows and pane rows both fit. */

@@ -6,10 +6,29 @@
  * shared automatic handoff runner here. No engine or IPC imports.
  */
 import { TRIM_MAX_GAIN } from '$lib/player/constants';
+import { autoGainLinear } from '$lib/rb/auto-gain.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 import { nextPlayingMaster } from '$lib/rb/audio-engine-guards';
 import type { MasterReason } from '$lib/rb/audio-engine-types';
+import { externallyRoutedDecks } from '$lib/sets/deck-audibility';
+import {
+	heardLevelDb,
+	stepLevelHandoff,
+	type HeardState,
+	type LevelHandoffDeck,
+	type LevelHandoffState,
+	type LevelHandoffStep
+} from './master-handoff';
+
+export {
+	HANDOFF_TICK_MS,
+	LEVEL_HANDOFF_IDLE,
+	masterHandoffMessage,
+	stepLevelHandoff,
+	type LevelHandoffState,
+	type LevelHandoffStep
+} from './master-handoff';
 
 export const SILENCE_GAIN_EPSILON = 1e-4;
 
@@ -51,7 +70,10 @@ function _xfGainFor(assign: CrossfaderAssign, x: number): number {
 }
 
 export function onAirGain(deck: MasterElectionDeck, crossfader: number, master: number): number {
-	return deck.trim * TRIM_MAX_GAIN * deck.fader * _xfGainFor(deck.assign, crossfader) * master;
+	// `trim` is the knob; the trim stage also multiplies in the deck's auto
+	// gain (AUTOGAIN-02, up to 12 dB either way), read here so every caller
+	// (Web Audio election and handoff, the Rust sync) judges what is heard.
+	return deck.trim * TRIM_MAX_GAIN * autoGainLinear(deck.id) * deck.fader * _xfGainFor(deck.assign, crossfader) * master;
 }
 
 function _isEligible(deck: MasterElectionDeck): boolean {
@@ -127,3 +149,69 @@ export function installAutomaticMasterElectionRunner(runner: AutomaticMasterElec
 export function runAutomaticMasterElection(work: () => Promise<void>): Promise<void> {
 	return automaticMasterElectionRunner(work);
 }
+
+/** The engine's live decks and mixer, read for a level handoff: each deck's
+ * playing flag and its heard level after EQ, filter and stems
+ * (master-handoff.ts). `routed` is the `?extroute=` set, read by the caller at
+ * the browser boundary, as the graph reads it. */
+export function levelHandoffDecks(
+	state: HeardState & { decks: Record<DeckId, { playing: boolean; stable_id: string | null }> },
+	ids: readonly DeckId[],
+	masterMuted: boolean,
+	routed: ReadonlySet<DeckId>
+): LevelHandoffDeck[] {
+	return ids.map((id) => ({
+		id,
+		playing: state.decks[id].playing && state.decks[id].stable_id !== null,
+		levelDb: heardLevelDb(state, id, masterMuted, routed)
+	}));
+}
+
+/** One step of the level hold from the engine's live decks and mixer: the
+ * master's tempo sets the one-beat hold, levels are heard levels. */
+export function stepLiveLevelHandoff(
+	prev: LevelHandoffState,
+	live: {
+		master: DeckId | null;
+		locked: boolean;
+		state: HeardState & { decks: Record<DeckId, { playing: boolean; stable_id: string | null; bpm: number | null; pitch: number }> };
+		masterMuted: boolean;
+		/** The page's URL query string, read by the caller at the browser boundary. */
+		extrouteQuery: string;
+	},
+	ids: readonly DeckId[],
+	nowMs: number
+): LevelHandoffStep {
+	const m = live.master === null ? null : live.state.decks[live.master];
+	const masterBpm = m === null || m.bpm === null ? null : m.bpm * m.pitch;
+	const decks = levelHandoffDecks(live.state, ids, live.masterMuted, externallyRoutedDecks(live.extrouteQuery));
+	return stepLevelHandoff(prev, { master: live.master, locked: live.locked, masterBpm, decks, nowMs });
+}
+
+/** A queued level handoff that failed is surfaced, never swallowed: an error
+ * toast for the DJ plus an error-level performance event (escalated). */
+export function reportLevelHandoffFailure(
+	master: DeckId,
+	error: unknown,
+	record: (kind: string, message: string, deck: DeckId, level: 'error') => void,
+	toast: (message: string, level: 'error') => void
+): void {
+	record('master-handoff-failed', `level handoff from ${master}: ${String(error)}`, master, 'error');
+	toast(`MASTER handoff from deck ${master} failed: ${error instanceof Error ? error.message : String(error)}`, 'error');
+}
+
+/** What a MASTER button press sends (the maintainer, Tue 27 Oct 2026). A click PICKS the
+ * deck and leaves AUTO handoff on; only the lock gesture (long-press, or a
+ * Shift/Alt click) locks, and the same gesture on the locked master unlocks. */
+export function masterButtonCommand(
+	current: { master_deck: DeckId | null; master_mode: 'auto' | 'locked' },
+	deck: DeckId,
+	lockGesture: boolean
+): { type: 'master'; deck: DeckId; lock: boolean } {
+	if (!lockGesture) return { type: 'master', deck, lock: false };
+	const lockedHere = current.master_deck === deck && current.master_mode === 'locked';
+	return { type: 'master', deck, lock: !lockedHere };
+}
+
+/** Hold this long on MASTER to lock it. */
+export const MASTER_LOCK_LONG_PRESS_MS = 500;

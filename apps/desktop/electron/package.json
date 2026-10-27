@@ -16,7 +16,7 @@
     "start": "tsc -p tsconfig.json && electron .",
     "e2e": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && node --test --test-reporter=tap --test-concurrency=1 'dist-test/e2e/*.e2e.js'",
     "live-proof": "node scripts/live-proof.mjs",
-    "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64"
+    "pack:dir": "tsc -p tsconfig.json && node scripts/stamp-build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir --mac --arm64 && node scripts/verify-pack.mjs"
   },
   "build": {
     "appId": "com.opendj.desktop",

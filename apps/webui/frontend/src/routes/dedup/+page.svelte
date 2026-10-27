@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	/**
 	 * /dedup - duplicate review + merge (interactive review UI).
 	 *
@@ -310,7 +311,7 @@
 											<span class="chip" title="Audio-fingerprint similarity to the proposed survivor, 0-100%">similarity {(member.similarity * 100).toFixed(1)}%</span>
 										{/if}
 										<span class="chip" title="Tempo in beats per minute (- when not analyzed)">{member.bpm ?? '-'} BPM</span>
-										<span class="chip" title="Musical key (- when not analyzed)">{member.key ?? '-'}</span>
+										<span class="chip" title="Musical key (- when not analyzed)">{shownKey(member.key) ?? '-'}</span>
 										<span class="chip" title="Track length, minutes:seconds">{formatDuration(member.duration_ms)}</span>
 										<span class="chip" title="Library rating of this copy (- when unrated)">rating {member.rating ?? '-'}</span>
 										<span class="chip" class:missing={!member.file_exists}>

@@ -750,7 +750,7 @@
 				bpm: s.bpm
 			};
 		});
-		return computeNextOnlyRef(slices);
+		return computeNextOnlyRef(slices, uiPrefs.compatible_filter.rules.length > 0);
 	});
 
 	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
@@ -1178,7 +1178,11 @@
 		try {
 			await hydrateRuntimePolicy();
 			if (bootAllTracksEarly) {
-				await bootTracksPrefetch().prefsPromise.catch(() => {});
+				// A ui-prefs contract failure (PR #7483) is shown AND fails the boot, never swallowed.
+				await bootTracksPrefetch().prefsPromise.catch((exc: unknown) => {
+					pushToast(`Settings did not load: ${String(exc)}`, 'error');
+					throw exc;
+				});
 				const healthRes = await healthPromise;
 				libraryHealthError = null;
 				allTracksCount = reconcileBootSnapshot({

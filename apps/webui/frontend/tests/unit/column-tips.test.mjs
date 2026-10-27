@@ -182,8 +182,8 @@ test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable
 	// against that module rather than a literal `key: 36` in this component's
 	// own source - see the equivalent fix in track-table-energy-column.test.mjs.
 	const { COL_DEFAULTS } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
-	assert.equal(COL_DEFAULTS.key, 36);
-	assert.equal(COL_DEFAULTS.bpm, 42);
+	assert.equal(COL_DEFAULTS.key, 64);
+	assert.equal(COL_DEFAULTS.bpm, 46);
 	assert.equal(
 		COL_DEFAULTS.autoplay,
 		28,
@@ -193,7 +193,13 @@ test('TrackTable keeps compact K/B cells and explains exact BPM plus unavailable
 	assert.match(source, /Exact BPM: .*toFixed\(1\)/);
 	assert.match(source, /Dynamic key.*not analyzed/);
 	assert.match(source, /Dynamic tempo analysis: not analyzed/);
-	assert.match(source, /#each hl\(row.key\) as part/, 'compact key cells must retain active search highlighting');
+	// The key cell highlights the text it renders, the key in the chosen
+	// notation, including a match on another notation (find-highlight.ts).
+	assert.match(
+		source,
+		/#each keyCellSpans\(row\.key, uiPrefs\.key_notation, findQuery\) as part/,
+		'compact key cells must retain active search highlighting'
+	);
 });
 
 test('key hover reserves only honest optional musical-mode and chord-progression detail', () => {

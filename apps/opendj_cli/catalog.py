@@ -25,6 +25,7 @@ from apps.opendj_cli.kinds import (
     DECK_VALUES,
     Arg,
     arg,
+    auto_gain_offset_value,
     bool_value,
     deck_value,
     enum_value,
@@ -224,6 +225,11 @@ _VERBS: tuple[Verb, ...] = (
     ), quick_draws=("key_nudge.up", "key_nudge.down")),
     # ----- mixer strip --------------------------------------------------
     Verb("trim", "trim", (_DECK, _UNIT), observes=_mixer("trim", "value")),
+    Verb("auto_gain_offset", "auto_gain_offset", (
+        _DECK, arg("offset_db", "number", auto_gain_offset_value, "-12..12|clear"),
+        arg("stable_id", "text", text_value),
+    ), note="AUTOGAIN-04: the loaded track's own auto gain dB; clear uses the analysed value. "
+            "stable_id names the track meant; a deck holding another one refuses the write."),
     Verb("eq", "eq", (_DECK, _BAND, _UNIT),
          observes=(Observe(("mixer", "channels", "{deck}", "eq_{band}"), "value", 1e-6),)),
     Verb("filter", "filter", (_DECK, _UNIT), observes=_mixer("filter", "value")),

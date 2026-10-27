@@ -194,18 +194,16 @@ test('2. after the master is paused, the remaining synced follower stays phase-l
 	);
 });
 
-test('2b. control: a paused LOCKED master hands nothing off, so its followers get no re-join', async () => {
+test('2b. a paused LOCKED master still hands off, to the playing deck, and the lock goes with it', async () => {
+	// Before Tue 27 Oct 2026 a lock pinned MASTER to a paused deck. the maintainer: a
+	// master that stops, ends or unloads always hands off, even if locked.
 	await playingMaster(1, grid(128, 0.1, 1200), 60_000);
 	await joinFollower(2, grid(126, 0.05, 1200), 30_000);
 	m.rustMaster.mode = 'locked';
 	sent = [];
 	await m.executeInRustEngine({ type: 'play', deck: 1, playing: false });
-	assert.equal(m.rustMaster.deck, 1, 'a locked master stays master while paused');
-	assert.deepEqual(
-		sent.filter((c) => c.deck === 2),
-		[],
-		'no seek or tempo is sent to a follower when no new master was elected'
-	);
+	assert.equal(m.rustMaster.deck, 2, 'if a stopped locked master keeps MASTER then broken');
+	assert.equal(m.rustMaster.mode, 'auto', 'if the lock outlives the stop then broken');
 	assert.equal(m.deckStates[2].sync_error, null);
 });
 

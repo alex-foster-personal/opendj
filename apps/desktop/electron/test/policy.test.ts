@@ -71,6 +71,8 @@ test('anything else is not: other hosts, https, file, lookalikes', () => {
 		`http://192.168.1.2:${anyPort}/`,
 		'file:///etc/passwd',
 		'opendj://evil/index.html',
+		// EL-17-F13: Tauri's capabilities grant only 127.0.0.1 and localhost, never IPv6 loopback.
+		`http://[::1]:${anyPort}/`,
 		'data:text/html,hi',
 		'about:blank',
 		'not a url'
@@ -80,7 +82,8 @@ test('anything else is not: other hosts, https, file, lookalikes', () => {
 });
 test('permissions: only the short list, only for loopback pages', () => {
 	assert.equal(permissionAllowed('midi', `http://127.0.0.1:${anyPort}`), true);
-	assert.equal(permissionAllowed('midiSysex', `http://127.0.0.1:${anyPort}/`), true);
+	// EL-17-F14: Tauri's MIDI command sends three bounded bytes; no SysEx under either shell.
+	assert.equal(permissionAllowed('midiSysex', `http://127.0.0.1:${anyPort}/`), false);
 	assert.equal(permissionAllowed('speaker-selection', `http://localhost:${anyPort}`), true);
 	assert.equal(permissionAllowed('geolocation', `http://127.0.0.1:${anyPort}`), false);
 	assert.equal(permissionAllowed('notifications', `http://127.0.0.1:${anyPort}`), false);

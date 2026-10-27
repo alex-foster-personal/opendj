@@ -47,6 +47,25 @@ pub fn trim_gain_from_knob(value: f64) -> f64 {
     value * TRIM_MAX_GAIN
 }
 
+/// Auto gain (AUTOGAIN-02): the per-track offset the page resolved
+/// (`/api/v1/auto-gain`), applied at the trim stage under the TRIM knob.
+/// Bounds mirror `apps/analysis_loudness/auto_gain.py` OFFSET_MIN/MAX_DB.
+pub const AUTO_GAIN_MIN_DB: f64 = -12.0;
+pub const AUTO_GAIN_MAX_DB: f64 = 12.0;
+
+pub fn check_auto_gain_db(db: f64) -> Result<f64, EngineError> {
+    if db.is_finite() && (AUTO_GAIN_MIN_DB..=AUTO_GAIN_MAX_DB).contains(&db) {
+        Ok(db)
+    } else {
+        Err(EngineError::new(ErrorCode::Invalid, "auto gain must be finite and within -12..12 dB"))
+    }
+}
+
+/// The trim stage's linear gain: TRIM knob times auto gain.
+pub fn trim_stage_gain(knob: f64, auto_gain_db: f64) -> f64 {
+    trim_gain_from_knob(knob) * 10f64.powf(auto_gain_db / 20.0)
+}
+
 /// Crossfader assignment of one channel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Assign {
@@ -131,6 +150,18 @@ pub fn check_unit(value: f64) -> Result<f64, EngineError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_gain_multiplies_under_the_trim_knob() {
+        // AUTOGAIN-02: knob at unity, -6 dB of auto gain is 10^(-6/20).
+        assert!((trim_stage_gain(0.5, -6.0) - 10f64.powf(-0.3)).abs() < 1e-12);
+        assert_eq!(trim_stage_gain(0.5, 0.0), 1.0);
+        // The knob still works on top: full knob doubles whatever auto gain left.
+        assert!((trim_stage_gain(1.0, -6.0) - 2.0 * 10f64.powf(-0.3)).abs() < 1e-12);
+        assert!(check_auto_gain_db(12.5).is_err());
+        assert!(check_auto_gain_db(f64::NAN).is_err());
+        assert_eq!(check_auto_gain_db(-12.0).unwrap(), -12.0);
+    }
 
     #[test]
     fn eq_law_endpoints_and_center() {

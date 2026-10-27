@@ -119,7 +119,7 @@ import {
 	setPlayingPositionReader,
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
-import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop } from '$lib/rb/deck-channel-graph';
+import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
@@ -225,8 +225,8 @@ import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$li
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
-import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
-import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import { hotCuesFromSlots as _hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
 import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/player/transport/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState, StemFetchProgress, StemLoadPhase } from '$lib/rb/stem-types';
@@ -237,8 +237,7 @@ import {
 	eqDbFromKnob,
 	masterDelaySeconds,
 	PARAM_SMOOTH_S,
-	PITCH_RANGES,
-	TRIM_MAX_GAIN
+	PITCH_RANGES
 } from '$lib/player/constants';
 import type { PitchRange } from '$lib/player/constants';
 import {
@@ -440,8 +439,6 @@ export type {
 //
 // T4 S4: PerformanceState now lives in player/state.svelte.ts. Re-exported
 // below at the same names so every UI consumer keeps importing it from here.
-// _hotCuesFromSlots stays until S11: it maps through hotCuesFromAnlz, which is
-// deck-load's ANLZ cue mapper, and state must not import deck/load.
 
 export {
 	deckEffectiveBpm,
@@ -456,11 +453,7 @@ export {
 // Opt-in startup master mute (`?muted=1`), re-exported at the engine barrel so
 // the topbar toggle and any test agent reach it on the same import as the rest
 // of the player surface. See player/master-mute.svelte.ts.
-export { isMasterMuted, setMasterMuted };
-
-function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
-	return hotCuesFromAnlz(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
-}
+export { isMasterMuted, setMasterMuted, setAutoGainLiveGuard, deckAutoGain };
 
 // -------------------------------------------- non-reactive audio runtime
 // AudioNodes and AudioBuffers stay OUT of $state on purpose: proxying
@@ -602,6 +595,9 @@ export function deckPcmEstimatedBytes(): number {
 export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
 
 // ---------------------------------------------------------------- _helpers
+
+const _applyTrimGain = (deck: DeckId): void => applyTrimStage(_rt[deck].nodes, mixerState.channels[deck].trim, deck, _setParam);
+registerAutoGainApplier(_applyTrimGain); // AUTOGAIN-02: a published auto gain reaches this deck's trim stage
 
 function _setParam(param: AudioParam, value: number): void {
 	if (_ctx === null) throw new Error('audio graph not initialised');
@@ -1088,8 +1084,14 @@ import {
 	AUTOMATIC_HANDOFF_REASONS,
 	runAutomaticRejoin as _automaticRejoinRunner,
 	electMaster,
-	onAirGain,
-	SILENCE_GAIN_EPSILON,
+	HANDOFF_TICK_MS,
+	LEVEL_HANDOFF_IDLE,
+	masterHandoffMessage,
+	runAutomaticMasterElection,
+	stepLiveLevelHandoff,
+	reportLevelHandoffFailure,
+	type LevelHandoffState,
+	type LevelHandoffStep,
 	type MasterElectionInput
 } from './master-election';
 export {
@@ -1176,7 +1178,12 @@ function _quantizeGridBeats(st: DeckState): 1 | 4 | 8 {
 	return beats;
 }
 
-function _assignMaster(deck: DeckId | null, reason?: MasterReason): void {
+function _assignMaster(deck: DeckId | null, reason?: MasterReason, levels?: { masterDb: number; toDb: number | null }): void {
+	// Every master change is a performance event (the maintainer, Tue 27 Oct 2026), the level handoff with its levels.
+	if (deck !== _masterDeck) {
+		recordPerfEvent('master-handoff', masterHandoffMessage(_masterDeck, deck, reason ?? 'restore', levels), deck, 'info');
+		_levelHandoff = LEVEL_HANDOFF_IDLE; // a new master earns its own unbroken beat of quiet
+	}
 	_masterDeck = deck;
 	if (reason !== undefined) _masterReason = reason;
 	for (const candidate of DECK_IDS) deckStates[candidate].is_master = candidate === deck;
@@ -1253,10 +1260,10 @@ function _electionInput(): MasterElectionInput {
 	};
 }
 
-function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason }): DeckId | null {
+function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason; to?: DeckId; levels?: { masterDb: number; toDb: number | null } }): DeckId | null {
 	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
-	const previous = _masterDeck, next = electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
-	_assignMaster(next, reason);
+	const previous = _masterDeck, next = options?.to ?? electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
+	_assignMaster(next, reason, options?.levels);
 	// Automatic handoff re-joins playing followers (same as setDeckMaster). Queued
 	// on the shared sync claim so a later load/seek/tempo is not overwritten.
 	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
@@ -1271,49 +1278,45 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 	return next;
 }
 
-function _maybeHandoffOnAir(): void {
-	if (_masterMode !== 'auto' || _masterDeck === null) return;
-	const masterDeck = _masterDeck;
-	const st = deckStates[masterDeck];
-	if (!st.playing) return;
-	const ch = mixerState.channels[masterDeck];
-	const masterGain = onAirGain(
-		{
-			id: masterDeck,
-			loaded: st.stable_id !== null,
-			playing: st.playing,
-			beat_sync_enabled: effectiveBeatSync(st),
-			fader: ch.fader,
-			trim: ch.trim,
-			assign: ch.assign
-		},
-		mixerState.crossfader,
-		mixerState.master
-	);
-	if (masterGain >= SILENCE_GAIN_EPSILON) return;
-	const hasOtherOnAir = DECK_IDS.some((candidate) => {
-		if (candidate === masterDeck) return false;
-		const other = deckStates[candidate];
-		if (other.stable_id === null || !other.playing) return false;
-		const otherCh = mixerState.channels[candidate];
-		return (
-			onAirGain(
-				{
-					id: candidate,
-					loaded: true,
-					playing: true,
-					beat_sync_enabled: effectiveBeatSync(other),
-					fader: otherCh.fader,
-					trim: otherCh.trim,
-					assign: otherCh.assign
-				},
-				mixerState.crossfader,
-				mixerState.master
-			) >= SILENCE_GAIN_EPSILON
-		);
-	});
-	if (!hasOtherOnAir) return;
-	_electPlayingMaster({ reason: 'master-left' });
+/** Level handoff (master-handoff.ts): the master stays below -30 dB for one beat
+ * while another playing deck is above -20 dB, measured after EQ, filter and stems.
+ * Runs on every mixer change, play/pause and a 100 ms tick; a locked master never moves here. */
+let _levelHandoff: LevelHandoffState = LEVEL_HANDOFF_IDLE, _lastHandoffCheckMs = -Infinity, _levelHandoffQueued = false;
+// Bumped by every manual MASTER command; a queued level election from an older generation stands down.
+let _levelHandoffGeneration = 0;
+function _maybeHandoffOnAir(nowMs: number = performance.now()): void {
+	_lastHandoffCheckMs = nowMs;
+	const master = _masterDeck;
+	const step = _stepLevelHandoff(nowMs);
+	if (step.handoffTo === null || master === null || _levelHandoffQueued) return;
+	// The election itself waits its turn under the all-deck + sync claim and is decided
+	// again there from the live levels and the unbroken hold (a recovery while queued
+	// cancels it; the loudest deck at that moment wins), so a MASTER/lock command in
+	// flight is never overtaken by the frame loop.
+	_levelHandoffQueued = true;
+	const generation = _levelHandoffGeneration;
+	void runAutomaticMasterElection(async () => {
+		_levelHandoffQueued = false;
+		if (generation !== _levelHandoffGeneration || _masterDeck !== master || _masterMode === 'locked') return;
+		const due = _stepLevelHandoff(performance.now());
+		if (due.handoffTo !== null) _electPlayingMaster({ reason: 'master-left', to: due.handoffTo, levels: due });
+	}).catch((e: unknown) => { _levelHandoffQueued = false; reportLevelHandoffFailure(master, e, recordPerfEvent, pushToast); });
+}
+
+/** One step of the level hold from the live mixer, stored as the current hold. */
+function _stepLevelHandoff(nowMs: number): LevelHandoffStep {
+	// The page URL is the boundary; tests that drive the engine stand in a page with an empty query.
+	const extrouteQuery = location.search; // a missing page throws here: the app is client-only (ssr = false)
+	const live = { master: _masterDeck, locked: _masterMode === 'locked', state: { decks: deckStates, mixer: mixerState }, masterMuted: isMasterMuted(), extrouteQuery };
+	const step = stepLiveLevelHandoff(_levelHandoff, live, DECK_IDS, nowMs);
+	_levelHandoff = step.state;
+	return step;
+}
+
+/** A master that stops, plays out or unloads always hands off, locked or not, and the lock goes with it. */
+function _handOffStoppedMaster(reason: MasterReason): void {
+	if (_masterMode === 'locked') _masterMode = 'auto';
+	_electPlayingMaster({ force: true, reason });
 }
 
 /** `syncMayWriteTempo` against LIVE state, for the writes that outlive the
@@ -1359,13 +1362,13 @@ function _releaseReanchorRampOwner(deck: DeckId, generation: number): void {
 function _handleAudibleTransition(deck: DeckId, wasAudible: boolean, audible: boolean): void {
 	void wasAudible;
 	void audible;
-	if (_masterMode !== 'auto') return;
 	const st = deckStates[deck];
-	if (_masterDeck === null && st.playing) {
+	if (_masterDeck === deck && !st.playing) {
+		_handOffStoppedMaster('master-left');
+	} else if (_masterMode === 'auto' && _masterDeck === null && st.playing) {
 		_electPlayingMaster({ reason: 'first-claim' });
-	} else if (_masterDeck === deck && !st.playing) {
-		_electPlayingMaster({ reason: 'master-left' });
 	}
+	_maybeHandoffOnAir();
 }
 
 /** Disconnect for synchronous silence, then let the worklet transfer its
@@ -2067,9 +2070,7 @@ function _publishPresentedTransport(
 			)
 		)
 			.then(() => {
-				if (_masterDeck === deck && !st.playing) {
-					_electPlayingMaster({ reason: 'natural-end' });
-				}
+				if (_masterDeck === deck && !st.playing) _handOffStoppedMaster('natural-end');
 			})
 			.catch((error: unknown) => {
 				if (rt.processor !== null) _recordProcessorFailure(deck, error);
@@ -2099,6 +2100,7 @@ function _tick(): void {
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
 		_phaseLock.tick(_ctx.currentTime); // NAE-19: keep Beat Sync followers on phase (throttled to 30 Hz)
+		const nowMs = performance.now(); if (nowMs - _lastHandoffCheckMs >= HANDOFF_TICK_MS) _maybeHandoffOnAir(nowMs);
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
 		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
 		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
@@ -2974,7 +2976,7 @@ class RbAudioEngine implements AudioEngine {
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			if (rt.desiredActive || deckStates[deck].playing) recordDeckStopOf(deckStates[deck], 'reload'); // PLAY-18
-			rt.loadToken += 1;
+			rt.loadToken += 1; publishDeckAutoGain(deck, { state: 'empty' }); // AUTOGAIN: no stale AG on a remount
 			_releasePendingStemUpgrade(rt);
 			const processor = detachProcessorForDisposal(rt);
 			if (processor !== null) processors.push(processor);
@@ -3043,6 +3045,7 @@ class RbAudioEngine implements AudioEngine {
 		let latencySec = 0;
 		let processor: _DeckProcessor | null = null;
 		let candidateStemState: StemDeckState = unavailableStemDeckState();
+		let candidateAutoGain: Awaited<ReturnType<typeof settleTrackAutoGain>> = { state: 'empty' };
 		// Hoisted so the deferred stem upgrade decodes into the SAME context the
 		// mix decoded into; re-resolving it after the swap could hand the stems a
 		// rebuilt graph and a silent sample-rate mismatch.
@@ -3080,7 +3083,8 @@ class RbAudioEngine implements AudioEngine {
 					time('getTrack', (trackRequest = getTrack(stable_id)).catch(rethrowLibraryTrackLookupError)),
 					time(audio.fetchStage, audio.bytes),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
-					time('fetchHotCues', fetchHotCueSlots(stable_id))
+					time('fetchHotCues', fetchHotCueSlots(stable_id)),
+					time('fetchAutoGain', settleTrackAutoGain(stable_id).then((settled) => { candidateAutoGain = settled; }))
 				]);
 			stages.fetchWall = perfMs();
 			Object.assign(stages, audio.stats(audioBytes));
@@ -3109,7 +3113,7 @@ class RbAudioEngine implements AudioEngine {
 			// `loading`, not `unavailable`: the probe has not run yet and _upgradeDeckStems settles it. A stems-off load
 			// (Trackify, #3975) never runs that upgrade, so it publishes its settled answer now (PERFMODE-15).
 			candidateStemState = loadStems ? loadingStemDeckState() : (stemsBlockedState() ?? unavailableStemDeckState('stems disabled for this load'));
-			latencySec = await time('processorLatency', processor.latencySec());
+			latencySec = await time('processorLatency', processor.latencySec()); candidateAutoGain = await freshTrackAutoGain(candidateAutoGain); // AUTOGAIN: never commit a superseded gain
 			_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);
 			stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
@@ -3192,6 +3196,7 @@ class RbAudioEngine implements AudioEngine {
 			rt.nextScheduleRevision = 0;
 			rt.desiredActive = false;
 			st.stable_id = stable_id;
+			publishDeckAutoGain(deck, candidateAutoGain);
 			st.source_path =
 				typeof candidateTrack.file_path === 'string' && candidateTrack.file_path.length > 0
 					? candidateTrack.file_path
@@ -4090,6 +4095,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		const stranded = _beatgridResyncPorts.takePending(deck); _resyncTracking.clearForDeck(deck); // stranded captured before clearForDeck, same race as r3912339491
 		_beatgridGuards.beforeClear(deck, stranded, 'unload'); // scoped, not fire-unscoped (r3912960726)
+		publishDeckAutoGain(deck, { state: 'empty' });
 		_rt[deck] = {
 			..._emptyRuntime(),
 			loadToken: rt.loadToken,
@@ -4142,22 +4148,22 @@ class RbAudioEngine implements AudioEngine {
 
 	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setDeckMaster');
+		// A manual pick, even of the current master, restarts the level hold and voids a queued handoff.
+		_levelHandoff = LEVEL_HANDOFF_IDLE;
+		_levelHandoffGeneration += 1;
 		const previousMaster = _masterDeck;
 		const previousMode = _masterMode;
 		if (!st.audible) {
 			if (options?.lock === false && _masterDeck === deck) {
+				// A plain click on the paused master keeps it, in AUTO; re-electing would drop it.
 				_masterMode = 'auto';
-				if (!st.playing) _electPlayingMaster({ reason: 'unlock-reelect' });
 				return;
 			}
 			const blockers = pausedMasterSelectionBlockers(deck, deckStates);
 			assertPausedMasterSelectionAllowed(deck, st.audible, blockers);
 			_assignMaster(deck, 'manual');
-			if (options?.lock === true) _masterMode = 'locked';
-			else if (options?.lock === false) {
-				_masterMode = 'auto';
-				if (!st.playing) _electPlayingMaster({ reason: 'unlock-reelect' });
-			}
+			// A click picks a paused deck in AUTO; re-electing here would undo the pick at once.
+			_masterMode = options?.lock === true ? 'locked' : options?.lock === false ? 'auto' : _masterMode;
 			return;
 		}
 		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
@@ -4187,13 +4193,13 @@ class RbAudioEngine implements AudioEngine {
 
 	setStemMute(deck: DeckId, stem: StemControl, muted: boolean, pressT0Ms?: number): void {
 		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
-		applyStemControl(deck, stem, 'muted', muted, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] });
+		applyStemControl(deck, stem, 'muted', muted, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d] }); _maybeHandoffOnAir();
 		if (_ctx !== null) logMixerApply(STEM_MUTE_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
 	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean, pressT0Ms?: number, exclusive = false): void {
 		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
-		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive });
+		applyStemControl(deck, stem, 'solo', solo, { requireLoaded: _requireLoaded, getChannel: (d) => mixerState.channels[d], exclusive }); _maybeHandoffOnAir();
 		if (_ctx !== null) logMixerApply(STEM_SOLO_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
 	}
 
@@ -4259,11 +4265,11 @@ class RbAudioEngine implements AudioEngine {
 		});
 	}
 
+	setAutoGainOffset(deck: DeckId, offsetDb: number | null, stableId: string): Promise<unknown> { return setDeckAutoGainUserOffset(deck, offsetDb, stableId); }
 	setTrim(deck: DeckId, value: number): void {
 		assertUnitRange('setTrim value', value);
 		mixerState.channels[deck].trim = value;
-		const nodes = _rt[deck].nodes;
-		if (nodes !== null) _setParam(nodes.trim.gain, value * TRIM_MAX_GAIN);
+		_applyTrimGain(deck);
 		_maybeHandoffOnAir();
 	}
 
@@ -4278,7 +4284,7 @@ class RbAudioEngine implements AudioEngine {
 		if (_ctx === null) throw new Error('audio graph not initialised');
 		const now = _ctx.currentTime;
 		const gain = band === 'low' ? nodes.low.gain : band === 'mid' ? nodes.mid.gain : nodes.high.gain;
-		applyEqRamp(gain, db, now, PARAM_SMOOTH_S); logEqApply(deck, pressT0Ms, now, PARAM_SMOOTH_S);
+		applyEqRamp(gain, db, now, PARAM_SMOOTH_S); logEqApply(deck, pressT0Ms, now, PARAM_SMOOTH_S); _maybeHandoffOnAir();
 	}
 
 	setFilter(deck: DeckId, value: number, pressT0Ms?: number): void {
@@ -4292,6 +4298,7 @@ class RbAudioEngine implements AudioEngine {
 			_setParam(nodes.filterHpWet.gain, hpWetGain);
 		}
 		if (_ctx !== null) logMixerApply(FILTER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
+		_maybeHandoffOnAir();
 	}
 
 	setFader(deck: DeckId, value: number, pressT0Ms?: number): void {

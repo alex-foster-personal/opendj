@@ -202,7 +202,7 @@ test('[PLAY-28] the unsynced mix clears a stale follower sync_error', () => {
 
 	const setMaster = engineBlockAfter('	async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {');
 	assert.match(setMaster, /_mixWithoutBeatSync\(deck, followers, pushToast, recordPerfEvent, _clearSyncError\)/);
-	const engine = engineBlockAfter('function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason }): DeckId | null {');
+	const engine = engineBlockAfter('function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason; to?: DeckId; levels?: { masterDb: number; toDb: number | null } }): DeckId | null {');
 	assert.match(
 		engine,
 		/_mixWithoutBeatSync\(next, followers, pushToast, recordPerfEvent, _clearSyncError\)/

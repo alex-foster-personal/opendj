@@ -12,8 +12,8 @@ export const COL_DEFAULTS = {
 	art: 54,
 	title: 220,
 	artist: 140,
-	key: 36,
-	bpm: 42,
+	key: 64,
+	bpm: 46,
 	plays: 36,
 	rating: 80,
 	comments: 110,
@@ -29,41 +29,9 @@ export const COL_DEFAULTS = {
 
 export type ColId = keyof typeof COL_DEFAULTS;
 
-type MusicalRow = {
-	key: string | null;
-	bpm: number | null;
-};
-
-// WebKit measures rendered 10B at 29.23px and 124 at 33px once the table cell
-// padding is included, so compact columns must not go below their rounded values.
-// Where the font stack lands on Inter (Chromium on Linux and Windows, or any
-// machine with Inter installed) the text alone is wider: 11px tabular "124"
-// measures 21.41px and "12B" (suffix at 0.67em) 19.09px, against the 21px and
-// 18px that 33 and 30 leave inside 6+6px padding, so the BPM column showed
-// "1..." (Wed 7 Oct 2026 nit sweep N6). The floors carry that plus ~2px.
-const KEY_MIN_WIDTH = 32;
-const BPM_MIN_WIDTH = 36;
-const MUSICAL_CHAR_WIDTH = 7;
-const MUSICAL_CELL_PADDING = 7;
-
-function _compactTextWidth(text: string, minimum: number, maximum: number): number {
-	return Math.min(maximum, Math.max(minimum, text.length * MUSICAL_CHAR_WIDTH + MUSICAL_CELL_PADDING));
-}
-
-/** Compact K/B widths from the text the table actually displays. */
-export function compactMusicalWidths(rows: readonly MusicalRow[]): Pick<Record<ColId, number>, 'key' | 'bpm'> {
-	let key = KEY_MIN_WIDTH;
-	let bpm = BPM_MIN_WIDTH;
-	for (const row of rows) {
-		key = Math.max(key, _compactTextWidth(row.key ?? '', KEY_MIN_WIDTH, COL_DEFAULTS.key));
-		bpm = Math.max(
-			bpm,
-			_compactTextWidth(row.bpm === null ? '' : String(Math.round(row.bpm)), BPM_MIN_WIDTH, COL_DEFAULTS.bpm)
-		);
-	}
-	return { key, bpm };
-}
-
+// Key and BPM auto-fit lives in musical-column-fit.ts: it measures the text
+// each column prints in the active skin's font. These are only the widths a
+// column starts at before its first fit (wide enough for `8A • Am` in Gothic).
 /** Keep a user's K/B drag authoritative while other rows reflow. */
 export function autoMusicalWidths(
 	current: Pick<Record<ColId, number>, 'key' | 'bpm'>,

@@ -904,7 +904,7 @@ impl Control {
             Load { deck, .. } | Regrid { deck, .. } | Extend { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
             | Seek { deck, .. } | TempoFader { deck, .. } | Quantize { deck, .. } | QuantizeGrid { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
-            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. }
+            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. } | AutoGain { deck, .. }
             | Eq { deck, .. } | Filter { deck, .. }
             | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
             Crossfader { .. } | MasterVolume { .. } | MasterMute { .. } => None,

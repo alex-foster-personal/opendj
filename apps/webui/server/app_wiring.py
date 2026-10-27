@@ -81,6 +81,7 @@ from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
 from .routes import audio_output_health as audio_output_health_routes
 from .routes import auth as auth_routes
+from .routes import auto_gain as auto_gain_routes
 from .routes import autolists as autolists_routes
 from .routes import beatgrid_flags as beatgrid_flags_routes
 from .routes import bench as bench_routes
@@ -623,6 +624,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         tracks_routes.router,
         track_handoff_routes.router,
         beatgrid_flags_routes.router,
+        auto_gain_routes.router,
         client_errors_routes.router,
         telemetry_consent_routes.router,
         error_feed_routes.router,

@@ -4,6 +4,9 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 import { readFrontendSource } from './engine-source.mjs';
 
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
+
 const REAL_PQTZ_BEATS = [
 	{ n: 1, bpm: 127, t: 0.135 },
 	{ n: 2, bpm: 127, t: 0.608 },

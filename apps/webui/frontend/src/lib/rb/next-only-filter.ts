@@ -1,7 +1,7 @@
 /**
  * Library "next-only" appropriateness: Camelot family + BPM window.
  */
-import { camelotKeysWithinSteps } from '$lib/player/key/camelot';
+import { camelotRulesAllow } from '$lib/player/key/camelot';
 import { BPM_HALF_ABS } from '$lib/rb/bpm-heat';
 import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 import { COMPATIBLE_FILTER_DEFAULTS } from '$lib/rb/compatible-filter-prefs';
@@ -57,15 +57,21 @@ export interface NextOnlyDeckSlice {
 	bpm: number | null;
 }
 
-/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
-export function computeNextOnlyRef(states: readonly NextOnlyDeckSlice[]): NextOnlyRef | null {
+/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM.
+ * With no Camelot rule ticked the key is not checked, so a keyless deck can be the
+ * reference (`needsKey: false`); otherwise a keyless master would hand the BPM
+ * check to another deck's tempo. */
+export function computeNextOnlyRef(
+	states: readonly NextOnlyDeckSlice[],
+	needsKey: boolean = true
+): NextOnlyRef | null {
 	const ordered = [
 		...states.filter((s) => s.is_master && s.stable_id !== null),
 		...states.filter((s) => s.playing && s.stable_id !== null),
 		...states.filter((s) => s.stable_id !== null)
 	];
 	for (const s of ordered) {
-		if (s.key !== null && s.bpm !== null && s.bpm > 0) {
+		if ((s.key !== null || !needsKey) && s.bpm !== null && s.bpm > 0) {
 			return { key: s.key, bpm: s.bpm };
 		}
 	}
@@ -119,7 +125,8 @@ export function isAppropriateNext(
 	prefs: CompatibleFilterPrefs = COMPATIBLE_FILTER_DEFAULTS
 ): boolean {
 	return (
-		camelotKeysWithinSteps(row.key, ref.key, prefs.camelot_steps) &&
+		// No rule ticked means the key is not checked: BPM alone decides.
+		(prefs.rules.length === 0 || camelotRulesAllow(ref.key, row.key, prefs.rules)) &&
 		bpmMatchesCompatiblePrefs(row.bpm, ref.bpm, prefs)
 	);
 }

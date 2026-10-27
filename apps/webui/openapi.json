@@ -1794,6 +1794,153 @@
         "title": "AutoCuesOut",
         "type": "object"
       },
+      "AutoGainOut": {
+        "properties": {
+          "analysed_offset_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysed Offset Db"
+          },
+          "effective_offset_db": {
+            "title": "Effective Offset Db",
+            "type": "number"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "integrated_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrated Lufs"
+          },
+          "limited_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "range",
+                  "true_peak"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limited By"
+          },
+          "loudness_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Reason"
+          },
+          "offset_max_db": {
+            "default": 12.0,
+            "title": "Offset Max Db",
+            "type": "number"
+          },
+          "offset_min_db": {
+            "default": -12.0,
+            "title": "Offset Min Db",
+            "type": "number"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "analysed",
+              "user",
+              "not_analysed",
+              "off"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_lufs": {
+            "title": "Target Lufs",
+            "type": "number"
+          },
+          "true_peak_ceiling_dbtp": {
+            "default": -1.0,
+            "title": "True Peak Ceiling Dbtp",
+            "type": "number"
+          },
+          "true_peak_dbtp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "True Peak Dbtp"
+          },
+          "user_offset_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Offset Db"
+          }
+        },
+        "required": [
+          "stable_id",
+          "status",
+          "enabled",
+          "target_lufs",
+          "integrated_lufs",
+          "true_peak_dbtp",
+          "analysed_offset_db",
+          "user_offset_db",
+          "effective_offset_db",
+          "limited_by",
+          "loudness_reason"
+        ],
+        "title": "AutoGainOut",
+        "type": "object"
+      },
+      "AutoGainPrefsOut": {
+        "description": "Auto gain: match every track to ``target_lufs`` (integrated, BS.1770).",
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "target_lufs": {
+            "default": -12.0,
+            "title": "Target Lufs",
+            "type": "number"
+          }
+        },
+        "title": "AutoGainPrefsOut",
+        "type": "object"
+      },
       "AutoSyncOut": {
         "properties": {
           "djay": {
@@ -5710,7 +5857,7 @@
         "type": "object"
       },
       "CompatibleFilterOut": {
-        "description": "Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.",
+        "description": "Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window.\n\n``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES.",
         "properties": {
           "allow_half_double": {
             "default": true,
@@ -5739,15 +5886,12 @@
             "title": "Bpm Window Bpm",
             "type": "number"
           },
-          "camelot_steps": {
-            "default": 1,
-            "enum": [
-              0,
-              1,
-              2
-            ],
-            "title": "Camelot Steps",
-            "type": "integer"
+          "rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rules",
+            "type": "array"
           }
         },
         "title": "CompatibleFilterOut",
@@ -25933,6 +26077,9 @@
             "title": "App Posture",
             "type": "string"
           },
+          "auto_gain": {
+            "$ref": "#/components/schemas/AutoGainPrefsOut"
+          },
           "auto_play_enabled": {
             "default": true,
             "title": "Auto Play Enabled",
@@ -26003,6 +26150,17 @@
             "default": false,
             "title": "Jog Radial Waveform",
             "type": "boolean"
+          },
+          "key_notation": {
+            "default": "camelot_musical",
+            "enum": [
+              "camelot_musical",
+              "camelot",
+              "open_key",
+              "musical"
+            ],
+            "title": "Key Notation",
+            "type": "string"
           },
           "level_calibration": {
             "$ref": "#/components/schemas/LevelCalibrationOut"
@@ -26166,6 +26324,16 @@
             ],
             "title": "App Posture"
           },
+          "auto_gain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutoGainPrefsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "auto_play_enabled": {
             "anyOf": [
               {
@@ -26323,6 +26491,23 @@
               }
             ],
             "title": "Jog Radial Waveform"
+          },
+          "key_notation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "camelot_musical",
+                  "camelot",
+                  "open_key",
+                  "musical"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Notation"
           },
           "level_calibration": {
             "anyOf": [
@@ -27640,6 +27825,26 @@
           "watching"
         ],
         "title": "UsbVolumesOut",
+        "type": "object"
+      },
+      "UserOffsetIn": {
+        "properties": {
+          "offset_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Db"
+          }
+        },
+        "required": [
+          "offset_db"
+        ],
+        "title": "UserOffsetIn",
         "type": "object"
       },
       "ValidationError": {
@@ -30574,6 +30779,102 @@
         "summary": "Whoami",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/auto-gain/tracks/{stable_id}": {
+      "get": {
+        "description": "The offset a deck applies when it loads this track, and why.",
+        "operationId": "get_track_auto_gain_api_v1_auto_gain_tracks__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoGainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Auto Gain",
+        "tags": [
+          "auto-gain"
+        ]
+      }
+    },
+    "/api/v1/auto-gain/tracks/{stable_id}/user-offset": {
+      "put": {
+        "description": "Set (or clear with null) the user's own offset. It wins over the analysed\none and is never replaced by re-analysis.",
+        "operationId": "put_track_auto_gain_user_offset_api_v1_auto_gain_tracks__stable_id__user_offset_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserOffsetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoGainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Track Auto Gain User Offset",
+        "tags": [
+          "auto-gain"
         ]
       }
     },

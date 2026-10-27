@@ -13,7 +13,7 @@ import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
 import { createFrameBackstop, notePositionSample } from '$lib/rb/engine-clock-reports';
 import type { DeckState } from '$lib/rb/deck-state-types';
-import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
+import { hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
 import {
 	installPerformanceHotCueDriver,
 	type PerformanceCommand
@@ -28,6 +28,8 @@ import {
 import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToast } from './rust-link';
 import { PAGE_DECIDED, rustMode } from './rust-mode.svelte';
 import { rawAnlz } from '$lib/rb/anlz-raw';
+import { deckAutoGainDb } from '$lib/rb/auto-gain';
+import { deckAutoGain, deckAutoGainApplied, freshTrackAutoGain, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain } from '$lib/rb/auto-gain.svelte';
 import {
 	cancelArmedJump,
 	decideOnPage,
@@ -149,8 +151,9 @@ export async function executeRustCommand(command: PerformanceCommand): Promise<v
 	await send(command);
 	applyAcknowledged(command);
 	if (command.type === 'unload') {
+		publishDeckAutoGain(command.deck, { state: 'empty' });
 		cancelArmedJump(command.deck);
-		if (rustMaster.deck === command.deck) await electAndRejoin({ force: true });
+		if (rustMaster.deck === command.deck) await electAndRejoin({ force: true, reason: 'unload' });
 	}
 }
 
@@ -163,12 +166,38 @@ export function installRustEngineClientForTest(fake: AudioEngineClient | null): 
 
 let active = false;
 
+/** AUTOGAIN-02 in this mode: the engine applies auto gain at its trim stage
+ * (`auto_gain` command, apps/audio-engine/src/mixer.rs trim_stage_gain). */
+function _sendAutoGain(deck: DeckId): Promise<void> {
+	const sent = deckAutoGain[deck];
+	const db = deckAutoGainDb(sent);
+	const refused = (why: string): void => {
+		if (sent.state === 'empty') return;
+		link.toast?.(`Deck ${deck} auto gain was not applied: ${why}`, 'error');
+		// What the deck applies is unknown now: never leave it reading as
+		// matched. The error state is 0 dB and is sent again in turn; it is
+		// not re-published if that fails too, so this cannot loop.
+		if (sent.state === 'ready' && deckAutoGain[deck] === sent) {
+			publishDeckAutoGain(deck, { state: 'error', stable_id: sent.value.stable_id, message: `the Rust engine did not acknowledge ${db} dB (${why}); the gain it applies is unknown` });
+		}
+	};
+	if (link.client === null || link.client === undefined) {
+		refused('no engine connection');
+		return Promise.resolve();
+	}
+	return link.client.send({ type: 'auto_gain', deck, db }).then(
+		() => undefined,
+		(error: unknown) => refused(error instanceof Error ? error.message : String(error))
+	);
+}
+
 /** Take over the page's hot-cue seam. Runs once, when the mode's code loads. */
 export function activateRustEngineMode(toast: RustToast | null): void {
 	if (toast !== null) link.toast = toast;
 	if (active) return;
 	active = true;
 	installPerformanceHotCueDriver(rustHotCueDriver);
+	registerAutoGainApplier(_sendAutoGain);
 }
 
 /** Load a library track: the page's metadata fetches plus the engine load. */
@@ -178,13 +207,14 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	deckStates[deck].load_generation += 1;
 	loadFences[deck] = Infinity;
 	holdLoadFailures(deck);
-	let trackRes, anlz, slots, loaded: unknown;
+	let trackRes, anlz, slots, loaded: unknown, autoGain;
 	try {
-		[trackRes, anlz, slots, loaded] = await Promise.all([
+		[trackRes, anlz, slots, loaded, autoGain] = await Promise.all([
 			getTrack(stable_id),
 			fetchAnlzForDeckLoad(stable_id),
 			fetchHotCueSlots(stable_id),
-			_post(`${AUDIO_ENGINE_PATH}/load`, { deck, stable_id })
+			_post(`${AUDIO_ENGINE_PATH}/load`, { deck, stable_id }),
+			settleTrackAutoGain(stable_id)
 		]);
 	} catch (error) {
 		// The deck still shows the earlier track: a failure that ended it lands now.
@@ -193,10 +223,16 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	} finally {
 		loadFences[deck] = link.lastState?.frame ?? -1;
 	}
+	// A pref or offset change while the engine loaded: re-read, never commit a superseded gain.
+	autoGain = await freshTrackAutoGain(autoGain);
 	const track = trackRes.track;
 	const st = deckStates[deck];
 	clearRustDeck(st);
 	st.stable_id = stable_id;
+	publishDeckAutoGain(deck, autoGain);
+	// The load is not done until the engine took the gain (or refused it, which
+	// shows as AG ERR at 0 dB).
+	await deckAutoGainApplied(deck);
 	st.source_path =
 		typeof track.file_path === 'string' && track.file_path.length > 0 ? track.file_path : null;
 	st.title = track.title ?? null;
@@ -208,7 +244,7 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.anlz = rawAnlz(anlz);
 	st.anlz_error = null;
 	st.bpm = anlz.beatgrid.bpm ?? track.bpm ?? null;
-	st.hot_cues = hotCuesFromAnlz(slots.flatMap((s) => (s.cue === null ? [] : [s.cue])));
+	st.hot_cues = hotCuesFromSlots(slots);
 	st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 	st.has_rb_mapping = track.has_rb_mapping;
 	st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
@@ -315,6 +351,7 @@ export function applyLoadFailed(e: EngineLoadFailed): void {
 	const st = deckStates[e.deck as DeckId];
 	if (st === undefined || st.stable_id === null) return;
 	clearRustDeck(st);
+	publishDeckAutoGain(e.deck as DeckId, { state: 'empty' });
 	st.processor_error = `${e.error.code}: ${e.error.message}`;
 	// As an explicit unload does: no armed jump survives, and a master that
 	// lost its audio hands sync to the next deck rather than lingering.
@@ -322,7 +359,7 @@ export function applyLoadFailed(e: EngineLoadFailed): void {
 	cancelArmedJump(deck);
 	if (rustMaster.deck === deck) void runAutomaticRejoin(async () => {
 		if (rustMaster.deck !== deck || deckStates[deck].stable_id !== null || loadFences[deck] === Infinity) return;
-		await electAndRejoin({ force: true });
+		await electAndRejoin({ force: true, reason: 'unload' });
 	}).catch((error: unknown) => {
 		st.sync_error = `Beat Sync re-join failed: ${error instanceof Error ? error.message : String(error)}`;
 	});
@@ -386,7 +423,7 @@ export function mirrorEngineState(s: EngineState): void {
 			) {
 				return;
 			}
-			await electAndRejoin();
+			await electAndRejoin({ force: true, reason: 'natural-end' }); // a master that played out always hands off
 		}).catch((error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
 			rustMode.error = message;

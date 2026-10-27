@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	// LIBWS-04: the Crate Desk preview bar. Shows the focused track with its
 	// real overview strip and readouts. Playback is inert: Library mode runs
 	// no audio engine (PERFMODE-14), and a preview player that does not wake
@@ -64,7 +65,7 @@
 			</div>
 			<div>
 				<dt>KEY</dt>
-				<dd title="Musical key in Camelot notation">{row.key ?? ''}</dd>
+				<dd title="Musical key, in the key notation chosen in Settings">{shownKey(row.key) ?? ''}</dd>
 			</div>
 			<div>
 				<dt>TIME</dt>

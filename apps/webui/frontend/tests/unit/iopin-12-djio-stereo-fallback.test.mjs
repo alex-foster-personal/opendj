@@ -13,7 +13,7 @@
 // output-stall rebuild under a playing deck) and
 // tests/e2e/audio-output-topology.spec.ts (master 1/2 and cue 3/4 routing on a
 // real four-channel graph). The claims that still have only these wiring
-// checks are listed in .planning/debt/3837.md.
+// checks are listed in (private path).
 //
 // Observed live on the installed Preview build d92bf93f (Fri 25 Sep 2026,
 // 21:27Z): the Mixtour Pro map redirected the page to ?djio=master12-cue34
@@ -60,6 +60,9 @@ import { after, afterEach, before, beforeEach, describe, test } from 'node:test'
 import { FakeAudioContext, ancestorsOf, installWindow } from './fixtures/fake-web-audio.mjs';
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
+
+// The engine reads the page URL for ?extroute=; tests that build no window run as a page with no query.
+globalThis.location ??= { search: '' };
 
 const DJIO = 'master12-cue34';
 

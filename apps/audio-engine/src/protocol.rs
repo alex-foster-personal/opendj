@@ -159,6 +159,7 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         "tempo" => &["type", "deck", "ratio"],
         "pitch_range" => &["type", "deck", "range"],
         "trim" | "filter" | "fader" => &["type", "deck", "value"],
+        "auto_gain" => &["type", "deck", "db"],
         "eq" => &["type", "deck", "band", "value"],
         "assign" => &["type", "deck", "assign"],
         "crossfader" | "master_volume" => &["type", "value"],
@@ -586,6 +587,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             apply(EngineCmd::KeyNudge { deck, semitones })
         }
         "trim" => apply(EngineCmd::Trim { deck: deck_of(o, ty)?, value: unit(o, ty, "value")? }),
+        "auto_gain" => apply(EngineCmd::AutoGain { deck: deck_of(o, ty)?, db: num(o, ty, "db")? }),
         "eq" => apply(EngineCmd::Eq { deck: deck_of(o, ty)?, band: band(o, ty)?, value: unit(o, ty, "value")? }),
         "filter" => apply(EngineCmd::Filter { deck: deck_of(o, ty)?, value: unit(o, ty, "value")? }),
         "fader" => apply(EngineCmd::Fader { deck: deck_of(o, ty)?, value: unit(o, ty, "value")? }),
@@ -850,6 +852,15 @@ mod tests {
 
     fn cmd(v: Value) -> Result<Command, ProtoError> {
         parse_command(&v)
+    }
+
+    #[test]
+    fn auto_gain_parses_and_refuses_extra_keys() {
+        assert!(matches!(
+            cmd(json!({"type": "auto_gain", "deck": 2, "db": -3.5})),
+            Ok(Command::Apply(EngineCmd::AutoGain { deck: 2, db })) if db == -3.5
+        ));
+        assert!(cmd(json!({"type": "auto_gain", "deck": 2, "value": -3.5})).is_err());
     }
 
     #[test]

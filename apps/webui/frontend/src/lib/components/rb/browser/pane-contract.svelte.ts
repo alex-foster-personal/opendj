@@ -32,6 +32,7 @@ import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { listingGenre } from '$lib/rb/genre-source';
+import { keyForms } from '$lib/rb/key-notation';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
@@ -517,6 +518,9 @@ export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolea
 				artist: r.artist,
 				comments: r.comments,
 				key: r.key,
+				// Every notation, so the key the cell shows always matches
+				// whatever key_notation is set (Sentry review, PR #7483).
+				key_forms: keyForms(r.key),
 				genre: listingGenre(r),
 				bpm: r.bpm,
 				rating: r.rating

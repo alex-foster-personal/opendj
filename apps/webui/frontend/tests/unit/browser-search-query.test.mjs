@@ -42,7 +42,8 @@ function track(overrides = {}) {
 		genre: null,
 		bpm: null,
 		rating: null,
-		...overrides
+		...overrides,
+		key_forms: overrides.key_forms ?? (overrides.key ? [overrides.key] : [])
 	};
 }
 
@@ -160,4 +161,16 @@ test('SEARCH_QUERY_HELP documents the grammar with runnable examples', () => {
 			`documented example "${entry.example}" should match a fully-populated track`
 		);
 	}
+});
+
+test('key: finds a key written in any notation (PR #7483)', () => {
+	const t = track({ key: 'Am', key_forms: ['8A', '1m', 'Am'] });
+	for (const q of ['key:8a', 'key:1m', 'key:am']) assert.equal(mod.matchesSearchQuery(t, q), true, q);
+	assert.equal(mod.matchesSearchQuery(t, 'key:9a'), false);
+});
+
+test('a plain search finds the key as shown in any notation (PR #7483)', () => {
+	const t = track({ key: '8A', key_forms: ['8A', '1m', 'Am'] });
+	for (const q of ['8a', '1m', 'Am']) assert.equal(mod.matchesSearchQuery(t, q), true, q);
+	assert.equal(mod.matchesSearchQuery(t, '9A'), false);
 });

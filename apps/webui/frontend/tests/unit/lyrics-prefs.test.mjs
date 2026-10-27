@@ -64,7 +64,7 @@ function _capturePuts() {
 	const original = globalThis.fetch;
 	globalThis.fetch = async (request) => {
 		bodies.push(await request.clone().json());
-		return new Response(JSON.stringify({ theme: 'dark' }), {
+		return new Response(JSON.stringify({ key_notation: 'camelot', theme: 'dark' }), {
 			status: 200,
 			headers: { 'content-type': 'application/json' }
 		});
@@ -199,6 +199,7 @@ test('hydrateConfirmPrefsFromDisk applies all six lyric prefs from disk', async 
 	globalThis.fetch = async () =>
 		new Response(
 			JSON.stringify({
+				key_notation: 'camelot',
 				theme: 'dark',
 				lyrics_global: false,
 				lyrics_library_col: false,
@@ -227,7 +228,7 @@ test('hydrate ignores an unknown lyrics_load_strategy from disk', async () => {
 	const prefs = await _loadPrefs();
 	const original = globalThis.fetch;
 	globalThis.fetch = async () =>
-		new Response(JSON.stringify({ theme: 'dark', lyrics_load_strategy: 'eager' }), {
+		new Response(JSON.stringify({ key_notation: 'camelot', theme: 'dark', lyrics_load_strategy: 'eager' }), {
 			status: 200,
 			headers: { 'content-type': 'application/json' }
 		});
@@ -245,7 +246,7 @@ test('the six lyric prefs have settings agent parity: allowlist, read, apply, ca
 	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 	const original = globalThis.fetch;
 	globalThis.fetch = async () =>
-		new Response(JSON.stringify({ theme: 'dark' }), {
+		new Response(JSON.stringify({ key_notation: 'camelot', theme: 'dark' }), {
 			status: 200,
 			headers: { 'content-type': 'application/json' }
 		});

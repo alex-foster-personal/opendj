@@ -58,6 +58,7 @@ import {
 	decodeSource
 } from '$lib/rb/midi/decode';
 import { djioRedirectTarget } from '$lib/rb/audio-output-topology';
+import { nativeShellKind } from '$lib/shell/native-shell';
 
 // The pure wire decoders live in decode.ts (webmidi crossed the 600-line file
 // limit). Re-exported here so callers and tests keep their import path.
@@ -225,6 +226,8 @@ function _publishResolvedDevices(): void {
 
 function _rescanWebMidiPorts(): void {
 	if (_access === null) throw new Error('_rescanWebMidiPorts before WebMIDI init');
+	// This page is leaving for djio; attaching handlers now would only be torn down.
+	if (_djioRedirectIssued) return;
 	const seen = new Set<string>();
 	for (const input of _access.inputs.values()) {
 		if (input.state !== 'connected') continue;
@@ -263,6 +266,15 @@ function _rescanWebMidiPorts(): void {
 		}
 	}
 	_publishResolvedDevices();
+	// EL-17-F11: the installed Electron shell carries MIDI on WebMIDI, so it makes
+	// the topology choice Tauri's native snapshot makes. A browser tab does not.
+	if (nativeShellKind() !== 'electron') return;
+	const target = _audioProfileRedirectTarget();
+	if (target === null) return;
+	_djioRedirectIssued = true;
+	_access.onstatechange = null;
+	for (const device of _resolved.values()) device.detachInput();
+	window.location.replace(target);
 }
 
 function _nativeOutput(deviceId: string): _MidiOutputPort {
@@ -312,6 +324,12 @@ function _applyNativeSnapshot(snapshot: _NativeMidiDevice[]): string | null {
 		_rearmTakeover(id);
 	}
 	_publishResolvedDevices();
+	return _audioProfileRedirectTarget();
+}
+
+/** The djio URL the connected controllers' maps ask for, or null to stay. Shared by
+ * the Tauri native snapshot and the Electron WebMIDI rescan (EL-17-F11). */
+function _audioProfileRedirectTarget(): string | null {
 	const profiles = new Set(
 		[..._resolved.values()].flatMap((device) =>
 			device.map?.nativeAudioProfile === undefined ? [] : [device.map.nativeAudioProfile]

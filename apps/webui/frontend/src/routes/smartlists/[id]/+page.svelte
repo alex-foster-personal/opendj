@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import {
@@ -230,7 +231,7 @@
 						<td><a href={`/track/${t.stable_id}`}>{t.title ?? t.stable_id}</a></td>
 						<td>{t.artist ?? ''}</td>
 						<td>{t.bpm ?? ''}</td>
-						<td>{t.key ?? ''}</td>
+						<td>{shownKey(t.key) ?? ''}</td>
 						<td>{t.rating ?? ''}</td>
 						<td>{t.genre ?? ''}</td>
 					</tr>

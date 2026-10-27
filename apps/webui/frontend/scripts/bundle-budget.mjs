@@ -251,7 +251,37 @@ const BUDGETS = [
   // both on "/" through the waveform component. CI measured 280,107 on 625d26b57 (main
   // alone 278,530). PR #6786 adds no zoom control, glide or settings; those land in
   // PR 2. Rounded up to the next KiB. No second raise.
-  { name: 'library', limit: 280576, measured: 280107, note: 'initial load of "/"' },
+  // RAISED Tue 27 Oct 2026 (+2 KiB, PR #7483, key notation + Camelot rules + master
+  // handoff, the maintainer: "merged to main please"): the library table, deck header and
+  // inspector now print keys through one notation (camelot_musical by default) and
+  // the K/B columns are measured in the rendered font (canvas measureText) instead of
+  // a 7px-per-character guess. Both are first-paint table code. This PR measured
+  // 280,578 locally against 280,576. The second KiB covers the two sibling PRs of
+  // the same request (Camelot rule checkboxes measured 280,277 alone; level-based
+  // MASTER handoff), each of which also adds first-paint weight. Payback: none
+  // planned; these are features on the first screen.
+  // RAISED Tue 27 Oct 2026 (+1 KiB, PR #7559, level-based MASTER handoff): the #7483
+  // raise covered three sibling PRs, but with #7483 and #7557 on main this PR measured
+  // 282,660 in CI against 282,624 (36 bytes over). The level estimate and the MASTER
+  // hold are first-paint deck code. Payback: none planned.
+  // RAISED Tue 27 Oct 2026 (+5 KiB over #7559, auto gain, AUTOGAIN-01..06, branch af--auto-gain):
+  // the deck audio engine is in the "/" first-paint closure, so the trim stage's
+  // auto gain (the resolved-offset reader and its checks, the per-deck store, the
+  // AG readout under TRIM) and the two Settings rows are first-paint weight.
+  // The pref sync is deferred behind the boot scheduler; a split of the Settings
+  // rows into their own leaf was tried and saved nothing, because the engine
+  // already carries the deck code into "/". Local build, one pass: clean
+  // origin/main 80fae484d 279,682; with this change 282,190 (+2,508). Next KiB
+  // above plus 1 KiB of jitter margin, as #3837: 283,648 (277 KiB) alone. Merged
+  // onto main's #7483 raise (282,624, measured 280,578): 280,578 + 2,508 = 283,086,
+  // next KiB plus 1 KiB of jitter => 284,672 (278 KiB). Review then added the
+  // answer contract check, write versioning, the unread-pref notice and the
+  // audibility factor: CI on 4240999 measured 285,293, next KiB plus 1 KiB of
+  // jitter => 286,720 (280 KiB). Merged onto main's #7559 raise (283,648, measured
+  // 282,660): auto gain adds 285,293 - 280,578 = 4,715, so 287,375 estimated, next
+  // KiB plus 1 KiB of jitter => 288,768 (282 KiB). Payback: the engine deferral named
+  // under #3837 above carries this weight out of "/" with the rest of the engine.
+  { name: 'library', limit: 288768, measured: 287375, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second

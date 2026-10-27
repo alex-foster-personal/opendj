@@ -51,6 +51,27 @@ is not set the script exits 1, names it, and writes nothing, so `pack:dir` stops
 before electron-builder. An empty value is accepted and means none.
 `pack:dir` is the only caller.
 
+When the payload is a built one (`payload/manifest.json` exists, or
+`stamp-build.mjs --manifest <path>`), every identity field (SHA, branch, dirty
+flag, build time, lane, channel, stable-evidence time) comes from the
+manifest's `identity` block instead, as the Tauri dmg recipe stamps its binary.
+The stamp is refused if the manifest's commit is not this checkout's HEAD (both
+SHAs are named), if a field is null or absent, or if a lane or channel variable
+that is set disagrees with the manifest. After electron-builder,
+`scripts/verify-pack.mjs` checks that the packed payload names the stamped
+commit and fails the pack if not. Only the tracked placeholder payload
+(`payload/README.md` alone, byte for byte) prints UNKNOWN, because there is nothing to
+compare; any other packed payload without a manifest fails. A manifest straight from
+`build_engine_payload` has no `release_channel` or `evidence_written_at_utc`;
+stamp-build adds them from `OPENDJ_BUILD_CHANNEL` (required) and
+`OPENDJ_BUILD_EVIDENCE_AT_UTC` (empty when unset), as the Tauri recipe's
+`stable_evidence stamp-payload` step does. It writes them back only after
+every other check has passed. The stamp and the manifest are both staged as
+temp files before either is replaced, so a failed run changes neither file and
+a previous stamp survives it. A manifest with only one of the two fields, or a
+short SHA that is not a prefix of the full one, is refused. Without a manifest, the
+stable-evidence time comes from `OPENDJ_BUILD_EVIDENCE_AT_UTC` when set.
+
 The bundle's own icon is `assets/icon.png` (`build.mac.icon`; electron-builder
 turns the 1024 px PNG into `Contents/Resources/icon.icns`), so Finder and the
 Dock show the Open DJ mark before the app runs. `assets/` is also in

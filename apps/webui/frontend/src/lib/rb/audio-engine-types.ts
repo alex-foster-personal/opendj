@@ -131,6 +131,8 @@ export interface AudioEngine {
 	captureDeckAudio(deck: DeckId): DeckAudioSnapshot;
 	/** TRIM knob 0..1 (0.5 = unity) -> per-channel input GainNode. */
 	setTrim(deck: DeckId, value: number): void;
+	/** AUTOGAIN-04: the user's own auto gain dB for the loaded track (null = analysed). */
+	setAutoGainOffset(deck: DeckId, offsetDb: number | null, stableId: string): Promise<unknown>;
 	/** One EQ band knob 0..1 (0.5 = flat) -> Biquad gain in dB. */
 	setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void;
 	/** FILTER knob 0..1 (0.5 = bypass) -> paired lowpass/highpass Biquad

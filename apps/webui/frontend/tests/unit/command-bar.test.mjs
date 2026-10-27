@@ -144,3 +144,12 @@ test('the browser solos the vocal stem only when the stems are ready', () => {
 	const solo = hook.indexOf("type: 'stem_solo'");
 	assert.ok(notReady > 0 && solo > notReady, 'stem_solo must sit behind the ready check');
 });
+
+test('Cmd-K finds a key typed in any notation the rows can show (8A, Am, 1m, 8A • Am)', async () => {
+	const { rowHaystack, matchRows } = await loadTypeScriptModule('src/lib/rb/command-bar.ts');
+	const rows = [{ stable_id: 's1', title: 'Song', artist: 'X', genre: null, key: '8A', bpm: 124 }];
+	const hay = rows.map(rowHaystack);
+	for (const q of ['8A', 'Am', '1m']) assert.equal(matchRows(rows, hay, q, 10).total, 1, q);
+	// Control: a key it is not stays a miss.
+	assert.equal(matchRows(rows, hay, '9B', 10).total, 0);
+});

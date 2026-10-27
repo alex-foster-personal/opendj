@@ -110,6 +110,7 @@ import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLi
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
+import { DEFAULT_KEY_NOTATION, installKeyNotationSource, isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
 import {
 	applyUiSkinDom,
 	effectiveWavePalette,
@@ -180,6 +181,8 @@ export interface RbUiPrefs
 	hide_broken_links: boolean;
 	/** Track-table row height: compact = current tight rows; cosy = taller. */
 	library_density: LibraryDensity;
+	/** How every key cell is written (keys are stored as canonical Camelot). */
+	key_notation: KeyNotation;
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
@@ -322,6 +325,7 @@ const DEFAULTS: RbUiPrefs = {
 	playlist_tree_width: PLAYLIST_TREE_WIDTH_DEFAULT,
 	hide_broken_links: false,
 	library_density: 'compact',
+	key_notation: DEFAULT_KEY_NOTATION,
 	beat_sync_max: true,
 	preview_beat_sync: 'tempo',
 	next_panel_collapsed: false,
@@ -434,6 +438,7 @@ function _migrateSkinDefaults(
 type LibraryPrefsValidated = {
 	hide_broken_links: boolean;
 	library_density?: RbUiPrefs['library_density'] | undefined;
+	key_notation?: KeyNotation | undefined;
 	playlist_tree_width?: number | undefined;
 };
 
@@ -470,6 +475,13 @@ function _validateLibraryPrefs(parsed: Partial<RbUiPrefs>): LibraryPrefsValidate
 				'clear the localStorage key to recover'
 		);
 	}
+	const keyNotation = parsed.key_notation;
+	if (keyNotation !== undefined && !isKeyNotation(keyNotation)) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (key_notation must be ${KEY_NOTATIONS.join('|')}) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const treeWidth = parsed.playlist_tree_width;
 	if (
 		treeWidth !== undefined &&
@@ -487,6 +499,7 @@ function _validateLibraryPrefs(parsed: Partial<RbUiPrefs>): LibraryPrefsValidate
 	return {
 		hide_broken_links: parsed.hide_broken_links,
 		library_density: density,
+		key_notation: keyNotation,
 		playlist_tree_width: treeWidth
 	};
 }
@@ -729,6 +742,7 @@ function _assembleLoadedPrefs(
 		playlist_tree_width: library.playlist_tree_width ?? DEFAULTS.playlist_tree_width,
 		hide_broken_links: library.hide_broken_links,
 		library_density: library.library_density ?? DEFAULTS.library_density,
+		key_notation: library.key_notation ?? DEFAULTS.key_notation,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
@@ -816,6 +830,7 @@ const _syncDiskPrefs = syncDiskPrefs;
 /** Reactive prefs singleton. Read anywhere; write ONLY via the setters
  * below so every change persists. */
 export const uiPrefs = $state<RbUiPrefs>(_load());
+installKeyNotationSource(() => uiPrefs.key_notation);
 
 _applyThemeDom(uiPrefs.theme);
 _applyWavePaletteDom(effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
@@ -863,6 +878,9 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 export const { toggleSpotifyPinned, rememberSpotifyRecent } = makeSpotifyLibrarySetters(uiPrefs, _persist);
 export function setLibraryDensity(next: LibraryDensity): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
+}
+export function setKeyNotation(next: KeyNotation): void {
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'key_notation', next);
 }
 
 /** DECKUX-37: turning Max ON also turns Beat Sync ON for loaded decks (through

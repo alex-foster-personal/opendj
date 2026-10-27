@@ -7,6 +7,9 @@ import { afterEach, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
+
 const API_BASE = 'https://autoplay-next-transition.example.test';
 const SID_OUT = 'a'.repeat(40);
 const SID_IN = 'b'.repeat(40);

@@ -1,3 +1,4 @@
+import { autoGainLinear } from '$lib/rb/auto-gain.svelte';
 import { createMeterTap, type MeterTap, type MeterTapSource } from '$lib/rb/meter-tap';
 import { filterParamsFromKnob } from '$lib/rb/audio-engine-guards';
 import type { LoopState } from '$lib/rb/deck-state-types';
@@ -33,6 +34,26 @@ export interface DeckChannelNodes {
 	extsplit: ChannelSplitterNode | null;
 }
 
+/** AUTOGAIN-02: the trim stage law, one place for the graph build and every
+ * knob move: TRIM knob (0..1, 0.5 unity) x TRIM_MAX_GAIN x the deck's auto
+ * gain, so the knob rides on top of auto gain. */
+export function trimStageGain(trimKnob: number, deck: DeckId): number {
+	return trimKnob * TRIM_MAX_GAIN * autoGainLinear(deck);
+}
+
+/** Set a deck's trim stage from its knob and auto gain (no-op before the graph exists). */
+export function applyTrimStage(
+	nodes: DeckChannelNodes | null,
+	trimKnob: number,
+	deck: DeckId,
+	setParam: (param: AudioParam, value: number) => void
+): void {
+	if (nodes !== null) setParam(nodes.trim.gain, trimStageGain(trimKnob, deck));
+}
+
+// The engine reaches the trim stage's auto gain input through the module that owns the stage.
+export { deckAutoGain, freshTrackAutoGain, publishDeckAutoGain, registerAutoGainApplier, setAutoGainLiveGuard, setDeckAutoGainUserOffset, settleTrackAutoGain } from '$lib/rb/auto-gain.svelte';
+
 export function buildDeckChannelGraph(deps: {
 	ctx: AudioContext;
 	mixerState: MixerState;
@@ -52,7 +73,7 @@ export function buildDeckChannelGraph(deps: {
 		analyser.maxDecibels = 0;
 		analyser.smoothingTimeConstant = 0;
 		const trim = deps.ctx.createGain();
-		trim.gain.value = ch.trim * TRIM_MAX_GAIN;
+		trim.gain.value = trimStageGain(ch.trim, deck);
 		const low = deps.ctx.createBiquadFilter();
 		low.type = 'lowshelf';
 		low.frequency.value = EQ_FREQ_LOW_HZ;

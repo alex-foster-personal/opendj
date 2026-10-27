@@ -6,6 +6,7 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
+import { AUTO_GAIN_ENABLED_SETTING, AUTO_GAIN_TARGET_SETTING } from './auto-gain-setting';
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING, WAVE_SPLIT_MASTER_SETTING } from './wave-palette-setting';
@@ -89,6 +90,25 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			options: [
 				{ value: 'compact', label: 'Compact' },
 				{ value: 'cosy', label: 'Cosy' }
+			]
+		}
+	},
+	{
+		id: 'key_notation',
+		label: 'Key notation',
+		group: 'library',
+		keywords: ['key', 'camelot', 'open key', 'musical', 'notation', 'traktor', 'mik'],
+		title: 'How every key is written',
+		detail:
+			'One notation for every key: Camelot and musical together (8A \u2022 Am, the default), Camelot (8A), Open Key (1m) or musical (Am). Applies to the library table, deck headers and the inspector. Keys stored in any notation are converted, so nothing mixes them.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'camelot_musical', label: 'Camelot + musical (8A \u2022 Am)' },
+				{ value: 'camelot', label: 'Camelot (8A)' },
+				{ value: 'open_key', label: 'Open Key (1m)' },
+				{ value: 'musical', label: 'Musical (Am)' }
 			]
 		}
 	},
@@ -237,6 +257,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	MIDI_ENABLED_SETTING,
+	AUTO_GAIN_ENABLED_SETTING,
+	AUTO_GAIN_TARGET_SETTING,
 	SHOW_SECTIONS_SETTING,
 	{
 		id: 'show_stems',

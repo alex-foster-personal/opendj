@@ -30,7 +30,12 @@ export interface SearchableTrack {
 	title: string | null;
 	artist: string | null;
 	comments: string | null;
+	/** The stored (canonical Camelot) key. Search reads `key_forms` instead. */
 	key: string | null;
+	/** The same key in every notation (key-notation.ts `keyForms`). Plain and
+	 * `key:` search both read it, so whichever notation the cell shows, typing
+	 * what you see ("Am", "8A", "1m") finds the row. */
+	key_forms: readonly string[];
 	/** Caller resolves any rb_meta fallback before calling - this module
 	 * only sees the one string it should search. */
 	genre: string | null;
@@ -40,7 +45,7 @@ export interface SearchableTrack {
 
 /** Fallback fields for a plain (unprefixed) substring term - identical set
  * pre-pin filterRows always searched. */
-const _PLAIN_FIELDS = ['title', 'artist', 'comments', 'key', 'genre'] as const;
+const _PLAIN_FIELDS = ['title', 'artist', 'comments', 'genre'] as const;
 
 type NumericField = 'bpm' | 'rating';
 type NumericOp = 'eq' | 'gte' | 'lte' | 'gt' | 'lt' | 'range';
@@ -133,10 +138,11 @@ function _genreTokens(track: SearchableTrack): string[] {
 function _matchesPlain(track: SearchableTrack, text: string): boolean {
 	const q = text.toLowerCase();
 	if (q === '') return true;
-	return _PLAIN_FIELDS.some((f) => {
+	const fieldHit = _PLAIN_FIELDS.some((f) => {
 		const value = track[f];
 		return value !== null && value.toLowerCase().includes(q);
 	});
+	return fieldHit || track.key_forms.some((form) => form.toLowerCase().includes(q));
 }
 
 function _matchesNumeric(track: SearchableTrack, p: NumericPredicate): boolean {
@@ -151,8 +157,7 @@ function _matchesNumeric(track: SearchableTrack, p: NumericPredicate): boolean {
 }
 
 function _matchesKey(track: SearchableTrack, p: KeyPredicate): boolean {
-	const raw = track.key;
-	return raw !== null && raw.toLowerCase().includes(p.value);
+	return track.key_forms.some((form) => form.toLowerCase().includes(p.value));
 }
 
 function _matchesGenre(track: SearchableTrack, p: GenrePredicate): boolean {

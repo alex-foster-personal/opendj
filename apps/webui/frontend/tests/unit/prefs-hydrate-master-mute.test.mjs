@@ -9,8 +9,10 @@ let mute;
 let prefsHydrate;
 let originalFetch;
 
+/** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
+ * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, init = {}) {
-	return new Response(JSON.stringify(body), {
+	return new Response(JSON.stringify({ key_notation: 'camelot', ...body }), {
 		status: 200,
 		...init,
 		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }

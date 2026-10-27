@@ -35,7 +35,7 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # interchangeable between sources (dBFS vs RMS vs LUFS integrated vs
         # LUFS short-term are four numbers wearing one word), so a loudness
         # write must clear the equivalence gate first -- see
-        # apps/shared/equivalence.py and docs/analysis-retention.md.
+        # apps/shared/equivalence.py and (private path).
         "loudness",
         # Clipped-peak count as the analyser observed it (MIK
         # ZSONG.ZCLIPPEDPEAKCOUNT: 2,379 of 7,026 tracks carry at least one
@@ -59,6 +59,9 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # flag ("I know, stop telling me"). A bool, set from the Err column or
         # PUT /beatgrid-flags/{id}/dismissed.
         "grid_flag_dismissed",
+        # AUTOGAIN-04: the user's own auto gain offset in dB (a float), set
+        # from the deck's AG readout or PUT /auto-gain/tracks/{id}/user-offset.
+        "auto_gain_user_db",
     }
 )
 

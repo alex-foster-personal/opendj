@@ -126,6 +126,8 @@ pub enum EngineCmd {
     MasterTempo { deck: DeckId, enabled: bool },
     KeyNudge { deck: DeckId, semitones: i32 },
     Trim { deck: DeckId, value: f64 },
+    /// Auto gain in dB at the trim stage, under the knob (AUTOGAIN-02).
+    AutoGain { deck: DeckId, db: f64 },
     Eq { deck: DeckId, band: EqBand, value: f64 },
     Filter { deck: DeckId, value: f64 },
     Fader { deck: DeckId, value: f64 },
@@ -330,6 +332,10 @@ impl Engine {
             Trim { deck, value } => {
                 let v = mixer::check_unit(value)?;
                 self.deck_mut(deck)?.set_trim(v)
+            }
+            AutoGain { deck, db } => {
+                let db = mixer::check_auto_gain_db(db)?;
+                self.deck_mut(deck)?.set_auto_gain_db(db)
             }
             Eq { deck, band, value } => {
                 let v = mixer::check_unit(value)?;

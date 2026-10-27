@@ -17,7 +17,9 @@ import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
 import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
-import { electMaster, runAutomaticRejoin } from '$lib/rb/master-election';
+import { electMaster, masterHandoffMessage, runAutomaticRejoin } from '$lib/rb/master-election';
+import type { MasterReason } from '$lib/rb/audio-engine-types';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
 import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -44,7 +46,9 @@ export const rustMaster: { deck: DeckId | null; mode: 'auto' | 'locked' } = {
 	mode: 'auto'
 };
 
-function _assignMaster(deck: DeckId | null): void {
+function _assignMaster(deck: DeckId | null, reason: MasterReason): void {
+	// Every master change is a performance event, as in the Web Audio engine.
+	if (deck !== rustMaster.deck) recordPerfEvent('master-handoff', masterHandoffMessage(rustMaster.deck, deck, reason ?? 'restore'), deck, 'info');
 	rustMaster.deck = deck;
 	for (const d of DECKS) deckStates[d].is_master = d === deck;
 }
@@ -55,10 +59,10 @@ function _syncMaster(): DeckId | null {
 	return d !== null && deckStates[d].playing ? d : null;
 }
 
-export function electIfAuto(options?: { force?: boolean }): void {
+export function electIfAuto(options?: { force?: boolean; reason?: MasterReason }): void {
 	if (rustMaster.mode === 'locked' && !options?.force) return;
 	if (options?.force) rustMaster.mode = 'auto';
-	_assignMaster(electMaster(electionInputFrom(deckStates, mixerState)));
+	_assignMaster(electMaster(electionInputFrom(deckStates, mixerState)), options?.reason ?? 'play-claim');
 }
 
 /**
@@ -70,7 +74,7 @@ export function electIfAuto(options?: { force?: boolean }): void {
  * follower that is off phase; the new master was itself locked to the old
  * one, so this is normally a tempo-only re-lock.
  */
-export async function electAndRejoin(options?: { force?: boolean }): Promise<void> {
+export async function electAndRejoin(options?: { force?: boolean; reason?: MasterReason }): Promise<void> {
 	const previous = rustMaster.deck;
 	electIfAuto(options);
 	const next = _syncMaster();
@@ -413,7 +417,7 @@ async function _pause(deck: DeckId): Promise<void> {
 	st.position_ms = at;
 	// The memory cue a pause leaves, snapped as the Web Audio engine snaps it.
 	st.cue_ms = rustCuePoint(st, at);
-	if (rustMaster.deck === deck) await electAndRejoin();
+	if (rustMaster.deck === deck) await electAndRejoin({ force: true, reason: 'master-left' }); // a stopped master always hands off
 }
 
 /** The CUE button. Playing: back to the cue point and pause. Paused with no
@@ -429,7 +433,7 @@ async function _pressCue(deck: DeckId): Promise<void> {
 		]);
 		_setPlaying(deck, false);
 		st.position_ms = target;
-		if (rustMaster.deck === deck) await electAndRejoin();
+		if (rustMaster.deck === deck) await electAndRejoin({ force: true, reason: 'master-left' }); // a stopped master always hands off
 		return;
 	}
 	if (st.cue_ms === null) {
@@ -535,23 +539,29 @@ async function _setDeckMaster(deck: DeckId, lock: boolean | undefined): Promise<
 		if (lock === true) rustMaster.mode = 'locked';
 		else if (lock === false) {
 			rustMaster.mode = 'auto';
-			if (!st.playing) electIfAuto();
+			if (!st.playing) electIfAuto({ reason: 'unlock-reelect' });
 		}
 	};
 	if (!st.playing) {
-		if (lock === false && rustMaster.deck === deck) return applyLock();
+		// A plain click on the paused master keeps it, in AUTO; re-electing would drop it.
+		if (lock === false && rustMaster.deck === deck) {
+			rustMaster.mode = 'auto';
+			return;
+		}
 		assertPausedMasterSelectionAllowed(
 			deck,
 			st.audible,
 			pausedMasterSelectionBlockers(deck, deckStates)
 		);
-		_assignMaster(deck);
-		return applyLock();
+		_assignMaster(deck, 'manual');
+		// A click picks a paused deck in AUTO; re-electing would undo the pick at once.
+		if (lock !== undefined) rustMaster.mode = lock ? 'locked' : 'auto';
+		return;
 	}
 	const followers = masterSwitchFollowers(deck, deckStates).filter((d) =>
 		effectiveBeatSync(deckStates[d])
 	);
-	_assignMaster(deck);
+	_assignMaster(deck, 'manual');
 	await _reanchor(deck, followers);
 	applyLock();
 }

@@ -8,6 +8,7 @@
  * cycle. Arithmetic unchanged.
  */
 
+import { CAMELOT_RULES, type CamelotRule, type CamelotRuleId } from './camelot-rules.generated';
 import { DECK_IDS } from '$lib/player/constants';
 import type { DeckId } from '$lib/rb/deck-id';
 
@@ -88,6 +89,10 @@ const WORD_MODES: Readonly<Record<string, CamelotKey['mode']>> = {
 /** `8A` / `12b`. Camelot notation always leads with the wheel number, so it
  * can never collide with the note-letter grammar below. */
 const _CAMELOT_RE = /^(1[0-2]|[1-9])([ab])$/i;
+/** `1m` / `12d`: Open Key (Traktor, Mixed In Key). `m` is minor and `d` is
+ * major; the number is the Camelot number + 5, mod 12, 1-indexed. Lower case
+ * only: an upper-case `M`/`D` is not Open Key in any source this app reads. */
+const _OPEN_KEY_RE = /^(1[0-2]|[1-9])([dm])$/;
 /** `Gm`, `F#`, `Bbm`, `Ab major`, `C# minor`. The only separator allowed
  * between the note and a spelled-out mode is whitespace. */
 const _MUSICAL_RE = /^([A-Ga-g])([#b\u266f\u266d]?)\s*([A-Za-z]*)$/;
@@ -115,8 +120,9 @@ function _modeFromToken(token: string): CamelotKey['mode'] | null {
 /**
  * Parse a track key into canonical Camelot form.
  *
- * Accepts numbered Camelot ("8A", "12b") and standard musical notation
- * ("Gm" -> 6A, "F#" -> 2B, "Ab major" -> 4B, "Bbm" -> 3A). Returns null for
+ * Accepts numbered Camelot ("8A", "12b"), Open Key ("1m" -> 8A, "12d" -> 7B)
+ * and standard musical notation ("Gm" -> 6A, "F#" -> 2B, "Ab major" -> 4B,
+ * "Bbm" -> 3A). Returns null for
  * metadata in neither notation, so callers can fail explicitly at their own
  * operation boundary rather than inventing a harmonic relationship.
  */
@@ -128,6 +134,13 @@ export function parseCamelotKey(value: string | null): CamelotKey | null {
 	if (camelot !== null) {
 		const number = Number(camelot[1]);
 		const mode = camelot[2].toUpperCase() as CamelotKey['mode'];
+		return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
+	}
+
+	const openKey = _OPEN_KEY_RE.exec(text);
+	if (openKey !== null) {
+		const number = ((Number(openKey[1]) + 6) % 12) + 1;
+		const mode: CamelotKey['mode'] = openKey[2] === 'm' ? 'A' : 'B';
 		return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
 	}
 
@@ -366,4 +379,48 @@ export function keySyncStatusTitle(status: Exclude<KeySyncStatus, 'off' | 'follo
 			throw new Error(`Unhandled KEY SYNC status: ${String(_exhaustive)}`);
 		}
 	}
+}
+
+export type { CamelotRuleId } from './camelot-rules.generated';
+
+/** True when `candidate` is one of the enabled rules' moves away from
+ * `reference` (compatible filter checkboxes). The rule table is generated
+ * from apps/shared/harmonic.py CAMELOT_RULES, so the browser and the server
+ * agree on what every rule means. Every rule respects the A/B letter and
+ * wraps 12 <-> 1. A key that does not parse matches nothing. Every rule id is
+ * resolved before any is tried, so an unknown one always throws. */
+export function camelotRulesAllow(
+	reference: string | null,
+	candidate: string | null,
+	ruleIds: readonly CamelotRuleId[]
+): boolean {
+	const rules = ruleIds.map((id) => {
+		const rule = CAMELOT_RULES_BY_ID.get(id);
+		if (rule === undefined) throw new Error(`Unknown Camelot rule: ${id}`);
+		return rule;
+	});
+	const ref = parseCamelotKey(reference);
+	const cand = parseCamelotKey(candidate);
+	if (ref === null || cand === null) return false;
+	return rules.some((rule) =>
+		rule.moves.some(
+			(move) =>
+				(move.from === '*' || move.from === ref.mode) &&
+				(cand.mode === ref.mode) === (move.to === 'same') &&
+				(((ref.number - 1 + move.step) % 12) + 12) % 12 === cand.number - 1
+		)
+	);
+}
+
+const CAMELOT_RULES_BY_ID: ReadonlyMap<CamelotRuleId, CamelotRule> = new Map(
+	CAMELOT_RULES.map((rule) => [rule.id, rule])
+);
+
+export const CAMELOT_RULE_IDS: readonly CamelotRuleId[] = CAMELOT_RULES.map((rule) => rule.id);
+export const DEFAULT_CAMELOT_RULE_IDS: readonly CamelotRuleId[] = CAMELOT_RULES.filter((r) => r.default_on).map(
+	(r) => r.id
+);
+
+export function isCamelotRuleId(value: unknown): value is CamelotRuleId {
+	return typeof value === 'string' && (CAMELOT_RULE_IDS as readonly string[]).includes(value);
 }

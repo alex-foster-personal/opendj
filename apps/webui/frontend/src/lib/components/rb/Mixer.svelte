@@ -66,6 +66,11 @@
 		void runPerformanceCommandFromUi({ type: 'trim', deck, value });
 	}
 
+	/** AUTOGAIN-04: the AG readout's write, through the same dispatcher as the knobs. */
+	function handleAutoGainOffset(deck: DeckId, offsetDb: number | null, stableId: string) {
+		return runPerformanceCommandFromUi({ type: 'auto_gain_offset', deck, offset_db: offsetDb, stable_id: stableId });
+	}
+
 	function handleEq(deck: DeckId, band: EqBand, value: number): void {
 		void runPerformanceCommandFromUi({ type: 'eq', deck, band, value });
 	}
@@ -217,6 +222,7 @@
 					stemEqMode={mixerState.channels[deck].stem_eq_mode}
 					stemPending={performanceCommandStatus.deck_pending[deck] > 0}
 					ontrim={(v) => handleTrim(deck, v)}
+					onAutoGainOffset={(db, id) => handleAutoGainOffset(deck, db, id)}
 					oneq={(band, v) => handleEq(deck, band, v)}
 					onfilter={(v) => handleFilter(deck, v)}
 					onfader={(v) => handleFader(deck, v)}

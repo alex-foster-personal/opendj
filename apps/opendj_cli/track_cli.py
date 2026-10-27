@@ -9,7 +9,7 @@ and call the running engine over HTTP, because the scan and the dismissal
 write state the engine owns.
 
 ``opendj track key-segments <stable_id>`` is nav1-key-record's own scope-lock
-line (specs/native-analysis-v1-lanes/nav1-key-record.md item 3): it must
+line ((private path) item 3): it must
 print the SAME `key_segments` block the `/anlz` payload carries, reusing the
 identical overlay function rather than a second read of the record.
 
@@ -41,6 +41,9 @@ GRID_FLAGS_VERB = "grid-flags"
 GRID_SCAN_VERB = "grid-scan"
 GRID_FLAG_VERB = "grid-flag"
 _GRID_FLAGS_PATH = "/api/v1/beatgrid-flags"
+#: AUTOGAIN-06: the CLI twin of `/api/v1/auto-gain` (the deck's AG readout).
+AUTO_GAIN_VERB = "auto-gain"
+_AUTO_GAIN_PATH = "/api/v1/auto-gain/tracks"
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
 
 _USAGE = (
@@ -48,7 +51,8 @@ _USAGE = (
     "       opendj track grid-flags [flagged|suspect|variable_tempo|unknown|ok|all]\n"
     "                               [include-dismissed] [all-tracks] [limit N]\n"
     "       opendj track grid-scan [all-tracks] [no-wait]\n"
-    "       opendj track grid-flag <stable_id> dismiss|restore"
+    "       opendj track grid-flag <stable_id> dismiss|restore\n"
+    "       opendj track auto-gain <stable_id> [set <dB>|clear]"
 )
 
 
@@ -70,6 +74,8 @@ def run(
         return _grid_scan(args)
     if verb == GRID_FLAG_VERB:
         return _grid_flag(args)
+    if verb == AUTO_GAIN_VERB:
+        return _auto_gain(args)
     print(f"unknown track verb: {verb!r}\n{_USAGE}", file=sys.stderr)
     return 1
 
@@ -125,6 +131,25 @@ def _grid_flag(args: Sequence[str]) -> int:
     body = json.dumps({"dismissed": args[1] == "dismiss"})
     return api_cli.run(
         ["PUT", f"{_GRID_FLAGS_PATH}/{args[0]}/dismissed", "--json", body], as_json=True
+    )
+
+
+def _auto_gain(args: Sequence[str]) -> int:
+    """`GET` one track's auto gain, or `PUT` the user's own offset (set/clear)."""
+    if len(args) == 1:
+        return api_cli.run(["GET", f"{_AUTO_GAIN_PATH}/{args[0]}"], as_json=True)
+    if len(args) == 2 and args[1] == "clear":
+        offset: float | None = None
+    elif len(args) == 3 and args[1] == "set":
+        try:
+            offset = float(args[2])
+        except ValueError:
+            return _usage_error()
+    else:
+        return _usage_error()
+    body = json.dumps({"offset_db": offset})
+    return api_cli.run(
+        ["PUT", f"{_AUTO_GAIN_PATH}/{args[0]}/user-offset", "--json", body], as_json=True
     )
 
 
@@ -283,6 +308,7 @@ def _key_segments(
 
 
 __all__ = [
+    "AUTO_GAIN_VERB",
     "GRID_FLAGS_VERB",
     "GRID_FLAG_VERB",
     "GRID_SCAN_VERB",

@@ -23,6 +23,7 @@ from apps.webui.server.sqlite_backend import SqliteBackend
 LIBRARY_BROWSER_DEFAULTS: dict[str, Any] = {
     "hide_broken_links": False,
     "library_density": "compact",
+    "key_notation": "camelot_musical",
     "next_only_filter": False,
     "remixes_filter": False,
     "vocals_filter": False,
@@ -33,6 +34,7 @@ LIBRARY_BROWSER_DEFAULTS: dict[str, Any] = {
 LIBRARY_BROWSER_WRITES: dict[str, Any] = {
     "hide_broken_links": True,
     "library_density": "cosy",
+    "key_notation": "musical",
     "next_only_filter": True,
     "remixes_filter": True,
     "vocals_filter": True,
@@ -136,6 +138,26 @@ def test_ui_prefs_library_browser_put_leaves_siblings_alone(prefs_client: TestCl
 
 def test_ui_prefs_rejects_invalid_library_density(prefs_client: TestClient) -> None:
     r = prefs_client.put("/api/v1/ui-prefs", json={"library_density": "wide"})
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("notation", ("camelot_musical", "camelot", "open_key", "musical"))
+def test_ui_prefs_key_notation_round_trips_every_notation(prefs_client: TestClient, notation: str) -> None:
+    """[if] a valid key_notation is PUT [then] GET returns it unchanged."""
+    r = prefs_client.put("/api/v1/ui-prefs", json={"key_notation": notation})
+    assert r.status_code == 200, r.text
+    assert prefs_client.get("/api/v1/ui-prefs").json()["key_notation"] == notation
+
+
+def test_ui_prefs_key_notation_defaults_to_camelot_plus_musical(prefs_client: TestClient) -> None:
+    """[if] nothing was ever stored [then] key_notation is camelot_musical (8A \u2022 Am)."""
+    assert prefs_client.get("/api/v1/ui-prefs").json()["key_notation"] == "camelot_musical"
+
+
+@pytest.mark.parametrize("bad", ("traktor", "Camelot", "", 1))
+def test_ui_prefs_rejects_unknown_key_notation(prefs_client: TestClient, bad: Any) -> None:
+    """One key notation for every row: an unknown one is refused, never coerced."""
+    r = prefs_client.put("/api/v1/ui-prefs", json={"key_notation": bad})
     assert r.status_code == 422
 
 
@@ -292,7 +314,7 @@ def test_ui_prefs_refuses_a_wrong_typed_library_browser_key_on_disk(
 
 
 COMPATIBLE_FILTER_DEFAULTS: dict[str, Any] = {
-    "camelot_steps": 1,
+    "rules": ["same_key", "adjacent", "relative"],
     "bpm_window_bpm": 20.0,
     "bpm_enabled": True,
     "allow_half_double": True,
@@ -311,7 +333,7 @@ def test_ui_prefs_compatible_filter_round_trips_to_disk(
 ) -> None:
     """[if] compatible-filter ranges are PUT [then] a fresh GET and ui-prefs.json return them, [else stop]."""
     chosen = {
-        "camelot_steps": 2,
+        "rules": ["same_key", "diagonal", "jaws"],
         "bpm_window_bpm": 10,
         "bpm_enabled": True,
         "allow_half_double": False,
@@ -349,12 +371,12 @@ def test_ui_prefs_compatible_filter_reloads_from_disk_in_a_new_app(
     with _client() as first:
         r = first.put(
             "/api/v1/ui-prefs",
-            json={"compatible_filter": {"camelot_steps": 0, "bpm_direction": "same"}},
+            json={"compatible_filter": {"rules": ["relative"], "bpm_direction": "same"}},
         )
         assert r.status_code == 200
     with _client() as second:
         body = second.get("/api/v1/ui-prefs").json()["compatible_filter"]
-    assert body == {**COMPATIBLE_FILTER_DEFAULTS, "camelot_steps": 0, "bpm_direction": "same"}
+    assert body == {**COMPATIBLE_FILTER_DEFAULTS, "rules": ["relative"], "bpm_direction": "same"}
 
 
 def test_ui_prefs_compatible_filter_partial_put_keeps_stored_fields(
@@ -379,7 +401,9 @@ def test_ui_prefs_compatible_filter_partial_put_keeps_stored_fields(
 @pytest.mark.parametrize(
     "bad",
     (
-        {"camelot_steps": 3},
+        {"rules": ["same_key", "tritone"]},
+        {"rules": ["same_key", "same_key"]},
+        {"rules": "same_key"},
         {"bpm_window_bpm": -1},
         {"bpm_direction": "sideways"},
     ),
@@ -391,13 +415,49 @@ def test_ui_prefs_rejects_invalid_compatible_filter(
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "stored",
+    ({"bpm_enabled": "yes"}, {"camelot_steps": []}, {"camelot_steps": {}}, {"camelot_steps": "1"}, {"camelot_steps": 3}),
+)
 def test_ui_prefs_get_refuses_wrong_typed_compatible_filter_on_disk(
-    prefs_client: TestClient, tmp_path: Path
+    prefs_client: TestClient, tmp_path: Path, stored: dict[str, Any]
 ) -> None:
+    """[if] a stored filter field (legacy camelot_steps too) has the wrong type [then] GET is a 422, never a 500."""
     path = tmp_path / "data" / "state" / "ui-prefs.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"compatible_filter": {"bpm_enabled": "yes"}}) + "\n", encoding="utf-8"
-    )
+    path.write_text(json.dumps({"compatible_filter": stored}) + "\n", encoding="utf-8")
     r = prefs_client.get("/api/v1/ui-prefs")
     assert r.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("steps", "rules"),
+    (
+        (0, ["same_key", "relative"]),
+        (1, ["same_key", "adjacent", "relative"]),
+        (2, ["same_key", "adjacent", "relative", "energy_boost", "energy_drop"]),
+    ),
+)
+def test_ui_prefs_migrates_legacy_camelot_steps_to_rules(
+    prefs_client: TestClient, tmp_path: Path, steps: int, rules: list[str]
+) -> None:
+    """[if] ui-prefs.json predates rule checkboxes [then] camelot_steps reads as its nearest rules."""
+    path = tmp_path / "data" / "state" / "ui-prefs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"compatible_filter": {"camelot_steps": steps}}) + "\n", encoding="utf-8")
+    body = prefs_client.get("/api/v1/ui-prefs").json()["compatible_filter"]
+    assert body == {**COMPATIBLE_FILTER_DEFAULTS, "rules": rules}
+
+
+def test_ui_prefs_unknown_camelot_rule_names_the_known_ones(prefs_client: TestClient) -> None:
+    """[if] a PUT names an unknown rule [then] the 422 lists every valid rule id."""
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"rules": ["tritone"]}})
+    assert r.status_code == 422
+    assert "same_key|adjacent|relative|diagonal" in json.dumps(r.json())
+
+
+def test_ui_prefs_empty_camelot_rules_is_kept(prefs_client: TestClient) -> None:
+    """[if] every rule box is unticked [then] the empty list is stored, not reset to defaults."""
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"rules": []}})
+    assert r.status_code == 200
+    assert prefs_client.get("/api/v1/ui-prefs").json()["compatible_filter"]["rules"] == []

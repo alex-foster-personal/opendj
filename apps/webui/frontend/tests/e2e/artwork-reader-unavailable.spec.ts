@@ -296,7 +296,13 @@ test('null artwork availability identifies an unavailable reader without request
 	);
 	await page.route('**/api/v1/ui-prefs', (route) =>
 		route.fulfill({
-			json: { theme: 'dark', hide_todo_settings: false, technically_working_animate: true, confirm: {} }
+			json: {
+				theme: 'dark',
+				hide_todo_settings: false,
+				technically_working_animate: true,
+				confirm: {},
+				key_notation: 'camelot'
+			}
 		})
 	);
 	await page.route('**/api/v1/smartlists', (route) => route.fulfill({ json: [] }));

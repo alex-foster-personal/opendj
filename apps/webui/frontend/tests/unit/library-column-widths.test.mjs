@@ -15,26 +15,11 @@ test('compact utility columns fit real analysis grids and keep room for row numb
 	}
 });
 
-test('compact musical columns fit displayed key and BPM text without widening defaults', async () => {
-	const { autoMusicalWidths, compactMusicalWidths, COL_DEFAULTS } = await loadTypeScriptModule(
-		'src/lib/rb/library-column-widths.ts'
-	);
-	// Real WebKit measurement: a rendered 10B needs 29.23px and 124 needs 33px
-	// after the table cell's existing horizontal padding. Inter (Chromium on
-	// Linux/Windows) needs 19.09px for "12B" and 21.41px for "124" inside the
-	// 6+6px padding, so the floors are 32 and 36 (nit sweep N6: "1...").
-	assert.deepEqual(compactMusicalWidths([]), { key: 32, bpm: 36 });
-	assert.deepEqual(compactMusicalWidths([{ key: '8A', bpm: 120 }, { key: '12B', bpm: 128.4 }]), {
-		key: 32,
-		bpm: 36
-	});
-	assert.deepEqual(compactMusicalWidths([{ key: 'unparsed-key', bpm: 12345 }]), {
-		key: COL_DEFAULTS.key,
-		bpm: COL_DEFAULTS.bpm
-	});
+test('a manual K/B drag stays authoritative over the measured fit', async () => {
+	const { autoMusicalWidths } = await loadTypeScriptModule('src/lib/rb/library-column-widths.ts');
 	assert.deepEqual(
-		autoMusicalWidths({ key: 31, bpm: 39 }, { key: 32, bpm: 36 }, new Set(['key'])),
-		{ key: 31, bpm: 36 }
+		autoMusicalWidths({ key: 31, bpm: 39 }, { key: 70, bpm: 46 }, new Set(['key'])),
+		{ key: 31, bpm: 46 }
 	);
 });
 
@@ -42,8 +27,8 @@ test('auto-fit follows viewport and row-number changes while preserving manually
 	const source = await readFile('src/lib/components/rb/browser/TrackTable.svelte', 'utf8');
 	assert.match(source, /const maxRowOrder = \$derived\(rows\.reduce/);
 	assert.match(source, /const compact = compactUtilityWidths\(maxRowOrder\);/);
-	assert.match(source, /const musical = compactMusicalWidths\(rows\);/);
-	assert.match(source, /autoMusicalWidths\(current, musical, manuallyResizedColumns\)/);
+	assert.match(source, /const musical = wrapEl === null \? null : fitMusicalColumns\(\{/);
+	assert.match(source, /musical === null \? \{\} : autoMusicalWidths\(current, musical, manuallyResizedColumns\)/);
 	assert.match(source, /manuallyResizedColumns\.add\(col\)/);
 	assert.match(source, /void wrapWidth;/);
 	assert.match(source, /\.c-funnel,[\s\S]*?\.c-cloud \{\s*padding: 0 2px;/);

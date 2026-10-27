@@ -5,6 +5,9 @@ import { before, test } from 'node:test';
 import { readFrontendSource } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
+
 let ipc;
 let pairing;
 

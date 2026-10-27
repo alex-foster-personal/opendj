@@ -160,3 +160,54 @@ def test_from_rekordbox_scale_name_rejects_malformed_string() -> None:
         from_rekordbox_scale_name("H")
     with pytest.raises(ValueError):
         from_rekordbox_scale_name("")
+
+
+#-----------------------------------------------------------------------------
+# canonical_key_text: ONE parse for a key stored in any notation (operator
+# report, Sat 24 Oct 2026: the library mixed "8A" and "Am"). Every spelling
+# below is one seen in a real operator library (track_fields.key), or a
+# variant another source writes. Expected Camelot is hand-checked against the
+# wheel.
+from apps.analysis_key.canon import canonical_key_text  # noqa: E402
+
+STORED_SPELLINGS = [
+    # rekordbox ScaleName, spelled minors (all observed)
+    ("Gm", "6A"), ("Dm", "7A"), ("Fm", "4A"), ("F#m", "11A"), ("Em", "9A"),
+    ("Am", "8A"), ("Bm", "10A"), ("Cm", "5A"), ("Abm", "1A"), ("Dbm", "12A"),
+    ("Ebm", "2A"), ("Bbm", "3A"),
+    # rekordbox ScaleName, spelled majors (all observed)
+    ("C", "8B"), ("D", "10B"), ("E", "12B"), ("A", "11B"), ("Ab", "4B"),
+    ("F", "7B"), ("Eb", "5B"), ("Db", "3B"), ("F#", "2B"), ("G", "9B"),
+    ("B", "1B"), ("Bb", "6B"), ("Fmaj", "7B"),
+    # Camelot (rekordbox, MIK, our own lanes)
+    ("8A", "8A"), ("12B", "12B"), ("1a", "1A"), (" 8A ", "8A"),
+    # Open Key (Traktor, MIK)
+    ("1m", "8A"), ("12d", "7B"), ("6m", "1A"),
+    # sharps and flats, Unicode accidentals, min/maj spelled out (ID3 TKEY)
+    ("G#m", "1A"), ("C#m", "12A"), ("Gb", "2B"), ("E\u266dm", "2A"),
+    ("A minor", "8A"), ("A min", "8A"), ("Bbmaj", "6B"), ("C# major", "3B"),
+]
+
+
+@pytest.mark.parametrize(("stored", "camelot"), STORED_SPELLINGS)
+def test_canonical_key_text_serves_every_observed_spelling_as_camelot(
+    stored: str, camelot: str
+) -> None:
+    """[if] a stored spelling serves a different Camelot than its key [then] rows mix, [else stop]."""
+    assert canonical_key_text(stored) == camelot
+
+
+@pytest.mark.parametrize("sentinel", ["All", "0", ""])
+def test_no_key_sentinels_serve_no_key(sentinel: str) -> None:
+    """[if] rekordbox's "All" no-key sentinel serves as a key [then] the cell lies, [else stop]."""
+    assert canonical_key_text(sentinel) is None
+
+
+@pytest.mark.parametrize("junk", ["H", "13A", "0m", "Amaj7", "8M", "-", "Cb"])
+def test_unparseable_key_is_served_as_stored(junk: str) -> None:
+    """[if] an unparseable key is guessed or dropped [then] data loss hides, [else stop]."""
+    assert canonical_key_text(junk) == junk
+
+
+def test_canonical_key_text_none_is_none() -> None:
+    assert canonical_key_text(None) is None

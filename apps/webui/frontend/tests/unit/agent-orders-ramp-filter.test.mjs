@@ -17,6 +17,9 @@ import { afterEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
+
 const entry = await loadTypeScriptModule('tests/unit/fixtures/agent-orders-entry.ts');
 
 afterEach(() => {

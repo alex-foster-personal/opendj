@@ -18,7 +18,7 @@
 		type SettingDef,
 		type SettingGroupId
 	} from '$lib/settings/catalog';
-	import { applySettingChange, readSettingValue, type AllowedSettingKey } from '$lib/settings/apply';
+	import { applySettingChange, readSettingValue, settingUnavailable, type AllowedSettingKey } from '$lib/settings/apply';
 	import {
 		applyBooleanAction,
 		booleanKeyAction,
@@ -597,6 +597,9 @@
 										     Full card width, below the label and control (the maintainer, Tue 6 Oct 2026). -->
 										<WaveformDesignPreview />
 									{/if}
+									{#if settingUnavailable(def.id) !== null}
+										<p class="so-detail so-unavailable" role="alert">{settingUnavailable(def.id)}</p>
+									{/if}
 									<p class="so-detail">{def.detail}</p>
 								</li>
 							{/each}
@@ -822,6 +825,9 @@
 	.so-group {
 		font-size: 0.72rem;
 		color: var(--muted, #9aa4b2);
+	}
+	.so-unavailable {
+		color: var(--danger, #f87171);
 	}
 	.so-detail {
 		margin: 8px 0 0;

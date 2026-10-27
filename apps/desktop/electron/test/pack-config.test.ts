@@ -28,6 +28,12 @@ test('pack:dir stamps build-identity before electron-builder', () => {
 	assert.ok(stampAt !== -1 && builderAt !== -1 && stampAt < builderAt);
 });
 
+test('pack:dir checks the packed payload against the stamp after electron-builder (EL-17-F12)', () => {
+	const builderAt = pkg.scripts['pack:dir'].indexOf('electron-builder');
+	const verifyAt = pkg.scripts['pack:dir'].indexOf('node scripts/verify-pack.mjs');
+	assert.ok(builderAt !== -1 && verifyAt > builderAt, pkg.scripts['pack:dir']);
+});
+
 test('the packaged app ships the bootstrap setup directory', () => {
 	assert.ok(pkg.build.extraResources.some((entry) => entry.from === '../setup' && entry.to === 'setup'));
 });

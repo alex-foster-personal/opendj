@@ -109,7 +109,8 @@
 				stable_id: decks[d].stable_id,
 				key: decks[d].key,
 				bpm: decks[d].bpm
-			}))
+			})),
+			uiPrefs.compatible_filter.rules.length > 0
 		)
 	);
 	const states = $derived(filterStates(uiPrefs));

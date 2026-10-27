@@ -32,6 +32,8 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, Literal, Protocol
 
+from apps.analysis_loudness.http import auto_gain
+
 # --- data models (dict-shaped; pydantic is a view layer) -----------------
 
 QueueKind = Literal["dedup", "bad_beatgrid", "auto_cue"]
@@ -96,6 +98,9 @@ class Track:
     tempo_pref: dict[str, float | None] | None = None
     # GRIDFLAG-04: the user hid this track's beatgrid flag. False when never set.
     grid_flag_dismissed: bool = False
+    # AUTOGAIN-04: the user's own auto gain offset in dB, beside the analysed
+    # one and winning over it. None when never set; re-analysis never writes it.
+    auto_gain_user_db: float | None = None
     file_path: str | None = None
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
@@ -217,6 +222,18 @@ def resolve_grid_flag_dismissed_write(patch_value: Any) -> bool:
     if not isinstance(patch_value, bool):
         raise BackendError("grid_flag_dismissed must be true or false")
     return patch_value
+
+
+def resolve_auto_gain_user_db_write(patch_value: Any) -> float | None:
+    """Validate an ``auto_gain_user_db`` patch value (AUTOGAIN-04): dB or null."""
+    if patch_value is None:
+        return None
+    if isinstance(patch_value, bool) or not isinstance(patch_value, (int, float)):
+        raise BackendError("auto_gain_user_db must be a number of dB or null")
+    try:
+        return auto_gain.validate_user_offset_db(float(patch_value))
+    except ValueError as exc:
+        raise BackendError(str(exc)) from exc
 
 
 def resolve_tempo_pref_write(patch_value: Any) -> dict[str, float | None] | None:
@@ -582,6 +599,13 @@ class InMemoryBackend:
                     )
                     prov["grid_flag_dismissed"] = Provenance(
                         value=updated.grid_flag_dismissed, source=source,
+                        confidence=1.0, modified_at=now, status="ok")
+                if "auto_gain_user_db" in update.patch:
+                    updated.auto_gain_user_db = resolve_auto_gain_user_db_write(
+                        update.patch["auto_gain_user_db"]
+                    )
+                    prov["auto_gain_user_db"] = Provenance(
+                        value=updated.auto_gain_user_db, source=source,
                         confidence=1.0, modified_at=now, status="ok")
                 if "file_path" in update.patch:
                     file_path = update.patch["file_path"]

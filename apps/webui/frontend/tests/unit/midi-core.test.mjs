@@ -23,6 +23,9 @@ import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 let vite;
@@ -643,7 +646,7 @@ test('headphone_mix while master_cue latched updates saved restore mix only', as
 // without editing the bundle, and to be removed again without a page reload.
 // Precedence is TIERED, not array-order: installed always beats builtin, so
 // resolution does not depend on which module happened to register first.
-// Design: specs/controller-onboarding.md section 3.3.
+// Design: (private path) section 3.3.
 //
 //   if an installed map loses to a builtin on the same port name then broken
 //   if unregisterDeviceMap leaves the map resolvable then broken

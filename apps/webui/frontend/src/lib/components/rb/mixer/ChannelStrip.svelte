@@ -5,6 +5,7 @@
 	 * headphone CUE, vertical fader (fills remaining height), STEM controls.
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
+	import AutoGainReadout from './AutoGainReadout.svelte';
 	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import { clickSelect, isSelected } from '$lib/rb/mixer-selection.svelte';
@@ -60,6 +61,8 @@
 		stemEqMode: boolean;
 		stemPending: boolean;
 		ontrim: (value: number) => void;
+		/** AUTOGAIN-04: set (dB) or clear (null) the user's auto gain via the dispatcher. */
+		onAutoGainOffset: (offsetDb: number | null, stableId: string) => Promise<{ ok: boolean; error?: unknown }>;
 		oneq: (band: EqBand, value: number) => void;
 		onfilter: (value: number) => void;
 		onfader: (value: number) => void;
@@ -83,6 +86,7 @@
 		stemEqMode,
 		stemPending,
 		ontrim,
+		onAutoGainOffset,
 		oneq,
 		onfilter,
 		onfader,
@@ -306,6 +310,7 @@
 			size={trimSize}
 			onchange={ontrim}
 		/>
+		<AutoGainReadout {deckId} onoffset={onAutoGainOffset} />
 	</div>
 	<div class="eq-stack">
 		<Knob
@@ -554,6 +559,7 @@
 	 * for the full arithmetic). Purely cosmetic spacing, no control removed
 	 * or made smaller. */
 	.trim-slot {
+		position: relative;
 		margin-bottom: 3px;
 	}
 	/* Pin 246b0f5 LESS mode: FILTER (the inert stub below) drops out of the

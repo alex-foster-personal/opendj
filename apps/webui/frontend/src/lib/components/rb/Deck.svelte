@@ -32,6 +32,7 @@
 		queryQuantizedLaunchArmed,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
+	import { masterButtonCommand } from '$lib/rb/master-election';
 	import { pushToast } from '$lib/stores.svelte';
 	import {
 		deckHoverEnter,
@@ -310,13 +311,9 @@
 		});
 	}
 
-	async function selectMaster(): Promise<void> {
-		const state = queryPerformanceState();
-		if (state.master_deck === deckId && state.master_mode === 'locked') {
-			await runPerformanceCommandFromUi({ type: 'master', deck: deckId, lock: false });
-			return;
-		}
-		await runPerformanceCommandFromUi({ type: 'master', deck: deckId, lock: true });
+	/** Click picks this deck and keeps AUTO handoff; long-press or Shift/Alt-click locks. */
+	async function selectMaster(lockGesture: boolean): Promise<void> {
+		await runPerformanceCommandFromUi(masterButtonCommand(queryPerformanceState(), deckId, lockGesture));
 	}
 
 	async function toggleMasterTempo(): Promise<void> {

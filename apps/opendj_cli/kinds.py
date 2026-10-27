@@ -87,6 +87,19 @@ def head_delay_ms_value(key: str, raw: str) -> float:
     return parsed
 
 
+AUTO_GAIN_OFFSET_MAX_DB = 12.0  # apps/analysis_loudness/auto_gain.py OFFSET_MAX_DB
+
+
+def auto_gain_offset_value(key: str, raw: str) -> float | None:
+    """AUTOGAIN-04: the user's auto gain dB, or ``clear`` for the analysed value."""
+    if raw == "clear":
+        return None
+    parsed = number_value(key, raw)
+    if abs(parsed) > AUTO_GAIN_OFFSET_MAX_DB:
+        raise ValueError(f"{key} must be within -12..12 dB or clear, got {raw!r}")
+    return parsed
+
+
 MASTER_DELAY_MAX_MS = 1500  # keep in sync with apps/webui/frontend/src/lib/player/constants.ts
 
 

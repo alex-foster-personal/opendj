@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	// LIBWS-02: the Crate Desk inspector. One selected track shows its fields
 	// with who set each one (provenance source chip) and edits rating, tags
 	// and notes through the same If-Match PATCH the track page uses. Several
@@ -273,8 +274,8 @@
 				>Tempo pref</button>
 			</dd>
 			<dt>Key</dt>
-			<dd title="Musical key in Camelot notation">
-				{single.key ?? ''}
+			<dd title="Musical key, in the key notation chosen in Settings">
+				{shownKey(single.key) ?? ''}
 				{#if sourceOf('key') !== null}<span class="src" title={sourceTitle('key')}>{sourceOf('key')}</span>{/if}
 			</dd>
 			<dt>Genre</dt>

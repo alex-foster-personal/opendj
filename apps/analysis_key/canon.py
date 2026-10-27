@@ -34,14 +34,21 @@ normalisers), not a fourth table:
     cannot be inverted to pick one.
 
 Neither rekordbox nor MIK is ground truth for the musical key of a track
-(see specs/native-analysis-v1.md section 5); this module only converts
+(see (private path) section 5); this module only converts
 between NOTATIONS of a key both sides can already agree to disagree about.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
-from apps.equivalence.normalisers import MISSING, MODE_MAJOR, MODE_MINOR, normalise_key
+from apps.equivalence.normalisers import (
+    MISSING,
+    MODE_MAJOR,
+    MODE_MINOR,
+    NormaliseError,
+    normalise_key,
+)
 from apps.equivalence.normalisers import Key as _NormKey
 
 # Canonical pitch-class spelling (0=C .. 11=B) used only when WRITING a
@@ -127,3 +134,33 @@ from_mik_camelot = from_camelot
 to_mik_camelot = to_camelot
 from_mik_open_key = from_open_key
 to_mik_open_key = to_open_key
+
+
+#-----------------------------------------------------------------------------
+# A stored key can arrive in any notation a source writes: rekordbox ScaleName
+# (Camelot "8A" OR spelled "Am"/"F#m"/"Fmaj"), MIK Camelot or Open Key ("1m"),
+# an ID3 TKEY ("A minor"), or a user edit. The library showed whichever one
+# was stored, so one table mixed "8A" and "Am" (operator report, Sat 24 Oct 2026). Every
+# reader goes through this ONE parse, which delegates to normalise_key (no
+# second key table), and serves the canonical Camelot form.
+_STORED_KEY_UNITS: tuple[str, ...] = ("mixed_camelot_musical", "open_key")
+
+
+# A library holds a few dozen distinct key strings, read once per row.
+@lru_cache(maxsize=1024)
+def canonical_key_text(raw: str | None) -> str | None:
+    """The text a reader serves for a stored key, in any supported notation.
+
+    Camelot when it parses, None for a documented no-key sentinel ("", "0",
+    rekordbox's "All"), and the raw text, unchanged, when no notation parses
+    (the browser flags that case rather than guessing).
+    """
+    if raw is None:
+        return None
+    for unit in _STORED_KEY_UNITS:
+        try:
+            result = normalise_key(raw, unit)
+        except NormaliseError:
+            continue
+        return result.camelot if isinstance(result, _NormKey) else None
+    return raw

@@ -11,7 +11,7 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 280576 then the figure moved
+// - if the library limit stops being exactly 283648 then the figure moved
 //   without a reviewed note: 256000 was the inherited figure this repair
 //   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
 //   the live-transport probe on the client error path, with main already
@@ -141,16 +141,19 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 280576: the inherited 256000 plus the reviewed KiB through the #6786 wave zoom raise', () => {
+test('the library limit is exactly 288768: the inherited 256000 plus the reviewed KiB through the #7559 and auto gain raises', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 280576,/,
+    /\{ name: 'library', limit: 288768,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
+  assert.match(source, /RAISED Tue 27 Oct 2026 \(\+5 KiB over #7559, auto gain, AUTOGAIN-01\.\.06/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 16 Oct 2026 \(\+1 KiB, PR #6786/, 'the raise must carry its note');
+  assert.match(source, /RAISED Tue 27 Oct 2026 \(\+2 KiB, PR #7483/, 'the raise must carry its note');
+  assert.match(source, /RAISED Tue 27 Oct 2026 \(\+1 KiB, PR #7559/, 'the raise must carry its note');
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6585 follow-up/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');

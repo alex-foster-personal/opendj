@@ -14,6 +14,7 @@
 import { DECK_IDS } from '$lib/player/constants';
 import { isMasterMuted } from '$lib/player/master-mute.svelte';
 import { getDeckState, mixerState } from '$lib/player/state.svelte';
+import { autoGainLinear } from './auto-gain.svelte';
 import {
 	classifyTransition,
 	type TransitionDeckInput,
@@ -31,7 +32,9 @@ function _deckInput(id: TransitionDeckInput['id']): TransitionDeckInput {
 		playing: deck.playing,
 		audible: deck.audible,
 		fader: channel.fader,
-		trim: channel.trim,
+		// The trim stage as heard: knob times auto gain (AUTOGAIN-02), so a deck
+		// auto gain cuts by 12 dB is not read as the louder one.
+		trim: channel.trim * autoGainLinear(id),
 		assign: channel.assign,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		is_master: deck.is_master,

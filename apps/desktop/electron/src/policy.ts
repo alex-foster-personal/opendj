@@ -123,7 +123,8 @@ export const APP_SCHEME = 'opendj';
 export const APP_HOST = 'app';
 export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+// IPv6 loopback is deliberately absent: the Tauri capabilities do not grant it (EL-17-F13).
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
 
 /** Loopback http, the same scope the Tauri capabilities grant (`http://127.0.0.1:*`, `http://localhost:*`). */
 export function isLoopbackHttp(url: string): boolean {
@@ -152,9 +153,9 @@ export function isTrustedPage(url: string): boolean {
 
 /** Chromium permissions granted to trusted pages; everything else is refused. */
 export const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set([
-	// Web MIDI: a stopgap until MIDI moves into the Rust audio engine (D9).
+	// Web MIDI: a stopgap until MIDI moves into the Rust audio engine (D9). No 'midiSysex':
+	// Tauri's native_midi_send accepts three bounded bytes, and no map needs SysEx (EL-17-F14).
 	'midi',
-	'midiSysex',
 	// Output device ids for AudioContext.setSinkId (two-device cue, CUEOUT-09).
 	'media',
 	'speaker-selection'

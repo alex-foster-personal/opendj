@@ -6,6 +6,7 @@
  * the whole-library search request and the load hand-off to the browser.
  */
 import type { DeckId } from './deck-id';
+import { keyForms } from './key-notation';
 import type { FileAvailabilityStatus } from './file-availability';
 
 /** The fields the bar shows and the browser's deck-load path needs. */
@@ -28,7 +29,8 @@ export const COMMAND_BAR_LIMIT = 50;
 
 /** Lower-cased "title artist genre key" for one row, built once per row set. */
 export function rowHaystack(row: CommandBarRow): string {
-	return [row.title, row.artist, row.genre, row.key]
+	// The key in every notation, so whatever the row shows (8A, Am, 1m) finds it.
+	return [row.title, row.artist, row.genre, ...keyForms(row.key ?? null)]
 		.filter((part): part is string => typeof part === 'string' && part !== '')
 		.join(' ')
 		.toLowerCase();

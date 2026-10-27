@@ -163,8 +163,8 @@ test('the heartbeat and the pressure poll go through the same window, so neither
 	assert.equal(fetchedUrls.length, 0, 'nothing may fetch while the boot window is open');
 	assert.equal(
 		manual.pending(),
-		5,
-		'the perf-tier fetch, telemetry consent, heartbeat, pressure poll, and client samples are all queued, never dropped'
+		6,
+		'the perf-tier fetch, auto gain pref sync, telemetry consent, heartbeat, pressure poll, and client samples are all queued, never dropped'
 	);
 
 	manual.release();

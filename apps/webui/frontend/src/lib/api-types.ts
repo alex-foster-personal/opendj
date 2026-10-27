@@ -944,6 +944,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auto-gain/tracks/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Auto Gain
+         * @description The offset a deck applies when it loads this track, and why.
+         */
+        get: operations["get_track_auto_gain_api_v1_auto_gain_tracks__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auto-gain/tracks/{stable_id}/user-offset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Track Auto Gain User Offset
+         * @description Set (or clear with null) the user's own offset. It wins over the analysed
+         *     one and is never replaced by re-analysis.
+         */
+        put: operations["put_track_auto_gain_user_offset_api_v1_auto_gain_tracks__stable_id__user_offset_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/autolists/buckets": {
         parameters: {
             query?: never;
@@ -7934,6 +7975,65 @@ export interface components {
             /** Stable Id */
             stable_id: string;
         };
+        /** AutoGainOut */
+        AutoGainOut: {
+            /** Analysed Offset Db */
+            analysed_offset_db: number | null;
+            /** Effective Offset Db */
+            effective_offset_db: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Integrated Lufs */
+            integrated_lufs: number | null;
+            /** Limited By */
+            limited_by: ("range" | "true_peak") | null;
+            /** Loudness Reason */
+            loudness_reason: string | null;
+            /**
+             * Offset Max Db
+             * @default 12
+             */
+            offset_max_db: number;
+            /**
+             * Offset Min Db
+             * @default -12
+             */
+            offset_min_db: number;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "analysed" | "user" | "not_analysed" | "off";
+            /** Target Lufs */
+            target_lufs: number;
+            /**
+             * True Peak Ceiling Dbtp
+             * @default -1
+             */
+            true_peak_ceiling_dbtp: number;
+            /** True Peak Dbtp */
+            true_peak_dbtp: number | null;
+            /** User Offset Db */
+            user_offset_db: number | null;
+        };
+        /**
+         * AutoGainPrefsOut
+         * @description Auto gain: match every track to ``target_lufs`` (integrated, BS.1770).
+         */
+        AutoGainPrefsOut: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Target Lufs
+             * @default -12
+             */
+            target_lufs: number;
+        };
         /** AutoSyncOut */
         AutoSyncOut: {
             /**
@@ -9351,7 +9451,9 @@ export interface components {
         };
         /**
          * CompatibleFilterOut
-         * @description Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.
+         * @description Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window.
+         *
+         *     ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES.
          */
         CompatibleFilterOut: {
             /**
@@ -9375,12 +9477,8 @@ export interface components {
              * @default 20
              */
             bpm_window_bpm: number;
-            /**
-             * Camelot Steps
-             * @default 1
-             * @enum {integer}
-             */
-            camelot_steps: 0 | 1 | 2;
+            /** Rules */
+            rules?: string[];
         };
         /** ConfigIn */
         ConfigIn: {
@@ -17028,6 +17126,7 @@ export interface components {
              * @enum {string}
              */
             app_posture: "prep" | "gig";
+            auto_gain?: components["schemas"]["AutoGainPrefsOut"];
             /**
              * Auto Play Enabled
              * @default true
@@ -17090,6 +17189,12 @@ export interface components {
              * @default false
              */
             jog_radial_waveform: boolean;
+            /**
+             * Key Notation
+             * @default camelot_musical
+             * @enum {string}
+             */
+            key_notation: "camelot_musical" | "camelot" | "open_key" | "musical";
             level_calibration?: components["schemas"]["LevelCalibrationOut"];
             /**
              * Library Density
@@ -17200,6 +17305,7 @@ export interface components {
             app_mode?: components["schemas"]["AppModeOut"] | null;
             /** App Posture */
             app_posture?: ("prep" | "gig") | null;
+            auto_gain?: components["schemas"]["AutoGainPrefsOut"] | null;
             /** Auto Play Enabled */
             auto_play_enabled?: boolean | null;
             /** Auto Play Enforce Order */
@@ -17228,6 +17334,8 @@ export interface components {
             hide_todo_settings?: boolean | null;
             /** Jog Radial Waveform */
             jog_radial_waveform?: boolean | null;
+            /** Key Notation */
+            key_notation?: ("camelot_musical" | "camelot" | "open_key" | "musical") | null;
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Library Density */
             library_density?: ("compact" | "cosy") | null;
@@ -17625,6 +17733,11 @@ export interface components {
             volumes: components["schemas"]["UsbVolumeOut"][];
             /** Watching */
             watching: boolean;
+        };
+        /** UserOffsetIn */
+        UserOffsetIn: {
+            /** Offset Db */
+            offset_db: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -19570,6 +19683,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeOut"];
+                };
+            };
+        };
+    };
+    get_track_auto_gain_api_v1_auto_gain_tracks__stable_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoGainOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_track_auto_gain_user_offset_api_v1_auto_gain_tracks__stable_id__user_offset_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserOffsetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoGainOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

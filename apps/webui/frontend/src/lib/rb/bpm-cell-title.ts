@@ -1,6 +1,7 @@
 /** BPM column hover copy (LIBUX-21). */
 import type { BrowserRow } from '$lib/components/rb/browser/pane-contract.svelte';
 import { bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
+import { hasUsableBpm } from '$lib/rb/bpm-cell-text';
 
 export function bpmCellTitle(row: BrowserRow, masterBpm: number | null): string {
 	if (row.bpm_status === 'failed') {
@@ -26,7 +27,7 @@ export function bpmCellTitle(row: BrowserRow, masterBpm: number | null): string 
 	} else if (row.bpm_confidence_error) {
 		parts.push(`Confidence: ${row.bpm_confidence_error}`);
 	}
-	if (row.bpm !== null) {
+	if (hasUsableBpm(row.bpm)) {
 		parts.push(`Exact BPM: ${row.bpm.toFixed(1)}`);
 		if (row.bpm_status === 'ok' && !row.bpm_method && row.bpm_confidence == null && !row.bpm_confidence_error) {
 			parts.push('Dynamic tempo analysis: not analyzed');

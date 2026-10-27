@@ -20,7 +20,10 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from apps.shared.events import publish
+from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS
 from apps.shared.paths import DATA_DIR
+
+from ..auto_gain_prefs import DEFAULT_AUTO_GAIN, AutoGainPrefsOut, merge_auto_gain, parse_auto_gain
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
 
@@ -75,12 +78,17 @@ _WAVE_OVERLAY_BOOL_DEFAULTS: dict[str, bool] = {"show_sections": _DEFAULT_SHOW_S
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
+# One notation for every key cell (operator report, Sat 24 Oct 2026): keys reach the
+# browser as canonical Camelot, and this picks how every row renders them.
+KeyNotation = Literal["camelot_musical", "camelot", "open_key", "musical"]
+_KEY_NOTATIONS: tuple[str, ...] = ("camelot_musical", "camelot", "open_key", "musical")
 PlaylistTreeView = Literal["tree", "column"]
 CompatibleBpmDirection = Literal["both", "above", "below", "same"]
 _DEFAULT_HIDE_BROKEN_LINKS = False
 _DEFAULT_DECK_RIGHT_MIRROR = False
 _DEFAULT_PLAYLIST_TREE_VIEW: PlaylistTreeView = "tree"
 _DEFAULT_LIBRARY_DENSITY: LibraryDensity = "compact"
+_DEFAULT_KEY_NOTATION: KeyNotation = "camelot_musical"
 _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "next_only_filter": False,
     "remixes_filter": False,
@@ -349,6 +357,28 @@ def _parse_library_density(raw: dict[str, Any]) -> str:
     return value
 
 
+def _merge_library_enum_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    if body.library_density is not None:
+        current["library_density"] = body.library_density
+    if body.key_notation is not None:
+        current["key_notation"] = body.key_notation
+
+
+def _parse_key_notation(raw: dict[str, Any]) -> str:
+    if "key_notation" not in raw:
+        return _DEFAULT_KEY_NOTATION
+    value = raw["key_notation"]
+    if value not in _KEY_NOTATIONS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "key_notation must be camelot_musical|camelot|open_key|musical",
+            },
+        )
+    return value
+
+
 def _library_browser_bool_defaults() -> dict[str, bool]:
     return {
         "hide_broken_links": _DEFAULT_HIDE_BROKEN_LINKS,
@@ -527,7 +557,7 @@ def _parse_library_watcher_folders(raw: dict[str, Any]) -> list[str]:
 # LIBUX-32 compatible filter ranges. Mirrors COMPATIBLE_FILTER_DEFAULTS and
 # validateCompatibleFilterPrefs in apps/webui/frontend/src/lib/rb/compatible-filter-prefs.ts.
 _DEFAULT_COMPATIBLE_FILTER: dict[str, Any] = {
-    "camelot_steps": 1,
+    "rules": list(DEFAULT_CAMELOT_RULE_IDS),
     "bpm_window_bpm": 20.0,
     "bpm_enabled": True,
     "allow_half_double": True,
@@ -544,10 +574,28 @@ def _is_bpm_window(value: Any) -> bool:
     )
 
 
+def _is_camelot_rule_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and all(isinstance(item, str) and item in CAMELOT_RULE_IDS for item in value)
+        and len(set(value)) == len(value)
+    )
+
+
+# The compatible filter's Camelot steps (0/1/2, letter-blind) became rule
+# checkboxes (Tue 27 Oct 2026). A stored blob from before that carries
+# camelot_steps and no rules; it reads as the nearest rule set, once.
+_LEGACY_CAMELOT_STEPS_RULES: dict[int, tuple[str, ...]] = {
+    0: ("same_key", "relative"),
+    1: DEFAULT_CAMELOT_RULE_IDS,
+    2: (*DEFAULT_CAMELOT_RULE_IDS, "energy_boost", "energy_drop"),
+}
+
+
 _COMPATIBLE_FILTER_CHECKS: dict[str, tuple[Callable[[Any], bool], str]] = {
-    "camelot_steps": (
-        lambda v: not isinstance(v, bool) and v in (0, 1, 2),
-        "must be 0, 1 or 2",
+    "rules": (
+        _is_camelot_rule_list,
+        f"must be a list of distinct rule ids from {'|'.join(CAMELOT_RULE_IDS)}",
     ),
     "bpm_window_bpm": (_is_bpm_window, "must be a finite number >= 0"),
     "bpm_enabled": (lambda v: isinstance(v, bool), "must be a boolean"),
@@ -557,6 +605,16 @@ _COMPATIBLE_FILTER_CHECKS: dict[str, tuple[Callable[[Any], bool], str]] = {
         "must be both|above|below|same",
     ),
 }
+
+
+def _legacy_camelot_steps_rules(steps: Any) -> tuple[str, ...]:
+    """The rule set a stored camelot_steps of 0, 1 or 2 reads as; anything else is a 422."""
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps not in _LEGACY_CAMELOT_STEPS_RULES:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "compatible_filter.camelot_steps must be 0, 1 or 2"},
+        )
+    return _LEGACY_CAMELOT_STEPS_RULES[steps]
 
 
 def _parse_compatible_filter(raw: Any) -> dict[str, Any]:
@@ -569,6 +627,9 @@ def _parse_compatible_filter(raw: Any) -> dict[str, Any]:
             detail={"code": "UI_PREFS_INVALID", "message": "compatible_filter must be an object"},
         )
     out = dict(_DEFAULT_COMPATIBLE_FILTER)
+    out["rules"] = list(DEFAULT_CAMELOT_RULE_IDS)
+    if "rules" not in raw and "camelot_steps" in raw:
+        out["rules"] = list(_legacy_camelot_steps_rules(raw["camelot_steps"]))
     for key, (check, rule) in _COMPATIBLE_FILTER_CHECKS.items():
         if key not in raw:
             continue
@@ -581,7 +642,12 @@ def _parse_compatible_filter(raw: Any) -> dict[str, Any]:
                     "message": f"compatible_filter.{key} {rule}",
                 },
             )
-        out[key] = float(value) if key == "bpm_window_bpm" else value
+        if key == "bpm_window_bpm":
+            out[key] = float(value)
+        elif key == "rules":
+            out[key] = list(value)
+        else:
+            out[key] = value
     return out
 
 
@@ -612,6 +678,7 @@ def _load(path: Path) -> dict[str, Any]:
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "show_stems": _DEFAULT_SHOW_STEMS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
+            "auto_gain": dict(DEFAULT_AUTO_GAIN),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
             "gig_helper": _DEFAULT_GIG_HELPER,
@@ -622,6 +689,7 @@ def _load(path: Path) -> dict[str, Any]:
             **_lyrics_defaults(),
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
+            "key_notation": _DEFAULT_KEY_NOTATION,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
             "library_watcher_folders": [],
             "compatible_filter": dict(_DEFAULT_COMPATIBLE_FILTER),
@@ -699,6 +767,7 @@ def _load(path: Path) -> dict[str, Any]:
         "show_agent_pins": show_agent_pins,
         "show_stems": show_stems,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
+        "auto_gain": parse_auto_gain(raw.get("auto_gain")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
         "gig_helper": _parse_gig_helper(raw),
@@ -709,6 +778,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_lyrics(raw),
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
+        "key_notation": _parse_key_notation(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
         "library_watcher_folders": _parse_library_watcher_folders(raw),
         "compatible_filter": _parse_compatible_filter(raw.get("compatible_filter")),
@@ -738,11 +808,14 @@ class WheelSensitivityOut(BaseModel):
 
 
 class CompatibleFilterOut(BaseModel):
-    """Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window."""
+    """Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window.
+
+    ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    camelot_steps: Literal[0, 1, 2] = _DEFAULT_COMPATIBLE_FILTER["camelot_steps"]
+    rules: list[str] = Field(default_factory=lambda: list(DEFAULT_CAMELOT_RULE_IDS))
     bpm_window_bpm: float = Field(default=_DEFAULT_COMPATIBLE_FILTER["bpm_window_bpm"], ge=0)
     bpm_enabled: bool = _DEFAULT_COMPATIBLE_FILTER["bpm_enabled"]
     allow_half_double: bool = _DEFAULT_COMPATIBLE_FILTER["allow_half_double"]
@@ -777,6 +850,7 @@ class UiPrefsOut(BaseModel):
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     show_stems: bool = _DEFAULT_SHOW_STEMS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
+    auto_gain: AutoGainPrefsOut = Field(default_factory=AutoGainPrefsOut)
     lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
     lyrics_library_col: bool = _DEFAULT_LYRICS_BOOLS["lyrics_library_col"]
     lyrics_hover_scrub: bool = _DEFAULT_LYRICS_BOOLS["lyrics_hover_scrub"]
@@ -796,6 +870,7 @@ class UiPrefsOut(BaseModel):
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
+    key_notation: KeyNotation = _DEFAULT_KEY_NOTATION
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
@@ -820,6 +895,7 @@ class UiPrefsPatch(BaseModel):
     show_agent_pins: bool | None = None
     show_stems: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
+    auto_gain: AutoGainPrefsOut | None = None
     lyrics_global: bool | None = None
     lyrics_library_col: bool | None = None
     lyrics_hover_scrub: bool | None = None
@@ -840,6 +916,7 @@ class UiPrefsPatch(BaseModel):
     show_sections: bool | None = None
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
+    key_notation: KeyNotation | None = None
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
     vocals_filter: bool | None = None
@@ -953,8 +1030,7 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         )
     _merge_topbar_bool_prefs(current, body)
     _merge_library_browser_bool_prefs(current, body)
-    if body.library_density is not None:
-        current["library_density"] = body.library_density
+    _merge_library_enum_prefs(current, body)
     if body.wheel_sensitivity is not None:
         current["wheel_sensitivity"] = _parse_wheel_sensitivity(
             {
@@ -979,6 +1055,7 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
             {"library_watcher_folders": body.library_watcher_folders}
         )
     _merge_compatible_filter(current, body)
+    merge_auto_gain(current, body.auto_gain)
     return current
 
 

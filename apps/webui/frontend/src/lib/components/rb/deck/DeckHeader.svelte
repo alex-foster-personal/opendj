@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shownKey } from '$lib/rb/key-notation';
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
 	// key badge + semitone nudge arrows, KEY SYNC,
@@ -19,6 +20,7 @@
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { beatSyncGridWarning } from '$lib/rb/beat-sync-math';
 	import { queryMasterMode } from '$lib/rb/performance-ipc.svelte';
+	import { MASTER_LOCK_LONG_PRESS_MS } from '$lib/rb/master-election';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { keySyncStatusTitle, type KeySyncStatus } from '$lib/player/key/camelot';
@@ -45,7 +47,7 @@
 		deckId: DeckId;
 		pending: boolean;
 		onBeatSync: () => Promise<void>;
-		onMaster: () => Promise<void>;
+		onMaster: (lockGesture: boolean) => Promise<void>;
 		onMasterTempo: () => Promise<void>;
 		onKeySync: () => Promise<void>;
 		onKeyNudge: (semitones: -1 | 1) => Promise<void>;
@@ -99,17 +101,44 @@
 		deck.stable_id === null
 			? 'no track loaded'
 			: deck.is_master && masterMode === 'locked'
-				? 'MASTER LOCKED - auto handoff is off; click to restore AUTO'
+				? 'MASTER LOCKED - level handoff is off; click for AUTO, or hold (Shift/Alt-click) to unlock'
 				: deck.is_master
-					? 'MASTER AUTO - this deck is the tempo / key sync reference; click to lock'
-					: 'MASTER - make this deck the tempo / key sync reference (locks AUTO)'
+					? 'MASTER AUTO - this deck is the tempo / key sync reference; hold or Shift/Alt-click to lock'
+					: 'MASTER - make this deck the tempo / key sync reference (AUTO); hold or Shift/Alt-click to lock'
 	);
 	const masterBullets: readonly string[] = [
 		'Only one MASTER at a time. Followers with Beat Sync lock phase to this deck.',
 		'KEY SYNC also uses MASTER as the Camelot reference.',
 		'BeatSyncMax keeps BAR phase lock across seeks when followers are synced.',
-		'AUTO hands off to an on-air, Beat-Synced playing deck when this one pauses, ends, or leaves the mix. LOCKED stays until you click MASTER again.'
+		'AUTO hands off when this deck stays below -30 dB (after EQ, filter and stems) for a beat while another playing deck is above -20 dB.',
+		'Click picks MASTER and keeps AUTO. Hold it, or Shift/Alt-click, to LOCK: no level handoff.',
+		'Stopping, playing out or unloading always hands off, even when LOCKED, and drops the lock.'
 	];
+	// Long-press locks (MASTER_LOCK_LONG_PRESS_MS); the click that ends a hold is swallowed.
+	let masterHold: ReturnType<typeof setTimeout> | null = null;
+	let masterHoldFired = false;
+	function startMasterHold(event: PointerEvent): void {
+		masterHoldFired = false;
+		if (!event.isPrimary || event.button !== 0) return; // only the primary press locks
+		cancelMasterHold();
+		masterHold = setTimeout(() => {
+			masterHold = null;
+			masterHoldFired = true;
+			void onMaster(true);
+		}, MASTER_LOCK_LONG_PRESS_MS);
+	}
+	function cancelMasterHold(): void {
+		if (masterHold !== null) clearTimeout(masterHold);
+		masterHold = null;
+	}
+	async function onMasterClick(event: MouseEvent): Promise<void> {
+		cancelMasterHold();
+		if (masterHoldFired) {
+			masterHoldFired = false;
+			return;
+		}
+		await onMaster(event.shiftKey || event.altKey);
+	}
 	const masterDataState = $derived(
 		deck.is_master ? (masterMode === 'locked' ? 'locked' : 'auto') : 'off'
 	);
@@ -143,6 +172,9 @@
 		keyAtPlayheadNow(deck.anlz, deck.position_ms, deck.key_shift_semitones, deck.key)
 	);
 	const keyText: string = $derived(keyPlayhead.display ?? '--');
+	/** keyText in the ONE key notation the user picked (ui-prefs key_notation). */
+	const keyShown: string = $derived(keyText === '--' ? '--' : (shownKey(keyText) ?? keyText));
+	const origKeyShown: string | null = $derived(shownKey(deck.key));
 	const masterEffectiveKey: string | null = $derived.by(() => {
 		if (keySyncPlan === null) return null;
 		const master = deckStates[keySyncPlan.masterDeck];
@@ -223,7 +255,7 @@
 			deck.key_shift_semitones >= 0
 				? `+${deck.key_shift_semitones}`
 				: String(deck.key_shift_semitones);
-		const suffix = ` (was ${raw}, shift ${shift})`;
+		const suffix = ` (was ${shownKey(raw) ?? raw}, shift ${shift})`;
 		return base === null ? `${effective}${suffix}` : `${base}${suffix}`;
 	});
 	const origKeyHover: string | null = $derived(camelotKeyHoverLabel(deck.key));
@@ -388,11 +420,11 @@
 			<div class="readout">
 				{#if keyChanged}
 					<span class="readout-key-line">
-						<span style={keyColor !== null ? `color:${keyColor}` : undefined}>{keyText}</span>
+						<span style={keyColor !== null ? `color:${keyColor}` : undefined}>{keyShown}</span>
 						<span class="from">
 							 (from <span
 								style={origKeyColor !== null ? `color:${origKeyColor}` : undefined}
-								title={origKeyHover ?? undefined}>{deck.key}</span>)
+								title={origKeyHover ?? undefined}>{origKeyShown}</span>)
 						</span>
 					</span>
 				{/if}
@@ -444,7 +476,7 @@
 				<span
 					class="key-val"
 					style={keyColor !== null ? `color:${keyColor}` : undefined}
-					title={keyHover ?? undefined}>{keyText}</span
+					title={keyHover ?? undefined}>{keyShown}</span
 				>
 				<span class="key-off" title={keyOffTitle}>{keyShiftText}</span>
 				<button
@@ -523,7 +555,11 @@
 						data-state={masterDataState}
 						data-master-mode={masterMode}
 						title={masterTitle}
-						onclick={async () => await onMaster()}
+						onpointerdown={startMasterHold}
+						onpointerup={cancelMasterHold}
+						onpointerleave={cancelMasterHold}
+						onpointercancel={cancelMasterHold}
+						onclick={onMasterClick}
 					>
 						MASTER
 					</button>
