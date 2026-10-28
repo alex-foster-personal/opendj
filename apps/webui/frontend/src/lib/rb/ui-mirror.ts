@@ -7,7 +7,7 @@ import { readAutoPlayStall } from './autoplay-stall.svelte';
 import { readAutoPlayMirrorStatus } from './auto-play.svelte';
 import { readLastDeckStop } from './deck-stop-log';
 import { queryPerformanceState } from './performance-ipc.svelte';
-import { installAgentOrderPoll } from './agent-orders';
+import { installAgentOrderPoll, readAgentPlanMirror } from './agent-orders';
 import type { TabLeadership } from './tab-leadership';
 import { createLeasedMirrorPublisher, MIRROR_PATH } from './leased-mirror-publisher';
 import { readXrunSessionCounter } from './xrun-sentinel';
@@ -101,6 +101,7 @@ export function buildUiMirror(): Record<string, unknown> {
 		master_mode: state.master_mode,
 		master_reason: state.master_reason,
 		transition: state.transition,
+		agent_plan: readAgentPlanMirror(),
 		context_state: audioContextState(),
 		// IOPIN-12 parity with the I/O panel notice: what djio asked for, what the
 		// graph actually wired, and the stereo-fallback reason when they differ.
@@ -116,7 +117,7 @@ export function buildUiMirror(): Record<string, unknown> {
 				// confirms the PREVIOUS track (#1739).
 				stable_id: deck.stable_id,
 				title: deck.title, artist: deck.artist, key: deck.key, bpm: deck.bpm,
-				effective_bpm: deck.effective_bpm, position: _position(deck), playing: deck.playing,
+				effective_bpm: deck.effective_bpm, position: _position(deck), cue_ms: deck.cue_ms, playing: deck.playing,
 				quantized_launch_armed: deck.quantized_launch_armed,
 				audible:
 					deck.audible &&
@@ -125,6 +126,9 @@ export function buildUiMirror(): Record<string, unknown> {
 					deviceLiveness.verdict !== 'device-unreachable',
 				presentation_clock: { trust: deck.transport_clock.source === 'audio_output' && deck.transport_clock.desired_revision === deck.transport_clock.presented_revision ? 'trusted' : 'untrusted', ...deck.transport_clock },
 				loop: deck.loop, hot_cues: deck.hot_cue_slots, pitch: deck.pitch,
+				// AGENT-24: the tempo fader's +-percent range, so a plan can refuse a
+				// beatmatch the incoming deck cannot reach.
+				pitch_range: deck.pitch_range,
 				sync: { mode: deck.sync_mode, enabled: deck.beat_sync_enabled }, stems: deck.stems,
 				phrases: deck.phrases,
 				// PLAY-18: the deck's last stop and its cause; user_pause is true only
@@ -187,7 +191,7 @@ function _anyDeckPlaying(): boolean {
 	return Object.values(queryPerformanceState().decks).some((deck) => deck.playing);
 }
 
-export function installUiMirror(leadership: TabLeadership): () => void {
+export function installUiMirror(leadership: TabLeadership): () => Promise<void> {
 	// The engine only knows a performance page is open once it has ACCEPTED a
 	// mirror publish, and every /api/v1/commands route answers 409 until then.
 	// `mirror.isRegistered()` is that precondition, read by the order poll:
@@ -255,9 +259,12 @@ export function installUiMirror(leadership: TabLeadership): () => void {
 		window.removeEventListener('pointerdown', noteGesture, { capture: true });
 		window.removeEventListener('keydown', noteGesture, { capture: true });
 		mirror.forget();
-		uninstallOrderPoll();
-		stopPublishTicker();
-		closeMirrorIfLeader();
-		unsubscribeLeadership();
+		// The plan runner's cancel of an armed launch goes through this page's registration, so the mirror is
+		// closed and leadership handed over only once the runner has settled.
+		return uninstallOrderPoll().finally(() => {
+			stopPublishTicker();
+			closeMirrorIfLeader();
+			unsubscribeLeadership();
+		});
 	};
 }

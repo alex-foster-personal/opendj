@@ -17,10 +17,10 @@ import logging
 import sqlite3
 import threading
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from apps.engine_core.jobs.reap import ReapResult, WorkerIdentity, reap_group
 from apps.shared import events
@@ -40,6 +40,8 @@ TERMINAL_STATUSES: frozenset[str] = frozenset(
     {"succeeded", "failed", "cancelled", "unknown"}
 )
 LIVE_STATUSES: tuple[str, ...] = ("running", "cancelling")
+# Not terminal: the row's work is still to come or under way.
+ACTIVE_STATUSES: tuple[str, ...] = ("queued", "running", "cancelling")
 
 # finish() is the ONLY terminal write, so the statuses it is allowed to write
 # OVER are enumerated rather than left to the caller. 'queued' is excluded
@@ -78,6 +80,27 @@ SPAWN_WINDOW_ERROR: str = (
 CANCEL_BEFORE_SPAWN: str = "cancelled while queued; no worker was ever spawned"
 
 JOBS_TOPIC: str = "jobs.updated"
+
+class ActiveJob(NamedTuple):
+    """One active row as a duplicate rule sees it."""
+
+    id: str
+    # queued, running or cancelling: a rule may need it, because a running
+    # worker can have fixed its work list at startup (a queued one has not).
+    status: str
+    payload: dict[str, Any]
+    # What a started row's worker was spawned with (``record_worker``), or
+    # None while queued or before the spawn is recorded: the runner re-parses
+    # the payload at launch, so this, not the payload, is what it runs.
+    worker_argv: tuple[str, ...] | None = None
+
+
+# A kind's duplicate rule: given every OTHER active row of the kind, newest
+# first, the id of the row that already does the requested work, or None. It
+# sees the whole active set at once because "already done" can need several
+# rows together (two per-track jobs whose tracks, between them, cover the
+# request).
+DuplicateRule = Callable[[list[ActiveJob]], str | None]
 
 _SCHEMA: str = f"""
 CREATE TABLE IF NOT EXISTS jobs (
@@ -119,6 +142,18 @@ class JobNotFound(LookupError):
 
 class JobConflict(RuntimeError):
     """The row is not in a state that permits the requested transition."""
+
+
+class JobDuplicate(JobConflict):
+    """An ACTIVE row already does the work; ``existing`` is that row.
+
+    Raised by a re-enqueue whose ``conflicts`` rule named an active row, after the
+    transaction rolled back, so nothing about the re-enqueued row changed.
+    """
+
+    def __init__(self, message: str, existing: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.existing = existing
 
 
 def _now() -> str:
@@ -304,23 +339,117 @@ class JobStore:
         *,
         external_ref: str | None = None,
     ) -> dict[str, Any]:
-        job_id = str(uuid.uuid4())
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO jobs (id, kind, payload, status, created_at, "
-                "owner_pid, owner_boot_id, external_ref) "
-                "VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)",
-                (
-                    job_id,
-                    kind,
-                    json.dumps(payload, sort_keys=True),
-                    _now(),
-                    self.owner_pid,
-                    self.boot_id,
-                    external_ref,
-                ),
-            )
+            job_id = self._insert(kind, payload, external_ref)
         return self._emit(job_id)
+
+    def enqueue_unless_active(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        conflicts: DuplicateRule,
+        external_ref: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Insert unless an ACTIVE row of ``kind`` already does this work.
+
+        ``conflicts`` gets the active (queued, running, cancelling) rows of
+        the kind as ``ActiveJob(id, status, payload, worker_argv)``, newest first, and names the one that
+        already does this work, or None. The read and the insert are ONE BEGIN
+        IMMEDIATE, the write lock sqlite takes for the whole file, so two
+        requests racing (two tabs, two agents, or two connections to one db)
+        cannot both see "nothing active" and both insert: a check in the
+        client and then a POST is a check-then-act that both can pass.
+
+        Returns ``(row, True)`` for a new row, or ``(existing_row, False)``
+        when ``conflicts`` named an active row and nothing was inserted.
+        """
+        existing: str | None = None
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self._active_duplicate(kind, conflicts, exclude=None)
+                job_id = (
+                    self._insert(kind, payload, external_ref)
+                    if existing is None
+                    else existing
+                )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        if existing is not None:
+            return self.get(existing), False
+        return self._emit(job_id), True
+
+    def _active_duplicate(
+        self,
+        kind: str,
+        conflicts: DuplicateRule,
+        *,
+        exclude: str | None,
+    ) -> str | None:
+        """The active row of ``kind`` (not ``exclude``) that ``conflicts``
+        names. Read INSIDE the caller's open BEGIN IMMEDIATE."""
+        rows = self._conn.execute(
+            "SELECT id, status, payload, worker_argv FROM jobs WHERE kind = ? AND status IN "
+            f"({','.join('?' for _ in ACTIVE_STATUSES)}) "
+            "ORDER BY created_at DESC, id DESC",
+            (kind, *ACTIVE_STATUSES),
+        ).fetchall()
+        active = [
+            ActiveJob(
+                str(row["id"]),
+                str(row["status"]),
+                json.loads(row["payload"]),
+                tuple(json.loads(row["worker_argv"])) if row["worker_argv"] else None,
+            )
+            for row in rows
+            if str(row["id"]) != exclude
+        ]
+        return conflicts(active)
+
+    def _refuse_duplicate_requeue(
+        self, job_id: str, conflicts: DuplicateRule | None
+    ) -> str | None:
+        """The active row a re-enqueue of ``job_id`` would duplicate, if any."""
+        if conflicts is None:
+            return None
+        kind = self._conn.execute(
+            "SELECT kind FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if kind is None:
+            raise JobNotFound(f"no job {job_id!r}")
+        return self._active_duplicate(str(kind["kind"]), conflicts, exclude=job_id)
+
+    def _duplicate_error(self, job_id: str, existing: str) -> JobDuplicate:
+        row = self.get(existing)
+        return JobDuplicate(
+            f"job {job_id} was not re-enqueued: active job {existing} "
+            f"({row['status']}) already does this work",
+            row,
+        )
+
+    def _insert(
+        self, kind: str, payload: dict[str, Any], external_ref: str | None
+    ) -> str:
+        """One queued row; the caller holds ``self._lock``."""
+        job_id = str(uuid.uuid4())
+        self._conn.execute(
+            "INSERT INTO jobs (id, kind, payload, status, created_at, "
+            "owner_pid, owner_boot_id, external_ref) "
+            "VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)",
+            (
+                job_id,
+                kind,
+                json.dumps(payload, sort_keys=True),
+                _now(),
+                self.owner_pid,
+                self.boot_id,
+                external_ref,
+            ),
+        )
+        return job_id
 
     def record_worker(
         self, job_id: str, *, pid: int, identity: WorkerIdentity
@@ -427,7 +556,11 @@ class JobStore:
         return self._emit(job_id)
 
     def reenqueue(
-        self, job_id: str, *, expect_attempt: int | None = None
+        self,
+        job_id: str,
+        *,
+        expect_attempt: int | None = None,
+        conflicts: DuplicateRule | None = None,
     ) -> dict[str, Any]:
         """Reset a terminal row back to 'queued' with attempt+1.
 
@@ -435,17 +568,26 @@ class JobStore:
         so two concurrent re-enqueues cannot both pass the check and stack two
         attempts (and, once the supervisor claims them, two workers) onto one
         row. ``expect_attempt`` makes the swap conditional on the exact row
-        the caller inspected.
+        the caller inspected. ``conflicts`` (see ``enqueue_unless_active``) is
+        asked of every OTHER active row of the kind in the same transaction;
+        a match raises ``JobDuplicate`` and leaves the row untouched.
         """
+        existing: str | None = None
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._assert_requeueable(job_id, expect_attempt)
-                self._requeue(job_id)
-                self._conn.execute("COMMIT")
+                existing = self._refuse_duplicate_requeue(job_id, conflicts)
+                if existing is None:
+                    self._requeue(job_id)
+                    self._conn.execute("COMMIT")
+                else:
+                    self._conn.execute("ROLLBACK")
             except BaseException:
                 self._conn.execute("ROLLBACK")
                 raise
+            if existing is not None:
+                raise self._duplicate_error(job_id, existing)
         return self._emit(job_id)
 
     def resolve_and_requeue(
@@ -456,6 +598,7 @@ class JobStore:
         expect_attempt: int,
         resolution: str,
         resolution_error: str,
+        conflicts: DuplicateRule | None = None,
     ) -> dict[str, Any]:
         """<expect_status> -> <resolution> -> queued as ONE compare-and-swap.
 
@@ -478,20 +621,27 @@ class JobStore:
             raise ValueError(
                 f"{expect_status!r} is not a status finish() may resolve"
             )
+        existing: str | None = None
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._assert_unchanged(job_id, expect_status, expect_attempt)
-                self._conn.execute(
-                    "UPDATE jobs SET status=?, error=?, finished_at=? "
-                    "WHERE id=?",
-                    (resolution, resolution_error, _now(), job_id),
-                )
-                self._requeue(job_id)
-                self._conn.execute("COMMIT")
+                existing = self._refuse_duplicate_requeue(job_id, conflicts)
+                if existing is None:
+                    self._conn.execute(
+                        "UPDATE jobs SET status=?, error=?, finished_at=? "
+                        "WHERE id=?",
+                        (resolution, resolution_error, _now(), job_id),
+                    )
+                    self._requeue(job_id)
+                    self._conn.execute("COMMIT")
+                else:
+                    self._conn.execute("ROLLBACK")
             except BaseException:
                 self._conn.execute("ROLLBACK")
                 raise
+            if existing is not None:
+                raise self._duplicate_error(job_id, existing)
         return self._emit(job_id)
 
     # ----- internals -----------------------------------------------------
@@ -675,6 +825,7 @@ def statuses() -> Iterable[str]:
 
 
 __all__ = [
+    "ACTIVE_STATUSES",
     "CANCEL_BEFORE_SPAWN",
     "FINISH_SOURCES",
     "JOBS_TOPIC",
@@ -684,7 +835,10 @@ __all__ = [
     "SPAWN_WINDOW_ERROR",
     "STATUSES",
     "TERMINAL_STATUSES",
+    "ActiveJob",
+    "DuplicateRule",
     "JobConflict",
+    "JobDuplicate",
     "JobNotFound",
     "JobStore",
     "open_store",

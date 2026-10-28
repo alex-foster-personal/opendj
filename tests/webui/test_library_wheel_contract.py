@@ -24,7 +24,7 @@ def test_built_service_satisfies_the_protocol_and_delegates() -> None:
 
 
 def test_contract_names_are_the_ones_the_package_uses() -> None:
-    assert CONTRACT_VERSION == "library_wheel/1"
+    assert CONTRACT_VERSION == "library_wheel/3"
     assert query.AXES is AXES
     assert query.LibraryWheelError is LibraryWheelError
     assert [a.key for a in AXES][:3] == ["genre", "decade", "play_count"]

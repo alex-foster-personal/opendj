@@ -117,5 +117,8 @@ export {
 } from '$lib/rb/library-playlist-page-prefetch';
 // The order answers when a playlist selection lands, not when its fill ends.
 export { paneLoadState, untilSelectionLands } from './selection-lands';
+// The USB export screen (USBEXP-01): through here for the same fan-out reason.
+export { openUsbExport } from '$lib/rb/usb-export.svelte';
+export { default as UsbExportScreenLoader } from '../UsbExportScreenLoader.svelte';
 // The filter labels shared with the Cmd K bar (CMDK-05).
 export { LIBRARY_FILTER_LABELS } from '$lib/rb/library-filter-labels';

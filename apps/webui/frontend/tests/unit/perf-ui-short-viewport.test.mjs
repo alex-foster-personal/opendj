@@ -131,7 +131,7 @@ test('MORE-mode compact wavestack at max-height 799px leaves room for one track 
 	);
 	assert.match(
 		moreBlock[1],
-		/calc\(4\s*\*\s*\(var\(--rb-waverow-h\)\s*\+\s*var\(--rb-stemwave-stack-extra,\s*0px\)\)\)/,
+		/calc\(4\s*\*\s*\(var\(--rb-waverow-h\)\s*\+\s*var\(--rb-stemwave-stack-extra,\s*0px\)\)(?:\s*\*\s*var\(--rb-wavestack-shown,\s*1\))?\)/,
 		'MORE must still reserve all 4 wavestack rows'
 	);
 });

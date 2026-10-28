@@ -7,7 +7,7 @@ waits forever on a docs-only batch, because nothing ever reports. Both workflows
 trigger on every pull request and decide scope INSIDE the run: a cheap `scope` job
 evaluates the lists below against the merge commit's changed files, the heavy jobs
 run only when it says in-scope, and one always-created aggregator check-run (`ci gate`,
-`e2e verdict`) reports the verdict either way. ADR: docs/decisions/
+`e2e verdict`) reports the verdict either way. ADR: (private path)/
 ADR-NEW-required-check-aggregators.md.
 
 Supersedes: the `pull_request` `paths` / `paths-ignore` trigger filters that ci.yml and
@@ -22,13 +22,20 @@ Both lists keep GitHub's own filter semantics, evaluated by
   from it and gated against it, and three commits that drifted the ledger (fa98ffda,
   643f896b, 9bc4128f) touched only `.planning` and so skipped the PR gate.
   `docs/perf/*.json` is written back in for the same reason: the perf KPI ledger, cards
-  and map are read by the test suite (`tests/webui/test_bench.py` serves the real ledger
+  and map are read by the test suite (`(private path)` serves the real ledger
   against the real cards), so the nightly ledger PR (#4473) that only appends ledger rows
   was docs-only, ran no pytest, and could land undeclared KPIs that break that test on main.
+  `(private path)`, the fan-out ledger, is excluded (Tue 27 Oct 2026, bundle
+  merges, (private path)): PR #7592 changed only it and a spec and ran the
+  whole fast lane, every fast-tier leg, the frontend job and the e2e gate, because the
+  selector's `data/` coupling reached 221 modules. Seven test modules do read it as a
+  seed, so this is a measured trade, not an oversight: a ledger edit is normally written
+  by the progress API, which validates it, and the nightly full suite (full-ci.yml) runs
+  those readers on main; a broken hand edit is fixed forward from there.
 - `E2E_PATHS_IGNORE` is a `paths-ignore` list: in scope when at least one changed file
   is not ignored. `e2e.yml`'s `push` trigger must carry the same list as a literal,
   because GitHub reads trigger filters from the workflow file and nowhere else;
-  `tests/scripts/test_ci_required_gate_wiring.py` pins that copy equal to this one.
+  `(private path)` pins that copy equal to this one.
 
 Every consumer reads these constants (the scope job, `scripts.review_docs_only`
 through `WorkflowCatalog`, `scripts.ci_wait`, and the planner's tests). Nothing
@@ -50,6 +57,7 @@ CI_PULL_REQUEST_PATHS: tuple[str, ...] = (
     "!.planning/**",
     "!specs/**",
     "!blog/**",
+    "!(private path)",
     ".planning/REQUIREMENTS.md",
     "docs/perf/*.json",
 )
@@ -74,6 +82,9 @@ E2E_PATHS_IGNORE: tuple[str, ...] = (
     "reqs.json",
     ".test_durations",
     "app_docs/**",
+    # The fan-out ledger (bundle merges, Tue 27 Oct 2026): the frontend names the
+    # `/progress-tree` route, never this file, and no Playwright run reads it.
+    "(private path)",
 )
 
 #: Workflow file -> (`paths`, `paths-ignore`) its in-run scope job evaluates for a

@@ -47,6 +47,7 @@
 {"pattern": "(private path)/", "kind": "user_data", "data_class": "usb-export-state"},
 {"pattern": "/node_modules/", "kind": "build_output", "data_class": null},
 {"pattern": "node_modules/", "kind": "build_output", "data_class": null},
+{"pattern": "node_modules", "kind": "build_output", "data_class": null},
 {"pattern": "target/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/node_modules/", "kind": "build_output", "data_class": null},
 {"pattern": "apps/webui/frontend/build/", "kind": "build_output", "data_class": null},

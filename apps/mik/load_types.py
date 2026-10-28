@@ -9,6 +9,8 @@ existing import shape used throughout the codebase) is unaffected.
 """
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -57,6 +59,10 @@ class LoadError(RuntimeError):
     """The load cannot proceed safely."""
 
 
+FieldVersion = tuple[str, str, str]
+"""``(source, value_json, modified_at)`` of one ``track_fields`` row."""
+
+
 @dataclass(frozen=True)
 class FieldWrite:
     stable_id: str
@@ -65,6 +71,11 @@ class FieldWrite:
     confidence: float | None
     modified_at: str
     tier: str
+    planned_version: FieldVersion | None = None
+    """The field's (source, value_json, modified_at) when the plan was built, None if empty.
+
+    The write is held if it differs under the lock: a newer analysis from the
+    SAME source changes value or modified_at, not source."""
 
 
 @dataclass(frozen=True)
@@ -97,7 +108,22 @@ class LoadPlan:
     segment_writes: list[SegmentWrite] = field(default_factory=list)
     staged: list[StagedWrite] = field(default_factory=list)
     blocked_by_gate: dict[str, int] = field(default_factory=dict)
+    not_selected: dict[str, int] = field(default_factory=dict)
     blocked_by_precedence: dict[str, int] = field(default_factory=dict)
+    overwrite_lower_precedence: bool = False
+    shared_incomplete: int = 0
+    shared_has_own: int = 0
+    """Duplicate fills skipped because the row already holds its own MIK energy value or series."""
+    staged_versions: dict[tuple[str, str], tuple[Any, ...] | None] = field(default_factory=dict)
+    """Each staged row's every mutable column at planning, None if absent; a changed row is held."""
+    series_versions: dict[str, tuple[tuple[Any, ...], ...]] = field(default_factory=dict)
+    promotions: dict[str, str] | None = None
+    """Every source row's promotion target at planning; any change refuses the plan (``stale_plan``)."""
+    """Each series target's stored MIK series at planning (empty when none); a changed one is held."""
+    """Duplicate fills dropped because only one of scalar and series could be planned."""
+    still_valid: Callable[[sqlite3.Connection], bool] | None = field(default=None, compare=False, repr=False)
+    """Re-checked under the write lock; False refuses the whole plan (``ApplyResult.stale_plan``)."""
+    """What the plan was built with, so the write can re-check precedence under its lock."""
     blocked_by_promotion_conflict: dict[str, int] = field(default_factory=dict)
     blocked_by_key_floor: int = 0
     key_review_band: list[str] = field(default_factory=list)

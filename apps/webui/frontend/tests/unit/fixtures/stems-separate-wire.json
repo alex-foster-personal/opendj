@@ -1,0 +1,139 @@
+{
+  "enqueue_track": {
+    "request": {
+      "kind": "stems.separate",
+      "payload": {
+        "stable_ids": [
+          "track-a"
+        ],
+        "tier": "M"
+      }
+    },
+    "response": {
+      "id": "197fbd99-aea3-4f7f-a20b-eb42feb12c02",
+      "kind": "stems.separate",
+      "payload": {
+        "executor": "modal",
+        "stable_ids": [
+          "track-a"
+        ],
+        "tier": "M"
+      },
+      "status": "queued",
+      "progress": 0.0,
+      "message": null,
+      "error": null,
+      "attempt": 0,
+      "created_at": "2026-10-15T13:56:29.233+00:00",
+      "started_at": null,
+      "finished_at": null,
+      "owner_pid": 20775,
+      "owner_boot_id": "boot-wire",
+      "worker_pid": null,
+      "worker_pgid": null,
+      "worker_argv": null,
+      "worker_started_at": null,
+      "external_ref": null
+    }
+  },
+  "enqueue_scope": {
+    "request": {
+      "kind": "stems.separate",
+      "payload": {
+        "scope": "pending",
+        "tier": "M"
+      }
+    },
+    "response": {
+      "id": "0728f87b-0609-46b8-b22f-d20f19f00d2e",
+      "kind": "stems.separate",
+      "payload": {
+        "executor": "modal",
+        "scope": "pending",
+        "tier": "M"
+      },
+      "status": "queued",
+      "progress": 0.0,
+      "message": null,
+      "error": null,
+      "attempt": 0,
+      "created_at": "2026-10-15T13:56:29.266+00:00",
+      "started_at": null,
+      "finished_at": null,
+      "owner_pid": 20775,
+      "owner_boot_id": "boot-wire",
+      "worker_pid": null,
+      "worker_pgid": null,
+      "worker_argv": null,
+      "worker_started_at": null,
+      "external_ref": null
+    }
+  },
+  "plan": {
+    "request": {
+      "path": "/api/v1/stems/plan",
+      "query": {
+        "tier": "M"
+      }
+    },
+    "response": {
+      "tier": "M",
+      "tier_name": "optimal",
+      "executor": "modal",
+      "total": 2,
+      "pending": 1,
+      "ready": 1,
+      "unavailable": 0,
+      "estimate_seconds": 2.7,
+      "estimate_usd": 0.0017,
+      "transport": "relay",
+      "transport_refusal": null,
+      "local_refusal": null
+    }
+  },
+  "_provenance": "Captured from the real engine routes (apps.engine_core.jobs.api router over a real JobStore, kinds from apps.engine_core.app._register_job_kinds; apps.stems.api plan router over a migrated state.db) in a configured relay build by the setup in (private path), which re-checks every response against these routes. Do not hand-edit.",
+  "enqueue_duplicate": {
+    "request": {
+      "kind": "stems.separate",
+      "payload": {
+        "stable_ids": [
+          "track-a"
+        ],
+        "tier": "M"
+      }
+    },
+    "status": 409,
+    "response": {
+      "detail": {
+        "code": "stems_job_active",
+        "message": "stems.separate job 197fbd99-aea3-4f7f-a20b-eb42feb12c02 is already queued for this work; not enqueued again",
+        "job": {
+          "id": "197fbd99-aea3-4f7f-a20b-eb42feb12c02",
+          "kind": "stems.separate",
+          "payload": {
+            "executor": "modal",
+            "stable_ids": [
+              "track-a"
+            ],
+            "tier": "M"
+          },
+          "status": "queued",
+          "progress": 0.0,
+          "message": null,
+          "error": null,
+          "attempt": 0,
+          "created_at": "2026-10-15T13:56:29.233+00:00",
+          "started_at": null,
+          "finished_at": null,
+          "owner_pid": 20775,
+          "owner_boot_id": "boot-wire",
+          "worker_pid": null,
+          "worker_pgid": null,
+          "worker_argv": null,
+          "worker_started_at": null,
+          "external_ref": null
+        }
+      }
+    }
+  }
+}

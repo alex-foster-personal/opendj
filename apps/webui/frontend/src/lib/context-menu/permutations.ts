@@ -37,7 +37,7 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 	playlist: { forbidDuplicates: [false, true] },
 	'playlist-folder': {},
 	smartlist: {},
-	'tree-readonly': {},
+	'tree-readonly': { stick: [false, true] },
 	'library-source': {},
 	deck: {
 		loaded: [false, true],

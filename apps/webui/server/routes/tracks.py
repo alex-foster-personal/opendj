@@ -42,6 +42,7 @@ from ..models import (
     QualityRungOut,
     TrackIndexOut,
     TrackListItemOut,
+    TrackLoudnessOut,
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
@@ -50,6 +51,7 @@ from ..models import (
 )
 from ..rb_vendor_pkg.track_rows import _artwork_facts
 from ..reveal_path import RevealPathError, reveal_track_path
+from ..track_loudness import track_loudness
 from .ingest_job import valid_lyrics_ids
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
@@ -884,7 +886,7 @@ def get_track(
         stems=stems,
     )
     has_rb_mapping, artwork_available = _rb_mapping_and_artwork(stable_id)
-    return _track_to_out(
+    out = _track_to_out(
         track,
         has_rb_mapping=has_rb_mapping,
         lyrics_available=lyrics,
@@ -892,6 +894,20 @@ def get_track(
         stems_available=stems_avail,
         artwork_available=artwork_available,
     )
+    out.loudness = loudness_block(state_db_path, stable_id)
+    return out
+
+
+def loudness_block(state_db_path: Path, stable_id: str) -> TrackLoudnessOut:
+    """The track's loudness, or status ``error`` when the store or its row is broken (AGENT-31).
+
+    A missing store or schema, a corrupt row and an unreadable database are all a broken store, not an unmeasured
+    track: served as ``error`` with the reason so the rest of the track still reads, and a consumer of loudness (the
+    AutoDJ profile) refuses it rather than planning without a trim (Sol P2 #7594)."""
+    try:
+        return track_loudness(state_db_path, stable_id)
+    except (FileNotFoundError, RuntimeError, ValueError, sqlite3.Error) as error:
+        return TrackLoudnessOut(lufs=None, status="error", reason=f"{type(error).__name__}: {error}")
 
 
 @router.post("/{stable_id}:reveal", status_code=204, operation_id="reveal_track")

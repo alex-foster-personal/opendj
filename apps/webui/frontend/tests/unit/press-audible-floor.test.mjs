@@ -777,7 +777,8 @@ test('the armed hot-cue dispatch marks its stamp as armed before arming the trig
 	const ipc = readSource('src/lib/rb/performance-ipc.svelte.ts');
 	const fn = ipc.slice(
 		ipc.indexOf("command.type === 'hot_cue_trigger'"),
-		ipc.indexOf("command.type === 'auto_play_two_track'")
+		// The dispatch branch, not the queue-scope list that also names it.
+		ipc.indexOf("} else if (command.type === 'auto_play_two_track')")
 	);
 	const markAt = fn.indexOf('markArmedHotCuePress(pressT0Ms)');
 	const armAt = fn.indexOf('await _hotCueDriver.arm(');

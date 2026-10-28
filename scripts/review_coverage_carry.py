@@ -1,7 +1,7 @@
 """Carry reviewer coverage from an earlier reviewed head (one mechanism, two rules).
 
 Rule 1, debt-only (issues #2907, #2871; ADR-0063): when the PR head advanced
-only via `.planning/debt/<pr>.md` commits, accept a reviewer artifact from an
+only via `(private path)/<pr>.md` commits, accept a reviewer artifact from an
 earlier ancestor head instead of forcing a paid re-review. Local
 `git diff --name-only` is the source of truth; the PR files API is never
 consulted. When carry applies, ``review_coverage.triage()`` prints both SHAs
@@ -12,6 +12,11 @@ main changed no path the PR touches, and the PR's net diff against its base is
 byte-identical at both heads (the disjoint-paths rule). See
 scripts/review_coverage_base_merge.py. A carry that cannot be measured is
 reported as `carry UNKNOWN` on the MISS row, never as a carry.
+
+Rule 3, same-path (REVIEW-23, ADR-0124): coverage is satisfied once per PR, so a
+head whose net diff touches only paths the reviewed head's net diff touched (plus
+this PR's debt file) carries. Tried last, after the two exact rules above, so their
+stronger proofs are printed when they hold.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from scripts.review_coverage_base_merge import (
     base_merge_carry,
     pin_base_tip,
     require_full_history,
+    same_path_carry,
 )
 from scripts.review_gh import _SHA_IN_BACKTICKS, _STATUS_COMPLETED, TriageError
 from scripts.review_lane import diff_of, evidence_skipped_paths_ok
@@ -44,7 +50,7 @@ if TYPE_CHECKING:
 
 
 def debt_file_path(pr: str) -> str:
-    return f".planning/debt/{pr}.md"
+    return f"(private path)/{pr}.md"
 
 
 @functools.cache
@@ -415,6 +421,9 @@ def carry_attempt(
             )
         try:
             proof = base_merge_carry(repo_root, base_tip.get(), carried_sha, head_sha)
+            same_path = None if proof else same_path_carry(
+                repo_root, base_tip.get(), carried_sha, head_sha, debt_file_path(pr)
+            )
         except CarryUnknown as exc:
             unknown.append(f"{short}: {exc}")
             continue
@@ -426,6 +435,16 @@ def carry_attempt(
                     reason=f"carried from {short} (net diff unchanged since; base merge only)",
                     carried_from=carried_sha,
                     carry_proof=proof.proof_lines(),
+                )
+            )
+        if same_path is not None:
+            return CarryAttempt(
+                ReviewerVerdict(
+                    name=name,
+                    reviewed=True,
+                    reason=f"carried from {short} (same paths since; no new path in the PR diff)",
+                    carried_from=carried_sha,
+                    carry_proof=same_path.proof_lines(),
                 )
             )
     return CarryAttempt(None, tuple(unknown))

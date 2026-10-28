@@ -13,6 +13,9 @@ import type { DeckId } from './deck-slots';
 import type { HotCue, HotCueSlot } from './hot-cue-types';
 import type { StemDeckState } from './stem-types';
 
+/** Re-exported so a deck-state consumer reads a deck's cue types from here. */
+export type { HotCue, HotCueSlot };
+
 /** Beat Sync phase target. Beat mode matches the closest beat; bar mode also
  * requires the follower PQTZ beat number (1..4) to match the master. */
 export type SyncMode = 'beat' | 'bar';

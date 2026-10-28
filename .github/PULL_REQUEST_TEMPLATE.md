@@ -9,13 +9,21 @@ Which requirement ID(s) from `REQUIREMENTS.md` are touched? (e.g., SYNC-01)
 
 ## ADR
 ADR: <ADR-NNNN, ADR: NEW, or 'none, because ...'>
-See `docs/decisions/README.md`. Required when the diff touches `apps/cloud/`,
+See `(private path)`. Required when the diff touches `apps/cloud/`,
 `apps/engine_core/`, `apps/webui/server/state*`, `.planning/REQUIREMENTS.md`,
 or a top-level dependency file.
 
 ## Tests added
 - [ ] List tests added or link to test files
 - [ ] No tests required because: ...
+
+## CI tests
+<!-- Minimal required set ((private path)). Each field is read only when it
+starts its own line, so these examples are inert until you write your own:
+  e.g. CI-Tests: (private path) -- reads the seed ledger this PR changes
+  e.g. CI-Wide-Reason: this PR changes conftest.py, which configures every test
+CI-Tests adds a module the selector cannot see. CI-Wide-Reason is required when CI runs
+the full suite or more than half the lane. -->
 
 ## Live-DB risk
 - [ ] None

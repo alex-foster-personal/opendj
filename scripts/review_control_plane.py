@@ -111,7 +111,10 @@ _require_marker_group_count(
 )
 
 # fnmatch semantics: `*` also crosses `/`, so `.github/workflows/*` covers the tree.
-ROOT_IMPORT_PATHS: tuple[str, ...] = ("__pycache__/*", "_winapi/*", "msvcrt/*", "nt/*", "org/*")
+# REVIEW-24 (ADR-0124, Wed 28 Oct 2026): the root import surface (any root *.py, *.so,
+# a root package's __init__, and the stdlib-shadowing dirs) is no longer control plane.
+# A merged root module that shadows the stdlib DOES run inside later gate runs; the maintainer
+# accepted that risk for one-review merges, and the ADR records the trade-off.
 CONTROL_PLANE_PATHS: tuple[str, ...] = (
     ".github/workflows/*",
     ".github/zizmor.yml",
@@ -182,9 +185,15 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "setup.cfg",
     "tox.ini",
     "(private path)",
-    *ROOT_IMPORT_PATHS,
 )
-CONTROL_PLANE_ROOT_FILES: tuple[str, ...] = ("*.py", "*.pyc", "*.so", "*.pyd")
+#: REVIEW-24: a control-plane file whose diff changes ONLY these declaration lines does
+#: not make the PR control plane. A PR registering its own tests in `pytest_scope` needs
+#: one reviewer; any other justfile line (the gate recipes) still needs two.
+#: The whole line must match: a quoted list of plain test paths, so no just backtick or
+#: shell text can ride in on a waived line.
+DECLARATION_ONLY_LINES: Mapping[str, re.Pattern[str]] = {
+    "justfile": re.compile(r'pytest_scope := "[A-Za-z0-9_./ -]*"'),
+}
 DUAL_REVIEW_MIN = 2
 #: GET /pulls/{n}/commits returns at most 250 commits, and so does GraphQL's
 #: `pullRequest.commits` (measured on #3837 Thu 1 Oct 2026: totalCount 428, 250 paged out).
@@ -300,26 +309,31 @@ class CommitList:
     detail: str
 
 
-def _is_root_import_surface(path: str) -> bool:
-    """`python -m` puts the repository root ahead of the standard library."""
-    parts = path.split("/")
-    if len(parts) == 1:
-        name = parts[0]
-    elif len(parts) == 2 and parts[1].split(".")[0] == "__init__":
-        name = parts[1]
-    else:
-        return False
-    return any(fnmatch.fnmatchcase(name, pat) for pat in CONTROL_PLANE_ROOT_FILES)
-
-
 def control_plane_hits(paths: Sequence[str]) -> tuple[str, ...]:
-    return tuple(
-        sorted(
-            p
-            for p in set(paths)
-            if any(fnmatch.fnmatchcase(p, g) for g in CONTROL_PLANE_PATHS) or _is_root_import_surface(p)
-        )
-    )
+    return tuple(sorted(p for p in set(paths) if any(fnmatch.fnmatchcase(p, g) for g in CONTROL_PLANE_PATHS)))
+
+
+def declaration_only(entry: Mapping) -> bool:
+    """Pure: whether one `pulls/{n}/files` entry changes only REVIEW-24 declaration lines.
+
+    Fails closed: a rename, a file GitHub sent no patch for (too large), or any other
+    changed line keeps the file control plane.
+    """
+    pattern = DECLARATION_ONLY_LINES.get(entry.get("filename", ""))
+    patch = entry.get("patch")
+    if pattern is None or not patch or entry.get("previous_filename"):
+        return False
+    # GitHub's `patch` field has no `---`/`+++` file headers, so every +/- line is a change.
+    changed = [line[1:] for line in patch.splitlines() if line[:1] in "+-"]
+    return bool(changed) and all(pattern.fullmatch(line) for line in changed)
+
+
+def without_declaration_only(paths: Sequence[str], entries: Callable[[], Sequence[Mapping]]) -> list[str]:
+    """`paths` minus files whose diff changes only declaration lines; reads `entries` only when needed."""
+    if not set(paths) & set(DECLARATION_ONLY_LINES):
+        return list(paths)
+    waived = {e["filename"] for e in entries() if declaration_only(e)}
+    return [p for p in paths if p not in waived]
 
 
 def author_markers(message: str) -> set[str]:
@@ -598,6 +612,13 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
 
     _LAST_FAILURE.clear()
 
+    def files_at_head() -> list[dict]:
+        # The files API describes the LIVE head: fail closed if it is not the pinned one.
+        entries = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/files")
+        rc._require_head_unchanged(head_sha, rc._head_sha(pr))
+        return entries
+
+    changed_files = without_declaration_only(changed_files, files_at_head)
     cp_hits = control_plane_hits(changed_files)
     repo_root: Path = rc.CHECKOUT_ROOT
 

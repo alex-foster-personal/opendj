@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from apps.shared.events import publish
 from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS
@@ -56,13 +57,21 @@ _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
 _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH = True
 _DEFAULT_MASTER_MUTED = False
+# TOPVIEW-04 / TOPVIEW-06: the PAD toggle and two-deck AutoPlay.
+_DEFAULT_SHOW_PADS = True
+_DEFAULT_AUTO_PLAY_TWO_DECK = False
 _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
     "beat_sync_max": _DEFAULT_BEAT_SYNC_MAX,
     "auto_play_enabled": _DEFAULT_AUTO_PLAY_ENABLED,
     "auto_play_enforce_order": _DEFAULT_AUTO_PLAY_ENFORCE_ORDER,
     "auto_play_maximize_reach": _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH,
     "master_muted": _DEFAULT_MASTER_MUTED,
+    "show_pads": _DEFAULT_SHOW_PADS,
+    "auto_play_two_deck": _DEFAULT_AUTO_PLAY_TWO_DECK,
 }
+# TOPVIEW-01..03: what the /performance wavestack area shows.
+PerfView = Literal["waveform", "list", "phase-scope", "phase-meter"]
+_DEFAULT_PERF_VIEW: PerfView = "waveform"
 # SETSTUB-02: the Quantize state a deck starts with when the page opens or the
 # deck is ejected ("Quantize on new decks"). Default on, the value every deck
 # was hardcoded to before this pref existed.
@@ -340,6 +349,21 @@ def _parse_bool_prefs(raw: dict[str, Any], defaults: dict[str, bool]) -> dict[st
             )
         out[key] = val
     return out
+
+
+def _parse_perf_view(raw: dict[str, Any]) -> str:
+    if "perf_view" not in raw:
+        return _DEFAULT_PERF_VIEW
+    value = raw["perf_view"]
+    if value not in ("waveform", "list", "phase-scope", "phase-meter"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "perf_view must be waveform|list|phase-scope|phase-meter",
+            },
+        )
+    return value
 
 
 def _parse_library_density(raw: dict[str, Any]) -> str:
@@ -689,6 +713,7 @@ def _load(path: Path) -> dict[str, Any]:
             **_lyrics_defaults(),
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
+            "perf_view": _DEFAULT_PERF_VIEW,
             "key_notation": _DEFAULT_KEY_NOTATION,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
             "library_watcher_folders": [],
@@ -778,6 +803,7 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_lyrics(raw),
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
+        "perf_view": _parse_perf_view(raw),
         "key_notation": _parse_key_notation(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
         "library_watcher_folders": _parse_library_watcher_folders(raw),
@@ -866,6 +892,9 @@ class UiPrefsOut(BaseModel):
     auto_play_enforce_order: bool = _DEFAULT_AUTO_PLAY_ENFORCE_ORDER
     auto_play_maximize_reach: bool = _DEFAULT_AUTO_PLAY_MAXIMIZE_REACH
     master_muted: bool = _DEFAULT_MASTER_MUTED
+    show_pads: bool = _DEFAULT_SHOW_PADS
+    auto_play_two_deck: bool = _DEFAULT_AUTO_PLAY_TWO_DECK
+    perf_view: PerfView = _DEFAULT_PERF_VIEW
     deck_default_quantize: bool = _DEFAULT_DECK_DEFAULT_QUANTIZE
     show_sections: bool = _DEFAULT_SHOW_SECTIONS
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
@@ -911,6 +940,14 @@ class UiPrefsPatch(BaseModel):
     auto_play_enforce_order: bool | None = None
     auto_play_maximize_reach: bool | None = None
     master_muted: bool | None = None
+    # StrictBool (Sol P1 4285228879): plain bool would coerce "false", 0 and 1
+    # into a write; these toggles take a JSON boolean or a 422.
+    # SkipJsonSchema[None] (Sol P1 4302581642): None is only "not sent" here,
+    # and `_refuse_null_view_prefs` answers an explicit null with 422, so the
+    # contract advertises these as omittable but never nullable.
+    show_pads: StrictBool | SkipJsonSchema[None] = None
+    auto_play_two_deck: StrictBool | SkipJsonSchema[None] = None
+    perf_view: PerfView | SkipJsonSchema[None] = None
     # Strict: lax bool would coerce "yes" or 1 to True and seed every deck from it.
     deck_default_quantize: StrictBool | None = None
     show_sections: bool | None = None
@@ -927,6 +964,19 @@ class UiPrefsPatch(BaseModel):
     playlist_tree_view: PlaylistTreeView | None = None
     library_watcher_folders: list[str] | None = None
     compatible_filter: CompatibleFilterOut | None = None
+
+    @model_validator(mode="after")
+    def _refuse_null_view_prefs(self) -> UiPrefsPatch:
+        # None is "not sent" for these three, so an explicit JSON null would
+        # pass as a silent no-op; they take a boolean or a view name, else a
+        # 422 (Sol P1 4301475288).
+        for key in _NON_NULL_VIEW_PREF_KEYS:
+            if key in self.model_fields_set and getattr(self, key) is None:
+                raise ValueError(f"{key} must not be null")
+        return self
+
+
+_NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view")
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -998,6 +1048,17 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     return UiPrefsOut.model_validate(current)
 
 
+_VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view")
+
+
+def _merge_view_scalar_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    """Replace-on-set view prefs: each is validated by its Patch field type."""
+    for key in _VIEW_SCALAR_PREFS:
+        value = getattr(body, key)
+        if value is not None:
+            current[key] = value
+
+
 def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[str, Any]:
     if body.confirm is not None:
         merged = {**current["confirm"], **body.confirm}
@@ -1030,6 +1091,7 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         )
     _merge_topbar_bool_prefs(current, body)
     _merge_library_browser_bool_prefs(current, body)
+    _merge_view_scalar_prefs(current, body)
     _merge_library_enum_prefs(current, body)
     if body.wheel_sensitivity is not None:
         current["wheel_sensitivity"] = _parse_wheel_sensitivity(
@@ -1046,10 +1108,6 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["level_calibration"] = _parse_level_calibration(
             {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
         )
-    if body.deck_right_mirror is not None:
-        current["deck_right_mirror"] = body.deck_right_mirror
-    if body.playlist_tree_view is not None:
-        current["playlist_tree_view"] = body.playlist_tree_view
     if body.library_watcher_folders is not None:
         current["library_watcher_folders"] = _parse_library_watcher_folders(
             {"library_watcher_folders": body.library_watcher_folders}

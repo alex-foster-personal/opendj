@@ -102,6 +102,12 @@ def attempt(repo: Path, reviewed_sha: str, head: str) -> CarryAttempt:
     return carry_attempt(CLAUDE, PR, head, [review_at(reviewed_sha)], [], [], repo)
 
 
-def assert_no_carry(repo: Path, reviewed_sha: str, head: str) -> None:
+def assert_no_base_merge_carry(repo: Path, reviewed_sha: str, head: str) -> None:
+    """The REVIEW-16 base-merge rule refuses to carry. Since REVIEW-23 the same-path
+    rule may still carry the head (these cases edit only the reviewed file), and when
+    it does the verdict must name the path-set proof, never the base-merge one."""
     result = attempt(repo, reviewed_sha, head)
-    assert result.verdict is None and result.unknown == (), result
+    assert result.unknown == (), result
+    if result.verdict is not None:
+        assert "same paths since" in result.verdict.reason, result
+        assert not any("base-merge carry" in line for line in result.verdict.carry_proof), result

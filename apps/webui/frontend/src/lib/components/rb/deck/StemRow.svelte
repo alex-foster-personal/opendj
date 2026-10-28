@@ -3,6 +3,7 @@
 	// solo. Both paths dispatch through the typed browser-agent command surface.
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import { stemCssColor } from '$lib/rb/stem-colors';
+	import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import type { StemControl } from '$lib/rb/stem-types';
 
@@ -12,7 +13,9 @@
 		testIdScope = 'deck',
 		onMute,
 		onSolo,
-		onLoad
+		onLoad,
+		separate = null,
+		onSeparate
 	}: {
 		deck: DeckState;
 		pending: boolean;
@@ -23,6 +26,9 @@
 		/** STEM-48: retry a failed stem load, or start one that is held. The deck
 		 * passes it; the mixer strip does not, and shows the reason on hover only. */
 		onLoad?: () => Promise<void>;
+		/** STEM-77: the "Separate this track" action on a NO STEMS deck, or null. */
+		separate?: SeparateActionView | null;
+		onSeparate?: () => Promise<void>;
 	} = $props();
 
 	const STEMS: readonly { id: StemControl; label: string }[] = [
@@ -118,6 +124,19 @@
 				{view.label}
 			</span>
 		{/if}
+		{#if view.name === 'none' && separate !== null && onSeparate !== undefined}
+			<button
+				class="status action separate"
+				disabled={separate.disabled}
+				title={separate.tip}
+				aria-label={`${separate.tip} Deck ${deck.deck_id}.`}
+				data-testid={`stem-separate-${testIdScope}-${deck.deck_id}`}
+				data-performance-control="stem-separate"
+				onclick={async () => await onSeparate()}
+			>
+				{separate.label}
+			</button>
+		{/if}
 	{/if}
 </div>
 
@@ -182,9 +201,16 @@
 		background: transparent;
 		border: 1px solid var(--rb-blue, #4aa3ff);
 		border-radius: 2px;
-		color: var(--rb-blue, #4aa3ff);
+		/* Text takes the skin's own text color so it clears WCAG AA in the
+		   light skins too; the blue border carries the action cue. */
+		color: var(--rb-text);
 		padding: 1px 6px;
 		cursor: pointer;
+	}
+	.status.action:disabled {
+		border-color: var(--rb-border);
+		color: var(--rb-text-dim);
+		cursor: default;
 	}
 	.status.action.failed {
 		border-color: var(--rb-red, #d0342c);

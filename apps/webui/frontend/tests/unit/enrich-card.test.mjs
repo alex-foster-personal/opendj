@@ -439,3 +439,91 @@ test('no stems source opens collapsed and the collapsed line names it, unless th
 	const runningAsk = summary({ key: { done: 44, missing: 1230 } });
 	assert.doesNotMatch(card.collapsedLine(runningAsk).text, /without stems/);
 });
+
+// requirement ENRICH-05: a stored "never" is said on the card and can be taken back.
+test('a stored never is named with what it leaves, and nothing is said without one', () => {
+	const declined = summary({}, {
+		stems: { state: 'user_declined', pending: 1150, failed: 0, reason: null },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(
+		card.stemsDeclinedText(declined),
+		'Stems: you chose never for this library. 1,150 tracks have no stems. A deck can still separate one track.'
+	);
+	assert.equal(card.stemsDeclinedText(summary({}, { decisions: { stems: 'ask' } })), null);
+	assert.equal(card.stemsDeclinedText(summary()), null);
+	// not_yet counts songs (ENRICH-03), so it is worded as songs, not tracks.
+	const songs = summary({}, {
+		stems: { state: 'user_declined', pending: 1150, failed: 0, reason: null, separated: 10, not_yet: 900 },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(
+		card.stemsDeclinedText(songs),
+		'Stems: you chose never for this library. 900 songs have no stems. A deck can still separate one track.'
+	);
+	const oneSong = summary({}, {
+		stems: { state: 'user_declined', pending: 3, failed: 0, reason: null, separated: 10, not_yet: 1 },
+		decisions: { stems: 'never' }
+	});
+	assert.match(card.stemsDeclinedText(oneSong), / 1 song has no stems\./);
+	// A null not_yet beside a numeric pending is the track count, said as
+	// tracks, never as songs (Sol P1 on #6819).
+	const nullSongs = summary({}, {
+		stems: { state: 'user_declined', pending: 1150, failed: 0, reason: null, separated: 10, not_yet: null },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(
+		card.stemsDeclinedText(nullSongs),
+		'Stems: you chose never for this library. 1,150 tracks have no stems. A deck can still separate one track.'
+	);
+});
+
+test('a standing never keeps the pill up and collapsed, and says nothing when stems have their own line', () => {
+	const declined = summary({}, {
+		show: false,
+		stems: { state: 'user_declined', pending: 1150, failed: 0, reason: null },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(card.keepsCardReachable(declined), true);
+	assert.equal(card.needsAttention(declined, null, null), false, 'never must not nag');
+	assert.equal(card.collapsedLine(declined).text, 'Library: stems set to never');
+
+	const noSource = summary({}, {
+		stems: { state: 'no_source', pending: 0, failed: 0, missing: 40, reason: 'no relay' },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(card.stemsDeclinedText(noSource), null);
+	assert.equal(card.keepsCardReachable(noSource), false);
+	assert.equal(card.keepsCardReachable(summary()), false, 'control: nothing declined keeps nothing up');
+	assert.equal(card.keepsCardReachable(null), false);
+});
+
+test('Hide hides the card, except while a standing never keeps its undo reachable', () => {
+	const declined = summary({}, {
+		show: false,
+		stems: { state: 'user_declined', pending: 1150, failed: 0, reason: null },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(card.cardVisible(declined, null, true), true, 'Hide must not strand "Ask about stems again"');
+	const showing = summary({}, { show: true });
+	assert.equal(card.cardVisible(showing, null, false), true, 'control: a card with something to say shows');
+	assert.equal(card.cardVisible(showing, null, true), false, 'control: Hide still hides a card with no standing never');
+	assert.equal(card.cardVisible(null, 'GET failed', true), false, 'control: Hide hides a load error too');
+	assert.equal(card.cardVisible(null, 'GET failed', false), true);
+	assert.equal(card.cardVisible(summary({}, { show: false }), null, false), false);
+});
+
+// Sol on #6819: a stored never with no count is a drifted summary, said so, never read as 0.
+test('a stored never whose summary carries no count says the count is unknown', () => {
+	const drifted = summary({}, {
+		stems: { state: 'user_declined', pending: null, failed: 0, reason: null },
+		decisions: { stems: 'never' }
+	});
+	assert.match(card.stemsDeclinedText(drifted), /How many have no stems is unknown: the summary carried neither not_yet nor pending\./);
+	// Control: a real zero says nothing about a count.
+	const none = summary({}, {
+		stems: { state: 'user_declined', pending: 0, failed: 0, reason: null },
+		decisions: { stems: 'never' }
+	});
+	assert.equal(card.stemsDeclinedText(none), 'Stems: you chose never for this library. A deck can still separate one track.');
+});

@@ -146,3 +146,38 @@ def test_an_order_that_is_not_exactly_one_declared_kind_is_refused() -> None:
         assert empty.status_code == 422
 
     asyncio.run(run())
+
+
+def test_plan_orders_reach_the_page_with_the_page_result_intact() -> None:
+    """AGENT-24: `plan` and `plan_amend` are declared kinds; the page's step result passes through."""
+
+    async def run() -> None:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app()), base_url="http://test"
+        ) as client:
+            await _open_page(client)
+            for body, kind in (
+                ({"plan": {"id": "plan-a", "events": []}}, "plan"),
+                ({"plan_amend": {"id": "plan-a", "action": "abort"}}, "plan_amend"),
+            ):
+                order = asyncio.create_task(client.post("/api/v1/commands", json=body))
+                claimed: dict[str, Any] | None = None
+                for _ in range(200):
+                    await asyncio.sleep(0.01)
+                    nxt = await client.get("/api/v1/commands/next")
+                    if nxt.json() is not None:
+                        claimed = nxt.json()
+                        break
+                assert claimed is not None and claimed["kind"] == kind
+                step = {"status": "succeeded", "result": {"plan_id": "plan-a", "status": "scheduled"}}
+                await client.post(
+                    f"/api/v1/commands/{claimed['id']}/result",
+                    json={"steps": [step], "mirror_delta": {"changed": {}}},
+                )
+                response = await order
+                assert response.status_code == 200
+                assert response.json()["steps"] == [step]
+            not_object = await client.post("/api/v1/commands", json={"plan": ["x"]})
+            assert not_object.status_code == 422
+
+    asyncio.run(run())

@@ -6,7 +6,7 @@ Regression lines:
   - if the config file may carry `state` then a config push resumes a queue paused for an incident
   - if a required status names no pull_request job then the queue waits on a check that never comes
   - if a required status is path-filtered or skippable then a docs-only draft times out in the queue
-  - if requiredStatuses drops an aggregator then the queue merges without that workflow's verdict
+  - if requiredStatuses drops `ci gate`, or regains `e2e verdict`, then the queue's gate is not the selected tests alone
   - if directMergeMode is on then a PR can merge untested by the queue while e2e skips PR heads
   - if the merge method drifts from merge_commit then queue merges differ from the step-7 lane merge
   - if Trunk's status check is enabled while ci_wait does not know its app then every waiter raises
@@ -256,7 +256,10 @@ def test_every_required_status_is_a_pull_request_job() -> None:
     assert not missing, f"required statuses no pull_request job produces: {missing}"
 
 
-AGGREGATORS = {"ci gate", "e2e verdict"}
+#: Bundle merges (the maintainer, Tue 27 Oct 2026): `ci gate` (scope plus the selected tests) is the
+#: only per-PR gate; `e2e verdict` still runs and reports, and e2e is sorted every 20 to 50
+#: PRs on main and by its nightly extended run.
+AGGREGATORS = {"ci gate"}
 
 
 def test_the_queue_requires_exactly_the_always_created_aggregators() -> None:

@@ -28,6 +28,7 @@ import {
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
 import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
 import type { DiskConfirmPatch } from './verified-pref-writes';
+import { hydrateTopbarViewFromDisk, type PerfView } from './topbar-view-prefs';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 import { isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
 
@@ -94,6 +95,9 @@ export type DiskPrefsPatch = {
 	deck_layout?: DeckLayoutMode;
 	deck_layout_animate?: boolean;
 	deck_layout_duration_ms?: DeckLayoutDurationMs;
+	perf_view?: PerfView;
+	show_pads?: boolean;
+	auto_play_two_deck?: boolean;
 	level_calibration?: LevelCalibrationPrefs;
 	lyrics_global?: boolean;
 	lyrics_library_col?: boolean;
@@ -183,6 +187,9 @@ export interface PrefsHydrateTarget {
 	deck_layout: DeckLayoutMode;
 	deck_layout_animate: boolean;
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	perf_view: PerfView;
+	show_pads: boolean;
+	auto_play_two_deck: boolean;
 	deck_right_mirror: boolean;
 	playlist_tree_view: 'tree' | 'column';
 	level_calibration: LevelCalibrationPrefs;
@@ -357,6 +364,17 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			const value = body[key];
 			if (typeof value === 'boolean') uiPrefs[key] = value;
 		}
+		// A malformed top-bar view pref keeps this browser's values and fails the
+		// hydration once the rest has applied, like key_notation below.
+		try {
+			hydrateTopbarViewFromDisk(uiPrefs, body);
+		} catch (exc) {
+			contractError ??= new Error(
+				`Top-bar view prefs on disk were refused, kept this browser's values: ${
+					exc instanceof Error ? exc.message : String(exc)
+				}`
+			);
+		}
 		// Announced only on a real change: a fresh browser's decks were seeded
 		// from the local default before this GET returned (SETSTUB-02).
 		if (
@@ -395,3 +413,4 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (contractError !== null) throw contractError;
 	};
 }
+

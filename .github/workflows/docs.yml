@@ -196,9 +196,19 @@ jobs:
     # requests, and the landing gate treats skipped/neutral as not-a-pass.
     # Pages publish stays main-only at the step below.
     continue-on-error: true
+    # `deployment` is true on a push to main ONLY (Tue 27 Oct 2026, bundle merges
+    # PR). A pull request still runs this job in the `pr-docs` environment, so the
+    # job and its check-run keep existing (see the no-`if` note above), but GitHub
+    # creates no deployment object for it, so a docs PR no longer shows "This
+    # branch is being deployed" / a pr-docs deployment for a build that publishes
+    # nothing. `deployment: false` is incompatible only with custom deployment
+    # protection rules, and neither environment has any (read back with
+    # `gh api repos/{owner}/{repo}/environments`). Pinned by
+    # tests/docs/test_mkdocs_config.py.
     environment:
       name: ${{ github.event_name == 'push' && 'github-pages' || 'pr-docs' }}
       url: ${{ steps.deployment.outputs.page_url }}
+      deployment: ${{ github.event_name == 'push' }}
     # See the `build` job above for the runner-selection note.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10

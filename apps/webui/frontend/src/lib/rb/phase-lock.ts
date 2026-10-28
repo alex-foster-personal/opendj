@@ -101,7 +101,7 @@ export const PHASE_LOCK_RESEND_RATIO = 0.0005;
  * known ahead of the playhead, so the window is CENTERED and the smoothing has
  * no lag: a tempo change is followed as it happens, rounded over the window.
  * 10 ms storage dither is cut to about a millisecond. Measured on the 19
- * uneven grids (ops/beatbench/phase-lock-jitter-round-1): 4, 8 and 16 give the
+ * uneven grids ((private path)): 4, 8 and 16 give the
  * same re-join count; 16 leaves more of a real tempo step unfollowed.
  */
 export const PHASE_LOCK_SMOOTH_HALF_WINDOW_BEATS = 8;
@@ -292,6 +292,16 @@ function _lockBeatPosition(times: Float64Array, positionSec: number): number | n
 	const span = times[lo + 1] - times[lo];
 	if (!(span > 0)) return null;
 	return lo + (positionSec - times[lo]) / span;
+}
+
+/**
+ * Fractional beat index of `positionSec` on the grid the lock measures:
+ * `gridBeatPosition` for an even grid, the smoothed grid for a flagged one.
+ * A phase view reads this so it shows 0 where the lock reads 0 (Sol P1 4350124721).
+ */
+export function lockBeatPosition(beats: readonly AnlzBeat[], positionSec: number): number | null {
+	const grid = _lockGrid(beats);
+	return grid === null ? null : _lockBeatPosition(grid.times, positionSec);
 }
 
 /**

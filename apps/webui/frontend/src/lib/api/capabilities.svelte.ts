@@ -111,6 +111,9 @@ class CapabilityStore {
 	 * answer yet, or a daemon that predates the field); false is a daemon that
 	 * HAS answered and has no OAuth client. Both health flavors carry it. */
 	googleOAuthConfigured = $state<boolean | null>(null);
+	/** `state_db.path` from the health body: the library store this daemon
+	 * serves, or null before an answer or when the body carries none. */
+	stateDbPath = $state<string | null>(null);
 
 	/** In flight or settled-successful probe. Cleared on failure so the next
 	 * caller retries instead of inheriting a verdict of "we never found out". */
@@ -147,6 +150,7 @@ class CapabilityStore {
 			const body = await unwrap(api.GET('/api/v1/health'));
 			this.flavor = readDaemonFlavor(body);
 			this.googleOAuthConfigured = readGoogleOAuthConfigured(body);
+			this.stateDbPath = _readStateDbPath(body);
 			this.error = null;
 			if (this.flavor === 'engine') {
 				const health = body as Record<string, unknown>;
@@ -165,6 +169,7 @@ class CapabilityStore {
 			this.flavor = 'unknown';
 			this.handshake = null;
 			this.googleOAuthConfigured = null;
+			this.stateDbPath = null;
 			this.error = _message(exc);
 			console.error('[capabilities] probe failed; daemon-specific surfaces stay inert', exc);
 		}
@@ -180,7 +185,15 @@ class CapabilityStore {
 		this.probedAt = null;
 		this.handshake = null;
 		this.googleOAuthConfigured = null;
+		this.stateDbPath = null;
 	}
+}
+
+function _readStateDbPath(body: object): string | null {
+	const stateDb = (body as { state_db?: unknown }).state_db;
+	if (typeof stateDb !== 'object' || stateDb === null) return null;
+	const path = (stateDb as { path?: unknown }).path;
+	return typeof path === 'string' && path !== '' ? path : null;
 }
 
 /**

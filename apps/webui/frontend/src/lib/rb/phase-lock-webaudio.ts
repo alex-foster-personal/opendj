@@ -327,9 +327,16 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 		return steps;
 	}
 
+	/** The tempo fold `deck` is locked at (follower grid beats per master
+	 * beat), or null when it holds no lock: a deck that is not sync-locked has
+	 * no fold, whatever its BPM ratio (Sol P1 4301847502). */
+	function normalizationOf(deck: PhaseLockDeckId): TempoNormalization | null {
+		return locks.get(deck)?.normalization ?? null;
+	}
+
 	function snapshot(): ReadonlyMap<PhaseLockDeckId, Readonly<WebAudioPhaseLock>> {
 		return new Map([...locks].map(([deck, lock]) => [deck, { ...lock }]));
 	}
 
-	return { record, clear, clearAll, nudge, tick, snapshot };
+	return { record, clear, clearAll, nudge, tick, normalizationOf, snapshot };
 }

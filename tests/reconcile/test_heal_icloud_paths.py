@@ -15,11 +15,11 @@ from apps.shared import rekordbox_db
 def _track(**kwargs: object) -> rekordbox_db.RBTrack:
     defaults = dict(
         id="1",
-        title="Hypnosis",
-        artist="PALAZZO",
+        title="Glass Tide",
+        artist="Marlowe Vane",
         album="",
         genre="",
-        folder_path="/Users/user/Library/Mobile Documents/com~apple~CloudDocs/x/01 Hypnosis.mp3",
+        folder_path="/Users/user/Library/Mobile Documents/com~apple~CloudDocs/x/01 Glass Tide.mp3",
         file_path=None,
         is_streaming=False,
         bpm=None,
@@ -35,26 +35,26 @@ def _track(**kwargs: object) -> rekordbox_db.RBTrack:
 
 def test_classify_ready_unique_one_basename_plus_size() -> None:
     cand = locate.Candidate(
-        path=Path("/Users/user/Music/Unravelling/01 Hypnosis.mp3"),
+        path=Path("/Users/user/Music/Paper Harbor/01 Glass Tide.mp3"),
         confidence=0.55,
-        signals=["basename_exact", "size_match"],
+        signals=("basename_exact", "size_match"),
     )
     row = heal._classify(_track(), [cand])
     assert row.status == "ready_unique"
-    assert row.candidate_path.endswith("01 Hypnosis.mp3")
+    assert row.candidate_path.endswith("01 Glass Tide.mp3")
 
 
 def test_classify_needs_confirm_when_two_unique_bar() -> None:
     cands = [
         locate.Candidate(
-            path=Path("/Users/user/Music/a/01 Hypnosis.mp3"),
+            path=Path("/Users/user/Music/a/01 Glass Tide.mp3"),
             confidence=0.55,
-            signals=["basename_exact", "size_match"],
+            signals=("basename_exact", "size_match"),
         ),
         locate.Candidate(
-            path=Path("/Users/user/Music/b/01 Hypnosis.mp3"),
+            path=Path("/Users/user/Music/b/01 Glass Tide.mp3"),
             confidence=0.55,
-            signals=["basename_exact", "duration_match"],
+            signals=("basename_exact", "duration_match"),
         ),
     ]
     row = heal._classify(_track(), cands)
@@ -64,9 +64,9 @@ def test_classify_needs_confirm_when_two_unique_bar() -> None:
 
 def test_classify_needs_confirm_basename_only() -> None:
     cand = locate.Candidate(
-        path=Path("/Users/user/Music/01 Hypnosis.mp3"),
+        path=Path("/Users/user/Music/01 Glass Tide.mp3"),
         confidence=0.35,
-        signals=["basename_exact"],
+        signals=("basename_exact",),
     )
     row = heal._classify(_track(), [cand])
     assert row.status == "needs_confirm"
@@ -85,14 +85,14 @@ def test_build_plan_finds_music_twin(
 
     home = tmp_path
     music_root = home / "Music"
-    music = music_root / "Unravelling"
+    music = music_root / "Paper Harbor"
     music.mkdir(parents=True)
-    twin = music / "01 Hypnosis.mp3"
+    twin = music / "01 Glass Tide.mp3"
     twin.write_bytes(b"x" * 4096)
 
     zone = (
         home / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
-        / "Convert" / "01 Hypnosis.mp3"
+        / "Convert" / "01 Glass Tide.mp3"
     )
     original = str(zone)
     roots = [music_root]
@@ -132,10 +132,10 @@ def test_build_plan_finds_music_twin(
 def _heal_row(candidate: Path, **kwargs: object) -> heal.HealRow:
     defaults = dict(
         id="1",
-        title="Hypnosis",
-        artist="PALAZZO",
+        title="Glass Tide",
+        artist="Marlowe Vane",
         original_path=(
-            "/Users/user/Library/Mobile Documents/com~apple~CloudDocs/x/01 Hypnosis.mp3"
+            "/Users/user/Library/Mobile Documents/com~apple~CloudDocs/x/01 Glass Tide.mp3"
         ),
         zone_reason="icloud_drive",
         status="ready_unique",
@@ -193,9 +193,9 @@ class _Rails:
 @pytest.fixture()
 def _twin(tmp_path: Path) -> Path:
     """A real, materialised, non-zone audio file for apply_unique to accept."""
-    music = tmp_path / "Music" / "Unravelling"
+    music = tmp_path / "Music" / "Paper Harbor"
     music.mkdir(parents=True)
-    twin = music / "01 Hypnosis.mp3"
+    twin = music / "01 Glass Tide.mp3"
     twin.write_bytes(b"x" * 4096)
     return twin
 
@@ -323,7 +323,7 @@ def test_apply_unique_refuses_a_dataless_candidate_before_any_rail_runs(
     rails = _Rails()
     rails.install(monkeypatch, tmp_path / "master.bak.db")
     _recording_console(monkeypatch)
-    ghost = tmp_path / "Music" / "01 Hypnosis.mp3"
+    ghost = tmp_path / "Music" / "01 Glass Tide.mp3"
     ghost.parent.mkdir(parents=True)
     ghost.write_bytes(b"x" * 4096)
     monkeypatch.setattr(heal.fs_residency, "is_materialised", lambda p: False)

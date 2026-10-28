@@ -71,12 +71,14 @@ tests/scripts/test_apps_scripts_import_audit.py
 tests/scripts/test_shell_construct_lint.py
 
 # Assert over every entry of a listed directory, each under 4 s (Tue 13 Oct 2026): apps/
-# packages against the import-linter contracts and layers, generated duplicates under apps/,
+# packages against the import-linter contracts, layers and public-surface contract, generated
+# duplicates under apps/,
 # CI lock use in every workflow and `scripts/*.sh`, adapter docs against shipped adapters,
 # agentic-testing driver verdicts, the security status table against the repository, and an
 # ADR-check replay over the real `(private path)`.
 tests/quality/test_importlinter_contracts.py
 (private path)
+tests/quality/test_module_surface_contract.py
 tests/quality/test_gate_generated_dup.py
 tests/scripts/test_ci_lock.py
 tests/open_dj/test_glossary.py

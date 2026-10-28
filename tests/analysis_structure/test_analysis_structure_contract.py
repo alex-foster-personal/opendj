@@ -22,7 +22,7 @@ from apps.analysis_structure.http import build_service
 def test_service_satisfies_protocol_and_delegates(tmp_path):
     service = build_service()
     assert isinstance(service, StructureService)
-    assert CONTRACT_VERSION == "analysis_structure/2"
+    assert CONTRACT_VERSION == "analysis_structure/3"
     # Cheap real call: rbx lane with vendor phrases is served untouched.
     out = service.merge_own_phrases({"phrases": [{"start_s": 0.0}]}, "s1", tmp_path, source="rbx")
     assert out["phrases_source"] == "rekordbox"

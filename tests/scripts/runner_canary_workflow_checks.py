@@ -74,6 +74,12 @@ CI_ONLY_PRE_PYTEST_STEPS = ("Install the main-side durations ledger over the com
 CI_ONLY_PYTEST_KEYS = ("continue-on-error",)
 
 
+#: Env entries ci.yml's pytest step carries that the canary's must NOT (bundle merges, Tue 27
+#: Oct 2026): CI_BUNDLE_DECLARATIONS reads `needs.scope`, and the canary has no scope job; a
+#: canary is a push, so the selector never reads it there anyway.
+CI_ONLY_PYTEST_ENV = ("CI_BUNDLE_DECLARATIONS",)
+
+
 #: The one in-step difference: the shard's own wall budget, sized under the 30-minute cap.
 PYTEST_BUDGET_SUBSTITUTION = ("MDT_PYTEST_TIMEOUT_S=2400\n", "MDT_PYTEST_TIMEOUT_S=1440\n")
 #: Its FULL-mode twin (Sat 17 Oct 2026): ci.yml gives a FULL shard a larger budget, and the
@@ -292,6 +298,9 @@ def _canary_expected_steps(ci_doc: dict[str, Any]) -> list[dict[str, Any]]:
     for key in CI_ONLY_PYTEST_KEYS:
         assert key in pytest_step, f"declared CI-only pytest key {key!r} no longer in ci.yml"
         del pytest_step[key]
+    for key in CI_ONLY_PYTEST_ENV:
+        assert key in pytest_step["env"], f"declared CI-only pytest env {key!r} no longer in ci.yml"
+        del pytest_step["env"][key]
     return kept
 
 

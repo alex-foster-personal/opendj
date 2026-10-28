@@ -1,0 +1,7 @@
+{
+  "detail": {
+    "code": "eject_volume_busy",
+    "message": "another USB export or eject is running; eject GIG-A once that finishes",
+    "ui_title": null
+  }
+}

@@ -1,6 +1,7 @@
 import { expect, fireEvent, fn, userEvent, within } from 'storybook/test';
 
 import type { DeckState } from '$lib/rb/deck-state-types';
+import { separateActionView, type SeparateActionView } from '$lib/rb/stem-separate-view';
 import type { StemControl, StemControlState, StemDeckState } from '$lib/rb/stem-types';
 
 /**
@@ -18,6 +19,8 @@ type Args = {
 	onMute: (stem: StemControl) => Promise<void>;
 	onSolo: (stem: StemControl) => Promise<void>;
 	onLoad?: () => Promise<void>;
+	separate?: SeparateActionView | null;
+	onSeparate?: () => Promise<void>;
 };
 type Ctx = { canvasElement: HTMLElement; args: Args };
 
@@ -41,6 +44,43 @@ function deck(deck_id: 1 | 2 | 3 | 4, stems: Partial<StemDeckState>): DeckState 
 
 const chips = (root: HTMLElement): HTMLButtonElement[] => Array.from(root.querySelectorAll<HTMLButtonElement>('button.chip'));
 const chipText = (root: HTMLElement): string[] => chips(root).map((c) => c.textContent?.trim() ?? '');
+
+/** A NO STEMS deck (STEM-48, STEM-77), shaped as stem-graph's `unavailableStemDeckState`
+ * reports it; not imported from there, since that module pulls the audio engine into the
+ * React type check. */
+const noStems = (deck_id: 1 | 2 | 3 | 4): DeckState =>
+	deck(deck_id, {
+		status: 'unavailable',
+		source: null,
+		model: null,
+		layout: null,
+		available_controls: [],
+		error: 'no bundle on this machine and none indexed in the cloud'
+	});
+/** Every separate view comes from `separateActionView`, the function the deck uses. */
+const SEPARATE_BASE = { refusal: null, checking: false, job: null, enqueueError: null, starting: false, probed: true };
+
+/** The separate button renders the view it is given, with the deck's testid, and clicks only when enabled. */
+async function expectSeparate({ canvasElement, args }: Ctx, deckId: number, enabled: boolean): Promise<void> {
+	const view = args.separate as SeparateActionView;
+	const button = within(canvasElement).getByTestId(`stem-separate-deck-${deckId}`);
+	await expect(button).toHaveClass('status', 'action', 'separate');
+	await expect(button).toHaveTextContent(view.label);
+	await expect(button).toHaveAttribute('title', view.tip);
+	await expect(button).toHaveAttribute('aria-label', `${view.tip} Deck ${deckId}.`);
+	await expect(button).toHaveAttribute('data-performance-control', 'stem-separate');
+	if (enabled) {
+		await expect(button).toBeEnabled();
+		await userEvent.click(button);
+		await expect(args.onSeparate).toHaveBeenCalledTimes(1);
+	} else {
+		await expect(button).toBeDisabled();
+		// A pointer click, as a user makes it: a disabled button never receives one.
+		await userEvent.click(button);
+		await expect(args.onSeparate).not.toHaveBeenCalled();
+	}
+	await expect(args.onLoad).not.toHaveBeenCalled();
+}
 
 const READY_TIP = 'real htdemucs stems (demucs4) - click mute, Shift+click solo';
 
@@ -168,6 +208,78 @@ export const contracts = {
 				await expect(chip).toHaveAttribute('aria-busy', 'true');
 			}
 			await expect(args.onLoad).not.toHaveBeenCalled();
+		}
+	},
+	/** NO STEMS with no separate action wired: the status label only, no button (what the mixer strip shows). */
+	NoStemsNoAction: {
+		args: { deck: noStems(1), pending: false, onMute: fn(), onSolo: fn(), onLoad: fn(), separate: null, onSeparate: fn() } satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			await expect(within(canvasElement).getByTestId('stem-status-deck-1')).toHaveAttribute('data-stems-state', 'none');
+			await expect(canvasElement.querySelector('.separate')).toBeNull();
+		}
+	},
+	/** A stems source answers: one click separates this track (STEM-77). */
+	NoStemsSeparate: {
+		args: {
+			deck: noStems(1),
+			pending: false,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn(),
+			separate: separateActionView(SEPARATE_BASE),
+			onSeparate: fn()
+		} satisfies Args,
+		play: async (ctx: Ctx) => {
+			await expect(within(ctx.canvasElement).getByTestId('stem-status-deck-1')).toHaveAttribute('data-stems-state', 'none');
+			await expectSeparate(ctx, 1, true);
+		}
+	},
+	/** No source on this machine: the button is inert and says why on hover. */
+	NoStemsNoSource: {
+		args: {
+			deck: noStems(2),
+			pending: false,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn(),
+			separate: separateActionView({ ...SEPARATE_BASE, refusal: 'this build has no GPU relay and no local separator' }),
+			onSeparate: fn()
+		} satisfies Args,
+		play: async (ctx: Ctx) => {
+			await expect(within(ctx.canvasElement).getByTestId('stem-status-deck-2')).toHaveAttribute('data-stems-state', 'none');
+			await expectSeparate(ctx, 2, false);
+		}
+	},
+	/** The job is queued: named, inert until it finishes. */
+	NoStemsQueued: {
+		args: {
+			deck: noStems(3),
+			pending: false,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn(),
+			separate: separateActionView({ ...SEPARATE_BASE, job: { id: 'job-42', status: 'queued' } }),
+			onSeparate: fn()
+		} satisfies Args,
+		play: async (ctx: Ctx) => {
+			await expect(within(ctx.canvasElement).getByTestId('stem-status-deck-3')).toHaveAttribute('data-stems-state', 'none');
+			await expectSeparate(ctx, 3, false);
+		}
+	},
+	/** The job failed: the button offers another try and carries the error. */
+	NoStemsFailed: {
+		args: {
+			deck: noStems(4),
+			pending: false,
+			onMute: fn(),
+			onSolo: fn(),
+			onLoad: fn(),
+			separate: separateActionView({ ...SEPARATE_BASE, job: { id: 'job-42', status: 'failed', error: 'relay answered HTTP 503' } }),
+			onSeparate: fn()
+		} satisfies Args,
+		play: async (ctx: Ctx) => {
+			await expect(within(ctx.canvasElement).getByTestId('stem-status-deck-4')).toHaveAttribute('data-stems-state', 'none');
+			await expectSeparate(ctx, 4, true);
 		}
 	}
 };

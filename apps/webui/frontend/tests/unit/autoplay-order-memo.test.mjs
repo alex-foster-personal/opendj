@@ -176,7 +176,7 @@ describe('the poll consults the memo (source guards; the controller is rune-boun
 	it('the chart uses the selected follower pitch range, and keys it', () => {
 		const start = CHART_ORDER_SOURCE.indexOf('export function refreshChartedAutoPlayOrder(');
 		const body = CHART_ORDER_SOURCE.slice(start, CHART_ORDER_SOURCE.indexOf('\n}\n', start));
-		assert.match(body, /const follower = pickFollowerDeck\(input\.snaps, input\.source\.id\)/);
+		assert.match(body, /const follower = pickFollowerDeck\(input\.snaps, input\.source\.id, uiPrefs\.auto_play_two_deck\)/);
 		assert.match(body, /const followerPitchRange = pitchRanges\[follower\]/);
 		assert.match(body, /tempoBoundsFromPitchRange\(followerPitchRange\)/);
 		assert.match(body, /follower_deck: follower/);

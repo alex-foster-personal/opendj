@@ -410,7 +410,9 @@ def _build_engine_core_cache(_tmp: Path) -> sqlite3.Connection:
 
 def _build_dedup(tmp: Path) -> sqlite3.Connection:
     """The LIVE dedup schema, run today by apps/tags and apps/dedup."""
-    return dedup_contract.ensure_schema(tmp / "dedup" / "phase7.sqlite")
+    path = tmp / "dedup" / "phase7.sqlite"
+    dedup_contract.ensure_schema(path)
+    return sqlite3.connect(path)
 
 
 def _build_fingerprint_cache(tmp: Path) -> sqlite3.Connection:

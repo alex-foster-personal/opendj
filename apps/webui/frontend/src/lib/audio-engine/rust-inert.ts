@@ -41,6 +41,7 @@ export const CONTROL_COMMANDS: Readonly<Record<string, string>> = {
 export function commandForControl(control: string | undefined, explicit?: string): string | null {
 	if (explicit !== undefined && explicit.length > 0) return explicit;
 	if (control === undefined) return null;
+	if (control === 'stem-separate') return 'stem_separate';
 	if (control.startsWith('stem-')) return 'stem_mute';
 	return CONTROL_COMMANDS[control] ?? null;
 }

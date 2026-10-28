@@ -58,6 +58,7 @@ test('every mapped command is one Rust mode can refuse, never one it plays', () 
 
 test('control names resolve to their command; an explicit opt-in wins', () => {
 	assert.equal(m.commandForControl('stem-vocals'), 'stem_mute');
+	assert.equal(m.commandForControl('stem-separate'), 'stem_separate', 'separate is refused by its own name');
 	assert.equal(m.commandForControl('key-nudge-up'), 'key_nudge');
 	assert.equal(m.commandForControl('play'), null, 'a control Rust mode plays is not mapped');
 	assert.equal(m.commandForControl(undefined, 'channel_cue'), 'channel_cue');

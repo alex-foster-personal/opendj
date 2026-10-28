@@ -16,8 +16,23 @@
  */
 
 import { api, unwrap } from '$lib/api/client';
+import { ApiError } from '$lib/api/errors';
 
-import { type Job, isTerminal, jobsStore } from './jobs-store.svelte';
+import { type Job, isTerminal, jobsStore, readJobPayload } from './jobs-store.svelte';
+
+/** The engine's 409 code when the request duplicates an active job; its
+ * detail carries that job (apps/engine_core/jobs/api.py STEMS_JOB_ACTIVE). */
+export const STEMS_JOB_ACTIVE = 'stems_job_active';
+
+/** The active job carried by the engine's duplicate refusal, or null when the
+ * error is anything else (which then stays an error). */
+export function adoptableStemsJob(exc: unknown): Job | null {
+	if (!(exc instanceof ApiError) || exc.status !== 409 || exc.code !== STEMS_JOB_ACTIVE) return null;
+	const detail = (exc.body as { detail?: { job?: unknown } } | null)?.detail;
+	const job = detail?.job;
+	if (typeof job !== 'object' || job === null) return null;
+	return readJobPayload(job as Record<string, unknown>);
+}
 
 /** The engine kind. Must match `apps/stems/job.py::JOB_KIND`. */
 export const STEMS_JOB_KIND = 'stems.separate';
@@ -168,11 +183,21 @@ export async function fetchStemsPlan(tier: StemsTier = DEFAULT_STEMS_TIER): Prom
 export async function enqueueStemsForPending(
 	tier: StemsTier = DEFAULT_STEMS_TIER
 ): Promise<Job> {
-	const job = (await unwrap(
-		api.POST('/api/v1/jobs', {
-			body: { kind: STEMS_JOB_KIND, payload: { scope: 'pending', tier } }
-		})
-	)) as Job;
+	let job: Job;
+	try {
+		job = (await unwrap(
+			api.POST('/api/v1/jobs', {
+				body: { kind: STEMS_JOB_KIND, payload: { scope: 'pending', tier } }
+			})
+		)) as Job;
+	} catch (exc) {
+		// A scope job already queued does this work: the engine refuses the
+		// duplicate atomically and hands that job back, which the prompt adopts
+		// as its own enqueue rather than reporting a failure (Sol on #6819).
+		const adopted = adoptableStemsJob(exc);
+		if (adopted === null) throw exc;
+		job = adopted;
+	}
 	jobsStore.upsert(job);
 	return job;
 }

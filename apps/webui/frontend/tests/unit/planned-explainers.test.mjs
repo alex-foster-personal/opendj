@@ -97,19 +97,55 @@ describe('planned explainers', () => {
 		assert.match(topbar, /plannedTitle\(/);
 	});
 
-	test('5ccbce4970bb: the planned two-track AutoPlay option remains inert while IPC can report its status', () => {
+	// TOPVIEW-06 (Fri 9 Oct 2026) built what 5ccbce4970bb held as a contract:
+	// the row is a live checkbox now, so it must not keep the not-built line.
+	test('two-track AutoPlay is a live checkbox, no longer a planned row', () => {
 		const topbar = readFileSync(
 			fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),
 			'utf8'
 		);
-		assert.match(topbar, /class="ap-row ap-two-track rb-inert"/);
+		assert.doesNotMatch(topbar, /ap-two-track rb-inert/);
+		assert.doesNotMatch(topbar, /plannedTitle\('autoplay-two-track'\)/);
+		// The checkbox dispatches the typed command; it no longer writes the pref directly.
 		assert.match(
 			topbar,
-			/class="ap-row ap-two-track rb-inert"[\s\S]*?\bdisabled\b[\s\S]*?Two-track AutoPlay/
+			/data-testid="ap-two-track"[\s\S]*?runPerformanceCommandFromUi\(\{\s*type: 'auto_play_two_track',/
 		);
-		assert.match(topbar, /ap-planned/);
-		assert.match(topbar, /plannedTitle\('autoplay-two-track'\)/);
-		assert.match(mod.PLANNED_CONTROLS['autoplay-two-track'], /second automatic track/i);
+		assert.doesNotMatch(topbar, /setAutoPlayTwoDeck\(/);
+		assert.equal(mod.PLANNED_CONTROLS['autoplay-two-track'], undefined);
+	});
+
+	test('built top-bar controls explain themselves without the not-built line', () => {
+		const { BUILT_CONTROLS, builtExplainerBullets, PLANNED_CONTROLS, NOT_BUILT_MARK } = mod;
+		for (const id of Object.keys(BUILT_CONTROLS)) {
+			assert.equal(PLANNED_CONTROLS[id], undefined, `${id} is both planned and built`);
+			const bullets = builtExplainerBullets(id);
+			assert.equal(bullets.length, 1);
+			assert.ok(bullets[0].length > 25, `${id} has no real description`);
+			assert.ok(!bullets[0].includes(NOT_BUILT_MARK), `${id} still says it is unbuilt`);
+		}
+		assert.throws(() => builtExplainerBullets('no-such-control'), /planned-explainers/);
+	});
+
+	test('TOPVIEW-07: the built catalogue holds exactly the controls it says moved (Sol P1 4301475294)', () => {
+		// The loop above only walks keys already present, so a moved control
+		// missing from the catalogue would pass it; pin the whole set.
+		assert.deepEqual(Object.keys(mod.BUILT_CONTROLS).sort(), [
+			'4-waveform-view',
+			'autoplay-two-track',
+			'information',
+			'list-view',
+			'scope-view-1',
+			'scope-view-2'
+		]);
+		const topbar = readFileSync(
+			fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),
+			'utf8'
+		);
+		assert.match(topbar, /const TWO_TRACK_AUTOPLAY_TITLE = builtTitle\('autoplay-two-track'\);/);
+		assert.match(topbar, /<label class="ap-row" title=\{TWO_TRACK_AUTOPLAY_TITLE\}>\s*<input\s*type="checkbox"\s*data-testid="ap-two-track"/);
+		assert.doesNotMatch(topbar, /'Two-track AutoPlay - /, 'no second, hand-copied title in the top bar');
+		assert.throws(() => mod.builtTitle('no-such-control'), /planned-explainers/);
 	});
 
 	// REQ: LIBUX-17

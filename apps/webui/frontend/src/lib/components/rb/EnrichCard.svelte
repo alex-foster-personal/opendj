@@ -11,6 +11,7 @@
 	  Retry     POST /api/v1/ahead-analysis/retry    (ahead_analysis_cli retry)
 	  Separate  POST /api/v1/jobs (via StemsPrompt)
 	  Never     PUT  /api/v1/enrich/decisions/stems  (enrich_cli decide)
+	  Ask again PUT  /api/v1/enrich/decisions/stems {answer: ask} (ENRICH-05)
 	  Hide      session only, re-shown on the next open
 	  More/Less view only; the card NEVER opens itself: needsAttention() flags
 	            the pill ("needs you"), and only a click expands it. Esc and a
@@ -22,7 +23,7 @@
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import EnrichCardView from '$lib/components/rb/EnrichCardView.svelte';
-	import { type EnrichSummary, needsAttention } from '$lib/enrich/enrich-card';
+	import { type EnrichSummary, cardVisible, needsAttention } from '$lib/enrich/enrich-card';
 
 	const REFRESH_MS = 30_000;
 	const HIDE_KEY = 'odj.enrich-card.hidden';
@@ -38,7 +39,8 @@
 
 	const attention = $derived(needsAttention(summary, loadError, actionError));
 
-	const visible = $derived(!hidden && (loadError !== null || (summary?.show ?? false)));
+	// ENRICH-05: a standing "never" keeps the pill up (collapsed, never flagged) so it can be undone, Hide included.
+	const visible = $derived(cardVisible(summary, loadError, hidden));
 
 	function readHidden(): boolean {
 		try {
@@ -50,6 +52,7 @@
 
 	function hide(): void {
 		hidden = true;
+		expanded = false; // a pill a standing "never" keeps up stays, collapsed
 		try {
 			sessionStorage.setItem(HIDE_KEY, '1');
 		} catch {
@@ -90,6 +93,16 @@
 			)
 		);
 
+	const askAgain = (): Promise<void> =>
+		act(() =>
+			unwrap(
+				api.PUT('/api/v1/enrich/decisions/{lane}', {
+					params: { path: { lane: 'stems' } },
+					body: { answer: 'ask' }
+				})
+			)
+		);
+
 	onMount(() => {
 		// LIBM-172: the summary is a multi-second engine read; it waits for the
 		// boot library index (the scheduler's ceiling still runs it).
@@ -114,6 +127,7 @@
 		onretry={retry}
 		onask={() => (asking = true)}
 		onnever={never}
+		onaskagain={askAgain}
 	>
 		{#snippet stemsPrompt()}
 			<StemsPrompt onenqueued={() => void load()} onskip={() => (asking = false)} />

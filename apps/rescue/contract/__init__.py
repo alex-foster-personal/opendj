@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-CONTRACT_VERSION = "rescue/1"
+CONTRACT_VERSION = "rescue/2"
 
 RING_SIZE = 8
 MAX_BYTES = 32 * 1024
@@ -21,9 +21,15 @@ MAX_BYTES = 32 * 1024
 class RescueSnapshotTooLargeError(ValueError):
     """Serialized snapshot exceeds the 32 KiB cap."""
 
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
 
 class RescueSnapshotInvalidError(ValueError):
     """Snapshot payload failed structural validation."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -54,7 +60,7 @@ class RescueAppendReceipt(BaseModel):
 class RescueService(Protocol):
     """Operations code outside ``apps.rescue`` uses on the snapshot ring."""
 
-    def append_snapshot(self, data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    def append_snapshot(self, data_dir: Path, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """Validate and write one snapshot; returns a ``RescueAppendReceipt``-shaped dict."""
         ...
 
@@ -62,7 +68,7 @@ class RescueService(Protocol):
         """Read the ring index (empty index when none exists)."""
         ...
 
-    def read_latest(self, data_dir: Path) -> dict[str, Any] | None:
+    def read_latest(self, data_dir: Path) -> dict[str, JsonValue] | None:
         """Newest readable snapshot, or None."""
         ...
 

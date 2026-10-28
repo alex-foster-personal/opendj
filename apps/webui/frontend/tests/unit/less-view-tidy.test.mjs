@@ -31,7 +31,6 @@ test('the LESS top bar hides Stage, voice command and every unfinished control',
 	for (const selector of [
 		'.icon-cluster > :global(.explainer:has(.rb-inert))',
 		'.link-btn',
-		'.topbar-slot-pad',
 		'.topbar-slot-utility',
 		'.free-badge',
 		'.lyr-stage-row',
@@ -39,7 +38,8 @@ test('the LESS top bar hides Stage, voice command and every unfinished control',
 	]) {
 		assert.ok(rule.includes(selector), `LESS must hide ${selector}`);
 	}
-	// Mutation guard: the 2-deck toggle is a real control and must survive.
+	// Mutation guard: the 2-deck toggle and PAD (TOPVIEW-04) are real controls and must survive.
+	assert.equal(rule.includes('.topbar-slot-pad'), false, 'PAD is a live toggle now; LESS must not hide it');
 	assert.equal(rule.includes('aria-pressed'), false);
 	assert.doesNotMatch(rule, /\.icon-cluster\s*\{|\.icon-cluster > :global\(\.explainer\)[,\s]/);
 });

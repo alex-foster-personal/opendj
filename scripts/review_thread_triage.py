@@ -1,22 +1,16 @@
-"""Bot review-thread triage gate for one pull request.
+"""Review-thread triage gate for one pull request.
 
-Every review thread opened by a review bot (Codex, Copilot, CodeRabbit, Devin) must
-reach one of three terminal states before or at merge:
+REVIEW-22 (ADR-0124, Wed 28 Oct 2026, the maintainer: "skip CI as we'd sort it every 20-50
+PRs"): only two kinds of thread block a merge --
 
-    FIXED        code changed in response
-    REBUTTED     reply explaining why not, thread resolved
-    DEBT-LOGGED  reply "logged as tech debt: <anchor>", thread resolved,
-                 entry in .planning/debt/<pr>.md on the PR branch
+    a P0 from any reviewer (Codex, Copilot, CodeRabbit, Devin, or a CLI lane)
+    a thread a HUMAN (maintainer, no lane marker) opened as BLOCKING
 
-Each of those rows requires BOTH HALVES: a reply that records which
-disposition was chosen, and a resolve that closes it. A reply alone is work in
-progress ("investigating" is not a disposition). A resolve alone leaves no
-record of which of the three was chosen. Silence -- an unresolved thread
-nobody answered -- is never a legal state on a merged PR.
-
-The gate additionally REFUSES a blocker written off as debt: P0/P1 and
-anything marked BLOCKING must be FIXED or REBUTTED, and a debt-log reply on
-one of those fails however the thread was closed.
+and each must reach FIXED or REBUTTED (a reply saying which, AND a resolve); a
+debt-log reply on one of them fails however the thread was closed. Every other
+bot thread (P1, P2, P3, bot BLOCKING) still open at the head is filed to the PR's
+one follow-up issue by `review_followups` before a pass is returned, so nothing
+is lost and nothing holds the merge open for another review round.
 
 What this script can and cannot prove. It is a SILENCE DETECTOR, not a judge of whether a rebuttal
 is sound or a fix is correct. It answers "did anyone reach a disposition here", which is
@@ -37,22 +31,26 @@ Requirements (mini-PRD)
   [if an unresolved thread carrying only "investigating" clears the gate then broken]
   [if a bare resolve with no reply clears the gate then broken]
 - `/ ` refuse a blocker that was debt-logged rather than fixed or rebutted.
-  [if a P1 closed with "logged as tech debt:" clears the gate then broken]
+  [if a P0 closed with "logged as tech debt:" clears the gate then broken]
   [if a P2 NON-BLOCKING closed with a debt-log reply is refused then broken]
+- `/ ` REVIEW-22: block only on P0 and human BLOCKING; file the rest.
+  [if an open bot P1 or bot BLOCKING thread fails the gate then broken]
+  [if an open P0 or an open human BLOCKING thread passes the gate then broken]
+  [if an open non-blocking thread passes without being filed to the follow-up issue then broken]
 - `/ ` surface the P-level and BLOCKING marker per thread, across bots.
   [if a P1 badge body reports severity P? then broken]
   [if a body saying NON-BLOCKING reports BLOCKING then broken]
   [if a Devin bug marked red does not tier as P1 then broken]
   [if a Devin analysis note tiers as a defect rather than INFO then broken]
   [if a Devin summary leaks its JSON envelope instead of the headline then broken]
-- `/ ` exit nonzero when any bot thread fails the gate, zero otherwise.
-  [if a PR with an untriaged bot thread exits 0 then broken]
+- `/ ` exit nonzero when any blocker thread fails the gate, zero otherwise.
+  [if a PR with an untriaged P0 thread exits 0 then broken]
   [if a fully triaged PR exits nonzero then broken]
   [if a PR with no bot threads at all exits nonzero then broken]
 - `/ ` read the tech-debt ledger from the PR's HEAD commit UNION its base
   branch, never a local checkout (#792, and #805 for the base half).
   [if a debt entry was appended directly to main under the workflow
-  .planning/TECH-DEBT.md documents, the PR branch has not rebased since, and
+  (private path) documents, the PR branch has not rebased since, and
   the gate reports NOT IN LEDGER, then broken]
   [if the base ledger cannot be read and the gate passes silently then broken]
   [if a debt entry exists only on the PR branch and the gate is run from a
@@ -78,7 +76,7 @@ Requirements (mini-PRD)
   [if a reviewer resolves a thread, or edits or deletes its terminal reply,
   while the ledger's own round trips are in flight, and the verdict is still
   built from the pre-ledger-read snapshot, then broken]
-- `/ ` validate the PR's OWN `.planning/debt/<pr>.md` via `review_debt_check.py`,
+- `/ ` validate the PR's OWN `(private path)/<pr>.md` via `review_debt_check.py`,
   reusing `scripts.debt_index`'s parser (issue #2980) instead of a copy of it.
   [if a malformed own-file passes silently, a sibling's defect is blamed on
   this PR, or a debt-file-less PR behaves any differently, then broken]
@@ -99,7 +97,7 @@ import json
 import sys
 
 try:
-    from scripts import pr_scope_check, review_blocker, review_coverage
+    from scripts import pr_scope_check, review_blocker, review_coverage, review_followups
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
@@ -230,7 +228,7 @@ def fetch_pull_request(number: int, owner: str = OWNER, repo: str = REPO) -> Pul
     the first page and then spent the rest of the fetch trying to notice if the
     world had moved underneath that snapshot -- first the head, then the base.
     The base guard compared a NAME, so `main` advancing was invisible to it, and
-    `.planning/TECH-DEBT.md` is appended DIRECTLY TO MAIN by documented
+    `(private path)` is appended DIRECTLY TO MAIN by documented
     convention: the gate would read the ledger, someone would land the very
     entry it was about to demand, and the run would still report DEBT-LOG NOT
     IN LEDGER against a snapshot taken seconds before the row appeared. Codex
@@ -309,7 +307,7 @@ def fetch_pull_request(number: int, owner: str = OWNER, repo: str = REPO) -> Pul
         # it. #805 round 7 (review_thread_triage.py:354): `disposition` never
         # reads the ledger (only `ledger_indexed` does), so it is computable
         # for free before any network round trip against
-        # `.planning/TECH-DEBT.md`. round 8 (review_thread_triage.py:347): a
+        # `(private path)`. round 8 (review_thread_triage.py:347): a
         # DEBT-LOGGED claim already failing for a ledger-independent reason --
         # unresolved, or illegal (P0/P1 or BLOCKING, which `illegal_debt_log`
         # fails regardless of ledger membership) -- gains nothing from the
@@ -423,53 +421,45 @@ def _describe(thread: Thread) -> str:
     )
 
 
-def _render(pr: PullRequest) -> str:
+def _render(pr: PullRequest, follow_up_url: str | None = None) -> str:
     lines = [
         f"PR #{pr.number} ({pr.state}{'/merged' if pr.merged else ''}): {pr.title}",
-        f"bot review threads: {len(pr.threads)}"
+        f"review threads: {len(pr.threads)}"
         f"  resolved: {sum(1 for t in pr.threads if t.resolved)}"
         f"  IN-PROGRESS: {len(pr.in_progress)}"
         f"  RESOLVED-UNCLEAR: {len(pr.resolved_unclear)}"
         f"  RESOLVED-SILENT: {len(pr.resolved_silent)}"
         f"  UNTRIAGED: {len(pr.silent)}",
     ]
-    if pr.silent:
+    blocking = [t for t in pr.failing if not t.illegal_debt_log]
+    if blocking:
         lines.append("")
-        lines.append("UNTRIAGED (never answered at all):")
-        lines += [_describe(t) for t in pr.silent]
-    if pr.in_progress:
+        lines.append("BLOCKING (P0, or a human BLOCKING thread, not yet FIXED or REBUTTED and resolved):")
+        lines += [_describe(t) for t in blocking]
+    if pr.violations:
         lines.append("")
-        lines.append("IN-PROGRESS (answered, but never dispositioned; resolve it or say why not):")
-        lines += [_describe(t) for t in pr.in_progress]
-    if pr.resolved_silent:
+        lines.append("ILLEGAL DEBT-LOG (a P0 or human BLOCKING cannot be written off as debt):")
+        lines += [_describe(t) for t in pr.violations]
+    if pr.follow_ups:
         lines.append("")
-        lines.append("RESOLVED-SILENT (closed with no reply; which disposition was it?):")
-        lines += [_describe(t) for t in pr.resolved_silent]
-    if pr.resolved_unclear:
-        lines.append("")
-        lines.append("RESOLVED-UNCLEAR (reply names none of FIXED / REBUTTED / DEBT-LOGGED):")
-        lines += [_describe(t) for t in pr.resolved_unclear]
+        where = follow_up_url or "not filed by this run"
+        lines.append(f"FOLLOW-UP (non-blocking, filed to {where}):")
+        lines += [_describe(t) for t in pr.follow_ups]
     if pr.unindexed_debt:
         lines.append("")
         lines.append(
             "DEBT-LOG NOT IN PR DEBT FILE (the reply claims it; "
-            f".planning/debt/{pr.number}.md at {pr.head_sha} does not):"
+            f"(private path)/{pr.number}.md at {pr.head_sha} does not; filed as a follow-up):"
         )
         lines += [_describe(t) for t in pr.unindexed_debt]
-    if pr.violations:
-        lines.append("")
-        lines.append("ILLEGAL DEBT-LOG (a blocker cannot be written off as debt):")
-        lines += [_describe(t) for t in pr.violations]
+    lines.append("")
     if pr.failing:
-        lines.append("")
         lines.append(
-            "Each must reach FIXED, REBUTTED, or DEBT-LOGGED "
-            f"(.planning/debt/{pr.number}.md) before this PR merges: a reply saying which, "
-            "AND a resolve. P0/P1 and BLOCKING may not be debt-logged."
+            "Each blocker must reach FIXED or REBUTTED before this PR merges: "
+            "a reply saying which, AND a resolve. It may not be debt-logged."
         )
     else:
-        lines.append("")
-        lines.append("OK: every bot review thread reached a terminal state.")
+        lines.append("OK: no P0 or human BLOCKING thread is open; every other open thread is a follow-up.")
     return "\n".join(lines)
 
 
@@ -487,6 +477,7 @@ def _as_json(
             "base_ref": pr.base_ref,
             "total": len(pr.threads),
             "failing": len(pr.failing),
+            "follow_ups": len(pr.follow_ups),
             "unterminated": len(pr.unterminated),
             "violations": len(pr.violations),
             "unindexed_debt": len(pr.unindexed_debt),
@@ -512,6 +503,8 @@ def _as_json(
                     "ledger_indexed": t.ledger_indexed,
                     "ledger_checked": t.ledger_checked,
                     "illegal_debt_log": t.illegal_debt_log,
+                    "blocks_merge": t.blocks_merge,
+                    "follow_up": t.follow_up,
                     "debt_not_in_ledger": t.debt_not_in_ledger,
                 }
                 for t in pr.threads
@@ -574,6 +567,14 @@ def main(argv: list[str] | None = None) -> int:
         debt_error, main_side_debt = check_pr_head_debt_file(
             pr.number, pr.head_sha, args.owner, args.repo
         )
+        # REVIEW-22: a pass needs every non-blocking thread filed, so a failed filing is exit 3,
+        # unless a blocker is already known: then the BLOCKER line must name it, not the filing.
+        try:
+            follow_up_url = review_followups.file_follow_ups(args.owner, args.repo, pr.number, pr.follow_ups)
+        except review_coverage.TriageError as exc:
+            if not (pr.failing or coverage or debt_error):
+                raise
+            follow_up_url = f"nowhere: filing failed ({exc})"
     except review_coverage.TriageError as exc:
         # Could not measure is not a verdict, and must not read as either one.
         review_blocker.unknown(f"[review-coverage] COULD NOT MEASURE: {exc}")
@@ -585,7 +586,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[review-thread-triage] COULD NOT MEASURE: {exc}", file=sys.stderr)
         return 3
 
-    print(_render(pr))
+    print(_render(pr, follow_up_url))
     debt_report = render_debt_verdict(pr.number, pr.head_sha, debt_error, main_side_debt)
     if debt_report:
         print(f"\n{debt_report}")

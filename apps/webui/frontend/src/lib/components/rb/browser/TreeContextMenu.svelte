@@ -4,6 +4,7 @@
 	import { bindMenuItems, type BoundMenuItem } from '$lib/context-menu/bind';
 	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
 	import { reportMenuLoadFailure } from './track-context-menu';
+	import { openUsbExportForPlaylist } from '$lib/rb/usb-export.svelte';
 
 	let {
 		oncreate,
@@ -77,7 +78,8 @@
 			...nodeRunners,
 			duplicate: () => onduplicate?.(node),
 			'forbid-duplicates': () => onforbidduplicates?.(node),
-			reveal: () => onselect(node)
+			reveal: () => onselect(node),
+			'export-usb': () => void openUsbExportForPlaylist(node.name)
 		});
 	}
 

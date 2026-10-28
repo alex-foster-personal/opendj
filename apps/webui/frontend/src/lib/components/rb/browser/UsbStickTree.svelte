@@ -17,7 +17,11 @@
 		usbErrorHeadline,
 		usbLibrary
 	} from '$lib/rb/usb-library.svelte';
-	import type { UsbVolumeKnown } from '$lib/rb/usb-tracker.svelte';
+	import { usbTracker, type UsbVolumeKnown } from '$lib/rb/usb-tracker.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
+	import { loadMenuRegistry, menuRegistry } from '$lib/context-menu/lazy.svelte';
+	import { usbStickMenuItems } from '$lib/rb/usb-stick-menu';
+	import { reportMenuLoadFailure } from './track-context-menu';
 
 	let {
 		volume,
@@ -43,7 +47,35 @@
 		else onselect(node);
 	}
 
+	/**
+	 * USBEXP-04: the stick's own right-click menu (USB status, Sync, Eject),
+	 * opened here rather than by Quick Draw so Library mode, which has no Quick
+	 * Draw, shows the same rows. stopPropagation keeps Quick Draw's window
+	 * listener on /performance from replacing it. No preload of its own: the
+	 * playlist tree's TreeContextMenu, mounted in both workspaces, already
+	 * warms the registry, and a cold right-click loads it on open.
+	 */
+	let menu = $state<{ x: number; y: number } | null>(null);
+
+	function _openMenu(event: MouseEvent): void {
+		loadMenuRegistry(reportMenuLoadFailure);
+		event.preventDefault();
+		event.stopPropagation();
+		menu = { x: event.clientX, y: event.clientY };
+	}
+
+	function _openMenuFromKeyboard(event: KeyboardEvent): boolean {
+		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return false;
+		loadMenuRegistry(reportMenuLoadFailure);
+		event.preventDefault();
+		event.stopPropagation();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		menu = { x: rect.left + 8, y: rect.top + 8 };
+		return true;
+	}
+
 	function _keydown(event: KeyboardEvent, node: PlaylistNode): void {
+		if (_openMenuFromKeyboard(event)) return;
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		event.preventDefault();
 		_activate(node);
@@ -91,7 +123,7 @@
 	{/each}
 {/snippet}
 
-<div class="usb-stick-tree" role="tree" aria-label="{volume.name} playlists" data-testid="usb-stick-tree" data-menu-target="tree-readonly">
+<div class="usb-stick-tree" role="tree" tabindex="-1" aria-label="{volume.name} playlists" data-testid="usb-stick-tree" data-menu-target="tree-readonly" oncontextmenu={_openMenu}>
 	{#if view === undefined || view.status === 'loading'}
 		<div class="row rb-inert" style="padding-left: 18px" data-testid="usb-stick-loading">
 			<span class="name dim">reading stick...</span>
@@ -110,6 +142,15 @@
 		{@render branch(view.tree, 0)}
 	{/if}
 </div>
+
+{#if menu !== null && menuRegistry() !== null}
+	<ContextMenu
+		items={usbStickMenuItems(menuRegistry()!.menuFor, volume, usbTracker)}
+		x={menu.x}
+		y={menu.y}
+		onclose={() => (menu = null)}
+	/>
+{/if}
 
 <style>
 	.row {

@@ -12,8 +12,9 @@ Requirements (mini-PRD):
     [if] a passing or unmeasured run prints BLOCKER [then] broken
   / A run that cannot measure says why on one parseable `UNKNOWN: <reason>` line.
     [if] exit 3 leaves the bridge with no reason to show [then] broken
-  / An unanswered P2 thread is a blocker like any other untriaged thread.
-    [if] a lone untriaged P2/NON-BLOCKING thread yields no BLOCKER line [then] broken
+  / REVIEW-22: only an open P0 or human BLOCKING thread is a thread blocker.
+    [if] a lone untriaged P0 thread yields no BLOCKER line [then] broken
+    [if] a lone untriaged bot P1 thread yields a BLOCKER line [then] broken
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def first_blocker(
         where = f"{t.path}:{t.line}" if t.line else t.path
         more = f" (+{len(failing) - 1} more)" if len(failing) > 1 else ""
         reason = (
-            f"review thread [{t.severity}/{t.blocking}] {where} not FIXED, REBUTTED or DEBT-LOGGED: {t.permalink}{more}"
+            f"review thread [{t.severity}/{t.blocking}] {where} not FIXED or REBUTTED: {t.permalink}{more}"
         )
     elif debt_error:
         reason = f"debt ledger: {debt_error}"

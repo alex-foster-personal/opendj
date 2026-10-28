@@ -37,7 +37,7 @@
  * module, one import, both halves of a load's telemetry.
  */
 
-import { ApiError } from '$lib/api/errors';
+import { ApiError, readsAsUnreachableFetch } from '$lib/api/errors';
 import {
 	deckLoadPlainHeadline,
 	libraryFailureCodeInText,
@@ -389,14 +389,6 @@ export function stickLoadFailureWords(cause: unknown): string | null {
  * deck-load-failure-copy.ts so the toast formatter can use it without
  * importing this module. */
 
-/** What fetch rejects with when nothing answered. The text is the browser's
- * own and differs per engine (Chromium, WebKit, Gecko). */
-const UNREACHABLE_FETCH_MESSAGES: ReadonlySet<string> = new Set([
-	'Failed to fetch',
-	'Load failed',
-	'NetworkError when attempting to fetch resource.'
-]);
-
 const HEADLINE_REASON_MAX_CHARS = 120;
 
 function _shortReason(cause: unknown): string {
@@ -470,7 +462,7 @@ export function deckLoadFailureHeadline(
 	if (cause instanceof Error && cause.name === 'EncodingError') {
 		return `Deck ${deck}: this track's audio file could not be decoded`;
 	}
-	if (cause instanceof TypeError && UNREACHABLE_FETCH_MESSAGES.has(cause.message)) {
+	if (readsAsUnreachableFetch(cause)) {
 		return `Deck ${deck}: the engine did not answer while loading this track`;
 	}
 	return `Deck ${deck} could not load the track: ${_shortReason(cause)}`;

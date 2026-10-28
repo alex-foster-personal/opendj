@@ -15,11 +15,11 @@ that merge adds, without changing what is served.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-CONTRACT_VERSION = "analysis_structure/2"  # /2: phrases_source gains "own-fast" (STRUCT-06)
+CONTRACT_VERSION = "analysis_structure/3"  # /3: the payload is typed JSON, not Any; /2: "own-fast" (STRUCT-06)
 
 PhraseSourceLane = Literal["rbx", "own"]
 """The PARITY-02 phrase selection lane a request asks for."""
@@ -46,8 +46,8 @@ class StructureService(Protocol):
     """The operations outside code uses on song structure today."""
 
     def merge_own_phrases(
-        self, payload: dict[str, Any], stable_id: str, data_dir: Path, *, source: str, share: bool = False
-    ) -> dict[str, Any]:
+        self, payload: dict[str, JsonValue], stable_id: str, data_dir: Path, *, source: str, share: bool = False
+    ) -> dict[str, JsonValue]:
         """Return ``payload`` with ``phrases``/``phrases_source`` (and ``own_phrases``) merged.
 
         ``share`` is the request's audio audience; a share request never starts

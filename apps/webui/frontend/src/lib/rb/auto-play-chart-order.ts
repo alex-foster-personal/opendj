@@ -50,7 +50,7 @@ export function refreshChartedAutoPlayOrder(input: {
 		return;
 	}
 	input.syncPlayedSet();
-	const follower = pickFollowerDeck(input.snaps, input.source.id);
+	const follower = pickFollowerDeck(input.snaps, input.source.id, uiPrefs.auto_play_two_deck);
 	if (follower === null) {
 		clearChartedAutoPlayOrder(input.chartKey);
 		return;

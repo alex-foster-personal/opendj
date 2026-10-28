@@ -1,0 +1,1501 @@
+"""TransitionPlan: the canon doc's plan, as data, plus ``validate_plan``.
+
+The wire shape is the canon doc's example::
+
+    {
+      "out": {"deck": 1, "track": "<stable_id>", "window": {"start_bar": 161, "bars": 32}},
+      "in":  {"deck": 2, "track": "<stable_id>", "window": {"start_bar": 17, "bars": 32}},
+      "style": "bass_swap_blend",
+      "tempo": {"mode": "sync_to_out"},
+      "events": [
+        {"at_bar": 0,  "deck": 2, "do": "play"},
+        {"at_bar": 0,  "deck": 2, "ramp": {"fader": 1.0}, "over_bars": 8},
+        {"at_bar": 16, "deck": 1, "set":  {"eq_low": 0.0}}
+      ],
+      "intent": "keep the energy up",
+      "rationale": "..."
+    }
+
+``at_bar`` counts bars on the PLAN's clock: bar 0 is the outgoing window's
+first bar (``out.window.start_bar`` on the outgoing track's own grid), and the
+plan ends ``out.window.bars`` bars later. The incoming deck enters at
+``in.window.start_bar`` when its ``play`` event fires. Each event does exactly
+one of ``do`` (play, stop, master), ``set`` or ``ramp`` (one control each).
+
+:func:`simulate` replays the events bar by bar, which is what lets
+:func:`validate_plan` measure the clashes the canon doc names (two basslines,
+two vocals) symbolically, before anything is rendered or played.
+"""
+
+from __future__ import annotations
+
+import math
+from bisect import bisect_right
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from itertools import pairwise
+from typing import Any, NamedTuple
+
+from apps.autodj.profile import TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
+from apps.autodj.styles import STYLES
+
+#: Per-deck controls a plan may set or ramp, and the bus command each becomes.
+DECK_CONTROLS: frozenset[str] = frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"})
+#: Mixer-wide controls (no deck).
+MIXER_CONTROLS: frozenset[str] = frozenset({"crossfader"})
+CONTROLS: frozenset[str] = DECK_CONTROLS | MIXER_CONTROLS
+ACTIONS: frozenset[str] = frozenset({"play", "stop", "master"})
+TEMPO_MODES: frozenset[str] = frozenset({"sync_to_out", "none"})
+ANCHORS: frozenset[str] = frozenset({"window", "next_phrase", "next_bar"})
+
+#: How far ahead of the outgoing playhead a plan's first event must be for it to still schedule.
+OUT_POSITION_MARGIN_BARS = 0.5
+
+#: Beat Sync's reach (``apps/shared/harmonic.py`` pitch window, the canon doc's 6%).
+BEATMATCH_LIMIT_PCT = 6.0
+#: How far before bar 0 an event may sit (a quantized launch lead).
+EARLIEST_BAR = -1.0
+#: A quantized launch fires on the master's next downbeat, so a play sent one beat ahead lands on the plan's bar.
+PLAY_LEAD_BARS = 0.25
+#: Fader and EQ above these count as "the deck is heard" in the simulation.
+AUDIBLE_FADER = 0.3
+# The page's silence threshold on a channel's gain (agent-plan.ts SILENCE_GAIN_EPSILON): below it a channel is silent.
+SILENT_GAIN = 1e-4
+AUDIBLE_LOW = 0.3
+#: Samples per bar on the grid that silence is checked on before the flips inside it are bisected.
+SILENCE_SAMPLES_PER_BAR = 32
+#: Samples per bar inside a ramp's span: a ramp crosses the audible floor where its value does, so its span is finer.
+SILENCE_SAMPLES_PER_RAMP_BAR = 512
+#: Bisection steps that place an audibility flip to well under a sample of a bar.
+BOUNDARY_BISECTIONS = 40
+#: Silent stretches no longer than this (in bars) are bisection rounding, not silence the executor would honor.
+SILENCE_EPSILON_BARS = 1e-9
+STRONG_BASS = 0.5
+FLAT = 0.5
+#: The crossfader's middle, and how far toward the other side a channel stays heard: a
+#: side-A channel is cut at 0.9 and up, a side-B channel at 0.1 and down.
+CROSSFADER_CENTER = 0.5
+CROSSFADER_CLOSED = 0.9
+#: The TRIM knob's unity position (``mixer-types.ts``: 0..1, 0.5 = unity). The engine
+#: scales gain linearly by it, so a channel left at trim 0 is silent whatever its fader.
+UNITY_TRIM = 0.5
+#: Beat Sync's tempo candidates, in its own order (``beat-sync-math.ts``
+#: ``_tempoRatioWithinRangeOrNull``): the raw ratio, then half time, then double time.
+TEMPO_FOLDS = (1.0, 0.5, 2.0)
+
+
+class PlanError(ValueError):
+    """The document is not a plan (shape, types, unknown names)."""
+
+
+@dataclass(frozen=True)
+class Side:
+    deck: int
+    track: str
+    start_bar: int
+    bars: int
+    #: AGENT-31: the incoming side's loudness match in dB (None: no trim), and why.
+    trim_db: float | None = None
+    trim_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class PlanEvent:
+    at_bar: float
+    deck: int | None
+    kind: str  # "do" | "set" | "ramp"
+    name: str  # action or control
+    value: float | None = None
+    over_bars: float = 0.0
+
+    def target(self) -> float:
+        """A set's or ramp's value, which must be a finite number: never defaulted (Sol P1 #7595, the class of
+        ``value or 0.0``, which turned a missing fader value into a kill)."""
+        value = self.value
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"{self.kind} {self.name} at bar {self.at_bar:g} has no numeric value: {value!r}")
+        return float(value)
+
+    def to_json(self) -> dict[str, Any]:
+        document: dict[str, Any] = {"at_bar": self.at_bar, "deck": self.deck}
+        if self.kind == "do":
+            document["do"] = self.name
+        else:
+            document[self.kind] = {self.name: self.value}
+            if self.kind == "ramp":
+                document["over_bars"] = self.over_bars
+        return document
+
+
+@dataclass(frozen=True)
+class TransitionPlan:
+    out: Side
+    in_: Side
+    style: str
+    events: tuple[PlanEvent, ...]
+    tempo_mode: str = "sync_to_out"
+    anchor: str = "window"
+    intent: str | None = None
+    rationale: str | None = None
+    extra: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def bars(self) -> int:
+        return self.out.bars
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "out": {
+                "deck": self.out.deck,
+                "track": self.out.track,
+                "window": {"start_bar": self.out.start_bar, "bars": self.out.bars},
+            },
+            "in": {
+                "deck": self.in_.deck,
+                "track": self.in_.track,
+                "window": {"start_bar": self.in_.start_bar, "bars": self.in_.bars},
+                "trim_db": self.in_.trim_db,
+                "trim_reason": self.in_.trim_reason,
+            },
+            "anchor": self.anchor,
+            "style": self.style,
+            "tempo": {"mode": self.tempo_mode},
+            "events": [event.to_json() for event in self.events],
+            "intent": self.intent,
+            "rationale": self.rationale,
+        }
+
+
+# ----- parsing -------------------------------------------------------------
+
+
+def _int(value: Any, where: str, *, minimum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PlanError(f"{where} must be an integer, got {value!r}")
+    if minimum is not None and value < minimum:
+        raise PlanError(f"{where} must be >= {minimum}, got {value}")
+    return value
+
+
+def _number(value: Any, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PlanError(f"{where} must be a number, got {value!r}")
+    if value != value or value in (float("inf"), float("-inf")):
+        raise PlanError(f"{where} must be finite, got {value!r}")
+    return float(value)
+
+
+def _deck(value: Any, where: str) -> int:
+    deck = _int(value, where)
+    if deck not in (1, 2, 3, 4):
+        raise PlanError(f"{where} must be a deck 1..4, got {deck}")
+    return deck
+
+
+def _trim_reason(value: Any, where: str) -> str | None:
+    if value is not None and not isinstance(value, str):
+        raise PlanError(f"{where}.trim_reason must be text or null")
+    return value
+
+
+def _side(document: Any, where: str) -> Side:
+    if not isinstance(document, Mapping):
+        raise PlanError(f"{where} must be an object with deck, track and window")
+    track = document.get("track")
+    if not isinstance(track, str) or not track:
+        raise PlanError(f"{where}.track must be a stable_id")
+    window = document.get("window")
+    if not isinstance(window, Mapping):
+        raise PlanError(f"{where}.window must be an object with start_bar and bars")
+    trim_db = document.get("trim_db")
+    if trim_db is not None and (
+        not isinstance(trim_db, (int, float)) or isinstance(trim_db, bool) or not math.isfinite(trim_db)
+    ):
+        raise PlanError(f"{where}.trim_db must be a number of dB or null")
+    if trim_db is not None and where != "in":
+        raise PlanError("only the incoming side carries trim_db: the outgoing track is the loudness reference")
+    return Side(
+        deck=_deck(document.get("deck"), f"{where}.deck"),
+        track=track,
+        start_bar=_int(window.get("start_bar"), f"{where}.window.start_bar", minimum=1),
+        bars=_int(window.get("bars"), f"{where}.window.bars", minimum=1),
+        trim_db=None if trim_db is None else float(trim_db),
+        trim_reason=_trim_reason(document.get("trim_reason"), where),
+    )
+
+
+def _single(mapping: Any, where: str) -> tuple[str, float]:
+    if not isinstance(mapping, Mapping) or len(mapping) != 1:
+        raise PlanError(f'{where} must name exactly one control, e.g. {{"fader": 1.0}}')
+    ((name, value),) = mapping.items()
+    if name not in CONTROLS:
+        raise PlanError(f"{where} control {name!r} is not one of {sorted(CONTROLS)}")
+    return str(name), _number(value, f"{where}.{name}")
+
+
+def _check_control(name: str, value: float, deck: int | None, where: str) -> None:
+    """A control's deck scope and value range, or :class:`PlanError`."""
+    if name in DECK_CONTROLS and deck is None:
+        raise PlanError(f"{where}: {name} needs a deck")
+    if name in MIXER_CONTROLS and deck is not None:
+        raise PlanError(f"{where}: {name} is mixer-wide; deck must be null")
+    if name == "tempo":
+        if not 0.0 < value <= 4.0:
+            raise PlanError(f"{where}: tempo is a ratio in (0, 4], got {value}")
+    elif not 0.0 <= value <= 1.0:
+        raise PlanError(f"{where}: {name} must be within 0..1 (bus control units), got {value}")
+
+
+def _event(document: Any, index: int) -> PlanEvent:
+    where = f"events[{index}]"
+    if not isinstance(document, Mapping):
+        raise PlanError(f"{where} must be an object")
+    kinds = [key for key in ("do", "set", "ramp") if key in document]
+    if len(kinds) != 1:
+        raise PlanError(f"{where} must carry exactly one of do, set or ramp")
+    at_bar = _number(document.get("at_bar"), f"{where}.at_bar")
+    raw_deck = document.get("deck")
+    deck = None if raw_deck is None else _deck(raw_deck, f"{where}.deck")
+    kind = kinds[0]
+    if kind == "do":
+        action = document["do"]
+        if action not in ACTIONS:
+            raise PlanError(f"{where}.do must be one of {sorted(ACTIONS)}, got {action!r}")
+        if deck is None:
+            raise PlanError(f"{where}: do {action} needs a deck")
+        return PlanEvent(at_bar=at_bar, deck=deck, kind="do", name=str(action))
+    name, value = _single(document[kind], f"{where}.{kind}")
+    _check_control(name, value, deck, where)
+    over_bars = 0.0
+    if kind == "ramp":
+        over_bars = _number(document.get("over_bars", 0), f"{where}.over_bars")
+        if over_bars <= 0:
+            raise PlanError(f"{where}: a ramp needs over_bars > 0 (use set for a jump)")
+    return PlanEvent(at_bar=at_bar, deck=deck, kind=kind, name=name, value=value, over_bars=over_bars)
+
+
+def _tempo_mode(document: Mapping[str, Any]) -> str:
+    """The tempo mode: synced when the field is absent; an object must name its mode, and anything else is refused, never defaulted."""
+    if "tempo" not in document:
+        return "sync_to_out"
+    tempo = document["tempo"]
+    if not isinstance(tempo, Mapping) or "mode" not in tempo:
+        raise PlanError(f"tempo must be an object with a mode, got {tempo!r}")
+    tempo_mode = tempo["mode"]
+    if tempo_mode not in TEMPO_MODES:
+        raise PlanError(f"tempo.mode must be one of {sorted(TEMPO_MODES)}, got {tempo_mode!r}")
+    return str(tempo_mode)
+
+
+def _optional_text(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def parse_plan(document: Any) -> TransitionPlan:
+    """A :class:`TransitionPlan` from its JSON, or :class:`PlanError` naming the field."""
+    if not isinstance(document, Mapping):
+        raise PlanError("a plan must be a JSON object")
+    style_name = document.get("style")
+    if not isinstance(style_name, str) or not style_name:
+        raise PlanError("style must name a transition style")
+    events = document.get("events")
+    if not isinstance(events, list) or not events:
+        raise PlanError("events must be a non-empty list")
+    tempo_mode = _tempo_mode(document)
+    anchor = document.get("anchor", "window")
+    if anchor not in ANCHORS:
+        raise PlanError(f"anchor must be one of {sorted(ANCHORS)}, got {anchor!r}")
+    known = {"out", "in", "style", "events", "tempo", "anchor", "intent", "rationale"}
+    parsed = TransitionPlan(
+        out=_side(document.get("out"), "out"),
+        in_=_side(document.get("in"), "in"),
+        style=style_name,
+        events=tuple(sorted((_event(event, index) for index, event in enumerate(events)), key=lambda e: e.at_bar)),
+        tempo_mode=str(tempo_mode),
+        anchor=str(anchor),
+        intent=_optional_text(document.get("intent")),
+        rationale=_optional_text(document.get("rationale")),
+        extra={key: value for key, value in document.items() if key not in known},
+    )
+    return parsed
+
+
+# ----- simulation ----------------------------------------------------------
+
+
+@dataclass
+class _DeckSim:
+    fader: float = 1.0
+    eq_low: float = FLAT
+    playing_from: float | None = None
+
+
+class ChannelStart(NamedTuple):
+    """Where one channel's fader, trim and low EQ stand before the plan's first event."""
+
+    fader: float = 1.0
+    trim: float = UNITY_TRIM
+    low: float = FLAT
+
+
+#: Both channels at full fader, unity trim and flat lows: the start when the mixer is unknown.
+UNTOUCHED = (ChannelStart(), ChannelStart())
+
+
+@dataclass(frozen=True)
+class BarState:
+    """Control values at the START of one plan bar (bar 0 .. bars-1)."""
+
+    bar: int
+    out_fader: float
+    out_low: float
+    in_fader: float
+    in_low: float
+    in_playing: bool
+    out_playing: bool = True
+    crossfader: float = CROSSFADER_CENTER
+    out_trim: float = UNITY_TRIM
+    in_trim: float = UNITY_TRIM
+
+
+def _value_at(events: list[PlanEvent], deck: int | None, control: str, at: float, start: float) -> float:
+    """The control's value at plan time ``at``: the latest set or ramp at or before it wins.
+
+    A ramp moves from the value its lane holds when it starts, as the page's
+    executor does: a later move cancels an earlier ramp still under way.
+    """
+    lane = _lane(events, deck, control)
+    return _lane_value(lane, bisect_right([e.at_bar for e in lane], at), at, start)
+
+
+def _lane(events: list[PlanEvent], deck: int | None, control: str) -> list[PlanEvent]:
+    """The control's sets and ramps in bar order (stable, so same-bar events keep plan order)."""
+    return sorted(
+        (e for e in events if e.deck == deck and e.name == control and e.kind in ("set", "ramp")),
+        key=lambda e: e.at_bar,
+    )
+
+
+def _lane_value(lane: list[PlanEvent], count: int, at: float, start: float) -> float:
+    """``_value_at`` over a bar-ordered lane whose first ``count`` events are at or before ``at``."""
+    if count == 0:
+        return start
+    last = lane[count - 1]
+    target = last.target()
+    if last.kind == "set" or at >= last.at_bar + last.over_bars:
+        return target
+    begin = _lane_value(lane, count - 1, last.at_bar, start)
+    return begin + (target - begin) * (at - last.at_bar) / last.over_bars
+
+
+class _Replay:
+    """A plan's events indexed once for sampling (Codex #7595: re-sorting every lane per sample made a live proposal
+    slower than its scheduling deadline). Each lane and each deck's transport steps are computed once per replay."""
+
+    def __init__(self, events: list[PlanEvent]) -> None:
+        self._events = events
+        self._lanes: dict[tuple[int | None, str], tuple[list[PlanEvent], list[float]]] = {}
+        self._transport: dict[int, list[tuple[float, bool]]] = {}
+
+    def value(self, deck: int | None, control: str, at: float, start: float) -> float:
+        key = (deck, control)
+        if key not in self._lanes:
+            lane = _lane(self._events, deck, control)
+            self._lanes[key] = (lane, [e.at_bar for e in lane])
+        lane, bars = self._lanes[key]
+        return _lane_value(lane, bisect_right(bars, at), at, start)
+
+    def playing(self, deck: int, at: float, start: bool) -> bool:
+        if deck not in self._transport:
+            self._transport[deck] = _transport_steps(self._events, deck)
+        return _playing_from(self._transport[deck], at, start)
+
+
+def launch_bar(at_bar: float, previous: float | None) -> float:
+    """A quantized play's dispatch bar: the lead, clamped to the executor's earliest bar.
+
+    A play is never dispatched before the deck's previous play or stop: moving it earlier than a stop
+    it follows would reorder the authored transport, and the stop would clear the armed launch.
+    """
+    lead = max(EARLIEST_BAR, at_bar - PLAY_LEAD_BARS)
+    return lead if previous is None else max(previous, lead)
+
+
+def first_dispatch_bar(plan: TransitionPlan) -> float:
+    """The plan bar the page sends the plan's first command at (Sol P1 #7595): a quantized play goes out at its
+    ``launch_bar``, ahead of its authored bar and never before its deck's previous transport event, as compile
+    dispatches it; anything else at its bar. Validation, the proposal filter and the anchor pre-roll all read this one
+    helper, so none of them measures the first command from its authored bar."""
+    bars: list[float] = []
+    previous: dict[int | None, float] = {}
+    for event in sorted(plan.events, key=lambda e: e.at_bar):
+        is_transport = event.kind == "do" and event.name in ("play", "stop")
+        bars.append(launch_bar(event.at_bar, previous.get(event.deck)) if is_transport and event.name == "play" else event.at_bar)
+        previous.update({event.deck: event.at_bar} if is_transport else {})
+    return min(bars, default=0.0)
+
+
+def play_start_bar(at_bar: float, previous: float | None) -> float:
+    """Where a quantized play actually starts: the master's first downbeat strictly after its dispatch.
+
+    Public: the ONE quantized launch time. Validation (transport replay, trim order, tempo gates), compile (through
+    ``launch_bar``) and the offline renderer all read it, so none of them models the launch on its own.
+
+    The launch planner takes a beat 1 that lands outside the processor lead window, and a dispatch
+    that runs on a downbeat (or on the earliest bar) has already passed that downbeat by the time it
+    is planned, so the start is the following one.
+    """
+    return float(math.floor(launch_bar(at_bar, previous)) + 1)
+
+
+def _transport_steps(events: list[PlanEvent], deck: int) -> list[tuple[float, bool]]:
+    """Each play or stop of ``deck`` as ``(bar it takes effect, playing after it)``, in effect order.
+
+    A play takes effect at its quantized start (``play_start_bar``), not at its authored bar, so a
+    stop authored after a play can still take effect before it.
+    """
+    steps: list[tuple[float, bool]] = []
+    previous: float | None = None
+    armed: int | None = None  # index in steps of a play still waiting for its downbeat
+    for event in sorted(
+        (e for e in events if e.kind == "do" and e.deck == deck and e.name in ("play", "stop")),
+        key=lambda e: e.at_bar,
+    ):
+        # A play or a stop before the pending launch's downbeat clears it: a second play replaces the launch, and a
+        # stop clears it, so that play never starts the deck.
+        if armed is not None and steps[armed][0] > event.at_bar:
+            steps[armed] = (math.inf, False)
+        if event.name == "play":
+            effective = play_start_bar(event.at_bar, previous)
+            armed = len(steps)
+        else:
+            effective = event.at_bar
+            armed = None
+        steps.append((effective, event.name == "play"))
+        previous = event.at_bar
+    return sorted((step for step in steps if step[0] != math.inf), key=lambda step: step[0])
+
+
+def _playing_at(events: list[PlanEvent], deck: int, at: float, start: bool) -> bool:
+    """Whether ``deck`` is playing at plan time ``at``: the latest play or stop to take effect by then wins."""
+    return _playing_from(_transport_steps(events, deck), at, start)
+
+
+def _playing_from(steps: list[tuple[float, bool]], at: float, start: bool) -> bool:
+    playing = start
+    for effective, is_play in steps:
+        if effective > at:
+            break
+        playing = is_play
+    return playing
+
+
+def _playing_intervals(plan: TransitionPlan) -> list[tuple[float, float]]:
+    """The clock-bar spans the incoming deck is playing, from each effective play to the next stop."""
+    intervals: list[tuple[float, float]] = []
+    since: float | None = None
+    for effective, is_play in _transport_steps(plan.events, plan.in_.deck):
+        if is_play and since is None:
+            since = effective
+        elif not is_play and since is not None:
+            intervals.append((since, effective))
+            since = None
+    if since is not None:
+        intervals.append((since, math.inf))
+    return intervals
+
+
+def _incoming_playing_bars(plan: TransitionPlan, begin: float, end: float) -> float:
+    """Clock bars in ``[begin, end]`` the incoming deck is playing; a paused stretch is not heard."""
+    return sum(max(0.0, min(stop, end) - max(start, begin)) for start, stop in _playing_intervals(plan))
+
+
+def _base_rate(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> float:
+    """Incoming grid bars per clock bar before any authored tempo.
+
+    Synced, it is the fold Beat Sync will pick (the tempo is not set yet at validation). Unsynced, the deck keeps
+    its current effective tempo, so it consumes the ratio of its tempo to the clock's.
+    """
+    if plan.tempo_mode == "sync_to_out":
+        return _beat_sync_fold(plan, in_profile, live)
+    decks = live_child((live or {}), "decks", "live mirror decks")
+    if not isinstance(decks, Mapping):
+        return 1.0
+    out_state = live_child(decks, str(plan.out.deck), "live mirror deck")
+    in_state = live_child(decks, str(plan.in_.deck), "live mirror deck")
+    if not isinstance(out_state, Mapping) or not isinstance(in_state, Mapping):
+        return 1.0
+    out_bpm, in_bpm = out_state.get("effective_bpm"), in_state.get("effective_bpm")
+    if not isinstance(out_bpm, (int, float)) or not isinstance(in_bpm, (int, float)) or out_bpm <= 0 or in_bpm <= 0:
+        return 1.0
+    return float(in_bpm) / float(out_bpm)
+
+
+def pair_beat_sync_fold(out_bpm: float | None, in_bpm: float | None, range_pct: float = BEATMATCH_LIMIT_PCT) -> float:
+    """The fold Beat Sync picks for a pair without a live mix: incoming grid bars per clock bar (1, 0.5 or 2).
+
+    The first of the raw ratio, half time and double time inside ``range_pct`` wins, as in :func:`sync_tempo_ratio`;
+    1 when none fits or a tempo is unknown.
+    """
+    if out_bpm is None or in_bpm is None or out_bpm <= 0 or in_bpm <= 0:
+        return 1.0
+    raw = out_bpm / in_bpm
+    for fold in TEMPO_FOLDS:
+        if abs(raw * fold - 1.0) * 100.0 <= range_pct + 1e-9:
+            return fold
+    return 1.0
+
+
+def _beat_sync_fold(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> float:
+    """Incoming grid bars per clock bar: 2 or 0.5 when Beat Sync folds the tempo, else 1.
+
+    Beat Sync's applied ratio is ``raw * fold`` with ``raw = out / in``, so the incoming deck
+    advances ``in * ratio / out == fold`` of its bars for each outgoing bar.
+    """
+    decks = live_child((live or {}), "decks", "live mirror decks")
+    if plan.tempo_mode != "sync_to_out" or not isinstance(decks, Mapping):
+        return 1.0
+    out_state = live_child(decks, str(plan.out.deck), "live mirror deck")
+    in_state = live_child(decks, str(plan.in_.deck), "live mirror deck")
+    if not isinstance(out_state, Mapping) or not isinstance(in_state, Mapping):
+        return 1.0
+    range_pct = in_state.get("pitch_range")
+    out_bpm = out_state.get("effective_bpm")
+    if not isinstance(range_pct, (int, float)) or not isinstance(out_bpm, (int, float)) or out_bpm <= 0:
+        return 1.0
+    ratio = sync_tempo_ratio(out_state, in_profile, float(range_pct))
+    if ratio is None:
+        return 1.0
+    return ratio * in_profile.bpm / float(out_bpm)
+
+
+def _clock_pitch(plan: TransitionPlan, live: Mapping[str, Any] | None) -> float:
+    """The clock deck's current pitch ratio: the base rate's effective tempo already includes it. 1.0 when unknown."""
+    decks = live_child((live or {}), "decks", "live mirror decks")
+    out_state = live_child(decks, str(plan.out.deck), "live mirror deck") if isinstance(decks, Mapping) else None
+    pitch = out_state.get("pitch") if isinstance(out_state, Mapping) else None
+    return float(pitch) if isinstance(pitch, (int, float)) and pitch > 0 else 1.0
+
+
+def _incoming_pitch(plan: TransitionPlan, live: Mapping[str, Any] | None) -> float:
+    """The incoming deck's current pitch ratio: where an authored tempo ramp starts, as the page's executor reads it. 1.0 when unknown."""
+    decks = live_child((live or {}), "decks", "live mirror decks")
+    in_state = live_child(decks, str(plan.in_.deck), "live mirror deck") if isinstance(decks, Mapping) else None
+    pitch = in_state.get("pitch") if isinstance(in_state, Mapping) else None
+    return float(pitch) if isinstance(pitch, (int, float)) and pitch > 0 else 1.0
+
+
+def _tempo_scale(plan: TransitionPlan, in_profile: TrackProfile, live: Mapping[str, Any] | None) -> float:
+    """Grid bars per clock bar for one unit of authored tempo: the track's own tempo over the clock's effective tempo.
+
+    An authored tempo is an absolute pitch ratio (the page's ``setTempoRatio``), so it is converted by the two
+    tracks' tempos, not multiplied into the base rate. 1.0 when either tempo is unknown.
+    """
+    decks = live_child((live or {}), "decks", "live mirror decks")
+    if not isinstance(decks, Mapping) or not in_profile.bpm or in_profile.bpm <= 0:
+        return 1.0
+    out_state = live_child(decks, str(plan.out.deck), "live mirror deck")
+    out_bpm = out_state.get("effective_bpm") if isinstance(out_state, Mapping) else None
+    if not isinstance(out_bpm, (int, float)) or out_bpm <= 0:
+        return 1.0
+    return in_profile.bpm / float(out_bpm)
+
+
+def _authored_tempos(plan: TransitionPlan, deck: int | None) -> list[float]:
+    return [
+        float(e.value)
+        for e in plan.events
+        if e.kind != "do" and e.deck == deck and e.name == "tempo" and e.value is not None
+    ]
+
+
+def _incoming_rate(plan: TransitionPlan, base: float, scale: float = 1.0, clock_pitch: float = 1.0) -> float:
+    """The grid rate the incoming deck is bounded at, per clock bar.
+
+    The fastest of the base rate and the authored incoming tempos converted by ``scale``, over the slowest clock
+    tempo: a clock slowed by its own tempo move stretches each clock bar, so the incoming deck spans more grid bars
+    in it. Authored clock tempos are absolute ratios, so they are taken against the clock's current ``clock_pitch``,
+    which the base rate already includes. The curve of a ramp is not modeled, so the bound takes the extremes the deck
+    reaches. An over-estimate
+    refuses a plan that might run out of grid; it never passes one that might.
+    """
+    fastest = max([base, *(tempo * scale for tempo in _authored_tempos(plan, plan.in_.deck))])
+    return fastest * clock_pitch / min([clock_pitch, *_authored_tempos(plan, plan.out.deck)])
+
+
+def _terminal_handover(plan: TransitionPlan) -> tuple[float, int] | None:
+    """(bar, plan index) of the plan's LAST ``master`` handover to the incoming deck, the one that leaves it leading
+    (Sol P1 #7594: an earlier one may be handed back), or None when it has none. Same-bar events keep plan order."""
+    return max(
+        ((e.at_bar, i) for i, e in enumerate(plan.events) if e.kind == "do" and e.name == "master" and e.deck == plan.in_.deck),
+        default=None,
+    )
+
+
+def handover_bar(plan: TransitionPlan) -> float | None:
+    """The bar of the plan's terminal ``master`` handover to the incoming deck, or None when it has none."""
+    terminal = _terminal_handover(plan)
+    return None if terminal is None else terminal[0]
+
+
+def prelaunch_synced_tempo_moves(plan: TransitionPlan) -> list[PlanEvent]:
+    """A synced plan's incoming tempo moves that run before the incoming deck actually starts (Codex + Sol #7594).
+
+    The start is the quantized launch's own downbeat (``_incoming_start``, from ``play_start_bar``, the function compile
+    times the launch with), not the authored play bar: the play is dispatched early and the deck starts later. A move
+    before that start goes to the leader while the follower is still paused, and a quantized launch does not retime
+    the follower, so it would start at the old tempo against a moved leader and drift. Such a plan is refused."""
+    start = _incoming_start(plan) if plan.tempo_mode == "sync_to_out" else None
+    if start is None:
+        return []
+    return [e for e in plan.events if e.deck == plan.in_.deck and e.name == "tempo" and e.at_bar < start]
+
+
+def incoming_leads(plan: TransitionPlan, index: int) -> bool:
+    """Whether event ``index`` runs once the incoming deck is master for good: after the terminal handover in (bar,
+    plan order).
+
+    An event at the handover's own bar but authored before the ``master`` event still runs while the incoming deck is a
+    synced follower (Codex #7594), so bar alone does not decide it."""
+    terminal = _terminal_handover(plan)
+    return terminal is not None and (plan.events[index].at_bar, index) > terminal
+
+
+def _synced_grid_view(plan: TransitionPlan) -> TransitionPlan:
+    """The plan as the incoming GRID sees it (AGENT-32, Codex #7594).
+
+    A synced plan's incoming tempo moves before the handover run on the leader (compile's ``_leader_led_events``),
+    and the follower keeps its bar ratio to the clock, so they do not change how many incoming bars a clock bar
+    holds: they are dropped here. Moves from the handover on stay, since the incoming deck leads by then."""
+    if plan.tempo_mode != "sync_to_out":
+        return plan
+    kept = tuple(
+        e
+        for i, e in enumerate(plan.events)
+        if not (e.deck == plan.in_.deck and e.name == "tempo" and not incoming_leads(plan, i))
+    )
+    return replace(plan, events=kept)
+
+
+def _incoming_grid_bars(plan: TransitionPlan, base: float, scale: float = 1.0, clock_pitch: float = 1.0) -> float:
+    """Incoming grid bars the plan consumes: the playing span from any pre-roll to the end, at the bounded rate."""
+    rate = _incoming_rate(plan, base, scale, clock_pitch)
+    return rate * _incoming_playing_bars(plan, min(0.0, _incoming_start(plan) or 0.0), plan.bars)
+
+
+def simulate(
+    plan: TransitionPlan,
+    *,
+    crossfader: float = CROSSFADER_CENTER,
+    channels: tuple[ChannelStart, ChannelStart] = UNTOUCHED,
+) -> list[BarState]:
+    """Replay the plan's mixer moves and transport bar by bar (sampled at each bar's middle).
+
+    The outgoing deck starts playing (validation requires it) and the incoming deck starts
+    cued; every ``play`` and ``stop`` on either deck is replayed, so a plan that stops a
+    deck mid-transition shows that deck as unheard from then on. The crossfader starts at
+    ``crossfader`` (the live mixer's, when known) and follows the plan's own moves; the
+    outgoing and incoming faders, trims and lows start at ``channels`` the same way.
+    """
+    events = _replay_events(plan, channels)
+    return [_state_of(plan, events, bar + 0.5, bar, crossfader, channels) for bar in range(plan.bars)]
+
+
+def cap_outgoing_fader(plan: TransitionPlan, ceiling: float) -> TransitionPlan:
+    """AGENT-35: a plan never makes the outgoing deck louder than the DJ left it. Every fader target the plan sets on
+    the outgoing deck is ``min(planned, ceiling)``, the live fader; 1.0 (no live fader known) leaves the plan as written.
+    The incoming deck is the one coming up, so its levels stand."""
+    outgoing = [e for e in plan.events if e.deck == plan.out.deck and e.name == "fader" and e.kind in ("set", "ramp")]
+    # Every outgoing fader target is a level between 0 and 1 whatever the ceiling (Sol P1 #7595: the unity fast path
+    # used to skip this), so an out-of-range target is refused, never emitted.
+    for event in outgoing:
+        _unit_level(event.target(), f"outgoing fader at bar {event.at_bar:g}")
+    if ceiling >= 1.0:
+        return plan
+    capped = tuple(replace(e, value=min(e.target(), ceiling)) if e in outgoing else e for e in plan.events)
+    return replace(plan, events=capped)
+
+
+def live_outgoing_fader(plan: TransitionPlan, live: Mapping[str, Any] | None) -> float | None:
+    """The outgoing channel's live fader from the mirror, or None when the mirror does not carry it (absent at any
+    level). A value that IS there but is not a unit number raises: a corrupt mirror is never read as "no fader"."""
+    channel = _live_channel(live, plan.out.deck)
+    if channel is None or "fader" not in channel:
+        return None
+    return _unit_level(channel["fader"], f"deck {plan.out.deck} live fader")
+
+
+def _live_channel(live: Mapping[str, Any] | None, deck: int) -> Mapping[str, Any] | None:
+    """The mirror's channel for a deck, None when any level is absent; a level present with the wrong type raises."""
+    level: Mapping[str, Any] = live or {}
+    for key, where in (
+        ("mixer", "live mirror mixer"),
+        ("channels", "live mirror channels"),
+        (str(deck), "live mirror channel"),
+    ):
+        if key not in level:
+            return None
+        level = live_mapping(level[key], where)
+    return level
+
+
+def _unit_level(value: Any, where: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not 0.0 <= value <= 1.0
+    ):
+        raise ValueError(f"{where} {value!r} is not a level between 0 and 1")
+    return float(value)
+
+
+def state_at(
+    plan: TransitionPlan,
+    at: float,
+    *,
+    bar: int,
+    crossfader: float = CROSSFADER_CENTER,
+    channels: tuple[ChannelStart, ChannelStart] = UNTOUCHED,
+) -> BarState:
+    """The mixer and transport at plan time ``at``, every event at or before it applied.
+
+    The outgoing fader is capped at where its channel starts (``cap_outgoing_fader``), as compile caps it live."""
+    return _state_of(plan, _replay_events(plan, channels), at, bar, crossfader, channels)
+
+
+def _replay_events(plan: TransitionPlan, channels: tuple[ChannelStart, ChannelStart]) -> _Replay:
+    """The events a replay samples: the outgoing fader capped once per replay, not per sample (Codex #7595), and each
+    lane indexed once."""
+    return _Replay(list(cap_outgoing_fader(plan, channels[0].fader).events))
+
+
+def _state_of(
+    plan: TransitionPlan,
+    events: _Replay,
+    at: float,
+    bar: int,
+    crossfader: float,
+    channels: tuple[ChannelStart, ChannelStart],
+) -> BarState:
+    out_start, in_start = channels
+    return BarState(
+        bar=bar,
+        out_fader=events.value(plan.out.deck, "fader", at, out_start.fader),
+        out_low=events.value(plan.out.deck, "eq_low", at, out_start.low),
+        in_fader=events.value(plan.in_.deck, "fader", at, in_start.fader),
+        in_low=events.value(plan.in_.deck, "eq_low", at, in_start.low),
+        in_playing=events.playing(plan.in_.deck, at, False),
+        out_playing=events.playing(plan.out.deck, at, True),
+        crossfader=events.value(None, "crossfader", at, crossfader),
+        out_trim=events.value(plan.out.deck, "trim", at, out_start.trim),
+        in_trim=events.value(plan.in_.deck, "trim", at, in_start.trim),
+    )
+
+
+# ----- validation ----------------------------------------------------------
+
+
+@dataclass
+class Validation:
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "errors": list(self.errors),
+            "warnings": list(self.warnings),
+            "metrics": dict(self.metrics),
+        }
+
+
+def bpm_gap_pct(out_bpm: float | None, in_bpm: float | None) -> float | None:
+    """Tempo gap in percent, folding half and double time."""
+    if not out_bpm or not in_bpm or out_bpm <= 0 or in_bpm <= 0:
+        return None
+    ratio = max(out_bpm, in_bpm) / min(out_bpm, in_bpm)
+    if abs(ratio / 2.0 - 1.0) < abs(ratio - 1.0):
+        ratio /= 2.0
+    return abs(ratio - 1.0) * 100.0
+
+
+_BAR_SAMPLES = 32
+
+
+def _in_bar(
+    plan: TransitionPlan,
+    plan_bar: int,
+    base: float,
+    scale: float = 1.0,
+    clock_pitch: float = 1.0,
+    in_pitch: float = 1.0,
+) -> int:
+    """The incoming grid bar sounding at ``plan_bar``.
+
+    Each sample of the bars before it that the incoming deck played advances the grid at the rate it runs at then:
+    the base rate until an authored tempo is set, and that tempo converted by ``scale`` after it, so an authored
+    tempo heard before the bar counts and one after it does not. The clock deck's own tempo at that sample stretches
+    the clock bar, so the grid advances by the rate divided by it.
+    """
+    consumed = 0.0
+    for sample in range(plan_bar * _BAR_SAMPLES):
+        at = (sample + 0.5) / _BAR_SAMPLES
+        if _playing_at(plan.events, plan.in_.deck, at, False):
+            authored = any(
+                e.kind in ("set", "ramp") and e.deck == plan.in_.deck and e.name == "tempo" and e.at_bar <= at
+                for e in plan.events
+            )
+            rate = _value_at(plan.events, plan.in_.deck, "tempo", at, in_pitch) * scale if authored else base
+            clock = _value_at(plan.events, plan.out.deck, "tempo", at, clock_pitch) / clock_pitch
+            consumed += rate / clock / _BAR_SAMPLES
+    return plan.in_.start_bar + int(consumed)
+
+
+def validate_plan(
+    plan: TransitionPlan,
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    *,
+    live: Mapping[str, Any] | None = None,
+) -> Validation:
+    """Errors (refuse to schedule), warnings (allowed, said) and clash metrics."""
+    result = Validation()
+    base = _base_rate(plan, in_profile, live)
+    scale = _tempo_scale(plan, in_profile, live)
+    clock_pitch = _clock_pitch(plan, live)
+    in_pitch = _incoming_pitch(plan, live)
+    _check_structure(plan, out_profile, in_profile, result, base, scale, clock_pitch)
+    _check_trim(plan, _channel_start(live_child((live or {}), "mixer"), plan.in_.deck), result)
+    _check_fit(plan, out_profile, in_profile, result)
+    _check_clashes(
+        plan, out_profile, in_profile, result, live_child((live or {}), "mixer"), base, scale, (clock_pitch, in_pitch)
+    )
+    if live is not None:
+        _validate_live(plan, (out_profile, in_profile), live, result)
+    return result
+
+
+def _check_trim(plan: TransitionPlan, start: ChannelStart, result: Validation) -> None:
+    """AGENT-31: the incoming trim. ``in.trim_db`` must be a gain the TRIM knob reaches, it is the only incoming trim
+    (compile hoists it into prepare, so an authored incoming trim would fight it), and any authored incoming trim move
+    lands before the incoming fader first opens: a trim that moves while the deck is heard is an audible gain jump."""
+    trim_db = plan.in_.trim_db
+    if trim_db is not None and trim_db > TRIM_MAX_DB + 1e-9:
+        result.errors.append(f"in.trim_db {trim_db:+.2f} dB is past the trim knob's {TRIM_MAX_DB:+.2f} dB")
+    trims = [e for e in plan.events if e.deck == plan.in_.deck and e.name == "trim"]
+    if trim_db is not None and trims:
+        result.errors.append("in.trim_db and an authored incoming trim both set the incoming trim: keep one")
+    _check_trim_order(plan, start, result)
+
+
+def hoistable(event: PlanEvent, plan: TransitionPlan) -> bool:
+    """Whether an incoming-deck set at bar 0 or before runs in ``prepare`` (compile hoists it there).
+
+    A prepare command runs before every timed event, so it may not jump a
+    ramp or set on its control that validation orders first. Only a set with
+    nothing else on its control at or before its bar is hoisted.
+    """
+    if event.kind != "set" or event.deck != plan.in_.deck or event.at_bar > 0:
+        return False
+    return not any(
+        other is not event and other.deck == event.deck and other.name == event.name and other.at_bar <= event.at_bar
+        for other in plan.events
+    )
+
+
+def _page_order(plan: TransitionPlan, deck: int) -> list[PlanEvent]:
+    """A deck's events in the order the page runs them: the sets compile hoists into prepare (only sets, no transport
+    or ramp), then the timed events by dispatch bar, a quantized play at its ``launch_bar`` (never before the deck's
+    last transport event, as compile dispatches it) and everything else at its bar, authored order within a bar."""
+    events = [e for e in plan.events if e.deck == deck]
+    dispatch: dict[int, float] = {}
+    previous: float | None = None
+    for event in (e for e in events if e.kind == "do" and e.name in ("play", "stop")):
+        dispatch[id(event)] = launch_bar(event.at_bar, previous) if event.name == "play" else event.at_bar
+        previous = event.at_bar
+    timed = sorted((e for e in events if not hoistable(e, plan)), key=lambda e: dispatch.get(id(e), e.at_bar))
+    return [*(e for e in events if hoistable(e, plan)), *timed]
+
+
+def _check_trim_order(plan: TransitionPlan, start: ChannelStart, result: Validation) -> None:
+    """One walk over the incoming deck's events in the order the page runs them: the sets compile hoists into prepare,
+    then the timed events by dispatch bar (a quantized play at its ``launch_bar``, everything else at its bar), authored
+    order within a bar. The deck is cued until the play's downbeat (``play_start_bar``) and quiet again from a stop,
+    which also clears a launch still waiting; a closing fader ramp counts as open until its end. A trim that changes
+    while the deck is audible with its fader open is a gain jump the room hears: a set when it lands, a ramp if the deck
+    is audible with the fader open at any point of its span (a trim raised from 0 opens the channel and is allowed).
+    Sol P1 #7594, three rounds: this one walk replaces the separate replay, transport query and ramp special cases."""
+    deck = plan.in_.deck
+    fader, trim = start.fader, start.trim
+    closing: tuple[float, float] | None = None  # (end bar, target) of a fader ramp toward closed
+    audible, launch, previous = False, None, None  # launch: the downbeat a pending quantized play starts on
+    moves: list[tuple[float, float]] = []  # (start, end) of trim moves from an open trim, still to be judged
+
+    def settle(now: float) -> None:
+        """A closing fader ramp that has ended by ``now`` leaves the fader at its target."""
+        nonlocal fader, closing
+        if closing is not None and now >= closing[0]:
+            fader, closing = closing[1], None
+
+    def judge(now: float) -> None:
+        """Every trim move running at ``now`` is heard if the deck is audible with its fader open then; a set is judged
+        at its own bar only, so it leaves the list here whatever the verdict."""
+        nonlocal moves
+        settle(now)
+        heard = [(at, end) for at, end in moves if at <= now < end or at == end == now] if audible and fader > 0.0 else []
+        result.errors.extend(
+            f"incoming trim at bar {at:g} lands while deck {deck} is heard: set the trim before its fader comes up or "
+            "before it plays"
+            for at, _end in heard
+        )
+        moves = [move for move in moves if move not in heard and move[1] > move[0]]  # a set (zero width) leaves at once
+
+    for event in _page_order(plan, deck):  # prepare holds only hoisted sets: no play, no ramp is pending while it runs
+        if launch is not None and event.at_bar >= launch:
+            audible, at_launch, launch = True, launch, None
+            judge(at_launch)
+        settle(event.at_bar)
+        if event.kind == "do" and event.name in ("play", "stop"):
+            launch = play_start_bar(event.at_bar, previous) if event.name == "play" else None
+            audible = audible and event.name == "play"
+            previous = event.at_bar
+        elif event.name == "fader":
+            target = event.target()
+            closing = (event.at_bar + event.over_bars, target) if event.kind == "ramp" and target < fader else None
+            fader = fader if closing is not None else target
+            judge(event.at_bar)
+        elif event.name == "trim":
+            if trim > 0.0:  # a set is a zero-width move: judged at its own bar only
+                moves.append((event.at_bar, event.at_bar + (event.over_bars if event.kind == "ramp" else 0.0)))
+            judge(event.at_bar)
+            trim = event.target()
+    if launch is not None:  # a downbeat after the deck's last event still starts it inside a ramp still running
+        audible = True
+        judge(launch)
+
+
+def _incoming_channel_start(plan: TransitionPlan, mixer: Mapping[str, Any]) -> ChannelStart:
+    """The incoming channel as prepare leaves it: ``in.trim_db`` is set there, before any timed event (AGENT-31)."""
+    start = _channel_start(mixer, plan.in_.deck)
+    if plan.in_.trim_db is None or plan.in_.trim_db > TRIM_MAX_DB + 1e-9:
+        return start
+    return start._replace(trim=trim_knob(plan.in_.trim_db))
+
+
+def _incoming_start(plan: TransitionPlan) -> float | None:
+    plays = [e for e in plan.events if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck]
+    return play_start_bar(plays[0].at_bar, None) if plays else None
+
+
+def _check_structure(
+    plan: TransitionPlan,
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    result: Validation,
+    base: float,
+    scale: float,
+    clock_pitch: float,
+) -> None:
+    """Who, which style, and whether every event and both windows fit the grids."""
+    errors, warnings = result.errors, result.warnings
+    if plan.out.deck == plan.in_.deck:
+        errors.append("out and in name the same deck")
+    if plan.out.track != out_profile.stable_id:
+        errors.append(f"out.track {plan.out.track} does not match the profile {out_profile.stable_id}")
+    if plan.in_.track != in_profile.stable_id:
+        errors.append(f"in.track {plan.in_.track} does not match the profile {in_profile.stable_id}")
+    style_doc = STYLES.get(plan.style)
+    if style_doc is None:
+        warnings.append(f"style {plan.style!r} is not in the catalog; its events are taken as written")
+    elif not style_doc.available:
+        errors.append(f"style {plan.style!r} is not available: {style_doc.unavailable_reason}")
+    out_end = plan.out.start_bar + plan.out.bars
+    if out_end > out_profile.bars:
+        errors.append(
+            f"the out window ends at bar {out_end}, after the outgoing track's last downbeat "
+            f"(bar {out_profile.bars}); the deck would run out before the handover"
+        )
+    for event in plan.events:
+        errors.extend(_event_errors(plan, event))
+    for event in prelaunch_synced_tempo_moves(plan):
+        errors.append(
+            f"incoming tempo at bar {event.at_bar:g} runs before the incoming launch in a synced plan: the follower would "
+            "start at the old tempo against a moved leader; move it to or after the launch"
+        )
+    if _incoming_start(plan) is None:
+        errors.append(f"no play event starts the incoming deck {plan.in_.deck}")
+    # A quantized play starts on a downbeat strictly after its dispatch, so no launch plays a pre-roll.
+    in_bars_heard = _incoming_grid_bars(_synced_grid_view(plan), base, scale, clock_pitch)
+    if plan.in_.start_bar + in_bars_heard > in_profile.bars + 1:
+        errors.append(
+            f"the incoming track runs out of grid: it starts at bar {plan.in_.start_bar} and the "
+            f"plan needs {in_bars_heard:g} bars, but its grid ends at bar {in_profile.bars}"
+        )
+
+
+def _event_errors(plan: TransitionPlan, event: PlanEvent) -> list[str]:
+    errors: list[str] = []
+    if event.at_bar < EARLIEST_BAR or event.at_bar > plan.bars:
+        errors.append(f"event at bar {event.at_bar} is outside the plan (bars {EARLIEST_BAR}..{plan.bars})")
+    if event.kind == "ramp" and event.at_bar + event.over_bars > plan.bars + 1e-9:
+        errors.append(
+            f"ramp of {event.name} on deck {event.deck} ends at bar "
+            f"{event.at_bar + event.over_bars}, after the plan ends at {plan.bars}"
+        )
+    if event.deck is not None and event.deck not in (plan.out.deck, plan.in_.deck):
+        errors.append(f"event at bar {event.at_bar} touches deck {event.deck}, which the plan does not name")
+    if event.kind == "do":
+        errors.extend(_handover_errors(plan, event))
+    return errors
+
+
+def _handover_errors(plan: TransitionPlan, event: PlanEvent) -> list[str]:
+    """Master and stop moves only at the terminal handover, the plan's last bar."""
+    errors: list[str] = []
+    # The incoming deck becomes master only at the terminal handover: a master move before the plan ends would reach the
+    # page while the incoming transport is still paused and the outgoing deck is active, failing the plan after prepare.
+    if event.name == "master" and event.deck == plan.in_.deck and event.at_bar < plan.bars:
+        errors.append(
+            f"incoming deck {plan.in_.deck} becomes master at bar {event.at_bar:g}, before the plan ends at {plan.bars:g}; "
+            "master moves only at the terminal handover"
+        )
+    # The clock stops only at the handover, the plan's last bar; a stop before it would freeze the clock mid-plan.
+    if event.name == "stop" and event.deck == plan.out.deck and event.at_bar < plan.bars:
+        errors.append(
+            f"outgoing deck {plan.out.deck} stops at bar {event.at_bar:g}, before the plan ends at {plan.bars:g}; "
+            "the clock must run to the handover"
+        )
+    return errors
+
+
+def _check_fit(plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation) -> None:
+    """Tempo, grid trust and key: allowed, but said."""
+    _check_tempo_fit(plan, out_profile, in_profile, result)
+    if not out_profile.grid_trusted or not in_profile.grid_trusted:
+        result.warnings.append("a beatgrid is untrusted; bar positions may be off")
+    _check_key_fit(plan, out_profile, in_profile, result)
+
+
+def _check_tempo_fit(
+    plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation
+) -> None:
+    gap = bpm_gap_pct(out_profile.bpm, in_profile.bpm)
+    result.metrics["bpm_gap_pct"] = None if gap is None else round(gap, 2)
+    beatmatched = _beatmatched(plan)
+    if gap is not None and gap > BEATMATCH_LIMIT_PCT and beatmatched:
+        result.warnings.append(
+            f"tempo gap {gap:.1f}% is beyond Beat Sync's {BEATMATCH_LIMIT_PCT:.0f}% reach; the "
+            "blend will drift. A cut or drop_swap does not need beatmatching"
+        )
+    if plan.tempo_mode == "none" and beatmatched:
+        result.warnings.append("tempo mode none on a beatmatched style: the decks will drift")
+
+
+def _check_key_fit(
+    plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation
+) -> None:
+    if not (out_profile.key and in_profile.key):
+        return
+    from apps.shared.harmonic import CamelotKey, camelot_distance
+
+    distance = camelot_distance(CamelotKey.from_string(out_profile.key), CamelotKey.from_string(in_profile.key))
+    result.metrics["key_distance"] = distance
+    if distance > 2 and plan.bars > 2:
+        result.warnings.append(
+            f"keys {out_profile.key} and {in_profile.key} are {distance} steps apart; a long "
+            "overlap will clash. Prefer a short style or one that keeps only drums together"
+        )
+
+
+def _bar_value(series: tuple[float, ...] | None, bar: int) -> float | None:
+    if series is None or not 0 < bar <= len(series):
+        return None
+    return series[bar - 1]
+
+
+def _overlaps(
+    series_out: tuple[float, ...] | None, series_in: tuple[float, ...] | None, out_bar: int, in_bar: int, floor: float
+) -> bool:
+    """Both decks carry this part (vocals, bass) at or above ``floor`` in their bars."""
+    out_value = _bar_value(series_out, out_bar)
+    in_value = _bar_value(series_in, in_bar)
+    return out_value is not None and in_value is not None and min(out_value, in_value) >= floor
+
+
+def _side_gain(assign: Any, crossfader: float) -> float:
+    """A channel's crossfader gain on the engine's equal-power curve (``_xfGainFor``): 1.0 for THRU or unknown."""
+    if assign == "A":
+        return math.cos(crossfader * math.pi / 2)
+    if assign == "B":
+        return math.cos((1.0 - crossfader) * math.pi / 2)
+    return 1.0
+
+
+def _side_open(assign: Any, crossfader: float) -> bool:
+    """Whether a channel on crossfader side ``assign`` passes at this crossfader position.
+
+    A channel on side A is cut from ``CROSSFADER_CLOSED`` toward B, one on side B from
+    ``1 - CROSSFADER_CLOSED`` toward A; a THRU or unknown assignment always passes.
+    """
+    if assign == "A":
+        return crossfader < CROSSFADER_CLOSED
+    if assign == "B":
+        return crossfader > 1.0 - CROSSFADER_CLOSED
+    return True
+
+
+def _assign_of(mixer: Mapping[str, Any], deck: int) -> Any:
+    return live_child(live_child(mixer, "channels", "live mirror channels"), str(deck), "live mirror channel").get(
+        "assign"
+    )
+
+
+def read_live_channels(plan: TransitionPlan, live: Mapping[str, Any] | None) -> tuple[ChannelStart, ChannelStart]:
+    """AGENT-35: both plan channels as the live mirror has them, read through the one strict reader validation uses
+    (fader, trim and low EQ; a malformed present value raises, a missing one keeps its default)."""
+    mixer = live_child((live or {}), "mixer", "live mirror mixer")
+    return _channel_start(mixer, plan.out.deck), _channel_start(mixer, plan.in_.deck)
+
+
+def _channel_start(mixer: Mapping[str, Any], deck: int) -> ChannelStart:
+    """The live channel's fader, trim and low EQ; a value the mirror lacks keeps its default."""
+    channel = live_child(live_child(mixer, "channels", "live mirror channels"), str(deck), "live mirror channel")
+    default = ChannelStart()
+    return ChannelStart(
+        fader=_level_or(channel, "fader", default.fader, deck),
+        trim=_level_or(channel, "trim", default.trim, deck),
+        low=_level_or(channel, "eq_low", default.low, deck),
+    )
+
+
+def _level_or(channel: Mapping[str, Any], key: str, default: float, deck: int) -> float:
+    """A live channel level: the default only when the mirror does not carry it; a malformed one raises."""
+    return default if key not in channel else _unit_level(channel[key], f"deck {deck} live {key}")
+
+
+def _number_or(value: Any, default: float) -> float:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+
+
+def _heard(row: BarState, out_assign: Any = None, in_assign: Any = None) -> tuple[bool, bool]:
+    """Whether the outgoing and the incoming deck are audible in this bar.
+
+    A channel's level is its fader scaled by its trim (unity at ``UNITY_TRIM``), as the
+    engine's input gain and fader gain multiply.
+    """
+    out_level = row.out_fader * row.out_trim / UNITY_TRIM
+    in_level = row.in_fader * row.in_trim / UNITY_TRIM
+    return (
+        row.out_playing and out_level >= AUDIBLE_FADER and _side_open(out_assign, row.crossfader),
+        row.in_playing and in_level >= AUDIBLE_FADER and _side_open(in_assign, row.crossfader),
+    )
+
+
+def _check_clashes(
+    plan: TransitionPlan,
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    result: Validation,
+    mixer: Mapping[str, Any],
+    base: float,
+    scale: float,
+    pitches: tuple[float, float] = (1.0, 1.0),
+) -> None:
+    """Replay the plan bar by bar: silence, vocals over vocals, bass over bass.
+
+    With the live mixer known, the crossfader and both channels' faders, trims and lows
+    start where they are and each
+    deck is heard only while its channel's side is open; without it, both channels count as
+    THRU at unity trim.
+    """
+    vocal_overlap = bass_overlap = 0
+    live_crossfader = mixer.get("crossfader")
+    start = float(live_crossfader) if isinstance(live_crossfader, (int, float)) else CROSSFADER_CENTER
+    out_assign, in_assign = _assign_of(mixer, plan.out.deck), _assign_of(mixer, plan.in_.deck)
+    channels = (_channel_start(mixer, plan.out.deck), _incoming_channel_start(plan, mixer))
+    silent_bars = len(_silent_bars(plan, (start, channels), (out_assign, in_assign)))
+    grid_view = _synced_grid_view(plan)
+    for row in simulate(plan, crossfader=start, channels=channels):
+        out_bar = plan.out.start_bar + row.bar
+        in_bar = _in_bar(grid_view, row.bar, base, scale, pitches[0], pitches[1])
+        out_heard, in_heard = _heard(row, out_assign, in_assign)
+        if not (out_heard and in_heard):
+            continue
+        if _overlaps(out_profile.bar_vocals, in_profile.bar_vocals, out_bar, in_bar, VOCAL_BAR_THRESHOLD):
+            vocal_overlap += 1
+        lows_open = row.out_low >= AUDIBLE_LOW and row.in_low >= AUDIBLE_LOW
+        if lows_open and _overlaps(out_profile.bar_bass, in_profile.bar_bass, out_bar, in_bar, STRONG_BASS):
+            bass_overlap += 1
+    _report_clashes(out_profile, in_profile, (vocal_overlap, bass_overlap, silent_bars), result)
+    _check_end(plan, (start, channels), (out_assign, in_assign), result)
+
+
+def _silence_cuts(plan: TransitionPlan) -> set[float]:
+    """The sample points of the silence replay: the bar grid, every event's bar, and each ramp's span."""
+    cuts = {bar + step / SILENCE_SAMPLES_PER_BAR for bar in range(plan.bars) for step in range(SILENCE_SAMPLES_PER_BAR)}
+    cuts.add(float(plan.bars))
+    for event in plan.events:
+        cuts.add(float(event.at_bar))
+        if event.kind == "ramp":
+            cuts.add(float(event.at_bar + event.over_bars))
+            span = max(1, math.ceil(event.over_bars * SILENCE_SAMPLES_PER_RAMP_BAR))
+            cuts.update(event.at_bar + event.over_bars * step / span for step in range(span + 1))
+    return cuts
+
+
+def _silent_bars(
+    plan: TransitionPlan,
+    start: tuple[float, tuple[ChannelStart, ChannelStart]],
+    assigns: tuple[Any, Any],
+) -> set[int]:
+    """The bars where neither deck is audible at some point.
+
+    Audibility is sampled on a grid of ``SILENCE_SAMPLES_PER_BAR`` per bar, plus every event's own bar, every
+    ramp's end, and a ``SILENCE_SAMPLES_PER_RAMP_BAR`` grid across each ramp's span. Wherever two neighboring
+    samples disagree, bisection finds the instant it flips (a fader ramp crossing the audible floor between
+    samples, for one), so every stretch between the resulting cut
+    points is uniformly heard or silent, and its midpoint decides it.
+    """
+    crossfader, channels = start
+    events = _replay_events(plan, channels)
+
+    def audible(at: float) -> bool:
+        state = _state_of(plan, events, at, min(int(at), plan.bars - 1), crossfader, channels)
+        return any(_heard(state, *assigns))
+
+    points = sorted(cut for cut in _silence_cuts(plan) if 0.0 <= cut <= plan.bars)
+    heard = {point: audible(point) for point in points}
+    bounds = [points[0]]
+    for lo, hi in pairwise(points):
+        if heard[lo] != heard[hi]:
+            low, high = lo, hi
+            for _ in range(BOUNDARY_BISECTIONS):
+                middle = (low + high) / 2
+                if audible(middle) == heard[lo]:
+                    low = middle
+                else:
+                    high = middle
+            bounds.append(high)
+        bounds.append(hi)
+    silent: set[int] = set()
+    for lo, hi in pairwise(bounds):
+        # Only float rounding is dropped: a flip on an event's own instant leaves a stretch of that size.
+        if hi - lo > SILENCE_EPSILON_BARS and not audible((lo + hi) / 2):
+            silent.add(min(int(lo), plan.bars - 1))
+    return silent
+
+
+def _check_end(
+    plan: TransitionPlan,
+    start: tuple[float, tuple[ChannelStart, ChannelStart]],
+    assigns: tuple[Any, Any],
+    result: Validation,
+) -> None:
+    """The bars are sampled at their middles, so the events on the last bar itself
+    (the handover's stops) are checked on the state they leave."""
+    crossfader, channels = start
+    end = state_at(plan, float(plan.bars), bar=plan.bars, crossfader=crossfader, channels=channels)
+    _, in_heard = _heard(end, *assigns)
+    # The outgoing deck is judged on the page's silence threshold, not the audible floor the bars count with: a fader
+    # the page still hears would keep both decks running after a plan that reports done.
+    out_gain = end.out_fader * end.out_trim / UNITY_TRIM * _side_gain(assigns[0], end.crossfader)
+    if end.out_playing and out_gain >= SILENT_GAIN:
+        # A plan that leaves the outgoing deck playing and heard never hands the room over: it would report done
+        # while both decks run on, so the handover has to stop it or fade it to silence.
+        result.errors.append(
+            f"the plan ends at bar {plan.bars} with the outgoing deck {plan.out.deck} still heard: end it with a stop "
+            "or a fader to silence, so the room is handed over"
+        )
+    if not in_heard:
+        result.errors.append(
+            f"the plan ends at bar {plan.bars} with the incoming deck {plan.in_.deck} unheard: the room "
+            "would go silent after the handover"
+        )
+    # The handover makes the incoming deck master: the plan's last master move, in the order it fires, must be the incoming
+    # deck on the last bar. Otherwise the plan reports done with the master on a deck it stopped, and the next proposal
+    # would take that deck as its outgoing source. The sort is stable, so equal bars keep their authored order.
+    masters = sorted((e for e in plan.events if e.name == "master"), key=lambda e: e.at_bar)
+    last = masters[-1] if masters else None
+    if last is None or last.deck != plan.in_.deck or last.at_bar < plan.bars:
+        result.errors.append(
+            f"the plan ends at bar {plan.bars} without making the incoming deck {plan.in_.deck} master: the handover "
+            "needs its last master move to be the incoming deck on the last bar"
+        )
+
+
+def _report_clashes(
+    out_profile: TrackProfile, in_profile: TrackProfile, counts: tuple[int, int, int], result: Validation
+) -> None:
+    vocal_overlap, bass_overlap, silent_bars = counts
+    vocals_known = out_profile.bar_vocals is not None and in_profile.bar_vocals is not None
+    bass_known = out_profile.bar_bass is not None and in_profile.bar_bass is not None
+    result.metrics["vocal_overlap_bars"] = vocal_overlap if vocals_known else None
+    result.metrics["bass_overlap_bars"] = bass_overlap if bass_known else None
+    result.metrics["silent_bars"] = silent_bars
+    if vocals_known and vocal_overlap:
+        result.warnings.append(f"two vocals overlap for {vocal_overlap} bars")
+    if not vocals_known:
+        result.warnings.append("vocals are not analyzed on one side: vocal clashes were not checked")
+    if bass_known and bass_overlap > 1:
+        result.warnings.append(f"two basslines play together for {bass_overlap} bars")
+    if silent_bars:
+        result.errors.append(f"{silent_bars} bars of the plan have neither deck audible")
+
+
+def live_mapping(value: Any, where: str = "live mirror value") -> Mapping[str, Any]:
+    """AGENT-35: an object level of the live mirror (mixer, channels, a channel, decks, a deck, a position) that is
+    PRESENT. Anything that is not an object, explicit null included, is a corrupt mirror and raises."""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{where} is {'null' if value is None else type(value).__name__}, not an object")  # noqa: TRY004 - one ValueError for every corrupt mirror value
+    return value
+
+
+def live_child(parent: Mapping[str, Any], key: str, where: str = "live mirror value") -> Mapping[str, Any]:
+    """AGENT-35: the ONE reader for a child object level of the live mirror. A MISSING key reads as an empty object, so
+    its values read as absent; a present key goes through :func:`live_mapping`, so an explicit null raises like any
+    other malformed value (Sol P1 #7595: null is malformed, not missing)."""
+    if key not in parent:
+        return {}
+    return live_mapping(parent[key], where)
+
+
+def _validate_live(
+    plan: TransitionPlan, profiles: tuple[TrackProfile, TrackProfile], live: Mapping[str, Any], result: Validation
+) -> None:
+    """Checks against the AGENT-02 mirror: who holds what, where the out deck is."""
+    out_profile, in_profile = profiles
+    decks = live_child(live, "decks", "live mirror decks")
+    out_state = live_child(decks, str(plan.out.deck), "live mirror deck")
+    in_state = live_child(decks, str(plan.in_.deck), "live mirror deck")
+    if not isinstance(out_state, Mapping) or out_state.get("stable_id") != plan.out.track:
+        result.errors.append(f"deck {plan.out.deck} does not hold the outgoing track {plan.out.track}")
+        return
+    if out_state.get("playing") is not True:
+        result.errors.append(
+            f"deck {plan.out.deck} is not playing: a plan continues a playing set; start the "
+            "outgoing deck first with the command tool"
+        )
+    if isinstance(in_state, Mapping) and in_state.get("playing") is True:
+        result.errors.append(f"deck {plan.in_.deck} is already playing; the incoming deck must be cued, not live")
+    if isinstance(in_state, Mapping) and in_state.get("quantized_launch_armed") is not None:
+        # Schedule and the page's runner refuse an armed deck as busy, so validation must refuse it too.
+        result.errors.append(f"deck {plan.in_.deck} is armed to launch; pick an idle deck")
+    if out_state.get("loop_engaged") is True:
+        # An engaged loop wraps the playhead, so the outgoing window is never reached and the plan would wait forever.
+        result.errors.append(f"deck {plan.out.deck} has an engaged loop; release it so the plan can reach its window")
+    _check_out_position(plan, out_profile, out_state, result)
+    _check_crossfader(plan, live_child(live, "mixer"), result)
+    _check_pitch_reach(plan, in_profile, (out_state, in_state), result)
+    _check_authored_tempo(plan, plan.in_.deck, in_state, result)
+    _check_authored_tempo(plan, plan.out.deck, out_state, result)
+
+
+def _beatmatched(plan: TransitionPlan) -> bool:
+    style_doc = STYLES.get(plan.style)
+    return (style_doc.needs_beatmatch if style_doc is not None else True) and plan.bars > 1
+
+
+def sync_tempo_ratio(out_state: Mapping[str, Any], in_profile: TrackProfile, range_pct: float) -> float | None:
+    """The incoming deck's tempo ratio that Beat Sync would pick to match the outgoing deck.
+
+    Beat Sync tries the raw ratio, then half and double time, and takes the first inside
+    the deck's +-``range_pct`` pitch range; ``None`` when none fits or a tempo is unknown.
+    """
+    out_bpm = out_state.get("effective_bpm")
+    if not isinstance(out_bpm, (int, float)) or out_bpm <= 0 or not in_profile.bpm or in_profile.bpm <= 0:
+        return None
+    raw = float(out_bpm) / in_profile.bpm
+    for fold in TEMPO_FOLDS:
+        if abs(raw * fold - 1.0) * 100.0 <= range_pct + 1e-9:
+            return raw * fold
+    return None
+
+
+def _check_authored_tempo(
+    plan: TransitionPlan, deck: int | None, deck_state: Mapping[str, Any], result: Validation
+) -> None:
+    """An authored tempo is an absolute ratio the addressed deck's pitch range must reach, or setTempoRatio refuses it.
+
+    Checked for both decks: the clock deck's tempo moves reach the page's ``setTempoRatio`` just the same.
+    """
+    targets = [
+        e for e in plan.events if e.kind != "do" and e.deck == deck and e.name == "tempo" and e.value is not None
+    ]
+    if not targets:
+        return
+    range_pct = deck_state.get("pitch_range")
+    if not isinstance(range_pct, (int, float)):
+        result.warnings.append(
+            f"deck {deck}'s pitch range is unknown: authored tempo targets were not checked against it"
+        )
+        return
+    for event in targets:
+        if abs(float(event.value) - 1.0) * 100.0 > float(range_pct) + 1e-9:
+            result.errors.append(
+                f"tempo {float(event.value):g} at bar {event.at_bar:g} is outside deck {deck}'s "
+                f"+-{float(range_pct):g}% pitch range"
+            )
+
+
+def _check_pitch_reach(
+    plan: TransitionPlan,
+    in_profile: TrackProfile,
+    states: tuple[Mapping[str, Any], Mapping[str, Any]],
+    result: Validation,
+) -> None:
+    """A beatmatched plan needs a tempo the incoming deck's pitch range can reach."""
+    if plan.tempo_mode != "sync_to_out" or not _beatmatched(plan):
+        return
+    out_state, in_state = states
+    range_pct = in_state.get("pitch_range")
+    out_bpm = out_state.get("effective_bpm")
+    if not isinstance(range_pct, (int, float)) or not isinstance(out_bpm, (int, float)) or not in_profile.bpm:
+        result.warnings.append(
+            f"deck {plan.in_.deck}'s pitch range or a tempo is unknown: whether Beat Sync can reach "
+            "the outgoing tempo was not checked"
+        )
+        return
+    if sync_tempo_ratio(out_state, in_profile, float(range_pct)) is None:
+        result.errors.append(
+            f"deck {plan.in_.deck} cannot match {float(out_bpm):.2f} BPM from {in_profile.bpm:.2f} within its "
+            f"+-{float(range_pct):g}% pitch range, even at half or double time: widen the range or pick "
+            "a style that does not beatmatch (cut, drop_swap)"
+        )
+
+
+def _check_out_position(
+    plan: TransitionPlan, out_profile: TrackProfile, out_state: Mapping[str, Any], result: Validation
+) -> None:
+    position_ms = live_child(out_state, "position").get("ms")
+    if not isinstance(position_ms, (int, float)):
+        return
+    bar_now = out_profile.bar_at(float(position_ms) / 1000.0)
+    result.metrics["out_bar_now"] = round(bar_now, 2)
+    if plan.out.start_bar + first_dispatch_bar(plan) <= bar_now + OUT_POSITION_MARGIN_BARS:
+        result.errors.append(
+            f"the out window starts at bar {plan.out.start_bar} but deck {plan.out.deck} is "
+            f"already at bar {bar_now:.1f}; pick a later window or anchor next_phrase"
+        )
+
+
+def _check_crossfader(plan: TransitionPlan, mixer: Mapping[str, Any], result: Validation) -> None:
+    channels = mixer.get("channels")
+    crossfader = mixer.get("crossfader")
+    if not isinstance(channels, Mapping) or not isinstance(crossfader, (int, float)):
+        return
+    assign = _assign_of(mixer, plan.in_.deck)
+    # Where the plan leaves it: a plan may open the incoming side itself (a crossfader mix).
+    end = state_at(plan, float(plan.bars), bar=plan.bars, crossfader=float(crossfader)).crossfader
+    if not _side_open(assign, end):
+        moved = "" if end == crossfader else f" (the plan moves it from {crossfader:.2f})"
+        result.errors.append(
+            f"deck {plan.in_.deck} is assigned to side {assign} and the crossfader ends at "
+            f"{end:.2f}{moved}: the incoming deck would not be heard and the room would go "
+            "silent when the outgoing deck stops; move the crossfader or reassign the channel first"
+        )

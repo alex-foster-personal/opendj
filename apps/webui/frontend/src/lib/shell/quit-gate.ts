@@ -9,7 +9,7 @@ import { reportClientError } from '$lib/client-error-reporting';
 import { flushPerformanceSessionSnapshot } from '$lib/rb/performance-session.svelte';
 import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { detectSurface, type ShellScope } from '$lib/rb/usage-heartbeat';
-import { closeQuitConfirm, isQuitConfirmOpen, openQuitConfirm } from './quit-gate-state';
+import { closeQuitConfirm, isQuitConfirmOpen, openQuitConfirm, quitVetoed } from './quit-gate-state';
 import { exitApp } from './native-shell';
 import { needsQuitConfirmation } from './needs-quit-confirmation';
 import { planQuitRequest } from './quit-gate-logic';
@@ -53,6 +53,10 @@ function onDialogKeydown(event: KeyboardEvent): void {
 	if (isConfirmChord(event)) {
 		event.preventDefault();
 		event.stopPropagation();
+		if (quitVetoed()) {
+			closeQuitConfirm();
+			return;
+		}
 		void confirmQuit();
 	}
 }
@@ -98,6 +102,12 @@ export function handleQuitRequest(
 		window: deps?.window ?? (window as Window & ShellScope)
 	};
 
+	// A user's quit (Cmd-Q, window close) waits while a device operation runs;
+	// the engine's own shutdown (force) cannot be held, so it is not vetoed.
+	if (options.force !== true && quitVetoed()) {
+		closeQuitConfirm();
+		return;
+	}
 	const action = planQuitRequest({
 		...(options.force !== undefined ? { force: options.force } : {}),
 		dialogOpen: isQuitConfirmOpen(),

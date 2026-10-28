@@ -126,6 +126,22 @@ test('in phase: the base, nothing scheduled', () => {
 	assert.deepEqual(e.log.schedules, []);
 });
 
+test('normalizationOf answers the fold a lock was recorded with, and null once it is cleared (Sol P1 4301847502)', () => {
+	const e = fakeEngine();
+	const lock = mod.createWebAudioPhaseLock(e.ports);
+	assert.equal(lock.normalizationOf(2), null, 'control: an unlocked deck has no fold');
+	lock.record(2, { ...JOIN, normalization: 2 });
+	assert.equal(lock.normalizationOf(2), 2);
+	assert.equal(lock.normalizationOf(3), null, 'another deck does not borrow the fold');
+	lock.record(2, { ...JOIN, normalization: 0.5 });
+	assert.equal(lock.normalizationOf(2), 0.5, 'a re-record replaces the fold');
+	lock.clear(2);
+	assert.equal(lock.normalizationOf(2), null);
+	lock.record(2, JOIN);
+	lock.clearAll();
+	assert.equal(lock.normalizationOf(2), null);
+});
+
 test('ahead: a trim below the RECORDED base goes through scheduleTempo, then returns to exactly base', async () => {
 	const e = fakeEngine();
 	const lock = mod.createWebAudioPhaseLock(e.ports);

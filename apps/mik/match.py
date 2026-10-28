@@ -46,7 +46,11 @@ from apps.shared.state.locations import list_location_paths
 
 from .mikdb import MikSong
 
-Tier = Literal["exact_path", "basename", "artist_title"]
+Tier = Literal["exact_path", "basename", "artist_title", "sources_map", "shared_duplicate"]
+"""The last two are not tiers ``match_songs`` walks. ``sources_map`` is the
+binding :mod:`apps.mik.sources_match` makes for a copy batch;
+``shared_duplicate`` marks a row that received a duplicate copy's energy
+through :mod:`apps.mik.duplicates`."""
 
 TIER_ORDER: tuple[Tier, ...] = ("exact_path", "basename", "artist_title")
 TIER_RANK: dict[Tier, int] = {tier: rank for rank, tier in enumerate(TIER_ORDER)}
@@ -81,6 +85,8 @@ class Unmatched:
     mik_row_id: int
     reason: UnmatchedReason
     detail: str
+    claimed_stable_id: str | None = None
+    """For ``lost_collision``: the track the song claimed, so its result still counts as an offer."""
 
 
 @dataclass
@@ -91,7 +97,7 @@ class MatchReport:
     def by_tier(self) -> dict[str, int]:
         counts = zero_tier_counts()
         for match in self.matches.values():
-            counts[match.tier] += 1
+            counts[match.tier] = counts.get(match.tier, 0) + 1
         return counts
 
     def by_reason(self) -> dict[str, int]:
@@ -329,6 +335,7 @@ def _resolve_claim_collisions(
                     f"track {stable_id} already claimed via tier "
                     f"{winner.tier} by MIK row {winner.mik_row_id}"
                 ),
+                claimed_stable_id=stable_id,
             )
 
 

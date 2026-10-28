@@ -2,6 +2,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { stemCssColor } from '$lib/rb/stem-colors';
+import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 import { stemStatusView } from '$lib/rb/stem-status';
 import type { StemControl } from '$lib/rb/stem-types';
 
@@ -21,6 +22,9 @@ export type StemRowProps = {
 	onSolo: (stem: StemControl) => Promise<void>;
 	/** STEM-48: retry a failed stem load, or start one that is held. */
 	onLoad?: () => Promise<void>;
+	/** STEM-77: the "Separate this track" action on a NO STEMS deck, or null. */
+	separate?: SeparateActionView | null;
+	onSeparate?: () => Promise<void>;
 };
 
 const STEMS: readonly { id: StemControl; label: string }[] = [
@@ -33,7 +37,16 @@ const STEMS: readonly { id: StemControl; label: string }[] = [
 
 const cls = (...parts: (string | false)[]): string => parts.filter(Boolean).join(' ');
 
-export default function StemRow({ deck, pending, testIdScope = 'deck', onMute, onSolo, onLoad }: StemRowProps) {
+export default function StemRow({
+	deck,
+	pending,
+	testIdScope = 'deck',
+	onMute,
+	onSolo,
+	onLoad,
+	separate = null,
+	onSeparate
+}: StemRowProps) {
 	const stems = deck.stems;
 	const visibleStems = STEMS.filter(
 		(stem) => (stem.id !== 'bass' && stem.id !== 'other') || stems.available_controls.includes(stem.id)
@@ -94,9 +107,7 @@ export default function StemRow({ deck, pending, testIdScope = 'deck', onMute, o
 					</button>
 				);
 			})}
-			{onLoad !== undefined &&
-				view.label !== '' &&
-				(view.action !== null ? (
+			{onLoad !== undefined && view.label !== '' && (view.action !== null ? (
 					<button
 						className={cls('status', 'action', view.name === 'error' && 'failed')}
 						title={view.tip}
@@ -120,6 +131,19 @@ export default function StemRow({ deck, pending, testIdScope = 'deck', onMute, o
 						{view.label}
 					</span>
 				))}
+			{onLoad !== undefined && view.label !== '' && view.name === 'none' && separate !== null && onSeparate !== undefined && (
+				<button
+					className="status action separate"
+					disabled={separate.disabled}
+					title={separate.tip}
+					aria-label={`${separate.tip} Deck ${deck.deck_id}.`}
+					data-testid={`stem-separate-${testIdScope}-${deck.deck_id}`}
+					data-performance-control="stem-separate"
+					onClick={async () => await onSeparate()}
+				>
+					{separate.label}
+				</button>
+			)}
 		</div>
 	);
 }

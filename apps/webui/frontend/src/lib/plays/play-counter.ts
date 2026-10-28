@@ -23,7 +23,7 @@
  */
 
 import { api } from '$lib/api/client';
-import { refuseStickWrite } from '$lib/rb/track-source';
+import { isUsbTrackId, refuseStickWrite } from '$lib/rb/track-source';
 import { queryPerformanceState, type PerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { deckWasHeard, externallyRoutedDecks } from '$lib/sets/deck-audibility';
 
@@ -33,7 +33,7 @@ type DeckId = NonNullable<PerformanceState['master_deck']>;
 
 /** Heard seconds after which a load counts as a play. Mirrors the server's
  *  `play_log.PLAY_THRESHOLD_S` and the set analytics' 60 s default
- *  (docs/product/set-dwell-threshold-analysis.md). */
+ *  ((private path)). */
 export const PLAY_THRESHOLD_S = 60;
 export const PLAY_SAMPLE_INTERVAL_MS = 1000;
 /** Most a single gap between samples may credit, so a throttled background
@@ -97,6 +97,28 @@ export interface PlayCounter {
 function _defaultHeard(): (state: PerformanceState, deck: DeckId) => boolean {
 	const routed = externallyRoutedDecks(typeof window === 'undefined' ? '' : window.location.search);
 	return (state, deck) => deckWasHeard(state, deck, routed);
+}
+
+/** One track's play counts (TOPVIEW-05 Track information), or the reason
+ * they could not be read. A USB-stick track has no library play log. */
+export async function fetchTrackPlays(
+	stableId: string
+): Promise<
+	| { plays: { opendj_play_count: number; rekordbox_play_count: number; opendj_last_played_at: string | null }; error: null }
+	| { plays: null; error: string }
+> {
+	if (isUsbTrackId(stableId)) {
+		return { plays: null, error: 'play counts are kept for library tracks only, not USB-stick tracks' };
+	}
+	try {
+		const { data, error } = await api.GET('/api/v1/tracks/{stable_id}/plays', {
+			params: { path: { stable_id: stableId } }
+		});
+		if (data === undefined) return { plays: null, error: `play counts unavailable: ${JSON.stringify(error)}` };
+		return { plays: data, error: null };
+	} catch (exc) {
+		return { plays: null, error: `play counts unavailable: ${String(exc)}` };
+	}
 }
 
 async function _defaultPost(play: PlayPost): Promise<void> {

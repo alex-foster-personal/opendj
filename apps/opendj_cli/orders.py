@@ -160,10 +160,12 @@ def ramp(invocation: Invocation, over: dict[str, Any]) -> dict[str, Any]:
     command = invocation.command
     if command["type"] not in RAMPABLE_TYPES:
         raise InvocationError(
-            f"--over ramps eq, fader, trim or filter; {command['type']} is not one "
+            f"--over ramps {', '.join(sorted(RAMPABLE_TYPES))}; {command['type']} is not one "
             "of them (the page refuses any other command type)"
         )
-    return {RAMP: {"command": command, "to": command["value"], "over": over}}
+    # AGENT-24: tempo's target is its ratio; every other rampable verb's is `value`.
+    target = command["ratio"] if command["type"] == "tempo" else command["value"]
+    return {RAMP: {"command": command, "to": target, "over": over}}
 
 
 @dataclass(frozen=True)

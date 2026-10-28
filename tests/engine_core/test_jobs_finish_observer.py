@@ -58,7 +58,9 @@ def _store(tmp_path: Path) -> JobStore:
 
 
 async def _until(store: JobStore, job_id: str, wanted: set[str]) -> dict[str, Any]:
-    deadline = asyncio.get_running_loop().time() + 20
+    # 60 s, not 20: a maximum for a loaded CI runner (agentbox shard 3 timed out at 20 on
+    # trunk repair #7658). The poll returns at the first terminal state, so it costs nothing.
+    deadline = asyncio.get_running_loop().time() + 60
     while True:
         row = store.get(job_id)
         if row["status"] in wanted and (row["status"] != "running" or row["worker_pgid"]):

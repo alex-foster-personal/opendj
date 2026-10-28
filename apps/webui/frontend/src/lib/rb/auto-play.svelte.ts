@@ -87,6 +87,7 @@ import {
 import { autoPlayDeckSnaps, autoPlayExcludeIds } from '$lib/rb/auto-play-snap';
 import { AutoPlayHandoffError } from '$lib/rb/auto-play-handoff-error';
 import { runAutoPlayHandoff } from '$lib/rb/auto-play-handoff';
+import { autoPlayYieldsNow, registerAutoPlayHandoffInFlight } from '$lib/rb/auto-play-plan-gate';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { classifyAutoPlayStatus, type AutoPlayMirrorStatus } from '$lib/rb/autoplay-status';
 
@@ -139,6 +140,9 @@ export { autoPlayOrder } from '$lib/rb/autoplay-queue.svelte';
 export function readAutoPlayHandoffInFlight(): boolean {
 	return _inFlight;
 }
+
+// AGENT-29: a plan accepted while a handoff or a master promotion is loading, starting or moving a deck would share it, so the plan runner asks here.
+registerAutoPlayHandoffInFlight(() => _inFlight || _promoting);
 
 /**
  * AGENT-20: what the UI-mirror publishes about AutoPlay. Read-only: it uses
@@ -344,8 +348,12 @@ async function _tick(): Promise<void> {
 		resetAutoPlayIdleClock();
 		return;
 	}
+	// AGENT-29: a scheduled or running agent plan owns the mix: no promotion and no handoff until it ends.
+	if (autoPlayYieldsNow()) return;
 	// Row 18: runs on every poll, including while a handoff is in flight.
 	await _promoteMaster();
+	// A plan scheduled during that await owns the mix now: checked again before any handoff is started.
+	if (autoPlayYieldsNow()) return;
 	if (_inFlight) return;
 
 	const snaps = _snaps();
@@ -444,7 +452,7 @@ async function _tick(): Promise<void> {
 		return;
 	}
 
-	const follower = pickFollowerDeck(snaps, source.id);
+	const follower = pickFollowerDeck(snaps, source.id, uiPrefs.auto_play_two_deck);
 	if (follower === null) {
 		// Do not pin _triggeredFor - retry when a deck frees; toast once.
 		if (_waitingFollowerFor !== source.stable_id) {

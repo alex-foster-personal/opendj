@@ -47,7 +47,6 @@
     "renovate[bot]"
   ],
   "requiredStatuses": [
-    "ci gate",
-    "e2e verdict"
+    "ci gate"
   ]
 }

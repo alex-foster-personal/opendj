@@ -14,10 +14,14 @@
 root_packages =
     apps
     scripts
+    ops
 include_external_packages = True
 ; An import under `if TYPE_CHECKING:` is never executed, so it cannot start a
 ; runtime cycle; the module that passes the real object in carries the edge.
 exclude_type_checking_imports = True
+; The `public_surface` contract type (ADR-NEW-module-contracts) lives in this repo.
+contract_types =
+    public_surface: scripts.arch_surface_contract.PublicSurfaceContract
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:shared-is-the-stable-core]
@@ -26,7 +30,7 @@ type = layers
 containers =
     apps
 layers =
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : webui
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : webui
     shared
 exhaustive = true
 ; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
@@ -67,7 +71,7 @@ containers =
 layers =
     engine_core : opendj_cli
     webui
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : autodj : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
 exhaustive = true
 ; apps.webui is the delivery layer: it composes domain packages behind HTTP. When a
 ; domain package imports back into it you get a cycle, and the domain package can
@@ -139,3 +143,67 @@ forbidden_modules =
 ; edge below reads `-> tests` rather than the full dotted path.)
 ignore_imports =
     apps.sync.usb.pioneer.differ -> tests
+
+; ---------------------------------------------------------------------------
+[importlinter:contract:module-public-surface]
+name = Enforced modules are reached only through their contract
+type = public_surface
+; ADR-NEW-module-contracts (Fri 9 Oct 2026). For each package below, code outside it
+; imports only apps.<pkg>.contract. The composition roots may also import apps.<pkg>.http,
+; the module's own router: the delivery layers below, the top-level packages under
+; composition_roots, and any __main__ entry point. The contract and the package root import only stdlib,
+; pydantic, typing_extensions, annotated_types and other contracts.
+;
+; This list only grows. tests/quality/test_module_surface_contract.py holds every
+; package under apps/ either here or in its frozen list of packages that predate the
+; ADR, so a package added after Fri 9 Oct 2026 must be listed here from its first
+; commit. To migrate a package: add apps/<pkg>/contract/, repoint its importers, move
+; it from the frozen list to this one. There are no ignore_imports, on purpose.
+enforced =
+    analysis_structure
+    dedup
+    library_wheel
+    pairings
+    parity
+    play_analytics
+    playlist_sets
+    reconcile
+    rescue
+    streaming_transfer
+    tags
+delivery =
+    webui
+    engine_core
+    opendj_cli
+composition_roots =
+    scripts
+; A load by a name no gate can read (`import_module(spec)` with spec from config or a
+; CLI flag) could load any implementation unseen, so it is refused in every module the
+; graph holds (apps, scripts and ops alike) except in these. The apps entries are plugin
+; registries whose targets are data, and dependency probes (`find_spec` over a backend's own
+; list of required modules, which imports a dotted name's parents); the scripts entries are
+; dev tools that load by path or by computed name (this gate's contract reader, spec loaders
+; of sibling files, a tool runner, a remote worker, a sitecustomize syntax check). The gate also refuses an entry that no
+; longer loads that way, so this list only shrinks; add to it only in a PR that says why
+; the target cannot be named in source.
+dynamic_loaders =
+    apps.analysis.backends
+    apps.analysis.backends.own_key
+    apps.analysis.queue_cli
+    apps.analysis_bench.cli
+    apps.analysis_bench.scorers
+    apps.open_dj.registry
+    apps.sets.classify
+    apps.sets.classify.model
+    apps.vocals.from_stems
+    scripts.arch_contract_schema
+    scripts.build_engine_payload
+    scripts.ci_stale_install_guard
+    scripts.lyrics_stem_coverage
+    scripts.modal_align_spike
+    scripts.modal_beat_farm
+    scripts.native10_offline_acceptance
+    scripts.pytest_tree_read_census
+    scripts.selection_reach_census
+    scripts.stems_modal_worker
+    scripts.worktree_tools

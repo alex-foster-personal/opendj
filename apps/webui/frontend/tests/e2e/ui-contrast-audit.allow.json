@@ -362,20 +362,6 @@
       "optional": true
     },
     {
-      "el": "rb-topbar > span.dim-label.topbar-slot-pad",
-      "skins": [
-        "default",
-        "mono-dev",
-        "light",
-        "theme-light"
-      ],
-      "surfaces": [
-        "performance-hover",
-        "performance-more"
-      ],
-      "reason": "Pre-existing on main, surfaced when the audit began applying element opacity and forcing hover on hover-rule owners (Codex review on #5727, Wed 7 Oct 2026): worst default \"PAD\" #575b62 on #14171d = 2.64:1 (needs 4.5:1). TopBar.svelte .dim-label opacity 0.6. Reported on #5638; the fix belongs to the owning component, not this measure-only PR."
-    },
-    {
       "el": "slot > span.letter",
       "skins": [
         "default",
@@ -602,19 +588,6 @@
         "library"
       ],
       "reason": "Build-info sha 'reading...' #9aa4b2 on #fffdf8 = 2.48:1. Pre-existing on main: the library route renders the browser panel since main's library-workspace change (merged into this branch Wed 7 Oct 2026), so the W34 audit now sees it there. Optional: it depends on selection, sync or build-info load state at audit time.",
-      "optional": true
-    },
-    {
-      "el": "rb-topbar > span.dim-label.topbar-slot-pad",
-      "skins": [
-        "mono-dev"
-      ],
-      "surfaces": [
-        "performance-less",
-        "performance-more",
-        "performance-hover"
-      ],
-      "reason": "Gothic PAD label #5a5a5a on #0e0e0e = 2.78:1. Seen on CI at 7882c43e9 (Wed 7 Oct 2026) but not locally. Optional: it renders only in some topbar and deck-count states.",
       "optional": true
     },
     {

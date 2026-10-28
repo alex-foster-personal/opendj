@@ -174,9 +174,10 @@ def get_library_wheel(
     )] = "play_count",
 ) -> dict[str, object]:
     try:
-        return build_service().query(
+        # dict() re-types the contract's JSON values as the route's declared object values.
+        return dict(build_service().query(
             shared_paths.STATE_DB, shared_paths.REKORDBOX_PLAIN_DB, axis=axis
-        )
+        ))
     except LibraryWheelError as exc:
         raise HTTPException(
             status_code=503,

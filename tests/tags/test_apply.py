@@ -95,6 +95,27 @@ def test_provenance_rows_inserted(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-01")
+def test_an_in_memory_dedup_db_is_refused_before_any_write(tmp_path: Path) -> None:
+    # Codex, PR #6182: provenance went to a second, empty in-memory database after the audio
+    # write. Refused up front now: no backup taken, the file untouched.
+    src = FIXTURE_ROOT / "src-320.mp3"
+    dst = tmp_path / "Artist - Title.mp3"
+    shutil.copy2(src, dst)
+    with pytest.raises(ValueError, match="in-memory"):
+        tags_apply.run_apply(
+            files=[dst],
+            dedup_db_path=Path(":memory:"),
+            backup_root=tmp_path / "backups",
+            reversal_dir=tmp_path / "reversals",
+            allow_app_running=True,
+            dry_run=False,
+            fetch_rb=lambda p: TagRead(genre="Techno", bpm=128.0),
+        )
+    assert _sha(dst) == _sha(src)
+    assert not (tmp_path / "backups").exists()
+
+
+@pytest.mark.requirement("META-01")
 def test_reversal_script_restores_original(tmp_path: Path) -> None:
     src = FIXTURE_ROOT / "src-320.mp3"
     dst = tmp_path / "Artist - Title.mp3"

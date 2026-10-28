@@ -23,6 +23,7 @@ from apps.mik import mikdb
 from apps.mik.mikdb import CORE_DATA_EPOCH
 from apps.shared.equivalence import EquivalenceGate
 from apps.shared.state import db as state_db
+from tests.mik.backfill_support import Lib
 
 # Shared by tests/mik/test_promote.py and test_promote_precedence.py (the
 # latter split out of the former purely for the file-size review gate).
@@ -217,7 +218,7 @@ def add_track(state_conn: sqlite3.Connection):
 
 @pytest.fixture
 def write_verdicts(data_dir: Path):
-    """Factory writing ``data/state/equivalence-verdicts.json``."""
+    """Factory writing ``(private path)``."""
 
     def _write(statuses: dict[str, str]) -> Path:
         payload = {
@@ -233,6 +234,23 @@ def write_verdicts(data_dir: Path):
         return path
 
     return _write
+
+
+@pytest.fixture
+def lib(tmp_path: Path, state_conn: sqlite3.Connection, add_track, data_dir: Path) -> Lib:
+    """The energy backfill's library on disk; see :mod:`tests.mik.backfill_support`."""
+    return Lib(tmp_path, state_conn, add_track, data_dir)
+
+
+@pytest.fixture
+def ingest_cfg(lib: Lib) -> Path:
+    """The ingest root this test's library is configured with.
+
+    It comes from the library's own settings file (written by ``Lib``), which
+    is the same path a person uses to move the ingest root: the engine routes
+    take no ingest root over HTTP, so a test sets the configuration, not the call.
+    """
+    return lib.ingest
 
 
 # --------------------------------------------------------- promotion staging

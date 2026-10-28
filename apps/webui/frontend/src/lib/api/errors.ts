@@ -116,3 +116,20 @@ export class RbApiError extends Error {
 	}
 }
 
+
+/** What fetch rejects with when nothing answered. The text is the runtime's
+ * own and differs per engine (Chromium, WebKit, Gecko, Node). */
+const UNREACHABLE_FETCH_MESSAGES: ReadonlySet<string> = new Set([
+	'Failed to fetch',
+	'Load failed',
+	'NetworkError when attempting to fetch resource.',
+	'fetch failed'
+]);
+
+/** Wording only: does this read like fetch's no-answer rejection? For a
+ * headline over a failure that is shown anyway (deck load, whose cause can
+ * come from a raw `fetch` outside the API client). Text alone is not
+ * provenance, so never use it to decide that a failure stays quiet. */
+export function readsAsUnreachableFetch(cause: unknown): boolean {
+	return cause instanceof TypeError && UNREACHABLE_FETCH_MESSAGES.has(cause.message);
+}

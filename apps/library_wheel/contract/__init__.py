@@ -10,11 +10,11 @@ operations outsiders use. Standard library and pydantic only.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-CONTRACT_VERSION = "library_wheel/1"
+CONTRACT_VERSION = "library_wheel/3"  # /3: query returns typed JSON, not Any; /2: one-message error
 
 
 class AxisInfo(BaseModel):
@@ -59,12 +59,15 @@ AXES: tuple[AxisInfo, ...] = (
 class LibraryWheelError(RuntimeError):
     """The configured library cannot satisfy the wheel's data contract."""
 
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
 
 @runtime_checkable
 class LibraryWheelService(Protocol):
     """The operations code outside ``apps.library_wheel`` uses today."""
 
-    def query(self, state_db: Path, master_db: Path, *, axis: str = "play_count") -> dict[str, Any]:
+    def query(self, state_db: Path, master_db: Path, *, axis: str = "play_count") -> dict[str, JsonValue]:
         """The JSON-ready genre-wheel read model; raises LibraryWheelError or ValueError."""
         ...
 

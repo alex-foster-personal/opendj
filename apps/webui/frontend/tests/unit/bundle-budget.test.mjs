@@ -141,21 +141,24 @@ function _run(root) {
 
 // ------------------------------------------------------------------ tests ---
 
-test('the library limit is exactly 288768: the inherited 256000 plus the reviewed KiB through the #7559 and auto gain raises', () => {
+test('the library limit is exactly 292864: the inherited 256000 plus the reviewed KiB through the #7559, auto gain and top bar raises and the #7658 trunk repair', () => {
   const source = execFileSync('node', ['-e', `process.stdout.write(require("fs").readFileSync(${JSON.stringify(GATE)},"utf8"))`], {
     encoding: 'utf8',
   });
   assert.match(
     source,
-    /\{ name: 'library', limit: 288768,/,
+    /\{ name: 'library', limit: 292864,/,
     'the library figure must not move without a dated note in the gate and a new pin here'
   );
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+5 KiB over #7559, auto gain, AUTOGAIN-01\.\.06/, 'the raise must carry its note');
+  assert.match(source, /RAISED Wed 28 Oct 2026 \(\+1 KiB, same PR, merged onto main e5fb30dcfd\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 16 Oct 2026 \(\+1 KiB, PR #6786/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+2 KiB, PR #7483/, 'the raise must carry its note');
   assert.match(source, /RAISED Tue 27 Oct 2026 \(\+1 KiB, PR #7559/, 'the raise must carry its note');
+  assert.match(source, /RAISED Wed 28 Oct 2026 \(trunk repair #7658\)/, 'the raise must carry its note');
   assert.match(source, /RAISED Mon 21 Sep 2026 \(\+1 KiB, PR #3737/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 14 Oct 2026 \(\+1 KiB, PR #6585 follow-up/, 'the raise must carry its note');
+  assert.match(source, /RAISED Thu 22 Oct 2026 \(\+1 KiB, PR #6819, re-land of #6195/, 'the raise must carry its note');
   assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
   assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 26 Sep 2026 \(\+2 KiB, PR #3837/, 'the raise must carry its note');

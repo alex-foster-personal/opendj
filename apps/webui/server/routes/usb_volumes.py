@@ -125,6 +125,19 @@ _last_scan_mono: float = 0.0
 _last_client_mono: float = 0.0
 _sse_watchers: int = 0
 _cached: list[UsbVolume] = []
+#: Bumped by invalidate_scan_cache. A scan publishes into the cache only when
+#: no invalidation landed while it ran, so a scan that read /Volumes before an
+#: eject cannot put the ejected stick back (Codex P2 4287821653).
+_scan_generation: int = 0
+_SCAN_CACHE_LOCK = threading.Lock()
+#: Held around one read of /Volumes and its publish, so scans never overlap
+#: (single flight). A caller that arrives mid-scan waits here, then answers
+#: from that listing if the scan started after it arrived, or reads itself.
+#: Never taken by invalidate_scan_cache, so an eject never waits behind
+#: diskutil. Replaces the per-scan tickets that Codex P2 4291072609,
+#: 4291243938, 4293176292 and 4300840628 had each patched.
+_SCAN_LOCK = threading.Lock()
+_SCAN_ATTEMPTS = 3
 _fakes: dict[str, UsbVolume] = {}
 _FAKES_LOCK = threading.Lock()
 
@@ -232,16 +245,47 @@ def _scan_volumes(
     global _last_scan_mono, _cached
     resolved_discovery = discovery
     now = time.monotonic()
-    if (
-        not force
-        and _cached
-        and (now - _last_scan_mono) < _MIN_SCAN_INTERVAL_S
-    ):
-        return _with_simulations(_cached) if include_simulated else list(_cached)
-    if not force and not _someone_watching() and _cached:
-        # Idle: do not burn diskutil / walk cycles.
-        return _with_simulations(_cached) if include_simulated else list(_cached)
+    if not force:
+        # Snapshot under the cache lock, so a cache hit is ordered against an
+        # eject's invalidation like a scan is: it either sees the dropped cache
+        # and reads again, or answers from before the eject (Codex 4349262503).
+        with _SCAN_CACHE_LOCK:
+            cached = list(_cached)
+            fresh = (now - _last_scan_mono) < _MIN_SCAN_INTERVAL_S
+        # Fresh, or idle (do not burn diskutil / walk cycles): answer from it.
+        if cached and (fresh or not _someone_watching()):
+            return _with_simulations(cached) if include_simulated else cached
 
+    # An eject that lands while /Volumes is being read invalidates this
+    # listing too: it is neither cached nor returned (Codex P2 4287821653,
+    # 4288109083). Re-read until a listing finishes with no invalidation in
+    # between; an eject is a rare, human-speed event, so the bound only
+    # matters if invalidations never stop.
+    arrived = time.monotonic()
+    for _attempt in range(_SCAN_ATTEMPTS):
+        with _SCAN_LOCK:
+            with _SCAN_CACHE_LOCK:
+                generation = _scan_generation
+                # A scan that started after this caller arrived, with no eject
+                # since, already read /Volumes for it. One that started earlier
+                # could list a stick removed before this call (Codex P2
+                # 4293176292), so this caller reads again instead.
+                if _last_scan_mono >= arrived:
+                    shared = list(_cached)
+                    return _with_simulations(shared) if include_simulated else shared
+            started = time.monotonic()
+            found = _read_volumes(resolved_discovery)
+            with _SCAN_CACHE_LOCK:
+                if generation != _scan_generation:
+                    continue
+                _cached = found
+                _last_scan_mono = started
+                return _with_simulations(found) if include_simulated else found
+    raise UsbDiscoveryUnavailable("volumes_changing")
+
+
+def _read_volumes(resolved_discovery: UsbDiscovery) -> list[UsbVolume]:
+    """One full read of the volumes root: list, probe, classify."""
     found: list[UsbVolume] = []
     try:
         entries = sorted(
@@ -302,9 +346,20 @@ def _scan_volumes(
                 access=listing.access,
             )
         )
-    _cached = found
-    _last_scan_mono = now
-    return _with_simulations(found) if include_simulated else found
+    return found
+
+def invalidate_scan_cache() -> None:
+    """Drop the throttled listing so the next scan reads /Volumes again.
+
+    The eject route calls this once it has proven the volume is gone, so the
+    rescan the screen fires right after an eject cannot be answered from a
+    cache that still lists the ejected stick (Sol P1 4287654317).
+    """
+    global _last_scan_mono, _cached, _scan_generation
+    with _SCAN_CACHE_LOCK:
+        _scan_generation += 1
+        _cached = []
+        _last_scan_mono = 0.0
 
 
 def _with_simulations(real: list[UsbVolume]) -> list[UsbVolume]:
@@ -332,7 +387,7 @@ def _skip_volume_name(name: str) -> bool:
 # slow-to-answer device. 2.0s was too tight to be a fault signal: on a loaded
 # machine (a full test suite, a build) it timed out on the healthy internal
 # disk, turned the whole route into a 503, and made
-# tests/webui/test_usb_volumes.py::test_get_volumes_ok flaky. Measured 1 in 5
+# (private path)::test_get_volumes_ok flaky. Measured 1 in 5
 # failures locally under load, Mon 31 Aug 2026. 10s is still bounded, so a
 # genuinely wedged diskutil is still reported rather than hanging the request.
 _DISKUTIL_TIMEOUT_S: float = 10.0

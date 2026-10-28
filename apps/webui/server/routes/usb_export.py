@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from apps.feature_flags import FlagRefusal
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.webui.server.routes.usb_gate import usb_export_gate
+from apps.webui.server.routes.usb_volume_lock import VolumeBusy, volume_operation
 
 router = APIRouter(prefix="/usb-export", tags=["usb-export"])
 
@@ -131,24 +132,41 @@ def plan_export(body: PlanRequest, request: Request) -> dict[str, Any] | JSONRes
     if not gate.available:
         return _disabled_response(gate.refusal)
     try:
-        plan = workflow.plan_export(
-            template_path=body.template_path,
-            target_root=body.target_root,
-            playlists=tuple(
-                PlaylistSpec(
-                    name=item.name,
-                    track_ids=tuple(item.track_ids),
-                    parent_id=item.parent_id,
-                )
-                for item in body.playlists
-            ),
-            track_updates=tuple(
-                TrackUpdate(**item.model_dump()) for item in body.track_updates
-            ),
-        )
+        # Planning reads the stick, so an eject must not unmount it midway
+        # (Sol P1 4356187304).
+        with volume_operation(body.target_root):
+            plan = workflow.plan_export(
+                template_path=body.template_path,
+                target_root=body.target_root,
+                playlists=tuple(
+                    PlaylistSpec(
+                        name=item.name,
+                        track_ids=tuple(item.track_ids),
+                        parent_id=item.parent_id,
+                    )
+                    for item in body.playlists
+                ),
+                track_updates=tuple(
+                    TrackUpdate(**item.model_dump()) for item in body.track_updates
+                ),
+            )
+    except VolumeBusy:
+        return _busy_response()
     except workflow.UsbExportError as exc:
         return _error(exc)
     return plan.to_dict()
+
+
+def _busy_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "code": "usb_volume_busy",
+                "message": "this stick is being ejected or written by another request; try again once it finishes",
+            }
+        },
+    )
 
 
 @router.post("/apply", response_model=ReceiptModel)
@@ -166,8 +184,12 @@ def apply_export(
 
     require_writeback_enabled("http.usb-export.apply")
     try:
-        plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
-        receipt = workflow.apply_export(plan, confirmation=body.confirmation)
+        # Never overlap an eject of the same stick (Codex P1 4300896677).
+        with volume_operation(body.plan.target_root):
+            plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
+            receipt = workflow.apply_export(plan, confirmation=body.confirmation)
+    except VolumeBusy:
+        return _busy_response()
     except workflow.UsbExportError as exc:
         return _error(exc)
     return receipt.to_dict()
@@ -183,9 +205,14 @@ def readback_export(
     if not gate.available:
         return _disabled_response(gate.refusal)
     try:
-        plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
-        receipt = workflow.ApplyReceipt.from_dict(body.receipt.model_dump())
-        report = workflow.readback_export(plan, receipt)
+        # The stick stays held while it is read back, so an eject from another
+        # tab or client cannot unmount it mid-read (Codex P2 4301348784).
+        with volume_operation(body.plan.target_root):
+            plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
+            receipt = workflow.ApplyReceipt.from_dict(body.receipt.model_dump())
+            report = workflow.readback_export(plan, receipt)
+    except VolumeBusy:
+        return _busy_response()
     except workflow.UsbExportError as exc:
         return _error(exc)
     return report.to_dict()

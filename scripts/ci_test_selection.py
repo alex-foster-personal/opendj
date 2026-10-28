@@ -1,10 +1,19 @@
 """Which tests a pull request HEAD runs in the five pytest fast lane shards (DEVOPS-20).
 
 the maintainer, Thu 1 Oct 2026, answered in chat: "Go now, skip the trial". A PR head runs only the
-tests its change affects; the Trunk merge queue draft, every main push, every
-`workflow_dispatch` and every `ci:trunk-repair` PR keep running the FULL suite, so every
-merge is still fully tested on the exact tree that lands. Decision record:
-docs/decisions/ADR-NEW-pr-heads-run-affected-tests.md.
+tests its change affects; every main push, every `workflow_dispatch` and every
+`ci:trunk-repair` PR keep running the FULL suite. Decision record:
+(private path).
+
+Bundle merges (the maintainer, Tue 27 Oct 2026; (private path),
+(private path)): a Trunk merge-queue draft tests a bundle of PRs, and it selects
+over the bundle's whole diff, exactly as a PR head does, once the repo variable
+`CI_QUEUE_TEST_SELECTION` also equals `affected`; unset or anything else keeps the queue on
+the full suite. The full suite runs nightly (`full-ci.yml` schedule) instead. A PR body may
+ADD test modules with `CI-Tests: <path> -- <reason>` lines; the selection is the union of
+those and what the rules below select, never fewer. A queue draft has no author body, so
+it takes the union of its PRs' declarations from CI_BUNDLE_DECLARATIONS, which the scope job
+collects once (scripts/ci_bundle_declarations.py); an unreadable record is the full suite.
 
 Mode, decided once per shard from the same inputs, so every shard agrees:
 
@@ -18,7 +27,8 @@ not is logged and recorded:
   1. repo variable `CI_PR_TEST_SELECTION` equals `affected` (the kill switch; anything else,
      unset included, is the full suite);
   2. the event is `pull_request`;
-  3. the head ref does not start with `trunk-merge/` (a Trunk queue draft);
+  3. the head ref does not start with `trunk-merge/` (a Trunk queue draft), unless repo
+     variable `CI_QUEUE_TEST_SELECTION` also equals `affected`;
   4. the PR does not carry the `ci:trunk-repair` label.
 
 A PR head then falls back to FULL, never to an empty run, when a changed path is global
@@ -39,8 +49,8 @@ Usage (the shard step in .github/workflows/ci.yml):
     python -m scripts.ci_test_selection junit-all-skipped REPORT.xml --modules DIR/shard-modules.txt
 
 `select` prints exactly one line on stdout, the mode, and writes DIR/selection.json (the
-record the escape measurement reads, scripts/ci_selection_escapes.py) and, in affected
-mode, DIR/shard-modules.txt. Everything for humans goes to stderr and the job summary.
+record the escape measurement and the selection guard read, scripts/ci_selection_escapes.py
+and scripts/ci_selection_guard.py) and, in affected mode, DIR/shard-modules.txt. Everything for humans goes to stderr and the job summary.
 """
 
 from __future__ import annotations
@@ -48,6 +58,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -58,13 +69,28 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from scripts.affected_tests import REPO
-from scripts.ci_test_selection_rules import DURATIONS_NAME, FullSuite, Selection, select_tests
+from scripts.ci_test_selection_rules import (
+    DURATIONS_NAME,
+    FullSuite,
+    Selection,
+    lane_universe,
+    select_tests,
+)
 
 SWITCH_VARIABLE = "CI_PR_TEST_SELECTION"
+QUEUE_SWITCH_VARIABLE = "CI_QUEUE_TEST_SELECTION"
+BUNDLE_VARIABLE = "CI_BUNDLE_DECLARATIONS"
 SWITCH_ON = "affected"
-QUEUE_DRAFT_PREFIX = "trunk-merge/"
+#: A Trunk queue draft is classified once, here, and the bundle collector imports it (Sol,
+#: PR #7598): the head ref is `trunk-merge/pr-N/...` or `trunk-temp/pr-N/...`, the author is
+#: the Trunk App, and the head lives in this repository. A branch name alone is
+#: caller-controlled, so a human's `trunk-merge/x` branch is an ordinary PR head.
+QUEUE_DRAFT_HEAD = re.compile(r"^trunk-(?:merge|temp)/pr-\d+/")
+TRUNK_LOGIN = "trunk-io[bot]"
 REPAIR_LABEL = "ci:trunk-repair"
-SCHEMA = 1
+#: Schema 2 (Tue 27 Oct 2026) adds `queue_switch`, `declared_modules`, `universe_modules` and
+#: `bundle_prs`.
+SCHEMA = 2
 RECORD_NAME = "selection.json"
 SHARD_MODULES_NAME = "shard-modules.txt"
 
@@ -81,9 +107,14 @@ class Event:
     head_sha: str
     labels: tuple[str, ...]
     pr_number: int | None
+    #: The PR body at the triggering event; a queue draft's is Trunk's banner.
+    body: str = ""
+    #: True only for an authenticated Trunk queue draft (`is_queue_draft`).
+    queue_draft: bool = False
 
     @classmethod
-    def from_payload(cls, name: str, payload: dict) -> Event:
+    def from_payload(cls, name: str, payload: dict, repository: str) -> Event:
+        """`repository` is GITHUB_REPOSITORY, which authenticates a queue draft's head."""
         pull_request = payload.get("pull_request") or {}
         head = pull_request.get("head") or {}
         return cls(
@@ -92,15 +123,36 @@ class Event:
             head_sha=str(head.get("sha") or ""),
             labels=tuple(str(label["name"]) for label in pull_request.get("labels") or ()),
             pr_number=pull_request.get("number"),
+            body=str(pull_request.get("body") or ""),
+            queue_draft=is_queue_draft(payload, repository),
         )
 
 
-def full_suite_reason(switch: str | None, event: Event) -> str | None:
-    """Why this run takes the full suite, or None when it is a PR head with selection on."""
+def is_queue_draft(payload: dict, repository: str) -> bool:
+    """True for a Trunk queue draft: its head ref, its author and its head repository agree."""
+    pull_request = payload.get("pull_request") or {}
+    head = pull_request.get("head") or {}
+    return (
+        bool(repository)
+        and QUEUE_DRAFT_HEAD.match(str(head.get("ref") or "")) is not None
+        and (pull_request.get("user") or {}).get("login") == TRUNK_LOGIN
+        and (head.get("repo") or {}).get("full_name") == repository
+    )
+
+
+def full_suite_reason(switch: str | None, event: Event, queue_switch: str | None = None) -> str | None:
+    """Why this run takes the full suite, or None when it is a PR head with selection on.
+
+    `queue_switch` is `CI_QUEUE_TEST_SELECTION`; None is the variable unset, which keeps a
+    queue draft on the full suite.
+    """
     if event.name != "pull_request":
         return f"event `{event.name}` is not a pull request head; only PR heads select"
-    if event.head_ref.startswith(QUEUE_DRAFT_PREFIX):
-        return f"head `{event.head_ref}` is a Trunk merge-queue draft; the queue runs everything"
+    if event.queue_draft and queue_switch != SWITCH_ON:
+        return (
+            f"head `{event.head_ref}` is a Trunk merge-queue draft; the queue runs everything "
+            f"while repo variable {QUEUE_SWITCH_VARIABLE}={queue_switch!r} is not {SWITCH_ON!r}"
+        )
     if REPAIR_LABEL in event.labels:
         return f"the PR carries `{REPAIR_LABEL}`; a trunk repair runs everything"
     if switch != SWITCH_ON:
@@ -109,6 +161,113 @@ def full_suite_reason(switch: str | None, event: Event) -> str | None:
             f"equals {SWITCH_ON!r}"
         )
     return None
+
+
+# ---------------------------------------------------------------------------
+# tests a PR body declares
+# ---------------------------------------------------------------------------
+
+#: `CI-Tests: tests/x/test_y.py -- why this PR needs it`, one module per line, at line start.
+_DECLARATION_LINE = re.compile(r"^[ \t]*CI-Tests:(?P<rest>.*)$", re.M)
+_DECLARATION = re.compile(r"^[ \t]*(?P<path>\S+)[ \t]+--[ \t]+\S")
+
+
+def parse_declarations(body: str) -> tuple[list[str], list[str]]:
+    """(declared module paths, errors) from a PR body's `CI-Tests:` lines.
+
+    A line that is not `CI-Tests: <path> -- <reason>` is an error, never ignored and never
+    half-read (Sol, PR #7598): the guard fails a record that carries one.
+    """
+    paths: list[str] = []
+    errors: list[str] = []
+    for match in _DECLARATION_LINE.finditer(body.replace("\r\n", "\n").replace("\r", "\n")):
+        parsed = _DECLARATION.match(match["rest"])
+        if parsed:
+            paths.append(parsed["path"])
+        else:
+            errors.append(f"malformed `CI-Tests:{match['rest']}`, expected `CI-Tests: <path> -- <reason>`")
+    return list(dict.fromkeys(paths)), errors
+
+
+def declared_tests(body: str) -> list[str]:
+    """The well-formed `CI-Tests:` module paths of a PR body, in order, deduplicated."""
+    return parse_declarations(body)[0]
+
+
+def undeclarable(paths: list[str], ignores: list[str], root: Path) -> list[str]:
+    """Declared paths this lane never runs: not a test module, absent, or lane-ignored.
+
+    The full lane carries the same ignores, so such a test would never run anywhere (Sol, PR
+    #7598); it is an error the guard fails, whatever reason the body gives.
+    """
+    return [path for path in paths if not lane_universe([path], ignores, root)]
+
+
+def bundle_record_problem(bundle: object) -> str | None:
+    """Why a bundle record is malformed, or None; the selector and the guard share this check.
+
+    An `unknown` record is well formed (it says why it could not read). A readable bundle needs
+    unique positive PR numbers, `reasons` mapping some of those PRs to text, and string lists
+    for `declared` and `errors` (Sol, PR #7598).
+    """
+    if not isinstance(bundle, dict) or not isinstance(bundle.get("bundle"), bool):
+        return f"{bundle!r} is not a bundle record"
+    if not bundle["bundle"] or bundle.get("unknown"):
+        return None
+    prs, reasons = bundle.get("prs"), bundle.get("reasons")
+    if not isinstance(prs, list) or not prs or not all(type(pr) is int and pr > 0 for pr in prs):
+        return f"prs is {prs!r}, not a non-empty list of PR numbers"
+    if len(set(prs)) != len(prs):
+        return f"prs {prs!r} repeats a PR"
+    if not isinstance(reasons, dict) or not all(
+        isinstance(pr, str) and pr.isdigit() and int(pr) in prs and isinstance(text, str) and text
+        for pr, text in reasons.items()
+    ):
+        return f"reasons is {reasons!r}, not a mapping of the bundle's PR numbers to reason text"
+    for field in ("declared", "errors"):
+        values = bundle.get(field)
+        if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+            return f"{field} is {values!r}, not a list of strings"
+    return None
+
+
+def bundle_declarations(bundle_json: str | None) -> tuple[list[str], list[int], list[str]] | None:
+    """(declared modules, PRs, declaration errors) from a queue draft's bundle record.
+
+    None when the record says this is not a bundle. An empty, unparseable or `unknown` record
+    is FullSuite: the bundle cannot say what its PRs declared, and running more is the safe
+    direction.
+    """
+    try:
+        bundle = json.loads(bundle_json or "")
+    except json.JSONDecodeError as error:
+        raise FullSuite(f"{BUNDLE_VARIABLE} is not a bundle record ({error}); the bundle's declarations are unknown") from error
+    problem = bundle_record_problem(bundle)
+    if problem:
+        raise FullSuite(f"the bundle record is malformed ({problem}); its declarations are unknown")
+    if not bundle["bundle"]:
+        return None
+    if bundle.get("unknown"):
+        raise FullSuite(f"the bundle's PR declarations could not be read: {bundle['unknown']}")
+    return list(bundle["declared"]), list(bundle["prs"]), list(bundle["errors"])
+
+
+def run_declarations(event: Event, bundle_json: str | None) -> tuple[list[str], list[int], list[str]]:
+    """(declared modules, bundle PRs, declaration errors) for this run; FullSuite when unreadable."""
+    if not event.queue_draft:
+        paths, errors = parse_declarations(event.body)
+        return paths, [], errors
+    bundle = bundle_declarations(bundle_json)
+    if bundle is None:
+        raise FullSuite("this is a Trunk queue draft, but the scope job's bundle record says it is not")
+    return bundle
+
+
+def add_declared(selection: Selection, declared: list[str]) -> None:
+    """Add the declared modules, already validated by `undeclarable`, to the selection."""
+    for path in declared:
+        selection.add(path, "declared in the PR body (`CI-Tests:`)")
+    selection.modules = sorted(selection.reasons)
 
 
 # ---------------------------------------------------------------------------
@@ -183,20 +342,56 @@ class Record:
     mode: str
     reason: str
     switch: str | None
+    queue_switch: str | None
     event: str
     head_ref: str
     head_sha: str
     pr_number: int | None
     changed_paths: list[str]
     selected_modules: list[str]
+    declared_modules: list[str]
+    #: The PRs a queue draft carries, whose declarations it used; empty for a PR head.
+    bundle_prs: list[int]
+    #: True for an authenticated Trunk queue draft.
+    queue_draft: bool
+    #: Why a `CI-Tests:` declaration is invalid; the guard always fails a record carrying one.
+    declaration_error: str | None
+    #: Test modules the lane collects; 0 when the run never computed it (a FULL record).
+    universe_modules: int
     shards: dict[str, list[str]]
     reasons: dict[str, list[str]]
     generated_at: str
 
 
-def decide(switch: str | None, event: Event, root: Path, ignores: list[str], shards: int) -> Record:
-    """The whole decision for this run. Never raises: any failure is a FULL record."""
+def decide(
+    switch: str | None,
+    event: Event,
+    root: Path,
+    ignores: list[str],
+    shards: int,
+    queue_switch: str | None = None,
+    bundle_json: str | None = None,
+) -> Record:
+    """The whole decision for this run. Never raises: any failure is a FULL record.
+
+    `bundle_json` is CI_BUNDLE_DECLARATIONS; it is read only for a `trunk-merge/` head.
+    """
     changed: list[str] = []
+    universe: list[str] = []
+    declared: list[str] = []
+    bundle_prs: list[int] = []
+    errors: list[str] = []
+    declarations_unknown: str | None = None
+    try:
+        declared, bundle_prs, errors = run_declarations(event, bundle_json)
+    except FullSuite as unreadable:
+        declarations_unknown = str(unreadable)
+    errors = errors + [
+        f"`CI-Tests:` path this lane never runs (typo, deleted, or lane-ignored): {path}"
+        for path in undeclarable(declared, ignores, root)
+    ]
+    #: Validated before every return, FULL ones included (Sol, PR #7598), so no path escapes the guard.
+    declaration_error = "; ".join(errors) or None
 
     def record(
         mode: str,
@@ -209,23 +404,35 @@ def decide(switch: str | None, event: Event, root: Path, ignores: list[str], sha
             mode=mode,
             reason=reason,
             switch=switch,
+            queue_switch=queue_switch,
             event=event.name,
             head_ref=event.head_ref,
             head_sha=event.head_sha,
             pr_number=event.pr_number,
             changed_paths=changed,
             selected_modules=selection.modules if selection else [],
+            declared_modules=declared,
+            bundle_prs=bundle_prs,
+            queue_draft=event.queue_draft,
+            declaration_error=declaration_error,
+            universe_modules=len(universe),
             shards={str(i + 1): group for i, group in enumerate(assignment or [])},
             reasons=selection.reasons if selection else {},
             generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
 
-    reason = full_suite_reason(switch, event)
+    reason = full_suite_reason(switch, event, queue_switch)
     if reason:
         return record("full", reason)
+    if declarations_unknown:
+        return record("full", f"fell back to the full suite: {declarations_unknown}")
+    if declaration_error:
+        return record("full", f"fell back to the full suite: invalid declaration: {declaration_error}")
     try:
         changed = pr_changed_paths(root, event.head_sha)
         selection = select_tests(changed, ignores, root)
+        universe = lane_universe(selection.graph_paths, ignores, root)
+        add_declared(selection, declared)
         ledger = json.loads((root / DURATIONS_NAME).read_text(encoding="utf-8"))
         assignment = assign_shards(selection.modules, module_durations(ledger), shards)
     except FullSuite as fallback:
@@ -255,19 +462,21 @@ def report_lines(record: Record, shard: int, shards: int) -> list[str]:
     lines = [f"PR TEST SELECTION: shard {shard} of {shards} runs mode={mode.upper()}"]
     lines.append(f"  reason: {record.reason}")
     lines.append(
-        f"  {SWITCH_VARIABLE}={record.switch!r}, event={record.event}, head={record.head_ref}"
+        f"  {SWITCH_VARIABLE}={record.switch!r}, {QUEUE_SWITCH_VARIABLE}={record.queue_switch!r}, "
+        f"event={record.event}, head={record.head_ref}"
     )
     if record.mode == "affected":
         mine = record.shards.get(str(shard), [])
         lines.append(
-            f"  selected {len(record.selected_modules)} module(s) for {len(record.changed_paths)} "
-            f"changed path(s); this shard runs {len(mine)}"
+            f"  selected {len(record.selected_modules)} of {record.universe_modules} lane module(s) "
+            f"for {len(record.changed_paths)} changed path(s), {len(record.declared_modules)} "
+            f"declared in the PR body; this shard runs {len(mine)}"
         )
         lines += [f"    {module}" for module in mine]
     if mode == "empty":
         lines.append(
             "  ZERO affected tests for this shard: it reports success without running pytest. "
-            "The Trunk merge queue runs the FULL suite on the exact tree that lands."
+            "The nightly FULL suite (full-ci.yml) still runs everything on main."
         )
     return lines
 
@@ -280,17 +489,18 @@ def summary_markdown(record: Record, shard: int, shards: int) -> str:
         "| field | value |",
         "|:--|:--|",
         f"| reason | {record.reason} |",
-        f"| `{SWITCH_VARIABLE}` | `{record.switch}` |",
+        f"| `{SWITCH_VARIABLE}` / `{QUEUE_SWITCH_VARIABLE}` | `{record.switch}` / `{record.queue_switch}` |",
         f"| event / head | `{record.event}` / `{record.head_ref}` |",
         f"| changed paths | {len(record.changed_paths)} |",
-        f"| selected modules (all shards) | {len(record.selected_modules)} |",
+        f"| selected modules (all shards) | {len(record.selected_modules)} of {record.universe_modules} |",
+        f"| declared in the PR body (`CI-Tests:`) | {len(record.declared_modules)} |",
         f"| this shard's modules | {len(record.shards.get(str(shard), []))} |",
         "",
     ]
     if mode == "empty":
         rows.append(
-            "Zero affected tests for this shard, so pytest did not start. The merge queue "
-            "still runs the full suite before anything lands."
+            "Zero affected tests for this shard, so pytest did not start. The nightly full "
+            "suite (full-ci.yml) still runs everything on main."
         )
     elif mode == "affected":
         rows.append("<details><summary>this shard's modules</summary>\n")
@@ -342,9 +552,11 @@ def _select(arguments: argparse.Namespace) -> int:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     event_path = os.environ.get("GITHUB_EVENT_PATH")
     payload = json.loads(Path(event_path).read_text(encoding="utf-8")) if event_path else {}
-    event = Event.from_payload(event_name, payload)
+    event = Event.from_payload(event_name, payload, os.environ.get("GITHUB_REPOSITORY", ""))
     switch = os.environ.get(SWITCH_VARIABLE)
-    record = decide(switch, event, REPO, arguments.ignore, arguments.shards)
+    queue_switch = os.environ.get(QUEUE_SWITCH_VARIABLE)
+    bundle_json = os.environ.get(BUNDLE_VARIABLE)
+    record = decide(switch, event, REPO, arguments.ignore, arguments.shards, queue_switch, bundle_json)
 
     out_dir = Path(arguments.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

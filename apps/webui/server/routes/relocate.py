@@ -361,7 +361,7 @@ def get_candidates(
             path=candidate.path,
             identity_token=candidate.identity_token,
             confidence=found_candidate.confidence,
-            signals=found_candidate.signals,
+            signals=list(found_candidate.signals),
             triple_validated=found_candidate.triple_validated,
         ))
     return RelocateCandidateList(

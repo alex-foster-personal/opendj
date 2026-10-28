@@ -76,6 +76,8 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'filter', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_open' }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_toggle' }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'track_info_close' }), null);
 	assert.equal(
 		ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' }),
 		null
@@ -146,6 +148,43 @@ test('pairing snapshot freezes deck state, removes only real adjustments, and sa
 	} finally {
 		uninstall();
 		globalThis.fetch = originalFetch;
+		delete globalThis.window;
+	}
+});
+
+test('TOPVIEW-05: the (i) overlay opens and closes through the dispatcher and the query reports it (Codex P1 4300879440)', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		for (const deckId of [1, 2, 3, 4]) pairing.deckStates[deckId].stable_id = null;
+		await assert.rejects(
+			pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' }),
+			/no deck holds a track/
+		);
+		assert.deepEqual(pairing.queryPerformanceState().track_info, { open: false, deck: null, stable_id: null });
+
+		pairing.deckStates[1].stable_id = 'track-a';
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
+		assert.deepEqual(pairing.queryPerformanceState().track_info, { open: true, deck: 1, stable_id: 'track-a' });
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
+		assert.equal(pairing.queryPerformanceState().track_info.open, false, 'a second toggle closes it');
+
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
+		pairing.deckStates[1].stable_id = 'track-b';
+		assert.equal(
+			pairing.queryPerformanceState().track_info.open,
+			false,
+			'the record opened for track-a is not reported open on the deck\'s new track'
+		);
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_close' });
+		// Control: once closed, a toggle opens for the deck's current track.
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_toggle' });
+		assert.deepEqual(pairing.queryPerformanceState().track_info, { open: true, deck: 1, stable_id: 'track-b' });
+		await pairing.dispatchPerformanceCommand({ type: 'track_info_close' });
+		assert.equal(pairing.queryPerformanceState().track_info.open, false);
+	} finally {
+		pairing.deckStates[1].stable_id = null;
+		uninstall();
 		delete globalThis.window;
 	}
 });
@@ -1498,6 +1537,45 @@ test('IOPIN-06 takeover mode is a strict dispatcher command with a query-visible
 	}
 });
 
+test('TOPVIEW-06 two-track AutoPlay has a queue scope and the checkbox uses the typed dispatcher', async () => {
+	// [if] auto_play_two_track has no queue scope [then] every IPC/CLI call throws, [else stop].
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'auto_play_two_track', enabled: true }), null);
+	// [if] the TopBar checkbox writes the pref directly [then] it bypasses the shared dispatcher, [else stop].
+	const source = await readFile('src/lib/components/rb/TopBar.svelte', 'utf8');
+	assert.match(source, /runPerformanceCommandFromUi\(\{\s*type: 'auto_play_two_track',/);
+	assert.doesNotMatch(source, /setAutoPlayTwoDeck\(/);
+});
+
+test('TOPVIEW-01..04 view icons and PAD are typed, query-visible dispatcher commands', async () => {
+	// [if] set_perf_view or show_pads has no queue scope [then] every IPC/CLI call throws, [else stop].
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'set_perf_view', view: 'list' }), null);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'show_pads', enabled: false }), null);
+	// [if] the parser accepts a view outside PERF_VIEWS or an extra key [then] an agent can write a bad pref, [else stop].
+	for (const view of ['waveform', 'list', 'phase-scope', 'phase-meter']) {
+		assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view }), { type: 'set_perf_view', view });
+	}
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view: 'grid' }), /set_perf_view view must be one of/);
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view' }), /set_perf_view view must be one of/);
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'set_perf_view', view: 'list', deck: 1 }));
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: false }), { type: 'show_pads', enabled: false });
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: 'no' }));
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'show_pads', enabled: true, deck: 1 }));
+	// [if] the query snapshot omits either pref [then] an agent cannot observe the controls, [else stop].
+	const ipcSource = await readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8');
+	assert.match(ipcSource, /perf_view: uiPrefs\.perf_view,/);
+	assert.match(ipcSource, /show_pads: uiPrefs\.show_pads,/);
+	assert.match(ipcSource, /command\.type === 'set_perf_view'\) \{\s*setPerfView\(command\.view\);/);
+	assert.match(ipcSource, /command\.type === 'show_pads'\) \{\s*setShowPads\(command\.enabled\);/);
+	// [if] a TopBar control writes the pref directly [then] it bypasses the shared dispatcher, [else stop].
+	const source = await readFile('src/lib/components/rb/TopBar.svelte', 'utf8');
+	for (const view of ['waveform', 'list', 'phase-scope', 'phase-meter']) {
+		assert.match(source, new RegExp(`runPerformanceCommandFromUi\\(\\{ type: 'set_perf_view', view: '${view}' \\}\\)`));
+	}
+	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'show_pads', enabled: !uiPrefs\.show_pads \}\)/);
+	assert.doesNotMatch(source, /setPerfView\(/);
+	assert.doesNotMatch(source, /setShowPads\(/);
+});
+
 test('IOPIN-06 MIDI panel sends takeover radios through the typed dispatcher', async () => {
 	// [if] a takeover radio changes [then] it dispatches the shared command, [else stop].
 	const source = await readFile('src/lib/components/rb/MidiPanel.svelte', 'utf8');
@@ -1693,6 +1771,55 @@ test('master command accepts optional lock and query exposes master_mode', async
 		assert.equal(state.master_mode, 'auto');
 		assert.equal(state.master_reason, null);
 	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+// STEM-77, Codex on #6819: a deck's end-of-job probe names its track, and the
+// check runs at the command's turn in the deck queue, so a load of another
+// track queued ahead of it is never reloaded on the probe's behalf.
+test('stem_load parses an optional stable_id and refuses an empty one', () => {
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2 }), { type: 'stem_load', deck: 2 });
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2, stable_id: 'track-a' }), {
+		type: 'stem_load',
+		deck: 2,
+		stable_id: 'track-a'
+	});
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'stem_load', deck: 2, stable_id: ' ' }), /non-empty string/);
+	assert.deepEqual(ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, stable_id: 'a' }), {
+		type: 'stem_separate',
+		deck: 2,
+		stable_id: 'a'
+	});
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, stable_id: '' }), /non-empty string/);
+	assert.throws(() => ipc.parsePerformanceCommandForTest({ type: 'stem_separate', deck: 2, extra: 'a' }), /unexpected fields/);
+});
+
+test('a stem_load for a track the deck no longer holds does nothing, with no error, toast or deck banner', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	const deck = pairing.deckStates[4];
+	const before = deck.stable_id;
+	try {
+		// The deck now holds track-b: a probe for track-a arrives after the swap.
+		deck.stable_id = 'track-b';
+		await pairing.dispatchPerformanceCommand({ type: 'stem_load', deck: 4, stable_id: 'track-a' });
+		const result = await pairing.runPerformanceCommandFromUi({ type: 'stem_load', deck: 4, stable_id: 'track-a' });
+		assert.equal(result.ok, true, 'skipped, not failed');
+		assert.equal(pairing.performanceCommandStatus.deck_errors[4], null, 'no deck banner');
+		assert.equal(pairing.performanceCommandStatus.last_error, null, 'no command error');
+		// Controls: naming the track the deck holds, or no track at all, is no
+		// skip: both reach the engine, which refuses this unloaded deck for its
+		// own reason (no audio runtime behind the stable_id set above).
+		for (const command of [
+			{ type: 'stem_load', deck: 4, stable_id: 'track-b' },
+			{ type: 'stem_load', deck: 4 }
+		]) {
+			await assert.rejects(pairing.dispatchPerformanceCommand(command), /retryStems/, JSON.stringify(command));
+		}
+	} finally {
+		deck.stable_id = before;
 		uninstall();
 		delete globalThis.window;
 	}

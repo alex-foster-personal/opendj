@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
 from apps.rescue.contract import (
     CONTRACT_VERSION,
@@ -16,7 +16,7 @@ from apps.rescue.contract import (
 from apps.rescue.http import build_service
 
 
-def _snapshot(captured_at_ms: int) -> dict[str, object]:
+def _snapshot(captured_at_ms: int) -> dict[str, JsonValue]:
     return {
         "schema": 1,
         "captured_at_ms": captured_at_ms,
@@ -29,7 +29,7 @@ def _snapshot(captured_at_ms: int) -> dict[str, object]:
 def test_build_service_satisfies_protocol_and_round_trips(tmp_path: Path) -> None:
     service = build_service()
     assert isinstance(service, RescueService)
-    assert CONTRACT_VERSION == "rescue/1"
+    assert CONTRACT_VERSION == "rescue/2"
 
     assert service.read_latest(tmp_path) is None
     receipt = service.append_snapshot(tmp_path, _snapshot(1234))

@@ -176,6 +176,8 @@ class FullSuite(Exception):
 class Selection:
     modules: list[str]
     reasons: dict[str, list[str]] = field(default_factory=dict)
+    #: Every module path in the import graph, so a caller can size the lane universe.
+    graph_paths: list[str] = field(default_factory=list)
 
     def add(self, module: str, rule: str) -> None:
         rules = self.reasons.setdefault(module, [])
@@ -440,7 +442,7 @@ def select_tests(changed: list[str], ignores: list[str], root: Path = REPO) -> S
     graph = Graph.load(root)
     _refuse_unnarrowable(changed, graph)
     universe = lane_universe(list(graph.path_of.values()), ignores, root)
-    selection = Selection(modules=[])
+    selection = Selection(modules=[], graph_paths=list(graph.path_of.values()))
     _select_test_areas(changed, universe, selection)
     reached = reverse_reach(_seed_modules(changed, graph), graph.importers)
     _select_by_conftest(reached, graph, universe, selection)

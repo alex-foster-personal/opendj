@@ -2040,6 +2040,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/energy/backfill/collect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backfill Collect */
+        post: operations["backfill_collect_api_v1_energy_backfill_collect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/energy/backfill/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backfill Plan */
+        post: operations["backfill_plan_api_v1_energy_backfill_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/energy/backfill/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Backfill Share Route
+         * @description Give a complete donor's MIK energy and series to its empty present duplicates.
+         */
+        post: operations["backfill_share_route_api_v1_energy_backfill_share_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/energy/backfill/stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backfill Stage */
+        post: operations["backfill_stage_api_v1_energy_backfill_stage_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/energy/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Energy Status */
+        get: operations["energy_status_api_v1_energy_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/enrich/decisions/{lane}": {
         parameters: {
             query?: never;
@@ -7090,6 +7178,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usb/eject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Eject Usb Volume */
+        post: operations["eject_usb_volume_api_v1_usb_eject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/usb/tracks/{track_id}": {
         parameters: {
             query?: never;
@@ -9289,6 +9394,42 @@ export interface components {
             note?: string | null;
             /** Revision */
             revision: string;
+        };
+        /** CollectIn */
+        CollectIn: {
+            /**
+             * Batch Dir
+             * @description The batch folder a live stage returned.
+             */
+            batch_dir: string;
+            /**
+             * Copy Store First
+             * @description Copy the store and read only the copy.
+             * @default false
+             */
+            copy_store_first: boolean;
+            /**
+             * Delete Copies
+             * @description With live: remove copies whose energy was loaded.
+             * @default false
+             */
+            delete_copies: boolean;
+            /**
+             * Live
+             * @description Write to the library. Without it this is a dry run.
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Share Across Duplicates
+             * @default false
+             */
+            share_across_duplicates: boolean;
+            /**
+             * Store
+             * @description A COPY of the MIK store, or MIK's own file with copy_store_first.
+             */
+            store: string;
         };
         /** CommentArchiveOut */
         CommentArchiveOut: {
@@ -11553,6 +11694,15 @@ export interface components {
             worker_started_at?: number | null;
         };
         /**
+         * JobReenqueueConflictOut
+         * @description 409 body of a re-enqueue: a duplicate stems.separate (structured), or a
+         *     row that cannot be re-enqueued in its state (a sentence).
+         */
+        JobReenqueueConflictOut: {
+            /** Detail */
+            detail: components["schemas"]["StemsJobActiveDetail"] | string;
+        };
+        /**
          * KaraokeLineOut
          * @description One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).
          *
@@ -13447,6 +13597,22 @@ export interface components {
             /** Table */
             table: string;
         };
+        /** PlanIn */
+        PlanIn: {
+            /** Limit */
+            limit?: number | null;
+            /**
+             * Share Across Duplicates
+             * @description Also treat same artist + title with durations within 1 s as one recording.
+             * @default false
+             */
+            share_across_duplicates: boolean;
+            /**
+             * Store
+             * @description A COPY of a MIK store not yet loaded; rows it would settle are left out.
+             */
+            store?: string | null;
+        };
         /** PlanModel */
         PlanModel: {
             /** Authorization Id */
@@ -15231,6 +15397,26 @@ export interface components {
             /** Tracks */
             tracks: number;
         };
+        /** ShareIn */
+        ShareIn: {
+            /**
+             * Live
+             * @description Write to the library. Without it this is a dry run.
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Share Across Duplicates
+             * @description Also treat same artist, title and duration (within 1 s) as one recording.
+             * @default false
+             */
+            share_across_duplicates: boolean;
+            /**
+             * Store
+             * @description A COPY of a MIK store not yet loaded; rows it would settle are held.
+             */
+            store?: string | null;
+        };
         /**
          * ShareRootReanchorOut
          * @description Answer of ``POST /library/share-root/reanchor``.
@@ -15457,6 +15643,33 @@ export interface components {
             rows: unknown[][];
             /** Truncated */
             truncated: boolean;
+        };
+        /** StageIn */
+        StageIn: {
+            /** Limit */
+            limit?: number | null;
+            /**
+             * Live
+             * @description Copy the files. Without it this is a dry run.
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Min Free Bytes
+             * @description Free disk the copies must leave. Default: the library's stored setting.
+             */
+            min_free_bytes?: number | null;
+            /**
+             * Share Across Duplicates
+             * @description Also treat same artist + title with durations within 1 s as one recording.
+             * @default false
+             */
+            share_across_duplicates: boolean;
+            /**
+             * Store
+             * @description A COPY of a MIK store not yet loaded; rows it would settle are left out.
+             */
+            store?: string | null;
         };
         /** StaleCandidateModel */
         StaleCandidateModel: {
@@ -15979,6 +16192,27 @@ export interface components {
             schema: number;
             /** Stable Id */
             stable_id: string;
+        };
+        /**
+         * StemsJobActiveDetail
+         * @description The detail of a 409 refusing a duplicate stems.separate: the job to adopt.
+         */
+        StemsJobActiveDetail: {
+            /**
+             * Code
+             * @constant
+             */
+            code: "stems_job_active";
+            job: components["schemas"]["JobOut"];
+            /** Message */
+            message: string;
+        };
+        /**
+         * StemsJobActiveOut
+         * @description 409 body of `POST /api/v1/jobs` when an active stems.separate already does the work.
+         */
+        StemsJobActiveOut: {
+            detail: components["schemas"]["StemsJobActiveDetail"];
         };
         /**
          * StemsPlanOut
@@ -16600,6 +16834,7 @@ export interface components {
             key_reason?: string | null;
             /** Key Status */
             key_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
+            loudness?: components["schemas"]["TrackLoudnessOut"] | null;
             /** Loudness Reason */
             loudness_reason?: string | null;
             /** Loudness Status */
@@ -16756,6 +16991,7 @@ export interface components {
             key_status?: ("ok" | "failed" | "missing" | "available-not-selected") | null;
             /** Last Played At */
             last_played_at?: string | null;
+            loudness?: components["schemas"]["TrackLoudnessOut"] | null;
             /** Loudness Reason */
             loudness_reason?: string | null;
             /** Loudness Status */
@@ -16810,6 +17046,21 @@ export interface components {
             };
         };
         /**
+         * TrackLoudnessOut
+         * @description AGENT-31: integrated loudness from the loudness lane's projection, or None with why.
+         */
+        TrackLoudnessOut: {
+            /** Lufs */
+            lufs: number | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "missing" | "error";
+        };
+        /**
          * TrackLyricsOut
          * @description Agent-native read model for cached line-synced lyrics only.
          */
@@ -16852,6 +17103,7 @@ export interface components {
             key?: string | null;
             /** Last Played At */
             last_played_at?: string | null;
+            loudness?: components["schemas"]["TrackLoudnessOut"] | null;
             /** Lyrics Available */
             lyrics_available: boolean;
             /** Notes */
@@ -17142,6 +17394,11 @@ export interface components {
              * @default true
              */
             auto_play_maximize_reach: boolean;
+            /**
+             * Auto Play Two Deck
+             * @default false
+             */
+            auto_play_two_deck: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
             /**
              * Available Offline Filter
@@ -17257,6 +17514,12 @@ export interface components {
              */
             perf_tier: "auto" | "low" | "standard" | "high";
             /**
+             * Perf View
+             * @default waveform
+             * @enum {string}
+             */
+            perf_view: "waveform" | "list" | "phase-scope" | "phase-meter";
+            /**
              * Playlist Tree View
              * @default tree
              * @enum {string}
@@ -17272,6 +17535,11 @@ export interface components {
              * @default true
              */
             show_agent_pins: boolean;
+            /**
+             * Show Pads
+             * @default true
+             */
+            show_pads: boolean;
             /**
              * Show Sections
              * @default false
@@ -17312,6 +17580,8 @@ export interface components {
             auto_play_enforce_order?: boolean | null;
             /** Auto Play Maximize Reach */
             auto_play_maximize_reach?: boolean | null;
+            /** Auto Play Two Deck */
+            auto_play_two_deck?: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
             /** Available Offline Filter */
             available_offline_filter?: boolean | null;
@@ -17361,12 +17631,19 @@ export interface components {
             next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /**
+             * Perf View
+             * @enum {string}
+             */
+            perf_view?: "waveform" | "list" | "phase-scope" | "phase-meter";
             /** Playlist Tree View */
             playlist_tree_view?: ("tree" | "column") | null;
             /** Remixes Filter */
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
             show_agent_pins?: boolean | null;
+            /** Show Pads */
+            show_pads?: boolean;
             /** Show Sections */
             show_sections?: boolean | null;
             /** Show Stems */
@@ -17567,6 +17844,49 @@ export interface components {
         /** UsbCapabilityErrorOut */
         UsbCapabilityErrorOut: {
             detail: components["schemas"]["UsbCapabilityDetail"];
+        };
+        /** UsbEjectErrorDetail */
+        UsbEjectErrorDetail: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Ui Title */
+            ui_title?: string | null;
+        };
+        /** UsbEjectErrorOut */
+        UsbEjectErrorOut: {
+            detail: components["schemas"]["UsbEjectErrorDetail"];
+        };
+        /** UsbEjectIn */
+        UsbEjectIn: {
+            /** Mount Path */
+            mount_path: string;
+            /** Volume Id */
+            volume_id: string;
+        };
+        /** UsbEjectOut */
+        UsbEjectOut: {
+            /** Ejected */
+            ejected: boolean;
+            /** Message */
+            message: string;
+            /** Mount Path */
+            mount_path: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * UsbEjectValidationErrorOut
+         * @description FastAPI's own 422 for a malformed request body (a missing ``volume_id``,
+         *     a mistyped field): ``detail`` is its list of field errors, not ``{code,
+         *     message}`` (Sol P1 4286542573).
+         */
+        UsbEjectValidationErrorOut: {
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            }[];
         };
         /** UsbStickCountsOut */
         UsbStickCountsOut: {
@@ -21883,6 +22203,179 @@ export interface operations {
             };
         };
     };
+    backfill_collect_api_v1_energy_backfill_collect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backfill_plan_api_v1_energy_backfill_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backfill_share_route_api_v1_energy_backfill_share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backfill_stage_api_v1_energy_backfill_stage_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StageIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    energy_status_api_v1_energy_status_get: {
+        parameters: {
+            query?: {
+                share_across_duplicates?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     put_decision_api_v1_enrich_decisions__lane__put: {
         parameters: {
             query?: never;
@@ -23475,6 +23968,15 @@ export interface operations {
                     "application/json": components["schemas"]["JobOut"];
                 };
             };
+            /** @description an active stems.separate job already does this work */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemsJobActiveOut"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -23586,6 +24088,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description another active stems.separate job does this work, or the row cannot be re-enqueued */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobReenqueueConflictOut"];
                 };
             };
             /** @description Validation Error */
@@ -30937,6 +31448,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    eject_usb_volume_api_v1_usb_eject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UsbEjectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbEjectOut"];
+                };
+            };
+            /** @description Nothing is mounted at that path. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbEjectErrorOut"];
+                };
+            };
+            /** @description diskutil refused, failed, or the mount is still present after eject. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbEjectErrorOut"];
+                };
+            };
+            /** @description The path is not a direct child of the volumes root ({code, message}), or the request body is malformed, such as a missing volume_id (a list of field errors). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbEjectErrorOut"] | components["schemas"]["UsbEjectValidationErrorOut"];
+                };
+            };
+            /** @description USB discovery is unavailable on this host or build, so eject is too. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsbEjectErrorOut"];
                 };
             };
         };

@@ -1,4 +1,4 @@
-import { _emptyRuntime, type _PendingSegment, type _DeckProcessor, type _DeckRuntime, type DeckTransportClock } from '$lib/rb/deck-runtime';
+import { _controlSegmentAt, _emptyRuntime, type _DeckProcessor, type _DeckRuntime, type DeckTransportClock } from '$lib/rb/deck-runtime';
 export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './master-election';
 import {
 	SILENT_METER_READING,
@@ -101,8 +101,7 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs } from '$lib/rb/engine-clock-reports';
-import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -322,7 +321,6 @@ import {
 	scheduleOffsetStages,
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
-import type { _ClockSegment } from '$lib/player/transport/schedule-math';
 import { createWebAudioPhaseLock } from './phase-lock-webaudio';
 import {
 	_effectivePresentedScheduleAt,
@@ -352,7 +350,6 @@ import type {
 } from '$lib/player/transport/presentation';
 
 // ---------------------------------------------------- extracted re-exports
-//
 // T4 S1. The DSP constants moved to player/constants.ts and the Camelot
 // algebra to player/key/camelot.ts. Everything they used to export from here
 // is re-exported below, so every existing importer of
@@ -596,6 +593,9 @@ export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].aud
 
 // ---------------------------------------------------------------- _helpers
 
+/** AGENT-30: each deck's presented playhead with the AudioContext time it was presented at; steps set ahead on that clock. */
+const _positionAnchor: Record<DeckId, RecordedAnchor | null> = { 1: null, 2: null, 3: null, 4: null };
+const _steps = new ScheduledSteps(() => _ctx?.currentTime ?? null);
 const _applyTrimGain = (deck: DeckId): void => applyTrimStage(_rt[deck].nodes, mixerState.channels[deck].trim, deck, _setParam);
 registerAutoGainApplier(_applyTrimGain); // AUTOGAIN-02: a published auto gain reaches this deck's trim stage
 
@@ -845,7 +845,7 @@ function _resetGraphState(releaseHeadphones: () => void): void {
 	_djOutputNodes = [];
 	_djOutputProfileActive = null;
 	clearDjOutputResolution();
-	_ctx = null;
+	_ctx = null; _steps.cancelAll(); for (const deck of DECK_IDS) _positionAnchor[deck] = null; // a retired context takes its steps and its clock pairings with it (Codex + Sol #7594)
 	resetMasterSilenceWatch();
 	resetPresentationClockStall();
 }
@@ -1088,6 +1088,8 @@ import {
 	LEVEL_HANDOFF_IDLE,
 	masterHandoffMessage,
 	runAutomaticMasterElection,
+	automaticElectionHeld,
+	autoPlayYieldsNow,
 	stepLiveLevelHandoff,
 	reportLevelHandoffFailure,
 	type LevelHandoffState,
@@ -1261,7 +1263,7 @@ function _electionInput(): MasterElectionInput {
 }
 
 function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason; to?: DeckId; levels?: { masterDb: number; toDb: number | null } }): DeckId | null {
-	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
+	if (automaticElectionHeld({ locked: _masterMode === 'locked', force: options?.force === true, planOwnsDecks: autoPlayYieldsNow() })) return _masterDeck;
 	const previous = _masterDeck, next = options?.to ?? electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
 	_assignMaster(next, reason, options?.levels);
 	// Automatic handoff re-joins playing followers (same as setDeckMaster). Queued
@@ -1845,35 +1847,6 @@ async function _resumeSlip(deck: DeckId): Promise<void> {
 	);
 	_clearSlip(deck);
 }
-function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
-	return {
-		active: pending.active,
-		loop: pending.loop,
-		startContextTime: pending.startContextTime,
-		startPositionSec: pending.startPositionSec,
-		tempoRatio: pending.tempoRatio,
-		masterTempoEnabled: pending.masterTempoEnabled ?? true,
-		keyShiftSemitones: pending.keyShiftSemitones ?? 0
-	};
-}
-
-function _controlSegmentAt(rt: _DeckRuntime, contextTime: number): _ClockSegment {
-	let selected: _ClockSegment = {
-		active: rt.controlActive,
-		loop: rt.controlLoop,
-		startContextTime: rt.startCtxTime,
-		startPositionSec: rt.startOffsetSec,
-		tempoRatio: rt.controlTempoRatio,
-		masterTempoEnabled: rt.controlMasterTempoEnabled,
-		keyShiftSemitones: rt.controlKeyShiftSemitones
-	};
-	for (const pending of rt.pending) {
-		if (pending.startContextTime > contextTime) break;
-		selected = _pendingClockSegment(pending);
-	}
-	return selected;
-}
-
 function _commitPendingIfDue(deck: DeckId): void {
 	if (_ctx === null) return;
 	const rt = _rt[deck];
@@ -2012,6 +1985,14 @@ function _publishPresentedTransport(
 	const st = deckStates[deck];
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
+	// AGENT-30: one observation at its render time (fader/EQ are upstream of the CUEOUT-14 delay); a sample-clock fallback has no true pairing, so no anchor (Codex #7594)
+	const delayMs = mixerState.headphones.master_delay_ms;
+	_positionAnchor[deck] = observation.clock_source === 'sample' ? null : {
+		position_ms: st.position_ms,
+		context_sec: outputTimestamp.contextTime - masterDelaySeconds(delayMs),
+		pitch: st.pitch,
+		basis: { timeline: rt.presentation, revision: rt.presentation.presented_revision, master_delay_ms: delayMs }
+	};
 	st.audible = observation.audible;
 	notePositionSample(deck, st, presentedSampleAtMs(observation, outputTimestamp)); // every playhead projects from this instant (ANIM-CLOCK-01)
 	st.transport_pending = observation.transport_pending || _reanchorRampPending(rt);
@@ -2657,8 +2638,8 @@ const _phaseLock = createWebAudioPhaseLock({ // NAE-19; bookkeeping lives in pha
 	beats: (deck) => deckStates[deck].anlz?.beatgrid.beats ?? [], positionSec: _projectPositionAt,
 	pitchRangePct: (deck) => pitchRanges[deck], loopEngaged: (deck) => deckStates[deck].loop?.engaged === true,
 	scheduleTempo: (deck, ratio) => _scheduleDeck(deck, _futureScheduleTime(deck), (when) => _projectPositionAt(deck, when), true, ratio),
-	resync: (master, deck) => _synchronizeFollowers(master, [deck]), reportError: (deck, message) => (deckStates[deck].sync_error = message)
-});
+	resync: (master, deck) => _synchronizeFollowers(master, [deck]), reportError: (deck, message) => (deckStates[deck].sync_error = message) });
+export const beatSyncFold = _phaseLock.normalizationOf; // TOPVIEW-02/03: Beat Sync's tempo fold for a deck, null with no lock (Sol P1 4301847502, 4349021851)
 const _beatgridGuards = createBeatgridResyncGuards({
 	ports: _beatgridResyncPorts,
 	deckRuntime: (deck) => _rt[deck],
@@ -2835,7 +2816,6 @@ function _landHeldStems(
 	});
 }
 
-
 /**
  * LAZY-STEMS. The whole secondary load: probe, fetch, decode, build, swap.
  * Runs AFTER the deck is playable and is never awaited by `load`.
@@ -2972,6 +2952,7 @@ class RbAudioEngine implements AudioEngine {
 		const processors: _DeckProcessor[] = [];
 		const nodes: AudioNode[] = [];
 		_engineSession += 1;
+		_steps.cancelAll(); // a deferred mirror write never lands on the next session (Codex #7594)
 		_phaseLock.clearAll();
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
@@ -3607,12 +3588,19 @@ class RbAudioEngine implements AudioEngine {
 		return launchAtContextSec;
 	}
 
+	/** AGENT-30: the deck's presented playhead and the AudioContext time it was presented at, while still valid. */
+	positionAnchor(deck: DeckId): PositionAnchor | null {
+		const p = _rt[deck].presentation, st = deckStates[deck], delayMs = mixerState.headphones.master_delay_ms;
+		return validAnchor(_positionAnchor[deck], { timeline: p, desired_revision: p.desired_revision, presented_revision: p.presented_revision, playing: st.playing, loop_active: st.loop?.engaged === true, master_delay_ms: delayMs });
+	}
+
 	/** The engine's AudioContext clock, for projecting an armed hot-cue
 	 * trigger's remaining wait without exposing the context itself. */
 	contextTimeNowSec(): number {
 		if (_ctx === null) throw new Error('contextTimeNowSec: audio graph not initialised');
 		return _ctx.currentTime;
 	}
+	stepState(stepId: string): 'waiting' | 'landed' | 'cancelled' | 'lost' | null { return _steps.state(stepId); } forgetStep(stepId: string): void { _steps.forget(stepId); } // AGENT-30: owned here, never inferred; kept until its runner forgets it
 
 	async setPitch(deck: DeckId, ratio: number): Promise<void> {
 		await this.setTempoRatio(deck, ratio);
@@ -4276,6 +4264,7 @@ class RbAudioEngine implements AudioEngine {
 	setEq(deck: DeckId, band: EqBand, value: number, pressT0Ms?: number): void {
 		assertUnitRange('setEq value', value);
 		const ch = mixerState.channels[deck], nodes = _rt[deck].nodes, db = eqDbFromKnob(value);
+		_steps.cancelPlain(`eq:${deck}:${band}`, null); // the ramp below cancels the automation itself
 		if (band === 'low') ch.eq_low = value;
 		else if (band === 'mid') ch.eq_mid = value;
 		else if (band === 'high') ch.eq_high = value;
@@ -4305,9 +4294,19 @@ class RbAudioEngine implements AudioEngine {
 		assertUnitRange('setFader value', value);
 		mixerState.channels[deck].fader = value;
 		const nodes = _rt[deck].nodes;
+		_steps.cancelPlain(`fader:${deck}`, nodes === null ? null : nodes.fader.gain); // a plain set wins over a waiting step
 		if (nodes !== null) _setParam(nodes.fader.gain, value);
 		_maybeHandoffOnAir();
 		if (_ctx !== null) logMixerApply(FADER_APPLY_KIND, deck, pressT0Ms, _ctx.currentTime);
+	}
+
+	/** AGENT-30: a fader or EQ step that starts on `atContextSec`; the mirror (and the level handoff) take it when it lands. */
+	scheduleStep(deck: DeckId, control: 'fader' | EqBand, value: number, atContextSec: number, stepId: string, nodes = _rt[deck].nodes, ch = mixerState.channels[deck]): void {
+		assertUnitRange('scheduleStep value', value);
+		const param = nodes === null ? null : control === 'fader' ? nodes.fader.gain : control === 'low' ? nodes.low.gain : control === 'mid' ? nodes.mid.gain : nodes.high.gain; if (param === null) throw new Error(`no_audio_param: deck ${deck} has no audio graph, so step ${stepId} has no ${control} AudioParam to automate`); // Sol P1 #7594: refused, never queued with no audio
+		const key = control === 'fader' ? `fader:${deck}` : `eq:${deck}:${control}`;
+		const startAudio = (at: number) => control === 'fader' ? param.setTargetAtTime(value, at, PARAM_SMOOTH_S) : applyEqRamp(param, eqDbFromKnob(value), at, PARAM_SMOOTH_S);
+		_steps.schedule(stepId, key, atContextSec, startAudio, () => { ch[control === 'fader' ? 'fader' : (`eq_${control}` as const)] = value; _maybeHandoffOnAir(); });
 	}
 
 	setCrossfader(value: number, pressT0Ms?: number): void {

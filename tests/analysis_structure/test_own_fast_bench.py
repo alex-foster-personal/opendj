@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.bench.own_fast_structure import (
+from apps.analysis_structure.bench import (
     agreement_from_counts,
     boundary_prf,
     frame_counts,

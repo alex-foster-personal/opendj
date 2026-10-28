@@ -48,6 +48,20 @@ Requirements (mini-PRD):
       PromotionConflict, never a silent re-point
   ✔︎ ✅ ``--json`` on every subcommand (agent-native parity), and
     ``--data-dir`` so a worktree can point at the primary checkout's data.
+  ✔︎ ✅ 🎯 ``load --sources-batch <folder> --library-root <root>``: bind a COPY
+    batch through its ``.sources.txt`` (:mod:`apps.mik.sources_match`).
+    [if] a copy has one source line that equals one live row [then] it resolves
+    [if] a line equals zero or several rows [then] unmatched with a reason, never guessed
+    [if] a store song is outside the batch folder [then] ignored and counted
+  ✔︎ ✅ 🎯 duplicate copies of one recording share energy
+    (:mod:`apps.mik.duplicates`; ``--share-across-duplicates`` adds the
+    artist + title + 1 s rule).
+    [if] ambiguous candidates are all one recording [then] each gets scalar + series
+    [if] copies offer different energies to one row [then ⛔️] none is written
+  ✔︎ ✅ 🎯 ``backfill status|plan|stage|collect`` (:mod:`apps.mik.cli_backfill`).
+    [if] the buckets do not sum to the present denominator [then ⛔️]
+    [if] stage or collect runs without ``--live`` [then] nothing is copied or written
+    [if] free disk would drop below the floor [then ⛔️] stage refuses
   → enabling ``apps/tags/collect.py::default_fetch_mik`` and the
     ``apps/tags/unify.py`` precedence corrections: OUT OF SCOPE here, separate
     PR. This module deliberately only provides the reader + loader they need.
@@ -71,7 +85,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from apps.shared.equivalence import verdict_path
 from apps.shared.mik_energy import readable_mik_energy
 from apps.shared.platform_paths import load_path_map
 from apps.shared.scan_mass_missing import MassMissingError
@@ -79,9 +92,10 @@ from apps.shared.state import db as state_db
 
 from . import availability as avail
 from . import load as loader
-from . import match as matcher
 from . import mikdb
-from .cli_common import UNVERIFIED_FLAG, _emit, _gate, _state_db_path
+from .cli_backfill import add_backfill_parser
+from .cli_common import UNVERIFIED_FLAG, _emit, _state_db_path
+from .cli_load import _read_and_match, cmd_load
 from .cli_promote import cmd_promote
 
 # ------------------------------------------------------------ availability
@@ -229,33 +243,6 @@ def cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
-# ------------------------------------------------------------------- match
-
-
-def _read_and_match(args: argparse.Namespace):
-    """``match`` is read-only, and ``load`` is dry-run unless ``--live``. Open
-    the state DB accordingly: ``open_rw`` applies pending schema migrations
-    and the machine-ID backfill before returning, so opening it for a
-    read-only or dry-run command would silently mutate ``state.db`` despite
-    the command's own read-only/dry-run contract.
-    """
-    store = Path(args.store).expanduser() if args.store else mikdb.DEFAULT_STORE
-    mik_conn = mikdb.open_ro(store)
-    try:
-        songs, read_stats = mikdb.read_songs(mik_conn)
-    finally:
-        mik_conn.close()
-    path = _state_db_path(args)
-    # Same open_dry_run rationale as cmd_availability: build_plan() below
-    # queries v8-only tables (unmatched_source_analysis) even in dry-run, so
-    # a plain open_ro against an un-migrated real database would raise
-    # "no such table" while merely previewing --live.
-    conn = state_db.open_rw(path) if args.live else state_db.open_dry_run(path)
-    index = matcher.TrackIndex.from_conn(conn)
-    report = matcher.match_songs(songs, index, allow_fuzzy=args.allow_fuzzy)
-    return songs, read_stats, conn, index, report, store, path
-
-
 def cmd_match(args: argparse.Namespace) -> int:
     songs, _stats, conn, index, report, store, path = _read_and_match(args)
     try:
@@ -329,114 +316,17 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     return 0
 
 
-# -------------------------------------------------------------------- load
-
-
-def _load_plan_detail_lines(plan: loader.LoadPlan, applied: dict[str, Any] | None) -> list[str]:
-    """The optional per-block detail lines for ``cmd_load``'s report, split
-    out to keep it under the complexity ceiling: each block is independent
-    and only appears when that condition on the plan actually fired."""
-    lines: list[str] = []
-    if plan.blocked_by_gate:
-        lines.append(
-            "  BLOCKED by equivalence gate: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(plan.blocked_by_gate.items()))
-            + f"  (run unit B, or force with {UNVERIFIED_FLAG})"
-        )
-    if plan.blocked_by_precedence:
-        lines.append(
-            "  skipped, a higher-precedence source already holds the field: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(plan.blocked_by_precedence.items()))
-        )
-    if plan.blocked_by_promotion_conflict:
-        lines.append(
-            "  skipped, already promoted to a different track: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(plan.blocked_by_promotion_conflict.items()))
-        )
-    if plan.blocked_by_key_floor:
-        lines.append(
-            f"  skipped, MIK key confidence below "
-            f"{loader.KEY_CONFIDENCE_FLOOR} (rekordbox wins outright): "
-            f"{plan.blocked_by_key_floor}"
-        )
-    if plan.key_review_band:
-        lines.append(
-            f"  FLAGGED for review, MIK key confidence in the "
-            f"{loader.KEY_CONFIDENCE_FLOOR}-{loader.KEY_CONFIDENCE_MIK_WINS} "
-            f"band and rekordbox disagrees on ownership: "
-            f"{len(plan.key_review_band)} tracks (never silently overwritten)"
-        )
-    if applied is not None:
-        lines.append("  applied: " + ", ".join(f"{k}={v}" for k, v in sorted(applied.items())))
-    else:
-        lines.append("  (dry-run: pass --live to write)")
-    return lines
-
-
-def cmd_load(args: argparse.Namespace) -> int:
-    songs, _stats, conn, _index, report, store, path = _read_and_match(args)
-    gate = _gate(args, mik_store=store)
-    try:
-        plan = loader.build_plan(
-            songs,
-            report,
-            gate,
-            conn,
-            overwrite_lower_precedence=args.overwrite_lower_precedence,
-        )
-        applied = None
-        if args.live:
-            result = loader.apply_plan(conn, plan)
-            applied = {
-                "fields_written": result.fields_written,
-                "fields_unchanged": result.fields_unchanged,
-                "segment_tracks": result.segment_tracks,
-                "segment_rows": result.segment_rows,
-                "segment_tracks_unchanged": result.segment_tracks_unchanged,
-                "segment_rows_unchanged": result.segment_rows_unchanged,
-                "staged_written": result.staged_written,
-                "staged_unchanged": result.staged_unchanged,
-            }
-        payload: dict[str, Any] = {
-            "mode": "live" if args.live else "dry-run",
-            "store": str(store),
-            "state_db": str(path),
-            "verdict_file": str(verdict_path(avail.resolve_data_dir(args.data_dir))),
-            "verdict_file_present": gate.file_present,
-            "equivalence": plan.gate_summary,
-            "allow_unverified": gate.allow_unverified,
-            "planned": {
-                "field_writes": len(plan.field_writes),
-                "segment_tracks": len(plan.segment_writes),
-                "segment_rows": plan.segment_row_count,
-                "staged_rows": len(plan.staged),
-            },
-            "blocked_by_gate": plan.blocked_by_gate,
-            "blocked_by_precedence": plan.blocked_by_precedence,
-            "blocked_by_promotion_conflict": plan.blocked_by_promotion_conflict,
-            "blocked_by_key_confidence_floor": plan.blocked_by_key_floor,
-            "key_review_band_flagged": len(plan.key_review_band),
-            "source_had_no_value": plan.no_value,
-            "applied": applied,
-        }
-    finally:
-        conn.close()
-    lines = [
-        f"[{payload['mode']}] MIK load into {path}",
-        f"  verdict file: {payload['verdict_file']} "
-        f"({'present' if gate.file_present else 'ABSENT -> all fields untested'})",
-        ("  equivalence: " + ", ".join(f"{k}={v}" for k, v in sorted(plan.gate_summary.items()))),
-        f"  planned: {payload['planned']['field_writes']} track_fields, "
-        f"{payload['planned']['segment_rows']} segment rows across "
-        f"{payload['planned']['segment_tracks']} tracks, "
-        f"{payload['planned']['staged_rows']} unmatched_source_analysis rows",
-    ]
-    lines.extend(_load_plan_detail_lines(plan, applied))
-    _emit(payload, as_json=args.json, lines=lines)
-    return 0
-
-
 # --------------------------------------------------------------- argparse
+
+
+def _parse_fields(raw: str) -> frozenset[str]:
+    names = frozenset(part.strip() for part in raw.split(",") if part.strip())
+    unknown = names - frozenset(loader.GATED_FIELDS)
+    if unknown or not names:
+        raise argparse.ArgumentTypeError(
+            f"unknown field(s) {sorted(unknown)}; choose from {list(loader.GATED_FIELDS)}"
+        )
+    return names
 
 
 def _common_options() -> argparse.ArgumentParser:
@@ -497,6 +387,35 @@ def _common_options() -> argparse.ArgumentParser:
         action="store_true",
         help="promote only: re-match pending staged rows against tracks as it is now",
     )
+    parser.add_argument(
+        "--fields",
+        type=_parse_fields,
+        default=None,
+        help="load only: comma-separated subset of "
+        + ",".join(loader.GATED_FIELDS)
+        + " (default: all). An unnamed field is neither written nor staged",
+    )
+    parser.add_argument(
+        "--sources-batch",
+        default=None,
+        help="load only: a copy-batch folder holding .sources.txt. Binds each song "
+        "under that folder to its library row by path equality instead of the "
+        "three tiers; songs outside the folder are ignored and counted",
+    )
+    parser.add_argument(
+        "--library-root",
+        default=None,
+        help="load only, with --sources-batch: the mounted root the originals sit under",
+    )
+    parser.add_argument(
+        "--share-across-duplicates",
+        action="store_true",
+        help="load/backfill: also treat rows with the same normalized artist and "
+        "title AND durations within 1 s as one recording, so a duplicate copy "
+        "receives the energy scalar and series. Off by default: without it only "
+        "rows the app already knows are one recording (equal content or audio "
+        "hash) share",
+    )
     parser.add_argument("--source-row-id", default=None, help="promote only")
     parser.add_argument("--stable-id", default=None, help="promote only")
     return parser
@@ -528,6 +447,7 @@ def build_parser() -> argparse.ArgumentParser:
                 help="override LIBM-41: allow a scan that drops more than "
                 "50% of previously present files (including to zero)",
             )
+    add_backfill_parser(sub, _common_options)
     return parser
 
 

@@ -19,6 +19,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from apps.opendj_cli.catalog import RAMPABLE_TYPES, VERBS, Expectation
@@ -39,6 +41,7 @@ _SAMPLE_TOKENS = (
     "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto",
+    "phase-meter",
 )
 
 
@@ -159,6 +162,16 @@ def test_waveform_seek_builds_the_bus_command_with_snap() -> None:
         parse_invocation(["waveform_seek", "1", "0", "instant"])
 
 
+def test_set_perf_view_and_show_pads_build_the_bus_commands() -> None:
+    """[if] the top bar's view icons or PAD button have no verb [then] an agent cannot drive them, [else stop]."""
+    assert parse_invocation(["set_perf_view", "phase-scope"]).command == {
+        "type": "set_perf_view", "view": "phase-scope",
+    }
+    assert parse_invocation(["show_pads", "false"]).command == {"type": "show_pads", "enabled": False}
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_perf_view", "grid"])
+
+
 def test_set_waveform_design_builds_the_bus_command() -> None:
     assert parse_invocation(["set_waveform_design", "tri-band"]).command == {
         "type": "set_waveform_design",
@@ -203,9 +216,15 @@ def test_a_duration_without_a_unit_is_refused() -> None:
 
 
 def test_the_rampable_types_match_the_pages_own_ramp_guard() -> None:
-    """agent-orders.ts refuses a ramp over anything but these four."""
-
-    assert {"eq", "fader", "trim", "filter", "stem_gain"} == RAMPABLE_TYPES
+    """agent-orders.ts refuses a ramp over anything but these (AGENT-24 added
+    crossfader and tempo). Read off the page's own RAMP_TYPES set, so the two
+    lists cannot drift."""
+    source = (ts_contract.REPO_ROOT / "apps/webui/frontend/src/lib/rb/agent-orders.ts").read_text()
+    match = re.search(r"const RAMP_TYPES = new Set\(\[([^\]]*)\]\)", source)
+    assert match is not None, "agent-orders.ts no longer declares RAMP_TYPES"
+    page_types = set(re.findall(r"'([a-z_]+)'", match.group(1)))
+    assert page_types == RAMPABLE_TYPES
+    assert {"eq", "fader", "trim", "filter", "stem_gain", "crossfader", "tempo"} == RAMPABLE_TYPES
 
 
 def test_anchors_are_the_three_the_duration_type_declares() -> None:

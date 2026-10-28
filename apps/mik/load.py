@@ -1,7 +1,7 @@
 """The gated MIK loader: plan first, write only what has been proven.
 
 Three destinations, chosen by whether we know which track the analysis belongs
-to (see ``docs/analysis-retention.md``):
+to (see ``(private path)``):
 
 ==========================  ==================================================
 destination                 for
@@ -52,7 +52,7 @@ from typing import Any
 from apps.shared.state import provenance as _prov
 
 from . import SOURCE
-from .load_plan import build_plan
+from .load_plan import _field_versions, build_plan, current_promotions, series_version, staged_versions
 from .load_types import (
     GATED_FIELDS,
     KEY_CONFIDENCE_FLOOR,
@@ -84,6 +84,16 @@ class ApplyResult:
     staged_written: int = 0
     staged_unchanged: int = 0
     verification_rows: int = 0
+    blocked_at_write: int = 0
+    """Writes held because their target changed source after planning."""
+    held_rows: frozenset[str] = frozenset()
+    stale_plan: bool = False
+    staged_held: int = 0
+    series_held: int = 0
+    """Series writes skipped because the stored series changed after planning."""
+    """Staged writes skipped because their row changed after planning."""
+    """``LoadPlan.still_valid`` failed under the lock: nothing was written."""
+    """Rows with any held write: nothing about them was delivered by this apply."""
 
 
 def record_verification(
@@ -160,6 +170,107 @@ def _series_matches(conn: sqlite3.Connection, write: SegmentWrite) -> bool:
     return True
 
 
+def _now_outranked(conn: sqlite3.Connection, plan: LoadPlan) -> set[tuple[str, str]]:
+    """Field writes whose target changed source AFTER planning. Read under the write lock.
+
+    ``build_plan`` decides precedence against sources read before
+    ``BEGIN IMMEDIATE``. A writer committing in between (any source, MIK
+    included: a share planned against an empty field must not overwrite the
+    track's own analysis collected meanwhile) voids that decision, so the
+    write is held for the next run to re-plan.
+    """
+    names = sorted({write.field_name for write in plan.field_writes})
+    if not names:
+        return set()
+    current = _field_versions(conn, names)
+    return {
+        (write.stable_id, write.field_name)
+        for write in plan.field_writes
+        if current.get((write.stable_id, write.field_name)) != write.planned_version
+    }
+
+
+def _write_fields(
+    conn: sqlite3.Connection,
+    plan: LoadPlan,
+    held: set[tuple[str, str]],
+    result: ApplyResult,
+    *,
+    stamp: str,
+    actor: str,
+) -> None:
+    """Every planned field write not held at write time, through provenance."""
+    for write in plan.field_writes:
+        if (write.stable_id, write.field_name) in held:
+            continue
+        changed = _prov.write_field(
+            conn,
+            stable_id=write.stable_id,
+            field_name=write.field_name,
+            value=write.value,
+            source=SOURCE,  # type: ignore[arg-type]
+            modified_at=write.modified_at,
+            confidence=write.confidence,
+            actor=f"{actor}:{write.tier}",
+            now=stamp,
+        )
+        if changed:
+            result.fields_written += 1
+        else:
+            result.fields_unchanged += 1
+
+
+def _write_segments(
+    conn: sqlite3.Connection, plan: LoadPlan, held: set[tuple[str, str]], result: ApplyResult
+) -> None:
+    """Every planned series whose energy write was not held, replaced whole."""
+    for segment_write in plan.segment_writes:
+        if (segment_write.stable_id, "energy") in held:
+            continue  # a series is never written without its own analysis's value
+        if _series_matches(conn, segment_write):
+            result.segment_tracks_unchanged += 1
+            result.segment_rows_unchanged += len(segment_write.segments)
+            continue
+        # Replace the whole series for this (track, source): a partial
+        # overlay of an old and a new analysis would be a chimera.
+        conn.execute(
+            "DELETE FROM track_energy_segments WHERE stable_id = ? AND source = ?",
+            (segment_write.stable_id, SOURCE),
+        )
+        conn.executemany(
+            "INSERT INTO track_energy_segments(stable_id, seq, start_ms, "
+            "length_ms, energy, source, confidence, start_clamped, "
+            "modified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    segment_write.stable_id,
+                    seg.seq,
+                    seg.start_ms,
+                    seg.length_ms,
+                    seg.energy,
+                    SOURCE,
+                    segment_write.confidence,
+                    int(seg.start_clamped),
+                    segment_write.modified_at,
+                )
+                for seg in segment_write.segments
+            ],
+        )
+        result.segment_tracks += 1
+        result.segment_rows += len(segment_write.segments)
+
+
+def _plan_is_stale(conn: sqlite3.Connection, plan: LoadPlan) -> bool:
+    """True when a promotion or the caller's own check moved since planning. Read under the lock.
+
+    A promotion committed after planning binds a source row to another track,
+    so every match and share this plan made from it is stale.
+    """
+    if plan.promotions is not None and current_promotions(conn) != plan.promotions:
+        return True
+    return plan.still_valid is not None and not plan.still_valid(conn)
+
+
 def apply_plan(
     conn: sqlite3.Connection,
     plan: LoadPlan,
@@ -179,60 +290,32 @@ def apply_plan(
     result = ApplyResult()
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if _plan_is_stale(conn, plan):
+            conn.execute("ROLLBACK")
+            result.stale_plan = True
+            return result
         result.verification_rows = record_verification(
             conn, plan.verification, now=stamp
         )
-        for write in plan.field_writes:
-            changed = _prov.write_field(
-                conn,
-                stable_id=write.stable_id,
-                field_name=write.field_name,
-                value=write.value,
-                source=SOURCE,  # type: ignore[arg-type]
-                modified_at=write.modified_at,
-                confidence=write.confidence,
-                actor=f"{actor}:{write.tier}",
-                now=stamp,
-            )
-            if changed:
-                result.fields_written += 1
-            else:
-                result.fields_unchanged += 1
-
+        held = _now_outranked(conn, plan)
+        # A series replaced after planning holds the row's scalar too: one
+        # row never ends up with this analysis's value and another's series.
         for segment_write in plan.segment_writes:
-            if _series_matches(conn, segment_write):
-                result.segment_tracks_unchanged += 1
-                result.segment_rows_unchanged += len(segment_write.segments)
-                continue
-            # Replace the whole series for this (track, source): a partial
-            # overlay of an old and a new analysis would be a chimera.
-            conn.execute(
-                "DELETE FROM track_energy_segments WHERE stable_id = ? AND source = ?",
-                (segment_write.stable_id, SOURCE),
-            )
-            conn.executemany(
-                "INSERT INTO track_energy_segments(stable_id, seq, start_ms, "
-                "length_ms, energy, source, confidence, start_clamped, "
-                "modified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    (
-                        segment_write.stable_id,
-                        seg.seq,
-                        seg.start_ms,
-                        seg.length_ms,
-                        seg.energy,
-                        SOURCE,
-                        segment_write.confidence,
-                        int(seg.start_clamped),
-                        segment_write.modified_at,
-                    )
-                    for seg in segment_write.segments
-                ],
-            )
-            result.segment_tracks += 1
-            result.segment_rows += len(segment_write.segments)
+            if series_version(conn, segment_write.stable_id) != plan.series_versions.get(segment_write.stable_id, ()):
+                held.add((segment_write.stable_id, "energy"))
+                result.series_held += 1
+        result.blocked_at_write = len(held)
+        result.held_rows = frozenset(stable_id for stable_id, _field in held)
+        _write_fields(conn, plan, held, result, stamp=stamp, actor=actor)
 
+        _write_segments(conn, plan, held, result)
+
+        staged_now = staged_versions(conn, plan.staged_versions)
         for staged in plan.staged:
+            key = (staged.source_row_id, staged.field_name)
+            if staged_now.get(key) != plan.staged_versions.get(key):
+                result.staged_held += 1  # another run staged this row after planning
+                continue
             cursor = conn.execute(
                 "INSERT INTO unmatched_source_analysis(source, source_row_id, "
                 "field_name, value_json, unmatched_reason, confidence, title, "

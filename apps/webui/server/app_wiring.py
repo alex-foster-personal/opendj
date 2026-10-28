@@ -99,6 +99,7 @@ from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import energy as energy_routes
 from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
@@ -166,6 +167,7 @@ from .routes import track_handoff as track_handoff_routes
 from .routes import track_plays as track_plays_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
+from .routes import usb_eject as usb_eject_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_tracks as usb_tracks_routes
 from .routes import usb_volumes as usb_volumes_routes
@@ -681,6 +683,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_queue_routes.router,
         library_jobs_routes.router,
         genres_routes.router,
+        energy_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
         enrich_routes.router,
@@ -712,6 +715,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         cloudsync_fleet_routes.router,
         spotify_routes.router,
         usb_export_routes.router,
+        usb_eject_routes.router,
         usb_volumes_routes.router,
         usb_tracks_routes.router,
     )

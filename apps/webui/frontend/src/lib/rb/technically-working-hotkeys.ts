@@ -38,7 +38,8 @@ const EDGE_HOVER_PX = 40;
 // whether to INITIATE a reveal would let the pointer "discover" a region it
 // cannot see yet; it may only keep one open that proximity already opened.
 const EDGE_REGION_SELECTOR: Record<EdgeRegion, string> = {
-	top: '.rb-wavestack',
+	// A phase view replaces the wave stack in the top region (TOPVIEW-02/03).
+	top: '.rb-wavestack, .rb-phase-view',
 	bottom: '.rb-browser',
 	left: '.deck-col:first-child',
 	right: '.deck-col:last-child'

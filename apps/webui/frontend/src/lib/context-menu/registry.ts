@@ -56,8 +56,9 @@ export interface MenuContextByKind {
 	playlist: { forbidDuplicates: boolean };
 	'playlist-folder': Record<string, never>;
 	smartlist: Record<string, never>;
-	/** Taglists, autolists, Missing Tracks, Recently Deleted, stick trees. */
-	'tree-readonly': Record<string, never>;
+	/** Taglists, autolists, Missing Tracks, Recently Deleted, stick trees.
+	 * `stick` is true only inside a plugged-in USB stick's tree (USBEXP-04). */
+	'tree-readonly': { stick: boolean };
 	/** Library source tabs and the icon rail. */
 	'library-source': Record<string, never>;
 	deck: { loaded: boolean; playing: boolean; looping: boolean; synced: boolean; master: boolean };
@@ -298,7 +299,14 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			command: 'playlist.update',
 			checked: (ctx) => ctx.forbidDuplicates
 		},
-		{ id: 'reveal', label: 'Reveal in tree', command: 'playlist.select' }
+		{ id: 'reveal', label: 'Reveal in tree', command: 'playlist.select' },
+		{
+			// USBEXP-04: opens the USB export screen with this playlist's name.
+			id: 'export-usb',
+			label: 'Export to USB...',
+			command: 'usb.export.plan',
+			title: () => 'Open the USB export screen for this playlist (POST /api/v1/usb-export/plan)'
+		}
 	],
 	'playlist-folder': [
 		...newItems<'playlist-folder'>(),
@@ -311,9 +319,32 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 		{ id: 'delete', label: 'Delete', command: 'smartlist.delete' },
 		{ id: 'duplicate', label: 'Duplicate', command: 'smartlist.duplicate' }
 	],
-	// Deliberately empty: these surfaces have no write API behind them, and an
-	// empty menu here means "suppress the wrong menu", not "show the browser's".
-	'tree-readonly': [],
+	// Empty off a stick: those surfaces have no write API behind them, and an
+	// empty menu means "suppress the wrong menu", not "show the browser's".
+	// A USB stick's tree gets the device rows (USBEXP-04).
+	'tree-readonly': [
+		{
+			id: 'usb-status',
+			label: 'USB status...',
+			command: 'usb.volumes',
+			when: (ctx) => ctx.stick,
+			title: () => 'Open the USB export screen: sticks, access and export (GET /api/v1/usb/volumes)'
+		},
+		{
+			id: 'usb-sync',
+			label: 'Sync to stick',
+			command: 'usb.export.plan',
+			when: (ctx) => ctx.stick,
+			disabledWhen: () =>
+				'no playlist sync to a stick yet: use Export to USB on a playlist, which writes exportLibrary.db only'
+		},
+		{
+			id: 'usb-eject',
+			label: 'Eject stick',
+			command: 'usb.eject',
+			when: (ctx) => ctx.stick
+		}
+	],
 	'library-source': [],
 	deck: [
 		{

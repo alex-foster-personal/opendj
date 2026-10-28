@@ -31,6 +31,23 @@ export function closeQuitConfirm(): void {
 	_notify();
 }
 
+const quitVetoes = new Set<() => boolean>();
+
+/** Something that must not be torn down mid-operation (a USB write) registers
+ * a veto: it returns true, after showing why, to refuse a user's quit. */
+export function registerQuitVeto(veto: () => boolean): () => void {
+	quitVetoes.add(veto);
+	return () => quitVetoes.delete(veto);
+}
+
+/** True when any registered veto refuses the quit right now. */
+export function quitVetoed(): boolean {
+	for (const veto of quitVetoes) {
+		if (veto()) return true;
+	}
+	return false;
+}
+
 export const quitConfirmOverlay = {
 	get open() {
 		return open;

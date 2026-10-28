@@ -1,0 +1,1 @@
+{"volumes": [{"id": "vol:A1B2C3D4-0000-0000-0000-000000000001", "name": "GIG-A", "mount_path": "/Volumes/GIG-A", "kind": "rekordbox", "present": true, "simulated": false, "is_music": true, "role": "usb_stick", "protocol": "USB", "hide_reason": null, "access": "ok"}], "scanned_at": 1000.0, "watching": true}

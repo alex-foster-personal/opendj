@@ -254,7 +254,8 @@ def runner_locked_export(repo_root: Path) -> str:
         raise PayloadBeatgridError("uv is not on PATH; cannot export the beatgrid runner deps")
     result = subprocess.run(
         ["uv", "export", "--script", str(repo_root / RUNNER_SCRIPT_RELATIVE),
-         "--locked", "--no-hashes", "--format", "requirements-txt", "--quiet"],
+         "--locked", "--no-hashes", "--format", "requirements-txt", "--quiet",
+         "--emit-index-url"],
         cwd=repo_root, capture_output=True, text=True, check=False,
     )
     if result.returncode != 0:
@@ -264,6 +265,45 @@ def runner_locked_export(repo_root: Path) -> str:
             f"{RUNNER_SCRIPT_RELATIVE}`):\n{result.stderr}"
         )
     return result.stdout
+
+
+def runner_index_args(export_text: str, platform: str) -> list[str]:
+    """The ``uv pip install`` index flags the runner closure needs on ``platform``.
+
+    The runner lock pins torch and torchaudio with a LOCAL version label on
+    Linux (``2.14.0+cpu``) and Windows (``+cu126``), and only the PyTorch
+    index serves those. ``uv export`` drops each requirement's index unless
+    asked, so the plain install could resolve ``torch==2.14.0+cpu`` against
+    PyPI alone and failed on Linux ("there is no version of torch==2.14.0+cpu",
+    Fri 9 Oct 2026). The export's ``--extra-index-url`` lines are passed back
+    to the install, with ``unsafe-best-match`` so a pin the PyTorch index
+    also carries (numpy, filelock) still installs at its locked version.
+
+    macOS gets no flags: its pins are plain PyPI versions, and the darwin
+    install stays byte-for-byte what the Tauri ``just dmg`` path ran before.
+    """
+    if platform == "darwin":
+        return []
+    args: list[str] = []
+    for line in export_text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "--extra-index-url":
+            args += ["--extra-index-url", parts[1]]
+    if args:
+        args += ["--index-strategy", "unsafe-best-match"]
+    return args
+
+
+def pin_satisfied(installed: str | None, pinned: str) -> bool:
+    """Whether ``installed`` meets the PEP 723 pin ``==pinned``.
+
+    PEP 440: a pin with no local label matches any local label of that public
+    version, so the Linux wheel ``2.14.0+cpu`` meets ``torch==2.14.0``. Any
+    other difference, a different public version included, does not.
+    """
+    if installed is None:
+        return False
+    return installed == pinned or installed.split("+", 1)[0] == pinned
 
 
 #-----------------------------------------------------------------------------
@@ -373,7 +413,7 @@ def verify_bundled_beatgrid_runner(payload_dir: Path, repo_root: Path) -> dict[s
         raise PayloadBeatgridError("the beatgrid runner interpreter can import `apps`; "
                                    "its site is not isolated from the engine closure")
     wrong = {name: (probe["versions"][name], version)
-             for name, version in pins.items() if probe["versions"][name] != version}
+             for name, version in pins.items() if not pin_satisfied(probe["versions"][name], version)}
     if wrong:
         raise PayloadBeatgridError(f"runner site versions differ from the PEP 723 pins "
                                    f"(installed, pinned): {wrong}")

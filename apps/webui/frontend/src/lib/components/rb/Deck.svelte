@@ -69,6 +69,14 @@
 	import PadModeMenu from './deck/PadModeMenu.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
+	import {
+		loadedStemSeparation,
+		stemSeparation,
+		stemSeparationLoadError,
+		type StemSeparationPort
+	} from '$lib/rb/stem-separation-port';
+	import { stemStatusView } from '$lib/rb/stem-status';
+	import { SeparateEndProbe, lookForBundle, separateRunId } from '$lib/rb/stem-separate-probe';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
@@ -329,6 +337,125 @@
 		await runPerformanceCommandFromUi({ type: 'stem_load', deck: deckId });
 	}
 
+	// STEM-77: a deck showing NO STEMS offers to separate the loaded track.
+	const separateId = $derived(
+		deck.stable_id !== null && stemStatusView(deck.stems).name === 'none' ? deck.stable_id : null
+	);
+	// The separation store (and the jobs client behind it) loads on demand, the
+	// first time a deck shows NO STEMS, so it is not in this route's first load
+	// (stem-separation-port.ts). Until it answers the button reads "Checking";
+	// a chunk that fails to load is the button's refusal, with its reason.
+	let separation = $state<StemSeparationPort | null>(loadedStemSeparation());
+	let separationLoadError = $state<string | null>(null);
+	$effect(() => {
+		if (separateId === null || separation !== null || separationLoadError !== null) return;
+		stemSeparation().then(
+			(port) => {
+				separation = port;
+			},
+			(exc: unknown) => {
+				// The port's own text, so the button and the query say the same.
+				separationLoadError = stemSeparationLoadError() ?? String(exc);
+			}
+		);
+	});
+	$effect(() => {
+		if (separateId === null || separation === null) return;
+		const store = separation;
+		store.ensureChecked();
+		// Date.now() is not reactive, so a stale "no source" answer is re-read on a timer.
+		const timer = setInterval(() => store.ensureChecked(), 15_000);
+		return () => clearInterval(timer);
+	});
+	// The button's words come from the store's chunk too (separateActionView);
+	// until it is loaded the deck says only "checking" or the load failure,
+	// in the same words (tests/unit/stem-separate.test.mjs keeps them equal).
+	const separateView = $derived(
+		separateId === null
+			? null
+			: separation === null
+				? {
+						label: 'SEPARATE',
+						tip:
+							separationLoadError === null
+								? 'Checking whether this machine can separate stems...'
+								: `Separation is not available here: ${separationLoadError}.`,
+						disabled: true
+					}
+				: separation.actionView(
+						separateId,
+						separateProbed(separation, separateId),
+						separateProbeFailed(separation, separateId)
+					)
+	);
+	// However the covering job ended (a library job can fail after writing
+	// this track's bundle), look for the bundle once before showing the
+	// job's verdict: `stem_load` loads it if it is there.
+	// Only a stem_load that RAN is an answer: one refused (a preset lock, no
+	// session) leaves the probe failed and the button offers to look again.
+	let separateProbeAnswers = $state(0);
+	// Sol 4291048002: `stem_load` loads whatever the deck holds NOW, so it is an
+	// answer for `stableId` only while the deck still holds that track.
+	// The stem_load returns once the deck has started reloading, so the look
+	// waits for that load to settle before it answers (Codex on #6819).
+	let stemsSettledWaiters: Array<() => void> = [];
+	function stemsSettled(): Promise<void> {
+		if (deck.stems.status !== 'loading') return Promise.resolve();
+		return new Promise((resolve) => stemsSettledWaiters.push(resolve));
+	}
+	$effect(() => {
+		if (deck.stems.status === 'loading' || stemsSettledWaiters.length === 0) return;
+		const waiters = stemsSettledWaiters;
+		stemsSettledWaiters = [];
+		for (const resolve of waiters) resolve();
+	});
+	const separateProbe = new SeparateEndProbe(
+		async (stableId) =>
+			separateId === stableId &&
+			lookForBundle({
+				run: async () => (await runPerformanceCommandFromUi({ type: 'stem_load', deck: deckId, stable_id: stableId })).ok,
+				settled: stemsSettled,
+				holds: () => deck.stable_id === stableId
+			}),
+		() => {
+			separateProbeAnswers += 1;
+		}
+	);
+	function separateProbed(store: StemSeparationPort, stableId: string): boolean {
+		void separateProbeAnswers;
+		const job = store.job(stableId);
+		return job !== null && separateProbe.probed(stableId, separateRunId(job));
+	}
+	function separateProbeFailed(store: StemSeparationPort, stableId: string): boolean {
+		void separateProbeAnswers;
+		const job = store.job(stableId);
+		return job !== null && separateProbe.failed(stableId, separateRunId(job));
+	}
+	$effect(() => {
+		if (separateId === null || separation === null) return;
+		separation.noteNoStems(separateId);
+		void separateProbe.observe(separateId, separation.job(separateId));
+	});
+
+	async function separateStems(): Promise<void> {
+		if (separateId === null) return;
+		// CHECK STEMS: the look for the bundle after the job ended did not
+		// run, so look again; nothing is known yet that would justify paying
+		// for another separation.
+		const job = separation?.job(separateId) ?? null;
+		if (job !== null && separateProbe.failed(separateId, separateRunId(job))) {
+			await separateProbe.retry(separateId, job);
+			return;
+		}
+		// Otherwise a new separation: a job that ended was already followed by
+		// a bundle probe that RAN (separateProbe), and the button only enables
+		// once it answered with the deck still on NO STEMS, so another load
+		// would find nothing again. The same typed command a browser agent
+		// sends; the store behind it refuses a second job while one for this
+		// track is still under way.
+		await runPerformanceCommandFromUi({ type: 'stem_separate', deck: deckId, stable_id: separateId });
+	}
+
 	async function toggleStemMute(stem: StemControl): Promise<void> {
 		await runPerformanceCommandFromUi({
 			type: 'stem_mute',
@@ -551,7 +678,15 @@
 	{#if reactDeck}
 		<ReactIsland
 			load={() => import('./deck/StemRow.tsx')}
-			props={{ deck: stemRowDeck, pending, onMute: toggleStemMute, onSolo: toggleStemSolo, onLoad: loadStems }}
+			props={{
+				deck: stemRowDeck,
+				pending,
+				onMute: toggleStemMute,
+				onSolo: toggleStemSolo,
+				onLoad: loadStems,
+				separate: separateView,
+				onSeparate: separateStems
+			}}
 		/>
 	{:else}
 		<StemRow
@@ -560,6 +695,8 @@
 			onMute={toggleStemMute}
 			onSolo={toggleStemSolo}
 			onLoad={loadStems}
+			separate={separateView}
+			onSeparate={separateStems}
 		/>
 	{/if}
 

@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from apps.opendj_cli.mcp_safety import ENABLE_DESTRUCTIVE_ENV, destructive_enabled
+from apps.opendj_cli.mcp_safety import ENABLE_DESTRUCTIVE_ENV, destructive_enabled, engine_error_code
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 from apps.opendj_cli.origin import EngineNotRunning, resolve_origin
 
@@ -60,7 +60,7 @@ def _call(hooks: _Hooks, method: str, path: str, *, json_body: Any, params: Any,
         body = {"text": response.text[:500]}
     if not response.is_success:
         detail = body.get("detail") if isinstance(body, dict) else None
-        code = detail.get("code") if isinstance(detail, dict) else f"http_{response.status_code}"
+        code = engine_error_code(detail, response.status_code)
         raise hooks.tool_error({"error": code, "status_code": response.status_code, "detail": detail or body})
     return body
 

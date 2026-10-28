@@ -281,7 +281,18 @@ const BUDGETS = [
   // 282,660): auto gain adds 285,293 - 280,578 = 4,715, so 287,375 estimated, next
   // KiB plus 1 KiB of jitter => 288,768 (282 KiB). Payback: the engine deferral named
   // under #3837 above carries this weight out of "/" with the rest of the engine.
-  { name: 'library', limit: 288768, measured: 287375, note: 'initial load of "/"' },
+  // Top bar re-land #6824 of #6201 (TOPVIEW-01/-05), Tue 27 Oct 2026: no raise here. Its
+  // Thu 22 Oct +1 KiB raise is dropped: locally, main 4c130633d1 286,471; main + this PR
+  // 288,012 (+1,541, under the limit).
+  // RAISED Wed 28 Oct 2026 (+1 KiB, same PR, merged onto main e5fb30dcfd): locally, main
+  // 287,253; main + this PR 288,683 (+1,430), 85 B under the limit, inside CI's build jitter.
+  // Measured ceiled to KiB (288,768) plus 1 KiB of jitter. Payback: none open.
+  // RAISED Wed 28 Oct 2026 (trunk repair #7658): main 275b88e7f8 is over this budget after
+  // #7594 (autodj defects + agent DJ control) and #6565 (MIK energy backfill) landed through
+  // selected-test bundle merges (#7598) that did not run the budget gate. One clean nucbox
+  // build each: main 906dc7be74 289,003; main 275b88e7f8 290,882 (+1,879).
+  // Measured ceiled to KiB plus 1 KiB of jitter. Payback: owed by #7594 and #6565.
+  { name: 'library', limit: 292864, measured: 290882, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second
@@ -451,7 +462,62 @@ const BUDGETS = [
   // other-lazy, so a build with the flag off fetches none of them. The raise is the measured size
   // ceiled to KiB (276,480) plus 2 KiB headroom. Payback: when the v2 shell is React, the islands
   // and the Svelte originals they wrap leave this route together.
-  { name: 'performance', limit: 278528, measured: 275958, note: '/performance and children' },
+  // RAISED Thu 22 Oct 2026 (+1 KiB, PR #6819, re-land of #6195 stem separation UI, V1 rule of
+  // up to 4 KiB per V1 PR): the /performance decks ship the "Separate this track" button and
+  // the deck's separation view. Local, one clean build each: main b447c807c measured 276,554
+  // over 25 files; this head 278,643 over 27, +2,089 (115 over the old limit). The separation
+  // store itself stays lazy. Payback, not yet measured: load the separation view on first use.
+  // RAISED AGAIN Tue 27 Oct 2026 (+2 KiB more, same PR, merge skew; +3 KiB over main's limit in
+  // all, within the V1 rule): CI's build of this head merged with main 4c130633d1 measured
+  // 280,526 over 27 files, 974 over the earlier raise, because main itself grew the route since
+  // b447c807c while this PR's own share stayed +2,089. The limit is that measurement ceiled to
+  // KiB (281,600). Same payback as above.
+  // RAISED Tue 27 Oct 2026 (+3,072 B, top bar re-land #6824 of #6201, TOPVIEW-01..04; within
+  // the V1 rule of up to 4 KiB per V1 PR). On Thu 22 Oct it fit with no raise: its earlier
+  // +3 KiB was paid back by loading the two phase views (PerfViewArea.svelte) on first use,
+  // and main b447c807ce 276,572 plus this PR measured 278,123. Main has since grown to within
+  // 138 bytes of the limit. Locally, one clean build each: main 4c130633d1 278,390; main +
+  // this PR 280,095 (+1,705). The weight is the top bar's view switch, Pads toggle and two-deck
+  // auto-play control, which render on this route. The raise is the measured size ceiled to
+  // KiB (280,576) plus 1 KiB of jitter. Payback: none open; the controls are this route's UI.
+  // Merged onto main e5fb30dcfd Wed 28 Oct 2026 (#6819 took main's ceiling to 281,600):
+  // locally, main 280,509; main + this PR 282,162 (+1,653). RAISED to the measured size ceiled
+  // to KiB (282,624) plus 1 KiB of jitter, +2 KiB over main's ceiling; same payback.
+  // RAISED Thu 15 Oct 2026 (+2,048 B, USB export re-land #6826 of #6191, USBEXP-01..04; within
+  // the V1 rule of up to 4 KiB per V1 PR). Local, one build each: main merge-base measured
+  // 273,395; this branch 275,553 (+2,158, 97 over the old limit). Most of it is the
+  // `usb-export.svelte` store joining the shared chunk first paint loads (about 2 KB); the
+  // lazily loaded stick menu adds about 90 B of re-exports. The extra KiB of headroom covers
+  // the 2-3 KB gap other PRs have measured between CI and local builds. Payback: lazy-load
+  // the usb-export store behind the stick tree, logged in (private path).
+  // Same day, same PR: the single in-flight operation guard in the usb-export store
+  // (close and re-entry refused while a plan, write or eject runs) moved it to 275,859
+  // (+306 B, local, one build); the limit is unchanged.
+  // RAISED Fri 16 Oct 2026 (+1,024 B, same PR, now +3 KiB of its 4 KiB V1 allowance): CI
+  // measured 277,936 on c76d0a3317, 432 over 277,504, after the write-warning, quit-close and
+  // vanished-stick fixes in the usb-export store. Same payback as above.
+  // Merged onto main b447c807ce Thu 22 Oct 2026: main took its own +3 KiB (#6211 part C,
+  // above) to the same 278,528 ceiling, so this PR's raise now lands on top of it. Locally,
+  // one clean build each: main 276,572; main + this PR 280,023 (+3,451). This PR's raise is
+  // +2 KiB over main's ceiling (280,576), within its 4 KiB V1 allowance; same payback.
+  // RAISED again Thu 22 Oct 2026 (+1,024 B, same PR, now +3 KiB over main's ceiling, within its
+  // 4 KiB V1 allowance): the review fixes since (eject race, plan envelope check, malformed
+  // volume listing refused, USB bus filter, literal verified check) measured 280,596 locally,
+  // 20 over 280,576. Same payback as above.
+  // Merged onto main e5fb30dcfd Wed 28 Oct 2026 (#6819 took main's ceiling to 281,600): this
+  // PR's raise now lands on top of it. Local, one clean build each: main 280,509; main + this
+  // PR 285,249 (+4,740). RAISED to +4 KiB over main's ceiling (285,696), the whole V1
+  // allowance, with 447 B headroom; same payback as above.
+  // Merged onto main again Wed 28 Oct 2026, after #6824 took main's ceiling to 283,648 (above):
+  // locally, one clean build each, main + #6824 282,162; main + this PR 287,067 (+4,905, the
+  // stick-action UUID gate included). RAISED to +4 KiB over main's ceiling (287,744), the whole
+  // V1 allowance, with 677 B headroom; same payback as above.
+  // RAISED Wed 28 Oct 2026 (trunk repair #7658): main 275b88e7f8 is over this budget after
+  // #7594 (autodj defects + agent DJ control) and #6565 (MIK energy backfill) landed through
+  // selected-test bundle merges (#7598) that did not run the budget gate. One clean nucbox
+  // build each: main 906dc7be74 287,062; main 275b88e7f8 287,946 (+884).
+  // Measured ceiled to KiB plus 1 KiB of jitter. Payback: owed by #7594 and #6565.
+  { name: 'performance', limit: 289792, measured: 287946, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -619,7 +685,12 @@ const BUDGETS = [
   // +5% ceil-to-KiB rule on 351,420 (=> 368,991, 361 KiB = 369,664). Payback: when the v2 shell
   // itself is React, react-dom moves to that shell's own budget and this bucket gives the ~60 KB
   // back.
-  { name: 'other-lazy', limit: 369664, measured: 351420, note: 'all other routes plus deferred shell' },
+  // RAISED Wed 28 Oct 2026 (trunk repair #7658): main 275b88e7f8 is over this budget after
+  // #7594 (autodj defects + agent DJ control) and #6565 (MIK energy backfill) landed through
+  // selected-test bundle merges (#7598) that did not run the budget gate. One clean nucbox
+  // build each: main 906dc7be74 367,705; main 275b88e7f8 375,402 (+7,697).
+  // Measured ceiled to KiB plus 1 KiB of jitter. Payback: owed by #7594 and #6565.
+  { name: 'other-lazy', limit: 376832, measured: 375402, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

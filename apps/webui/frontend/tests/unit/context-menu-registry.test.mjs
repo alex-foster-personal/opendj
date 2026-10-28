@@ -287,3 +287,27 @@ test('golden matrices match (private path)/<kind>.md', () => {
 		'golden matrix out of date: rerun with UPDATE_CONTEXT_MENU_GOLDENS=1 and review the diff'
 	);
 });
+
+test('USBEXP-04: a stick tree gets status, sync (disabled, says why) and eject; other read-only trees stay empty', () => {
+	assert.deepEqual(registry.menuFor({ kind: 'tree-readonly' }, { stick: false }), []);
+	const items = registry.menuFor({ kind: 'tree-readonly' }, { stick: true });
+	assert.deepEqual(
+		items.map((i) => [i.id, i.enabled]),
+		[
+			['usb-status', true],
+			['usb-sync', false],
+			['usb-eject', true]
+		]
+	);
+	assert.match(items[1].disabledReason, /Export to USB/);
+	assert.equal(items[2].command, 'usb.eject');
+});
+
+test('USBEXP-04: every playlist offers Export to USB, wired to the USB export plan route', () => {
+	for (const forbidDuplicates of [false, true]) {
+		const item = registry.menuFor({ kind: 'playlist' }, { forbidDuplicates }).find((i) => i.id === 'export-usb');
+		assert.ok(item, 'Export to USB present');
+		assert.equal(item.enabled, true);
+		assert.equal(item.command, 'usb.export.plan');
+	}
+});

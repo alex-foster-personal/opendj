@@ -39,6 +39,7 @@ from apps.opendj_cli import (
     EXIT_NO_PAGE,
     EXIT_TIMEOUT,
     EXIT_UNCONFIRMED,
+    status_cli,
 )
 from apps.opendj_cli.catalog import DECK_VALUES
 from apps.opendj_cli.client import (
@@ -97,6 +98,7 @@ _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
+_DJ_COMMAND = "dj"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -705,6 +707,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         from apps.opendj_cli import update_cli
 
         return update_cli.run(update_tokens, as_json=args.json, lock=args.lock)
+    dj_split = _split_subcommand(tokens, _DJ_COMMAND)
+    if dj_split is not None:
+        global_tokens, dj_tokens = dj_split
+        args = _parser(as_json=True).parse_args([*global_tokens, _DJ_COMMAND])
+        from apps.opendj_cli import dj_cli
+
+        return dj_cli.run(dj_tokens, lock=args.lock)
     api_split = _split_subcommand(tokens, _API_COMMAND)
     if api_split is not None:
         global_tokens, api_tokens = api_split
@@ -730,8 +739,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         if head == _STATE_COMMAND:
             return _run_state(args, resolve_verified_origin(args.lock))
         if head == _STATUS_COMMAND:
-            from apps.opendj_cli import status_cli
-
             return status_cli.run(rest, as_json=args.json, lock=args.lock)
         if head == _OPEN_COMMAND:
             return _run_open(args, resolve_verified_origin(args.lock), rest)

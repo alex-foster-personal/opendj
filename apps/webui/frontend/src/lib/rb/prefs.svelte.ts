@@ -19,6 +19,12 @@ import {
 	type DeckLayoutMode
 } from './deck-layout-prefs';
 import {
+	makeTopbarViewSetters,
+	TOPBAR_VIEW_DEFAULTS,
+	validateTopbarViewFields,
+	type TopbarViewPrefsState
+} from './topbar-view-prefs';
+import {
 	makePlaylistTreeViewSetters,
 	validatePlaylistTreeViewField,
 	type PlaylistTreeViewMode
@@ -173,6 +179,7 @@ export interface RbUiPrefs
 		AppModePrefs,
 		LyricsPrefs,
 		DevUiPrefs,
+		TopbarViewPrefsState,
 		DeckDefaultPrefs,
 		SectionOverlayPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
@@ -356,6 +363,7 @@ const DEFAULTS: RbUiPrefs = {
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
+	...TOPBAR_VIEW_DEFAULTS,
 	deck_right_mirror: false,
 	deck_left_mirror: false,
 	playlist_tree_view: 'tree',
@@ -774,6 +782,7 @@ function _assembleLoadedPrefs(
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
 		deck_right_mirror: deckRightMirror ?? DEFAULTS.deck_right_mirror,
 		deck_left_mirror: deckLeftMirror,
+		..._topbarViewFromParsed(parsed),
 		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
@@ -800,6 +809,16 @@ function _assembleLoadedPrefs(
 			: DEFAULTS.library_watcher_folders,
 		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY),
 		...mergeDeckDefaultPrefsFromParsed(parsed, STORAGE_KEY)
+	};
+}
+
+/** TOPVIEW-01..06: the top-bar view fields, each falling back to its default. */
+function _topbarViewFromParsed(parsed: Parameters<typeof validateTopbarViewFields>[0]): TopbarViewPrefsState {
+	const v = validateTopbarViewFields(parsed, STORAGE_KEY);
+	return {
+		perf_view: v.perf_view ?? DEFAULTS.perf_view,
+		show_pads: v.show_pads ?? DEFAULTS.show_pads,
+		auto_play_two_deck: v.auto_play_two_deck ?? DEFAULTS.auto_play_two_deck
 	};
 }
 
@@ -1017,6 +1036,13 @@ export const {
 	setDeckRightMirror,
 	setDeckLeftMirror
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+export const { setPerfView, setShowPads, setAutoPlayTwoDeck } = makeTopbarViewSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
+export { PERF_VIEWS, isPerfView, type PerfView } from './topbar-view-prefs';
 
 export const { setPlaylistTreeView, togglePlaylistTreeView } = makePlaylistTreeViewSetters(
 	uiPrefs,

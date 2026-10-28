@@ -76,6 +76,16 @@ test('no command is both forwarded and refused', () => {
 	}
 });
 
+test('page-level preference toggles are not refused in rust mode (Codex 4286901139)', () => {
+	// Two-track AutoPlay, the perf view and the PAD toggle only write a ui pref
+	// the page reads; none touches the Web Audio clock, buffers or devices.
+	for (const t of ['auto_play_two_track', 'set_perf_view', 'show_pads']) {
+		assert.equal(m.WEB_AUDIO_ONLY.has(t), false, t);
+	}
+	// Control: a command that does reach into Web Audio is still refused.
+	assert.ok(m.WEB_AUDIO_ONLY.has('auto_play_next_arm'));
+});
+
 test('off: every command stays with the page', async () => {
 	assert.equal(await m.executeInRustEngine({ type: 'play', deck: 1, playing: true }), false);
 });

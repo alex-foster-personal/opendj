@@ -2,7 +2,9 @@
 
 Eight tools over lock-file HTTP: ``status``, ``app_state``, ``command``,
 ``library``, ``ui_url``, ``open_route``, ``update_check``, and
-``update_apply``. Safety rails live in :mod:`mcp_safety`.
+``update_apply``. Safety rails live in :mod:`mcp_safety`. The AutoDJ tools
+(AGENT-29: mix state, track profiles, mix windows, transition plans) are
+registered from :mod:`mcp_dj_tools`.
 
 The two update tools are the agent-native half of the updater (AGENT-13,
 issue #2942): the same ``check_via_engine`` and ``apply_via_engine`` the
@@ -31,6 +33,8 @@ from apps.opendj_cli.client import (
     OrderTimedOut,
 )
 from apps.opendj_cli.engine_status import build_engine_status
+from apps.opendj_cli.mcp_dj_tools import register_dj_tools
+from apps.opendj_cli.mcp_energy_tools import register_energy_tools
 from apps.opendj_cli.mcp_genre_tools import register_genre_tools
 from apps.opendj_cli.mcp_safety import (
     SafetyRefusal,
@@ -82,7 +86,6 @@ _DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 @dataclass
 class _SessionState:
     lock_path: Path | None = None
-    last_mirror_delta: dict[str, Any] | None = None
     safety_notes: dict[str, Any] = field(default_factory=dict)
 
 
@@ -376,10 +379,7 @@ def create_server() -> MCPServer:
         try:
             origin = _resolve_verified_origin()
             parsed_order = _parse_order_payload(order, verb, args)
-            guarded_order, safety = guard_order(
-                parsed_order,
-                last_mirror_delta=_state.last_mirror_delta,
-            )
+            guarded_order, safety = guard_order(parsed_order)
         except SafetyRefusal as error:
             raise _tool_error(
                 {"error": error.code, "message": str(error), **error.fields}
@@ -406,9 +406,6 @@ def create_server() -> MCPServer:
         except EngineNotRunning as error:
             raise _engine_not_running(error) from error
 
-        mirror_delta = result.get("mirror_delta")
-        if isinstance(mirror_delta, dict):
-            _state.last_mirror_delta = mirror_delta
         document: dict[str, Any] = dict(result)
         if safety:
             document["safety"] = safety
@@ -462,9 +459,7 @@ def create_server() -> MCPServer:
         base_path, query = _split_query(path)
         query, projection = _extract_projection(query)
 
-        request_headers = {"Accept": "application/json"}
-        for name, value in _parse_library_headers(headers):
-            request_headers[name] = value
+        request_headers = {"Accept": "application/json", **dict(_parse_library_headers(headers))}
         if request_body is not None:
             request_headers["Content-Type"] = "application/json"
 
@@ -557,7 +552,20 @@ def create_server() -> MCPServer:
         tool_error=_tool_error,
         engine_not_running=_engine_not_running,
     )
+    register_dj_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+        engine_identity_mismatch=_engine_identity_mismatch,
+    )
     register_genre_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_energy_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

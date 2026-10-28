@@ -80,7 +80,11 @@ export const MENU_COMMANDS = {
 	'smartlist.create': http('POST', '/api/v1/smartlists'),
 	'smartlist.update': http('PUT', '/api/v1/smartlists/{smartlist_id}'),
 	'smartlist.delete': http('DELETE', '/api/v1/smartlists/{smartlist_id}'),
-	'smartlist.duplicate': http('POST', '/api/v1/smartlists/{smartlist_id}/duplicate')
+	'smartlist.duplicate': http('POST', '/api/v1/smartlists/{smartlist_id}/duplicate'),
+	// USB sticks (USBEXP-04).
+	'usb.export.plan': http('POST', '/api/v1/usb-export/plan', 'python -m apps.sync.usb.pioneer.export_workflow plan'),
+	'usb.eject': http('POST', '/api/v1/usb/eject'),
+	'usb.volumes': http('GET', '/api/v1/usb/volumes')
 } as const satisfies Record<string, MenuCommand>;
 
 export type MenuCommandId = keyof typeof MENU_COMMANDS;

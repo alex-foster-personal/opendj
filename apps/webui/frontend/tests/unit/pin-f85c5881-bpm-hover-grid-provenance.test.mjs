@@ -127,3 +127,24 @@ test('the store fetches the grid-provenance endpoint and keeps a failure visible
 	assert.match(store, /state: 'error'/);
 	assert.match(store, /gridProvenanceNeedsFetch\(/);
 });
+
+test('the library Beatgrid row shows a short value and puts the source and confidence in its title (Sol P1 4301959432)', () => {
+	const ready = { state: 'ready', value: own() };
+	const row = mod.libraryGridProvenance(ready);
+	assert.equal(row.value, 'own analysis');
+	assert.equal(row.title, mod.gridProvenanceHoverText(ready), 'the hover is the full provenance text');
+	assert.doesNotMatch(row.value, /Confidence/, 'the explanation is not the visible value');
+	assert.equal(mod.libraryGridProvenance({ state: 'ready', value: { ...own(), source: 'rekordbox' } }).value, 'rekordbox analysis');
+	assert.equal(
+		mod.libraryGridProvenance({ state: 'ready', value: own({ status: 'failed', reason: 'decode error', bpm_confidence: null }) }).value,
+		'own analysis, failed'
+	);
+	const failed = mod.libraryGridProvenance({ state: 'error', message: 'HTTP 500' });
+	assert.equal(failed.value, 'unavailable');
+	assert.match(failed.title, /HTTP 500/);
+	assert.equal(mod.libraryGridProvenance({ state: 'loading' }).value, 'loading');
+	assert.equal(mod.libraryGridProvenance({ state: 'idle' }).value, 'not loaded');
+	for (const view of [ready, { state: 'loading' }, { state: 'idle' }]) {
+		assert.ok(mod.libraryGridProvenance(view).title.length > 0, `${view.state} has a hover`);
+	}
+});

@@ -65,6 +65,10 @@ export function installShellNavigationPoll(): () => void {
 			const route = pending.route;
 			if (!routeMatches(window.location.pathname, route)) {
 				await goto(route);
+				// A page can refuse to be left (a USB write in flight cancels the
+				// navigation): leave the request pending, unacked, and retry it on
+				// a later tick instead of claiming a move that never happened.
+				if (!routeMatches(window.location.pathname, route)) return;
 				pushToast(
 					`An agent moved this window to ${route}.`,
 					'info',

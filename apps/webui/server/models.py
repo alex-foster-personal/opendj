@@ -42,6 +42,15 @@ class ProvenanceOut(BaseModel):
     reason: str | None = None
 
 
+class TrackLoudnessOut(BaseModel):
+    """AGENT-31: integrated loudness from the loudness lane's projection, or None with why."""
+
+    lufs: float | None
+    #: ``error``: the loudness store itself is absent or has the wrong schema (not "unmeasured").
+    status: Literal["ok", "failed", "missing", "error"]
+    reason: str | None = None
+
+
 class TrackOut(BaseModel):
     stable_id: str
     title: str | None = None
@@ -83,6 +92,8 @@ class TrackOut(BaseModel):
     # the browser can skip the img GET (same job as has_rb_mapping /
     # lyrics_available).
     artwork_available: bool | None
+    #: AGENT-31: served by the single-track read only (None on listings), for the AutoDJ loudness match.
+    loudness: TrackLoudnessOut | None = None
 
 
 class QualityOut(BaseModel):

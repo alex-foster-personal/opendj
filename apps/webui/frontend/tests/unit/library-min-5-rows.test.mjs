@@ -372,7 +372,7 @@ test('perf-root has PER-MODE row floors, and LESS reserves less than MORE by at 
 	function wavestackRows(block, label) {
 		const m = firstMatch(
 			block,
-			/calc\((\d+)\s*\*\s*\(var\(--rb-waverow-h\)\s*\+\s*var\(--rb-stemwave-stack-extra,\s*0px\)\)\)/,
+			/calc\((\d+)\s*\*\s*\(var\(--rb-waverow-h\)\s*\+\s*var\(--rb-stemwave-stack-extra,\s*0px\)\)(?:\s*\*\s*var\(--rb-wavestack-shown,\s*1\))?\)/,
 			`a wavestack row count in ${label}`
 		);
 		return Number(m[1]);

@@ -190,7 +190,9 @@
 		prefetchPlaylistTreeIntent,
 		invalidatePlaylistFirstPage,
 		invalidateAllPlaylistFirstPages,
-		computeNextOnlyRef
+		computeNextOnlyRef,
+		openUsbExport,
+		UsbExportScreenLoader
 	} from './browser/browser-panel-support';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
@@ -3853,10 +3855,12 @@
 	</div>
 	<div class="bottom-bar">
 		<button
-			class="icon-btn rb-inert"
-			disabled
-			title={plannedTitle('export-eject')}
+			type="button"
+			class="icon-btn"
+			data-testid="bottom-bar-export-eject"
+			title="Export / eject - open the USB screen to write an export to a stick or eject it"
 			aria-label="export/eject"
+			onclick={openUsbExport}
 		>
 			<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
 				<path d="M8 3l5 6H3zM3 11h10v2H3z" fill="currentColor" />
@@ -3987,6 +3991,8 @@
 		}}
 	/>
 {/if}
+
+<UsbExportScreenLoader />
 
 <style>
 	.rb-browser {

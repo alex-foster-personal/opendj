@@ -7,12 +7,17 @@ name: Full CI (on-demand)
 # tests/sync/usb, tests/sets), or whenever a full-coverage snapshot is
 # wanted. Dispatched runs show up in the ledger of ci-budget-watch.yml.
 #
-# There is deliberately NO schedule and NO push trigger. Known trade-off:
-# a regression confined to the slow suites can land on main undetected
-# until someone dispatches this workflow. If that ever bites, add
-# `schedule: [{cron: "0 3 * * *"}]` here -- one line.
+# NIGHTLY since Tue 27 Oct 2026 (bundle merges, the maintainer: "Full-suite runs belong
+# to scheduled nightly jobs and to a stated hypothesis, never to merging";
+# (private path), ADR-NEW-bundle-merges-run-selected-tests). PR heads
+# and merge-queue bundles run only their selected tests, so this run on main is
+# what catches a regression a selection missed; it is fixed forward. There is
+# still NO push trigger. The cron is 03:11 UTC, off the hour, before e2e.yml's
+# 04:17 extended run and periodic-checks.yml's 05:40 window.
 
 on:
+  schedule:
+    - cron: "11 3 * * *"
   workflow_dispatch:
   # Called by periodic-checks.yml so the periodic full run and a
   # dispatched one are provably the SAME suite, not a copy that can

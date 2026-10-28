@@ -453,6 +453,49 @@ export function stemsText(stems: StemsLine): string | null {
 	}
 }
 
+/** ENRICH-05: the pill stays on screen while a "never" stands, so it can always be taken back. */
+export function keepsCardReachable(summary: EnrichSummary | null): boolean {
+	return summary !== null && stemsDeclinedText(summary) !== null;
+}
+
+/**
+ * Whether the pill is on screen at all.
+ *
+ *   [if] a "never" stands [then] the pill shows even after Hide, so its undo stays reachable (ENRICH-05)
+ *   [if] the user hid the card this session [then] nothing else shows it
+ *   [if] the summary failed to load or says there is something to show [then] it shows
+ */
+export function cardVisible(summary: EnrichSummary | null, loadError: string | null, hidden: boolean): boolean {
+	if (keepsCardReachable(summary)) return true;
+	return !hidden && (loadError !== null || (summary?.show ?? false));
+}
+
+/**
+ * ENRICH-05: a stored "never" is said, and can be taken back.
+ *
+ *   [if] the library's stems answer is "never" [then] the card names it and offers "Ask again"
+ *   [if] there is no stored "never" [then] nothing is said (null)
+ *   [if] stems are done or cannot be made here [then] nothing is said: that lane has its own line
+ */
+export function stemsDeclinedText(summary: EnrichSummary): string | null {
+	if (summary.decisions.stems !== 'never' || summary.stems.state !== 'user_declined') return null;
+	// not_yet counts SONGS (ENRICH-03); pending, the older payload, counts tracks.
+	// The noun follows the count actually used: a null not_yet with a numeric
+	// pending is a track count, never quoted as songs (Sol P1 on #6819).
+	const songs = typeof summary.stems.not_yet === 'number';
+	const left = songs ? summary.stems.not_yet : summary.stems.pending;
+	// The server always counts a stored never (enrich_prompt.py); a summary
+	// with neither count has drifted, and is said so rather than read as 0
+	// (Sol on #6819).
+	const tail =
+		typeof left !== 'number'
+			? ' How many have no stems is unknown: the summary carried neither not_yet nor pending.'
+			: left > 0
+				? ` ${countOf(left, songs)} ${left === 1 ? 'has' : 'have'} no stems.`
+				: '';
+	return `Stems: you chose never for this library.${tail} A deck can still separate one track.`;
+}
+
 /** The stems row's tone: failures read red, the question reads as work in progress. */
 export function stemsTone(stems: StemsLine): CardLine['tone'] {
 	if (stems.state === 'failed') return 'failed';
@@ -521,6 +564,9 @@ export function collapsedLine(summary: EnrichSummary): { text: string; title: st
 				text: `Library: ${n(summary.stems.missing ?? 0)} without stems, none can be made here`,
 				title: noSourceTitle
 			};
+		}
+		if (stemsDeclinedText(summary) !== null) {
+			return { text: 'Library: stems set to never', title: 'Click to ask about separating stems again' };
 		}
 		return { text: 'Library: nothing left running', title: 'No analysis lane is still running in the background' };
 	}

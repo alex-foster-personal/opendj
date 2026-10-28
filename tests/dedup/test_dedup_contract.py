@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,9 @@ _IDLE = {
 def test_built_service_satisfies_the_protocol(tmp_path: Path) -> None:
     service = build_service()
     assert isinstance(service, DedupService)
-    conn = service.ensure_schema(tmp_path / "dedup.sqlite")
+    assert not hasattr(DedupService, "ensure_schema"), "an open connection must not cross the service"
+    contract.ensure_schema(tmp_path / "dedup.sqlite")  # returns nothing: no connection crosses
+    conn = sqlite3.connect(tmp_path / "dedup.sqlite")
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     finally:
@@ -40,7 +43,8 @@ def test_built_service_satisfies_the_protocol(tmp_path: Path) -> None:
 
 
 def test_scan_status_matches_the_job_payload_and_rejects_extra_fields() -> None:
-    assert ScanStatus.model_validate(_IDLE).model_dump() == _IDLE
+    # The wire is JSON: a tuple field is a list there.
+    assert ScanStatus.model_validate(_IDLE).model_dump(mode="json") == _IDLE
     with pytest.raises(ValidationError):
         ScanStatus.model_validate({**_IDLE, "surprise": 1})
 
@@ -48,6 +52,6 @@ def test_scan_status_matches_the_job_payload_and_rejects_extra_fields() -> None:
 def test_contract_version_and_cluster_bounds() -> None:
     from apps.dedup import find_clusters
 
-    assert contract.CONTRACT_VERSION == "dedup/1"
+    assert contract.CONTRACT_VERSION == "dedup/2"
     assert find_clusters.DEFAULT_MAX_CLUSTER == contract.DEFAULT_MAX_CLUSTER == 8
     assert find_clusters.DEFAULT_DURATION_DELTA_S == contract.DEFAULT_DURATION_DELTA_S == 3.0

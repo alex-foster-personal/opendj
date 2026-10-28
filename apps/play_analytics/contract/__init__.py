@@ -11,11 +11,11 @@ describe that dict's shape and are what consumers may validate it against.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-CONTRACT_VERSION = "play_analytics/1"
+CONTRACT_VERSION = "play_analytics/2"
 
 ShareState = Literal["private", "shared_local", "shared_cloud"]
 EventsTable = Literal["events", "set_events"]
@@ -39,6 +39,9 @@ DEFAULT_MIN_AUDIBLE_S: float = 60.0
 
 class AnalyticsSchemaError(RuntimeError):
     """The configured event store cannot satisfy the analytics contract."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 class _Frozen(BaseModel):
@@ -83,8 +86,8 @@ class PlayAnalyticsReadModel(_Frozen):
     schema_version: Literal[1]
     filters: PlayAnalyticsFilters
     summary: PlayAnalyticsSummary
-    sessions: list[PlayAnalyticsSession]
-    top_tracks: list[PlayAnalyticsTopTrack]
+    sessions: tuple[PlayAnalyticsSession, ...]
+    top_tracks: tuple[PlayAnalyticsTopTrack, ...]
 
 
 @runtime_checkable
@@ -99,7 +102,7 @@ class PlayAnalyticsService(Protocol):
         limit: int = 50,
         events_table: EventsTable = "events",
         min_audible_s: float = DEFAULT_MIN_AUDIBLE_S,
-    ) -> dict[str, Any]:
+    ) -> dict[str, JsonValue]:
         """Return the JSON-ready read model (see ``PlayAnalyticsReadModel``).
 
         Raises ``AnalyticsSchemaError`` when the event store cannot satisfy

@@ -189,6 +189,48 @@ def test_load_live_splits_matched_and_unmatched(
     assert payload["applied"]["staged_written"] == len(loader.GATED_FIELDS)
 
 
+def test_load_fields_writes_only_the_named_fields(
+    library: Path, data_dir: Path, write_verdicts, capsys
+) -> None:
+    """if --fields names energy and its series then key, bpm and loudness are untouched."""
+    write_verdicts({field: "passed" for field in loader.GATED_FIELDS})
+    payload = _run(
+        [
+            "load",
+            "--json",
+            "--live",
+            "--fields",
+            "energy,energy_segments",
+            "--data-dir",
+            str(data_dir),
+            "--store",
+            str(library),
+        ],
+        capsys,
+    )
+    assert payload["applied"]["fields_written"] == 1
+    assert payload["applied"]["segment_rows"] == 1
+    assert payload["applied"]["staged_written"] == 2
+    unselected = set(loader.GATED_FIELDS) - {"energy", "energy_segments"}
+    assert set(payload["not_selected"]) == unselected
+    assert payload["blocked_by_gate"] == {}
+    conn = sqlite3.connect(data_dir / "state" / "state.db")
+    try:
+        written = {row[0] for row in conn.execute("SELECT DISTINCT field_name FROM track_fields WHERE source = 'mik'")}
+        staged = {row[0] for row in conn.execute("SELECT DISTINCT field_name FROM unmatched_source_analysis")}
+    finally:
+        conn.close()
+    assert written == {"energy"}
+    assert staged == {"energy", "energy_segments"}
+
+
+def test_load_fields_rejects_an_unknown_field(library: Path, data_dir: Path) -> None:
+    """if --fields names a field the loader does not own then it stops before reading anything."""
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["load", "--fields", "energy,tempo", "--data-dir", str(data_dir), "--store", str(library)])
+    assert stopped.value.code == 2
+
+
 def test_exact_path_only_narrows_matching(library: Path, data_dir: Path, capsys) -> None:
     payload = _run(
         [

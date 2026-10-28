@@ -19,7 +19,7 @@ from tests.scripts.base_merge_repo import (
     QUOTED,
     THIRD,
     advance_main,
-    assert_no_carry,
+    assert_no_base_merge_carry,
     attempt,
     commit,
     git,
@@ -88,7 +88,7 @@ def test_main_change_to_pr_file_far_from_hunk_does_not_carry(repo: Path, reviewe
     head = merge_main(repo)
     assert git(repo, "show", f"{head}:{FILE}").splitlines()[2] == "line2 main"
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -105,7 +105,7 @@ def test_main_change_to_quoted_pr_path_does_not_carry(repo: Path) -> None:
     main_paths = changed_paths(repo, single_merge_base(repo, tip, reviewed), single_merge_base(repo, tip, head))
     assert main_paths == frozenset({QUOTED.encode()}), "the probe must name the overlapping raw path"
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 # ----------------------------------------------------------------------------
@@ -144,7 +144,7 @@ def test_relocated_hunk_onto_duplicate_block_does_not_carry(repo: Path) -> None:
     ported[13] = "val = 999"
     head = merge_main_with_edit(repo, FILE, "\n".join(ported))
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -165,7 +165,7 @@ def test_edit_ported_to_a_unique_block_main_moved_does_not_carry(repo: Path) -> 
     advance_main(repo, FILE, "\n".join(moved) + "\n")
     head = merge_main_with_edit(repo, FILE, "\n".join(moved).replace("y = 2", "y = 99") + "\n")
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -196,7 +196,7 @@ def test_context_zero_config_does_not_mask_a_hand_edit_beside_the_hunk(repo: Pat
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main_with_edit(repo, FILE, lines({30: "line30 pr", 28: "line28 sneaky"}))
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 # ----------------------------------------------------------------------------
@@ -209,7 +209,7 @@ def test_whitespace_hand_edit_to_pr_line_inside_merge_does_not_carry(repo: Path,
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main_with_edit(repo, FILE, lines({30: "    line30 pr"}))
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -218,7 +218,7 @@ def test_hand_edit_to_untouched_file_inside_merge_does_not_carry(repo: Path, rev
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main_with_edit(repo, THIRD, "third smuggled\n")
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -227,7 +227,7 @@ def test_hand_edit_to_main_changed_file_inside_merge_does_not_carry(repo: Path, 
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main_with_edit(repo, OTHER, "other v2 smuggled\n")
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 # ----------------------------------------------------------------------------
@@ -241,7 +241,7 @@ def test_own_commit_on_pr_file_does_not_carry(repo: Path, reviewed: str) -> None
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main(repo)
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -252,7 +252,7 @@ def test_revert_pair_then_base_merge_does_not_carry(repo: Path, reviewed: str) -
     advance_main(repo, OTHER, "other v2\n")
     head = merge_main(repo)
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -264,7 +264,7 @@ def test_merge_with_main_as_first_parent_does_not_carry(repo: Path, reviewed: st
     head = git(repo, "rev-parse", "HEAD")
     assert git(repo, "rev-parse", f"{head}^1") == git(repo, "rev-parse", "main")
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -278,7 +278,7 @@ def test_gitlink_smuggled_into_merge_does_not_carry_when_submodules_are_ignored(
     head = git(repo, "rev-parse", "HEAD")
     assert git(repo, "ls-tree", head, "--", "vendor/sub").startswith("160000 commit"), "gitlink must be in the merge"
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 # ----------------------------------------------------------------------------
@@ -294,7 +294,7 @@ def test_hand_edit_restored_by_a_later_merge_does_not_carry(repo: Path, reviewed
     head = merge_main_with_edit(repo, THIRD, "third v1\n")
     assert git(repo, "show", f"{head}:{THIRD}") == "third v1", "the later merge must restore the file"
 
-    assert_no_carry(repo, reviewed, head)
+    assert_no_base_merge_carry(repo, reviewed, head)
 
 
 @pytest.mark.requirement("REVIEW-16")
@@ -306,3 +306,55 @@ def test_two_clean_base_merges_carry(repo: Path, reviewed: str) -> None:
     head = merge_main(repo)
 
     assert attempt(repo, reviewed, head).verdict is not None
+
+
+# ----------------------------------------------------------------------------
+# REVIEW-23: same-path carry, both directions
+
+
+@pytest.mark.requirement("REVIEW-23")
+def test_same_path_fix_up_carries_with_path_set_proof(repo: Path, reviewed: str) -> None:
+    """[if] a fix-up push edits only a path the reviewed head touched [then] coverage carries, [else stop]."""
+    head = commit(repo, FILE, lines({30: "line30 pr", 5: "line5 fix-up"}))
+
+    carried = attempt(repo, reviewed, head).verdict
+    assert carried is not None and carried.reviewed is True
+    assert carried.reason == f"carried from {reviewed[:11]} (same paths since; no new path in the PR diff)"
+    proof = "\n".join(carried.carry_proof)
+    assert f"same-path carry: reviewed {reviewed} -> head {head}" in proof
+    assert "reviewed diff touches 1, head diff touches 1, new paths 0" in proof
+
+
+@pytest.mark.requirement("REVIEW-23")
+def test_push_adding_a_new_path_needs_a_fresh_review(repo: Path, reviewed: str) -> None:
+    """[if] a push brings a path into the PR diff the reviewed head did not touch [then] no carry, [else stop]."""
+    head = commit(repo, OTHER, "other changed by the PR\n")
+
+    result = attempt(repo, reviewed, head)
+    assert result.verdict is None and result.unknown == (), result
+
+
+@pytest.mark.requirement("REVIEW-23")
+def test_the_prs_own_debt_file_is_not_a_new_path(repo: Path, reviewed: str) -> None:
+    """[if] a same-path fix-up adds this PR's own debt file [then] coverage still carries, [else stop].
+
+    The debt file never needs review."""
+    commit(repo, FILE, lines({30: "line30 pr", 6: "line6 fix-up"}))
+    head = commit(repo, "(private path)", "# PR #4426 debt log\n")
+
+    carried = attempt(repo, reviewed, head).verdict
+    assert carried is not None and "same paths since" in carried.reason
+    proof = "\n".join(carried.carry_proof)
+    assert "head diff touches 1, new paths 0" in proof
+    assert "plus this PR's own debt file" in proof
+
+
+@pytest.mark.requirement("REVIEW-23")
+def test_a_rebased_head_on_the_same_paths_does_not_carry(repo: Path, reviewed: str) -> None:
+    """[if] the reviewed head is not an ancestor of the head (rebase, force-push) [then] no carry, [else stop]."""
+    from scripts.review_coverage_base_merge import same_path_carry
+
+    git(repo, "checkout", "-q", "-b", "rebased", "main")
+    head = commit(repo, FILE, lines({30: "line30 pr rewritten"}))
+    tip = git(repo, "rev-parse", "main")
+    assert same_path_carry(repo, tip, reviewed, head, "(private path)") is None

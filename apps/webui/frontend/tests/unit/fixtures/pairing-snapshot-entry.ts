@@ -8,6 +8,8 @@ export { analysisSourceState } from '$lib/rb/analysis-source.svelte';
 export {
 	dispatchPerformanceCommand,
 	installPerformanceBrowserIpc,
+	performanceCommandStatus,
 	queryPerformanceState,
+	runPerformanceCommandFromUi,
 	uiPrefs
 } from '$lib/rb/performance-ipc.svelte';

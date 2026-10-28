@@ -13,9 +13,10 @@ Tables:
 * ``track_aliases``       -- one row per alias -> canonical.
 * ``tag_provenance``      -- insert-only history of unified-tag writes.
 """
+
 from __future__ import annotations
 
-import sqlite3
+import sqlite3 as _sqlite3
 from pathlib import Path
 
 # fingerprints table is created by FingerprintCache; we only add the
@@ -61,21 +62,25 @@ CREATE INDEX IF NOT EXISTS idx_provenance_field
 """
 
 
-def ensure_schema(db_path: Path) -> sqlite3.Connection:
-    """Create (or migrate) the dedup schema; return an open connection.
+def ensure_schema(db_path: Path) -> None:
+    """Create (or migrate) the dedup schema at ``db_path``.
 
-    Safe to call repeatedly. Uses IF NOT EXISTS guards everywhere.
+    Safe to call repeatedly. Uses IF NOT EXISTS guards everywhere. A caller
+    outside ``apps.dedup`` opens its own connection afterwards: an open
+    connection never crosses the contract, so none is returned or kept here.
+    That is why an in-memory database is refused: it lives only as long as the
+    connection that migrated it, so the caller's own connection would open a
+    second, empty one and fail on its first write.
     """
+    if str(db_path) == ":memory:":
+        raise ValueError("the dedup contract migrates a database file; an in-memory database cannot outlive it")
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.executescript(SCHEMA_SQL)
-    cluster_columns = {
-        str(row[1]) for row in conn.execute("PRAGMA table_info(duplicate_clusters)")
-    }
-    if "flagged_manual_review" not in cluster_columns:
-        conn.execute(
-            "ALTER TABLE duplicate_clusters ADD COLUMN "
-            "flagged_manual_review INTEGER NOT NULL DEFAULT 0"
-        )
-    conn.commit()
-    return conn
+    conn = _sqlite3.connect(db_path)
+    try:
+        conn.executescript(SCHEMA_SQL)
+        cluster_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(duplicate_clusters)")}
+        if "flagged_manual_review" not in cluster_columns:
+            conn.execute("ALTER TABLE duplicate_clusters ADD COLUMN flagged_manual_review INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    finally:
+        conn.close()

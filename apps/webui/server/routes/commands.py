@@ -36,7 +36,9 @@ from apps.webui.server.shell_commands import shell_broker
 
 router = APIRouter(prefix="/commands", tags=["agent-commands"])
 
-_ORDER_KEYS = frozenset({"single", "sequence", "parallel", "ramp"})
+#: AGENT-24: ``plan`` arms the page's transition-plan executor and answers at
+#: once; ``plan_amend`` aborts, finishes or extends the armed plan.
+_ORDER_KEYS = frozenset({"single", "sequence", "parallel", "ramp", "plan", "plan_amend"})
 
 #: AGENT-19: the longest a claim request may be held open. Below every proxy and
 #: webview fetch idle timeout in the path (vite proxy, WKWebView 60 s).
@@ -284,7 +286,9 @@ async def submit_single_command(request: Request, command: dict[str, Any]) -> di
 
 def _order(body: dict[str, Any]) -> dict[str, Any]:
     if len(body) != 1:
-        raise ValueError("an order must contain exactly one of single, sequence, parallel, or ramp")
+        raise ValueError(
+            "an order must contain exactly one of single, sequence, parallel, ramp, plan, or plan_amend"
+        )
     kind, payload = next(iter(body.items()))
     if kind not in _ORDER_KEYS:
         raise ValueError(f"unknown order kind: {kind}")
@@ -296,8 +300,8 @@ def _order(body: dict[str, Any]) -> dict[str, Any]:
         or not all(isinstance(step, dict) for step in payload)
     ):
         raise ValueError(f"{kind} must be a non-empty list of command objects")
-    if kind == "ramp" and not isinstance(payload, dict):
-        raise ValueError("ramp must be an object")
+    if kind in {"ramp", "plan", "plan_amend"} and not isinstance(payload, dict):
+        raise ValueError(f"{kind} must be an object")
     return {"kind": kind, "payload": payload}
 
 

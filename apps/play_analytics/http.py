@@ -54,12 +54,14 @@ def create_router(*, db_path: Path = SETS_DB, events_table: EventsTable = "event
         ] = DEFAULT_MIN_AUDIBLE_S,
     ) -> dict[str, object]:
         try:
-            return service.query_play_analytics(
-                db_path,
-                share_state=share_state,
-                limit=limit,
-                events_table=events_table,
-                min_audible_s=min_audible_s,
+            return dict(
+                service.query_play_analytics(
+                    db_path,
+                    share_state=share_state,
+                    limit=limit,
+                    events_table=events_table,
+                    min_audible_s=min_audible_s,
+                )
             )
         except AnalyticsSchemaError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc

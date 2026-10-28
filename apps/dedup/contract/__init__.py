@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from .schema import SCHEMA_SQL, ensure_schema
 
-CONTRACT_VERSION = "dedup/1"
+CONTRACT_VERSION = "dedup/2"
 
 # Cluster bounds the review routes re-check before an apply; the clustering
 # pass (apps.dedup.find_clusters) uses the same values as its defaults.

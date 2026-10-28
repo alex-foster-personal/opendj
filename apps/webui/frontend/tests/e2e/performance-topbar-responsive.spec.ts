@@ -35,7 +35,7 @@ async function _hitTarget(page: Page, selector: string): Promise<{ hit: boolean;
 	});
 }
 
-test('responsive TopBar keeps priority controls reachable and reports the two-track contract', async ({ page }) => {
+test('responsive TopBar keeps priority controls reachable and two-track AutoPlay is live', async ({ page }) => {
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
 
@@ -71,20 +71,23 @@ test('responsive TopBar keeps priority controls reachable and reports the two-tr
 
 	await page.locator('span.ap-wrap > button[aria-describedby="ap-menu-status"]').focus();
 	await expect(page.locator('.ap-menu')).toBeVisible();
-	await expect(page.locator('button.ap-two-track')).toBeDisabled();
-	await expect(page.locator('button.ap-two-track')).toHaveAttribute('title', /Not built yet/);
-
-	const refusal = await page.evaluate(async () => {
+	// TOPVIEW-06: two-track AutoPlay is a live checkbox, and its IPC twin
+	// flips the same pref the checkbox shows.
+	const twoTrack = page.locator('[data-testid="ap-two-track"]');
+	await expect(twoTrack).toBeEnabled();
+	await expect(twoTrack).not.toBeChecked();
+	const snapshotTwoDeck = await page.evaluate(async () => {
 		const ipc = window.musicDjToolsPerformance;
 		if (ipc === undefined) throw new Error('performance IPC is not installed');
-		try {
-			await ipc.dispatch({ type: 'auto_play_two_track' });
-			return null;
-		} catch (error) {
-			return error instanceof Error ? error.message : String(error);
-		}
+		const state = await ipc.dispatch({ type: 'auto_play_two_track', enabled: true });
+		return state.ui.auto_play_two_deck;
 	});
-	expect(refusal).toMatch(/not_implemented/);
+	expect(snapshotTwoDeck).toBe(true);
+	await expect(twoTrack).toBeChecked();
+	await page.evaluate(async () => {
+		await window.musicDjToolsPerformance?.dispatch({ type: 'auto_play_two_track', enabled: false });
+	});
+	await expect(twoTrack).not.toBeChecked();
 });
 
 test('compact 800x600 performance top bar shows Stage, compact lyric cue, and cold-load Stage wiring', async ({

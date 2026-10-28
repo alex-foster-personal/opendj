@@ -11,7 +11,7 @@ shields badge and (since Mon 31 Aug 2026) an explicit BLOCKING verdict. Devin
 states neither: it ships a JSON envelope in an HTML comment plus a headline
 colour. CodeRabbit is governed but has emitted no threads here yet.
 
-Acceptance tests live in tests/scripts/test_review_thread_parse.py and run
+Acceptance tests live in (private path) and run
 against real captured payloads pinned by checksum.
 """
 
@@ -40,6 +40,13 @@ BOT_LOGINS = frozenset(
         "devin-ai-integration",
     }
 )
+
+# REVIEW-22 (Wed 28 Oct 2026, ADR-0124): the only HUMAN whose thread can block a
+# merge by marking it BLOCKING. Lane reviews (Sol, Claude, Grok, Cursor) also post
+# under this login and are told apart by their lane marker. A P0 from ANY human is
+# governed too, BLOCKING or not.
+HUMAN_BLOCKER_LOGINS = frozenset({"maintainer"})
+HUMAN = "human"
 
 # Codex renders severity as a shields.io badge, e.g.
 # ![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)
@@ -225,16 +232,35 @@ class Thread:
         return "UNTRIAGED"
 
     @property
+    def merge_blocker_class(self) -> bool:
+        """REVIEW-22: a P0 from any reviewer, or a human's explicit BLOCKING.
+
+        Nothing else stops a merge. A bot P1, P2, P3 or bot BLOCKING verdict is
+        a follow-up, filed by `review_followups`, so it is never lost and never
+        holds a merge open for another review round.
+        """
+        return self.severity == "P0" or (self.bot == HUMAN and self.blocking == "BLOCKING")
+
+    @property
+    def blocks_merge(self) -> bool:
+        """A merge-blocker-class thread not yet FIXED or REBUTTED and resolved."""
+        return self.merge_blocker_class and (not self.triaged or self.disposition == "DEBT-LOGGED")
+
+    @property
     def illegal_debt_log(self) -> bool:
         """A blocker written off as debt: forbidden however it was resolved.
 
-        P0/P1 and anything marked BLOCKING must be FIXED or REBUTTED. Catching
-        this is mechanical because the debt-log reply has a fixed opening, so
-        the gate can refuse the one shortcut the tiering exists to prevent.
+        P0 and a human BLOCKING thread must be FIXED or REBUTTED. Catching this
+        is mechanical because the debt-log reply has a fixed opening, so the
+        gate can refuse the one shortcut the tiering exists to prevent.
         """
-        return self.disposition == "DEBT-LOGGED" and (
-            self.severity in {"P0", "P1"} or self.blocking == "BLOCKING"
-        )
+        return self.disposition == "DEBT-LOGGED" and self.merge_blocker_class
+
+    @property
+    def follow_up(self) -> bool:
+        """A non-blocking thread that still needs work after the merge: unterminated,
+        or a debt-log claim the PR's debt file does not hold."""
+        return not self.merge_blocker_class and (not self.triaged or self.debt_not_in_ledger)
 
     @property
     def debt_not_in_ledger(self) -> bool:
@@ -247,33 +273,17 @@ class Thread:
         Gated on `ledger_checked`: #805 round 8 (review_thread_triage.py:360).
         A thread built on the deferred-read path never had its permalink
         checked against anything -- `ledger_indexed` defaults False there, not
-        because the claim was absent, but because nobody looked. Asserting
-        NOT IN LEDGER from a default is exactly the accusation-from-an-
-        unmeasured-read #792 banned, just one layer up: the same class of bug
-        `LedgerReadError` exists to keep out of a rendered verdict, but for a
-        read that was skipped by design rather than one that failed outright.
+        because the claim was absent, but because nobody looked.
         """
         return self.disposition == "DEBT-LOGGED" and self.ledger_checked and not self.ledger_indexed
 
     @property
     def ledger_relevant(self) -> bool:
-        """A DEBT-LOGGED claim whose place in `PullRequest.failing` actually
-        hinges on ledger membership. #805 round 8 (review_thread_triage.py:347):
-        `illegal_debt_log` already fails a P0/P1 or BLOCKING debt-log
-        regardless of `ledger_indexed`, and an unresolved thread already fails
-        via `triaged` regardless too -- in both cases a ledger read can only
-        downgrade an already-known verdict to COULD NOT MEASURE if the read
-        happens to fail (a deleted historical base, a predates-the-ledger
-        head). Only a RESOLVED, non-blocking DEBT-LOGGED thread's outcome is
-        actually undetermined without `ledger_indexed`; that is the one shape
-        `debt_not_in_ledger` can flip from passing to failing.
+        """A DEBT-LOGGED claim whose verdict actually hinges on ledger membership:
+        resolved and not merge-blocker class (a blocker's debt-log is illegal
+        regardless, an unresolved thread is unterminated regardless).
         """
-        return (
-            self.disposition == "DEBT-LOGGED"
-            and self.resolved
-            and self.severity not in {"P0", "P1"}
-            and self.blocking != "BLOCKING"
-        )
+        return self.disposition == "DEBT-LOGGED" and self.resolved and not self.merge_blocker_class
 
 
 @dataclass(frozen=True)
@@ -290,7 +300,7 @@ class PullRequest:
     head_sha: str
     threads: tuple[Thread, ...]
     # The branch this PR merges into. A DEBT-LOGGED claim may be indexed here
-    # rather than at the head, because `.planning/TECH-DEBT.md` sanctions
+    # rather than at the head, because `(private path)` sanctions
     # appends pushed straight to main; the default is what every caller before
     # #805 was implicitly assuming.
     base_ref: str = "main"
@@ -302,10 +312,13 @@ class PullRequest:
 
     @property
     def failing(self) -> tuple[Thread, ...]:
-        """Everything the gate refuses: unterminated, plus illegal debt-logs."""
-        return tuple(
-            t for t in self.threads if not t.triaged or t.illegal_debt_log or t.debt_not_in_ledger
-        )
+        """Everything the gate refuses (REVIEW-22): an open or debt-logged P0 or human BLOCKING."""
+        return tuple(t for t in self.threads if t.blocks_merge)
+
+    @property
+    def follow_ups(self) -> tuple[Thread, ...]:
+        """Non-blocking threads still needing work; filed, never merge-blocking."""
+        return tuple(t for t in self.threads if t.follow_up)
 
     @property
     def silent(self) -> tuple[Thread, ...]:
@@ -549,7 +562,14 @@ def build_thread(
     first = comments[0]
     author = (first.get("author") or {}).get("login") or ""
     body = first["body"]
-    if not _is_reviewer_thread(author, body):
+    if _is_reviewer_thread(author, body):
+        opened_by = _reviewer_lane(author, body) or author
+    elif _is_human(author) and (
+        _severity(body) == "P0"
+        or (_normalize_login(author) in HUMAN_BLOCKER_LOGINS and _blocking(body) == "BLOCKING")
+    ):
+        opened_by = HUMAN  # REVIEW-22: a P0 from anyone, or the maintainer's explicit BLOCKING
+    else:
         return None
     replies = [
         comment
@@ -562,7 +582,7 @@ def build_thread(
         line=node["line"],
         resolved=node["isResolved"],
         outdated=node["isOutdated"],
-        bot=_reviewer_lane(author, body) or author,
+        bot=opened_by,
         severity=_severity(body),
         blocking=_blocking(body),
         summary=_summary(body),

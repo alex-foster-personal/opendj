@@ -248,20 +248,30 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
     ),
     *_each(
         "javascript",
-        (("@esbuild/darwin-arm64", "0.25.12"),),
+        (
+            ("@esbuild/darwin-arm64", "0.25.12"),
+            ("@esbuild/linux-x64", "0.25.12"),
+            ("@esbuild/linux-arm64", "0.25.12"),
+        ),
         text_relative="docs/legal/esbuild-LICENSE.md",
         source_url="https://raw.githubusercontent.com/evanw/esbuild/208f539945b145e7c9d6d844290f81c3fe5af320/LICENSE.md",
         sha256="b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681",
-        reason="the darwin-arm64 native package ships no LICENSE; parent esbuild 0.25.12 LICENSE.md "
+        reason="the darwin-arm64, linux-x64 and linux-arm64 native packages ship no LICENSE; parent esbuild 0.25.12 LICENSE.md "
         "(gitHead 208f5399) covers this binary and is staged",
     ),
     *_each(
         "javascript",
-        (("@rollup/rollup-darwin-arm64", "4.62.2"),),
+        (
+            ("@rollup/rollup-darwin-arm64", "4.62.2"),
+            ("@rollup/rollup-linux-x64-gnu", "4.62.2"),
+            ("@rollup/rollup-linux-x64-musl", "4.62.2"),
+            ("@rollup/rollup-linux-arm64-gnu", "4.62.2"),
+            ("@rollup/rollup-linux-arm64-musl", "4.62.2"),
+        ),
         text_relative="docs/legal/rollup-LICENSE.md",
         source_url="https://raw.githubusercontent.com/rollup/rollup/8faa18777374582bb813d54ce3623f4acf1f9e0b/LICENSE.md",
         sha256="fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8",
-        reason="the darwin-arm64 native package ships no LICENSE; parent rollup 4.62.2 LICENSE.md "
+        reason="the darwin-arm64 and linux x64/arm64 gnu/musl native packages ship no LICENSE; parent rollup 4.62.2 LICENSE.md "
         "(gitHead 8faa1877) covers this binary and is staged",
     ),
     *_each(

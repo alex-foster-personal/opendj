@@ -6,6 +6,8 @@
  * shared automatic handoff runner here. No engine or IPC imports.
  */
 import { TRIM_MAX_GAIN } from '$lib/player/constants';
+// The engine reads the plan gate through this module, which already owns the election hold it feeds.
+export { autoPlayYieldsNow } from './auto-play-plan-gate';
 import { autoGainLinear } from '$lib/rb/auto-gain.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
@@ -144,6 +146,18 @@ export function installAutomaticMasterElectionRunner(runner: AutomaticMasterElec
 	return () => {
 		automaticMasterElectionRunner = previous;
 	};
+}
+
+/**
+ * AGENT-24 (Codex P1 on #5822): whether an automatic master election must leave the master where it is. A locked
+ * master holds against every non-forced election; so does a running or scheduled agent plan, which owns its clock
+ * deck as master until its own terminal `master` event (a level handoff caused by the plan's own fader cut would
+ * otherwise steal the master and fail the plan). Forced elections (the master stopped, played out or unloaded) still
+ * run: the deck is gone, and the plan fails on that loss itself.
+ */
+export function automaticElectionHeld(input: { locked: boolean; force: boolean; planOwnsDecks: boolean }): boolean {
+	if (input.force) return false;
+	return input.locked || input.planOwnsDecks;
 }
 
 export function runAutomaticMasterElection(work: () => Promise<void>): Promise<void> {

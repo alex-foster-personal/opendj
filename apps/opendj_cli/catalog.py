@@ -60,14 +60,19 @@ ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks")
+# TOPVIEW-01..03: mirrors PERF_VIEWS in apps/webui/frontend/src/lib/rb/topbar-view-prefs.ts.
+PERF_VIEW_VALUES: tuple[str, ...] = ("waveform", "list", "phase-scope", "phase-meter")
 UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light")
 WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono")
 WAVE_SPLIT_MASTER_VALUES: tuple[str, ...] = ("auto", "on", "off")
 
 # The command types AGENT-03 will ramp. An ordering that carries a target must
 # be one of these, mirroring the guard in the page's own ramp executor
-# (apps/webui/frontend/src/lib/rb/agent-orders.ts).
-RAMPABLE_TYPES: frozenset[str] = frozenset({"eq", "fader", "trim", "filter", "stem_gain"})
+# (apps/webui/frontend/src/lib/rb/agent-orders.ts). AGENT-24 added crossfader
+# and tempo (the canon AutoDJ doc's first gap); tempo travels as a ratio.
+RAMPABLE_TYPES: frozenset[str] = frozenset(
+    {"eq", "fader", "trim", "filter", "stem_gain", "crossfader", "tempo"}
+)
 
 _DECK = arg("deck", "deck", deck_value, "1-4")
 _ENABLED = arg("enabled", "bool", bool_value, "true|false")
@@ -214,6 +219,11 @@ _VERBS: tuple[Verb, ...] = (
     Verb("stem_solo", "stem_solo", (_DECK, _STEM, arg("solo", "bool", bool_value, "true|false"))),
     Verb("stem_load", "stem_load", (_DECK,),
          note="STEM-46/47: get the deck's stems now (retry a failed load, start a held one)."),
+    Verb("stem_separate", "stem_separate", (_DECK, arg("stable_id", "text", text_value, optional=True)),
+         note="STEM-77: enqueue separation of the track on a NO STEMS deck; "
+              "refused while a job for it is queued or running, or when the deck no longer "
+              "holds stable_id (omitted: the track it holds when the command arrives). "
+              "stem_load lands the result."),
     Verb("stem_eq_mode", "stem_eq_mode", (_DECK, _ENABLED),
          observes=(Observe(("mixer", "channels", "{deck}", "stem_eq_mode"), "enabled"),)),
     Verb("stem_gain", "stem_gain", (_DECK, _STEM, _UNIT),
@@ -295,8 +305,13 @@ _VERBS: tuple[Verb, ...] = (
         arg("feature", "enum", enum_value(ANALYSIS_SOURCE_FEATURES), "beatgrid"),
         arg("source", "enum", enum_value(ANALYSIS_SOURCE_VALUES), "rekordbox|own"),
     ), note="PARITY-02: rbx-vs-own analysis source A/B per feature."),
-    Verb("auto_play_two_track", "auto_play_two_track", (),
-         note="UI contract only: no automatic second-track selection exists yet."),
+    Verb("auto_play_two_track", "auto_play_two_track", (_ENABLED,),
+         note="TOPVIEW-06: two-track AutoPlay keeps the set on decks 1 and 2."),
+    Verb("set_perf_view", "set_perf_view", (
+        arg("view", "enum", enum_value(PERF_VIEW_VALUES), "waveform|list|phase-scope|phase-meter"),
+    ), note="TOPVIEW-01..03: the top bar's view icons; what the wavestack area shows."),
+    Verb("show_pads", "show_pads", (_ENABLED,),
+         note="TOPVIEW-04: the top bar's PAD button; show or hide the performance-pad rows."),
     Verb("auto_play_next_arm", "auto_play_next_arm", ()),
     Verb("auto_play_next_cancel", "auto_play_next_cancel", ()),
     Verb("pins_show_other_users", "pins_show_other_users", (),
@@ -363,6 +378,9 @@ _VERBS: tuple[Verb, ...] = (
         arg("edge", "enum", enum_value(EDGE_VALUES), "top|left|right|bottom"),
         arg("hovered", "bool", bool_value, "true|false"),
     )),
+    # ----- top bar Track information (i) overlay (TOPVIEW-05) -----------
+    Verb("track_info_toggle", "track_info_toggle", ()),
+    Verb("track_info_close", "track_info_close", ()),
     Verb("pairing_snapshot_open", "pairing_snapshot_open", ()),
     Verb("pairing_snapshot_remove_eq_adjuster", "pairing_snapshot_remove_eq_adjuster",
          (_DECK, _BAND)),

@@ -178,7 +178,8 @@ describe('auto-play deck pick', () => {
 					deck({ id: 3, stable_id: null }),
 					deck({ id: 4, stable_id: 'y', playing: true })
 				],
-				1
+				1,
+				false
 			),
 			2
 		);
@@ -190,7 +191,8 @@ describe('auto-play deck pick', () => {
 					deck({ id: 3, stable_id: 'y', playing: true }),
 					deck({ id: 4, stable_id: 'z', playing: true })
 				],
-				1
+				1,
+				false
 			),
 			2
 		);
@@ -202,7 +204,8 @@ describe('auto-play deck pick', () => {
 					deck({ id: 3, stable_id: 'b', playing: true }),
 					deck({ id: 4, stable_id: 'c', playing: true })
 				],
-				1
+				1,
+				false
 			),
 			null
 		);
@@ -210,7 +213,7 @@ describe('auto-play deck pick', () => {
 });
 
 describe('[PLAY-22] auto-play prefers the partner deck (1<->2, 3<->4)', () => {
-	const pick = (decks, source) => mod.pickFollowerDeck(decks.map((d) => deck(d)), source);
+	const pick = (decks, source) => mod.pickFollowerDeck(decks.map((d) => deck(d)), source, false);
 	it('source 1, deck 2 loaded and stopped, 3/4 empty: deck 2 (cleared by the handoff)', () => {
 		assert.equal(
 			pick([{ id: 1, stable_id: 'src', playing: true }, { id: 2, stable_id: 'x' }, { id: 3 }, { id: 4 }], 1),

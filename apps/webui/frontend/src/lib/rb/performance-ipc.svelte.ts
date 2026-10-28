@@ -123,6 +123,9 @@ import {
 	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
 	setShowStems,
+	setAutoPlayTwoDeck,
+	setPerfView,
+	setShowPads,
 	setWaveformDesign,
 	setUiSkin,
 	setWavePalette,
@@ -130,6 +133,7 @@ import {
 	type LibraryPanel
 } from '$lib/rb/prefs.svelte';
 import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
+import { PERF_VIEWS, isPerfView, type PerfView } from '$lib/rb/prefs.svelte';
 import {
 	effectiveWaveformDesign,
 	effectiveWavePalette,
@@ -140,12 +144,13 @@ import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
 	DeckState,
+	HotCue,
+	HotCueSlot,
 	LoopState,
 	QuantizeGrid,
 	SafetyLoopSlot,
 	SyncMode
 } from '$lib/rb/deck-state-types';
-import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
 	EqBand,
@@ -155,6 +160,13 @@ import type {
 	MixerChannelState
 } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
+import {
+	type StemSeparationSnapshot,
+	noteStemsLoadedOnceSettled,
+	separateLoadedDeck,
+	stemLoadRun,
+	stemSeparationSnapshot
+} from '$lib/rb/stem-separation-port';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
 import { assertHeadphoneAlignmentMode, assertMasterDelayMs } from '$lib/player/constants';
 import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
@@ -163,6 +175,12 @@ import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/perfor
 import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
+import {
+	closeTrackInfo,
+	toggleTrackInfo,
+	trackInfoSnapshot,
+	type TrackInfoDeck
+} from '$lib/rb/track-info-state.svelte';
 import { enableBeatSyncAfterLoad, installBeatSyncMaxEnabler, uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
@@ -251,7 +269,7 @@ export type PerformanceCommand =
 			start_at_context_sec?: number;
 	  }
 	| { type: 'cue'; deck: DeckId }
-	| { type: 'seek'; deck: DeckId; position_ms: number }
+	| { type: 'seek'; deck: DeckId; position_ms: number; exact?: boolean }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design: WaveformDesignPref }
 	| { type: 'set_skin'; ui_skin: SkinSettings['ui_skin']; wave_palette: SkinSettings['wave_palette']; wave_split_master: SkinSettings['wave_split_master'] }
@@ -273,7 +291,7 @@ export type PerformanceCommand =
 	// above. 1/4/8 are real and change engine.setQuantizeGrid; 'phase'
 	// (match to the detected phase length) is explicitly NOT implemented -
 	// _dispatchUnknown rejects it before it can queue, same shape as
-	// auto_play_two_track's not_implemented rejection.
+	// pins_show_other_users' not_implemented rejection.
 	| { type: 'quantize_grid'; deck: DeckId; beats: 1 | 4 | 8 | 'phase' }
 	| { type: 'beat_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
@@ -282,8 +300,16 @@ export type PerformanceCommand =
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean; exclusive?: boolean }
 	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
-	/** STEM-46/47: get this deck's stems now (retry a failed load, start a held one). */
-	| { type: 'stem_load'; deck: DeckId }
+	/** STEM-46/47: get this deck's stems now (retry a failed load, start a held one).
+	 * STEM-77: with `stable_id`, it does nothing unless the deck still holds
+	 * that track when it runs, so a probe for one track never reloads another
+	 * loaded meanwhile. */
+	| { type: 'stem_load'; deck: DeckId; stable_id?: string }
+	/** STEM-77: enqueue separation of the loaded track on a NO STEMS deck
+	 * (POST /api/v1/jobs kind stems.separate); stem_load lands the result.
+	 * With `stable_id`, it is refused unless the deck still holds that track
+	 * when it runs, so a click on one track never pays for another. */
+	| { type: 'stem_separate'; deck: DeckId; stable_id?: string }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
@@ -291,9 +317,10 @@ export type PerformanceCommand =
 	| { type: 'trim'; deck: DeckId; value: number }
 	/** AUTOGAIN-04: the user's own auto gain dB for the loaded track (null = use the analysed one). */
 	| { type: 'auto_gain_offset'; deck: DeckId; offset_db: number | null; stable_id: string }
-	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
+	// AGENT-30: `at_context_sec` starts the step on that AudioContext time (sample-accurate), not on dispatch.
+	| { type: 'eq'; deck: DeckId; band: EqBand; value: number; at_context_sec?: number; step_id?: string }
 	| { type: 'filter'; deck: DeckId; value: number }
-	| { type: 'fader'; deck: DeckId; value: number }
+	| { type: 'fader'; deck: DeckId; value: number; at_context_sec?: number; step_id?: string }
 	| { type: 'assign'; deck: DeckId; assign: CrossfaderAssign }
 	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
 	| { type: 'crossfader'; value: number }
@@ -318,8 +345,15 @@ export type PerformanceCommand =
 	| { type: 'headphone_calibrate'; interactive?: boolean }
 	| { type: 'headphone_calibrate_abort' }
 	| { type: 'analysis_source'; feature: AnalysisSourceFeature; source: AnalysisSource }
-	/** UI contract only: no automatic second-track selection or mixing exists yet. */
-	| { type: 'auto_play_two_track' }
+	/** TOPVIEW-06: two-track AutoPlay, the set kept on decks 1 and 2 (the
+	 * AutoPlay menu checkbox's twin; persists uiPrefs.auto_play_two_deck). */
+	| { type: 'auto_play_two_track'; enabled: boolean }
+	/** TOPVIEW-01..03: which view the /performance wavestack area shows (the
+	 * top bar's view icons; persists uiPrefs.perf_view). */
+	| { type: 'set_perf_view'; view: PerfView }
+	/** TOPVIEW-04: whether the performance-pad rows are shown (the top bar's
+	 * PAD button; persists uiPrefs.show_pads). */
+	| { type: 'show_pads'; enabled: boolean }
 	/** Pin fc60002b81a8: early next-track transition trigger, the ">|" split
 	 * of the AutoPlay button. Real (not stubbed) - see auto-play-next.ts /
 	 * auto-play-next.svelte.ts for the approximate loop/duck/cut it arms. */
@@ -353,6 +387,10 @@ export type PerformanceCommand =
 	| { type: 'tech_mode_opt_reveal'; revealed: boolean }
 	| { type: 'tech_mode_eq_raised'; raised: boolean }
 	| { type: 'tech_mode_edge_hover'; edge: EdgeRegion; hovered: boolean }
+	// TOPVIEW-05: the top bar's Track information (i) overlay, UI state with
+	// no engine write, shared by the button and agents (Codex P1 4300879440).
+	| { type: 'track_info_toggle' }
+	| { type: 'track_info_close' }
 	| { type: 'pairing_snapshot_open' }
 	| { type: 'pairing_snapshot_remove_eq_adjuster'; deck: DeckId; band: EqBand }
 	| { type: 'pairing_snapshot_save'; from_deck: DeckId; to_deck: DeckId }
@@ -417,6 +455,12 @@ export interface PerformanceDeckSnapshot {
 	/** Last load stage map (ms); null until a load. CLI/IPC feedback. */
 	last_load_stages: Record<string, number> | null;
 	stems: StemDeckState;
+	/** STEM-77: the loaded track's separation job, pending start and refusal,
+	 * the same inputs the deck's SEPARATE button renders; null with no track,
+	 * or while the separation store is not loaded yet (a deck showing NO
+	 * STEMS loads it, and so does the first `stem_separate` command); a load
+	 * that failed shows here as `refusal`, the text the deck's button shows. */
+	stem_separation: StemSeparationSnapshot | null;
 	loop: LoopState | null;
 	/** The saved SAFE slot is engine truth, so agents can verify a resize did
 	 * not leave a stale snapshot that out-crossing engage could restore. */
@@ -438,6 +482,8 @@ export interface PerformanceDeckSnapshot {
 	waveform_seek_armed: { target_position_ms: number; remaining_ms: number } | null;
 	/** LATENCY-02: QUANTIZED LAUNCH armed countdown; null once launched or cleared. */
 	quantized_launch_armed: { remaining_ms: number; launch_at_context_sec: number } | null;
+	/** Whether this deck's loop is engaged: an engaged loop wraps the playhead, so a plan can never reach its window. */
+	loop_engaged: boolean;
 	command_error: string | null;
 	command_pending: boolean;
 	/** Last command observed for this deck, including MIDI and UI sources. */
@@ -531,10 +577,18 @@ export interface PerformanceState {
 		eq_raised: boolean;
 		hovered_edges: EdgeRegion[];
 	};
+	/** TOPVIEW-05: whether the (i) overlay is open, and on which deck and track. */
+	track_info: { open: boolean; deck: DeckId | null; stable_id: string | null };
 	ui: {
 		show_stems: boolean;
 		/** AGENT-20: so an autoplay command's mirror_delta names what it changed. */
 		auto_play_enabled: boolean;
+		/** TOPVIEW-06: AutoPlay keeps to decks 1 and 2. */
+		auto_play_two_deck: boolean;
+		/** TOPVIEW-01..03: the view the wavestack area shows. */
+		perf_view: PerfView;
+		/** TOPVIEW-04: the performance-pad rows are shown. */
+		show_pads: boolean;
 		/** Stored pref; 'auto' follows the skin. */
 		waveform_design: WaveformDesignPref;
 		/** What the waveforms actually paint (auto resolved through the skin). */
@@ -1193,6 +1247,41 @@ function _validatedPressStamp(pressT0Ms: unknown): number | undefined {
 	return pressT0Ms;
 }
 
+/**
+ * AGENT-30: an optional AudioContext start time for a step set (absent means now), and the caller's `step_id`, which
+ * a scheduled step requires and a plain set never carries: the engine reports that step's state under it.
+ */
+function _atContextSec(record: Record<string, unknown>): { at_context_sec?: number; step_id?: string } {
+	if (record.at_context_sec === undefined) {
+		if (record.step_id !== undefined) throw new TypeError('step_id is only for a step with at_context_sec');
+		return {};
+	}
+	const at = _finite('at_context_sec', record.at_context_sec);
+	if (at < 0) throw new RangeError('at_context_sec must be >= 0');
+	if (typeof record.step_id !== 'string' || record.step_id === '') throw new TypeError('a step with at_context_sec needs a step_id');
+	return { at_context_sec: at, step_id: record.step_id };
+}
+
+/** AGENT-30: a scheduled step's state as the engine owns it (waiting, landed, cancelled), or null if never scheduled. */
+export function performanceStepState(stepId: string): 'waiting' | 'landed' | 'cancelled' | 'lost' | null {
+	return engine.stepState(stepId);
+}
+
+/** AGENT-30: the plan runner has retired a finished step, so the engine may drop its state. */
+export function performanceForgetStep(stepId: string): void {
+	engine.forgetStep(stepId);
+}
+
+/** AGENT-30: a deck's playhead with the AudioContext time it was presented at (one observation), or null. */
+export function performancePositionAnchor(deckId: DeckId): { position_ms: number; context_sec: number; pitch: number } | null {
+	return engine.positionAnchor(deckId);
+}
+
+/** The engine's AudioContext clock: the time base `at_context_sec` is written in. */
+export function performanceContextTimeNowSec(): number {
+	return _quantizedLaunchDriver.contextTimeNowSec();
+}
+
 function _parseCommand(message: unknown): PerformanceCommand {
 	const record = _record(message);
 	if (typeof record.type !== 'string') throw new TypeError('performance command type must be string');
@@ -1324,8 +1413,19 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, feature: record.feature as AnalysisSourceFeature, source: record.source };
 	}
 	if (type === 'auto_play_two_track') {
-		_exactKeys(record, ['type']);
-		return { type };
+		_exactKeys(record, ['type', 'enabled']);
+		return { type, enabled: _boolean('enabled', record.enabled) };
+	}
+	if (type === 'set_perf_view') {
+		_exactKeys(record, ['type', 'view']);
+		if (!isPerfView(record.view)) {
+			throw new TypeError(`set_perf_view view must be one of ${PERF_VIEWS.join(', ')}; got ${String(record.view)}`);
+		}
+		return { type, view: record.view };
+	}
+	if (type === 'show_pads') {
+		_exactKeys(record, ['type', 'enabled']);
+		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
 	if (type === 'auto_play_next_arm' || type === 'auto_play_next_cancel') {
 		_exactKeys(record, ['type']);
@@ -1335,7 +1435,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
-	if (type === 'tech_mode_toggle') {
+	if (type === 'tech_mode_toggle' || type === 'track_info_toggle' || type === 'track_info_close') {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -1507,10 +1607,11 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
 	} else if (type === 'seek') {
-		_exactKeys(record, ['type', 'deck', 'position_ms']);
+		_exactKeys(record, ['type', 'deck', 'position_ms', 'exact']);
 		const position_ms = _finite('position_ms', record.position_ms);
 		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
-		return { type, deck, position_ms };
+		if (record.exact !== undefined && typeof record.exact !== 'boolean') throw new TypeError('seek exact must be a boolean');
+		return record.exact === true ? { type, deck, position_ms, exact: true } : { type, deck, position_ms };
 	} else if (type === 'waveform_seek') {
 		_exactKeys(record, ['type', 'deck', 'position_ms', 'snap']);
 		const position_ms = _finite('position_ms', record.position_ms);
@@ -1591,9 +1692,13 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'stem_eq_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
-	} else if (type === 'stem_load') {
-		_exactKeys(record, ['type', 'deck']);
-		return { type, deck };
+	} else if (type === 'stem_load' || type === 'stem_separate') {
+		_exactKeys(record, ['type', 'deck', 'stable_id']);
+		if (record.stable_id === undefined) return { type, deck };
+		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
+			throw new TypeError('stable_id must be a non-empty string');
+		}
+		return { type, deck, stable_id: record.stable_id };
 	} else if (type === 'stem_gain') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
@@ -1615,15 +1720,18 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`auto_gain_offset stable_id must name the track meant; got ${String(record.stable_id)}`);
 		}
 		return { type, deck, offset_db: _autoGainOffset(record.offset_db), stable_id: record.stable_id };
-	} else if (type === 'trim' || type === 'fader' || type === 'filter') {
+	} else if (type === 'fader') {
+		_exactKeys(record, ['type', 'deck', 'value', 'at_context_sec', 'step_id']);
+		return { type, deck, value: _unit('value', record.value), ..._atContextSec(record) };
+	} else if (type === 'trim' || type === 'filter') {
 		_exactKeys(record, ['type', 'deck', 'value']);
 		return { type, deck, value: _unit('value', record.value) };
 	} else if (type === 'eq') {
-		_exactKeys(record, ['type', 'deck', 'band', 'value']);
+		_exactKeys(record, ['type', 'deck', 'band', 'value', 'at_context_sec', 'step_id']);
 		if (record.band !== 'low' && record.band !== 'mid' && record.band !== 'high') {
 			throw new TypeError(`band must be low, mid, or high; got ${String(record.band)}`);
 		}
-		return { type, deck, band: record.band, value: _unit('value', record.value) };
+		return { type, deck, band: record.band, value: _unit('value', record.value), ..._atContextSec(record) };
 	} else if (type === 'assign') {
 		_exactKeys(record, ['type', 'deck', 'assign']);
 		if (record.assign !== 'A' && record.assign !== 'B' && record.assign !== 'THRU') {
@@ -1920,6 +2028,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 				other: { ...deck.stems.controls.other }
 			}
 		},
+		stem_separation: stemSeparationSnapshot(deckId, deck.stable_id),
 		loop: deck.loop === null ? null : { ...deck.loop },
 		safety_loop: deck.safety_loop === null ? null : { ...deck.safety_loop },
 		loop_interval: {
@@ -1944,6 +2053,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		hot_cue_armed: _hotCueArmedSnapshot(deckId),
 		waveform_seek_armed: _waveformSeekArmedSnapshot(deckId),
 		quantized_launch_armed: _quantizedLaunchArmedSnapshot(deckId),
+		loop_engaged: deck.loop !== null && deck.loop.engaged,
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
 		last_command_id: _deckCommandIds[deckId]
@@ -2057,6 +2167,7 @@ export function queryPerformanceState(): PerformanceState {
 			eq_raised: isEqRaised(),
 			hovered_edges: hoveredEdgeList()
 		},
+		track_info: trackInfoSnapshot(_trackInfoDecks()),
 		waveform_stutter: { ...waveformStutterSnapshot() },
 		library_panels: {
 			next_collapsed: uiPrefs.next_panel_collapsed,
@@ -2073,6 +2184,9 @@ export function queryPerformanceState(): PerformanceState {
 		ui: {
 			show_stems: uiPrefs.show_stems,
 			auto_play_enabled: uiPrefs.auto_play_enabled,
+			auto_play_two_deck: uiPrefs.auto_play_two_deck,
+			perf_view: uiPrefs.perf_view,
+			show_pads: uiPrefs.show_pads,
 			waveform_design: uiPrefs.waveform_design,
 			waveform_design_effective: effectiveWaveformDesign(uiPrefs.waveform_design, uiPrefs.ui_skin),
 			ui_skin: uiPrefs.ui_skin,
@@ -2162,6 +2276,9 @@ export function performanceCommandQueueScopes(
 		// STEM-47: landing stems on a playing deck waits for the transport to
 		// be idle; in the deck's queue it would BE the thing keeping it busy.
 		command.type === 'stem_load' ||
+		// STEM-77: an HTTP enqueue with no engine write; in the deck's queue
+		// the POST would hold up that deck's live controls.
+		command.type === 'stem_separate' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
 		command.type === 'master_volume' ||
@@ -2179,6 +2296,11 @@ export function performanceCommandQueueScopes(
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
 		command.type === 'autoplay' ||
+		// TOPVIEW: the two-track AutoPlay toggle is a preference write with no deck.
+		command.type === 'auto_play_two_track' ||
+		// TOPVIEW: the view icons and the PAD button are preference writes with no deck.
+		command.type === 'set_perf_view' ||
+		command.type === 'show_pads' ||
 		command.type === 'set_waveform_design' ||
 		command.type === 'set_skin' ||
 		// View state only: no engine write to serialize, so queueing these
@@ -2193,6 +2315,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'tech_mode_opt_reveal' ||
 		command.type === 'tech_mode_eq_raised' ||
 		command.type === 'tech_mode_edge_hover'
+		|| command.type === 'track_info_toggle'
+		|| command.type === 'track_info_close'
 		|| command.type === 'pairing_snapshot_open'
 		|| command.type === 'pairing_snapshot_remove_eq_adjuster'
 		|| command.type === 'pairing_snapshot_save'
@@ -2364,7 +2488,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'seek') {
 		waveformSeekArmed[command.deck] = null;
-		await engine.quantizedSeek(command.deck, command.position_ms);
+		// exact: the authored position lands as given, not re-snapped to the grid (a plan's prepare cue).
+		await engine.quantizedSeek(command.deck, command.position_ms, command.exact === true);
 	} else if (command.type === 'waveform_seek') {
 		const state = getDeckState(command.deck);
 		const beats = state.anlz?.beatgrid.beats ?? [];
@@ -2445,7 +2570,38 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
 	} else if (command.type === 'stem_load') {
+		// Checked here, when the command runs, not when it was issued: a load
+		// of another track may have replaced the deck's track meanwhile, and
+		// that track must not be reloaded on this command's behalf (Codex on
+		// #6819). Not an error: nothing failed, and a toast or deck banner
+		// would fire on every track change. The caller reads the deck to tell
+		// a skipped load from one that ran (Deck.svelte's probe does).
+		const held = getDeckState(command.deck).stable_id;
+		if (command.stable_id !== undefined && held !== command.stable_id) {
+			console.debug(`[performance-ipc] stem_load skipped: deck ${command.deck} no longer holds ${command.stable_id}`);
+			return;
+		}
+		// The ended run this load can look for, read before the reload starts
+		// (Codex P1 on #6819).
+		const run = stemLoadRun(held);
 		await engine.retryStems(command.deck);
+		// The look that lets this deck's stem_separate follow an ended job,
+		// for the button and an agent alike: recorded once the reload
+		// retryStems started has left loading, if the deck still holds that
+		// track (Sol P1 on #6819). Not awaited, so the deck queue never waits
+		// out a stem decode; until it lands, stem_separate still refuses.
+		void noteStemsLoadedOnceSettled(command.deck, held, run, () => getDeckState(command.deck));
+	} else if (command.type === 'stem_separate') {
+		// The deck is read when the command runs, and again once the store has
+		// loaded (separateLoadedDeck): stem_separate is outside the deck queue,
+		// and a load of another track can land while this command waits, so a
+		// click on one track must not enqueue a paid separation of the next
+		// (Codex on #6819). Unlike a skipped stem_load this is an error: the
+		// separation asked for did not start.
+		// A command that names no track was bound on receipt (_dispatchUnknown);
+		// only the preset path, which skips that, reaches this fallback.
+		const expected = command.stable_id ?? getDeckState(command.deck).stable_id;
+		await separateLoadedDeck(command.deck, expected, () => getDeckState(command.deck));
 	} else if (command.type === 'stem_gain') {
 		engine.setStemGain(command.deck, command.stem, command.value);
 	} else if (command.type === 'slip') {
@@ -2457,11 +2613,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'trim') {
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
-		engine.setEq(command.deck, command.band, command.value, pressT0Ms);
+		// AGENT-30: a plan step with `at_context_sec` starts on that AudioContext time; anything else is a plain set now.
+		if (command.at_context_sec !== undefined) engine.scheduleStep(command.deck, command.band, command.value, command.at_context_sec, command.step_id!);
+		else engine.setEq(command.deck, command.band, command.value, pressT0Ms);
 	} else if (command.type === 'filter') {
 		engine.setFilter(command.deck, command.value, pressT0Ms);
 	} else if (command.type === 'fader') {
-		engine.setFader(command.deck, command.value, pressT0Ms);
+		if (command.at_context_sec !== undefined) engine.scheduleStep(command.deck, 'fader', command.value, command.at_context_sec, command.step_id!);
+		else engine.setFader(command.deck, command.value, pressT0Ms);
 		} else if (command.type === 'assign') {
 		engine.assignChannel(command.deck, command.assign);
 	} else if (command.type === 'channel_cue') {
@@ -2627,7 +2786,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'auto_play_two_track') {
-		throw new Error('auto_play_two_track must be rejected at the dispatch boundary');
+		setAutoPlayTwoDeck(command.enabled);
+	} else if (command.type === 'set_perf_view') {
+		setPerfView(command.view);
+	} else if (command.type === 'show_pads') {
+		setShowPads(command.enabled);
 	} else if (command.type === 'auto_play_next_arm') {
 		if (_autoPlayNextController === null) {
 			throw new Error('auto_play_next_arm: no AutoPlay Next controller is mounted on this route');
@@ -2650,6 +2813,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setEqRaised(command.raised);
 	} else if (command.type === 'tech_mode_edge_hover') {
 		setEdgeHovered(command.edge, command.hovered);
+	} else if (command.type === 'track_info_toggle') {
+		toggleTrackInfo(_trackInfoDecks());
+	} else if (command.type === 'track_info_close') {
+		closeTrackInfo();
 	} else if (command.type === 'pairing_snapshot_open') {
 		_pairingSnapshot = _openPairingSnapshot();
 	} else if (command.type === 'pairing_snapshot_remove_eq_adjuster') {
@@ -3271,6 +3438,21 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	command = _autoPlayOffNeedsUser(_quantizeDefaultOn(command, caller), caller);
+	// STEM-77: a stem_separate that names no track (the CLI verb, an agent)
+	// is bound HERE, on receipt and before any await, to the track the deck
+	// holds now. Read later, after the engine routing, it could name a track a
+	// load put on the deck meanwhile and enqueue a paid separation of that one
+	// (Codex on #6819). A deck holding nothing refuses here for the same
+	// reason: a load landing before the command runs is not what was asked.
+	if (command.type === 'stem_separate' && command.stable_id === undefined) {
+		const held = getDeckState(command.deck).stable_id;
+		if (!held) {
+			const error = new Error(`stem_separate: deck ${command.deck} has no track loaded`);
+			_persistCommandError(command.deck, error, command);
+			throw error;
+		}
+		command = { ...command, stable_id: held };
+	}
 	const deck = _commandDeck(command);
 	if (command.type === 'load') {
 		onDeckLoadStart(command.deck);
@@ -3305,13 +3487,6 @@ async function _dispatchUnknown(
 			_persistCommandError(null, error);
 			throw error;
 		}
-	}
-	if (command.type === 'auto_play_two_track') {
-		const error = new Error(
-			'auto_play_two_track: not_implemented - second-track matching and independent rules are planned'
-		);
-		_persistCommandError(null, error);
-		throw error;
 	}
 	if (command.type === 'pins_show_other_users') {
 		const error = new Error(
@@ -3496,12 +3671,59 @@ export function parsePerformanceCommandForTest(message: unknown): PerformanceCom
 	return _parseCommand(message);
 }
 
+/**
+ * Installs whose page has unmounted but whose cleanup still waits on the plan
+ * runner. A remount may take them over; a live install still refuses a second.
+ */
+const _retiringPerformanceIpcs = new WeakSet<object>();
+/** Installs a remount has taken over, so their late cleanup is a no-op. */
+const _supersededPerformanceIpcs = new WeakSet<object>();
+/** Each install's Beat Sync Max enabler cleanup, run once by whichever comes first. */
+const _beatSyncMaxEnablerUninstalls = new WeakMap<object, () => void>();
+
+/** Called on unmount, before the deferred cleanup: the install may now be taken over. */
+export function retirePerformanceBrowserIpc(): void {
+	for (const host of _performanceIpcHosts()) {
+		if (host.musicDjToolsPerformance !== undefined) {
+			_retiringPerformanceIpcs.add(host.musicDjToolsPerformance);
+		}
+	}
+}
+
+let _mountGeneration = 0;
+
+/** Called synchronously at mount, before any await, so a retiring page sees a newer mount even while its hydration is pending. */
+export function claimPerformanceMount(): number {
+	_mountGeneration += 1;
+	return _mountGeneration;
+}
+
+/** The generation of the newest mount; a page whose own claim is still current owns the engine. */
+export function currentPerformanceMount(): number {
+	return _mountGeneration;
+}
+
 export function installPerformanceBrowserIpc(): () => void {
 	const hosts = _performanceIpcHosts();
 	for (const host of hosts) {
-		if (host.musicDjToolsPerformance !== undefined) {
+		const existing = host.musicDjToolsPerformance;
+		if (existing !== undefined && !_retiringPerformanceIpcs.has(existing)) {
 			throw new Error('performance IPC is already installed');
 		}
+	}
+	let tookOver = false;
+	for (const host of hosts) {
+		const existing = host.musicDjToolsPerformance;
+		if (existing !== undefined) {
+			_supersededPerformanceIpcs.add(existing);
+			_beatSyncMaxEnablerUninstalls.get(existing)?.();
+			_beatSyncMaxEnablerUninstalls.delete(existing);
+			tookOver = true;
+		}
+	}
+	// The retiring session ends here, so the new one can start its own.
+	if (tookOver && _activeCommandSession !== null) {
+		_invalidateCommandSession(_activeCommandSession.generation);
 	}
 	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
@@ -3569,10 +3791,13 @@ export function installPerformanceBrowserIpc(): () => void {
 		// The deck SYNC button's own path (DECKUX-37 rule 4).
 		dispatch: (command) => runPerformanceCommandFromUi(command)
 	});
+	_beatSyncMaxEnablerUninstalls.set(ipc, uninstallBeatSyncMaxEnabler);
 	return () => {
-		uninstallBeatSyncMaxEnabler();
+		if (_beatSyncMaxEnablerUninstalls.delete(ipc)) uninstallBeatSyncMaxEnabler();
 		for (const host of hosts) {
 			if (host.musicDjToolsPerformance !== ipc) {
+				// A remount took this install over: its session is already the new one's.
+				if (_supersededPerformanceIpcs.has(ipc)) return;
 				throw new Error('performance IPC ownership changed before cleanup');
 			}
 		}
@@ -3583,6 +3808,14 @@ export function installPerformanceBrowserIpc(): () => void {
 			}
 		}
 	};
+}
+
+/** Every deck as the TOPVIEW-05 track info rules read it (track-info-state.svelte.ts). */
+function _trackInfoDecks(): TrackInfoDeck[] {
+	return DECK_IDS.map((id) => {
+		const deck = getDeckState(id);
+		return { id, loaded: deck.stable_id !== null, isMaster: deck.is_master, stableId: deck.stable_id };
+	});
 }
 
 /**

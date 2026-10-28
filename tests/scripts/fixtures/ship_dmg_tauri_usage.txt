@@ -1,0 +1,52 @@
+usage: ship_dmg.sh [--dry-run] [--sha REF] [--machine NAME]... [--lane LABEL]
+                   [--no-close] [--requested-at ISO8601-UTC]
+                   [--build-on NAME]
+
+Ships the Open DJ desktop dmg to every DEFAULT machine (air, silver,
+demon-llama), built on demon-llama. With no arguments this is the whole
+rollout, from any of those three Macs. Best build method first: machines
+already at the target sha are skipped, a dmg
+whose embedded manifest matches is reused from THIS worktree or any sibling
+build worktree, and only otherwise is a full `just dmg` build run (arm64
+macOS only). Every install quits the app itself, deletes previous versions,
+installs, relaunches, verifies the installed manifest stamp and reports
+engine health (tracks/playlists). Any OTHER Open DJ instance running on a
+target (for example "Open DJ (Preview)") is asked to quit too, but only when
+it is idle: no deck playing, by its own engine's report. One in use, or one
+whose activity cannot be measured, is left running and named in the plan and
+the report; none is ever deleted or forced. Before quitting the app on ANY machine,
+the run refuses, naming the reason, if that machine's TESTMAC persona loop
+(opendj-agt-persona-loop) is currently running.
+
+  --dry-run       decision logic + health probes only; no quit, build,
+                  delete or install. Safe anywhere. When the plan needs a
+                  build, it also runs the read-only dmg preflight and exits
+                  nonzero if any precondition is unmet, naming all of them.
+  --sha REF       target git ref (default origin/main).
+  --machine NAME  limit to this machine (repeatable). agentbox is a
+                  disabled stub and fails loudly if requested. A selected
+                  machine that cannot be reached over ssh stops the run by
+                  name before anything is built or installed.
+  --build-on NAME which machine performs the BUILD (default demon-llama, or
+                  MDT_BUILD_ON). If it is not this machine, this exact
+                  invocation is handed to it over ssh and it does the
+                  whole rollout, still installing to every selected
+                  machine. Silver is not allowed to build. Only a mac can
+                  build: a macOS app bundle needs macOS. That machine's
+                  checkout must already BE on the target revision, since
+                  the dispatch runs its script and its sources; a
+                  mismatch is refused in seconds rather than after the
+                  build. Nothing here moves a checkout other agents share.
+  --no-close      do NOT ask the app to quit; wait for the operator to quit
+                  it by hand instead (up to 180s), then continue. The
+                  default is for the script to close it itself.
+  --lane LABEL    build/ship a labelled bake-off lane instead of the plain
+                  product. Requires MDT_LANE_LABEL exported to the SAME
+                  value (double intent); a lone env var or a lone --lane
+                  is refused. Plain product (default, zero-config): leave
+                  both unset.
+  --no-acceptance skip the installed-app acceptance (OPS-58). Loud: the
+                  report says the build is NOT accepted. Default: it runs on
+                  demon-llama after every install there.
+  --acceptance-on NAME  also run the acceptance on NAME after its install
+                  (repeatable; air is the opt-in; silver is refused).

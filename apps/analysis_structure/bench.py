@@ -2,7 +2,7 @@
 
 Usage (app venv, from the repo root):
 
-    python -m scripts.bench.own_fast_structure --allin1 DIR --peaks DIR [--json OUT]
+    python -m apps.analysis_structure.bench --allin1 DIR --peaks DIR [--json OUT]
 
 ``DIR`` for ``--allin1`` holds ``allin1_runner.py`` outputs (``<id>.json``);
 ``--peaks`` holds the 3-band waveform peaks of the same tracks as
@@ -50,9 +50,9 @@ from typing import Any
 
 import numpy as np
 
-from apps.analysis_structure.dj_labels import label_sections
-from apps.analysis_structure.fast_segment import band_envelopes, segment
-from apps.analysis_structure.pipeline import build_sidecar
+from .dj_labels import label_sections
+from .fast_segment import band_envelopes, segment
+from .pipeline import build_sidecar
 
 TOLERANCES_S = (0.5, 2.0, 3.0)
 FRAME_S = 0.5
@@ -184,28 +184,32 @@ def _mean(rows: list[dict[str, Any]], key: str) -> float | None:
     return round(statistics.fmean(vals), 3) if vals else None
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--allin1", type=Path, required=True)
-    ap.add_argument("--peaks", type=Path, required=True)
-    ap.add_argument("--json", type=Path)
-    args = ap.parse_args(argv)
+def _score_dir(allin1: Path, peaks: Path) -> dict[str, Any]:
+    """One row per All-In-One output: its scores, or why it was skipped."""
     rows: dict[str, Any] = {}
-    for path in sorted(args.allin1.glob("*.json")):
+    for path in sorted(allin1.glob("*.json")):
         raw = json.loads(path.read_text(encoding="utf-8"))
-        peaks_path = args.peaks / f"{path.stem}.npy"
+        peaks_path = peaks / f"{path.stem}.npy"
         if raw.get("status") != "ok" or not peaks_path.exists():
             rows[path.stem] = {"skipped": raw.get("status") or "no peaks"}
             continue
         rows[path.stem] = score_track(raw, np.load(peaks_path)) or {"skipped": "ref not ok"}
+    return rows
+
+
+def _median(scored: list[dict[str, Any]], key: str) -> float | None:
+    return statistics.median(r[key] for r in scored) if scored else None
+
+
+def _summary(rows: dict[str, Any]) -> dict[str, Any]:
     scored = [r for r in rows.values() if "ms" in r]
-    summary = {
+    return {
         "tracks": len(rows),
         "scored": len(scored),
         **{k: _mean(scored, k) for k in ("f@0.5", "f@2.0", "f@3.0")},
         **{k: _mean(scored, k) for k in ("base_f@0.5", "base_f@2.0", "base_f@3.0")},
-        "ref_sections_median": statistics.median(r["ref_sections"] for r in scored) if scored else None,
-        "est_sections_median": statistics.median(r["est_sections"] for r in scored) if scored else None,
+        "ref_sections_median": _median(scored, "ref_sections"),
+        "est_sections_median": _median(scored, "est_sections"),
         "ref_labeled": sum(r["ref_labeled"] for r in scored),
         "est_labeled": sum(r["est_labeled"] for r in scored),
         # Pooled over frames (the published figures), then the per-track means for comparison.
@@ -219,9 +223,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "label_acc_track_mean": _mean(scored, "label_acc"),
         "drop_f1_track_mean": _mean(scored, "drop_f1"),
-        "ms_median": statistics.median(r["ms"] for r in scored) if scored else None,
+        "ms_median": _median(scored, "ms"),
         "ms_max": max((r["ms"] for r in scored), default=None),
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--allin1", type=Path, required=True)
+    ap.add_argument("--peaks", type=Path, required=True)
+    ap.add_argument("--json", type=Path)
+    args = ap.parse_args(argv)
+    rows = _score_dir(args.allin1, args.peaks)
+    summary = _summary(rows)
     for sid, r in rows.items():
         print(sid, json.dumps(r))
     print("SUMMARY", json.dumps(summary))

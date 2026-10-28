@@ -57,6 +57,15 @@ Requirements (mini-PRD):
     [if] a merge whose first parent is main carries [then broken]
   / An unmeasurable carry is UNKNOWN, never a carry.
     [if] a missing reviewed-head object or a shallow clone carries [then broken]
+
+Same-path carry (REVIEW-23, ADR-0124, Wed 28 Oct 2026): coverage is satisfied once per
+PR. A later head carries an earlier reviewed ancestor's coverage when every path the
+head's net diff touches (against its merge-base with main) was already in the reviewed
+head's net diff, plus this PR's own debt file. Only a push that brings a NEW path into
+the PR needs a fresh review. `same_path_carry` below; tried after the two exact rules.
+  / A same-path fix-up carries; a push adding a path does not.
+    [if] a fix-up editing only reviewed paths reads MISS [then broken]
+    [if] a push adding a path the reviewed head did not touch carries [then broken]
 """
 
 from __future__ import annotations
@@ -236,4 +245,60 @@ def base_merge_carry(root: Path, tip: str, reviewed: str, head: str) -> BaseMerg
         pr_paths=pr_paths,
         main_paths=main_paths,
         net_diff_sha256=hashlib.sha256(at_reviewed).hexdigest(),
+    )
+
+
+# ----------------------------------------------------------------------------
+# REVIEW-23: same-path carry
+
+
+@dataclass(frozen=True)
+class SamePathCarry:
+    reviewed: str
+    head: str
+    reviewed_paths: frozenset[bytes]
+    head_paths: frozenset[bytes]  # this PR's debt file already removed
+    debt_path_added: bool
+
+    def proof_lines(self) -> tuple[str, ...]:
+        debt = "; plus this PR's own debt file, which never needs review" if self.debt_path_added else ""
+        return (
+            f"  same-path carry: reviewed {self.reviewed} -> head {self.head}",
+            f"    path set: reviewed diff touches {len(self.reviewed_paths)}, head diff touches "
+            f"{len(self.head_paths)}, new paths 0 (head paths are a subset of reviewed paths){debt}",
+        )
+
+
+def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor, descendant], capture_output=True, check=False
+    )
+    if proc.returncode in (0, 1):
+        return proc.returncode == 0
+    detail = proc.stderr.decode(errors="replace").strip() or "<no stderr>"
+    raise CarryUnknown(f"git merge-base --is-ancestor {ancestor} {descendant} failed ({proc.returncode}): {detail}")
+
+
+def same_path_carry(root: Path, tip: str, reviewed: str, head: str, debt_path: str) -> SamePathCarry | None:
+    """The proof when `reviewed` is an ancestor of `head` and the head's net diff touches no
+    path the reviewed head's did not (this PR's debt file aside), else None.
+
+    Raises CarryUnknown when ancestry or either net diff cannot be measured.
+    """
+    if reviewed == head or not is_ancestor(root, reviewed, head):
+        return None  # a rebase or force-push never carries
+    reviewed_paths = changed_paths(root, single_merge_base(root, tip, reviewed), reviewed)
+    if not reviewed_paths:
+        raise CarryUnknown(f"net diff of {reviewed} is empty, so there is no reviewed path set to compare")
+    all_head_paths = changed_paths(root, single_merge_base(root, tip, head), head)
+    debt = debt_path.encode()
+    head_paths = all_head_paths - {debt}
+    if head_paths - reviewed_paths:
+        return None
+    return SamePathCarry(
+        reviewed=reviewed,
+        head=head,
+        reviewed_paths=reviewed_paths,
+        head_paths=head_paths,
+        debt_path_added=debt in all_head_paths and debt not in reviewed_paths,
     )

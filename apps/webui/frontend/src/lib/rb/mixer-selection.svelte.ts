@@ -3,9 +3,18 @@
  * Hover highlight stays in deck-hover.svelte.ts; this module owns click select.
  */
 import type { DeckId } from './deck-slots';
+import { singleSelectedDeck } from './focused-deck';
 import { noteRecentDeck } from './recent-deck';
 
-export const mixerSelection = $state<{ selected: DeckId[] }>({ selected: [1] });
+/** `clickedDeck` is the one deck the last click left selected, null before any
+ * click or after a click that left several. Only `clickSelect` writes it: deck
+ * loads rewrite `selected` (Space follows the loading deck) but are not a
+ * choice, so Track information reads this instead (Sol P1 4350579790 and
+ * 4351433888 on #6824: with no deck chosen it opens the master). */
+export const mixerSelection = $state<{ selected: DeckId[]; clickedDeck: DeckId | null }>({
+	selected: [1],
+	clickedDeck: null
+});
 
 export function isSelected(deck: DeckId): boolean {
 	return mixerSelection.selected.includes(deck);
@@ -31,6 +40,7 @@ export function clickSelect(deck: DeckId, shift: boolean): void {
 	} else {
 		resetToSingle(deck);
 	}
+	mixerSelection.clickedDeck = singleSelectedDeck(mixerSelection.selected);
 	if (mixerSelection.selected.includes(deck)) noteRecentDeck(deck);
 }
 

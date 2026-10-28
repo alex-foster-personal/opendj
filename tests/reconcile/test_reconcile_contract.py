@@ -39,7 +39,7 @@ def test_built_service_satisfies_protocol_and_scores_through_locate(tmp_path: Pa
 
     service: ReconcileService = build_service(music_roots=[root], dedup_db=tmp_path / "absent-dedup.db")
     assert isinstance(service, ReconcileService)
-    assert CONTRACT_VERSION == "reconcile/1"
+    assert CONTRACT_VERSION == "reconcile/2"
 
     found = service.find_relocate_candidates(
         RelocateQuery(

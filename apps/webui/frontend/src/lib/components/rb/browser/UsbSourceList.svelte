@@ -22,10 +22,16 @@
 		openUsbPanel,
 		presentNonForgotten,
 		usbAccessBlocked,
+		usbTracker,
 		type UsbVolumeKnown
 	} from '$lib/rb/usb-tracker.svelte';
 	import UsbStickTree from './UsbStickTree.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
+	import { loadMenuRegistry, menuRegistry } from '$lib/context-menu/lazy.svelte';
+	import { usbStickMenuItems } from '$lib/rb/usb-stick-menu';
+	import { reportMenuLoadFailure } from './track-context-menu';
 	import { canImportUsbVolume, importUsbVolume } from '$lib/rb/usb-import';
+	import { openUsbExport } from '$lib/rb/usb-export.svelte';
 
 	let {
 		selectedId,
@@ -43,6 +49,34 @@
 	function _toggleStick(vol: UsbVolumeKnown): void {
 		if (usbAccessBlocked(vol)) return;
 		openSticks[vol.id] = !openSticks[vol.id];
+	}
+
+	/**
+	 * USBEXP-04: the stick row carries the same right-click menu (USB status,
+	 * Sync, Eject) as its tree, so a stick that is collapsed, or that macOS has
+	 * not let Open DJ read and so never expands, still offers it (Codex P2
+	 * 4302000930). stopPropagation keeps Quick Draw's window listener on
+	 * /performance from replacing it.
+	 */
+	let menu = $state<{ vol: UsbVolumeKnown; x: number; y: number } | null>(null);
+
+	function _openRowMenu(event: MouseEvent, vol: UsbVolumeKnown): void {
+		loadMenuRegistry(reportMenuLoadFailure);
+		event.preventDefault();
+		event.stopPropagation();
+		menu = { vol, x: event.clientX, y: event.clientY };
+	}
+
+	function _rowKeydown(event: KeyboardEvent, vol: UsbVolumeKnown): void {
+		if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+			loadMenuRegistry(reportMenuLoadFailure);
+			event.preventDefault();
+			event.stopPropagation();
+			const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+			menu = { vol, x: rect.left + 8, y: rect.top + 8 };
+		} else if (event.key === 'Enter') {
+			_toggleStick(vol);
+		}
 	}
 </script>
 
@@ -62,9 +96,8 @@
 				data-testid="usb-source-row"
 				data-access={vol.access ?? 'unknown'}
 				onclick={() => _toggleStick(vol)}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') _toggleStick(vol);
-				}}
+				oncontextmenu={(e) => _openRowMenu(e, vol)}
+				onkeydown={(e) => _rowKeydown(e, vol)}
 			>
 				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 					<path d="M4 2h8v12H4zM6 4h4v2H6z" fill="currentColor" />
@@ -118,6 +151,28 @@
 			{/if}
 		{/each}
 	{/if}
+	<!-- USBEXP-01: the USB export screen's home in the USB source view. It
+	     lists blank sticks too, which this list folds away as not music. -->
+	<button
+		type="button"
+		class="row export-row"
+		data-testid="usb-source-export"
+		title="USB export - pick a stick, write an export to it, or eject it"
+		onclick={openUsbExport}
+	>
+		<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+			<path d="M8 3l5 6H3zM3 11h10v2H3z" fill="currentColor" />
+		</svg>
+		<span class="name">Export / eject...</span>
+	</button>
+	{#if menu !== null && menuRegistry() !== null}
+		<ContextMenu
+			items={usbStickMenuItems(menuRegistry()!.menuFor, menu.vol, usbTracker)}
+			x={menu.x}
+			y={menu.y}
+			onclose={() => (menu = null)}
+		/>
+	{/if}
 </div>
 
 <style>
@@ -136,6 +191,16 @@
 		color: var(--rb-text);
 		cursor: pointer;
 		white-space: nowrap;
+	}
+	.export-row {
+		width: 100%;
+		margin-top: 4px;
+		background: transparent;
+		border: none;
+		border-top: 1px solid var(--rb-border);
+		font: inherit;
+		text-align: left;
+		color: var(--rb-text-dim);
 	}
 	.row:hover {
 		background: var(--rb-panel-raised);

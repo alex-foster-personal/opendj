@@ -6,30 +6,35 @@ and typing only.
 
 ``Candidate`` and ``VETO_SIGNALS`` were MOVED here unchanged from
 ``apps.reconcile.locate``, which re-exports them, so the locate pipeline and
-the relocate route keep handling the very same objects (zero behavior change).
+the relocate route keep handling the very same objects. ``Candidate`` is now
+frozen, as every contract type must be; nothing assigned to its fields.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-CONTRACT_VERSION = "reconcile/1"
+CONTRACT_VERSION = "reconcile/2"  # /2: Candidate is a frozen dataclass and its signals a tuple
 
 # Signals that rule a candidate out of automatic apply, whatever else fired.
 VETO_SIGNALS: frozenset[str] = frozenset({"fingerprint_mismatch"})
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class Candidate:
     """A scored match for a single broken RB row."""
 
     path: Path
     confidence: float = 0.0
-    signals: list[str] = field(default_factory=list)
+    signals: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # Callers build the signals as a list; the frozen candidate keeps them as a tuple.
+        object.__setattr__(self, "signals", tuple(self.signals))
 
     @property
     def signal_count(self) -> int:

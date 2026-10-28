@@ -108,6 +108,9 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'safety_loop_arm',
 	'safety_loop_clear',
 	'stem_load',
+	// Separation ends in a stem_load this mode refuses, so its result could
+	// never play here; it must not start paid GPU work either (Codex on #6819).
+	'stem_separate',
 	'headphone_outputs_refresh',
 	'headphone_output_acquire',
 	'headphone_input_select',
@@ -115,7 +118,6 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'headphone_calibrate_abort',
 	'headphone_alignment_mode',
 	'master_delay_ms',
-	'auto_play_two_track',
 	'auto_play_next_arm',
 	'auto_play_next_cancel',
 	'rescue_resume',

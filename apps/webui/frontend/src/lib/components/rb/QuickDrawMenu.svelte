@@ -364,6 +364,9 @@
 			case 'mixer-channel':
 				return _mixerItems(menuTarget);
 			case 'tree-readonly':
+				// A USB stick's tree opens its own menu (UsbStickTree, USBEXP-04)
+				// and stops the event, so only stick-less trees reach here.
+				return menuFor({ kind: 'tree-readonly' }, { stick: false }).map((item) => _toCtxItem(item, undefined));
 			case 'library-source':
 			case 'perf-empty':
 				return menuFor({ kind: menuTarget.kind }, {}).map((item) => _toCtxItem(item, undefined));

@@ -2,10 +2,19 @@
 import { releaseBody } from '../api/release-body';
 import {
 	dispatchPerformanceCommand,
+	performanceContextTimeNowSec,
+	performancePositionAnchor,
+	performanceStepState,
+	performanceForgetStep,
 	queryPerformanceState,
 	type PerformanceCommand
 } from './performance-ipc.svelte';
 import { durationProgress, resolveDuration, type Duration } from './agent-duration';
+// The plan runner itself loads on the first plan order (see `_plans`), so its code
+// stays out of /performance's first load; only its types are imported here.
+import type { AgentPlanMirror, PlanRunner, PlanStateView } from './agent-plan';
+import { autoPlayHandoffInFlight, registerAgentPlanStatus } from './auto-play-plan-gate';
+import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 
 type ClockDeck = 1 | 2 | 3 | 4;
 
@@ -31,16 +40,70 @@ export const NEXT_ORDER_URL = `${NEXT_ORDER_PATH}?wait_ms=${ORDER_LONG_POLL_MS}`
 const IDLE_POLL_MS = 50;
 
 export interface AgentOrder {
-	kind: 'single' | 'sequence' | 'parallel' | 'ramp';
+	kind: 'single' | 'sequence' | 'parallel' | 'ramp' | 'plan' | 'plan_amend';
 	payload: unknown;
 }
 
 interface AgentStepResult {
 	status: 'succeeded' | 'failed' | 'skipped';
 	error?: string;
-	/** browser_select_playlist answers at first rows; `complete` false means more are coming. */
-	result?: { complete: boolean; rows_loaded: number };
+	/** browser_select_playlist answers at first rows (`complete` false means more
+	 * are coming); a plan answers with its id, status and current bar (AGENT-24). */
+	result?: { complete: boolean; rows_loaded: number } | Record<string, unknown>;
 }
+
+/** AGENT-24: one transition-plan executor per page, created on first use. */
+let _planRunner: PlanRunner | null = null;
+/** The installed poll's generation: a runner exists only while one is installed, so
+ * an order still in flight when the page closes (its code loading, or not yet
+ * asked for) is refused rather than creating a runner nothing will dispose. */
+let _planEpoch = 0;
+let _planOpenEpoch: number | null = null;
+/** The last unmounted page's runner disposal. A new mount's poll waits for it, so no
+ * command reaches the engine before that runner has cancelled its launch (BLOCKING, Codex on 9f82b290f4). */
+let _retiringPlanDisposal: Promise<void> = Promise.resolve();
+const PLAN_CLOSED = 'plan runner disposed: the performance page closed';
+
+async function _plans(): Promise<PlanRunner> {
+	const epoch = _planOpenEpoch;
+	if (epoch === null) throw new Error(PLAN_CLOSED);
+	if (_planRunner) return _planRunner;
+	const { createPlanRunner } = await import('./agent-plan');
+	if (epoch !== _planOpenEpoch) throw new Error(PLAN_CLOSED);
+	_planRunner ??= createPlanRunner({
+		dispatch: (command) => dispatchPerformanceCommand(command as PerformanceCommand, undefined, 'agent-command'),
+		query: () => queryPerformanceState(),
+		setTimer: (callback, ms) => window.setTimeout(callback, ms),
+		clearTimer: (handle) => window.clearTimeout(handle as number),
+		now: () => Date.now(),
+		handoffInFlight: autoPlayHandoffInFlight,
+		contextNowSec: () => performanceContextTimeNowSec(),
+		positionAnchor: (deck) => performancePositionAnchor(deck),
+		stepState: (stepId) => performanceStepState(stepId),
+		forgetStep: (stepId) => performanceForgetStep(stepId),
+		stemsSilent: (deck) => everyStemPartSilent(queryPerformanceState().decks[deck])
+	});
+	return _planRunner;
+}
+
+/** AGENT-24: the running (or last) plan, for the UI mirror's `agent_plan`. */
+export function readAgentPlanMirror(): AgentPlanMirror | null {
+	return _planRunner?.mirror() ?? null;
+}
+
+// AGENT-29: AutoPlay stands aside while this runner's plan is scheduled or running.
+registerAgentPlanStatus(() => readAgentPlanMirror()?.status ?? null);
+
+async function _planStep(run: () => Promise<Record<string, unknown>>): Promise<AgentStepResult> {
+	try {
+		return { status: 'succeeded', result: await run() };
+	} catch (error) {
+		return { status: 'failed', error: _message(error) };
+	}
+}
+
+/** The control values a ramp reads its start from and travels in. */
+const RAMP_TYPES = new Set(['eq', 'fader', 'trim', 'filter', 'stem_gain', 'crossfader', 'tempo']);
 
 /**
  * DECKUX-39: the command types whose OFF only a person may ask for. An agent
@@ -108,23 +171,53 @@ async function _one(command: unknown): Promise<AgentStepResult> {
 	}
 }
 
+/** The live value a ramp travels from, in the unit its command carries. */
+function _rampStart(state: ReturnType<typeof queryPerformanceState>, command: PerformanceCommand): number {
+	if (command.type === 'eq') return state.mixer.channels[command.deck][`eq_${command.band}`];
+	if (command.type === 'stem_gain') return state.decks[command.deck].stems.controls[command.stem].gain;
+	if (command.type === 'crossfader') return state.mixer.crossfader;
+	if (command.type === 'tempo') return state.decks[command.deck].pitch;
+	if (command.type === 'fader' || command.type === 'trim' || command.type === 'filter') {
+		return state.mixer.channels[command.deck][command.type];
+	}
+	throw new TypeError(`ramp has no start value for ${command.type}`);
+}
+
+/** A tempo step outside the deck's live pitch range is refused before it is sent. */
+function _tempoStepRefusal(deck: ClockDeck, to: number): void {
+	const range = queryPerformanceState().decks[deck].pitch_range / 100;
+	const min = Math.max(0.01, 1 - range);
+	const max = 1 + range;
+	if (to < min || to > max) throw new RangeError(`tempo ramp to must be inside deck ${deck}'s pitch range, ${min} to ${max}`);
+}
+
 async function _ramp(payload: unknown): Promise<AgentStepResult> {
 	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('ramp must be an object');
 	const ramp = payload as Record<string, unknown>;
 	const command = _command(ramp.command);
-	if (
-		command.type !== 'eq' &&
-		command.type !== 'fader' &&
-		command.type !== 'trim' &&
-		command.type !== 'filter' &&
-		command.type !== 'stem_gain'
-	) {
-		throw new TypeError('ramp command must be eq, fader, trim, filter, or stem_gain');
+	if (!RAMP_TYPES.has(command.type)) {
+		throw new TypeError('ramp command must be eq, fader, trim, filter, stem_gain, crossfader, or tempo');
 	}
-	if (typeof ramp.to !== 'number' || !Number.isFinite(ramp.to) || ramp.to < 0 || ramp.to > 1) {
-		throw new RangeError('ramp to must be a finite 0..1 control value');
+	if (typeof ramp.to !== 'number' || !Number.isFinite(ramp.to)) {
+		throw new RangeError('ramp to must be a finite number');
+	}
+	// AGENT-24: tempo travels in its own unit, a playback ratio; everything else is 0..1.
+	if (command.type === 'tempo' ? ramp.to <= 0 || ramp.to > 4 : ramp.to < 0 || ramp.to > 1) {
+		throw new RangeError(
+			command.type === 'tempo' ? 'tempo ramp to must be a ratio in (0, 4]' : 'ramp to must be a finite 0..1 control value'
+		);
 	}
 	const before = queryPerformanceState();
+	if (command.type === 'tempo') {
+		// The engine refuses a ratio outside the deck's pitch range, and a ramp dispatches step by step: an out-of-range
+		// target would move the deck partway before its first refused step, so the target is checked before any step.
+		const range = before.decks[command.deck].pitch_range / 100;
+		const min = Math.max(0.01, 1 - range);
+		const max = 1 + range;
+		if (ramp.to < min || ramp.to > max) {
+			throw new RangeError(`tempo ramp to must be inside deck ${command.deck}'s pitch range, ${min} to ${max}`);
+		}
+	}
 	const over = ramp.over as Duration | undefined;
 	if (over === undefined) throw new TypeError('ramp over must declare a Duration');
 	const clockDeck: ClockDeck | null = over.clock === undefined || over.clock === 'master'
@@ -138,19 +231,17 @@ async function _ramp(payload: unknown): Promise<AgentStepResult> {
 		phrases: clock.phrases
 	});
 	if (over.unit !== 'ms' && !clock.playing) throw new Error('clock_not_playing');
-	const start =
-		command.type === 'eq'
-			? before.mixer.channels[command.deck][`eq_${command.band}`]
-			: command.type === 'stem_gain'
-				? before.decks[command.deck].stems.controls[command.stem].gain
-				: before.mixer.channels[command.deck][command.type];
+	const start = _rampStart(before, command);
 	const startedAt = performance.now();
 	while (true) {
 		const progress = over.unit === 'ms'
 			? Math.min(1, (performance.now() - startedAt) / over.n)
 			: durationProgress(plan, queryPerformanceState().decks[clockDeck].position_ms);
 		const value = start + (ramp.to - start) * progress;
-		await dispatchPerformanceCommand({ ...command, value }, undefined, 'agent-command');
+		// The operator may narrow the pitch range mid-ramp, so each tempo step is checked against the live range, not the one read at order time.
+		if (command.type === 'tempo') _tempoStepRefusal(command.deck, value);
+		const step = (command.type === 'tempo' ? { ...command, ratio: value } : { ...command, value }) as PerformanceCommand;
+		await dispatchPerformanceCommand(step, undefined, 'agent-command');
 		if (progress === 1) break;
 		await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
 	}
@@ -178,6 +269,10 @@ export async function executeAgentOrder(order: AgentOrder): Promise<{ steps: Age
 		steps = await Promise.all(order.payload.map(_one));
 	} else if (order.kind === 'ramp') {
 		steps = [await _ramp(order.payload)];
+	} else if (order.kind === 'plan') {
+		steps = [await _planStep(async () => (await _plans()).schedule(order.payload))];
+	} else if (order.kind === 'plan_amend') {
+		steps = [await _planStep(async () => (await _plans()).amend(order.payload))];
 	} else {
 		const exhaustive: never = order.kind;
 		throw new Error(`unknown agent order ${exhaustive}`);
@@ -305,7 +400,11 @@ export async function pollAgentOrders(
 		if (next !== null) {
 			let result: Awaited<ReturnType<typeof executeAgentOrder>>;
 			try {
-				result = await executeAgentOrder(next);
+				// The claim can land after this mount retired: a newer mount owns the plan epoch,
+				// so a retiring loop refuses the order rather than run it under that epoch.
+				result = isRunning()
+					? await executeAgentOrder(next)
+					: { steps: [{ status: 'failed', error: PLAN_CLOSED }], mirror_delta: { changed: {} } };
 			} catch (error) {
 				result = { steps: [{ status: 'failed', error: _message(error) }], mirror_delta: { changed: {} } };
 			}
@@ -351,10 +450,29 @@ export async function pollAgentOrders(
 export function installAgentOrderPoll(
 	page: PerformancePageRegistration,
 	republish: () => void
-): () => void {
+): () => Promise<void> {
 	let running = true;
-	void pollAgentOrders(page, republish, () => running);
+	// A mount starts with no runner: one left by an earlier mount is that page's.
+	const priorDisposal = _planRunner?.dispose() ?? Promise.resolve();
+	_planRunner = null;
+	// Inherits any still-pending disposal, so a mount that unmounts before it settles hands the wait on.
+	const settled = Promise.all([priorDisposal, _retiringPlanDisposal]).then(() => undefined, () => undefined);
+	_retiringPlanDisposal = settled;
+	_planEpoch += 1;
+	const epoch = _planEpoch;
+	_planOpenEpoch = epoch;
+	void settled.then(() => pollAgentOrders(page, republish, () => running));
 	return () => {
 		running = false;
+		if (_planOpenEpoch !== epoch) return Promise.resolve(); // a newer mount owns the runner now
+		// The plan runner is page-scoped: a scheduled or running plan must not keep
+		// dispatching into an audio engine the route is disposing, and its status
+		// must not survive into the next mount. The returned promise settles once the
+		// runner has cancelled any launch it fired, so the page keeps its command channel until then.
+		_planOpenEpoch = null;
+		const disposal = Promise.all([_planRunner?.dispose() ?? Promise.resolve(), settled]).then(() => undefined);
+		_planRunner = null;
+		_retiringPlanDisposal = disposal;
+		return disposal;
 	};
 }

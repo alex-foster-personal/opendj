@@ -56,6 +56,7 @@ on:
       - "reqs.json"
       - ".test_durations"
       - "app_docs/**"
+      - "(private path)"
   schedule:
     # 04:17 UTC daily, for the extended tier. Off-peak and deliberately not on
     # the hour, where GitHub's scheduler queues are busiest.

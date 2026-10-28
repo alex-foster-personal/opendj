@@ -58,9 +58,16 @@
 	background: transparent;
 	border: 1px solid var(--rb-blue, #4aa3ff);
 	border-radius: 2px;
-	color: var(--rb-blue, #4aa3ff);
+	/* Text takes the skin's own text color so it clears WCAG AA in the
+	   light skins too; the blue border carries the action cue. */
+	color: var(--rb-text);
 	padding: 1px 6px;
 	cursor: pointer;
+}
+.stems .status.action:disabled {
+	border-color: var(--rb-border);
+	color: var(--rb-text-dim);
+	cursor: default;
 }
 .stems .status.action.failed {
 	border-color: var(--rb-red, #d0342c);

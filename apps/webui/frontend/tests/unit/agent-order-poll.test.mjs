@@ -247,6 +247,72 @@ test('an order that fails still reports failed: surviving never hides a failed o
 	assert.equal(posted[0].steps[0].status, 'failed');
 });
 
+// ------------------------------------------------------------ AGENT-24 ---
+// The plan runner loads on the first plan order (a dynamic import keeps it out of
+// /performance's first load), and exists only while a poll is installed.
+
+/** Serve one plan order, call `onClaim` as it is claimed, and collect result bodies. */
+function onePlanOrder(onClaim = () => {}) {
+	const posted = [];
+	let served = false;
+	respond = (url) => {
+		if (url.endsWith('/result')) return json(202, { accepted: true });
+		if (!served) {
+			served = true;
+			onClaim();
+			return json(200, { id: 'o-plan', kind: 'plan', payload: {} });
+		}
+		return heldEmpty();
+	};
+	const fakeFetch = globalThis.fetch;
+	globalThis.fetch = async (url, init) => {
+		if (String(url).endsWith('/result')) posted.push(JSON.parse(init.body));
+		return fakeFetch(url, init);
+	};
+	return posted;
+}
+
+const planModule = await loadTypeScriptModule('src/lib/rb/agent-plan.ts');
+const BAD_PLAN = (() => {
+	try {
+		planModule.parsePlanOrder({});
+	} catch (error) {
+		return error.message;
+	}
+	throw new Error('parsePlanOrder({}) was expected to refuse an empty plan');
+})();
+
+test('a plan order on an installed poll reaches the runner, loaded on first use', async () => {
+	const posted = onePlanOrder();
+	const uninstall = orders.installAgentOrderPoll(registration(true), () => {});
+	await capturingConsole(async () => {
+		await hops(40);
+		await settle();
+	});
+	uninstall();
+	assert.equal(posted.length, 1);
+	// The runner's own parse refusal, so its code loaded and ran.
+	assert.deepEqual(posted[0].steps[0], { status: 'failed', error: BAD_PLAN });
+});
+
+test('a plan order with no poll installed, or claimed as the page closes, is refused', async () => {
+	const closedPosts = await (async () => {
+		const posted = onePlanOrder();
+		await runLoopBriefly();
+		return posted;
+	})();
+	assert.deepEqual(closedPosts[0].steps[0], { status: 'failed', error: 'plan runner disposed: the performance page closed' });
+	let uninstall = () => {};
+	const posted = onePlanOrder(() => uninstall());
+	uninstall = orders.installAgentOrderPoll(registration(true), () => {});
+	await capturingConsole(async () => {
+		await hops(40);
+		await settle();
+	});
+	assert.deepEqual(posted[0].steps[0], { status: 'failed', error: 'plan runner disposed: the performance page closed' });
+	assert.equal(orders.readAgentPlanMirror(), null);
+});
+
 test('an unreachable engine does not kill the loop or reject', async () => {
 	const page = registration(true);
 	respond = () => {

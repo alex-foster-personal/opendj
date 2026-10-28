@@ -5,6 +5,7 @@ import type { AlignedStemDeckProcessor } from '$lib/rb/stem-graph';
 import type { DeckChannelNodes as _ChannelNodes } from '$lib/rb/deck-channel-graph';
 import { createPresentedTransportTimeline, type PresentedTransportTimeline, type SlipAnchor, type SlipTempoBoundary } from '$lib/player/transport/presentation';
 import type { StemDeckState } from '$lib/rb/stem-types';
+import type { _ClockSegment } from '$lib/player/transport/schedule-math';
 
 export interface DeckTransportClock {
 	source: 'paused_cursor' | 'audio_output';
@@ -105,4 +106,35 @@ export function _emptyRuntime(): _DeckRuntime {
 		reanchorRampOwnerGeneration: null,
 		pendingStemUpgrade: null
 	};
+}
+
+// The clock segment a deck's control timeline is on at `contextTime`: the acknowledged one, or the last pending
+// segment already due. Pure over the runtime; moved from audio-engine.svelte.ts unchanged.
+function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
+	return {
+		active: pending.active,
+		loop: pending.loop,
+		startContextTime: pending.startContextTime,
+		startPositionSec: pending.startPositionSec,
+		tempoRatio: pending.tempoRatio,
+		masterTempoEnabled: pending.masterTempoEnabled ?? true,
+		keyShiftSemitones: pending.keyShiftSemitones ?? 0
+	};
+}
+
+export function _controlSegmentAt(rt: _DeckRuntime, contextTime: number): _ClockSegment {
+	let selected: _ClockSegment = {
+		active: rt.controlActive,
+		loop: rt.controlLoop,
+		startContextTime: rt.startCtxTime,
+		startPositionSec: rt.startOffsetSec,
+		tempoRatio: rt.controlTempoRatio,
+		masterTempoEnabled: rt.controlMasterTempoEnabled,
+		keyShiftSemitones: rt.controlKeyShiftSemitones
+	};
+	for (const pending of rt.pending) {
+		if (pending.startContextTime > contextTime) break;
+		selected = _pendingClockSegment(pending);
+	}
+	return selected;
 }

@@ -30,7 +30,12 @@ from apps.engine_core.jobs.reap import (
     group_has_live_member,
     reap,
 )
-from apps.engine_core.jobs.store import JobConflict, JobNotFound, JobStore
+from apps.engine_core.jobs.store import (
+    DuplicateRule,
+    JobConflict,
+    JobNotFound,
+    JobStore,
+)
 from apps.shared.shutdown_bound import quit_started
 
 log = logging.getLogger(__name__)
@@ -242,18 +247,26 @@ def reconcile(job: dict[str, Any]) -> str:
     return result
 
 
-def resolve_and_reenqueue(store: JobStore, job_id: str) -> dict[str, Any]:
+def resolve_and_reenqueue(
+    store: JobStore,
+    job_id: str,
+    *,
+    conflicts: DuplicateRule | None = None,
+) -> dict[str, Any]:
     """Re-enqueue, refusing while the previous outcome is still unknown.
 
     The reconcile hook runs OUTSIDE the write transaction (it can do arbitrary
     IO and holding sqlite's write lock across it would stall every reader),
     so the verdict it returns is applied as a compare-and-swap against the
     exact row it was asked about. A caller whose row moved underneath it lost
-    the race and is refused with JobConflict.
+    the race and is refused with JobConflict. ``conflicts`` is passed to the
+    store's transaction (``JobStore.reenqueue``), which raises JobDuplicate.
     """
     job = store.get(job_id)
     if job["status"] != "unknown":
-        return store.reenqueue(job_id, expect_attempt=job["attempt"])
+        return store.reenqueue(
+            job_id, expect_attempt=job["attempt"], conflicts=conflicts
+        )
     resolved = reconcile(job)
     if resolved == "unknown":
         raise JobConflict(
@@ -268,6 +281,7 @@ def resolve_and_reenqueue(store: JobStore, job_id: str) -> dict[str, Any]:
         expect_attempt=job["attempt"],
         resolution=resolved,
         resolution_error=f"reconciled by the {job['kind']} hook as {resolved}",
+        conflicts=conflicts,
     )
 
 

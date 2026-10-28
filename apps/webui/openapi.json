@@ -5305,6 +5305,49 @@
         "title": "ClustersOut",
         "type": "object"
       },
+      "CollectIn": {
+        "properties": {
+          "batch_dir": {
+            "description": "The batch folder a live stage returned.",
+            "title": "Batch Dir",
+            "type": "string"
+          },
+          "copy_store_first": {
+            "default": false,
+            "description": "Copy the store and read only the copy.",
+            "title": "Copy Store First",
+            "type": "boolean"
+          },
+          "delete_copies": {
+            "default": false,
+            "description": "With live: remove copies whose energy was loaded.",
+            "title": "Delete Copies",
+            "type": "boolean"
+          },
+          "live": {
+            "default": false,
+            "description": "Write to the library. Without it this is a dry run.",
+            "title": "Live",
+            "type": "boolean"
+          },
+          "share_across_duplicates": {
+            "default": false,
+            "title": "Share Across Duplicates",
+            "type": "boolean"
+          },
+          "store": {
+            "description": "A COPY of the MIK store, or MIK's own file with copy_store_first.",
+            "title": "Store",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_dir",
+          "store"
+        ],
+        "title": "CollectIn",
+        "type": "object"
+      },
       "CommentArchiveOut": {
         "properties": {
           "archived_to": {
@@ -11349,6 +11392,27 @@
         "title": "JobOut",
         "type": "object"
       },
+      "JobReenqueueConflictOut": {
+        "description": "409 body of a re-enqueue: a duplicate stems.separate (structured), or a\nrow that cannot be re-enqueued in its state (a sentence).",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemsJobActiveDetail"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "JobReenqueueConflictOut",
+        "type": "object"
+      },
       "KaraokeLineOut": {
         "description": "One derived line (:mod:`apps.lyrics.lines`, the canonical grouping).\n\nServed rather than client-derived so every surface agrees and an agent can\ncurl exactly what the deck renders.",
         "properties": {
@@ -16045,6 +16109,43 @@
           "after"
         ],
         "title": "PlanEntryOut",
+        "type": "object"
+      },
+      "PlanIn": {
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "share_across_duplicates": {
+            "default": false,
+            "description": "Also treat same artist + title with durations within 1 s as one recording.",
+            "title": "Share Across Duplicates",
+            "type": "boolean"
+          },
+          "store": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A COPY of a MIK store not yet loaded; rows it would settle are left out.",
+            "title": "Store"
+          }
+        },
+        "title": "PlanIn",
         "type": "object"
       },
       "PlanModel": {
@@ -20812,6 +20913,36 @@
         "title": "SetupStatusOut",
         "type": "object"
       },
+      "ShareIn": {
+        "properties": {
+          "live": {
+            "default": false,
+            "description": "Write to the library. Without it this is a dry run.",
+            "title": "Live",
+            "type": "boolean"
+          },
+          "share_across_duplicates": {
+            "default": false,
+            "description": "Also treat same artist, title and duration (within 1 s) as one recording.",
+            "title": "Share Across Duplicates",
+            "type": "boolean"
+          },
+          "store": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A COPY of a MIK store not yet loaded; rows it would settle are held.",
+            "title": "Store"
+          }
+        },
+        "title": "ShareIn",
+        "type": "object"
+      },
       "ShareRootReanchorOut": {
         "description": "Answer of ``POST /library/share-root/reanchor``.",
         "properties": {
@@ -21352,6 +21483,62 @@
           "row_count"
         ],
         "title": "SqlQueryOut",
+        "type": "object"
+      },
+      "StageIn": {
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "live": {
+            "default": false,
+            "description": "Copy the files. Without it this is a dry run.",
+            "title": "Live",
+            "type": "boolean"
+          },
+          "min_free_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free disk the copies must leave. Default: the library's stored setting.",
+            "title": "Min Free Bytes"
+          },
+          "share_across_duplicates": {
+            "default": false,
+            "description": "Also treat same artist + title with durations within 1 s as one recording.",
+            "title": "Share Across Duplicates",
+            "type": "boolean"
+          },
+          "store": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A COPY of a MIK store not yet loaded; rows it would settle are left out.",
+            "title": "Store"
+          }
+        },
+        "title": "StageIn",
         "type": "object"
       },
       "StaleCandidateModel": {
@@ -22523,6 +22710,43 @@
           "envelope"
         ],
         "title": "StemWaveformOut",
+        "type": "object"
+      },
+      "StemsJobActiveDetail": {
+        "description": "The detail of a 409 refusing a duplicate stems.separate: the job to adopt.",
+        "properties": {
+          "code": {
+            "const": "stems_job_active",
+            "title": "Code",
+            "type": "string"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobOut"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "job"
+        ],
+        "title": "StemsJobActiveDetail",
+        "type": "object"
+      },
+      "StemsJobActiveOut": {
+        "description": "409 body of `POST /api/v1/jobs` when an active stems.separate already does the work.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/StemsJobActiveDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "StemsJobActiveOut",
         "type": "object"
       },
       "StemsPlanOut": {
@@ -24279,6 +24503,16 @@
             ],
             "title": "Key Status"
           },
+          "loudness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackLoudnessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "loudness_reason": {
             "anyOf": [
               {
@@ -24816,6 +25050,16 @@
             ],
             "title": "Last Played At"
           },
+          "loudness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackLoudnessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "loudness_reason": {
             "anyOf": [
               {
@@ -25013,6 +25257,49 @@
         "title": "TrackListItemOut",
         "type": "object"
       },
+      "TrackLoudnessOut": {
+        "description": "AGENT-31: integrated loudness from the loudness lane's projection, or None with why.",
+        "properties": {
+          "lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lufs"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lufs",
+          "status"
+        ],
+        "title": "TrackLoudnessOut",
+        "type": "object"
+      },
       "TrackLyricsOut": {
         "description": "Agent-native read model for cached line-synced lyrics only.",
         "properties": {
@@ -25160,6 +25447,16 @@
               }
             ],
             "title": "Last Played At"
+          },
+          "loudness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackLoudnessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lyrics_available": {
             "title": "Lyrics Available",
@@ -26095,6 +26392,11 @@
             "title": "Auto Play Maximize Reach",
             "type": "boolean"
           },
+          "auto_play_two_deck": {
+            "default": false,
+            "title": "Auto Play Two Deck",
+            "type": "boolean"
+          },
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
           },
@@ -26242,6 +26544,17 @@
             "title": "Perf Tier",
             "type": "string"
           },
+          "perf_view": {
+            "default": "waveform",
+            "enum": [
+              "waveform",
+              "list",
+              "phase-scope",
+              "phase-meter"
+            ],
+            "title": "Perf View",
+            "type": "string"
+          },
           "playlist_tree_view": {
             "default": "tree",
             "enum": [
@@ -26259,6 +26572,11 @@
           "show_agent_pins": {
             "default": true,
             "title": "Show Agent Pins",
+            "type": "boolean"
+          },
+          "show_pads": {
+            "default": true,
+            "title": "Show Pads",
             "type": "boolean"
           },
           "show_sections": {
@@ -26366,6 +26684,10 @@
               }
             ],
             "title": "Auto Play Maximize Reach"
+          },
+          "auto_play_two_deck": {
+            "title": "Auto Play Two Deck",
+            "type": "boolean"
           },
           "auto_sync": {
             "anyOf": [
@@ -26669,6 +26991,16 @@
             ],
             "title": "Perf Tier"
           },
+          "perf_view": {
+            "enum": [
+              "waveform",
+              "list",
+              "phase-scope",
+              "phase-meter"
+            ],
+            "title": "Perf View",
+            "type": "string"
+          },
           "playlist_tree_view": {
             "anyOf": [
               {
@@ -26705,6 +27037,10 @@
               }
             ],
             "title": "Show Agent Pins"
+          },
+          "show_pads": {
+            "title": "Show Pads",
+            "type": "boolean"
           },
           "show_sections": {
             "anyOf": [
@@ -27306,6 +27642,111 @@
           "detail"
         ],
         "title": "UsbCapabilityErrorOut",
+        "type": "object"
+      },
+      "UsbEjectErrorDetail": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ui_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Title"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "UsbEjectErrorDetail",
+        "type": "object"
+      },
+      "UsbEjectErrorOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UsbEjectErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbEjectErrorOut",
+        "type": "object"
+      },
+      "UsbEjectIn": {
+        "properties": {
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "volume_id": {
+            "title": "Volume Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mount_path",
+          "volume_id"
+        ],
+        "title": "UsbEjectIn",
+        "type": "object"
+      },
+      "UsbEjectOut": {
+        "properties": {
+          "ejected": {
+            "title": "Ejected",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mount_path",
+          "name",
+          "ejected",
+          "message"
+        ],
+        "title": "UsbEjectOut",
+        "type": "object"
+      },
+      "UsbEjectValidationErrorOut": {
+        "description": "FastAPI's own 422 for a malformed request body (a missing ``volume_id``,\na mistyped field): ``detail`` is its list of field errors, not ``{code,\nmessage}`` (Sol P1 4286542573).",
+        "properties": {
+          "detail": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbEjectValidationErrorOut",
         "type": "object"
       },
       "UsbStickCountsOut": {
@@ -33572,6 +34013,224 @@
         ]
       }
     },
+    "/api/v1/energy/backfill/collect": {
+      "post": {
+        "operationId": "backfill_collect_api_v1_energy_backfill_collect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Backfill Collect Api V1 Energy Backfill Collect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backfill Collect",
+        "tags": [
+          "energy"
+        ]
+      }
+    },
+    "/api/v1/energy/backfill/plan": {
+      "post": {
+        "operationId": "backfill_plan_api_v1_energy_backfill_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Backfill Plan Api V1 Energy Backfill Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backfill Plan",
+        "tags": [
+          "energy"
+        ]
+      }
+    },
+    "/api/v1/energy/backfill/share": {
+      "post": {
+        "description": "Give a complete donor's MIK energy and series to its empty present duplicates.",
+        "operationId": "backfill_share_route_api_v1_energy_backfill_share_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Backfill Share Route Api V1 Energy Backfill Share Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backfill Share Route",
+        "tags": [
+          "energy"
+        ]
+      }
+    },
+    "/api/v1/energy/backfill/stage": {
+      "post": {
+        "operationId": "backfill_stage_api_v1_energy_backfill_stage_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Backfill Stage Api V1 Energy Backfill Stage Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backfill Stage",
+        "tags": [
+          "energy"
+        ]
+      }
+    },
+    "/api/v1/energy/status": {
+      "get": {
+        "operationId": "energy_status_api_v1_energy_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "share_across_duplicates",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Share Across Duplicates",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Energy Status Api V1 Energy Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Energy Status",
+        "tags": [
+          "energy"
+        ]
+      }
+    },
     "/api/v1/enrich/decisions/{lane}": {
       "put": {
         "operationId": "put_decision_api_v1_enrich_decisions__lane__put",
@@ -35646,6 +36305,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsJobActiveOut"
+                }
+              }
+            },
+            "description": "an active stems.separate job already does this work"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -35793,6 +36462,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobReenqueueConflictOut"
+                }
+              }
+            },
+            "description": "another active stems.separate job does this work, or the row cannot be re-enqueued"
           },
           "422": {
             "content": {
@@ -46677,6 +47356,85 @@
         "summary": "Readback Export",
         "tags": [
           "usb-export"
+        ]
+      }
+    },
+    "/api/v1/usb/eject": {
+      "post": {
+        "operationId": "eject_usb_volume_api_v1_usb_eject_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsbEjectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbEjectOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbEjectErrorOut"
+                }
+              }
+            },
+            "description": "Nothing is mounted at that path."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbEjectErrorOut"
+                }
+              }
+            },
+            "description": "diskutil refused, failed, or the mount is still present after eject."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbEjectErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbEjectValidationErrorOut"
+                    }
+                  ],
+                  "title": "Response 422 Eject Usb Volume Api V1 Usb Eject Post"
+                }
+              }
+            },
+            "description": "The path is not a direct child of the volumes root ({code, message}), or the request body is malformed, such as a missing volume_id (a list of field errors)."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbEjectErrorOut"
+                }
+              }
+            },
+            "description": "USB discovery is unavailable on this host or build, so eject is too."
+          }
+        },
+        "summary": "Eject Usb Volume",
+        "tags": [
+          "usb"
         ]
       }
     },

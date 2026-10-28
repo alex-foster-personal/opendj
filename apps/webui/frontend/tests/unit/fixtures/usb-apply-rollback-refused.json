@@ -1,0 +1,1 @@
+{"detail": {"code": "rollback_refused", "message": "post-promotion readback failed and automatic cleanup was refused: PIONEER/rekordbox/exportLibrary.db changed after promotion"}}

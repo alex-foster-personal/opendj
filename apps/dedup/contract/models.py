@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
@@ -25,16 +24,12 @@ class ScanStatus(BaseModel):
     error: str | None
     started_at: str | None
     finished_at: str | None
-    error_samples: list[str]
+    error_samples: tuple[str, ...]
 
 
 @runtime_checkable
 class DedupService(Protocol):
     """The dedup operations code outside ``apps.dedup`` uses today."""
-
-    def ensure_schema(self, db_path: Path) -> sqlite3.Connection:
-        """Create (or migrate) the dedup database; return an open connection."""
-        ...
 
     def scan_status(self) -> ScanStatus:
         """Where the background library scan is."""

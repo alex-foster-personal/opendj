@@ -254,7 +254,8 @@ def run_apply(
     reversal_dir = reversal_dir or paths.TAGS_REVERSAL_DIR
     dedup_db = dedup_db_path or paths.DEDUP_FALLBACK_DB
 
-    conn = dedup_contract.ensure_schema(dedup_db)
+    dedup_contract.ensure_schema(dedup_db)
+    conn = sqlite3.connect(dedup_db)
     try:
         results: list[ApplyResult] = []
         for path in files:

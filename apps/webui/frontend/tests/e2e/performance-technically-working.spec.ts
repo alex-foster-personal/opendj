@@ -384,3 +384,42 @@ test('overlay mode leaves no deck-column or wave-stack rule painted, and each re
 		.poll(rules)
 		.toEqual({ left: TRANSPARENT, right: TRANSPARENT, top: before.top });
 });
+
+for (const [view, testId] of [
+	['phase-scope', 'phase-scope-view'],
+	['phase-meter', 'phase-meter-view']
+] as const) {
+	test(`overlay mode hides the ${view} view with the top region, and the top edge brings it back (Sol P1 4301008516)`, async ({
+		page
+	}) => {
+		const root = page.locator('.perf-root');
+		const gauge = page.getByTestId(testId);
+		const opacity = () => gauge.evaluate((element) => getComputedStyle(element).opacity);
+		await page.evaluate(
+			(next) => window.musicDjToolsPerformance!.dispatch({ type: 'set_perf_view', view: next }),
+			view
+		);
+		try {
+			await expect(gauge).toBeVisible();
+			// Positive control: outside overlay mode the view is painted, so 0 below is a change.
+			expect(await opacity()).toBe('1');
+
+			await page.keyboard.down('Control');
+			await page.keyboard.press('r');
+			await page.keyboard.up('Control');
+			await expect(root).toHaveClass(/tw-active/);
+			await page.mouse.move(640, 400);
+			await expect(root).not.toHaveClass(/tw-top-visible/);
+			await expect.poll(opacity).toBe('0');
+
+			// Opposite direction: the top edge reveals it again, so the fix is not "never paint it".
+			await page.mouse.move(1000, 5);
+			await expect(root).toHaveClass(/tw-top-visible/);
+			await expect.poll(opacity).toBe('1');
+		} finally {
+			await page.evaluate(() =>
+				window.musicDjToolsPerformance!.dispatch({ type: 'set_perf_view', view: 'waveform' })
+			);
+		}
+	});
+}

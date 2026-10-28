@@ -20,6 +20,7 @@
 		lyricsLine,
 		offersRetry,
 		songsTitle,
+		stemsDeclinedText,
 		stemsText,
 		stemsTitle,
 		stemsTone
@@ -48,6 +49,8 @@
 		onretry?: () => void;
 		onask?: () => void;
 		onnever?: () => void;
+		/** ENRICH-05: take back a stored "never" (PUT answer "ask"). */
+		onaskagain?: () => void;
 	}
 
 	const {
@@ -64,13 +67,15 @@
 		onhide,
 		onretry,
 		onask,
-		onnever
+		onnever,
+		onaskagain
 	}: Props = $props();
 
 	const lines = $derived(
 		summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null), ...dudLines(summary), ...absentLines(summary)] : []
 	);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
+	const declinedLine = $derived(summary ? stemsDeclinedText(summary) : null);
 	const pillLine = $derived(
 		summary ? collapsedLine(summary) : { text: 'Library status unknown', title: loadError ?? 'The library summary has not loaded' }
 	);
@@ -157,6 +162,18 @@
 					<button type="button" onclick={onnever} disabled={busy}>Never for this library</button>
 				</div>
 			{/if}
+		{/if}
+		{#if declinedLine}
+			<p class="enrich-line unavailable" data-lane="stems" data-tone="declined">{declinedLine}</p>
+			<div class="enrich-actions">
+				<button
+					type="button"
+					onclick={onaskagain}
+					disabled={busy || onaskagain === undefined}
+					title="Undo Never: the card asks about separating this library's stems again"
+					data-testid="enrich-stems-ask-again">Ask about stems again</button
+				>
+			</div>
 		{/if}
 		{#if actionError}
 			<p class="enrich-line failed">{actionError}</p>

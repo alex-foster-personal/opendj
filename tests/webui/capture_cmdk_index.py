@@ -31,11 +31,11 @@ from tests.webui.test_unmapped_streaming_provider import _ENGINE_READ, REAL_AUDI
 #: (stable id, title, artist, album, file). ``None`` file means the present real mp3;
 #: a str is used as is (a streaming URI, or a local path that does not exist).
 SPECS = [
-    ("1" * 40, "Harbor Lights", "Ostra Vell", "Kestrelmoor Sessions", None),
-    ("2" * 40, "Harbor Lights (Dub Remix)", "Ostra Vell", None, None),
+    ("1" * 40, "Lanternfall", "Ostra Vell", "Kestrelmoor Sessions", None),
+    ("2" * 40, "Lanternfall (Dub Remix)", "Ostra Vell", None, None),
     ("3" * 40, "Glass Tide", "Mira Quell", "Kestrelmoor Sessions", None),
-    ("4" * 40, "Harbor Static", "Ostra Vell", None, "/missing/harbor-static.mp3"),
-    ("5" * 40, "Harbor Stream", "Tidal Act", None, "tidal:track:6089"),
+    ("4" * 40, "Lanternfall Static", "Ostra Vell", None, "/missing/lanternfall-static.mp3"),
+    ("5" * 40, "Lanternfall Stream", "Tidal Act", None, "tidal:track:6089"),
 ]
 PLAYLIST_ID = "pl-cmdk-v2"
 #: Comments written through the production field path: a word that appears in no

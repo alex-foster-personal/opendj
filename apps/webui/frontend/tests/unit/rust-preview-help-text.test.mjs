@@ -25,7 +25,7 @@ const protocol = readFileSync(new URL('../../../../audio-engine/src/protocol.rs'
 const CLAIMABLE = {
 	'key sync': ['key_sync'],
 	slip: ['slip'],
-	stems: ['stem_load', 'stem_mute', 'stem_solo', 'stem_gain', 'stem_eq_mode'],
+	stems: ['stem_load', 'stem_separate', 'stem_mute', 'stem_solo', 'stem_gain', 'stem_eq_mode'],
 	'safety loops': ['safety_loop_save', 'safety_loop_arm', 'safety_loop_clear'],
 	'autoplay next': ['auto_play_next_arm', 'auto_play_next_cancel'],
 	'the headphone cue bus': ['channel_cue', 'headphone_mix', 'headphone_level', 'head_delay_ms'],
@@ -49,7 +49,6 @@ const UNNAMED = new Set([
 	'loop_interval_mode',
 	'loop_interval_base',
 	'master_delay_ms',
-	'auto_play_two_track',
 	'rescue_resume',
 	'rescue_stop_all',
 	'pairing_snapshot_save'

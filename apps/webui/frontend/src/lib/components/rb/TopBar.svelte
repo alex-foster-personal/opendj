@@ -19,7 +19,6 @@
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { StageDeck } from '$lib/lyrics/stage-store.svelte';
 	import { anyDeckPlaying } from '$lib/rb/playing-gate';
-	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import {
 		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi,
@@ -47,12 +46,13 @@
 	import { switchDeviceOutput } from '$lib/rb/device-output-probe-control';
 
 	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
-	const listViewBullets = plannedExplainerBullets('list-view');
+	const listViewBullets = builtExplainerBullets('list-view');
 	const fxBullets = plannedExplainerBullets('fx');
 	const twoDeck = $derived(describeTwoDeckToggle(uiPrefs.deck_layout));
-	const fourWaveformBullets = plannedExplainerBullets('4-waveform-view');
-	const scopeView1Bullets = plannedExplainerBullets('scope-view-1');
-	const scopeView2Bullets = plannedExplainerBullets('scope-view-2');
+	const fourWaveformBullets = builtExplainerBullets('4-waveform-view');
+	const TWO_TRACK_AUTOPLAY_TITLE = builtTitle('autoplay-two-track');
+	const scopeView1Bullets = builtExplainerBullets('scope-view-1');
+	const scopeView2Bullets = builtExplainerBullets('scope-view-2');
 	const linkBullets = [
 		...plannedExplainerBullets('link'),
 		'When built, tempo and phase align across laptops on the same network; this button joins or leaves that session.'
@@ -87,7 +87,9 @@
 	import { pairingUnavailableReason } from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
-	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
+	import TrackInfoButton from './TrackInfoButton.svelte';
+	import TrackInfoHost from './TrackInfoHost.svelte';
+	import { builtExplainerBullets, builtTitle, plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import StemsProgress from './StemsProgress.svelte';
 	import FeedbackThumbs from './FeedbackThumbs.svelte';
@@ -112,10 +114,6 @@
 
 	/** ENRICH-01: the route's enrich pill, rendered in flow in this row (a snippet, so this file adds no import). */
 	const { enrich }: { enrich?: Snippet } = $props();
-
-	interface MasterCapableEngine extends AudioEngine {
-		setMaster(value: number): void;
-	}
 
 	/** Why the JOBS toggle is inert, or null when the daemon offers jobs. A
 	 * different category from the planned-explainer catalogue: those describe
@@ -449,6 +447,8 @@
 <header
 	class="rb-topbar rb-panel"
 	class:less-view={uiPrefs.deck_layout === 'less'}
+	class:view-chosen={uiPrefs.perf_view !== 'waveform'}
+	class:pads-off={!uiPrefs.show_pads}
 >	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
 	<AnalysisSourceToggle />
@@ -494,14 +494,23 @@
 	<GigHelperPrompt />
 
 	<div class="icon-cluster">
-		<!-- list-view icon with dropdown caret -->
+		<!-- TOPVIEW-01: list view. The four view icons (list, 4-waveform, phase
+		     scope, phase meter) are one choice, uiPrefs.perf_view, persisted to
+		     disk prefs (PUT /api/v1/ui-prefs is the agent twin). -->
 		<ControlExplainer title="List view" bullets={listViewBullets} showDelayMs={60}>
-			<button class="tb-icon rb-inert" disabled aria-label="list view">
-				<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
-					<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
-					<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
-					<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
-					<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
+			<button
+				type="button"
+				class="tb-icon tb-view"
+				class:active={uiPrefs.perf_view === 'list'}
+				aria-label="list view"
+				aria-pressed={uiPrefs.perf_view === 'list'}
+				data-testid="perf-view-list"
+				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'list' })}
+			>
+				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+					<rect x="1" y="1.5" width="10" height="1.6" fill="currentColor" />
+					<rect x="1" y="5.2" width="10" height="1.6" fill="currentColor" />
+					<rect x="1" y="8.9" width="10" height="1.6" fill="currentColor" />
 				</svg>
 			</button>
 		</ControlExplainer>
@@ -532,11 +541,20 @@
 				</svg>
 			</button>
 		</ControlExplainer>
-		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically. Four
+		<!-- 4-waveform icon (TOPVIEW-01): lit while the waveform stack is the
+		     view, and a click brings it back from list or a phase view. Four
 		     stacked jagged polylines - must NOT read as a plain list glyph or
 		     a dotted grid (SCREENSHOT-SPEC 1). -->
 		<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} showDelayMs={60}>
-			<button class="tb-icon active rb-inert" disabled aria-label="4 waveform view">
+			<button
+				type="button"
+				class="tb-icon tb-view"
+				class:active={uiPrefs.perf_view === 'waveform'}
+				aria-label="4 waveform view"
+				aria-pressed={uiPrefs.perf_view === 'waveform'}
+				data-testid="perf-view-waveform"
+				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'waveform' })}
+			>
 				<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
 					{#each WAVE_ICON_ROWS as row (row.cy)}
 						<polyline
@@ -551,9 +569,17 @@
 				</svg>
 			</button>
 		</ControlExplainer>
-		<!-- 2 circular scope icons -->
+		<!-- 2 circular scope icons (TOPVIEW-02, TOPVIEW-03) -->
 		<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} showDelayMs={60}>
-			<button class="tb-icon rb-inert" disabled aria-label="scope view 1">
+			<button
+				type="button"
+				class="tb-icon tb-view"
+				class:active={uiPrefs.perf_view === 'phase-scope'}
+				aria-label="phase scope view"
+				aria-pressed={uiPrefs.perf_view === 'phase-scope'}
+				data-testid="perf-view-phase-scope"
+				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-scope' })}
+			>
 				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
 					<circle cx="6" cy="6" r="1.4" fill="currentColor" />
@@ -561,7 +587,15 @@
 			</button>
 		</ControlExplainer>
 		<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} showDelayMs={60}>
-			<button class="tb-icon rb-inert" disabled aria-label="scope view 2">
+			<button
+				type="button"
+				class="tb-icon tb-view"
+				class:active={uiPrefs.perf_view === 'phase-meter'}
+				aria-label="phase meter view"
+				aria-pressed={uiPrefs.perf_view === 'phase-meter'}
+				data-testid="perf-view-phase-meter"
+				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-meter' })}
+			>
 				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
 					<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
@@ -756,15 +790,25 @@
 					/>
 					<span>Maximize reach (avoid stranding)</span>
 				</label>
-				<button
-					type="button"
-					class="ap-row ap-two-track rb-inert"
-					disabled
-					title={plannedTitle('autoplay-two-track')}
-				>
-					<span>Two-track AutoPlay</span>
-					<span class="ap-planned">Planned</span>
-				</button>
+				<!-- TOPVIEW-06: two-track AutoPlay keeps the set on decks 1 and 2. -->
+				<label class="ap-row" title={TWO_TRACK_AUTOPLAY_TITLE}>
+					<input
+						type="checkbox"
+						data-testid="ap-two-track"
+						checked={uiPrefs.auto_play_two_deck}
+						onchange={async (e) => {
+							const input = e.currentTarget as HTMLInputElement;
+							const result = await runPerformanceCommandFromUi({
+								type: 'auto_play_two_track',
+								enabled: input.checked
+							});
+							// A refused command (lifecycle lock) leaves the pref as it was:
+							// put the box back so it never shows a mode AutoPlay is not in.
+							if (!result.ok) input.checked = uiPrefs.auto_play_two_deck;
+						}}
+					/>
+					<span>Two-track AutoPlay (decks 1 and 2 only)</span>
+				</label>
 				<p class="ap-hint">
 					Off enforce: key +-1 + Beat Sync BPM. Maximize reach (default on) prefers
 					fewer-outward twins so later tracks stay playable. Enforce order: next row
@@ -774,7 +818,20 @@
 		{/if}
 	</span>
 
-	<span class="dim-label topbar-slot-pad" title={plannedTitle('pad')}>PAD</span>
+	<!-- TOPVIEW-04: PAD shows or hides every deck's hot-cue pad bank. -->
+	<button
+		type="button"
+		class="bsm-toggle topbar-slot-pad"
+		class:on={uiPrefs.show_pads}
+		aria-pressed={uiPrefs.show_pads}
+		data-testid="topbar-pad-toggle"
+		title={uiPrefs.show_pads
+			? 'PAD ON - every deck shows its 2x4 hot-cue pad bank. Click to hide the pads (hot cues stay on the waveforms, the overview strip, MIDI and the hotkeys)'
+			: 'PAD OFF - the hot-cue pad banks are hidden on every deck. Click to show them'}
+		onclick={() => void runPerformanceCommandFromUi({ type: 'show_pads', enabled: !uiPrefs.show_pads })}
+	>
+		PAD
+	</button>
 	<!-- MIDI moved to settings, I/O view, and bottom tray (issue #3886). -->
 
 	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
@@ -796,13 +853,16 @@
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
 	<CommandEntry />
 
-	<button class="tb-icon rb-inert topbar-slot-utility" disabled title={plannedTitle('information')} aria-label="information">
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" />
-			<rect x="5.3" y="5" width="1.4" height="4" fill="currentColor" />
-			<rect x="5.3" y="2.6" width="1.4" height="1.4" fill="currentColor" />
-		</svg>
-	</button>
+	<!-- TOPVIEW-05: Track information for the focused deck. The button sits in
+	     the evictable utility slot; the overlay and its load failure mount
+	     outside it, so an agent's track_info_toggle still shows them where the
+	     width tiers or LESS view hide the slot (Sol P1 4350988015). -->
+	<span class="info-slot topbar-slot-utility"
+		><TrackInfoButton
+			ontoggle={() => void runPerformanceCommandFromUi({ type: 'track_info_toggle' })}
+		/></span
+	>
+	<TrackInfoHost onclose={() => void runPerformanceCommandFromUi({ type: 'track_info_close' })} />
 
 	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
 
@@ -1182,6 +1242,13 @@
 	@media (max-width: 1448px) {
 		/* Was 1210px. The inert view-icon cluster, LINK and PAD are 233px of
 		   placeholder chrome that operate nothing; the deficits above 1211px run
+		   (TOPVIEW-01..04, Fri 9 Oct 2026: the four view icons and PAD are live
+		   controls now, marked `.tb-view`, and still yield in this tier at the
+		   same measured width, because the row's width did not change. They
+		   yield only while at their defaults: once a non-waveform view is
+		   chosen or the pads are hidden, the persisted choice keeps its way
+		   back on screen (.view-chosen / .pads-off), accepting a tighter row
+		   over a view nobody can leave)
 		   to 138px, so 1415px is the last measured failing width plus the same
 		   25px margin the other tiers use. Only the cluster's INERT members go:
 		   the 2-deck toggle is a real control since V1 (PR #4923) and is about
@@ -1191,8 +1258,9 @@
 		   [1416px, 1423px] in a 1px elementFromPoint sweep (the input's centre hit
 		   the skin toggle), so 1448px is 1423px plus the same 25px margin. */
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
+		.rb-topbar:not(.view-chosen) .icon-cluster > :global(.explainer:has(.tb-view)),
 		.rb-topbar .link-btn,
-		.rb-topbar .topbar-slot-pad { display: none; }
+		.rb-topbar:not(.pads-off) .topbar-slot-pad { display: none; }
 	}
 	@media (max-width: 1257px) {
 		/* New tier. Status first (see the note above), and the chrome the 825px
@@ -1264,7 +1332,6 @@
 	   width tiers above; the 2-deck toggle is a real control and stays. */
 	.rb-topbar.less-view .icon-cluster > :global(.explainer:has(.rb-inert)),
 	.rb-topbar.less-view .link-btn,
-	.rb-topbar.less-view .topbar-slot-pad,
 	.rb-topbar.less-view .topbar-slot-utility,
 	.rb-topbar.less-view .free-badge,
 	.rb-topbar.less-view .lyr-stage-row,
@@ -1301,8 +1368,9 @@
 	}
 	@media (max-height: 799px) and (max-width: 1512px) {
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
+		.rb-topbar:not(.view-chosen) .icon-cluster > :global(.explainer:has(.tb-view)),
 		.rb-topbar .link-btn,
-		.rb-topbar .topbar-slot-pad { display: none; }
+		.rb-topbar:not(.pads-off) .topbar-slot-pad { display: none; }
 	}
 	/* READ-ONLY status only. The Gig/Prep posture buttons and the refresh-analysis
 	   button are controls, and a short window is Playwright's default 1280x720
@@ -1423,20 +1491,6 @@
 	}
 	.ap-row input {
 		margin: 0;
-	}
-	.ap-two-track {
-		justify-content: space-between;
-		width: 100%;
-		padding: 0;
-		border: 0;
-		background: transparent;
-		font: inherit;
-		text-align: left;
-	}
-	.ap-planned {
-		font-size: 8px;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 	}
 	.ap-hint {
 		margin: 0;
@@ -1564,6 +1618,10 @@
 		gap: 2px;
 	}
 
+	/* The width tiers hide this wrapper; TrackInfoButton styles its own button. */
+	.info-slot {
+		display: flex;
+	}
 	.tb-icon {
 		display: flex;
 		align-items: center;
@@ -1620,13 +1678,6 @@
 		line-height: 1;
 	}
 
-	.dim-label {
-		font-size: var(--rb-fs-label);
-		letter-spacing: 0.08em;
-		color: var(--rb-text-dim);
-		opacity: 0.6;
-	}
-
 	.bsm-toggle {
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
@@ -1643,6 +1694,12 @@
 		color: var(--rb-accent);
 		border-color: color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--rb-accent) 25%, transparent);
+	}
+	/* PAD is on by default, so its on state is always visible: accent text on the
+	   raised panel is 3.47:1 in the default skin (under AA), so the label stays
+	   full-strength text and the accent border and glow carry "on". */
+	.bsm-toggle.topbar-slot-pad.on {
+		color: var(--rb-text);
 	}
 	.bsm-toggle:hover {
 		color: var(--rb-text);

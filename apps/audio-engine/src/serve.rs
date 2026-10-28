@@ -2875,8 +2875,15 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |_side, _stop| {
-                std::thread::sleep(Duration::from_millis(300));
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |side, _stop| {
+                // Die once the command is in the mailbox, never before: a fixed
+                // 300 ms sleep let a starved runner's reader land the line after
+                // the audio side had already gone (CI, Thu 22 Oct 2026).
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while side.cmd_rx.slots() == 0 {
+                    assert!(Instant::now() < deadline, "the command never reached the mailbox");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
             });
             let _ = tx.send(r);
         });

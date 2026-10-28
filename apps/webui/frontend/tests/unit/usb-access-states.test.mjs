@@ -227,3 +227,27 @@ test('a daemon that does not report access gets no invented value', async () => 
 	assert.equal('access' in known('vol:OLD'), false);
 	assert.ok(listed('vol:OLD'));
 });
+
+test('a fresh listing that omits the bus clears the USB bus a past one named (Sol P1 on 091295d344)', async () => {
+	await poll([readableStick('vol:BUS', { protocol: 'USB' })]);
+	await poll([apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'USB' })]);
+	assert.equal(known('vol:BUS').protocol, 'USB', 'control: a listing that names USB keeps it');
+	await poll([apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true })]);
+	assert.equal(known('vol:BUS').protocol, null, 'if a listing with no bus keeps the old USB bus then broken');
+	await poll([apiVolume('vol:BUS', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'Secure Digital' })]);
+	assert.equal(known('vol:BUS').protocol, 'Secure Digital', 'a listing that names another bus replaces it');
+});
+
+test('a fresh listing that omits the mount clears the mount a past one named (Sol P1 4398465000)', async () => {
+	const stick = (extra) => apiVolume('vol:MNT', { role: 'usb_stick', kind: 'rekordbox', is_music: true, protocol: 'USB', ...extra });
+	await poll([stick({ mount_path: '/Volumes/GIG-A' })]);
+	await poll([stick({ mount_path: '/Volumes/GIG-A' })]);
+	assert.equal(known('vol:MNT').mount_path, '/Volumes/GIG-A', 'control: a listing that names the mount keeps it');
+	await poll([stick({ mount_path: null })]);
+	assert.equal(known('vol:MNT').mount_path, undefined, 'if a listing with a null mount keeps the old path then broken');
+	await poll([stick({ mount_path: '/Volumes/GIG-A 1' })]);
+	assert.equal(known('vol:MNT').mount_path, '/Volumes/GIG-A 1', 'a listing that names another mount replaces it');
+	const { mount_path: _dropped, ...omitted } = stick({});
+	await poll([omitted]);
+	assert.equal(known('vol:MNT').mount_path, undefined, 'if a listing that omits the mount keeps the old path then broken');
+});

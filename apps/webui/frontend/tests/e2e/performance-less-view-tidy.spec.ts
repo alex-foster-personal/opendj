@@ -115,7 +115,7 @@ test('LESS hides the less important controls without unmounting them, and MORE s
 	const hidden = [
 		['voice command', page.locator('input[aria-label="text command entry"]')],
 		['LINK', page.locator('.link-btn')],
-		['PAD', page.locator('.topbar-slot-pad')],
+		// PAD left this list with TOPVIEW-04: it is a live pad-bank toggle now and LESS keeps it.
 		['FX (unfinished)', page.locator('button[aria-label="FX panel"]')],
 		// CSS, not role, locators: a role query skips display:none, and MOUNTED is the point.
 		['Find & Replace', page.locator('[data-testid="library-edit-menu-list"] > button', { hasText: 'Find & Replace' })],

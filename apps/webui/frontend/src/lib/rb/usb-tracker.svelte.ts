@@ -90,7 +90,9 @@ export const usbTracker = $state({
 	consecutiveFailures: 0,
 	/** Daemon `scanned_at` of the last successful poll this session; null
 	 * until one lands, while every `present` flag is still last session's. */
-	scannedAt: null as number | null
+	scannedAt: null as number | null,
+	/** Which refresh the listing came from (see `usbRefreshSeq`); 0 before any. */
+	listingSeq: 0
 });
 
 let _pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -215,6 +217,13 @@ export function usbRowKindLabel(v: UsbVolumeKnown): string {
 	return v.simulated ? `${kind} (simulated)` : kind;
 }
 
+/** Tells the user about a USB action that did not happen (an eject that never
+ * started), as an error toast. Raised from here, where the USB toasts already
+ * are, so USB modules do not each import the toast store. */
+export function announceUsbProblem(message: string): void {
+	pushToast(message, 'error');
+}
+
 export function openUsbPanel(id?: string): void {
 	usbTracker.panelOpen = true;
 	if (id !== undefined) {
@@ -284,7 +293,8 @@ const _REASON_SENTENCES: Record<string, string> = {
 	diskutil_timed_out: 'macOS diskutil did not answer in time',
 	diskutil_query_failed: 'macOS diskutil returned an error',
 	volumes_root_unavailable: '/Volumes is not available on this machine',
-	volumes_root_unreadable: '/Volumes could not be listed'
+	volumes_root_unreadable: '/Volumes could not be listed',
+	volumes_changing: 'USB sticks kept changing while /Volumes was read; it will be read again'
 };
 
 /** The sentence the USB panel shows instead of an empty list it cannot
@@ -346,17 +356,98 @@ function _refusalDetail(body: unknown): { reason: string | null; title: string |
 	};
 }
 
+/**
+ * Sequence of the latest volume read started. Reads overlap (the poll, the
+ * export screen opening, the rescan after an eject), and only the newest one
+ * may write the tracker: an older answer landing late would put an ejected
+ * stick back on the list as present (Codex P2 4288381672).
+ */
+let _refreshSeq = 0;
+
+/** The newest refresh started so far. A listing with a higher `listingSeq`
+ * was requested after this moment; an older request in flight is dropped
+ * once a newer one starts, so it never lands after it. */
+export function usbRefreshSeq(): number {
+	return _refreshSeq;
+}
+
+/**
+ * What is wrong with a volume listing the daemon answered 200 with, or null.
+ * A listing missing `volumes` is contract drift, not "no sticks": read as
+ * empty it would mark every stick gone and drop the export screen's picked
+ * stick and plan (Sol P1 4350275754), so it is a discovery error instead.
+ */
+/** UsbVolumeOut's fields every daemon sends, by type. `_ingest` skips a row
+ * whose `present` is not true and then marks every remembered stick absent, so
+ * a row missing one of these would read as an unplug rather than an error. */
+const _ROW_REQUIRED: Record<string, 'string' | 'boolean'> = {
+	id: 'string',
+	name: 'string',
+	present: 'boolean',
+	simulated: 'boolean',
+	is_music: 'boolean'
+};
+/** UsbVolumeOut's Literal fields, by allowed value. A Record over each union
+ * makes the compiler refuse a missing or extra value. A value outside its set
+ * (a typo such as "usb-stick") would replace the stored role and read as the
+ * stick being unplugged, so it is malformed too (Codex 4351111102). */
+const _KINDS: Record<UsbKind, true> = { rekordbox: true, djay: true, music: true, unknown: true };
+const _ROLES: Record<UsbRole, true> = { usb_stick: true, mounted_drive: true, disk_image: true, other: true };
+const _ACCESS: Record<UsbAccess, true> = { ok: true, pending: true, denied: true, unknown: true };
+const _ROW_ENUMS: Record<string, { values: Record<string, true>; optional: boolean }> = {
+	kind: { values: _KINDS, optional: false },
+	role: { values: _ROLES, optional: false },
+	// Older daemons never send `access` (USBPLAY-02).
+	access: { values: _ACCESS, optional: true }
+};
+/** Fields an older daemon may leave out; when sent they must be a string or null. */
+const _ROW_OPTIONAL_STRINGS = ['mount_path', 'protocol', 'hide_reason'] as const;
+
+function _malformedRowFields(row: unknown): string[] {
+	if (row === null || typeof row !== 'object' || Array.isArray(row)) return ['volumes[]'];
+	const r = row as Record<string, unknown>;
+	const wrong = Object.entries(_ROW_REQUIRED)
+		.filter(([key, type]) => typeof r[key] !== type)
+		.map(([key]) => `volumes[].${key}`);
+	for (const [key, { values, optional }] of Object.entries(_ROW_ENUMS)) {
+		const value = r[key];
+		if (optional && value === undefined) continue;
+		if (typeof value !== 'string' || !Object.hasOwn(values, value)) wrong.push(`volumes[].${key}`);
+	}
+	for (const key of _ROW_OPTIONAL_STRINGS) {
+		const value = r[key];
+		if (value === undefined || value === null || typeof value === 'string') continue;
+		wrong.push(`volumes[].${key}`);
+	}
+	return wrong;
+}
+
+function _malformedListing(body: unknown): string | null {
+	const { volumes, scanned_at } = (body ?? {}) as { volumes?: unknown; scanned_at?: unknown };
+	const wrong: string[] = [];
+	if (!Array.isArray(volumes)) wrong.push('volumes');
+	else wrong.push(...new Set(volumes.flatMap(_malformedRowFields)));
+	if (typeof scanned_at !== 'number' || !Number.isFinite(scanned_at)) wrong.push('scanned_at');
+	return wrong.length === 0 ? null : wrong.join(', ');
+}
+
 export async function refreshUsbVolumes(): Promise<void> {
+	const seq = ++_refreshSeq;
 	try {
 		const body = await unwrap(api.GET('/api/v1/usb/volumes'));
-		_ingest(body.volumes ?? []);
+		if (seq !== _refreshSeq) return;
+		const malformed = _malformedListing(body);
+		if (malformed !== null) throw new Error(`the daemon's USB volume answer is malformed: ${malformed}`);
+		_ingest(body.volumes);
 		usbTracker.scannedAt = body.scanned_at;
+		usbTracker.listingSeq = seq;
 		usbTracker.lastError = null;
 		usbTracker.discovery = 'ok';
 		usbTracker.unavailableReason = null;
 		usbTracker.unavailableTitle = null;
 		usbTracker.consecutiveFailures = 0;
 	} catch (exc) {
+		if (seq !== _refreshSeq) return;
 		usbTracker.consecutiveFailures += 1;
 		if (exc instanceof ApiError) {
 			usbTracker.lastError = `usb volumes HTTP ${exc.status}`;
@@ -428,10 +519,17 @@ function _ingest(remote: ApiVolume[]): void {
 		} else {
 			prev.last_seen = now;
 			prev.present = true;
-			if (api.mount_path != null) prev.mount_path = api.mount_path;
+			// The newest healthy row decides the mount too: one with no mount no
+			// longer establishes where the stick is, so Check plan and Eject are not
+			// offered at an older path (Sol P1 4398465000).
+			if (api.mount_path == null) delete prev.mount_path;
+			else prev.mount_path = api.mount_path;
 			prev.kind = api.kind;
 			prev.role = role;
-			prev.protocol = api.protocol ?? prev.protocol ?? null;
+			// The newest healthy row decides the bus: one that omits it no longer
+			// establishes USB, so Check plan and Eject are not offered on a stale
+			// value (Sol P1 on 091295d344, Codex 4350696755, Sol 4352227073).
+			prev.protocol = api.protocol ?? null;
 			prev.simulated = api.simulated;
 			if (api.hide_reason) prev.hide_reason = api.hide_reason;
 			if (api.access !== undefined) prev.access = api.access;

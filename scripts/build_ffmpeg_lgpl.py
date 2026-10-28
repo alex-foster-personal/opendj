@@ -108,13 +108,26 @@ ENCODERS = ("pcm_s16le", "pcm_f32le")
 PROTOCOLS = ("file", "pipe")
 
 
-def configure_args(prefix: Path) -> list[str]:
-    """The ffmpeg configure line. Never --enable-gpl, never --enable-nonfree."""
-    flags = f"-mmacosx-version-min={MACOS_MIN} -I{prefix}/include"
+def configure_args(prefix: Path, host: str = sys.platform) -> list[str]:
+    """The ffmpeg configure line. Never --enable-gpl, never --enable-nonfree.
+
+    ``host`` is ``sys.platform``. darwin is the shipped macOS arm64 line,
+    unchanged; linux builds the same decode-only surface for the host's own
+    arch with the system C compiler (the Electron Linux pack, Fri 9 Oct 2026).
+    """
+    if host == "darwin":
+        target = ["--arch=arm64", "--cc=clang"]
+        cflags = f"-mmacosx-version-min={MACOS_MIN} -I{prefix}/include"
+        ldflags = f"-mmacosx-version-min={MACOS_MIN} -L{prefix}/lib"
+    else:
+        # glibc keeps libm separate, and the static libsoxr probe links
+        # before ffmpeg adds -lm itself ("libsoxr not found", Fri 9 Oct 2026).
+        target = ["--cc=cc", "--extra-libs=-lm"]
+        cflags = f"-I{prefix}/include"
+        ldflags = f"-L{prefix}/lib"
     return [
         f"--prefix={prefix}",
-        "--arch=arm64",
-        "--cc=clang",
+        *target,
         "--enable-static",
         "--disable-shared",
         "--disable-autodetect",
@@ -134,8 +147,8 @@ def configure_args(prefix: Path) -> list[str]:
         f"--enable-muxer={','.join(MUXERS)}",
         f"--enable-encoder={','.join(ENCODERS)}",
         f"--enable-protocol={','.join(PROTOCOLS)}",
-        f"--extra-cflags={flags}",
-        f"--extra-ldflags=-mmacosx-version-min={MACOS_MIN} -L{prefix}/lib",
+        f"--extra-cflags={cflags}",
+        f"--extra-ldflags={ldflags}",
     ]
 
 
@@ -355,10 +368,24 @@ def cached_artifact() -> Path | None:
     return prefix
 
 
+def unsupported_host(host: str, machine: str) -> str | None:
+    """Why this host cannot build the payload ffmpeg, or None when it can.
+
+    macOS builds arm64 only (the shipped line); Linux builds for its own arch.
+    Windows has no configure line here yet.
+    """
+    if host == "darwin":
+        return None if machine == "arm64" else "the macOS payload ffmpeg is built for arm64, on arm64"
+    if host == "linux":
+        return None
+    return f"no payload ffmpeg configure line for {host}; macOS arm64 and Linux only"
+
+
 def build() -> Path:
     """Build (or reuse) the artifact and return its directory."""
-    if sys.platform != "darwin" or platform.machine() != "arm64":
-        raise FfmpegBuildError("the payload ffmpeg is built for macOS arm64, on macOS arm64")
+    refusal = unsupported_host(sys.platform, platform.machine())
+    if refusal:
+        raise FfmpegBuildError(refusal)
     cached = cached_artifact()
     if cached is not None:
         return cached
@@ -384,7 +411,7 @@ def build() -> Path:
     return prefix
 
 
-LICENSES_RELATIVE = "licenses/ffmpeg"
+LICENSES_RELATIVE = "(private path)"
 LICENSE_FILES = ("LICENSE-ffmpeg", "LICENSE-soxr", "NOTICE-ffmpeg")
 
 

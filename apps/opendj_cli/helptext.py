@@ -39,6 +39,16 @@ installed app MCP (AGENT-11, issue #2753):
   claude mcp add opendj -- "/Applications/Open DJ.app/Contents/Resources/payload/bin/opendj" mcp
   MCP tools: status, app_state, command, library, ui_url (browser only),
   open_route (shell), update_check (read-only), update_apply (destructive)
+  AutoDJ MCP tools (AGENT-29): get_mix_state, get_track_profile, get_mix_windows,
+  score_pair, suggest_next, list_verbs, list_transition_styles,
+  propose_transition, validate_plan, schedule_plan, amend_plan
+
+AutoDJ (AGENT-29, JSON out; plans continue a playing set, never start one):
+  opendj dj state                                       # bar, section, mixer per deck
+  opendj dj profile|windows|score|suggest ...           # track facts and fit
+  opendj dj propose <in_stable_id> --intent "wind down" # validated plans
+  opendj dj validate|schedule <plan.json|->             # check, then perform
+  opendj dj amend <plan_id> abort|finish_now|extend [--bars N]
 
 installed app UPDATE (AGENT-13, issue #2942; exits 0 only for current or
 update-available, and for an apply that relaunched into the announced build):

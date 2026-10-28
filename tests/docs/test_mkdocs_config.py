@@ -182,3 +182,17 @@ def test_helper_scripts_present(script: str):
     path = REPO_ROOT / script
     assert path.is_file(), f"{script} missing"
     assert "mkdocs" in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.requirement("DEVOPS-22")
+def test_docs_pull_requests_create_no_deployment():
+    """Docs PRs build in the pr-docs environment but create no deployment (Tue 27 Oct 2026).
+
+    [if] a docs pull request creates a pr-docs deployment [then] GitHub shows it deployed for a no-op, so fail, [else stop].
+
+    The job must still exist on a pull request (no job-level `if`, pinned above), so the
+    environment stays and only its deployment object is switched off outside a push.
+    """
+    environment = _load_workflow("docs.yml")["jobs"]["deploy"]["environment"]
+    assert environment["deployment"] == "${{ github.event_name == 'push' }}"
+    assert "'github-pages'" in environment["name"]

@@ -35,19 +35,12 @@ export const NOT_BUILT_MARK = 'Not built yet';
  */
 export const PLANNED_CONTROLS: Record<string, string> = {
 	'remote-control': 'Remote control - uses another Open DJ machine on your network as the speaker output, the way Spotify Connect plays on another device, while this machine stays the controller.',
-	'list-view': 'List view - shows the browser as one compact line per track with no preview waveform, so more rows fit on screen. The caret picks which columns.',
 	fx: 'FX panel - opens the beat-effects rack - delay, echo, reverb, roll - synced to the deck tempo. Separate from the per-channel Sound Color FX dial on the mixer.',
 	'split-view': 'Split view - splits the window so the browser and the decks each get half, instead of the decks owning the top and the browser the bottom.',
 	'2-deck-view': '2-deck view - hides decks 3 and 4 and gives decks 1 and 2 the full width, for a two-deck set.',
 	'grid-view': 'Grid view - lays all four decks out in a 2x2 grid with equal space, rather than stacking their waveforms.',
-	'4-waveform-view': '4-waveform view - stacks all four decks as full-width scrolling waveforms. This is the layout you are in now, which is why it is lit.',
-	'scope-view-1': 'Phase scope - replaces the waveform stack with a circular phase display per deck, so beat alignment reads as rotation rather than as bars.',
-	'scope-view-2': 'Phase meter - shows how far each follower deck is ahead of or behind the master as an arc, for correcting drift by eye.',
 	link: 'LINK - joins other machines on the network - Ableton Link tempo sync, and sharing this library with a second laptop.',
-	pad: 'PAD - labels the performance-pad row: hot cues, beat loops, beat jump and sampler banks for the focused deck.',
-	information: 'Track information - opens the full record for the focused deck - every tag, the analysis provenance, play history and the file path.',
 	'free-badge': 'Free plan - is the licence tier this copy runs on. Everything on this screen is included; the badge marks where paid tiers will differ once there are any.',
-	'autoplay-two-track': 'Two-track AutoPlay - will match and mix a second automatic track alongside the primary handoff, with its own evolving selection rules.',
 	'grid-adjust': 'Grid adjust - nudges the beatgrid later or earlier on this deck so downbeats line up with the kick, without changing tempo.',
 	'grid-shift': 'Grid shift - slides the whole beatgrid by whole beats so bar 1 lands on the phrase start you hear.',
 	'auto-cue': 'Auto cue - jumps back to the loaded cue when the track ends, so the next play starts from that cue instead of 0:00.',
@@ -66,7 +59,6 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'master-dropdown': 'Master playlist - pins which playlist the NEXT / compatible filter treats as the master source, independent of which deck is MASTER.',
 	'single-column-layout': 'Single-column library - hides the playlist tree and gives the track table the full browser width.',
 	'split-column-layout': 'Split-column library - stacks two track tables side by side so two playlists can be compared without switching panes.',
-	'export-eject': 'Export / eject - flushes a USB export and safely ejects the stick from the bottom bar, the same action as the USB panel.',
 	'pane-prev-track': 'Previous track in pane - moves the table selection up one row and, when a deck is focused, prepares that row as the next load.',
 	'pane-next-track': 'Next track in pane - moves the table selection down one row and, when a deck is focused, prepares that row as the next load.',
 	// Pin 552a810ba13b, second sweep (issue #4089): the remaining /performance
@@ -80,6 +72,39 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'grid-flag-dismiss': 'Dismiss beatgrid flag - hides the uneven-beatgrid warning for this track without changing its grid, and can restore it here. This view has no dismiss handler connected yet, so the button does nothing.',
 	'quantize-grid-phase': 'Phrase quantize - snaps seeks, cue points and loop ends to the detected phrase length from analysis (for example 16 or 32 bars) instead of a fixed 1, 4 or 8 beat grid.'
 };
+
+/**
+ * TOPVIEW-01..07 (Fri 9 Oct 2026): top-bar controls that were planned here and
+ * are now built. Same "Name - what it does" shape, minus the not-built line,
+ * so the explainer a user saw while it was planned keeps describing it.
+ */
+export const BUILT_CONTROLS: Record<string, string> = {
+	'list-view': 'List view - hides the scrolling waveforms so the library below gets their height and more track rows fit on screen. The decks and mixer stay where they are. Click the 4-waveform icon to bring the waveforms back.',
+	'4-waveform-view': '4-waveform view - stacks every deck as a full-width scrolling waveform. Lit while it is the view; click it to come back from list view or a phase view.',
+	'scope-view-1': 'Phase scope - replaces the waveform stack with one dial per deck whose dot turns once per bar, so decks in phase turn together and a drifting deck leads or lags.',
+	'scope-view-2': 'Phase meter - replaces the waveform stack with one arc per deck showing how far its beat is ahead of (right) or behind (left) the master deck, in ms, for correcting drift by eye.',
+	information: 'Track information - opens the full record for the focused deck (the deck you last clicked, else the master): tags, analysis provenance, play counts and the file path.',
+	'autoplay-two-track': 'Two-track AutoPlay - AutoPlay plays the set on decks 1 and 2 only, two tracks at a time: each handoff loads the other of the two, and decks 3 and 4 stay yours for samples or a manual load. Off: AutoPlay may use any free deck when the partner deck is busy.'
+};
+
+/** The tooltip for a built control: its whole entry. Throws on an unknown id. */
+export function builtTitle(id: string): string {
+	const entry = BUILT_CONTROLS[id];
+	if (entry === undefined) {
+		throw new Error(`planned-explainers: no built entry for control '${id}'`);
+	}
+	return entry;
+}
+
+/** Rich ControlExplainer bullets for a built topbar control. Throws on an unknown id. */
+export function builtExplainerBullets(id: string): readonly string[] {
+	const entry = BUILT_CONTROLS[id];
+	if (entry === undefined) {
+		throw new Error(`planned-explainers: no built entry for control '${id}'`);
+	}
+	const dash = entry.indexOf(' - ');
+	return [dash === -1 ? entry : entry.slice(dash + 3)];
+}
 
 /** The tooltip for a planned control. Throws on an unknown id: an empty
  * tooltip on a visible control is the failure this catalogue exists to stop. */

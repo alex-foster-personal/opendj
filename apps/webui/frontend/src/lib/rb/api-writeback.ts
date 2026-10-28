@@ -49,3 +49,18 @@ export async function rollbackWriteback(playlistId: string, result: WritebackApp
 		return await unwrap(api.POST('/api/v1/playlists/{playlist_id}/writeback/rollback', { params: { path: { playlist_id: playlistId } }, body: { vendor: plan.vendor, target_mode: plan.target_mode, target_path: plan.target_path, target_id: plan.target_id, backup_id: result.backup_id, expected_target_revision: result.target_revision, confirmed: true } }));
 	} catch (error) { _toWritebackError(error); }
 }
+
+type UsbSchemas = components['schemas'];
+
+/** USB export (USBEXP-01, USBEXP-03) and eject (USBEXP-02): writes to a stick
+ * behind the same one-way import gate as playlist writeback. A refusal throws
+ * the client's ApiError unchanged, because the USB screen shows the daemon's
+ * own code and sentence from either error envelope. */
+export const usbExportRoutes = {
+	plan: (body: UsbSchemas['PlanRequest']) => unwrap(api.POST('/api/v1/usb-export/plan', { body })),
+	apply: (body: UsbSchemas['ApplyRequest']) => unwrap(api.POST('/api/v1/usb-export/apply', { body })),
+	readback: (body: UsbSchemas['ReadbackRequest']) =>
+		unwrap(api.POST('/api/v1/usb-export/readback', { body })),
+	eject: (mountPath: string, volumeId: string) =>
+		unwrap(api.POST('/api/v1/usb/eject', { body: { mount_path: mountPath, volume_id: volumeId } }))
+};
