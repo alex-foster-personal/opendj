@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from .client import SpotifyPlaylist
+from .client import SpotifyPlaylist, _track_id_from_spotify_uri
 from .matcher_adapter import MatchedPair
 
 __all__ = [
@@ -93,8 +93,8 @@ def build_acquisition_entries(
 
 
 def _spotify_web_url(uri: str) -> str:
-    if uri.startswith("spotify:track:"):
-        tid = uri.split(":", 2)[2]
+    tid = _track_id_from_spotify_uri(uri)
+    if tid:
         return f"https://open.spotify.com/track/{tid}"
     return uri  # pragma: no cover
 

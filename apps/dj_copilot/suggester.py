@@ -8,13 +8,13 @@ Composition:
 The optional ``explain=True`` path is synchronous in Phase 13: it calls
 the stub explainer inline. The documented event-bus contract
 (``ai.explain_requested`` / ``ai.explain_response``) is shipped in
-``docs/dj_copilot_events.md`` for Phase 14 / Phase 17 consumers.
+``(private path)`` for Phase 14 / Phase 17 consumers.
 """
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import UTC
+from datetime import UTC, datetime
 
 from apps.shared.harmonic import TrackFeature
 
@@ -58,8 +58,6 @@ def _rationale_tags(sc: ScoredCandidate) -> list[str]:
 
 
 def _current_to_played(current: TrackFeature) -> PlayedTrack:
-    from datetime import datetime
-
     return PlayedTrack(
         stable_id=current.stable_id,
         artist=current.artist,
@@ -93,8 +91,6 @@ def suggest_next(
         return []
 
     if context is None:
-        from datetime import datetime
-
         context = SessionContext(
             recent=[], source="empty", captured_at=datetime.now(UTC)
         )

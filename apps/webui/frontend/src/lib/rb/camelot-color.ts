@@ -13,6 +13,15 @@ import { parseCamelotKey } from '$lib/player/key/camelot';
 /** Classic Camelot wheel hues (1..12); A/B share the number colour. */
 const CAMELOT_HUES = [0, 30, 55, 85, 120, 155, 185, 210, 240, 275, 300, 330] as const;
 
+/** Hue (degrees) of a Camelot number 1..12; A and B share it. The one hue
+ * table for every key surface (browser swatch, deck header, library wheel). */
+export function camelotNumberHue(number: number): number {
+	if (!Number.isInteger(number) || number < 1 || number > 12) {
+		throw new RangeError(`camelotNumberHue: number must be an integer 1..12, got ${number}`);
+	}
+	return CAMELOT_HUES[number - 1];
+}
+
 /** Pitch-class → display name (C=0). Mixed sharp/flat labels match common Camelot charts. */
 const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
 
@@ -22,7 +31,7 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 
 export function camelotKeyColor(key: string | null): string | null {
 	const parsed = parseCamelotKey(key);
 	if (parsed === null) return null;
-	const hue = CAMELOT_HUES[parsed.number - 1];
+	const hue = camelotNumberHue(parsed.number);
 	const major = parsed.mode === 'B';
 	// Lightness is a skin hook: Light (theme.css) darkens both so the swatch
 	// text clears 4.5:1 on its pale rows; other skins leave them unset.

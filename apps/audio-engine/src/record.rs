@@ -5,7 +5,7 @@
 //! This half needs no device, so Linux CI tests it: the device half
 //! (`capture`, feature `device`) only feeds it interleaved f32 frames. It is
 //! what lets REC record in the installed app, which bundles no ffmpeg
-//! (`docs/decisions/*-set-recording-without-ffmpeg.md`).
+//! (`(private path)/*-set-recording-without-ffmpeg.md`).
 //!
 //! Every file is created new (`create_new`), never replaced, so a recording
 //! can never overwrite anything, a library file included. The header's sizes
@@ -16,6 +16,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use crate::dsp;
 
 /// The longest segment `record` accepts: an hour of 16-bit stereo at 192 kHz
 /// is about 2.6 GiB, inside a WAV file's 4 GiB.
@@ -75,10 +77,6 @@ pub fn write_pcm16_header(w: &mut impl Write, channels: u16, sr: u32, data_bytes
     w.write_all(&16u16.to_le_bytes())?;
     w.write_all(b"data")?;
     w.write_all(&data_bytes.to_le_bytes())
-}
-
-fn to_i16(s: f32) -> i16 {
-    (s.clamp(-1.0, 1.0) * 32767.0).round() as i16
 }
 
 struct Open {
@@ -194,7 +192,7 @@ impl SegmentWriter {
             let channels = self.channels;
             let o = self.open.as_mut().expect("opened above");
             for s in &frame[..channels as usize] {
-                o.w.write_all(&to_i16(*s).to_le_bytes())?;
+                o.w.write_all(&dsp::f32_to_pcm16(*s).to_le_bytes())?;
             }
             o.frames += 1;
             o.since_patch += 1;
@@ -372,7 +370,7 @@ mod tests {
         let name = &wide.finish().unwrap()[0];
         let b = std::fs::read(tmp.path().join(name)).unwrap();
         let got: Vec<i16> = b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
-        assert_eq!(got, [to_i16(0.1), to_i16(0.2), to_i16(0.3), to_i16(0.4)]);
+        assert_eq!(got, [dsp::f32_to_pcm16(0.1), dsp::f32_to_pcm16(0.2), dsp::f32_to_pcm16(0.3), dsp::f32_to_pcm16(0.4)]);
         // A partial frame is refused rather than shifting every channel after it.
         let mut w = SegmentWriter::new(tmp.path(), 2, 8, 1, at(30)).unwrap();
         assert!(w.push(&[0.0; 3]).is_err());
@@ -450,7 +448,7 @@ mod tests {
         let name = w.finish().unwrap().remove(0);
         let b = std::fs::read(tmp.path().join(name)).unwrap();
         let got: Vec<i16> = b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
-        let want: Vec<i16> = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].iter().map(|s| to_i16(*s)).collect();
+        let want: Vec<i16> = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].iter().map(|s| dsp::f32_to_pcm16(*s)).collect();
         assert_eq!(got, want, "every sample in order, channels never shifted");
     }
 

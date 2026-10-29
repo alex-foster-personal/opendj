@@ -97,6 +97,7 @@ def test_the_discovery_probe_finds_a_port_in_a_new_configuration(tmp_path: Path)
 KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
     ("apps/desktop/wdio.conf.ts", "const EMBEDDED_WEBDRIVER_PORT = 4455;", 4455),
     ("apps/desktop/mcp/smoke.ts", "const WEBDRIVER_PORT = 4456;", 4456),
+    ("apps/desktop/mcp/smoke.ts", "const CDP_PORT = 9336;", 9336),
     ("apps/webui/frontend/tests/e2e/vite.play-analytics.config.ts", "port: 5214,", 5214),
     ("apps/webui/frontend/tests/e2e/vite.library-wheel.config.ts", "port: 5228,", 5228),
     (

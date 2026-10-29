@@ -39,6 +39,7 @@ const MIXER = fileURLToPath(new URL('../../src/lib/components/rb/mixer', import.
 let knobs;
 /** wheel-adjust, for WHEEL_TRACKPAD_EVENTS_PER_DETENT only. */
 let wheel;
+let sens;
 /** Registered fake dials by id, each holding a real settable value. */
 let dials;
 let wheelHandler;
@@ -71,6 +72,8 @@ before(async () => {
 	// Read-only: this is a SEPARATE module instance from the copy esbuild
 	// bundled into knob-control, so only its constants are meaningful here.
 	wheel = await loadTypeScriptModule('src/lib/rb/wheel-adjust.ts');
+	// Read-only for the same reason: only its pure functions and defaults.
+	sens = await loadTypeScriptModule('src/lib/rb/drag-sensitivity.svelte.ts');
 	globalThis.__listeners = listeners;
 });
 
@@ -467,41 +470,32 @@ test('scroll or arrow on a selected dial moves the whole selection; on an unsele
 	assert.ok(near(valueOf(a), 0.4), 'turning an unselected dial dragged the selection along');
 });
 
-test('two-axis drag: up+right is all up, up+left is the first up and the others down', () => {
+test('R7 pad: up+right is all up, down+right is channel A up and channel B down', () => {
 	const sel = ['1:low', '2:low'];
 	const base = { '1:low': 0.5, '2:low': 0.5 };
-	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
-	const upRight = knobs.twoAxisDragTargets(sel, base, px, px);
+	const upRight = knobs.padDragTargets(sel, base, 0.1, 0.1);
 	assert.ok(near(upRight['1:low'], 0.6) && near(upRight['2:low'], 0.6), `up+right ${JSON.stringify(upRight)}`);
-	const upLeft = knobs.twoAxisDragTargets(sel, base, -px, px);
-	assert.ok(near(upLeft['1:low'], 0.6), 'up+left must still raise the first-selected deck');
-	assert.ok(near(upLeft['2:low'], 0.4), 'up+left must lower the other deck');
-	const upOnly = knobs.twoAxisDragTargets(sel, base, 0, px);
-	assert.ok(near(upOnly['2:low'], 0.5), 'pure vertical moved the second deck - the axes are not independent');
-	const rightOnly = knobs.twoAxisDragTargets(sel, base, px, 0);
-	assert.ok(near(rightOnly['1:low'], 0.5), 'pure horizontal moved the first-selected deck');
-	assert.ok(near(rightOnly['2:low'], 0.6), 'right must be up for the other deck');
+	const downRight = knobs.padDragTargets(sel, base, 0.1, -0.1);
+	assert.ok(near(downRight['1:low'], 0.6) && near(downRight['2:low'], 0.4), 'the -45 degree diagonal is not the flip');
+	const xOnly = knobs.padDragTargets(sel, base, 0.1, 0);
+	assert.ok(near(xOnly['2:low'], 0.5), 'pure X moved channel B - the axes are not independent');
+	const yOnly = knobs.padDragTargets(sel, base, 0, 0.1);
+	assert.ok(near(yOnly['1:low'], 0.5) && near(yOnly['2:low'], 0.6), 'pure Y must move only channel B');
 });
 
-test('two-axis drag: vertical drives every selected dial on the first-selected deck', () => {
-	const sel = ['1:low', '2:low', '1:high'];
-	const base = { '1:low': 0.5, '2:low': 0.5, '1:high': 0.2 };
-	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
-	const out = knobs.twoAxisDragTargets(sel, base, 0, px);
-	assert.ok(near(out['1:high'], 0.3), 'a second dial on the lead deck did not follow the vertical axis');
-	assert.ok(near(out['2:low'], 0.5));
-	// Order decides the lead deck, not the id.
-	const flipped = knobs.twoAxisDragTargets(['2:low', '1:low'], base, 0, px);
-	assert.ok(near(flipped['2:low'], 0.6) && near(flipped['1:low'], 0.5), 'the lead deck is not the first-selected one');
+test('R7 pad: X is every item on the first-selected channel; one channel puts the first on X and the rest on Y', () => {
+	assert.deepEqual(knobs.padAxes(['2:low', '1:low', '2:high', '1:fader']), {
+		x: ['2:low', '2:high'],
+		y: ['1:low', '1:fader']
+	});
+	assert.deepEqual(knobs.padAxes(['1:mid', '1:low', '1:fader']), { x: ['1:mid'], y: ['1:low', '1:fader'] });
 });
 
-test('two-axis drag clamps, and one selected dial keeps horizontal fine adjust', () => {
-	const big = knobs.KNOB_CFG.dragVerticalPx * 2;
-	const out = knobs.twoAxisDragTargets(['1:low', '2:low'], { '1:low': 0.9, '2:low': 0.1 }, -big, big);
+test('R7 pad clamps, and one selected item is not a pad', () => {
+	const out = knobs.padDragTargets(['1:low', '2:low'], { '1:low': 0.9, '2:low': 0.1 }, 2, -2);
 	assert.equal(out['1:low'], 1);
 	assert.equal(out['2:low'], 0);
-	assert.equal(knobs.twoAxisDragTargets(['1:low'], { '1:low': 0.5 }, 50, 0), null,
-		'a single selected dial must not enter two-axis mode');
+	assert.equal(knobs.padDragTargets(['1:low'], { '1:low': 0.5 }, 0.5, 0), null);
 	const fine = knobs.singleDragDelta(100, 0);
 	const coarse = knobs.singleDragDelta(0, 100);
 	assert.ok(fine > 0 && fine * 3 <= coarse, `horizontal ${fine} is not fine adjust next to vertical ${coarse}`);
@@ -517,8 +511,7 @@ test('a selection drag starts only on a selected dial of a 2+ set and never accu
 	assert.equal(knobs.beginSelectionDrag(c), null, 'dragging an unselected dial must not move the selection');
 	const start = knobs.beginSelectionDrag(b);
 	assert.ok(start !== null);
-	const px = knobs.KNOB_CFG.dragVerticalPx;
-	for (const f of [0.02, 0.05, 0.08, 0.1]) knobs.applySelectionDrag(start, f * px, f * px);
+	for (const d of [0.02, 0.03, 0.03, 0.02]) knobs.stepSelectionDrag(start, d, false);
 	assert.ok(near(valueOf(a), 0.6) && near(valueOf(b), 0.6), `slow drag ended at ${valueOf(a)}, ${valueOf(b)}`);
 	assert.equal(valueOf(c), 0.5);
 });
@@ -589,8 +582,21 @@ test('agent parity: window.__mdtKnobSelection drives the same selection and move
 	bridge.nudge(0.1);
 	assert.ok(near(bridge.value(a), 0.6) && near(bridge.value(b), 0.6), 'bridge nudge is not common mode');
 	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
+	// The bridge drag runs through the pointer's drag gain (Sol P1, PR #6829):
+	// a straight drag scales both axes by one integrated gain g, so the pad
+	// split is +/- 0.1 * g. g comes from a separate module instance at the
+	// shipped defaults, which is what the bundled copy holds here.
+	const gained = sens.gainedStraightDrag(-px, px, {
+		base: sens.DRAG_DEFAULTS.base,
+		falloffPx: sens.DRAG_DEFAULTS.falloffPx
+	});
+	const g = gained.dy / px;
+	assert.ok(g > 0 && g < 0.99, `the default drag gain ${g} is not below 1, so this test cannot tell gained from raw`);
 	bridge.drag(-px, px);
-	assert.ok(near(valueOf(a), 0.7) && near(valueOf(b), 0.5), `bridge up+left drag gave ${valueOf(a)}, ${valueOf(b)}`);
+	assert.ok(
+		near(valueOf(a), 0.6 - 0.1 * g) && near(valueOf(b), 0.6 + 0.1 * g),
+		`bridge pad up+left gave ${valueOf(a)}, ${valueOf(b)}; the gained drag predicts ${0.6 - 0.1 * g}, ${0.6 + 0.1 * g}`
+	);
 	assert.throws(() => bridge.set(['9:nope']), /no mounted knob/);
 	assert.deepEqual(bridge.get(), [a, b], 'a refused set changed the selection');
 	assert.throws(() => bridge.nudge(Number.NaN), RangeError);
@@ -609,6 +615,45 @@ test('horizontal drag is at least 3x less sensitive than vertical', () => {
 	);
 });
 
+// ============================================ R2: the dragged control leads (Wed 7 Oct 2026)
+
+test('R2: a drag on the SECOND-selected dial moves the whole group with it', () => {
+	// the maintainer: "the up/down direction is for the first one selected, not the one
+	// click-dragged on". Mutation control: the old two-axis rule drove only the
+	// first-selected deck on vertical travel, so the dragged dial stayed put.
+	const a = addDial('1:low', 0.5);
+	const b = addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	const start = knobs.beginSelectionDrag(b);
+	assert.equal(start.leadId, b, 'the dragged dial is not the lead');
+	knobs.stepSelectionDrag(start, 0.2, false);
+	assert.ok(near(valueOf(b), 0.7), `the dragged dial did not follow the pointer (${valueOf(b)})`);
+	assert.ok(near(valueOf(a), 0.7), `the first-selected dial did not move the same way (${valueOf(a)})`);
+	// The old rule: vertical travel moved only the first-selected deck, so b stayed at 0.5.
+	assert.ok(!near(valueOf(b), 0.5), 'control: b did not move, which is the old first-selected rule');
+});
+
+test('R2: the lead is the dragged item, never selection[0], for the sign rule', () => {
+	const sel = ['1:low', '2:low'];
+	assert.deepEqual(knobs.leadDragSigns(sel, '2:low', false), { '1:low': 1, '2:low': 1 });
+	// With the flip, only the lead's side follows; selection[0] as lead would invert this.
+	assert.deepEqual(knobs.leadDragSigns(sel, '2:low', true), { '1:low': -1, '2:low': 1 });
+});
+
+test('R2: a group drag clamps each item but keeps its virtual travel, so reversing is exact', () => {
+	const a = addDial('1:low', 0.95);
+	const b = addDial('2:low', 0.2);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	const start = knobs.beginSelectionDrag(b);
+	knobs.stepSelectionDrag(start, 0.2, false);
+	assert.equal(valueOf(a), 1);
+	assert.ok(near(valueOf(b), 0.4));
+	knobs.stepSelectionDrag(start, -0.2, false);
+	assert.ok(near(valueOf(a), 0.95) && near(valueOf(b), 0.2), 'reversing the drag did not return both');
+});
+
 // ============================================ the wiring (the live regression)
 
 test('the Knob component routes its input through knob-control', () => {
@@ -623,7 +668,8 @@ test('the Knob component routes its input through knob-control', () => {
 		['registerKnob', 'the dial is not in the registry, so the global wheel cannot find it'],
 		['shiftClickKnob', 'shift+click no longer selects a dial'],
 		['beginSelectionDrag', 'a drag on a selected dial no longer moves the whole selection'],
-		['applySelectionDrag', 'the two-axis drag is not wired'],
+		['stepSelectionDrag', 'the group drag led by the dragged dial is not wired'],
+		['trackDragMove', 'the drag bypasses the shared drag sensitivity'],
 		['nudgeKnobOrSelection', 'scroll or arrow keys on a selected dial move only that dial'],
 		['altClickKnob', 'alt+click no longer links a pair'],
 		['setKnobFromDrag', 'a drag bypasses the link maths, so the partner never moves'],
@@ -688,7 +734,7 @@ test('the Knob classifies drags by travel and only steps on a primary click', ()
 	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
 	assert.match(knob, /pointerTravelIsDrag\(/,
 		'if Knob.svelte marks any pointermove as a drag then jitter swallows the MIX click - broken');
-	assert.match(knob, /onsingleclick !== undefined && insideSlop/,
+	assert.match(knob, /\(onsingleclick !== undefined \|\| altPressInGroup\) && insideSlop/,
 		'if the click slop applies to every knob then 1-4 px fine adjustments on EQ and GAIN are discarded - broken');
 	assert.match(knob, /e\.button !== 0/,
 		'if a right or middle click starts a gesture then a context-menu click steps MIX - broken');
@@ -716,7 +762,7 @@ test('a selected dial pinned at 1 still moves the rest of the selection on its o
 
 test('the Knob hands the raw wheel step to the selection, not a delta from the clamped value', () => {
 	const source = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
-	assert.match(source, /nudge: \(delta\) => nudgeKnobOrSelection\(knobId, delta\)/,
+	assert.match(source, /nudge: \(delta, event\) => nudgeKnobOrSelection\(knobId, delta, event\.altKey\)/,
 		'if the wheel derives its delta from the clamped value then a dial at 0 or 1 freezes the selection');
 });
 
@@ -759,13 +805,12 @@ test('both dials of a linked pair selected: the selection wins, both move togeth
 	assert.ok(near(valueOf(a), 0.6) && near(valueOf(p), 0.6),
 		`a selected linked pair did not move together (${valueOf(a)}, ${valueOf(p)}) - the link overrode the selection`);
 	const start = knobs.beginSelectionDrag(a);
-	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
-	knobs.applySelectionDrag(start, -px, px);
-	assert.ok(near(valueOf(p), 0.7) && near(valueOf(a), 0.5),
-		`the two-axis drag on a selected linked pair gave ${valueOf(p)}, ${valueOf(a)}`);
+	knobs.stepSelectionDrag(start, 0.1, true);
+	assert.ok(near(valueOf(a), 0.7) && near(valueOf(p), 0.5),
+		`the flipped drag on a selected linked pair gave ${valueOf(a)}, ${valueOf(p)}`);
 });
 
-test('a two-axis drag keeps the Alt link too, from the pointer-down baselines', () => {
+test('a group drag keeps the Alt link too, from the pointer-down baselines', () => {
 	const a = addDial('1:low', 0.5);
 	const b = addDial('2:high', 0.5);
 	const p = addDial('3:low', 0.5);
@@ -774,13 +819,309 @@ test('a two-axis drag keeps the Alt link too, from the pointer-down baselines', 
 	knobs.shiftClickKnob(a);
 	knobs.shiftClickKnob(b);
 	const start = knobs.beginSelectionDrag(a);
-	const px = knobs.KNOB_CFG.dragVerticalPx * 0.1;
-	for (const f of [0.3, 0.6, 1]) knobs.applySelectionDrag(start, 0, f * px);
+	for (const d of [0.03, 0.03, 0.04]) knobs.stepSelectionDrag(start, d, false);
 	assert.ok(near(valueOf(p), 0.4), `the partner did not track inversely without accumulating (${valueOf(p)})`);
-	assert.ok(near(valueOf(b), 0.5), 'pure vertical moved the other deck');
+	assert.ok(near(valueOf(b), 0.6), 'the other selected dial did not follow the lead');
 });
 
 test('control: with no link, group moves are plain common mode', () => {
 	const out = knobs.applyLinkToTargets(['1:low', '2:low'], { '1:low': 0.5, '2:low': 0.5 }, { '1:low': 0.6, '2:low': 0.6 }, null);
 	assert.deepEqual(out, { '1:low': 0.6, '2:low': 0.6 });
+});
+
+// ============================================ R3: Opt flips one side (Wed 7 Oct 2026)
+
+test('R3: two channels, Opt held: the dragged channel follows, the other goes opposite', () => {
+	const a1 = addDial('1:low', 0.5);
+	const a2 = addDial('1:mid', 0.5);
+	const b = addDial('2:low', 0.5);
+	for (const id of [a1, a2, b]) knobs.shiftClickKnob(id);
+	const start = knobs.beginSelectionDrag(b);
+	knobs.stepSelectionDrag(start, 0.1, true);
+	assert.ok(near(valueOf(b), 0.6), 'the dragged item did not follow the pointer');
+	assert.ok(near(valueOf(a1), 0.4) && near(valueOf(a2), 0.4), 'the other channel did not go opposite');
+});
+
+test('R3 mutation control: the flip side comes from the DRAGGED channel, not the first-selected', () => {
+	// Taking selection[0] as the lead would move deck 1 up and deck 2 down here.
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	const start = knobs.beginSelectionDrag(b);
+	knobs.stepSelectionDrag(start, 0.1, true);
+	assert.ok(near(valueOf(b), 0.6) && near(valueOf(a), 0.4), `got a=${valueOf(a)} b=${valueOf(b)}`);
+	knobs.stepSelectionDrag(start, 0.1, false);
+	assert.ok(near(valueOf(a), 0.5), 'without Opt every item follows');
+});
+
+test('R3: one channel, Opt held: the item under the pointer follows, the rest go opposite', () => {
+	const low = addDial('1:low', 0.5);
+	const mid = addDial('1:mid', 0.5);
+	const fader = addDial(knobs.faderControlId(1), 0.5);
+	for (const id of [low, mid, fader]) knobs.shiftClickKnob(id);
+	const start = knobs.beginSelectionDrag(mid);
+	knobs.stepSelectionDrag(start, 0.1, true);
+	assert.ok(near(valueOf(mid), 0.6));
+	assert.ok(near(valueOf(low), 0.4) && near(valueOf(fader), 0.4));
+});
+
+test('R3: releasing Opt mid-drag stops the flip from that point with no jump', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	const start = knobs.beginSelectionDrag(b);
+	knobs.stepSelectionDrag(start, 0.1, true); // a 0.4, b 0.6
+	const before = valueOf(a);
+	knobs.stepSelectionDrag(start, 0.01, false);
+	assert.ok(near(valueOf(a), before + 0.01), `a jumped from ${before} to ${valueOf(a)}`);
+	assert.ok(near(valueOf(b), 0.61));
+});
+
+test('R3: the wheel with Opt flips relative to the control under the pointer, else the first-selected', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	knobs.nudgeKnobOrSelection(b, 0.1, true);
+	assert.ok(near(valueOf(b), 0.6) && near(valueOf(a), 0.4));
+	const onWheel = globalThis.__listeners.get('wheel');
+	knobs.setKnobHovered(null);
+	onWheel({ deltaY: -100, deltaMode: 0, wheelDeltaY: 120, altKey: true, target: null, preventDefault() {} });
+	// Lead falls back to the first-selected (a): a up, b down.
+	assert.ok(valueOf(a) > 0.4 && valueOf(b) < 0.6, `got a=${valueOf(a)} b=${valueOf(b)}`);
+});
+
+test('R3 wiring: Knob and VFader pass e.altKey to the group drag and the wheel', () => {
+	const knob = readFileSync(`${MIXER}/Knob.svelte`, 'utf8');
+	assert.match(knob, /stepSelectionDrag\(selectionDrag, singleDragDelta\(step\.dx, step\.dy\), e\.altKey\)/);
+	assert.match(knob, /nudgeKnobOrSelection\(knobId, delta, event\.altKey\)/);
+	assert.match(knob, /if \(altClick\) \{\s*altClickKnob\(knobId\)/, 'an Alt press on a grouped dial that never moves no longer arms a link');
+	const fader = readFileSync(`${MIXER}/VFader.svelte`, 'utf8');
+	assert.match(fader, /stepSelectionDrag\(selectionDrag, delta, e\.altKey\)/);
+	assert.match(fader, /setKnobHovered\(controlId\)/);
+});
+
+// ============================================ R4: at most two channels (Wed 7 Oct 2026)
+
+test('R4: a third channel is refused with a hint; the first two stay selected', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	const c = addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	assert.equal(knobs.shiftClickKnob(c), false);
+	assert.deepEqual([...knobs.selectedKnobIds()], [a, b], 'a deck 3 item was added to a deck 1 + 2 group');
+	assert.deepEqual(knobs.knobUi.groupHint, { id: c, text: 'Group is limited to two channels' });
+});
+
+test('R4: any number of items on one or two channels are all selected', () => {
+	const ids = ['1:low', '1:mid', '1:high', '1:fader', '2:low', '2:mid', '2:fader'].map((id) => addDial(id, 0.5));
+	for (const id of ids) assert.equal(knobs.shiftClickKnob(id), true, `${id} was refused`);
+	assert.deepEqual([...knobs.selectedKnobIds()], ids);
+	assert.equal(knobs.knobUi.groupHint, null);
+});
+
+test('R4: removing an item is never refused, and freeing a channel lets a new one in', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	const c = addDial('3:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	assert.equal(knobs.shiftClickKnob(a), true);
+	assert.equal(knobs.shiftClickKnob(c), true);
+	assert.deepEqual([...knobs.selectedKnobIds()], [b, c]);
+});
+
+test('R4: the agent bridge refuses a three-channel selection loudly', () => {
+	addDial('1:low', 0.5);
+	addDial('2:low', 0.5);
+	addDial('3:low', 0.5);
+	assert.throws(() => globalThis.window.__mdtKnobSelection.set(['1:low', '2:low', '3:low']), /limited to two channels/);
+});
+
+// ============================================ R7: the two-axis pad (Wed 7 Oct 2026)
+
+test('R7: a pad drag accumulates per axis, and the dot release leaves values where they were', () => {
+	const a = addDial('1:low', 0.5);
+	const a2 = addDial('1:fader', 0.5);
+	const b = addDial('2:low', 0.5);
+	for (const id of [a, a2, b]) knobs.shiftClickKnob(id);
+	const start = knobs.beginPadDrag();
+	assert.ok(start !== null);
+	knobs.stepPadDrag(start, 0.05, 0);
+	knobs.stepPadDrag(start, 0.05, -0.1);
+	assert.ok(near(valueOf(a), 0.6) && near(valueOf(a2), 0.6), 'channel A did not follow X');
+	assert.ok(near(valueOf(b), 0.4), 'channel B did not follow Y');
+	// A fresh press starts from where the last one left off (relative pad).
+	const again = knobs.beginPadDrag();
+	knobs.stepPadDrag(again, 0, 0.1);
+	assert.ok(near(valueOf(b), 0.5) && near(valueOf(a), 0.6));
+});
+
+test('R7: no pad drag below two selected items', () => {
+	knobs.shiftClickKnob(addDial('1:low', 0.5));
+	assert.equal(knobs.beginPadDrag(), null);
+});
+
+test('R7 wiring: the pad shows at 2+, closes and clears, uses the shared gain, and is mounted in the mixer', () => {
+	const pad = readFileSync(`${MIXER}/GroupPad.svelte`, 'utf8');
+	assert.match(pad, /knobUi\.selectedIds\.length >= 2/);
+	assert.match(pad, /clearKnobSelection\(\)/);
+	assert.match(pad, /e\.key === 'Escape' && pointerOver/);
+	assert.match(pad, /trackDragMove\(tracker, e\.clientX, e\.clientY\)/);
+	assert.match(pad, /stepPadDrag\(session/);
+	assert.match(pad, /dot = \{ x: 0, y: 0 \}/, 'the dot no longer springs back to centre');
+	assert.doesNotMatch(pad, /tabindex="0"/, 'the pad must never take keyboard focus');
+	for (const cls of ['gp-axis', 'gp-diag', 'gp-half', 'gp-tick']) assert.ok(pad.includes(cls), `${cls} lines are gone`);
+	assert.match(pad, /TICKS = \[0\.25, 0\.5, 0\.75, 1\]/);
+	const mixer = readFileSync(`${MIXER}/../Mixer.svelte`, 'utf8');
+	assert.match(mixer, /<GroupPad \/>/);
+});
+
+// requirement: MIXGRP-05
+test('closing the group pad mid-drag ends the drag, so a later move cannot resume it (Sol P1, PR #6829)', () => {
+	// Esc or X clears the selection and removes the pad's SVG before any
+	// pointerup, while this copy stays mounted with the old session.
+	const pad = readFileSync(`${MIXER}/GroupPad.svelte`, 'utf8');
+	const end = pad.match(/function endDrag\(\): void \{([\s\S]*?)\n\t\}/);
+	assert.ok(end, 'GroupPad has no endDrag');
+	for (const reset of ['tracker = null;', 'session = null;', 'dot = { x: 0, y: 0 };']) {
+		assert.ok(end[1].includes(reset), `endDrag does not reset: ${reset}`);
+	}
+	assert.match(pad, /\$effect\(\(\) => \{\s*if \(!open\) endDrag\(\);\s*\}\);/, 'closing the pad keeps the drag session');
+	assert.match(pad, /onlostpointercapture=\{endDrag\}/, 'a lost pointer capture does not cancel the drag');
+	// Control (the overshoot): a move still drives the open pad's session.
+	assert.match(pad, /if \(tracker === null \|\| session === null\) return;\n\t\tconst step = trackDragMove/);
+});
+
+test('the group pad stays reachable while settings is open, on any route (Sol P1, PR #6829)', () => {
+	// The drag tester's controls can form a group, but the only pad lived in
+	// the Mixer: absent on routes without one, and under the settings
+	// backdrop on /performance. Settings mounts its own copy inside its
+	// backdrop layer, and exactly one copy shows at a time.
+	const pad = readFileSync(`${MIXER}/GroupPad.svelte`, 'utf8');
+	assert.match(pad, /const open = \$derived\(knobUi\.selectedIds\.length >= 2 && isSettingsOpen\(\) === inSettings\);/);
+	const overlay = readFileSync(`${MIXER}/../../settings/SettingsOverlay.svelte`, 'utf8');
+	const backdrop = overlay.indexOf('class="so-backdrop"');
+	const mount = overlay.indexOf('<GroupPad inSettings />');
+	assert.ok(backdrop >= 0 && mount > backdrop, 'SettingsOverlay does not mount the pad inside its backdrop layer');
+	assert.ok(mount > overlay.lastIndexOf('</section>'), 'the pad must sit outside the transformed panel, or position:fixed pins it to the panel');
+});
+
+// ============================================ drag tester isolation (#6829 P1)
+
+test('a drag-tester control never joins a live selection, so a tester drag cannot move a live control', () => {
+	const live = addDial('1:low', 0.5);
+	const tester = addDial('test-a:knob', 0.5);
+	const testerB = addDial('test-b:knob', 0.5);
+	knobs.shiftClickKnob(live);
+	assert.ok(knobs.shiftClickKnob(tester), 'the tester click was refused instead of starting fresh');
+	assert.deepEqual([...knobs.knobUi.selectedIds], [tester], 'a live control stayed grouped with the tester');
+	const start = knobs.beginSelectionDrag(tester);
+	assert.equal(start, null, 'a lone tester control started a group drag');
+	// Control: two tester controls still group and drag together.
+	knobs.shiftClickKnob(testerB);
+	const group = knobs.beginSelectionDrag(tester);
+	assert.deepEqual([...group.ids].sort(), [tester, testerB].sort());
+	knobs.stepSelectionDrag(group, 0.1, false);
+	assert.equal(valueOf(live), 0.5, 'the tester drag moved a live control');
+	assert.ok(valueOf(testerB) > 0.5, 'the tester group did not move');
+});
+
+test('a live selection is left whole by live shift-clicks and replaced by a tester click', () => {
+	const a = addDial('1:low', 0.5);
+	const b = addDial('2:low', 0.5);
+	knobs.shiftClickKnob(a);
+	knobs.shiftClickKnob(b);
+	assert.deepEqual([...knobs.knobUi.selectedIds], [a, b], 'live grouping broke');
+	assert.throws(() => knobs.setKnobSelection([a, 'test-a:knob']), /cannot mix/);
+});
+
+test('a tester dial never links to a live one', () => {
+	const live = addDial('1:low', 0.5);
+	const tester = addDial('test-a:knob', 0.5);
+	knobs.altClickKnob(live);
+	knobs.altClickKnob(tester);
+	assert.equal(knobs.knobUi.link, null, 'a tester dial linked to a live dial');
+	assert.equal(knobs.knobUi.linkPendingId, tester, 'the tester click did not arm a fresh link');
+});
+
+test('the group hint anchors to the knob copy that is on top, not the first in the document', () => {
+	const src = readFileSync(new URL('../../src/lib/components/rb/mixer/GroupHint.svelte', import.meta.url), 'utf8');
+	assert.doesNotMatch(src, /document\.querySelector\(/, 'the hint picks the first duplicate id again');
+	assert.match(src, /querySelectorAll\([\s\S]*?\.find\(_onTop\)/);
+	assert.match(src, /elementFromPoint\(/);
+});
+
+test('a group-pad press that ends on the settings backdrop does not close Settings (Sol P1, PR #6829)', () => {
+	// The pad sits inside the backdrop, so a drag from it ending on bare
+	// backdrop dispatches its click at the backdrop itself. Runs the shipped
+	// handlers, with their type annotations stripped.
+	const overlay = readFileSync(`${MIXER}/../../settings/SettingsOverlay.svelte`, 'utf8');
+	assert.match(
+		overlay,
+		/role="presentation" onpointerdown=\{onBackdropDown\} onpointerup=\{onBackdropUp\} onclick=\{onBackdrop\}>/
+	);
+	const start = overlay.indexOf('let pressOnBackdrop = false;');
+	const end = overlay.indexOf('function onSearchKeydown');
+	assert.ok(start > 0 && end > start, 'the backdrop handlers moved');
+	const body = overlay.slice(start, end).replace(/: (PointerEvent|MouseEvent|void)/g, '');
+	let closed = 0;
+	const handlers = new Function('closeSettings', `${body}; return { onBackdropDown, onBackdropUp, onBackdrop };`)(() => {
+		closed += 1;
+	});
+	const backdrop = {};
+	const pad = {};
+	// A drag from the pad, released over bare backdrop.
+	handlers.onBackdropDown({ target: pad, currentTarget: backdrop });
+	handlers.onBackdropUp({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
+	assert.equal(closed, 0, 'a pad drag closed Settings');
+	// A plain click inside the pad.
+	handlers.onBackdropDown({ target: pad, currentTarget: backdrop });
+	handlers.onBackdropUp({ target: pad, currentTarget: backdrop });
+	handlers.onBackdrop({ target: pad, currentTarget: backdrop });
+	assert.equal(closed, 0, 'a pad click closed Settings');
+	// Control: a real outside click still closes it.
+	handlers.onBackdropDown({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdropUp({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
+	assert.equal(closed, 1, 'an outside click no longer closes Settings');
+	// A click with no press seen (the pad stopped its pointerdown) cannot close it.
+	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
+	assert.equal(closed, 1, 'a stale press closed Settings');
+});
+
+test('a press on the settings backdrop released over the panel does not close Settings (Sol P1, PR #6829)', () => {
+	// The real retargeting sequence: pointerdown on bare backdrop, pointerup
+	// over the panel, and the browser dispatches the click at their common
+	// ancestor, the backdrop. Runs the shipped handlers, types stripped.
+	const overlay = readFileSync(`${MIXER}/../../settings/SettingsOverlay.svelte`, 'utf8');
+	const start = overlay.indexOf('let pressOnBackdrop = false;');
+	const end = overlay.indexOf('function onSearchKeydown');
+	assert.ok(start > 0 && end > start, 'the backdrop handlers moved');
+	const body = overlay.slice(start, end).replace(/: (PointerEvent|MouseEvent|void)/g, '');
+	let closed = 0;
+	const handlers = new Function('closeSettings', `${body}; return { onBackdropDown, onBackdropUp, onBackdrop };`)(() => {
+		closed += 1;
+	});
+	const backdrop = {};
+	const panel = {};
+	handlers.onBackdropDown({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdropUp({ target: panel, currentTarget: backdrop });
+	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
+	assert.equal(closed, 0, 'a backdrop press released over the panel closed Settings');
+	// The next genuine outside click is not poisoned by the abandoned release.
+	handlers.onBackdropDown({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdropUp({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
+	assert.equal(closed, 1, 'a real outside click after it no longer closes Settings');
+	// A release left over from an earlier press does not stand in for this one's.
+	handlers.onBackdropDown({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdropUp({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdropDown({ target: backdrop, currentTarget: backdrop });
+	handlers.onBackdrop({ target: backdrop, currentTarget: backdrop });
+	assert.equal(closed, 1, 'a stale release closed Settings');
 });

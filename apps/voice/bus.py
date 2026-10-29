@@ -26,6 +26,14 @@ from apps.voice.settings import voice_data_dir
 log = logging.getLogger(__name__)
 
 
+def _enrich_voice_event_meta(event: dict) -> dict:
+    """Copy ``event`` and apply voice bus timestamp/source defaults."""
+    enriched = dict(event)
+    enriched.setdefault("ts", now_iso())
+    enriched.setdefault("source", "voice")
+    return enriched
+
+
 @runtime_checkable
 class EventBus(Protocol):
     """Protocol every bus backend implements."""
@@ -48,9 +56,7 @@ class JsonlStubBus:
     _cache: list[dict] = field(default_factory=list)
 
     def publish(self, event: dict) -> int:
-        enriched = dict(event)
-        enriched.setdefault("ts", now_iso())
-        enriched.setdefault("source", "voice")
+        enriched = _enrich_voice_event_meta(event)
         enriched["id"] = self._next_id
         self._next_id += 1
         append_jsonl(self.path, enriched)
@@ -73,9 +79,7 @@ class InMemoryBus:
     _next_id: int = 1
 
     def publish(self, event: dict) -> int:
-        enriched = dict(event)
-        enriched.setdefault("ts", now_iso())
-        enriched.setdefault("source", "voice")
+        enriched = _enrich_voice_event_meta(event)
         enriched["id"] = self._next_id
         self._next_id += 1
         self.events.append(enriched)
@@ -122,9 +126,7 @@ class StateBackedBus:
         self._lock = threading.Lock()
 
     def publish(self, event: dict) -> int:
-        enriched = dict(event)
-        enriched.setdefault("ts", now_iso())
-        enriched.setdefault("source", "voice")
+        enriched = _enrich_voice_event_meta(event)
         kind = str(enriched.get("kind", ""))
         stable_id = enriched.get("stable_id")
         # payload is the full enriched dict so ``recent`` can reconstruct

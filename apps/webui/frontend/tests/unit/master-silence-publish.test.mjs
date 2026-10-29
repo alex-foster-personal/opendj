@@ -48,7 +48,7 @@ describe('the master meter publishes only what it measured', () => {
 		// `audio-engine.svelte.ts` passes `_masterAnalyser` straight through - so
 		// this is the production path, not a stand-in for one.
 		report.resetMasterSilenceWatch();
-		report.noteMasterSilence(null, null, true, 1_000);
+		report.noteMasterSilence(null, null, true, 1_000, false, false);
 		const state = report.masterSilenceState();
 		assert.equal(state.rms, null, 'the no-meter sentinel must never be published as an rms');
 		assert.equal(state.at_ms, null, 'an unmeasured sample must not carry a measurement stamp');
@@ -56,7 +56,7 @@ describe('the master meter publishes only what it measured', () => {
 
 	it('leaves the fold alone: a missing meter is still not a dropout', () => {
 		report.resetMasterSilenceWatch();
-		for (let t = 0; t < 20_000; t += 100) report.noteMasterSilence(null, null, true, t);
+		for (let t = 0; t < 20_000; t += 100) report.noteMasterSilence(null, null, true, t, false, false);
 		assert.equal(
 			report.masterSilenceState().verdict,
 			'ok',
@@ -66,7 +66,7 @@ describe('the master meter publishes only what it measured', () => {
 
 	it('makes the mirror say unknown rather than healthy', () => {
 		report.resetMasterSilenceWatch();
-		report.noteMasterSilence(null, null, true, 1_000);
+		report.noteMasterSilence(null, null, true, 1_000, false, false);
 		const state = report.masterSilenceState();
 		const block = mirror.buildAudioHealthMirror({
 			snapshot: null,
@@ -119,7 +119,7 @@ describe('the source PCM reader stays off the non-quiet master path', () => {
 			return [];
 		});
 		report.resetMasterSilenceWatch();
-		report.noteMasterSilence(null, null, true, 1_000);
+		report.noteMasterSilence(null, null, true, 1_000, false, false);
 		assert.equal(readerCalls, 0, 'no-meter sentinel must not trigger source PCM scans');
 	});
 
@@ -158,11 +158,41 @@ describe('the source PCM reader stays off the non-quiet master path', () => {
 			return readSnaps();
 		});
 		for (let t = 0; t <= 3_000; t += 100) {
-			report.noteMasterSilence(analyser, null, true, t);
+			report.noteMasterSilence(analyser, null, true, t, false, false);
 			if (report.masterSilenceState().verdict === 'silent-while-playing') reported = true;
 		}
 		return { reported, readerCalls };
 	}
+
+	function holdQuietBus(outputSilent, busSilent) {
+		report.resetMasterSilenceWatch();
+		report.setSilenceSourceReader(() => []);
+		const analyser = analyserAt(0);
+		let reported = false;
+		for (let t = 0; t <= 3_000; t += 100) {
+			report.noteMasterSilence(analyser, null, true, t, outputSilent, busSilent);
+			if (report.masterSilenceState().verdict === 'silent-while-playing') reported = true;
+		}
+		return reported;
+	}
+
+	it('a bus left silent by routed-only playback is not a dropout; an unexplained one still is', () => {
+		// Codex P1, PR #6829: ?extroute= playback never reaches _masterGain.
+		assert.equal(holdQuietBus(false, true), false, 'routed-only playback was cut as a dropout');
+		assert.equal(holdQuietBus(false, false), true, 'the bus watchdog stopped catching real dropouts');
+		assert.equal(holdQuietBus(true, true), false);
+	});
+
+	it('both silence verdicts are required, so no caller borrows the output verdict for the bus', () => {
+		// Sol P1, PR #6829: a defaulted bus verdict hid callers that never
+		// decided the routed-only case.
+		report.resetMasterSilenceWatch();
+		const analyser = analyserAt(0);
+		assert.throws(() => report.noteMasterSilence(analyser, null, true, 0, false), TypeError);
+		assert.throws(() => report.noteMasterSilence(analyser, null, true, 0), TypeError);
+		assert.throws(() => report.noteMasterSilence(analyser, null, true, 0, false, 'no'), TypeError);
+		assert.doesNotThrow(() => report.noteMasterSilence(analyser, null, true, 0, false, false));
+	});
 
 	it('silent source under a quiet master is content, not a dropout (AC1, AC4)', () => {
 		const buffer = bufferFilled(0);

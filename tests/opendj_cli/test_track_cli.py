@@ -1,7 +1,7 @@
 """``opendj track key-segments <stable_id>``: the CLI parity surface for
 nav1-key-record's `key_segments` block.
 
-specs/native-analysis-v1-lanes/nav1-key-record.md item 3: "prints the same
+(private path) item 3: "prints the same
 `key_segments` block (status, reason, segments) the `/anlz` payload carries,
 with an end-to-end test that writes a two-segment record, runs the command,
 and checks the printed block against the wire payload."
@@ -371,3 +371,11 @@ def test_default_state_db_never_resolves_inside_the_payload(
     assert "payload" not in resolved.parts
     assert resolved != fake_bundle_data_dir / "state" / "state.db"
     assert resolved == app_data_dir / "state" / "state.db"
+
+
+def test_every_usage_line_is_one_command() -> None:
+    """If two usage entries run together on one line then broken."""
+    from apps.opendj_cli import track_cli
+
+    lines = [line for line in track_cli._USAGE.splitlines() if line.strip()]
+    assert lines and all(line.count("opendj track") <= 1 for line in lines), lines

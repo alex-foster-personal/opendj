@@ -46,6 +46,9 @@ export type SettingControl =
 /** Kinds of live preview a settings row can carry (rendered by SettingsOverlay). */
 export type SettingPreview = 'waveform';
 
+/** Interactive try-it controls rendered under a row (not a per-option preview). */
+export type SettingTester = 'drag';
+
 export interface SettingDef {
 	id: string;
 	label: string;
@@ -64,6 +67,8 @@ export interface SettingDef {
 	devOnly?: boolean;
 	/** A live thumbnail rendered under the control; every option value must paint one. */
 	preview?: SettingPreview;
+	/** Try-it controls under the row, e.g. R6's test knobs and faders. */
+	tester?: SettingTester;
 	control: SettingControl;
 }
 

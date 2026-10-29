@@ -55,7 +55,10 @@ NOW = "2026-10-01T00:00:00Z"
 WARM_OPEN_BUDGET = 40
 #: Bytes of JSON per listed row in this fixture (rows with a preview strip and
 #: vocal regions measure about 1,660). A ratchet: raise it only with a reason.
-ROW_BYTES_BUDGET = 1_900
+#: 1,900 -> 1,960 (Tue 27 Oct 2026, QLTSCAN-02): every row gained the QLT grade
+#: block, about 52 bytes (letter, checked, issue keys). Its ~300-byte hover text
+#: was moved off the row to a hover-time read to keep the rise this small.
+ROW_BYTES_BUDGET = 1_960
 PREVIEW_LEVEL, REANALYZED_LEVEL, OUTSIDE_LEVEL = 5, 9, 13
 
 #: What each row has on disk, cycled by row number.

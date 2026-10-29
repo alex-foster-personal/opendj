@@ -203,7 +203,7 @@ test('CHROME-14 if a migrated blob is migrated again then a later explicit pick 
 	first.setUiSkin('default');
 	first.setWaveformDesign('tri-band');
 	first.setWavePalette('rekordbox');
-	assert.equal(JSON.parse(store.get(STORAGE_KEY)).defaults_migration, 1);
+	assert.equal(JSON.parse(store.get(STORAGE_KEY)).defaults_migration, first.PREFS_DEFAULTS_MIGRATION);
 	installBrowser(store);
 	const prefs = await loadPrefs();
 	assert.deepEqual(

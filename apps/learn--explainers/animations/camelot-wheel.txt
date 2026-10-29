@@ -1,0 +1,125 @@
+camelot wheel: one step around the wheel keeps the mix in key
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                      [8A]                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+
+   start on 8A (A minor)               [ ] = now  ( ) = was
+@@
+camelot wheel: one step around the wheel keeps the mix in key
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B         [9A]                       3A          3B
+                           outer B = major
+                      (8A)                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+
+   8A -> 9A   one step around        compatible
+@@
+camelot wheel: one step around the wheel keeps the mix in key
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B         (9A)                       3A          3B
+                           outer B = major
+                       8A                    4A
+
+           [8B]            7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+
+   8A -> 8B   straight across        compatible
+@@
+camelot wheel: one step around the wheel keeps the mix in key
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                       8A                    4A
+
+           (8B)           [7A]           5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+
+   8A -> 7A   one step back          compatible
+@@
+camelot wheel: one step around the wheel keeps the mix in key
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                  [2A]
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                       8A                    4A
+
+            8B            (7A)           5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+
+   8A -> 2A   six steps, far side    clash
+@@
+camelot wheel: one step around the wheel keeps the mix in key
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                  (2A)
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                      [8A]                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+
+   back home on 8A

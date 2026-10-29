@@ -4,9 +4,10 @@
  *
  * Shift+click toggles a dial in or out of an ORDERED selection set (MIXUX-13).
  * Scroll, arrow keys or the global wheel on any selected dial move every
- * selected dial by the same delta (common mode). A drag on a selected dial
- * with 2+ selected is a two-axis drag: vertical drives the first-selected
- * dial's deck group, horizontal drives the others (right = up). Esc or a
+ * selected dial by the same delta (common mode). A drag on a selected control
+ * with 2+ selected moves the whole group, led by the control under the
+ * pointer (R2, Wed 7 Oct 2026); Opt held flips one side (R3). Channel faders
+ * join the same selection as `deck:fader`. Esc or a
  * click on empty space clears the set. Plain click/drag does not select.
  * Alt/Option+click two knobs to link (turn one down => other up).
  *
@@ -18,6 +19,7 @@
  */
 
 import { detectWheelInputKind, scaledWheelStep } from './wheel-adjust';
+import { gainedStraightDrag } from './drag-sensitivity.svelte';
 
 // ----- central sensitivity (tweak here; not buried in components) -----
 
@@ -80,11 +82,14 @@ export const knobUi = $state<{
 	linkPendingId: string | null;
 	link: LinkedPair | null;
 	hoveredId: string | null;
+	/** R4: the refused control and why, shown briefly next to it. */
+	groupHint: { id: string; text: string } | null;
 }>({
 	selectedIds: [],
 	linkPendingId: null,
 	link: null,
-	hoveredId: null
+	hoveredId: null,
+	groupHint: null
 });
 
 /**
@@ -110,6 +115,15 @@ export function knobId(deckId: number | 'hp', role: KnobRole): string {
 	return `${deckId}:${role}`;
 }
 
+/**
+ * Channel LEVEL fader id in this same selection registry. Same `deck:part`
+ * shape as a dial id, so knobGroupOf puts a fader on its deck's channel and
+ * a fader plus that deck's EQs count as ONE channel for the group rules.
+ */
+export function faderControlId(deckId: number): string {
+	return `${deckId}:fader`;
+}
+
 export function clamp01(v: number): number {
 	return Math.min(1, Math.max(0, v));
 }
@@ -131,8 +145,44 @@ export function applyLinkedDelta(
 
 // ----- multi-select (MIXUX-13), pure -----
 
-/** Shift+click: toggle `id` in an ordered selection, keeping selection order. */
+/** R4 (the maintainer, Wed 7 Oct 2026): "limit shift click drag selection groups to two
+ * channels but any number of items on that channel". */
+export const GROUP_MAX_CHANNELS = 2;
+export const GROUP_LIMIT_HINT = 'Group is limited to two channels';
+
+/** The distinct channels (decks, or `hp`) of a selection, in first-selected order. */
+export function selectionChannels(selection: readonly string[]): string[] {
+	const out: string[] = [];
+	for (const id of selection) {
+		const group = knobGroupOf(id);
+		if (!out.includes(group)) out.push(group);
+	}
+	return out;
+}
+
+/** True when adding `id` would put a third channel in the group. Removing never is. */
+export function wouldExceedChannelLimit(selection: readonly string[], id: string): boolean {
+	if (selection.includes(id)) return false;
+	if (selection.some((s) => isTestControl(s) !== isTestControl(id))) return false;
+	return selectionChannels([...selection, id]).length > GROUP_MAX_CHANNELS;
+}
+
+/** Settings' drag tester scopes its controls `test-a` / `test-b`: wired to nothing. */
+const TEST_GROUP_PREFIX = 'test-';
+
+/** True for a drag-tester control, which must never share a group or link with a live one. */
+export function isTestControl(id: string): boolean {
+	return knobGroupOf(id).startsWith(TEST_GROUP_PREFIX);
+}
+
+/**
+ * Shift+click: toggle `id` in an ordered selection, keeping selection order.
+ * A tester control and a live control never share a selection: clicking one
+ * kind while the other is selected starts a fresh selection, so a tester drag
+ * can never move a live control.
+ */
 export function toggleKnobSelection(selection: readonly string[], id: string): string[] {
+	if (selection.some((s) => isTestControl(s) !== isTestControl(id))) return [id];
 	return selection.includes(id) ? selection.filter((s) => s !== id) : [...selection, id];
 }
 
@@ -158,29 +208,40 @@ export function singleDragDelta(dx: number, dy: number): number {
 }
 
 /**
- * Two-axis drag for a selection of 2+ dials, from pointer-down baselines.
- * `dy` is up-positive, `dx` right-positive. Vertical drives the FIRST-selected
- * dial's deck group (every selected dial on that deck); horizontal drives the
- * other selected dials, right = up. Both axes use the coarse vertical scale so
- * a 45-degree diagonal moves both groups equally: up+right is all up, up+left
- * is the first group up and the others down. Returns null for fewer than two
- * selected dials, where the caller keeps single-dial fine adjust.
+ * R7 two-axis pad axes. X = channel A (the first-selected item's channel),
+ * Y = channel B. A one-channel group puts the first item on X and the rest
+ * on Y. So the +45 degree diagonal moves both the same way and the -45 degree
+ * diagonal is the Opt-flip feel.
  */
-export function twoAxisDragTargets(
+export function padAxes(selection: readonly string[]): { x: string[]; y: string[] } {
+	const channels = selectionChannels(selection);
+	if (channels.length >= 2) {
+		return {
+			x: selection.filter((id) => knobGroupOf(id) === channels[0]),
+			y: selection.filter((id) => knobGroupOf(id) !== channels[0])
+		};
+	}
+	return { x: selection.slice(0, 1), y: selection.slice(1) };
+}
+
+/**
+ * Pad targets from baselines: `dx` (right-positive) moves the X items and
+ * `dy` (up-positive) the Y items, both in 0..1 units, each clamped. Null for
+ * fewer than two items.
+ */
+export function padDragTargets(
 	selection: readonly string[],
 	baselines: Readonly<Record<string, number>>,
 	dx: number,
 	dy: number
 ): Record<string, number> | null {
 	if (selection.length < 2) return null;
-	const lead = knobGroupOf(selection[0]);
-	const vertical = dy / KNOB_CFG.dragVerticalPx;
-	const horizontal = dx / KNOB_CFG.dragVerticalPx;
+	const axes = padAxes(selection);
 	const out: Record<string, number> = {};
 	for (const id of selection) {
 		const base = baselines[id];
 		if (base === undefined) continue;
-		out[id] = clamp01(base + (knobGroupOf(id) === lead ? vertical : horizontal));
+		out[id] = clamp01(base + (axes.x.includes(id) ? dx : dy));
 	}
 	return out;
 }
@@ -312,12 +373,36 @@ export function setKnobHovered(id: string | null): void {
 export function setKnobSelection(ids: readonly string[]): void {
 	const next: string[] = [];
 	for (const id of ids) if (!next.includes(id)) next.push(id);
+	if (next.some((id) => isTestControl(id) !== isTestControl(next[0]))) {
+		throw new RangeError(`a selection cannot mix drag-tester and live controls; got ${next.join(', ')}`);
+	}
+	const channels = selectionChannels(next);
+	if (channels.length > GROUP_MAX_CHANNELS) {
+		throw new RangeError(`${GROUP_LIMIT_HINT}; got ${channels.join(', ')}`);
+	}
 	knobUi.selectedIds = next;
 }
 
-/** Shift+click: toggle a dial in or out of the ordered selection set. */
-export function shiftClickKnob(id: string): void {
+let _hintTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Shift+click: toggle a control in or out of the ordered selection set. A
+ * control on a third channel is refused, not swapped for the oldest (R4
+ * assumption, flagged to the maintainer), and a short hint names the limit.
+ */
+export function shiftClickKnob(id: string): boolean {
+	if (wouldExceedChannelLimit(knobUi.selectedIds, id)) {
+		knobUi.groupHint = { id, text: GROUP_LIMIT_HINT };
+		if (_hintTimer !== null) clearTimeout(_hintTimer);
+		_hintTimer = setTimeout(() => {
+			knobUi.groupHint = null;
+			_hintTimer = null;
+		}, 2500);
+		return false;
+	}
+	knobUi.groupHint = null;
 	knobUi.selectedIds = toggleKnobSelection(knobUi.selectedIds, id);
+	return true;
 }
 
 /** Esc or a click on empty space. */
@@ -334,6 +419,11 @@ export function altClickKnob(id: string): void {
 	if (knobUi.linkPendingId === id) {
 		knobUi.linkPendingId = null;
 		knobUi.link = null;
+		return;
+	}
+	if (isTestControl(knobUi.linkPendingId) !== isTestControl(id)) {
+		// A tester dial never links to a live one: this click arms a fresh link.
+		knobUi.linkPendingId = id;
 		return;
 	}
 	knobUi.link = { a: knobUi.linkPendingId, b: id };
@@ -426,12 +516,20 @@ function _applyTargets(targets: Readonly<Record<string, number>>): void {
 	for (const [id, value] of Object.entries(targets)) _activeRef(id)?.setValue(value);
 }
 
+/** Options for a group nudge: who leads, and whether Opt flips one side (R3). */
+export interface GroupNudgeOptions {
+	/** The control under the pointer; falls back to the first-selected. */
+	leadId?: string | null;
+	flip?: boolean;
+}
+
 /**
  * Common-mode nudge of the whole selection. One selected dial goes through
- * nudgeKnob; with 2+ selected each dial moves by exactly `delta`, clamped. In
- * both cases an Alt-linked partner moves inversely with the stagger.
+ * nudgeKnob; with 2+ selected each dial moves by exactly `delta`, clamped (or
+ * by -delta on the flipped side when Opt is held, R3). In both cases an
+ * Alt-linked partner moves inversely with the stagger.
  */
-export function nudgeSelection(delta: number): void {
+export function nudgeSelection(delta: number, opts: GroupNudgeOptions = {}): void {
 	if (!Number.isFinite(delta) || delta === 0) return;
 	const { ids, baselines } = _selectionBaselines();
 	if (ids.length === 0) return;
@@ -439,37 +537,105 @@ export function nudgeSelection(delta: number): void {
 		nudgeKnob(ids[0], delta);
 		return;
 	}
-	const selected: Record<string, number> = {};
-	for (const id of ids) selected[id] = baselines[id];
-	_applyTargets(applyLinkToTargets(ids, baselines, commonModeTargets(selected, delta), knobUi.link));
+	const lead = opts.leadId != null && ids.includes(opts.leadId) ? opts.leadId : ids[0];
+	const signs = leadDragSigns(ids, lead, opts.flip === true);
+	const targets: Record<string, number> = {};
+	for (const id of ids) targets[id] = clamp01(baselines[id] + signs[id] * delta);
+	_applyTargets(applyLinkToTargets(ids, baselines, targets, knobUi.link));
 }
 
 /**
  * A dial's own scroll / arrow key: when it is part of a 2+ selection the whole
- * selection moves together, otherwise just this dial (link-aware).
+ * selection moves together, led by this dial, otherwise just this dial
+ * (link-aware). `flip` is Opt held during the wheel (R3).
  */
-export function nudgeKnobOrSelection(id: string, delta: number): void {
-	if (isKnobSelected(id) && knobUi.selectedIds.length >= 2) nudgeSelection(delta);
+export function nudgeKnobOrSelection(id: string, delta: number, flip: boolean = false): void {
+	if (isKnobSelected(id) && knobUi.selectedIds.length >= 2) nudgeSelection(delta, { leadId: id, flip });
 	else nudgeKnob(id, delta);
 }
 
-/** Pointer-down snapshot for a multi-dial drag; null when it is a single-dial drag. */
+/**
+ * Per-item direction for a group drag or wheel led by `leadId`. Without the
+ * flip every selected item follows the lead. With the flip (Opt held, R3):
+ * when the group spans two channels, items on the lead's channel follow and
+ * the other channel goes opposite; when every item is on one channel, the lead
+ * alone follows and the rest go opposite.
+ */
+export function leadDragSigns(
+	selection: readonly string[],
+	leadId: string,
+	flip: boolean
+): Record<string, 1 | -1> {
+	const out: Record<string, 1 | -1> = {};
+	const leadGroup = knobGroupOf(leadId);
+	const oneChannel = selection.every((id) => knobGroupOf(id) === leadGroup);
+	for (const id of selection) {
+		const follows = !flip || (oneChannel ? id === leadId : knobGroupOf(id) === leadGroup);
+		out[id] = follows ? 1 : -1;
+	}
+	return out;
+}
+
+/**
+ * Pointer-down snapshot for a group drag; null when it is a single-dial drag.
+ * `offsets` accumulate per item, so a modifier change mid-drag (Opt released)
+ * changes only the direction of what comes next and never jumps.
+ */
 export interface SelectionDragStart {
 	ids: string[];
 	baselines: Record<string, number>;
+	/** The control under the pointer: it leads the direction (R2). */
+	leadId: string;
+	offsets: Record<string, number>;
 }
 
-/** Start a two-axis drag when `id` is selected and 2+ registered dials are. */
+/** Start a group drag led by `id` when it is selected and 2+ registered controls are. */
 export function beginSelectionDrag(id: string): SelectionDragStart | null {
 	if (!isKnobSelected(id)) return null;
 	const start = _selectionBaselines();
-	return start.ids.length >= 2 ? start : null;
+	if (start.ids.length < 2) return null;
+	const offsets: Record<string, number> = {};
+	for (const sid of start.ids) offsets[sid] = 0;
+	return { ...start, leadId: id, offsets };
 }
 
-/** Apply a two-axis drag frame from the pointer-down baselines (no accumulation). */
-export function applySelectionDrag(start: SelectionDragStart, dx: number, dy: number): void {
-	const targets = twoAxisDragTargets(start.ids, start.baselines, dx, dy);
-	if (targets !== null) _applyTargets(applyLinkToTargets(start.ids, start.baselines, targets, knobUi.link));
+/** Pure: targets from baselines plus accumulated offsets, each clamped to 0..1. */
+export function groupDragTargets(start: Readonly<SelectionDragStart>): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const id of start.ids) out[id] = clamp01(start.baselines[id] + (start.offsets[id] ?? 0));
+	return out;
+}
+
+/**
+ * One drag frame: `delta` (0..1 units, up-positive) is the lead's move for
+ * this frame. Every item adds it with its own sign, then targets go through
+ * the registry (and so the typed command path), link-aware.
+ */
+export function stepSelectionDrag(start: SelectionDragStart, delta: number, flip: boolean): void {
+	if (!Number.isFinite(delta) || delta === 0) return;
+	const signs = leadDragSigns(start.ids, start.leadId, flip);
+	for (const id of start.ids) start.offsets[id] = (start.offsets[id] ?? 0) + signs[id] * delta;
+	_applyTargets(applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link));
+}
+
+/**
+ * One R7 pad frame: `dx` / `dy` (0..1 units, gained by the caller) add to the
+ * X and Y items' accumulated offsets, then go through the registry, link-aware.
+ */
+export function stepPadDrag(start: SelectionDragStart, dx: number, dy: number): void {
+	if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
+	const axes = padAxes(start.ids);
+	for (const id of start.ids) start.offsets[id] = (start.offsets[id] ?? 0) + (axes.x.includes(id) ? dx : dy);
+	_applyTargets(applyLinkToTargets(start.ids, start.baselines, groupDragTargets(start), knobUi.link));
+}
+
+/** Pad drag start: the whole 2+ selection, no lead (the pad itself is the pointer). */
+export function beginPadDrag(): SelectionDragStart | null {
+	const start = _selectionBaselines();
+	if (start.ids.length < 2) return null;
+	const offsets: Record<string, number> = {};
+	for (const id of start.ids) offsets[id] = 0;
+	return { ...start, leadId: start.ids[0], offsets };
 }
 
 export function linkedPartnerId(id: string): string | null {
@@ -496,7 +662,8 @@ function _onWindowWheel(e: WheelEvent): void {
 	// or the shift-selected dial stays hypersensitive while every other control
 	// is calm. Same seam, same constant.
 	const step = scaledWheelStep(KNOB_CFG.scrollStep, detectWheelInputKind(e));
-	nudgeSelection(dir * step);
+	// R3: the lead is the control under the pointer, else the first-selected.
+	nudgeSelection(dir * step, { leadId: knobUi.hoveredId, flip: e.altKey });
 }
 
 function _ensureGlobalWheel(): void {
@@ -534,7 +701,7 @@ export interface KnobSelectionBridge {
 	clear: () => void;
 	/** Common-mode delta in 0..1 units, as scroll and arrow keys apply it. */
 	nudge: (delta: number) => void;
-	/** Two-axis drag in px (dx right-positive, dy UP-positive) from current values. */
+	/** The R7 pad in px (dx right-positive moves channel A, dy UP-positive channel B), from current values. */
 	drag: (dx: number, dy: number) => void;
 	/** Current value of a dial, or null when it is not mounted. */
 	value: (id: string) => number | null;
@@ -560,11 +727,15 @@ export function installKnobSelectionGlobal(): void {
 				throw new RangeError(`knob drag must be finite, got ${dx}, ${dy}`);
 			}
 			const { ids, baselines } = _selectionBaselines();
+			// The same gain and falloff the pointer gets, so drag sensitivity
+			// moves both surfaces alike (Sol P1, PR #6829).
+			const gained = gainedStraightDrag(dx, dy);
 			if (ids.length >= 2) {
-				const targets = twoAxisDragTargets(ids, baselines, dx, dy) ?? {};
+				const unit = KNOB_CFG.dragVerticalPx;
+				const targets = padDragTargets(ids, baselines, gained.dx / unit, gained.dy / unit) ?? {};
 				_applyTargets(applyLinkToTargets(ids, baselines, targets, knobUi.link));
 			} else if (ids.length === 1) {
-				nudgeKnob(ids[0], singleDragDelta(dx, dy));
+				nudgeKnob(ids[0], singleDragDelta(gained.dx, gained.dy));
 			}
 		},
 		value: (id) => readKnobValue(id)

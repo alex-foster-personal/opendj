@@ -22,3 +22,7 @@ export { trackEditMenuItems, type TrackEditModalKind } from './track-edit-menu';
 export { addToPlaylistMenuItem } from './add-to-playlist-menu';
 export { removeFromLibraryMenuItem } from './track-library-menu';
 export { showInPlaylistsMenuItem } from './track-playlists-menu';
+export { compatibleKeyChecked, compatibleRowKeyShift } from '$lib/rb/next-only-filter';
+export { keyShiftSuperscript, shiftedKeyText } from '$lib/rb/compatible-filter-copy';
+export type { CompatibleKeyShift } from '$lib/player/key/camelot';
+export { loadKeyHoverCard } from './key-hover-card-load';

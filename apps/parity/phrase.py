@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.parity.figure import LaneFigure
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n, mean_of
 from apps.parity.lanes import DENOMINATOR_NAME
 
 Phrase = dict[str, Any]
@@ -177,11 +177,11 @@ def score_phrase(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
         boundary_f_3_0.append(_greedy_boundary_f(ref_bounds, est_bounds, 3.0))
         label_acc.append(_kind_accuracy_at_half_second(rb, own))
 
-    denominator_n = len(rows) - len(ungradable_ids)
-    scored_n = len(agree_ids) + len(disagree_ids)
-    mean_f_0_5 = (sum(boundary_f_0_5) / len(boundary_f_0_5)) if boundary_f_0_5 else None
-    mean_f_3_0 = (sum(boundary_f_3_0) / len(boundary_f_3_0)) if boundary_f_3_0 else None
-    mean_label = (sum(label_acc) / len(label_acc)) if label_acc else None
+    denominator_n = lane_denominator_n(len(rows), len(ungradable_ids))
+    scored_n = lane_scored_n(len(agree_ids), len(disagree_ids))
+    mean_f_0_5 = mean_of(boundary_f_0_5)
+    mean_f_3_0 = mean_of(boundary_f_3_0)
+    mean_label = mean_of(label_acc)
 
     return LaneFigure(
         lane="phrase",

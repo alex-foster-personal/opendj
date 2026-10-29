@@ -185,7 +185,15 @@ function main(): void {
 
 	const exitApp = (code: number, reason: string): void => {
 		quitAllowed = true;
-		void shutdownAll(reason).finally(() => app.exit(code));
+		// A shutdown that could not stop the engine's helpers is a failed exit, never a
+		// clean one, whatever the reason for quitting was (Sol P1 on #6830).
+		let status = code;
+		void shutdownAll(reason)
+			.catch((error: unknown) => {
+				appendShellLog('shutdown', `[ERROR] shell exit: ${(error as Error).message}`);
+				if (status === 0) status = 1;
+			})
+			.finally(() => app.exit(status));
 	};
 
 	// Signals from a terminal or a script: stop the engine, then go (P10).

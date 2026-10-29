@@ -257,7 +257,7 @@ def plan_transfer(
                 deterministic_unmatched.append(
                     replace(record, status="unmatched", reason="duration_mismatch")
                 )
-        elif confidence < confidence_threshold:
+        else:
             escalations.append(
                 Escalation(
                     source=track,

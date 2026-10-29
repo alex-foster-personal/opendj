@@ -11,6 +11,8 @@ import pytest
 from apps.dedup import scan as scan_mod
 from apps.shared.fingerprints import ChromaprintMissing, FingerprintCache
 
+from tests.dedup.phase7_support import PHASE7_DEDUP_AUDIO_COUNT, patch_chromaprint_backend_missing
+
 # ---------------------------------------------------------------- smoke
 
 
@@ -20,17 +22,15 @@ def test_smoke_fixtures(tmp_path: Path, tmp_fixture_tree, fake_acoustid) -> None
     out = scan_mod.run_scan(
         roots=[tmp_fixture_tree], db_path=db, force_recompute=False
     )
-    # 7 audio files in the fixture tree (src.wav + src-{320,128,v2}.mp3 +
-    # src.m4a + src.flac + other-silent-intro.mp3).
-    assert out.scanned == 7
-    assert out.computed == 7
+    assert out.scanned == PHASE7_DEDUP_AUDIO_COUNT
+    assert out.computed == PHASE7_DEDUP_AUDIO_COUNT
     assert out.cache_hits == 0
     assert out.errors == 0
 
     # Cache now holds 7 rows.
     cache = FingerprintCache(db)
     rows = list(cache.iter_all())
-    assert len(rows) == 7
+    assert len(rows) == PHASE7_DEDUP_AUDIO_COUNT
 
 
 @pytest.mark.requirement("META-03")
@@ -39,11 +39,11 @@ def test_incremental_rerun_is_cache_hits(
 ) -> None:
     db = tmp_path / "cache.sqlite"
     first = scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db)
-    assert first.computed == 7
+    assert first.computed == PHASE7_DEDUP_AUDIO_COUNT
 
     second = scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db)
     assert second.computed == 0
-    assert second.cache_hits == 7
+    assert second.cache_hits == PHASE7_DEDUP_AUDIO_COUNT
     assert second.errors == 0
 
 
@@ -56,7 +56,7 @@ def test_force_recompute_hits_every_file(
     forced = scan_mod.run_scan(
         roots=[tmp_fixture_tree], db_path=db, force_recompute=True
     )
-    assert forced.computed == 7
+    assert forced.computed == PHASE7_DEDUP_AUDIO_COUNT
     assert forced.cache_hits == 0
 
 
@@ -68,17 +68,7 @@ def test_chromaprint_missing_raises(
     tmp_path: Path, tmp_fixture_tree, monkeypatch
 ) -> None:
     """With no engine build and no fpcalc, scan raises ChromaprintMissing immediately."""
-    from apps.shared import fingerprints as fp_mod
-
-    class BadBackend:
-        class NoBackendError(Exception):
-            pass
-
-        def fingerprint_file(self, _path):
-            raise self.NoBackendError("fpcalc missing")
-
-    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
-    monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: BadBackend())
+    patch_chromaprint_backend_missing(monkeypatch)
 
     db = tmp_path / "cache.sqlite"
     with pytest.raises(ChromaprintMissing):
@@ -103,24 +93,14 @@ def test_cli_quiet(
     )
     assert rc == 0
     captured = capsys.readouterr()
-    assert "scanned=7" in (captured.out + captured.err)
+    assert f"scanned={PHASE7_DEDUP_AUDIO_COUNT}" in (captured.out + captured.err)
 
 
 @pytest.mark.requirement("META-03")
 def test_cli_chromaprint_missing_exit_2(
     tmp_path: Path, tmp_fixture_tree, monkeypatch, capsys
 ) -> None:
-    from apps.shared import fingerprints as fp_mod
-
-    class BadBackend:
-        class NoBackendError(Exception):
-            pass
-
-        def fingerprint_file(self, _path):
-            raise self.NoBackendError("fpcalc missing")
-
-    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
-    monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: BadBackend())
+    patch_chromaprint_backend_missing(monkeypatch)
 
     rc = scan_mod.main(
         ["--root", str(tmp_fixture_tree), "--db", str(tmp_path / "cli.sqlite"), "--quiet"]

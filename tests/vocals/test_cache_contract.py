@@ -55,7 +55,7 @@ def test_write_then_load_roundtrip(tmp_path: Path, audio: Path) -> None:
     assert loaded == written
     assert loaded is not None
     assert loaded["schema"] == vcache.VOCAL_CACHE_SCHEMA
-    assert loaded["source"] == "demucs-htdemucs"
+    assert loaded["source"] == vcache.VOCAL_CACHE_SOURCE
     assert loaded["audio_mtime"] == audio.stat().st_mtime
     assert loaded["confidence"] == 0.84  # scalar = max region confidence
     assert loaded["regions"][0]["intensity"] == 3  # round(0.84 * 4)

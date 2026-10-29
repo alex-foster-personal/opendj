@@ -131,7 +131,9 @@ class RecordingTts:
 
 def make_tts(env: dict[str, str] | None = None):
     """Factory. ``$TTS_BACKEND`` picks backend; default ``say``."""
-    env = env if env is not None else dict(os.environ)
+    from apps.voice.settings import coalesce_env
+
+    env = coalesce_env(env)
     backend = (env.get("TTS_BACKEND") or "say").lower()
     if backend == "say":
         return SayTts()

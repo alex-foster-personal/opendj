@@ -299,7 +299,12 @@ describe('MasterLevelMeter renders the shared ten-segment policy, not a new one'
 	const topbar = readSrc('lib/components/rb/TopBar.svelte');
 
 	it('imports segment thresholds and colour bands from meter-math, never redeclaring them', () => {
-		assert.match(meter, /SEGMENT_THRESHOLDS_DBFS\.map/);
+		// The R button shifts this scale. The master meter has to use the same
+		// shift as the channel meter, or pressing R (or not pressing it) is
+		// exactly how the two bars disagree about red. Pin 4cdff93a094c.
+		assert.match(meter, /segmentThresholdsForRed\(/);
+		assert.match(meter, /segmentsLitFromDbfs\(reading\.db, thresholds\)/);
+		assert.doesNotMatch(meter, /lit = reading\.segments/);
 		assert.match(meter, /segmentBand\(index \+ 1\)/);
 		assert.match(meter, /from '\$lib\/rb\/meter-math'/);
 		for (const threshold of ['-34', '-26', '-20', '-16', '-12', '-9', '-6', '-3']) {
@@ -376,7 +381,18 @@ describe('the master meter RAF loop is gated on deck-playing state, not always-o
 	const topbar = readSrc('lib/components/rb/TopBar.svelte');
 
 	it('defaults `active` to false, so an unwired instantiation cannot silently run forever', () => {
-		assert.match(meter, /let\s*\{\s*active\s*=\s*false\s*\}\s*:\s*Props\s*=\s*\$props\(\)/);
+		assert.match(meter, /let\s*\{\s*active\s*=\s*false\s*,\s*redDbfs\s*=\s*null\s*\}\s*:\s*Props\s*=\s*\$props\(\)/);
+	});
+
+	it('takes the red anchor from TopBar instead of importing prefs (fan-in ratchet)', () => {
+		assert.doesNotMatch(meter, /from '\$lib\/rb\/prefs\.svelte'/);
+		assert.match(meter, /segmentThresholdsForRed\(redDbfs\)/);
+		const tag = topbar.match(/<MasterLevelMeter\b[^/]*\/>/);
+		assert.ok(tag);
+		assert.match(
+			tag[0],
+			/redDbfs=\{uiPrefs\.level_calibration\.red_enabled \? uiPrefs\.level_calibration\.red_dbfs : null\}/
+		);
 	});
 
 	it('TopBar passes an explicit active prop derived from deck-playing state, not a bare tag', () => {

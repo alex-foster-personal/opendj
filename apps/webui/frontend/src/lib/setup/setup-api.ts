@@ -197,6 +197,11 @@ export async function startFolderImport(
 	return unwrap(api.POST('/api/v1/setup/import/folder', { body: options }));
 }
 
+/** Read one job, such as the folder import startFolderImport queued. */
+export async function getSetupJob(jobId: string): Promise<SetupJob> {
+	return unwrap(api.GET('/api/v1/jobs/{job_id}', { params: { path: { job_id: jobId } } }));
+}
+
 /** Canonical setup folder path on the client: trim and strip a trailing slash.
  *
  * Does not expand ``~``; the server refuses tilde paths at the wire boundary.

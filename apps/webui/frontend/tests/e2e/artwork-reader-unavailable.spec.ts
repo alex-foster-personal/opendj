@@ -301,7 +301,9 @@ test('null artwork availability identifies an unavailable reader without request
 				hide_todo_settings: false,
 				technically_working_animate: true,
 				confirm: {},
-				key_notation: 'camelot'
+				key_notation: 'camelot',
+				library_hidden_columns: [],
+				library_key_filter: []
 			}
 		})
 	);
@@ -344,11 +346,18 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({ json: { total_tracks: 1, on_disk: 1, unreachable: 0, missing: { vocals: 1, stems: 1 }, generated_at: 0 } })
 	);
 	// TrackTable asks the engine once per page session to bring stored beatgrid
-	// verdicts up to date (api-grid-flags.ts `ensureGridQualityScan`). Declared
+	// verdicts up to date (library-scans.ts `ensureLibraryScans`). Declared
 	// as a KNOWN request; `idle` is the engine's answer when nothing is running.
 	await page.route('**/api/v1/beatgrid-flags/scan', (route) =>
 		route.fulfill({
 			json: { state: 'idle', running_scope: null, last_result: null, last_error: null }
+		})
+	);
+	// The same once-per-session request for the QLT letters (QLTSCAN-03,
+	// library-scans.ts `ensureLibraryScans`), answered idle the same way.
+	await page.route('**/api/v1/audio-quality/scan', (route) =>
+		route.fulfill({
+			json: { state: 'idle', stopping: false, last_result: null, last_error: null }
 		})
 	);
 	// StemCacheHealthDot.svelte reads the stem cache's disk state on mount and

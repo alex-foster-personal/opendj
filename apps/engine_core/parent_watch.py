@@ -9,6 +9,8 @@ import threading
 import time
 from pathlib import Path
 
+from apps.shared.process_liveness import pid_is_alive
+
 PARENT_ENV = "OPENDJ_PARENT_PID"
 PARENT_FILE_NAME = ".engine.parent"
 POLL_INTERVAL_S = 0.25
@@ -37,16 +39,6 @@ def _read_parent_file(data_dir: Path) -> int | None:
         return None
 
 
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 def _set_pdeathsig_linux() -> None:
     if not sys.platform.startswith("linux"):
         return
@@ -61,7 +53,7 @@ def _watch_loop(data_dir: Path, env_pid: int) -> None:
     while True:
         file_pid = _read_parent_file(data_dir)
         watched_pid = file_pid if file_pid is not None else env_pid
-        if not _is_alive(watched_pid):
+        if not pid_is_alive(watched_pid):
             print(
                 f"[WARN] parent pid {watched_pid} is gone; stopping this engine",
                 file=sys.stderr,

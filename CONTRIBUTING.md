@@ -28,7 +28,7 @@ releases are published to the public one.
 3. [Running tests and lint](#running-tests-and-lint)
 4. [Branching and pull requests](#branching-and-pull-requests)
 5. [Conventional commits](#conventional-commits)
-6. [The six-rail safety pattern](#the-six-rail-safety-pattern)
+6. [The safety rails](#the-safety-rails)
 7. [Proposing a larger change](#proposing-a-larger-change)
 8. [House rules](#house-rules)
 9. [Developer Certificate of Origin](#developer-certificate-of-origin)
@@ -175,39 +175,27 @@ Common types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `build`,
 `ci`. Scopes are usually an app module (`fix(sync):`) or an area such
 as `docs(governance):`.
 
-## The six-rail safety pattern
+## The safety rails
 
-Every destructive write path in this repo goes through the six-rail safety
-pattern. If you add or modify a code path that writes to Rekordbox, djay,
-Serato, Traktor, or any operator file on disk, all six rails apply. See
-[`apps/sync/safety.py`](apps/sync/safety.py) for the canonical helpers and
-the safety section of [`docs/developer-guide.md`](docs/developer-guide.md) for the summary.
+Every destructive write path in this repo goes through a safety rail set. If you add or modify a
+code path that writes to Rekordbox, djay, Serato, Traktor, or any operator file on disk, the rails
+apply. Vendor library DB writes use the seven-rail harness in
+[`apps/sync/safety.py`](apps/sync/safety.py) (`LiveWriteSession`, plus a backstop rail 0 for
+one-way import mode); the full list, the writer conventions around it and its known gap are in
+[the developer guide](docs/developer-guide.md#safety-the-seven-rail-harness), the single source.
+Older docs and module docstrings call this the six-rail pattern.
 
-1. **Typed confirmation.** Operator must type a non-trivial string (not
-   just "y"). Use the helpers in `apps/sync/safety.py`.
-2. **Running-app check.** `pgrep` for Rekordbox / djay / Serato /
-   Traktor and abort if the target app is running. Catch the lock before
-   you touch the file. A missing or erroring `pgrep` is now a hard
-   error (PR #81); the CLI override `--force-no-pgrep` exists only for
-   operators who have manually confirmed the vendor app is quit. Test
-   code may pass `allow_app_running=True` into `apps/tags/apply.py`,
-   but the `_in_pytest()` guard rejects that kwarg anywhere outside a
-   pytest run (PR #86).
-3. **Timestamped backup.** Copy the target file to a timestamped path
-   before the write. Every rail-3 backup must be restorable by the
-   reversal script in rail 6.
-4. **Dry-run default.** A live write needs both `--live` and
-   `--i-understand-the-risks`. Dry-run output must be the diff the live
-   run will apply, not a summary.
-5. **Atomic write.** Write to a temp file in the same directory, then
-   rename. Never truncate-in-place.
-6. **Post-write readback plus reversal script.** Re-open the written file
-   and verify the change took; emit a reversal script that restores the
-   rail-3 backup. A new writer without a reversal script will not be
-   merged. For DB writers, run the readback inside the same
-   `BEGIN IMMEDIATE` / `COMMIT` as the write so a mismatch can
-   `ROLLBACK` before anything becomes durable (`apps/sync/playlist_apply.py`,
-   PR #81 is the reference implementation).
+What a new writer must do, in short:
+
+- Enter `LiveWriteSession` for any live vendor DB write: it takes the backup, checks the target app
+  is quit, requires `--i-understand-the-risks` and starts the reversal script.
+- Default to a dry run whose output is the diff the live run applies; write only with `--live`.
+- Fail closed when the running-app check cannot run (missing or erroring `pgrep`), with
+  `--force-no-pgrep` as the only operator override (PR #81). Known gap: the harness's own
+  `_is_running` in `apps/sync/safety.py` still reads a missing `pgrep` as not running.
+- Never truncate in place: read back inside the same `BEGIN IMMEDIATE` ... `COMMIT` as the write
+  for DB writers (`apps/sync/playlist_apply.py`, PR #81), or write a temp file and `os.replace` it.
+- Ship a reversal script; a new writer without one will not be merged.
 
 Parallel fail-closed rule for cloud write guards: if a peer-lock probe
 raises, the FastAPI dependency must return `503 lock_probe_failed`

@@ -14,6 +14,11 @@ import { expect } from 'storybook/test';
  * module's importer count.
  */
 
+type Grade = {
+	letter: 'A' | 'B' | 'C' | 'D' | null;
+	checked: boolean;
+	issues: string[];
+};
 type Quality = {
 	venue: string | null;
 	label: string;
@@ -23,6 +28,7 @@ type Quality = {
 	kbps: number | null;
 	container: string;
 	lossless: boolean;
+	grade?: Grade | null;
 };
 type Args = { quality: Quality | null; showContainer?: boolean; compact?: boolean };
 type Ctx = { canvasElement: HTMLElement; args: Args };
@@ -46,6 +52,11 @@ const badge = (root: HTMLElement): HTMLElement => {
 };
 const label = (root: HTMLElement): string => badge(root).querySelector('.q-label')?.textContent ?? '';
 const ext = (root: HTMLElement): Element | null => badge(root).querySelector('.q-ext');
+
+const FAKE_FLAC_TITLE = 'C -- Thin on a big rig\nIssues: none found';
+const UNCHECKED_TITLE = 'A (not checked yet) -- from bitrate and format only';
+const flac = (grade: Grade): Quality =>
+	rung({ venue: 'stadium', label: 'Stadium', rank: 5, kbps: 912, container: '.flac', lossless: true, grade });
 
 const CLUB_TITLE = 'Club -- holds up on a club rig. Effective 256 kbps, mp3. Rung 4 of 6.';
 
@@ -166,6 +177,53 @@ export const contracts = {
 		play: async ({ canvasElement }: Ctx) => {
 			await expect(ext(canvasElement)).toBeNull();
 			await expect(badge(canvasElement)).toHaveAttribute('title', CLUB_TITLE);
+		}
+	},
+	/** QLTSCAN-05: a checked letter. The spectrum, not the container, decides: this FLAC is C. */
+	GradeChecked: {
+		args: {
+			quality: flac({ letter: 'C', checked: true, issues: [] }),
+			compact: true,
+			showContainer: false
+		} satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const el = badge(canvasElement);
+			await expect(el).toHaveClass('q-badge', 'q-grade', 'q-grade-C', 'compact');
+			await expect(el).not.toHaveClass('hollow');
+			await expect(el).toHaveAttribute('data-grade', 'C');
+			await expect(label(canvasElement)).toBe('C');
+			await expect(el.querySelector('.q-dot')).toBeNull();
+			await expect(el).toHaveAttribute('title', FAKE_FLAC_TITLE);
+		}
+	},
+	/** Not scanned yet: the bitrate letter drawn hollow, and the hover says so. */
+	GradeUnchecked: {
+		args: {
+			quality: flac({ letter: 'A', checked: false, issues: [] }),
+			compact: true,
+			showContainer: false
+		} satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const el = badge(canvasElement);
+			await expect(el).toHaveClass('q-grade-A', 'hollow');
+			await expect(el).toHaveAttribute('data-grade', 'A-unchecked');
+			await expect(label(canvasElement)).toBe('A');
+			await expect(el).toHaveAttribute('title', UNCHECKED_TITLE);
+		}
+	},
+	/** Issues never move the letter (except corruption); they add a dot. */
+	GradeWithIssues: {
+		args: {
+			quality: flac({ letter: 'A', checked: true, issues: ['clipping'] }),
+			compact: true,
+			showContainer: false
+		} satisfies Args,
+		play: async ({ canvasElement }: Ctx) => {
+			const el = badge(canvasElement);
+			await expect(el).toHaveClass('q-grade-A');
+			await expect(el.querySelector('.q-dot')).not.toBeNull();
+			await expect(label(canvasElement)).toBe('A');
+			await expect(el).toHaveAttribute('title', 'A -- Safe on any system\nIssues: clipping');
 		}
 	},
 	/** Compact: the rung's initial only, the .compact class, and the full title on hover. */

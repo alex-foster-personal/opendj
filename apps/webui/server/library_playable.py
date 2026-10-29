@@ -197,6 +197,15 @@ def _require_buckets_cover_every_row(scan: LibraryPlayability) -> None:
 #-----------------------------------------------------------------------------
 # the scan
 #-----------------------------------------------------------------------------
+def local_audio_paths(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> dict[str, Path]:
+    """`stable_id -> local file` for the given ids that are present on this
+    machine: the same resolution `scan_playability` uses for its `present`
+    bucket, without classifying the rest of the library."""
+    owner = _owner_machine_id(conn, None)
+    resolved = state_locations.bulk_local_audio_paths(conn, list(stable_ids), machine_id=owner or None)
+    return {sid: Path(path) for sid, path in resolved.items() if path is not None}
+
+
 def scan_playability(
     conn: sqlite3.Connection,
     *,

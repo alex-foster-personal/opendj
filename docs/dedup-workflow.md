@@ -19,7 +19,7 @@ python -m apps.dedup.scan
 ```
 
 Walks `paths.MUSIC_ROOTS`, fingerprints each audio file via pyacoustid,
-persists rows to `data/dedup/phase7.sqlite:fingerprints`. Incremental on
+persists rows to `(private path):fingerprints`. Incremental on
 re-run (skip when size + mtime match the cache). Use `--force-recompute`
 to refresh everything.
 
@@ -32,8 +32,8 @@ python -m apps.dedup.find_clusters
 Single-linkage union-find over pairwise chromaprint similarity. Default
 threshold is `0.92`. Writes:
 
-* `data/dedup/clusters.csv` -- review-friendly list of cluster rows.
-* `data/dedup/manual-review.csv` -- borderline clusters (duration delta
+* `(private path)` -- review-friendly list of cluster rows.
+* `(private path)` -- borderline clusters (duration delta
   > 3s or cluster size > `--max-cluster-size`).
 
 Canonical selection follows the D2 tie-break ladder:
@@ -50,7 +50,7 @@ The `/dedup` page applies OpenDJ playlist membership rewrites: Merge
 replaces alias stable ids with the survivor in every playlist that
 referenced an alias, and Undo restores the journaled membership. It does
 not delete, rename, or archive audio files. Rekordbox FolderPath rewrite
-remains `python -m apps.dedup.apply --live ...` with the six rails in
+remains `python -m apps.dedup.apply --live ...` with the seven rails in
 step 4.
 
 ### 3. Dry-run apply
@@ -61,7 +61,7 @@ python -m apps.dedup.apply
 
 Joins clusters/aliases against the live Rekordbox DB to find playlist
 entries that still reference alias paths. Writes
-`data/dedup/rewrite-plan.csv` + `rewrite-summary.md`. **Never** mutates
+`(private path)` + `rewrite-summary.md`. **Never** mutates
 any DB or audio file.
 
 ### 4. Cautious live apply (2-3 clusters first)
@@ -76,7 +76,7 @@ Safety rails (all must pass):
 1. Typed confirm `yes i understand` at stdin.
 2. Refuse if Rekordbox is open (pgrep -if rekordbox).
 3. Timestamped backup of `master.db` under
-   `data/dedup/backups/master.YYYYMMDD-HHMMSS.db`.
+   `(private path)`.
 4. Update `FolderPath` rows via pyrekordbox, commit.
 5. Re-open the DB, verify every row now reads the canonical path.
 6. Emit `reverse-dedup-YYYYMMDD-HHMMSS.sh` that restores the backup.
@@ -93,7 +93,7 @@ tags into the audio containers (ID3v2.4 / MP4 atoms / Vorbis). See
 ## Safety invariants
 
 * Never deletes or renames audio files.
-* Never writes `master.db` without the 6 rails above.
+* Never writes `master.db` without the seven rails above.
 * `--archive-duplicates` is NOT implemented in v1 (logged as
   `NotImplementedError`).
 * Rating / djay writes are Plan 02's job; this plan only rewrites RB

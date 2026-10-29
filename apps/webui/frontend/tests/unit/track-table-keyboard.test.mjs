@@ -255,7 +255,7 @@ test('ARIA: grid with multiselect, full rowcount, per-row index/selected, roving
 	assert.match(table, /role="grid"/);
 	assert.match(table, /aria-multiselectable="true"/);
 	assert.match(table, /aria-rowcount=\{rows\.length \+ 1\}/);
-	assert.match(src, /<thead bind:clientHeight=\{theadHeightPx\}>\s*<tr aria-rowindex=\{1\}>/);
+	assert.match(src, /<thead bind:clientHeight=\{theadHeightPx\}(?: oncontextmenu=\{[^}]*\})?>\s*<tr aria-rowindex=\{1\}>/);
 	const row = src.match(/data-testid="track-row"[\s\S]*?draggable="true"/)[0];
 	assert.match(row, /data-row-index=\{rowIndex\}/);
 	assert.match(row, /aria-rowindex=\{rowIndex \+ 2\}/);

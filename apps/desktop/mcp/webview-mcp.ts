@@ -4,7 +4,8 @@
  *
  * Transport seam: the debug binary already hosts a W3C WebDriver HTTP server
  * (tauri-plugin-wdio-webdriver, cfg(debug_assertions) only -- zero release
- * surface). This server is a thin token-shaping layer over that seam plus the
+ * surface). The unpackaged Electron shell is driven the same way over its CDP
+ * port instead (MDT_WEBVIEW_MCP_CDP, ./cdp-driver.ts). This server is a thin token-shaping layer over that seam plus the
  * engine's own HTTP API. It compiles NO new Rust and adds NO new attack
  * surface: if the shell is a release build, every tool fails loudly.
  *
@@ -51,6 +52,8 @@ import sharp from 'sharp';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { Cdp, CdpTimeoutError, type PageDriver } from './cdp-driver';
+import { diffTrees } from './tree-diff';
 
 //----- config: explicit, no hidden defaults ---------------------------------
 
@@ -58,19 +61,30 @@ function _requireEnv(name: string): string {
 	const value = process.env[name];
 	if (!value) {
 		throw new Error(
-			`${name} is required (e.g. MDT_WEBVIEW_MCP_WEBDRIVER=http://127.0.0.1:4455 ` +
-				`MDT_WEBVIEW_MCP_ENGINE=http://127.0.0.1:8691). Start the debug shell with ` +
-				`TAURI_WEBDRIVER_PORT set; release builds have no WebDriver surface.`
+			`${name} is required (e.g. MDT_WEBVIEW_MCP_WEBDRIVER=http://127.0.0.1:4455 or ` +
+				`MDT_WEBVIEW_MCP_CDP=<the CDP origin just electron-dev prints>, plus MDT_WEBVIEW_MCP_ENGINE=http://127.0.0.1:8691). ` +
+				`Start the Tauri debug shell with TAURI_WEBDRIVER_PORT, or the Electron shell with ` +
+				`just electron-dev; release builds have no WebDriver or CDP surface.`
 		);
 	}
 	return value;
 }
 
-const WEBDRIVER_BASE = _requireEnv('MDT_WEBVIEW_MCP_WEBDRIVER');
+// Exactly one page seam: WebDriver (the Tauri debug shell) or CDP (the
+// unpackaged Electron shell). Both set, or neither, is a boot error.
+const CDP_BASE = process.env.MDT_WEBVIEW_MCP_CDP?.trim() || null;
+if (CDP_BASE !== null && process.env.MDT_WEBVIEW_MCP_WEBDRIVER) {
+	throw new Error('set MDT_WEBVIEW_MCP_WEBDRIVER (Tauri) or MDT_WEBVIEW_MCP_CDP (Electron), not both');
+}
+const WEBDRIVER_BASE = CDP_BASE === null ? _requireEnv('MDT_WEBVIEW_MCP_WEBDRIVER') : '';
 const ENGINE_BASE = _requireEnv('MDT_WEBVIEW_MCP_ENGINE');
 const MAX_IMAGE_WIDTH_DEFAULT = 1456; // ~1585 tokens at Anthropic's (w*h)/750
 const DIFF_LINE_CAP = 80;
 const ACT_SETTLE_MS = 300;
+/** A lazily loaded surface (the Settings dialog's chunk) can land after the
+ * settle; an unchanged tree is re-read until this long has passed. */
+const ACT_CHANGE_WAIT_MS = 2000;
+const ACT_CHANGE_POLL_MS = 200;
 
 /**
  * Session traces: Devin-style visual replay of everything this MCP did.
@@ -175,7 +189,15 @@ if (TRACE_ENABLED) {
 /** Full-window frame for the trace, same descale rules as the screenshot tool. */
 async function _traceFrame(): Promise<string | undefined> {
 	if (!trace) return undefined;
-	const b64 = await wd.screenshotBase64();
+	let b64: string;
+	try {
+		b64 = await wd.screenshotBase64();
+	} catch (error) {
+		// The step ran, but its trace frame was not captured: the tool fails so the
+		// trace is never silently missing a frame, and no later frame stands in for it.
+		if (!(error instanceof CdpTimeoutError)) throw error;
+		throw new CdpTimeoutError(`the step ran, but its trace frame was not captured: ${error.message}`);
+	}
 	const page = await wd.execute<{ w: number }>('return { w: window.innerWidth };');
 	const png = await sharp(Buffer.from(b64, 'base64'))
 		.resize({ width: Math.min(MAX_IMAGE_WIDTH_DEFAULT, page.w), withoutEnlargement: true })
@@ -186,7 +208,7 @@ async function _traceFrame(): Promise<string | undefined> {
 
 //----- minimal raw W3C WebDriver client -------------------------------------
 
-class Wd {
+class Wd implements PageDriver {
 	private _sessionId: string | null = null;
 
 	async ensureSession(): Promise<string> {
@@ -257,7 +279,13 @@ class Wd {
 	}
 }
 
-const wd = new Wd();
+// Optional: the dev app's origin (Vite). Unset, the engine serves the packed shell's pages.
+const APP_ORIGIN = process.env.MDT_WEBVIEW_MCP_APP?.trim() || null;
+// The one origin the driven page must sit on (CDP status), and the one a relative
+// navigate resolves against, whatever page the window wandered to. Normalized, so a
+// configured trailing slash cannot double the slash in a navigate URL.
+const PAGE_ORIGIN = new URL(APP_ORIGIN ?? ENGINE_BASE).origin;
+const wd: PageDriver = CDP_BASE === null ? new Wd() : new Cdp(CDP_BASE, PAGE_ORIGIN);
 
 //----- injected page scripts -------------------------------------------------
 
@@ -450,28 +478,6 @@ interface TreeSnapshot {
 }
 let lastTree: TreeSnapshot | null = null;
 
-function _diffTrees(before: string[], after: string[]): string {
-	const beforeSet = new Set(before);
-	const afterSet = new Set(after);
-	const removed = before.filter((l) => !afterSet.has(l));
-	const added = after.filter((l) => !beforeSet.has(l));
-	if (removed.length === 0 && added.length === 0) return '(no tree change)';
-	if (removed.length + added.length > DIFF_LINE_CAP) {
-		// Preview the SHALLOWEST new nodes: they name what appeared (a dialog, a
-		// panel) without paying for its full contents.
-		const indentOf = (l: string): number => l.length - l.trimStart().length;
-		const preview = [...added]
-			.sort((a, b) => indentOf(a) - indentOf(b))
-			.slice(0, 12)
-			.map((l) => `+ ${l.trim()}`);
-		return (
-			`(large change: ${removed.length} lines gone, ${added.length} new -- ` +
-			`re-observe with ui_tree. Shallowest new nodes:)\n${preview.join('\n')}`
-		);
-	}
-	return [...removed.map((l) => `- ${l.trim()}`), ...added.map((l) => `+ ${l.trim()}`)].join('\n');
-}
-
 interface SerializedTree {
 	error?: string;
 	version: number;
@@ -498,7 +504,7 @@ server.registerTool(
 	'status',
 	{
 		description:
-			'Health of the whole seam: embedded WebDriver reachable, engine healthy, current page. Call first.'
+			'Health of the whole seam: page driver (Tauri WebDriver or Electron CDP) reachable, engine healthy, current page. Call first.'
 	},
 	async () => {
 		const driver = await wd.status();
@@ -546,16 +552,19 @@ server.registerTool(
 	}
 );
 
+
 server.registerTool(
 	'navigate',
 	{
 		description:
 			'Point the real shell webview at an app route (e.g. "/performance", "/setup"). ' +
-			'Accepts a path (resolved against the engine origin) or a full URL. Invalidates all refs.',
+			'Accepts a path (resolved against the configured app origin, MDT_WEBVIEW_MCP_APP, else the engine) ' +
+			'or a full URL. ' +
+			'Invalidates all refs.',
 		inputSchema: { url: z.string() }
 	},
 	async ({ url }) => {
-		const absolute = url.startsWith('http') ? url : `${ENGINE_BASE}${url}`;
+		const absolute = url.startsWith('http') ? url : `${PAGE_ORIGIN}${url}`;
 		await wd.navigate(absolute);
 		lastTree = null;
 		await new Promise((resolve) => setTimeout(resolve, ACT_SETTLE_MS));
@@ -664,6 +673,16 @@ server.registerTool(
 		}>(ACT_SCRIPT, [kind, ref ?? null, tree_version ?? null, text ?? null]);
 		if (result.error) throw new Error(result.error);
 		await new Promise((resolve) => setTimeout(resolve, ACT_SETTLE_MS));
+		let after = await _snapshotTree();
+		let diff = before
+			? diffTrees(before.lines, after.tree.split('\n'), DIFF_LINE_CAP)
+			: '(no prior tree to diff against)';
+		for (let waited = 0; before && diff === '(no tree change)' && waited < ACT_CHANGE_WAIT_MS; waited += ACT_CHANGE_POLL_MS) {
+			await new Promise((resolve) => setTimeout(resolve, ACT_CHANGE_POLL_MS));
+			after = await _snapshotTree();
+			diff = diffTrees(before.lines, after.tree.split('\n'), DIFF_LINE_CAP);
+		}
+		// After the polling, so the replay frame shows the state the returned diff describes.
 		trace?.record({
 			tool: 'act',
 			detail: `${kind} ${ref ?? ''} ${text ?? ''}`.trim(),
@@ -672,10 +691,6 @@ server.registerTool(
 			viewport: result.viewport,
 			frame: await _traceFrame()
 		});
-		const after = await _snapshotTree();
-		const diff = before
-			? _diffTrees(before.lines, after.tree.split('\n'))
-			: '(no prior tree to diff against)';
 		return {
 			content: [
 				{

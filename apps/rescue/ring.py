@@ -33,6 +33,14 @@ __all__ = [
 _SCHEMA = 1
 
 
+def _compact_json(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+
+
+def _ring_has_data(index: RescueIndex) -> bool:
+    return any(slot.bytes > 0 for slot in index.slots)
+
+
 def _rescue_dir(data_dir: Path) -> Path:
     return data_dir / "state" / "rescue"
 
@@ -125,7 +133,7 @@ def _load_index(rescue_dir: Path) -> RescueIndex:
 
 
 def _validate_snapshot(payload: dict[str, Any]) -> int:
-    if payload.get("schema") != 1:
+    if payload.get("schema") != _SCHEMA:
         raise RescueSnapshotInvalidError("snapshot schema must be 1")
     captured_at_ms = payload.get("captured_at_ms")
     if not isinstance(captured_at_ms, int) or captured_at_ms < 0:
@@ -138,8 +146,7 @@ def _validate_snapshot(payload: dict[str, Any]) -> int:
     decks = payload.get("decks")
     if not isinstance(decks, dict):
         raise RescueSnapshotInvalidError("snapshot decks must be an object")
-    serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    size = len(serialized.encode("utf-8"))
+    size = len(_compact_json(payload).encode("utf-8"))
     if size > MAX_BYTES:
         raise RescueSnapshotTooLargeError(f"snapshot is {size} bytes; max is {MAX_BYTES}")
     return size
@@ -166,7 +173,7 @@ def read_latest(data_dir: Path) -> dict[str, Any] | None:
         index = _load_index(rescue_dir)
     except RescueSnapshotInvalidError:
         return None
-    if all(slot.bytes == 0 for slot in index.slots):
+    if not _ring_has_data(index):
         return None
     for offset in range(RING_SIZE):
         slot = (index.newest_slot - offset) % RING_SIZE
@@ -183,12 +190,10 @@ def append_snapshot(data_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     size = _validate_snapshot(payload)
     rescue_dir = _rescue_dir(data_dir)
     index = _load_index(rescue_dir)
-    has_any = any(slot.bytes > 0 for slot in index.slots)
-    next_slot = (index.newest_slot + 1) % RING_SIZE if has_any else 0
+    next_slot = (index.newest_slot + 1) % RING_SIZE if _ring_has_data(index) else 0
     captured_at_ms = int(payload["captured_at_ms"])
 
-    ring_text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    write_atomic(_ring_path(rescue_dir, next_slot), ring_text + "\n")
+    write_atomic(_ring_path(rescue_dir, next_slot), _compact_json(payload) + "\n")
 
     slots = list(index.slots)
     slots[next_slot] = RescueSlotMeta(slot=next_slot, captured_at_ms=captured_at_ms, bytes=size)

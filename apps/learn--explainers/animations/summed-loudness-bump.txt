@@ -1,0 +1,71 @@
+summed loudness bump: overlap of two full tracks reads louder
+
+   level (: = one track at full level)
+
+   A out  |##############################          |
+   B in   |                                        |
+
+   sum    |##############################          |
+                                         :
+
+   A alone: sum = A
+@@
+summed loudness bump: overlap of two full tracks reads louder
+
+   level (: = one track at full level)
+
+   A out  |##############################          |
+   B in   |###############                         |
+
+   sum    |#################################       |
+                                         :
+
+   B fades up: sum starts to rise
+@@
+summed loudness bump: overlap of two full tracks reads louder
+
+   level (: = one track at full level)
+
+   A out  |##############################          |
+   B in   |##############################          |
+
+   sum    |####################################### |
+                                         :
+
+   both full: sum bumps above both (+3 LU)
+@@
+summed loudness bump: overlap of two full tracks reads louder
+
+   level (: = one track at full level)
+
+   A out  |##############################          |
+   B in   |##############################          |
+
+   sum    |####################################### |
+                                         :
+
+   both full: sum bumps above both (+3 LU)
+@@
+summed loudness bump: overlap of two full tracks reads louder
+
+   level (: = one track at full level)
+
+   A out  |###############                         |
+   B in   |##############################          |
+
+   sum    |#################################       |
+                                         :
+
+   A fades down: sum settles
+@@
+summed loudness bump: overlap of two full tracks reads louder
+
+   level (: = one track at full level)
+
+   A out  |                                        |
+   B in   |##############################          |
+
+   sum    |##############################          |
+                                         :
+
+   B alone: sum = B

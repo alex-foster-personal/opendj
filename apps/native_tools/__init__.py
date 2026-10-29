@@ -26,4 +26,32 @@ into a cycle by anything that imports it later.
 
 from __future__ import annotations
 
+import subprocess
+
 SYSCTL = "/usr/sbin/sysctl"
+
+
+def sysctl_n(oid: str, *, timeout: float = 2.0) -> subprocess.CompletedProcess[str]:
+    """Run ``sysctl -n`` for one OID. Never raises on a non-zero exit status."""
+    return subprocess.run(
+        [SYSCTL, "-n", oid],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def try_sysctl_n(oid: str, *, timeout: float = 2.0) -> str | None:
+    """Return one ``sysctl -n`` value, or ``None`` when the call fails or times out."""
+    try:
+        completed = subprocess.run(
+            [SYSCTL, "-n", oid],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    return completed.stdout.strip()

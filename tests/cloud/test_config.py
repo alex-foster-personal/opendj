@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from apps.cloud.config import REQUIRED_VARS, CloudConfig, MissingEnvError
+from apps.cloud.config import (
+    DEFAULT_AUDIO_BUCKET,
+    DEFAULT_BIND_HOST,
+    DEFAULT_STATE_BUCKET,
+    REQUIRED_VARS,
+    CloudConfig,
+    MissingEnvError,
+)
 
 
 @pytest.mark.requirement("CAT-04")
@@ -34,9 +41,9 @@ def test_from_env_defaults_are_applied():
         "R2_SECRET_ACCESS_KEY": "c",
     }
     cfg = CloudConfig.from_env(env)
-    assert cfg.state_bucket == "music-dj-state"
-    assert cfg.audio_bucket == "music-dj-audio"
-    assert cfg.bind_host == "127.0.0.1"
+    assert cfg.state_bucket == DEFAULT_STATE_BUCKET
+    assert cfg.audio_bucket == DEFAULT_AUDIO_BUCKET
+    assert cfg.bind_host == DEFAULT_BIND_HOST
     assert cfg.hostname  # whatever socket.gethostname returns
 
 

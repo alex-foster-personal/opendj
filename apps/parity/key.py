@@ -11,7 +11,7 @@ from typing import Any
 
 from apps.analysis_bench.scorers.key_lane import weighted_score
 from apps.analysis_key import canon
-from apps.parity.figure import LaneFigure
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n, mean_of
 from apps.parity.lanes import DENOMINATOR_NAME
 
 _SENTINEL_SCALE_NAMES = frozenset({"All", "all", ""})
@@ -73,9 +73,9 @@ def score_key(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
             disagree_ids.append(sid)
             if score > 0.0:
                 related_ids.append(sid)
-    denominator_n = len(rows) - len(ungradable_ids)
-    scored_n = len(agree_ids) + len(disagree_ids)
-    mirex_mean = (sum(mirex) / len(mirex)) if mirex else None
+    denominator_n = lane_denominator_n(len(rows), len(ungradable_ids))
+    scored_n = lane_scored_n(len(agree_ids), len(disagree_ids))
+    mirex_mean = mean_of(mirex)
     return LaneFigure(
         lane="key",
         status="scored",

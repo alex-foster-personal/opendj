@@ -36,10 +36,22 @@ class ConflictBody(BaseModel):
     etag: str
 
 
-async def handle_not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
+def _error_response(
+    status_code: int,
+    *,
+    error: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> JSONResponse:
     return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content=ErrorBody(error="not_found", message=str(exc)).model_dump(),
+        status_code=status_code,
+        content=ErrorBody(error=error, message=message, details=details).model_dump(),
+    )
+
+
+async def handle_not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
+    return _error_response(
+        status.HTTP_404_NOT_FOUND, error="not_found", message=str(exc),
     )
 
 
@@ -57,56 +69,50 @@ async def handle_conflict(_request: Request, exc: ConflictError) -> JSONResponse
 async def handle_already_exists(
     _request: Request, exc: AlreadyExistsError,
 ) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content=ErrorBody(error="already_exists", message=str(exc)).model_dump(),
+    return _error_response(
+        status.HTTP_409_CONFLICT, error="already_exists", message=str(exc),
     )
 
 
 async def handle_smartlist_immutable(
     _request: Request, exc: SmartlistImmutableError,
 ) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=ErrorBody(
-            error="smartlist_immutable", message=str(exc),
-        ).model_dump(),
+    return _error_response(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        error="smartlist_immutable",
+        message=str(exc),
     )
 
 
 async def handle_slice_not_contiguous(
     _request: Request, exc: SliceNotContiguousError,
 ) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=ErrorBody(
-            error="slice_not_contiguous", message=str(exc),
-        ).model_dump(),
+    return _error_response(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        error="slice_not_contiguous",
+        message=str(exc),
     )
 
 
 async def handle_target_inside_slice(
     _request: Request, exc: TargetInsideSliceError,
 ) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=ErrorBody(
-            error="target_inside_slice", message=str(exc),
-        ).model_dump(),
+    return _error_response(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        error="target_inside_slice",
+        message=str(exc),
     )
 
 
 async def handle_bulk_limit(_request: Request, exc: BulkLimitError) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=ErrorBody(error="bulk_limit", message=str(exc)).model_dump(),
+    return _error_response(
+        status.HTTP_422_UNPROCESSABLE_ENTITY, error="bulk_limit", message=str(exc),
     )
 
 
 async def handle_backend_error(_request: Request, exc: BackendError) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=ErrorBody(error="invalid_patch", message=str(exc)).model_dump(),
+    return _error_response(
+        status.HTTP_422_UNPROCESSABLE_ENTITY, error="invalid_patch", message=str(exc),
     )
 
 
@@ -156,18 +162,19 @@ async def handle_rekordbox_writeback_disabled(
     code plus the mapped surface id, so an agent driving the API learns
     exactly which write surface it hit and why nothing happened.
     """
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content=ErrorBody(
-            error=exc.code, message=exc.message, details={"surface": exc.surface_id}
-        ).model_dump(),
+    return _error_response(
+        status.HTTP_403_FORBIDDEN,
+        error=exc.code,
+        message=exc.message,
+        details={"surface": exc.surface_id},
     )
 
 
 def precondition_required(message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-        content=ErrorBody(error="precondition_required", message=message).model_dump(),
+    return _error_response(
+        status.HTTP_428_PRECONDITION_REQUIRED,
+        error="precondition_required",
+        message=message,
     )
 
 

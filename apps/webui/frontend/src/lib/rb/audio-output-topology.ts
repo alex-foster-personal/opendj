@@ -6,7 +6,7 @@
  * or the Mixtour Pro's master 1/2 plus cue 3/4 layout.
  */
 
-import { DECK_IDS } from '$lib/player/constants';
+import { DECK_IDS, TRIM_MAX_GAIN } from '$lib/player/constants';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import type { DeckId } from '$lib/rb/deck-id';
 import type { MixerState } from '$lib/rb/mixer-types';
@@ -231,5 +231,114 @@ export function cueOnlyMonitoringActive(
 		DECK_IDS.some(
 			(deck) => mixer.channels[deck].cue_enabled && (decks[deck].playing || decks[deck].audible)
 		)
+	);
+}
+
+/** Linear master-path gain below which a silent master bus is the DJ's own
+ * doing rather than a dropout, -26 dB. The watchdog's RMS floor is 0.001, so
+ * a quiet passage through a nearly closed fader reads as silence well before
+ * the fader reaches zero; erring low here would stop a deck mid-set. */
+export const MIXER_COMMANDED_SILENCE_GAIN = 0.05;
+
+/** Commanded trim -> fader -> crossfader -> master gain for one deck. EQ is
+ * excluded: a full kill still passes signal outside its band. A deck routed
+ * out by `?extroute=` goes from its fader straight to the external merger,
+ * past the software crossfader and master gain: on its own output only trim
+ * and fader count, and on the internal master bus (`busOnly`) it carries
+ * nothing at all. A deck an active map leaves out is the reverse: it feeds
+ * only the internal bus, which no output carries in that mode. `masterCeilingGain` is the calibrated ceiling's fixed
+ * attenuation on the master gain node (1 when off), which a routed deck also
+ * skips. */
+function _commandedMasterPathGain(
+	mixer: MixerState,
+	deck: DeckId,
+	externallyRouted: ReadonlyMap<DeckId, number> | null,
+	masterCeilingGain: number,
+	busOnly: boolean
+): number {
+	const channel = mixer.channels[deck];
+	const postFader = channel.trim * TRIM_MAX_GAIN * channel.fader;
+	if (externallyRouted?.has(deck)) return busOnly ? 0 : postFader;
+	// Under an active map the device is fed only by the external merger, and
+	// `_masterGain` reaches no output (`wireAudioOutputTopology`), so a deck the
+	// map leaves out is heard nowhere: it still counts on the bus the watchdog
+	// reads, but never toward output-device liveness (Sol P1, PR #6829).
+	if (externallyRouted !== null && externallyRouted.size > 0 && !busOnly) return 0;
+	const x = mixer.crossfader;
+	let crossfade = 1;
+	if (channel.assign === 'A') crossfade = Math.cos((x * Math.PI) / 2);
+	else if (channel.assign === 'B') crossfade = Math.cos(((1 - x) * Math.PI) / 2);
+	return postFader * crossfade * mixer.master * masterCeilingGain;
+}
+
+/** Commanded linear gain from one deck to the internal master bus, the tap
+ * the silence watchdog reads: trim, fader, crossfader, master and the
+ * calibrated ceiling, or 0 for a deck routed out by `?extroute=`, which never
+ * feeds that bus. The source gate scales each deck's PCM by this, so it must
+ * see the same bus the watchdog measures (Codex P1, PR #6829). */
+export function masterBusPathGain(
+	mixer: MixerState,
+	deck: DeckId,
+	externallyRouted: ReadonlyMap<DeckId, number> | null,
+	masterCeilingGain: number
+): number {
+	return _commandedMasterPathGain(mixer, deck, externallyRouted, masterCeilingGain, true);
+}
+
+/** True when every live deck is held (near) silent by the mixer itself: trim,
+ * channel fader, crossfader, master volume or the calibrated master ceiling.
+ * A deck cued up with its fader down is playing by design, not dropping out.
+ * `externallyRouted` is the active `?extroute=` deck map, whose decks skip
+ * the crossfader, master and ceiling. */
+export function mixerHoldsLiveDecksSilent(
+	mixer: MixerState,
+	decks: Record<DeckId, DeckState>,
+	externallyRouted: ReadonlyMap<DeckId, number> | null,
+	masterCeilingGain: number,
+	busOnly = false
+): boolean {
+	const live = DECK_IDS.filter((deck) => decks[deck].playing || decks[deck].audible);
+	return (
+		live.length > 0 &&
+		live.every(
+			(deck) =>
+				_commandedMasterPathGain(mixer, deck, externallyRouted, masterCeilingGain, busOnly) <
+				MIXER_COMMANDED_SILENCE_GAIN
+		)
+	);
+}
+
+/** Every reason a silent master output is expected while a deck plays.
+ * Cue-only monitoring needs no term of its own: it requires a closed master,
+ * which `mixerHoldsLiveDecksSilent` already counts for every unrouted deck,
+ * while a live `?extroute=` deck skips master and cue and stays armed until
+ * its own trim or fader closes (Sol P1, PR #6829). `profile` is kept so this
+ * and `masterBusSilenceIsCommanded` take the same arguments. */
+export function masterSilenceIsCommanded(
+	_profile: DjOutputProfile | null,
+	mixer: MixerState,
+	decks: Record<DeckId, DeckState>,
+	externallyRouted: ReadonlyMap<DeckId, number> | null,
+	masterCeilingGain: number
+): boolean {
+	return mixerHoldsLiveDecksSilent(mixer, decks, externallyRouted, masterCeilingGain);
+}
+
+/** Every reason the internal master bus (`_masterGain`, the only tap the
+ * silence watchdog reads) is expected to be silent while a deck plays. Like
+ * `masterSilenceIsCommanded`, plus: a deck routed out by `?extroute=` never
+ * feeds that bus, so routed-only playback leaves it silent by design. Output
+ * device liveness keeps using `masterSilenceIsCommanded`, which still counts
+ * a routed deck as live (Codex P1, PR #6829). */
+export function masterBusSilenceIsCommanded(
+	profile: DjOutputProfile | null,
+	mixer: MixerState,
+	decks: Record<DeckId, DeckState>,
+	externallyRouted: ReadonlyMap<DeckId, number> | null,
+	masterCeilingGain: number
+): boolean {
+	return (
+		cueOnlyMonitoringActive(profile, mixer, decks) ||
+		mixerHoldsLiveDecksSilent(mixer, decks, externallyRouted, masterCeilingGain, true)
 	);
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ContextMenu from '../ContextMenu.svelte';
+	import ColumnChooserMenu, { type ColumnChooserPrefs } from './ColumnChooserMenu.svelte';
 	import { bindMenuItems, type BoundMenuItem, type MenuRunners } from '$lib/context-menu/bind';
 	import { loadMenuRegistry, menuRegistry, preloadMenuRegistry } from '$lib/context-menu/lazy.svelte';
 	import { isUsbTrackId } from '$lib/rb/track-source';
@@ -62,6 +63,8 @@
 		selectedOrderSet: Set<number>
 	): void {
 		if (!selectedOrderSet.has(row.order)) onselectrow(row);
+		// One right-click menu at a time: a track menu closes the header's chooser.
+		chooserAt = null;
 		menu = {
 			x,
 			y,
@@ -71,6 +74,15 @@
 	}
 
 	$effect(preloadMenuRegistry);
+
+	/** LIBUX-54: the header's column chooser, one of the table's right-click menus. */
+	let chooserAt = $state<{ x: number; y: number; prefs: ColumnChooserPrefs } | null>(null);
+
+	export function openColumnChooser(event: MouseEvent, prefs: ColumnChooserPrefs): void {
+		event.preventDefault();
+		menu = null;
+		chooserAt = { x: event.clientX, y: event.clientY, prefs };
+	}
 
 	export function open(event: MouseEvent, row: BrowserRow): void {
 		loadMenuRegistry(reportMenuLoadFailure);
@@ -135,6 +147,9 @@
 	}
 </script>
 
+{#if chooserAt !== null}
+	<ColumnChooserMenu x={chooserAt.x} y={chooserAt.y} prefs={chooserAt.prefs} onclose={() => (chooserAt = null)} />
+{/if}
 {#if menu !== null && menuRegistry() !== null}
 	<ContextMenu
 		items={trackMenuItems(menuRegistry()!, menu.row, menu.targetIds, menu.x, menu.y)}

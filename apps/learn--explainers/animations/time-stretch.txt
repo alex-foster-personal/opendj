@@ -1,0 +1,95 @@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 124 BPM     key lock: on
+
+   beat 1              2                   3                   4
+   |                   |                   |                   |
+   #~~~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~~~#~~~~~
+   |                   |                   |                   |
+
+   beat spacing: 20 columns
+   pitch: unchanged
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 126 BPM     key lock: on
+
+   beat 1             2                  3                  4
+   |                  |                  |                  |
+   #~~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~~#~~~~~~~~
+   |                  |                  |                  |
+
+   beat spacing: 19 columns
+   pitch: unchanged
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 128 BPM     key lock: on
+
+   beat 1            2                 3                 4
+   |                 |                 |                 |
+   #~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~#~~~~~~~~~~~
+   |                 |                 |                 |
+
+   beat spacing: 18 columns
+   pitch: unchanged
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 128 BPM     key lock: on
+
+   beat 1            2                 3                 4
+   |                 |                 |                 |
+   #~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~#~~~~~~~~~~~~~~~~~#~~~~~~~~~~~
+   |                 |                 |                 |
+
+   beat spacing: 18 columns
+   pitch: unchanged
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 124 BPM     key lock: off
+
+   beat 1              2                   3                   4
+   |                   |                   |                   |
+   #^^^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^^^#^^^^^
+   |                   |                   |                   |
+
+   beat spacing: 20 columns
+   pitch: unchanged (key lock off)
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 126 BPM     key lock: off
+
+   beat 1             2                  3                  4
+   |                  |                  |                  |
+   #^^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^^#^^^^^^^^
+   |                  |                  |                  |
+
+   beat spacing: 19 columns
+   pitch: +28 cents, rising
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 128 BPM     key lock: off
+
+   beat 1            2                 3                 4
+   |                 |                 |                 |
+   #^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^#^^^^^^^^^^^
+   |                 |                 |                 |
+
+   beat spacing: 18 columns
+   pitch: +55 cents, higher
+@@
+time-stretch: same 4-beat phrase, beats squeezed closer
+
+   tempo: 128 BPM     key lock: off
+
+   beat 1            2                 3                 4
+   |                 |                 |                 |
+   #^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^#^^^^^^^^^^^^^^^^^#^^^^^^^^^^^
+   |                 |                 |                 |
+
+   beat spacing: 18 columns
+   pitch: +55 cents, higher

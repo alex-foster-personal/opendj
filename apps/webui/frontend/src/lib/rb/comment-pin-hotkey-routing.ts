@@ -16,6 +16,16 @@ function _pointerOnlyPassthrough(target: EventTarget | null): boolean {
 	return target instanceof Element && target.hasAttribute(POINTER_ONLY_HOTKEY_PASSTHROUGH_ATTR);
 }
 
+/** Marks a widget that owns plain letter keys while it has focus (the
+ * compatible dropdown's T / M modes, PR #6574). Plain `m` inside it never
+ * arms a pin; the Cmd+Shift+M backup still does. */
+export const OWNS_LETTER_KEYS_ATTR = 'data-owns-letter-keys';
+
+function _insideLetterKeyOwner(target: EventTarget | null): boolean {
+	const closest = (target as { closest?: (selector: string) => unknown } | null)?.closest;
+	return typeof closest === 'function' && closest.call(target, `[${OWNS_LETTER_KEYS_ATTR}]`) != null;
+}
+
 /** A focused `<select>` counts as text entry for the shared shortcut gate
  * (Space opens it, letters type-ahead), but nobody TYPES prose into one, so
  * the comment hotkey claims `m` there (pin 28a5effd). */
@@ -32,14 +42,16 @@ function _isSelect(target: EventTarget | null): boolean {
  *
  * There is deliberately no Settings veto (pin 28a5effd): pins are placed on
  * the Settings overlay like on any other surface, and the placement layer
- * stacks above it. The only thing that keeps plain `m` from arming is real
- * text entry: a text input, a textarea, or a contenteditable.
+ * stacks above it. Plain `m` stands down only for real text entry (a text
+ * input, a textarea, or a contenteditable) and inside a widget marked with
+ * OWNS_LETTER_KEYS_ATTR.
  */
 export function resolveCommentPinHotkey(e: CommentPinKeyboardEventLike): CommentPinHotkeyAction {
 	if (e.key !== 'm' && e.key !== 'M') return null;
 	const backup = (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey;
 	if (backup) return 'arm';
 	if (e.metaKey || e.ctrlKey || e.altKey) return null;
+	if (_insideLetterKeyOwner(e.target)) return null;
 	if (_isSelect(e.target)) return 'arm';
 	if (isTextEntryTarget(e.target)) {
 		return _pointerOnlyPassthrough(e.target) ? 'arm' : null;

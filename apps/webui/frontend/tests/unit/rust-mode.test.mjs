@@ -21,6 +21,7 @@
  *   that ended the earlier load is applied to the new one then broken too
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -226,6 +227,112 @@ test('knobs follow acknowledged commands; unload clears the deck', () => {
 	assert.equal(st.stable_id, null);
 	assert.equal(st.title, null);
 	assert.equal(st.position_ms, 0);
+});
+
+test('restart to load engine only after this page has committed to a different engine', () => {
+	const store = new Map();
+	const prior = globalThis.window;
+	globalThis.window = {
+		localStorage: {
+			getItem: (k) => (store.has(k) ? store.get(k) : null),
+			setItem: (k, v) => store.set(k, String(v))
+		},
+		location: { search: '' }
+	};
+	const priorEnabled = m.rustMode.enabled;
+	const priorSaved = m.rustMode.saved;
+	const priorCommitted = m.rustMode.committed;
+	try {
+		m.rustMode.enabled = false;
+		m.rustMode.saved = null;
+		m.rustMode.committed = false;
+		m.setStoredEngineChoice('rust');
+		assert.equal(
+			m.engineRestartNeeded(),
+			false,
+			'before the page commits, the next load picks the engine up straight away'
+		);
+		m.rustMode.committed = true;
+		m.rustMode.enabled = false;
+		m.rustMode.saved = 'webaudio';
+		m.setStoredEngineChoice('rust');
+		assert.equal(m.engineRestartNeeded(), true);
+		m.setStoredEngineChoice('webaudio');
+		assert.equal(m.engineRestartNeeded(), false, 'changing back to the live engine clears it');
+	} finally {
+		m.rustMode.enabled = priorEnabled;
+		m.rustMode.saved = priorSaved;
+		m.rustMode.committed = priorCommitted;
+		globalThis.window = prior;
+	}
+});
+
+test('restart to load engine is one command: the Settings button and the agent bridge run it alike', () => {
+	// Sol P1, PR #6829: the restart was a click handler only, with no agent path.
+	assert.deepEqual(m.engineRestartTarget('http://h/performance?engine=rust&x=1'), {
+		kind: 'assign',
+		href: 'http://h/performance?x=1'
+	});
+	assert.deepEqual(m.engineRestartTarget('http://h/performance?x=1'), { kind: 'reload' });
+	const prior = globalThis.window;
+	const priorState = { enabled: m.rustMode.enabled, saved: m.rustMode.saved, committed: m.rustMode.committed };
+	const calls = [];
+	const store = new Map();
+	globalThis.window = {
+		localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) },
+		location: {
+			href: 'http://h/performance?engine=webaudio',
+			search: '?engine=webaudio',
+			assign: (href) => calls.push(['assign', href]),
+			reload: () => calls.push(['reload'])
+		}
+	};
+	try {
+		m.rustMode.committed = true;
+		m.rustMode.enabled = false;
+		m.rustMode.saved = 'webaudio';
+		m.setStoredEngineChoice('webaudio');
+		assert.throws(() => m.restartToLoadEngine(), /already the one this page runs/, 'a restart with nothing to load must refuse');
+		assert.deepEqual(calls, []);
+		m.setStoredEngineChoice('rust');
+		m.restartToLoadEngine();
+		assert.deepEqual(calls, [['assign', 'http://h/performance']], 'the ?engine= override would outrank the save');
+		const overlay = readFileSync(new URL('../../src/lib/components/settings/SettingsOverlay.svelte', import.meta.url), 'utf8');
+		assert.match(overlay, /restartToLoadEngine\(\);/, 'the Settings button no longer runs the shared command');
+		assert.doesNotMatch(overlay, /searchParams\.delete\('engine'\)/, 'the button keeps a private copy of the restart');
+	} finally {
+		Object.assign(m.rustMode, priorState);
+		globalThis.window = prior;
+	}
+});
+
+test('the engine bridge exists on every route, before the performance page commits an engine', async () => {
+	// Sol P1s, PR #6829: first installed from initRustMode() (performance only),
+	// then from rust-mode's own load, which arrives only with the deferred
+	// Settings prefetch. Now a tiny eager module the root layout imports.
+	const prior = globalThis.window;
+	const calls = [];
+	globalThis.window = {
+		localStorage: { getItem: () => null, setItem: () => {} },
+		location: { href: 'http://h/library', search: '', assign: (h) => calls.push(h), reload: () => calls.push('reload') }
+	};
+	try {
+		await loadTypeScriptModule('src/lib/audio-engine/engine-bridge.ts');
+		const bridge = globalThis.window.__mdtAudioEngine;
+		assert.ok(bridge, 'window.__mdtAudioEngine is missing once the eager bridge module loads');
+		assert.equal(await bridge.restartNeeded(), false, 'a page with no engine asked for a restart');
+		// restartToLoadEngine() is the only source of this error, so the bridge runs the button's restart.
+		await assert.rejects(
+			() => bridge.restartToLoad(),
+			/^Error: restartToLoadEngine: this page runs no engine/,
+			'the agent bridge runs a different restart than the Settings button'
+		);
+		assert.deepEqual(calls, []);
+		const layout = readFileSync(new URL('../../src/routes/+layout.svelte', import.meta.url), 'utf8');
+		assert.match(layout, /^\timport '\$lib\/audio-engine\/engine-bridge';$/m, 'the root layout must load the bridge eagerly');
+	} finally {
+		globalThis.window = prior;
+	}
 });
 
 test('Settings > Audio engine chooses the next load, Web Audio by default', async () => {

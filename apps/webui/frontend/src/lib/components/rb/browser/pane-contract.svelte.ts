@@ -461,10 +461,9 @@ export function rowIsRemix(row: BrowserRow): boolean {
 }
 
 // Vocals checkbox (VOCALS-FILTER-01): the three-way has-vocals rule lives in
-// ./vocals-filter; re-exported under the name BrowserPanel.svelte imports.
+// ./vocals-filter; applyLibraryFilters below applies it.
 export {
 	VOCALS_FILTER_MIN_LINES,
-	rowHasVocals as rowHasVocalLyrics,
 	vocalsFilterCounts,
 	vocalsFilterTitle
 } from './vocals-filter';
@@ -473,6 +472,42 @@ export {
 export function rowIsLocallyAvailable(row: BrowserRow): boolean {
 	if (row.is_streaming === true || row.spotify_pending === true) return false;
 	return row.file_exists === true;
+}
+
+import { applyLibraryKeyFilter } from '$lib/rb/library-key-filter';
+import { rowHasVocals } from './vocals-filter';
+export { applyLibraryKeyFilter };
+
+/** The selected row's stored key, looked up in each pool in order (search
+ * results, then the pane rows a search fallback may be showing), so a visible
+ * selected row is always found (Sol P1, #7743). Null when nothing matches. */
+export function selectedRowKeyIn(
+	selectedId: string | null,
+	pools: readonly (readonly BrowserRow[])[]
+): string | null {
+	if (selectedId === null) return null;
+	for (const pool of pools) {
+		const row = pool.find((r) => r.stable_id === selectedId);
+		if (row !== undefined) return row.key;
+	}
+	return null;
+}
+
+/** The library header's row filters (remixes, vocals, offline, keys) in one pass. */
+export function applyLibraryFilters(
+	rows: BrowserRow[],
+	prefs: {
+		remixes_filter: boolean;
+		vocals_filter: boolean;
+		available_offline_filter: boolean;
+		library_key_filter: readonly string[];
+	}
+): BrowserRow[] {
+	let out = rows;
+	if (prefs.remixes_filter) out = out.filter(rowIsRemix);
+	if (prefs.vocals_filter) out = out.filter(rowHasVocals);
+	if (prefs.available_offline_filter) out = out.filter(rowIsLocallyAvailable);
+	return applyLibraryKeyFilter(out, prefs.library_key_filter);
 }
 
 // ------------------------------------------------------- boot pane selection

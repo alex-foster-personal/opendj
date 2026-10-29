@@ -18,22 +18,47 @@ describe('usb import contracts (LIBMX-13)', () => {
 		assert.match(src, /importUsbVolume/);
 	});
 
-	it('LibraryNav mounts UsbPanel and starts USB watch', () => {
+	it('LibraryNav mounts UsbPanel on first open and starts USB watch', () => {
 		const src = readFileSync(
 			new URL('../../src/lib/components/rb/browser/LibraryNav.svelte', import.meta.url),
 			'utf8'
 		);
-		assert.match(src, /import UsbPanel/);
+		// Lazy: the panel renders nothing until opened, so it stays out of the
+		// /performance first-paint bundle and loads when usbTracker opens it.
+		assert.doesNotMatch(src, /import UsbPanel/);
+		assert.match(src, /import\('\.\.\/UsbPanel\.svelte'\)/);
+		assert.match(
+			src,
+			/loadUsbPanel\(\s*\(\) => \(usbTracker\.panelOpen = false\),\s*\(\) => \(usbTracker\.panelOpen = true\)\s*\)/
+		);
+		// The failure is visible with a Retry, not only in the console (Sol P1, PR #6223).
+		assert.match(src, /onfail\(\);[\s\S]{0,200}pushToast\(`The USB panel did not load: \$\{why\}`, 'error'[\s\S]{0,120}label: 'Retry',\s*handler: retry/);
+		// A failed chunk closes the panel so the next open retries (Sol P2, PR #6223).
+		assert.match(src, /usbPanelLoad = null;\s*onfail\(\);/);
+		assert.match(src, /\{#if UsbPanelView\}\s*<UsbPanelView \/>/);
 		assert.match(src, /startUsbWatch/);
 		assert.match(src, /stopUsbWatch/);
 	});
 
-	it('usb-import calls startFolderImport', () => {
+	it('usb-import calls startFolderImport and starts analysis', () => {
 		const src = readFileSync(
 			new URL('../../src/lib/rb/usb-import.ts', import.meta.url),
 			'utf8'
 		);
 		assert.match(src, /startFolderImport/);
+		assert.match(src, /startAnalysisQueueDrain/);
+		assert.match(src, /openUsbImportPlan/);
+	});
+
+	it('the import plan has a likely-next bar and a virtualized queue', () => {
+		const src = readFileSync(
+			new URL('../../src/lib/components/rb/UsbImportPlan.svelte', import.meta.url),
+			'utf8'
+		);
+		assert.match(src, /data-testid="usb-import-next-bar"/);
+		assert.match(src, /data-testid="usb-import-queue"/);
+		assert.match(src, /VirtualList/);
+		assert.match(src, /Only the rows in view are mounted/);
 	});
 
 	it('usb-tracker still has no api.POST', () => {

@@ -437,8 +437,7 @@ def _render(pr: PullRequest, follow_up_url: str | None = None) -> str:
         lines.append("BLOCKING (P0, or a human BLOCKING thread, not yet FIXED or REBUTTED and resolved):")
         lines += [_describe(t) for t in blocking]
     if pr.violations:
-        lines.append("")
-        lines.append("ILLEGAL DEBT-LOG (a P0 or human BLOCKING cannot be written off as debt):")
+        lines += ["", "ILLEGAL DEBT-LOG (a P0 or human BLOCKING cannot be written off as debt):"]
         lines += [_describe(t) for t in pr.violations]
     if pr.follow_ups:
         lines.append("")
@@ -506,6 +505,7 @@ def _as_json(
                     "blocks_merge": t.blocks_merge,
                     "follow_up": t.follow_up,
                     "debt_not_in_ledger": t.debt_not_in_ledger,
+                    "debt_anchor_missing": t.debt_anchor_missing,
                 }
                 for t in pr.threads
             ],

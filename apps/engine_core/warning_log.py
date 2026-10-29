@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from apps.engine_core.log_disk import rotation_allowed
+from apps.engine_core.utc_timestamps import utc_iso_ms
 
 MAX_BYTES = 5 * 1024 * 1024
 RETENTION_DAYS = 7
@@ -105,7 +106,7 @@ class _WarningJsonHandler(logging.Handler):
             "level": record.levelname,
             "logger": record.name,
             "message": message,
-            "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
+            "timestamp": utc_iso_ms(),
             **identity,
         }
         try:

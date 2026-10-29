@@ -42,6 +42,15 @@
 			"side": "top",
 			"otherSide": "top",
 			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
+			"other": "div.library-key-filter-pop > button.rb-lit-button.library-key-filter-trigger",
+			"count": 1,
+			"reason": "The library Key trigger (#7599) is a browser header control like nav-back and master-dd above, so its top border sits on .rb-browser's top border for the same BrowserPanel.svelte layout reason tracked on issue #5638. Remove this entry with that fix."
+		},
+		{
+			"kind": "double",
+			"side": "top",
+			"otherSide": "top",
+			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
 			"other": "span.explainer > label.rb-search",
 			"count": 1,
 			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."

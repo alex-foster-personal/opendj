@@ -247,7 +247,11 @@ def test_unmapped_rows_and_meta_read_file_tag_metadata_from_state(
     assert row["genre"] == "House"
     assert row["comments"] == "Imported from file tags"
     assert row["file_exists"] == body["file_exists"]
-    assert row["quality"] == body["quality"]
+    # The row's quality also carries the QLT grade (QLTSCAN-02); rb-meta's does not.
+    assert {k: v for k, v in row["quality"].items() if k != "grade"} == {
+        k: v for k, v in body["quality"].items() if k != "grade"
+    }
+    assert body["quality"].get("grade") is None
 
     listing_row = _rows_by_id(client)[LOCAL_ONLY]
     assert listing_row["genre"] == "House"

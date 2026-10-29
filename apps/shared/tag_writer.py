@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from apps.shared.numeric_coerce import coerce_optional
+
 POPM_EMAIL = "music-dj-tools@local"
 POPM_BUCKETS: dict[int, int] = {0: 0, 1: 51, 2: 102, 3: 153, 4: 204, 5: 255}
 
@@ -100,15 +102,6 @@ def _other_first(other: Mapping[str, Any], *keys: str) -> str | None:
     return None
 
 
-def _safe_float(v: Any) -> float | None:
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
 def _safe_int(v: Any) -> int | None:
     if v is None or v == "":
         return None
@@ -145,7 +138,7 @@ def read_tags(path: Path) -> TagRead:
         artist=(tag.artist or None),
         album=(tag.album or None),
         genre=(tag.genre or None),
-        bpm=_safe_float(_other_first(other, "bpm", "tbpm")),
+        bpm=coerce_optional(_other_first(other, "bpm", "tbpm"), float),
         key_openkey=_other_first(other, "initialkey", "key", "tkey"),
         key_camelot=_other_first(other, "camelot"),
         energy=_safe_int(_other_first(other, "energy")),

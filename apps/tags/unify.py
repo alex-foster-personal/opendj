@@ -94,9 +94,7 @@ def _valid_energy(v: int | None) -> bool:
 
 
 def _valid_key(v: str | None) -> bool:
-    if v is None or not v.strip():
-        return False
-    return True
+    return bool(v and v.strip())
 
 
 SANITY: dict[str, Any] = {
@@ -126,6 +124,42 @@ def _get_value(tr: TagRead, field_name: str) -> Any:
     return getattr(tr, field_name)
 
 
+def _source_lookup(sources: TagSources) -> dict[str, TagRead | None]:
+    """Map public source names to the corresponding ``TagSources`` slot."""
+    return {name: getattr(sources, name) for name in SOURCES}
+
+
+def _resolve_field(
+    field_name: str,
+    chain: tuple[str, ...],
+    src_lookup: dict[str, TagRead | None],
+    *,
+    now_iso: str,
+) -> tuple[Any | None, Provenance | None]:
+    """Walk ``chain``; return the first valid value and its provenance, if any."""
+    attempts: list[tuple[str, bool]] = []
+    winner_source: str | None = None
+    for src in chain:
+        tr = src_lookup.get(src)
+        ok = _has_value(tr, field_name)
+        attempts.append((src, ok))
+        if ok and winner_source is None:
+            winner_source = src
+    if winner_source is None:
+        return None, None
+    winner_tr = src_lookup[winner_source]
+    if winner_tr is None:
+        return None, None
+    value = _get_value(winner_tr, field_name)
+    provenance = Provenance(
+        source=winner_source,
+        confidence=SOURCE_CONFIDENCE[winner_source],
+        modified_at=now_iso,
+        attempts=tuple(attempts),
+    )
+    return value, provenance
+
+
 # -------------------------------------------------------------- main op
 
 
@@ -140,36 +174,19 @@ def unify(
     Deterministic: same input -> same output (including attempts log).
     """
     now_iso = (now or datetime.now(UTC)).isoformat()
-    src_lookup: dict[str, TagRead | None] = {
-        "rb": sources.rb,
-        "mik": sources.mik,
-        "djay": sources.djay,
-        "file": sources.file,
-        "filename": sources.filename,
-    }
+    src_lookup = _source_lookup(sources)
 
     chosen: dict[str, Any] = {}
     provenance: dict[str, Provenance] = {}
 
     for field_name, chain in policy.by_field.items():
-        attempts: list[tuple[str, bool]] = []
-        winner_source: str | None = None
-        for src in chain:
-            tr = src_lookup.get(src)
-            ok = _has_value(tr, field_name)
-            attempts.append((src, ok))
-            if ok and winner_source is None:
-                winner_source = src
-        if winner_source is None:
-            continue
-        value = _get_value(src_lookup[winner_source], field_name)  # type: ignore[arg-type]
-        chosen[field_name] = value
-        provenance[field_name] = Provenance(
-            source=winner_source,
-            confidence=SOURCE_CONFIDENCE[winner_source],
-            modified_at=now_iso,
-            attempts=tuple(attempts),
+        value, field_provenance = _resolve_field(
+            field_name, chain, src_lookup, now_iso=now_iso
         )
+        if field_provenance is None:
+            continue
+        chosen[field_name] = value
+        provenance[field_name] = field_provenance
 
     return UnifiedPlan(
         tags=UnifiedTags(**chosen),

@@ -30,6 +30,7 @@ from collections.abc import Iterable
 
 from apps.shared.normalised import NormalisedCue
 from apps.shared.rb_color_palette import rgb_to_color_index
+from apps.sync.tsaf_writer import locate_rating_tag_in_tail
 
 _CUE_CLASS = b"ADCMediaItemCuePoint"
 _LOOP_CLASS = b"ADCMediaItemLoopRegion"
@@ -185,10 +186,9 @@ def patch_rating(blob: bytes, rating: int) -> bytes:
     if not blob:
         return blob
     rating = max(0, min(5, int(rating)))
-    tail_start = max(0, len(blob) - 30)
-    for i in range(tail_start, len(blob) - 1):
-        if blob[i] == 0x0F and 1 <= blob[i + 1] <= 5:
-            return blob[: i + 1] + bytes([rating]) + blob[i + 2 :]
+    tag_offset = locate_rating_tag_in_tail(blob)
+    if tag_offset is not None:
+        return blob[: tag_offset + 1] + bytes([rating]) + blob[tag_offset + 2 :]
     # Insert new.
     insert_at = _find_insertion_point(blob)
     new_field = _emit_uint8(rating) + _emit_string("rating")

@@ -187,7 +187,9 @@ class GroqClient:
 
 def make_client(env: dict[str, str] | None = None):
     """Factory -- pick STT backend per ``$STT_BACKEND``."""
-    env = env if env is not None else dict(os.environ)
+    from apps.voice.settings import coalesce_env
+
+    env = coalesce_env(env)
     backend = (env.get("STT_BACKEND") or "whisper_cpp").lower()
     if backend in ("whisper_cpp", "whisper-cpp", "whisper"):
         url = env.get("VOICE_WHISPER_URL", DEFAULT_WHISPER_URL)

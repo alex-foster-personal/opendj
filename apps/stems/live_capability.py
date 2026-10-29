@@ -26,7 +26,6 @@ import json
 import math
 import platform
 import re
-import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -34,7 +33,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
-from apps.native_tools import SYSCTL
+from apps.native_tools import sysctl_n
 
 CAPABILITY_FILE_NAME: Final[str] = "live_stems_capability.json"
 CAPABILITY_SCHEMA: Final[int] = 1
@@ -184,13 +183,7 @@ def detect_installed_machine_name() -> str:
     system = platform.system()
     if system != "Darwin":
         return f"{system} {platform.machine()}"
-    result = subprocess.run(
-        [SYSCTL, "-n", "machdep.cpu.brand_string"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=2,
-    )
+    result = sysctl_n("machdep.cpu.brand_string")
     name = result.stdout.strip()
     if result.returncode != 0 or not name:
         detail = result.stderr.strip() or f"exit {result.returncode}"

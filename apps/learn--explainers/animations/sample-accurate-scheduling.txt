@@ -1,0 +1,59 @@
+scheduling: a sample-indexed cue hits the grid, a JS timer lands late
+
+  grid      |-------|-------|-------|-------|-------|-------|-------|
+
+  scheduled                         |
+                                    ^ cue @ sample 48050: on the line
+
+  timer                                |
+                                       ^ setTimeout: +1.5 ms late
+
+  the scheduled cue lands every time; the timer jitters
+@@
+scheduling: a sample-indexed cue hits the grid, a JS timer lands late
+
+  grid      |-------|-------|-------|-------|-------|-------|-------|
+
+  scheduled                         |
+                                    ^ cue @ sample 48050: on the line
+
+  timer                                    |
+                                           ^ setTimeout: +3.5 ms late
+
+  the scheduled cue lands every time; the timer jitters
+@@
+scheduling: a sample-indexed cue hits the grid, a JS timer lands late
+
+  grid      |-------|-------|-------|-------|-------|-------|-------|
+
+  scheduled                         |
+                                    ^ cue @ sample 48050: on the line
+
+  timer                               |
+                                      ^ setTimeout: +1.0 ms late
+
+  the scheduled cue lands every time; the timer jitters
+@@
+scheduling: a sample-indexed cue hits the grid, a JS timer lands late
+
+  grid      |-------|-------|-------|-------|-------|-------|-------|
+
+  scheduled                         |
+                                    ^ cue @ sample 48050: on the line
+
+  timer                                  |
+                                         ^ setTimeout: +2.5 ms late
+
+  the scheduled cue lands every time; the timer jitters
+@@
+scheduling: a sample-indexed cue hits the grid, a JS timer lands late
+
+  grid      |-------|-------|-------|-------|-------|-------|-------|
+
+  scheduled                         |
+                                    ^ cue @ sample 48050: on the line
+
+  timer                                      |
+                                             ^ setTimeout: +4.5 ms late
+
+  the scheduled cue lands every time; the timer jitters

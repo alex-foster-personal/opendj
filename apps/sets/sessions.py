@@ -1,17 +1,19 @@
 """Session discovery helpers.
 
-Plan 12-03 Step 2. Scans ``data/sets/`` for session directories with
+Plan 12-03 Step 2. Scans ``(private path)/`` for session directories with
 a ``manifest.json`` and returns summary/full-view dataclasses. Used
 by the CLI ``list``/``replay`` commands and by :mod:`apps.sets.api`.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from . import paths as sets_paths
+from .classify import read_transitions
+from .label import read_labels
 from .manifest import Manifest, read_manifest
 
 
@@ -42,13 +44,23 @@ def _duration_from_manifest(m: Manifest) -> float | None:
     if m.started_at is None or m.ended_at is None:
         return None
     try:
-        from datetime import datetime
-
         started = datetime.fromisoformat(m.started_at)
         ended = datetime.fromisoformat(m.ended_at)
         return max(0.0, (ended - started).total_seconds())
     except ValueError:
         return None
+
+
+def _session_summary(manifest: Manifest, session_dir: Path) -> SessionSummary:
+    return SessionSummary(
+        session_id=manifest.session_id,
+        started_at=manifest.started_at,
+        ended_at=manifest.ended_at,
+        duration_s=_duration_from_manifest(manifest),
+        event_count=int(manifest.event_count or 0),
+        transition_count=_transition_count(session_dir),
+        share_state=manifest.share_state,
+    )
 
 
 def _transition_count(session_dir: Path) -> int:
@@ -73,17 +85,7 @@ def list_sessions(*, sets_root: Path | None = None) -> list[SessionSummary]:
         if not (session_dir / "manifest.json").exists():
             continue
         manifest = read_manifest(session_dir)
-        out.append(
-            SessionSummary(
-                session_id=manifest.session_id,
-                started_at=manifest.started_at,
-                ended_at=manifest.ended_at,
-                duration_s=_duration_from_manifest(manifest),
-                event_count=int(manifest.event_count or 0),
-                transition_count=_transition_count(session_dir),
-                share_state=manifest.share_state,
-            )
-        )
+        out.append(_session_summary(manifest, session_dir))
     return sorted(out, key=lambda s: s.started_at, reverse=True)
 
 
@@ -94,38 +96,9 @@ def get_session(session_id: str, *, sets_root: Path | None = None) -> Session | 
     if not (session_dir / "manifest.json").exists():
         return None
     manifest = read_manifest(session_dir)
-    summary = SessionSummary(
-        session_id=manifest.session_id,
-        started_at=manifest.started_at,
-        ended_at=manifest.ended_at,
-        duration_s=_duration_from_manifest(manifest),
-        event_count=int(manifest.event_count or 0),
-        transition_count=_transition_count(session_dir),
-        share_state=manifest.share_state,
-    )
-    transitions: list[dict[str, Any]] = []
-    tpath = session_dir / "transitions.jsonl"
-    if tpath.exists():
-        for line in tpath.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                transitions.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    labels: dict[int, str] = {}
-    lpath = session_dir / "labels.jsonl"
-    if lpath.exists():
-        for line in lpath.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            labels[int(row["idx"])] = str(row["class"])
+    summary = _session_summary(manifest, session_dir)
+    transitions = read_transitions(manifest.session_id, sets_root=root)
+    labels = read_labels(manifest.session_id, sets_root=root)
     return Session(
         summary=summary,
         manifest=manifest.to_dict(),

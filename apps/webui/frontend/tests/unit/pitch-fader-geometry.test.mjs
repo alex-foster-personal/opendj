@@ -355,8 +355,21 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		// knows the uncalibrated default scale (meter-tap stays deck-agnostic
 		// and policy-free by design - see meter-tap.ts's module doc).
 		assert.doesNotMatch(meter, /reading\.segments/);
-		assert.match(meter, /segmentsLitFromDbfs\(reading\.db, thresholds\)/);
-		assert.match(meter, /reading\.db/);
+		// Heard level, not the raw pre-crossfader tap: center crossfade is
+		// -3 dB, which is the red line, so the raw tap paints red while the
+		// master meter stays amber. Pin 4cdff93a094c. The heard level is the
+		// worklet's post-crossfader peak through its own ballistics, never the
+		// pre-crossfader reading scaled by the crossfader at read time, which
+		// rewrote a decaying bar when the crossfader moved (Sol P1, PR #6829).
+		assert.match(meter, /const heardDb = reading\.heardDb;/);
+		assert.doesNotMatch(meter, /channelDbHeardOnMaster\(/);
+		assert.match(meter, /segmentsLitFromDbfs\(heardDb, thresholds\)/);
+		// The clip pip judges the tap's post-crossfader clips, measured on the
+		// audio thread, not the decaying ballistic heardDb (Sol P1, PR #6829).
+		assert.match(meter, /pipCursor\.frame\(reading\.heardClipSeq\)/);
+		assert.doesNotMatch(meter, /isClipping\(heardDb\)/);
+		assert.doesNotMatch(meter, /clipped = reading\.clipped/);
+		assert.doesNotMatch(meter, /reading\.db\b/);
 	});
 
 	it('labels the tap position honestly and does not claim speaker risk', () => {
@@ -379,7 +392,7 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 			fileURLToPath(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url)),
 			'utf8'
 		);
-		assert.match(graph, /meterSources\.push\(\{ tap, source: fader \}\)/);
+		assert.match(graph, /meterSources\.push\(\{ tap, source: fader, /);
 		assert.match(engine, /_setParam\(nodes\.fader\.gain, value\)/);
 		assert.doesNotMatch(graph, /meterSources\.push\(\{ tap, source: high \}\)/);
 	});
@@ -439,7 +452,7 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 		// on its way down. A numeric floor alone lets that be captured.
 		assert.match(stripSrc, /if \(!playing\) return;/);
 		assert.match(stripSrc, /if \(db <= METER_FLOOR_DBFS\) return;/);
-		assert.match(stripSrc, /import \{ METER_FLOOR_DBFS \} from '\$lib\/rb\/meter-math'/);
+		assert.match(stripSrc, /import \{[^}]*\bMETER_FLOOR_DBFS\b[^}]*\} from '\$lib\/rb\/meter-math'/);
 		// The refusal must be explained where the user can see it.
 		assert.match(stripSrc, /stopped or silent channel captures nothing/i);
 	});

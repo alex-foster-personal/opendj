@@ -121,8 +121,15 @@ test('no sort, filter or search reads the deferred fields', () => {
 	// The Vocals checkbox (VOCALS-FILTER-01) is the one deliberate reader of
 	// `vocals`: a region-less index row is "not analyzed yet", never "no vocals",
 	// so it can only be missing from the filter, never wrongly in it.
-	const vocalIds = new Set(full.filter(contract.rowHasVocalLyrics).map((r) => r.stable_id));
-	assert.ok(index.filter(contract.rowHasVocalLyrics).every((r) => vocalIds.has(r.stable_id)));
+	const vocalsOnly = (rows) =>
+		contract.applyLibraryFilters(rows, {
+			remixes_filter: false,
+			vocals_filter: true,
+			available_offline_filter: false,
+			library_key_filter: []
+		});
+	const vocalIds = new Set(vocalsOnly(full).map((r) => r.stable_id));
+	assert.ok(vocalsOnly(index).every((r) => vocalIds.has(r.stable_id)));
 	const counts = contract.vocalsFilterCounts(index);
 	assert.equal(counts.without, 0, 'deferred vocals never count as no vocals');
 });

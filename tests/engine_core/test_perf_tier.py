@@ -9,8 +9,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.engine_core.host_info import HOST_INFO_STATE_ATTR, HostIdentity
-from apps.engine_core.perf_tier_api import PERF_TIER_PATH, add_perf_tier_route
+from apps.engine_core.host_info import (
+    CODE_HOST_INFO_UNAVAILABLE,
+    HOST_INFO_STATE_ATTR,
+    HostIdentity,
+)
+from apps.engine_core.perf_tier_api import (
+    CODE_PERF_TIER_UNAVAILABLE,
+    PERF_TIER_PATH,
+    add_perf_tier_route,
+)
 from apps.shared.perf_tier import (
     CanaryThresholdsUnmeasured,
     HostFacts,
@@ -145,6 +153,10 @@ def test_perf_tier_http_503_when_auto_and_host_failed(tmp_path: Path) -> None:
     client = TestClient(app)
     response = client.get(PERF_TIER_PATH)
     assert response.status_code == 503
+    body = response.json()
+    assert body["error"] == CODE_PERF_TIER_UNAVAILABLE
+    assert "psutil broke" in body["message"]
+    assert body["details"] == {"host_error": CODE_HOST_INFO_UNAVAILABLE}
 
 
 @pytest.mark.requirement("PERFMODE-01")

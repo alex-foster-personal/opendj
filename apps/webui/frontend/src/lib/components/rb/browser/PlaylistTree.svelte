@@ -32,6 +32,7 @@
 	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { prefetchPlaylistFirstPage } from '$lib/rb/library-playlist-page-prefetch';
+	import { collapse } from '$lib/motion/collapse';
 
 	let {
 		nodes,
@@ -288,6 +289,7 @@
 			data-testid="playlist-folder"
 			role="button"
 			tabindex="0"
+			aria-expanded={playlistsOpen}
 			onclick={() => (playlistsOpen = !playlistsOpen)}
 			onkeydown={(e) => {
 				if (e.key === 'Enter') playlistsOpen = !playlistsOpen;
@@ -315,101 +317,105 @@
 			{/if}
 		</div>
 		{#if playlistsOpen}
-			<PlaylistFolderStates
-				nodeCount={nodes.length}
-				{playlistsLoading}
-				{playlistsError}
-				{hiddenBrokenPlaylistCount}
-				oncreate={oncreateplaylist ? () => void rename.createAndRename() : undefined}
-			/>
-			{#each nodes as node (node.playlist_id)}
-				<div
-					class="row child"
-					data-testid="playlist-row"
-					class:selected={selectedId === node.playlist_id}
-					class:broken={node.mostly_broken}
-					title={node.mostly_broken ? formatMostlyBrokenTooltip() : undefined}
-					class:drop-target={dropTargetId === node.playlist_id}
-					class:drop-before={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'before'}
-					class:drop-after={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'after'}
-					class:moving={movingPlaylistId === node.playlist_id}
-					class:tint-deck={_tintOf(node) === 'deck'}
-					class:tint-multi={_tintOf(node) === 'multi'}
-					role="button"
-					tabindex="0"
-					draggable="true"
-					use:foldTracker.bindSelectedRow={selectedId === node.playlist_id}
-					onpointerenter={() => { if (node.kind === 'playlist') prefetchPlaylistFirstPage(node.playlist_id); }}
-					onpointerdown={() => { if (node.kind === 'playlist') prefetchPlaylistFirstPage(node.playlist_id); }}
-					onclick={() => onselect(node)}
-					onkeydown={(e) => { _rowKeydown(e, node); treeContextMenu?.openFromKeyboard(e, 'playlist', node); }}
-					oncontextmenu={(e) => treeContextMenu?.open(e, 'playlist', node)}
-					ondragstart={(e) => _onPlaylistDragStart(e, node)}
-					ondragover={(e) => _onTrackDragOver(e, node)}
-					ondragleave={() => _onTrackDragLeave(node)}
-					ondrop={(e) => _onTrackDrop(e, node)}
-					ondragend={_endReorderDrag}
-				>
-					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-						<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
-					</svg>
-					{#if rename.editingId === node.playlist_id}
-						<input
-							bind:this={rename.inputEl}
-							class="rename-input"
-							type="text"
-							value={rename.editDraft}
-							aria-label="Rename playlist"
-							onclick={(e) => e.stopPropagation()}
-							onmousedown={(e) => e.stopPropagation()}
-							oninput={(e) => (rename.editDraft = e.currentTarget.value)}
-							onkeydown={(e) => rename.onKeydown(e)}
-							onblur={() => void rename.commit()}
-						/>
-					{:else}
-						<span class="name" title={node.mostly_broken ? formatMostlyBrokenTooltip() : node.name}>{node.name}</span>
-					{/if}
-					{#if onrenameplaylist}
-						<button
-							type="button"
-							class="pl-action dim"
-							title="Rename playlist"
-							aria-label="Rename playlist"
-							onclick={(e) => {
-								e.stopPropagation();
-								void rename.begin(node);
-							}}
+			<div class="collapse" in:collapse out:collapse>
+				<div class="collapse-inner">
+					<PlaylistFolderStates
+						nodeCount={nodes.length}
+						{playlistsLoading}
+						{playlistsError}
+						{hiddenBrokenPlaylistCount}
+						oncreate={oncreateplaylist ? () => void rename.createAndRename() : undefined}
+					/>
+					{#each nodes as node (node.playlist_id)}
+						<div
+							class="row child"
+							data-testid="playlist-row"
+							class:selected={selectedId === node.playlist_id}
+							class:broken={node.mostly_broken}
+							title={node.mostly_broken ? formatMostlyBrokenTooltip() : undefined}
+							class:drop-target={dropTargetId === node.playlist_id}
+							class:drop-before={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'before'}
+							class:drop-after={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'after'}
+							class:moving={movingPlaylistId === node.playlist_id}
+							class:tint-deck={_tintOf(node) === 'deck'}
+							class:tint-multi={_tintOf(node) === 'multi'}
+							role="button"
+							tabindex="0"
+							draggable="true"
+							use:foldTracker.bindSelectedRow={selectedId === node.playlist_id}
+							onpointerenter={() => { if (node.kind === 'playlist') prefetchPlaylistFirstPage(node.playlist_id); }}
+							onpointerdown={() => { if (node.kind === 'playlist') prefetchPlaylistFirstPage(node.playlist_id); }}
+							onclick={() => onselect(node)}
+							onkeydown={(e) => { _rowKeydown(e, node); treeContextMenu?.openFromKeyboard(e, 'playlist', node); }}
+							oncontextmenu={(e) => treeContextMenu?.open(e, 'playlist', node)}
+							ondragstart={(e) => _onPlaylistDragStart(e, node)}
+							ondragover={(e) => _onTrackDragOver(e, node)}
+							ondragleave={() => _onTrackDragLeave(node)}
+							ondrop={(e) => _onTrackDrop(e, node)}
+							ondragend={_endReorderDrag}
 						>
-							<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-								<path d={PENCIL_PATH} fill="none" stroke="currentColor" stroke-width="2" />
+							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+								<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
 							</svg>
-						</button>
-					{/if}
-					{#if ondeleteplaylist}
-						<button
-							type="button"
-							class="pl-action dim"
-							title="Delete playlist"
-							onclick={(e) => {
-								e.stopPropagation();
-								ondeleteplaylist(node);
-							}}
-						>
-							×
-						</button>
-					{/if}
-					{#if selectedId === node.playlist_id}
-						<span class="badge badge-plus" aria-hidden="true">+</span>
-					{/if}
-					<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
+							{#if rename.editingId === node.playlist_id}
+								<input
+									bind:this={rename.inputEl}
+									class="rename-input"
+									type="text"
+									value={rename.editDraft}
+									aria-label="Rename playlist"
+									onclick={(e) => e.stopPropagation()}
+									onmousedown={(e) => e.stopPropagation()}
+									oninput={(e) => (rename.editDraft = e.currentTarget.value)}
+									onkeydown={(e) => rename.onKeydown(e)}
+									onblur={() => void rename.commit()}
+								/>
+							{:else}
+								<span class="name" title={node.mostly_broken ? formatMostlyBrokenTooltip() : node.name}>{node.name}</span>
+							{/if}
+							{#if onrenameplaylist}
+								<button
+									type="button"
+									class="pl-action dim"
+									title="Rename playlist"
+									aria-label="Rename playlist"
+									onclick={(e) => {
+										e.stopPropagation();
+										void rename.begin(node);
+									}}
+								>
+									<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+										<path d={PENCIL_PATH} fill="none" stroke="currentColor" stroke-width="2" />
+									</svg>
+								</button>
+							{/if}
+							{#if ondeleteplaylist}
+								<button
+									type="button"
+									class="pl-action dim"
+									title="Delete playlist"
+									onclick={(e) => {
+										e.stopPropagation();
+										ondeleteplaylist(node);
+									}}
+								>
+									×
+								</button>
+							{/if}
+							{#if selectedId === node.playlist_id}
+								<span class="badge badge-plus" aria-hidden="true">+</span>
+							{/if}
+							<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
+						</div>
+						{#if rename.createdId === node.playlist_id && node.track_count === 0}
+							<div class="row child hint" data-testid="playlist-new-hint">
+								Drag tracks or a folder here to add music
+							</div>
+						{/if}
+					{/each}
+					<PlaylistHiddenBrokenNotice {hiddenBrokenPlaylistCount} />
 				</div>
-				{#if rename.createdId === node.playlist_id && node.track_count === 0}
-					<div class="row child hint" data-testid="playlist-new-hint">
-						Drag tracks or a folder here to add music
-					</div>
-				{/if}
-			{/each}
-			<PlaylistHiddenBrokenNotice {hiddenBrokenPlaylistCount} />
+			</div>
 		{/if}
 		<RecentlyDeletedFolder />
 		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
@@ -568,6 +574,15 @@
 		color: var(--rb-text-dim);
 		font-variant-numeric: tabular-nums;
 	}
+	/* Shared collapse rule ($lib/motion/collapse.ts): the transition animates
+	 * this grid's single row from 0fr to 1fr; the inner block clips while it does. */
+	.collapse {
+		display: grid;
+	}
+	.collapse-inner {
+		min-height: 0;
+		overflow: hidden;
+	}
 	.disclosure {
 		flex: none;
 		display: inline-block;
@@ -577,6 +592,11 @@
 	}
 	.disclosure.open {
 		transform: rotate(90deg);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.disclosure {
+			transition: none;
+		}
 	}
 	.badge {
 		flex: none;

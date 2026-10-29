@@ -1,0 +1,64 @@
+beam search: grow candidate transitions, keep only the best K each level
+  K = 3: keep the best 3 at every level, x = pruned
+
+  level 1               level 2               level 3
+
+ S
+
+
+
+
+
+  start: one empty set
+@@
+beam search: grow candidate transitions, keep only the best K each level
+  K = 3: keep the best 3 at every level, x = pruned
+
+  level 1               level 2               level 3
+
+ S --+-- a .90  keep
+     +-- b .80  keep
+     +-- c .70  keep
+     +-- d .30  x
+     +-- e .20  x
+
+  level 1: 5 candidates, keep 3
+@@
+beam search: grow candidate transitions, keep only the best K each level
+  K = 3: keep the best 3 at every level, x = pruned
+
+  level 1               level 2               level 3
+
+ S --+-- a .90  keep     -- a f 1.75  keep
+     +-- b .80  keep     -- a g 1.40  x
+     +-- c .70  keep     -- b h 1.70  keep
+     +-- d .30  x        -- b i 1.10  x
+     +-- e .20  x        -- c j 1.65  keep
+
+  level 2: expand the 3, keep best 3
+@@
+beam search: grow candidate transitions, keep only the best K each level
+  K = 3: keep the best 3 at every level, x = pruned
+
+  level 1               level 2               level 3
+
+ S --+-- a .90  keep     -- a f 1.75  keep     -- a f k 2.60
+     +-- b .80  keep     -- a g 1.40  x        -- a f l 2.10  x
+     +-- c .70  keep     -- b h 1.70  keep     -- b h m 2.70  best
+     +-- d .30  x        -- b i 1.10  x        -- b h n 2.00  x
+     +-- e .20  x        -- c j 1.65  keep     -- c j o 2.40
+
+  level 3: expand again, keep best 3
+@@
+beam search: grow candidate transitions, keep only the best K each level
+  K = 3: keep the best 3 at every level, x = pruned
+
+  level 1               level 2               level 3
+
+ S --+-- a .90  keep     -- a f 1.75  keep     -- a f k 2.60
+     +-- b .80  keep     -- a g 1.40  x        -- a f l 2.10  x
+     +-- c .70  keep     -- b h 1.70  keep     -- b h m 2.70  best
+     +-- d .30  x        -- b i 1.10  x        -- b h n 2.00  x
+     +-- e .20  x        -- c j 1.65  keep     -- c j o 2.40
+
+  winner: S b h m at 2.70

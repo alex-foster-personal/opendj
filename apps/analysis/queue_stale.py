@@ -16,8 +16,9 @@ thrown away because its dependency moved.
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
 from typing import Any
+
+from .time_iso import utc_now_iso
 
 #: Why a record went stale.
 STALE_DEPENDENCY_MOVED: str = "dependency_record_changed"
@@ -43,10 +44,6 @@ def ensure_stale_table(conn: sqlite3.Connection) -> None:
         conn.execute(sql)
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
 #-----------------------------------------------------------------------------
 # staleness
 #-----------------------------------------------------------------------------
@@ -68,7 +65,7 @@ def mark_stale(
         ON CONFLICT(stable_id, lane, backend, backend_version) DO UPDATE SET
             reason = excluded.reason, detected_at = excluded.detected_at
         """,
-        (stable_id, lane, backend, backend_version, reason, _now_iso()),
+        (stable_id, lane, backend, backend_version, reason, utc_now_iso()),
     )
 
 

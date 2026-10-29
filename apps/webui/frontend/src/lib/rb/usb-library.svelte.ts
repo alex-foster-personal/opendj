@@ -32,7 +32,7 @@ import { pruneSelection } from '$lib/components/rb/browser/pane-row-selection';
 import type { BrowserRow, PaneStore } from '$lib/components/rb/browser/pane-contract.svelte';
 import { fetchRbJson, RbApiError } from './api-rb-json';
 import type { PlaylistNode } from './library-types';
-import { usbTracker, type UsbVolumeKnown } from './usb-tracker.svelte';
+import { noteUsbLibraryRead, usbTracker, type UsbVolumeKnown } from './usb-tracker.svelte';
 import {
 	buildUsbTree,
 	parseUsbLibraryWire,
@@ -212,6 +212,10 @@ async function _readLibrary(volumeUuid: string, epoch: number): Promise<UsbLibra
 			trackCount: library.tracks.length,
 			readMs: library.read_ms
 		});
+		noteUsbLibraryRead(`vol:${volumeUuid}`, {
+			state: 'ok',
+			trackCount: library.tracks.length
+		});
 		return library;
 	} catch (exc) {
 		const error = _stickError(exc);
@@ -220,6 +224,11 @@ async function _readLibrary(volumeUuid: string, epoch: number): Promise<UsbLibra
 			// served as if the stick had just answered.
 			_libraries.delete(volumeUuid);
 			_setView(volumeUuid, _errorView(error));
+			noteUsbLibraryRead(`vol:${volumeUuid}`, {
+				state: 'failed',
+				code: error.code,
+				detail: error.message
+			});
 		}
 		throw error;
 	}
@@ -233,7 +242,13 @@ export function openUsbStick(volume: Pick<UsbVolumeKnown, 'id'>): void {
 	try {
 		volumeUuid = usbVolumeUuid(volume.id);
 	} catch (exc) {
-		usbLibrary.sticks[volume.id] = _errorView(_stickError(exc));
+		const error = _stickError(exc);
+		usbLibrary.sticks[volume.id] = _errorView(error);
+		noteUsbLibraryRead(volume.id, {
+			state: 'failed',
+			code: error.code,
+			detail: error.message
+		});
 		return;
 	}
 	watchUsbVolumes();

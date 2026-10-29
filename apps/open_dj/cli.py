@@ -43,6 +43,7 @@ from apps.open_dj.registry import (
     load_adapter,
 )
 from apps.open_dj.validate import validate_document
+from apps.open_dj.wire import color_hex_to_int
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -433,28 +434,6 @@ def _unwrap_prov(value: Any) -> Any:
     return value
 
 
-def _color_hex_to_int(value: Any) -> int | None:
-    """Inverse of :func:`apps.open_dj.wire._color_int_to_hex`.
-
-    Accepts ``"#rrggbb"``, ``"rrggbb"``, or a plain int. Returns ``None``
-    on anything it cannot parse so loaders degrade gracefully rather than
-    crashing on vendor-emitted oddities.
-    """
-    if value is None:
-        return None
-    if isinstance(value, int):
-        return value & 0xFFFFFF
-    if isinstance(value, str):
-        s = value.strip().lstrip("#")
-        if not s:
-            return None
-        try:
-            return int(s, 16) & 0xFFFFFF
-        except ValueError:
-            return None
-    return None
-
-
 def _cues_from_doc(raw: list[dict[str, Any]], CuePoint) -> tuple:
     """Rehydrate wire-format cue list into typed ``CuePoint`` tuples.
 
@@ -513,7 +492,7 @@ def _cues_from_doc(raw: list[dict[str, Any]], CuePoint) -> tuple:
                 position_ms=int(c.get("position_ms", 0)),
                 type=emit_type,
                 name=c.get("name", ""),
-                color_rgb=_color_hex_to_int(c.get("color") or c.get("color_rgb")),
+                color_rgb=color_hex_to_int(c.get("color") or c.get("color_rgb")),
                 length_ms=int(length_ms) if length_ms is not None else None,
             )
         )

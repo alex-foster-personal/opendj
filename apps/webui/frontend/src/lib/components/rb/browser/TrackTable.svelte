@@ -21,7 +21,7 @@
 	// DOM-virtualizes the render: only the scrolled window (+overscan) is
 	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
 	// provider.total.
-	import { tick, untrack, type Snippet } from 'svelte';
+	import { tick, untrack, type Component, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import {
 		artworkUrl,
@@ -31,7 +31,14 @@
 		type Vocals
 	} from '$lib/rb/api-rb';
 	import { artworkFetchAllowed, artworkRetry, artworkRetrySrc } from '$lib/rb/artwork-retry';
-	import { autoMusicalWidths, COL_DEFAULTS, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
+	import {
+		autoMusicalWidths,
+		COL_DEFAULTS,
+		compactUtilityWidths,
+		hiddenColumnClasses,
+		shownColumnWidths,
+		type ColId
+	} from '$lib/rb/library-column-widths';
 	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
 	import { isPairedRow } from '$lib/rb/pairing-row';
 	import {
@@ -67,10 +74,16 @@
 		renderedTableFont,
 		bpmCellText,
 		hasUsableBpm,
-		type TrackEditModalKind
+		type TrackEditModalKind,
+		compatibleRowKeyShift,
+		compatibleKeyChecked,
+		keyShiftSuperscript,
+		shiftedKeyText,
+		loadKeyHoverCard,
+		type CompatibleKeyShift
 	} from './track-table-support';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
-	import { ensureGridQualityScan, setGridFlagDismissed } from '$lib/rb/api-grid-flags';
+	import { audioQualityHover, ensureLibraryScans, setGridFlagDismissed } from '$lib/rb/library-scans';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
@@ -82,9 +95,18 @@
 	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
 	import { autoPlayQueue } from '$lib/rb/autoplay-queue.svelte';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
-	import { setConfirmPref, uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		setConfirmPref,
+		setKeyNotation,
+		setLibraryDensity,
+		setUiSkin,
+		showAllLibraryColumns,
+		toggleLibraryColumn,
+		uiPrefs
+	} from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
+	import { draggedDeckRows } from '$lib/rb/deck-track-drop';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayRankCell from './AutoPlayRankCell.svelte';
@@ -234,12 +256,70 @@
 		deckHoverUi.deckId === null ? null : (deckStates[deckHoverUi.deckId].stable_id ?? null)
 	);
 
+	/** With the compatible filter on, a row matches under the active mode and
+	 * may need a key shift (KEYSHIFT-01..03); otherwise the ring keeps today's
+	 * +-1 family against the master. 24 keys at most, so memoized per key. */
+	const keyMatchCache = $derived.by(() => {
+		void keyCompatRef;
+		void uiPrefs.next_only_filter;
+		void uiPrefs.compatible_filter;
+		return new Map<string | null, CompatibleKeyShift | null>();
+	});
+
+	function keyMatch(key: string | null): CompatibleKeyShift | null {
+		const cached = keyMatchCache.get(key);
+		if (cached !== undefined) return cached;
+		let match: CompatibleKeyShift | null;
+		if (uiPrefs.next_only_filter && compatibleReferenceKey !== null && compatibleKeyChecked(uiPrefs.compatible_filter)) {
+			match = compatibleRowKeyShift(key, compatibleReferenceKey, uiPrefs.compatible_filter);
+		} else {
+			match = camelotKeysAreCompatible(key, keyCompatRef) && key !== null ? { shift: 0, key } : null;
+		}
+		keyMatchCache.set(key, match);
+		return match;
+	}
+
 	function keyCompat(key: string | null): boolean {
-		return camelotKeysAreCompatible(key, keyCompatRef);
+		return keyMatch(key) !== null;
+	}
+
+	let keyHover = $state<{ row: BrowserRow; x: number; y: number } | null>(null);
+	// The hover card loads on the first key hover, so it stays out of the
+	// library route's initial bundle (bundle budget, scripts/check-bundle-size.sh).
+	let KeyHoverCard = $state<Component<{
+		ownKey: string | null;
+		shift: number;
+		shiftedKey: string | null;
+		note?: string | null;
+		x: number;
+		y: number;
+		onDismiss: () => void;
+	}> | null>(null);
+	let keyHoverCardLoad: Promise<void> | null = null;
+
+	function _onKeyCellEnter(e: MouseEvent, row: BrowserRow): void {
+		if (KeyHoverCard === null && keyHoverCardLoad === null) {
+			keyHoverCardLoad = loadKeyHoverCard().then(
+				(mod) => {
+					KeyHoverCard = mod.default;
+				},
+				(err: unknown) => {
+					// A failed chunk fetch must not disable the card for the session:
+					// the next hover retries. The failure itself is shown, never only logged.
+					keyHoverCardLoad = null;
+					const detail = err instanceof Error ? err.message : String(err);
+					onkeycardfailed(`Key card failed to load: ${detail}. Hover the key again to retry.`);
+				}
+			);
+		}
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		keyHover = { row, x: rect.left + rect.width / 2, y: rect.top };
 	}
 
 	function keyCompatStyle(key: string | null): string | undefined {
-		const base = keyCellStyle(key);
+		// A shifted match shows the key it plays in, so it takes that key's color.
+		const match = keyMatch(key);
+		const base = keyCellStyle(match !== null && match.shift !== 0 ? match.key : key);
 		if (!keyCompat(key) || masterKeyColor === null) return base;
 		const border = `--key-compat-color: ${masterKeyColor}`;
 		return base === undefined ? border : `${base};${border}`;
@@ -252,6 +332,12 @@
 	/** ONE notation for every row (ui-prefs key_notation), never the stored spelling. */
 	function keyCellDisplay(row: BrowserRow) {
 		return displayKey(row.key, uiPrefs.key_notation);
+	}
+
+	/** The row's canonical Camelot code ("8A"), for the key wheel e2e veto (#7599). */
+	function rowCanonicalCamelotKey(row: BrowserRow): string | undefined {
+		const shown = displayKey(row.key, 'camelot');
+		return shown?.parsed === true ? shown.text : undefined;
 	}
 
 	function keyCellTitle(row: BrowserRow): string {
@@ -341,12 +427,13 @@
 		return analysisIssuesFor(row);
 	}
 
-	// GRIDFLAG-02: the beatgrid verdicts on the rows are stored server-side.
+	// GRIDFLAG-02 / QLTSCAN-03: the beatgrid verdicts and QLT letters on the rows
+	// are stored server-side.
 	// Ask once per page session for them to be brought up to date; the engine
 	// skips every unchanged grid and announces any change on library.changed.
 	// Library mode starts no worker (LIBWS-03), and the scan is one.
 	$effect(() => {
-		if (!libraryMode) void ensureGridQualityScan();
+		if (!libraryMode) ensureLibraryScans();
 	});
 
 	/** GRIDFLAG-04: hide or restore one row's beatgrid flag (a persisted user
@@ -392,6 +479,7 @@
 		onsort,
 		onselectrow,
 		onloadrow,
+		onkeycardfailed,
 		onpickdoubledeck,
 		onloadconfirmcancelled,
 		onpreviewseek,
@@ -542,6 +630,9 @@
 		compatibleReferenceKey?: string | null;
 		/** LIBWS-03: mounted in the Library workspace, which has no decks. */
 		libraryMode?: boolean;
+		/** A key hover card that fails to load is reported here, never only logged. */
+		/** Required: a failed key-card chunk load must reach the user (fail-fast). */
+		onkeycardfailed: (message: string) => void;
 	} = $props();
 
 	const keyCompatRef = $derived(
@@ -957,8 +1048,24 @@
 	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
 	const showLyricsCol = $derived(uiPrefs.lyrics_library_col && uiPrefs.lyrics_global);
 	const colCount = $derived(
-		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) + (showLyricsCol ? 1 : 0)
+		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) +
+			(showLyricsCol ? 1 : 0) -
+			uiPrefs.library_hidden_columns.length
 	);
+
+	// ----- LIBUX-54 hidden columns (chooser lives in ColumnChooserMenu) -----
+	const hiddenCols = $derived(new Set(uiPrefs.library_hidden_columns));
+	/** colWidths with hidden columns at 0: what the table width and the
+	 * MASTER fold badge are summed from. */
+	const shownWidths = $derived(shownColumnWidths(colWidths, uiPrefs.library_hidden_columns));
+	const columnChooserPrefs = {
+		state: uiPrefs,
+		toggleColumn: toggleLibraryColumn,
+		showAllColumns: showAllLibraryColumns,
+		setKeyNotation,
+		setDensity: setLibraryDensity,
+		setSkin: setUiSkin
+	};
 
 	function _autoPlayRank(stableId: string): number | null {
 		return autoPlayOrder.rankOf.get(stableId) ?? null;
@@ -995,7 +1102,7 @@
 	 * to redistribute - narrower than the wrap just leaves blank space to the
 	 * right, same as any wrap wider than its content. */
 	const tableWidthPx = $derived(
-		Object.entries(colWidths).reduce(
+		Object.entries(shownWidths).reduce(
 			(sum, [id, w]) => sum + (id === 'lyrics' && !showLyricsCol ? 0 : w),
 			0
 		)
@@ -1425,14 +1532,11 @@
 			artist: row.artist ?? '',
 			count: ids.length
 		});
+		// KEYSHIFT-03: each dragged row's displayed shift (its superscript) travels
+		// with the drag, so a drop onto a deck loads it shifted like a double-click.
+		// Every selected id gets an entry: a multi-row drop loads the first of them.
 		if (reorderBlocked !== null) _showReorderHint();
-		beginTrackDrag(ids, {
-			[row.stable_id]: {
-				file_exists: row.file_exists,
-				file_availability: row.file_availability,
-				is_streaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false
-			}
-		});
+		beginTrackDrag(ids, draggedDeckRows(ids, rows, (r) => keyMatch(r.key)?.shift ?? 0));
 	}
 
 	function onRowDragEnd(): void {
@@ -1542,7 +1646,7 @@
 		<button
 			type="button"
 			class="master-fold above"
-			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
+			style={`left:${masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is above - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
@@ -1554,7 +1658,7 @@
 		<button
 			type="button"
 			class="master-fold below"
-			style={`left:${masterFoldCenterPx(colWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
+			style={`left:${masterFoldCenterPx(shownWidths, liveScrollLeft, wrapWidth, masterFoldBadgeWidth / 2)}px`}
 			onclick={jumpToMaster}
 			title="Master track is below - click to jump"
 			bind:clientWidth={masterFoldBadgeWidth}
@@ -1592,6 +1696,7 @@
 		     (header row is 1). See track-table-keyboard.ts. -->
 		<table
 			data-testid="track-table"
+			class={hiddenColumnClasses(uiPrefs.library_hidden_columns)}
 			style={`width:${tableWidthPx}px`}
 			role="grid"
 			aria-label="Tracks"
@@ -1604,25 +1709,25 @@
 				<col style={`width:${colWidths.cloud}px`} />
 				<col style={`width:${colWidths.order}px`} />
 				{#if autoPlayMode !== 'off'}<col style={`width:${colWidths.autoplay}px`} />{/if}
-				<col style={`width:${colWidths.preview}px`} />
-				<col style={`width:${colWidths.art}px`} />
+				{#if !hiddenCols.has('preview')}<col style={`width:${colWidths.preview}px`} />{/if}
+				{#if !hiddenCols.has('art')}<col style={`width:${colWidths.art}px`} />{/if}
 				<col style={`width:${colWidths.title}px`} />
-				<col style={`width:${colWidths.artist}px`} />
-				<col style={`width:${colWidths.key}px`} />
-				<col style={`width:${colWidths.bpm}px`} />
-				<col style={`width:${colWidths.plays}px`} />
-				<col style={`width:${colWidths.rating}px`} />
-				<col style={`width:${colWidths.comments}px`} />
-				<col style={`width:${colWidths.time}px`} />
-				<col style={`width:${colWidths.quality}px`} />
-				<col style={`width:${colWidths.energy}px`} />
-				<col style={`width:${colWidths.genre}px`} />
-				<col style={`width:${colWidths.stems}px`} />
+				{#if !hiddenCols.has('artist')}<col style={`width:${colWidths.artist}px`} />{/if}
+				{#if !hiddenCols.has('key')}<col style={`width:${colWidths.key}px`} />{/if}
+				{#if !hiddenCols.has('bpm')}<col style={`width:${colWidths.bpm}px`} />{/if}
+				{#if !hiddenCols.has('plays')}<col style={`width:${colWidths.plays}px`} />{/if}
+				{#if !hiddenCols.has('rating')}<col style={`width:${colWidths.rating}px`} />{/if}
+				{#if !hiddenCols.has('comments')}<col style={`width:${colWidths.comments}px`} />{/if}
+				{#if !hiddenCols.has('time')}<col style={`width:${colWidths.time}px`} />{/if}
+				{#if !hiddenCols.has('quality')}<col style={`width:${colWidths.quality}px`} />{/if}
+				{#if !hiddenCols.has('energy')}<col style={`width:${colWidths.energy}px`} />{/if}
+				{#if !hiddenCols.has('genre')}<col style={`width:${colWidths.genre}px`} />{/if}
+				{#if !hiddenCols.has('stems')}<col style={`width:${colWidths.stems}px`} />{/if}
 				{#if showLyricsCol}
 					<col style={`width:${colWidths.lyrics}px`} />
 				{/if}
 			</colgroup>
-			<thead bind:clientHeight={theadHeightPx}>
+			<thead bind:clientHeight={theadHeightPx} oncontextmenu={(e) => trackContextMenu?.openColumnChooser(e, columnChooserPrefs)}>
 				<tr aria-rowindex={1}>
 					<th
 						class="h-icon"
@@ -1855,7 +1960,7 @@
 					<th
 						class="h-quality"
 						style={`width:${colWidths.quality}px`}
-						use:columnExplainer={{ text: "QLT - audio quality as the biggest venue this file survives, from effective bitrate (size over duration) and container. The badge shows the rung's initial and its colour; hover a badge for the full rung name, the kbps and the container" }}
+						use:columnExplainer={{ text: "QLT - audio quality as a letter: A safe on any system, B good on a club system, C thin on a big rig, D rough. It starts from bitrate and container and drops when a scan finds a lossy source behind the file (a brick-wall cut-off) or damage. A hollow letter is not checked yet; a dot means the scan found an issue. Hover a badge for the measurements" }}
 					>
 						<span class="th-label"><span>QLT</span></span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1946,6 +2051,7 @@
 					<tr
 						use:observeRow={row}
 						data-testid="track-row"
+						data-canonical-camelot-key={rowCanonicalCamelotKey(row)}
 						data-stable-id={row.stable_id}
 						data-row-index={rowIndex}
 						aria-rowindex={rowIndex + 2}
@@ -2203,7 +2309,10 @@
 							class:key-inert={keyCellInert(row)}
 							class:key-unparsed={keyCellDisplay(row)?.parsed === false}
 							style={keyCompatStyle(row.key)}
-							title={keyCellTitle(row)}
+							aria-label={keyCellTitle(row)}
+							data-custom-tip=""
+							onmouseenter={(e) => _onKeyCellEnter(e, row)}
+							onmouseleave={() => (keyHover = null)}
 						>
 							{#if row.key_status === 'failed' || row.key_status === 'missing'}
 								<span class="key-status">{row.key_status === 'failed' ? 'failed' : 'missing'}</span>
@@ -2211,9 +2320,15 @@
 								{#snippet keyCharacters(text: string)}
 									{#each text as character}<span class:camelot-suffix={uiPrefs.key_notation === 'camelot' && (character === 'A' || character === 'B')}>{character}</span>{/each}
 								{/snippet}
-								{#each keyCellSpans(row.key, uiPrefs.key_notation, findQuery) as part, i (i)}
-									{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
-								{/each}
+								{@const match = keyMatch(row.key)}
+								{#if match !== null && match.shift !== 0}
+									<!-- KEYSHIFT-03: the key it will play in (in the chosen notation), plus the load shift. -->
+									{@render keyCharacters(shiftedKeyText(match.key, uiPrefs.key_notation))}<sup class="key-shift-sup">{keyShiftSuperscript(match.shift)}</sup>
+								{:else}
+									{#each keyCellSpans(row.key, uiPrefs.key_notation, findQuery) as part, i (i)}
+										{#if part.hit}<mark class="find-hit">{@render keyCharacters(part.text)}</mark>{:else}{@render keyCharacters(part.text)}{/if}
+									{/each}
+								{/if}
 							{/if}
 						</td>
 						<td
@@ -2252,7 +2367,12 @@
 						</td>
 						<td class="c-time" title={timeCellTitle(row.duration_ms)}>{_fmtTime(row.duration_ms)}</td>
 						<td class="c-quality">
-							<QualityBadge quality={row.quality} compact showContainer={false} />
+							<QualityBadge
+								quality={row.quality}
+								compact
+								showContainer={false}
+								loadHover={row.quality?.grade?.letter ? () => audioQualityHover(row.stable_id, JSON.stringify(row.quality?.grade)) : undefined}
+							/>
 						</td>
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
@@ -2366,6 +2486,19 @@
 		</div>
 	{/if}
 </div>
+
+{#if keyHover !== null && KeyHoverCard !== null}
+	{@const hoverMatch = keyMatch(keyHover.row.key)}
+	<KeyHoverCard
+		ownKey={keyHover.row.key}
+		shift={hoverMatch?.shift ?? 0}
+		shiftedKey={hoverMatch?.key ?? null}
+		note={keyCellInert(keyHover.row) ? keyCellTitle(keyHover.row) : null}
+		x={keyHover.x}
+		y={keyHover.y}
+		onDismiss={() => (keyHover = null)}
+	/>
+{/if}
 
 {#if loadConfirm !== null}
 	<div
@@ -3045,6 +3178,13 @@
 		text-overflow: clip;
 	}
 	.camelot-suffix { font-size: 0.67em; }
+	.key-shift-sup {
+		margin-left: 1px;
+		font-size: 0.68em;
+		font-weight: 600;
+		line-height: 1;
+		color: var(--rb-orange, #e8a13a);
+	}
 	.c-key.key-compat {
 		border-radius: 2px;
 		padding-left: 4px;
@@ -3616,5 +3756,47 @@
 	}
 	.load-confirm-no:hover {
 		background: #444;
+	}
+
+	/* LIBUX-54: a hidden column drops its header and every cell; its <col> is
+	 * left out of the colgroup, so fixed layout gives its width to nobody. */
+	table.hide-preview :is(th.h-preview, td.c-preview) {
+		display: none;
+	}
+	table.hide-art :is(th.h-art, td.c-art) {
+		display: none;
+	}
+	table.hide-artist :is(th.h-artist, td.c-artist) {
+		display: none;
+	}
+	table.hide-key :is(th.h-key, td.c-key) {
+		display: none;
+	}
+	table.hide-bpm :is(th.h-bpm, td.c-bpm) {
+		display: none;
+	}
+	table.hide-plays :is(th.h-plays, td.c-plays) {
+		display: none;
+	}
+	table.hide-rating :is(th.h-rating, td.c-rating) {
+		display: none;
+	}
+	table.hide-comments :is(th.h-comments, td.c-comments) {
+		display: none;
+	}
+	table.hide-time :is(th.h-time, td.c-time) {
+		display: none;
+	}
+	table.hide-quality :is(th.h-quality, td.c-quality) {
+		display: none;
+	}
+	table.hide-energy :is(th.h-energy, td.c-energy) {
+		display: none;
+	}
+	table.hide-genre :is(th.h-genre, td.c-genre) {
+		display: none;
+	}
+	table.hide-stems :is(th.h-stems, td.c-stems) {
+		display: none;
 	}
 </style>

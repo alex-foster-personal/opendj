@@ -2,7 +2,7 @@
 
 The grid judged is the one the deck plays for v1: rekordbox's PQTZ, read with
 pyrekordbox from the track's ANLZ `.DAT` (decided in
-`docs/decisions/ADR-NEW-deck-beatgrid-source.md`: decks stay on rekordbox's
+`(private path)`: decks stay on rekordbox's
 grid for v1). A track with no rekordbox analysis has no grid to judge and is
 `unknown`, never `ok`.
 
@@ -38,6 +38,7 @@ import hashlib
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -244,7 +245,17 @@ def scan_library(*, scope: ScanScope = "present", pause_s: float = 0.0) -> ScanR
 class ScanRunner:
     """Single-flight scan with a status any caller can read."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        scan_fn: Callable[..., ScanResult] | None = None,
+        *,
+        thread_name: str = SCAN_THREAD_NAME,
+        label: str = "grid-quality",
+    ) -> None:
+        # The audio-fit scan (GRIDFIT-02) reuses this runner with its own scan.
+        self._scan_fn = scan_fn or scan_library
+        self._thread_name = thread_name
+        self._label = label
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._running_scope: ScanScope | None = None
@@ -271,9 +282,9 @@ class ScanRunner:
         result: ScanResult | None = None
         error: str | None = None
         try:
-            result = scan_library(scope=scope, pause_s=pause_s)
-        except Exception as exc:  # noqa: BLE001 - kept in the status and logged, never dropped
-            log.exception("grid-quality scan failed")
+            result = self._scan_fn(scope=scope, pause_s=pause_s)
+        except Exception as exc:
+            log.exception("%s scan failed", self._label)
             error = f"{type(exc).__name__}: {exc}"
         with self._lock:
             self._running_scope = None
@@ -298,7 +309,7 @@ class ScanRunner:
             thread = threading.Thread(
                 target=self._run,
                 args=(scope, BACKGROUND_PAUSE_S),
-                name=SCAN_THREAD_NAME,
+                name=self._thread_name,
                 daemon=True,
             )
             with self._lock:
@@ -312,7 +323,7 @@ class ScanRunner:
         if thread is not None:
             thread.join(timeout_s)
             if thread.is_alive():
-                raise TimeoutError(f"grid-quality scan still running after {timeout_s} s")
+                raise TimeoutError(f"{self._label} scan still running after {timeout_s} s")
 
 
 _RUNNER_GUARD = threading.Lock()

@@ -1,0 +1,71 @@
+clocks: the audio clock steps exactly, the page tick wanders
+
+audio clock |     |
+page tick   *
+            ------------------------------------------------------------
+            0                                                          t
+
+
+  drift:  0 ms
+
+  both start aligned
+@@
+clocks: the audio clock steps exactly, the page tick wanders
+
+audio clock |     |     |     |
+page tick   *      *   *
+            ------------------------------------------------------------
+            0                                                          t
+
+
+  drift:  1 ms   #
+
+  page tick jitters
+@@
+clocks: the audio clock steps exactly, the page tick wanders
+
+audio clock |     |     |     |     |
+page tick   *      *   *       *    *
+            ------------------------------------------------------------
+            0                                                          t
+
+
+  drift:  2 ms   ##
+
+  drift creeping in
+@@
+clocks: the audio clock steps exactly, the page tick wanders
+
+audio clock |     |     |     |     |     |     |
+page tick   *      *   *       *    *
+            ------------------------------------------------------------
+            0                                                          t
+                                    <-- tab hidden -->
+
+  drift:  3 ms   ###
+
+  tab hidden: page tick stalls
+@@
+clocks: the audio clock steps exactly, the page tick wanders
+
+audio clock |     |     |     |     |     |     |     |     |
+page tick   *      *   *       *    *                         *
+            ------------------------------------------------------------
+            0                                                          t
+                                    <-- tab hidden -->
+
+  drift:  9 ms   #########
+
+  drift large
+@@
+clocks: the audio clock steps exactly, the page tick wanders
+
+audio clock |     |     |     |     |     |     |     |     |     |
+page tick   *      *   *       *    *                         *
+            ------------------------------------------------------------
+            0                                                          t
+                                    <-- tab hidden -->
+
+  drift:  0 ms
+
+  re-anchored to the audio clock

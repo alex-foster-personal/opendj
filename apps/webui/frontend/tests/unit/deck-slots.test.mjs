@@ -801,7 +801,7 @@ describe('the master deck is rechecked inside the queued command execution, opt-
 		);
 		assert.match(
 			fn,
-			/dispatchPerformanceCommand\(\{\s*type: 'load',\s*deck: target,\s*stable_id: row\.stable_id,\s*refuseIfMaster: true\s*\}\)/
+			/dispatchPerformanceCommand\(\{\s*type: 'load',\s*deck: target,\s*stable_id: row\.stable_id,\s*refuseIfMaster: true(?:,\s*\.\.\.\(keyShift !== 0 \? \{ key_shift: keyShift \} : \{\}\))?\s*\}\)/
 		);
 	});
 

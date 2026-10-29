@@ -1,0 +1,71 @@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [################]        HI   [................]
+   MID  [################]        MID  [................]
+   LOW  [################]        LOW  [................]
+
+   >> approaching the mix point
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [################]        HI   [########........]
+   MID  [################]        MID  [########........]
+   LOW  [################]        LOW  [................]
+
+   >> B in, its LOW held down
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [################]        HI   [################]
+   MID  [################]        MID  [################]
+   LOW  [################]        LOW  [................]
+
+   >> both mids and highs playing, one bassline
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [################]        HI   [################]
+   MID  [################]        MID  [################]
+   LOW  [................]        LOW  [################]
+
+   >> MIX POINT: bass swapped on the downbeat
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [################]        HI   [################]
+   MID  [################]        MID  [################]
+   LOW  [................]        LOW  [################]
+
+   >> one bassline (B), A still has mids and highs
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [################]        HI   [################]
+   MID  [########........]        MID  [################]
+   LOW  [................]        LOW  [################]
+
+   >> later: A's MID comes down
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [########........]        HI   [################]
+   MID  [................]        MID  [################]
+   LOW  [................]        LOW  [################]
+
+   >> later: A's HI comes down
+@@
+bass swap: A's LOW drops as B's LOW comes in, on one downbeat
+
+            DECK A                     DECK B
+   HI   [................]        HI   [################]
+   MID  [................]        MID  [################]
+   LOW  [................]        LOW  [################]
+
+   >> A is out, B carries the mix

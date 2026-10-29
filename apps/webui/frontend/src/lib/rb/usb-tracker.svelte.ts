@@ -73,6 +73,16 @@ type ApiList = { volumes: ApiVolume[]; scanned_at: number };
  * 'unreachable' is everything else that stopped an answer arriving. */
 export type UsbDiscoveryState = 'unknown' | 'ok' | 'unavailable' | 'unreachable';
 
+/** Outcome of one stick's library read. The volume list can already say
+ * "rekordbox" while export.pdb itself fails, which is the RBX-but-unreadable
+ * case the USB modal has to spell out. */
+export type UsbLibraryReadNote = {
+	state: 'ok' | 'failed';
+	code?: string;
+	detail?: string;
+	trackCount?: number;
+};
+
 // ----- state -------------------------------------------------------------
 
 export const usbTracker = $state({
@@ -91,6 +101,8 @@ export const usbTracker = $state({
 	/** Daemon `scanned_at` of the last successful poll this session; null
 	 * until one lands, while every `present` flag is still last session's. */
 	scannedAt: null as number | null,
+	/** Library GET outcome by volume id. Not persisted: a new session re-reads. */
+	readNotes: {} as Record<string, UsbLibraryReadNote>,
 	/** Which refresh the listing came from (see `usbRefreshSeq`); 0 before any. */
 	listingSeq: 0
 });
@@ -215,6 +227,127 @@ export function usbRowKindLabel(v: UsbVolumeKnown): string {
 	if (v.is_music === false) return 'non-music';
 	const kind = v.kind ?? 'unknown';
 	return v.simulated ? `${kind} (simulated)` : kind;
+}
+
+export type UsbFormatVolume = Pick<UsbVolumeKnown, 'id' | 'name'> &
+	Partial<Pick<UsbVolumeKnown, 'present' | 'kind' | 'role' | 'is_music' | 'forgotten'>>;
+
+export type UsbFormatStickLine = {
+	id: string;
+	name: string;
+	version: string;
+};
+
+export type UsbFormatReport = {
+	/** Whether the machine has a single present volume or more than one. */
+	drives: string;
+	/** Whether the music sticks are only rekordbox (RBX), only the other
+	 * library, or both. */
+	libraries: string;
+	sticks: UsbFormatStickLine[];
+};
+
+function _libraryKindWords(kind: UsbKind | undefined): string {
+	switch (kind) {
+		case 'rekordbox':
+			return 'rekordbox (RBX)';
+		case 'djay':
+			return 'djay';
+		case 'music':
+			return 'music files';
+		default:
+			return 'unrecognized';
+	}
+}
+
+function _versionSentence(
+	kind: UsbKind | undefined,
+	note: UsbLibraryReadNote | undefined
+): string {
+	if (note?.state === 'ok') {
+		const tracks =
+			typeof note.trackCount === 'number' ? `${note.trackCount} tracks. ` : '';
+		if (kind === 'rekordbox') {
+			return (
+				`${tracks}Version found: rekordbox Device Library (export.pdb, RBX). ` +
+				'The pdb file version number is not reported. ' +
+				'Device Library Plus, the other rekordbox export, was not part of this read.'
+			);
+		}
+		return `${tracks}Version found: ${_libraryKindWords(kind)}. Not a rekordbox (RBX) export.`;
+	}
+	if (note?.state === 'failed') {
+		const why = note.detail ? ` (${note.detail})` : '';
+		if (kind === 'rekordbox') {
+			return (
+				`USB read failed${why}, but this drive is rekordbox (RBX) format. ` +
+				'Version number was not read. This app only opens export.pdb (Device Library). ' +
+				'A stick that is only Device Library Plus, the other export, fails this read.'
+			);
+		}
+		return `USB read failed${why}. Classified as ${_libraryKindWords(kind)}, not rekordbox (RBX).`;
+	}
+	if (kind === 'rekordbox') {
+		return (
+			'Classified as rekordbox (RBX). Version not read yet: open the stick to read export.pdb. ' +
+			'Whether it is only Device Library or only Device Library Plus is not known until that read.'
+		);
+	}
+	if (kind === 'djay') {
+		return 'Classified as djay, the other library. Not rekordbox (RBX).';
+	}
+	return `No library version identified (${_libraryKindWords(kind)}).`;
+}
+
+/** What the USB modal says about the drives plugged in right now.
+ * Assumption: "version" is the library class (RBX export.pdb vs djay vs
+ * Device Library Plus). This build's volume list has no pdb version number,
+ * so a failed RBX read is reported as RBX with the version unread. */
+export function usbFormatReport(
+	volumes: readonly UsbFormatVolume[],
+	reads: Readonly<Record<string, UsbLibraryReadNote>>,
+	scanned: boolean
+): UsbFormatReport {
+	// Before this session's first scan every `present` flag is last session's,
+	// so naming a drive as mounted could name one already unplugged.
+	if (!scanned) {
+		return {
+			drives: 'Checking drives: none scanned yet this session.',
+			libraries: 'Not known until the first scan.',
+			sticks: []
+		};
+	}
+	const present = volumes.filter((v) => v.present === true);
+	const names = present.map((v) => v.name || v.id);
+	const drives =
+		present.length === 0
+			? 'No drive found.'
+			: present.length === 1
+				? `One drive only: ${names[0]}.`
+				: `Not one drive only. ${present.length} drives: ${names.join(', ')}.`;
+	const typed = present.filter((v) => v.kind === 'rekordbox' || v.kind === 'djay');
+	const kinds = new Set(typed.map((v) => v.kind));
+	const libraries =
+		typed.length === 0
+			? 'Not classified as rekordbox (RBX) or the other library (djay).'
+			: kinds.size > 1
+				? 'Both rekordbox (RBX) and djay are mounted. Not only one or the other.'
+				: kinds.has('rekordbox')
+					? 'Only rekordbox (RBX). Not the other library (djay).'
+					: 'Only djay, the other library. Not rekordbox (RBX).';
+	return {
+		drives,
+		libraries,
+		sticks: present.map((v) => ({
+			id: v.id,
+			name: v.name || v.id,
+			version: _versionSentence(v.kind, reads[v.id])
+		}))
+	};
+}
+
+export function noteUsbLibraryRead(volumeId: string, note: UsbLibraryReadNote): void {
+	usbTracker.readNotes = { ...usbTracker.readNotes, [volumeId]: note };
 }
 
 /** Tells the user about a USB action that did not happen (an eject that never
@@ -540,8 +673,18 @@ function _ingest(remote: ApiVolume[]): void {
 		}
 	}
 
+	const gone: string[] = [];
 	for (const row of byId.values()) {
-		if (!seen.has(row.id)) row.present = false;
+		if (seen.has(row.id)) continue;
+		row.present = false;
+		gone.push(row.id);
+	}
+	// A removed stick's read note describes a read of the stick as it was, so
+	// a replug shows nothing until it is read again (Sol P2, PR #6223).
+	if (gone.some((id) => id in usbTracker.readNotes)) {
+		const notes = { ...usbTracker.readNotes };
+		for (const id of gone) delete notes[id];
+		usbTracker.readNotes = notes;
 	}
 
 	usbTracker.volumes = [...byId.values()].sort((a, b) => b.last_seen - a.last_seen);

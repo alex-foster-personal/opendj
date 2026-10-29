@@ -25,7 +25,7 @@
  * and a resonant filter adds gain at its cutoff, and a summed prediction would
  * report a flat line while the real output climbed into the red.
  *
- * Background: docs/research/adrian-level-meters-clipping-lights.md
+ * Background: (private path)
  */
 
 import {
@@ -54,7 +54,8 @@ const METER_REPORT_INTERVAL_S = 0.02;
 
 /** Silent by construction, and silenced again by a zero gain on the way out. */
 const METER_NODE_OPTIONS: Readonly<AudioWorkletNodeOptions> = Object.freeze({
-	numberOfInputs: 1,
+	// Input 1 is the post-crossfader copy a channel tap folds as `heard`.
+	numberOfInputs: 2,
 	numberOfOutputs: 1,
 	outputChannelCount: [1]
 });
@@ -62,10 +63,15 @@ const METER_NODE_OPTIONS: Readonly<AudioWorkletNodeOptions> = Object.freeze({
 interface _Observation {
 	seq: number;
 	peak: number;
+	/** Peak of the same window after the channel's crossfader gain node,
+	 * measured on the audio thread; absent on a tap with no heard source. */
+	heard?: number;
 }
 
 interface _Ballistic {
 	db: number;
+	/** The same ballistics run on the post-crossfader `heard` peak. */
+	heardDb: number;
 	peak: PeakHoldState;
 	consumedSeq: number;
 	lastReadMs: number;
@@ -78,12 +84,20 @@ export interface MeterTap {
 	latest: _Observation | null;
 	ballistic: _Ballistic;
 	node: AudioWorkletNode | null;
+	/** `seq` of the newest observation whose own peak clipped, 0 for none.
+	 * Recorded as each message ARRIVES, so a clip followed by a quieter post
+	 * before the next read is still seen (Sol P1, PR #6829). */
+	clipSeq: number;
+	/** The same for the post-crossfader `heard` peak. */
+	heardClipSeq: number;
 }
 
-/** One tap and the node it reads. */
+/** One tap and the node it reads. `heardSource` is the same signal after the
+ * channel's crossfader gain node, folded on the worklet's second input. */
 export interface MeterTapSource {
 	tap: MeterTap;
 	source: AudioNode;
+	heardSource?: AudioNode;
 }
 
 export interface MeterReading {
@@ -97,6 +111,18 @@ export interface MeterReading {
 	normalized: number;
 	/** True while the clip warning is latched. */
 	clipped: boolean;
+	/** Ballistic level of the post-crossfader `heard` peak, dBFS, floored like
+	 * `db`. Measured on the audio thread through the crossfader those samples
+	 * played under, so moving the crossfader never rewrites a decaying reading
+	 * (Sol P1, PR #6829). A tap with no heard source mirrors `db`. */
+	heardDb: number;
+	/** `seq` of the newest observation whose post-crossfader peak clipped,
+	 * 0 for none. The crossfader in it is the gain the audio thread applied to
+	 * those samples. Reading it never consumes it: several readers share one
+	 * tap (the strip, the level meter, the MIDI meter poll), so a reader that
+	 * latches on it keeps its own cursor and lights on any change (Sol P1,
+	 * PR #6829). */
+	heardClipSeq: number;
 }
 
 /** How long a clip stays lit after the level that caused it has passed. A
@@ -107,11 +133,29 @@ const CLIP_LATCH_MS = 1200;
 function _emptyBallistic(): _Ballistic {
 	return {
 		db: METER_FLOOR_DBFS,
+		heardDb: METER_FLOOR_DBFS,
 		peak: INITIAL_PEAK_HOLD,
 		consumedSeq: 0,
 		lastReadMs: 0,
 		clipLatchedUntilMs: 0
 	};
+}
+
+/**
+ * Record one worklet post on its tap. Every post is judged for clipping here,
+ * as it arrives, rather than when a reader next looks: `latest` keeps only the
+ * newest post, so a clip followed by a quieter one inside a single frame would
+ * otherwise never be seen (Sol P1, PR #6829).
+ */
+export function noteMeterObservation(tap: MeterTap, data: unknown): void {
+	if (!_isObservation(data)) {
+		throw new TypeError(`a channel meter posted an unreadable message: ${JSON.stringify(data)}`);
+	}
+	tap.latest = data;
+	if (isClipping(dbfsFromAmplitude(data.peak))) tap.clipSeq = data.seq;
+	if (data.heard !== undefined && isClipping(dbfsFromAmplitude(data.heard))) {
+		tap.heardClipSeq = data.seq;
+	}
 }
 
 let _taps: MeterTap[] = [];
@@ -124,7 +168,11 @@ let _sink: GainNode | null = null;
 function _isObservation(data: unknown): data is _Observation {
 	if (typeof data !== 'object' || data === null) return false;
 	const candidate = data as Partial<_Observation>;
-	return Number.isFinite(candidate.seq) && Number.isFinite(candidate.peak);
+	return (
+		Number.isFinite(candidate.seq) &&
+		Number.isFinite(candidate.peak) &&
+		(candidate.heard === undefined || Number.isFinite(candidate.heard))
+	);
 }
 
 /**
@@ -134,7 +182,7 @@ function _isObservation(data: unknown): data is _Observation {
  * one catch and the failure is recorded in exactly one place.
  */
 export function createMeterTap(): MeterTap {
-	return { latest: null, ballistic: _emptyBallistic(), node: null };
+	return { latest: null, ballistic: _emptyBallistic(), node: null, clipSeq: 0, heardClipSeq: 0 };
 }
 
 /**
@@ -163,7 +211,9 @@ export const SILENT_METER_READING: Readonly<MeterReading> = Object.freeze({
 	peakDb: METER_FLOOR_DBFS,
 	segments: 0,
 	normalized: 0,
-	clipped: false
+	clipped: false,
+	heardDb: METER_FLOOR_DBFS,
+	heardClipSeq: 0
 });
 
 /**
@@ -262,7 +312,9 @@ export const UNAVAILABLE_METER_READING: Readonly<MeterReading> = Object.freeze({
 	peakDb: METER_FLOOR_DBFS,
 	segments: 0,
 	normalized: 0,
-	clipped: false
+	clipped: false,
+	heardDb: METER_FLOOR_DBFS,
+	heardClipSeq: 0
 });
 
 /**
@@ -305,7 +357,7 @@ export function createMasterMeterSource(gain: AudioNode): MeterTapSource {
  * NOT a speaker-damage reading: everything downstream of the master bus (OS
  * volume, the audio interface, the amplifier, its limiter) is invisible from
  * here, and a deck on external USB routing bypasses the master bus entirely.
- * See docs/research/adrian-level-meters-clipping-lights.md.
+ * See (private path).
  */
 export function masterMeterReading(nowMs: number): MeterReading {
 	if (_metersUnavailable) return UNAVAILABLE_METER_READING;
@@ -357,18 +409,16 @@ export async function attachMeterTaps(
 	sink.gain.value = 0;
 	sink.connect(ctx.destination);
 	_sink = sink;
-	for (const { tap, source } of sources) {
+	for (const { tap, source, heardSource } of sources) {
 		const node = new AudioWorkletNode(ctx, CHANNEL_METER_PROCESSOR_NAME, {
 			...METER_NODE_OPTIONS,
-			processorOptions: { reportIntervalS: METER_REPORT_INTERVAL_S }
+			processorOptions: {
+				reportIntervalS: METER_REPORT_INTERVAL_S,
+				heardInput: heardSource !== undefined
+			}
 		});
 		node.port.onmessage = (event: MessageEvent): void => {
-			if (!_isObservation(event.data)) {
-				throw new TypeError(
-					`a channel meter posted an unreadable message: ${JSON.stringify(event.data)}`
-				);
-			}
-			tap.latest = event.data;
+			noteMeterObservation(tap, event.data);
 		};
 		// A processor that crashes AFTER arming leaves this node permanently
 		// silent, and the arming promise has already RESOLVED by then, so its
@@ -383,6 +433,7 @@ export async function attachMeterTaps(
 			markMetersUnavailable(ctx);
 		};
 		source.connect(node);
+		heardSource?.connect(node, 0, 1);
 		node.connect(sink);
 		tap.node = node;
 		_taps.push(tap);
@@ -399,6 +450,8 @@ export function teardownMeterTaps(): void {
 			tap.node = null;
 		}
 		tap.latest = null;
+		tap.clipSeq = 0;
+		tap.heardClipSeq = 0;
 		tap.ballistic = _emptyBallistic();
 	}
 	_taps = [];
@@ -438,19 +491,30 @@ export function readMeterTap(tap: MeterTap, nowMs: number): MeterReading {
 	// Attack ONLY on a new observation. Re-attacking to a stale peak on every
 	// frame between posts would pin the meter and it would never fall.
 	let observedDb = METER_FLOOR_DBFS;
+	let observedHeardDb = METER_FLOOR_DBFS;
 	if (observation !== null && observation.seq !== state.consumedSeq) {
+		// Any post since the last read that clipped latches, not only the newest.
+		// `seq` only rises within a tap's life; teardown resets both cursors.
+		const clippedSince = tap.clipSeq > state.consumedSeq;
 		state.consumedSeq = observation.seq;
 		observedDb = Math.max(METER_FLOOR_DBFS, dbfsFromAmplitude(observation.peak));
-		if (isClipping(observedDb)) state.clipLatchedUntilMs = nowMs + CLIP_LATCH_MS;
+		observedHeardDb =
+			observation.heard === undefined
+				? observedDb
+				: Math.max(METER_FLOOR_DBFS, dbfsFromAmplitude(observation.heard));
+		if (clippedSince) state.clipLatchedUntilMs = nowMs + CLIP_LATCH_MS;
 	}
 
 	state.db = stepBallistics(state.db, observedDb, elapsedS);
+	state.heardDb = stepBallistics(state.heardDb, observedHeardDb, elapsedS);
 	state.peak = stepPeakHold(state.peak, observedDb, elapsedS);
 	return {
 		db: state.db,
 		peakDb: state.peak.db,
 		segments: segmentsLitFromDbfs(state.db),
 		normalized: normalizedFromDbfs(state.db),
-		clipped: nowMs < state.clipLatchedUntilMs
+		clipped: nowMs < state.clipLatchedUntilMs,
+		heardDb: state.heardDb,
+		heardClipSeq: tap.heardClipSeq
 	};
 }

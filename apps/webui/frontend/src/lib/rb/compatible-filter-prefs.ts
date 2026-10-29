@@ -1,12 +1,16 @@
-/** Compatible-filter range prefs (LIBUX-32) and Camelot rule checkboxes. */
+/** Compatible-filter range prefs (LIBUX-32), Camelot rule checkboxes, and the
+ * Transition / Mashup modes with the allowed key shift (KEYSHIFT-01..05). */
 
 import {
   DEFAULT_CAMELOT_RULE_IDS,
   isCamelotRuleId,
   type CamelotRuleId,
+  type CompatibleKeyRule,
 } from "$lib/player/key/camelot";
 
 export type CompatibleBpmDirection = "both" | "above" | "below" | "same";
+export type CompatibleMode = "transition" | "mashup";
+export type CompatibleKeyShiftMax = 0 | 1 | 2 | 3;
 
 export interface CompatibleFilterPrefs {
   /** Enabled rule ids (player/key/camelot-rules.generated.ts). Empty = key not checked. */
@@ -15,6 +19,10 @@ export interface CompatibleFilterPrefs {
   bpm_enabled: boolean;
   allow_half_double: boolean;
   bpm_direction: CompatibleBpmDirection;
+  /** Transition uses `rules`; Mashup is the same wheel number (KEYSHIFT-01). */
+  mode: CompatibleMode;
+  key_shift_max: CompatibleKeyShiftMax;
+  mashup_relative: boolean;
 }
 
 export const COMPATIBLE_FILTER_DEFAULTS: CompatibleFilterPrefs = {
@@ -23,6 +31,9 @@ export const COMPATIBLE_FILTER_DEFAULTS: CompatibleFilterPrefs = {
   bpm_enabled: true,
   allow_half_double: true,
   bpm_direction: "both",
+  mode: "transition",
+  key_shift_max: 1,
+  mashup_relative: false,
 };
 
 const LEGACY_CAMELOT_STEPS_RULES: Record<0 | 1 | 2, readonly CamelotRuleId[]> = {
@@ -47,6 +58,9 @@ const FIELD_CHECKS: Record<
   allow_half_double: isBool,
   bpm_direction: (v) =>
     v === "both" || v === "above" || v === "below" || v === "same",
+  mode: (v) => v === "transition" || v === "mashup",
+  key_shift_max: (v) => v === 0 || v === 1 || v === 2 || v === 3,
+  mashup_relative: isBool,
 };
 
 export function validateCompatibleFilterPrefs(
@@ -76,4 +90,18 @@ export function validateCompatibleFilterPrefs(
     out[key] = value;
   }
   return out as Partial<CompatibleFilterPrefs>;
+}
+
+/** Whether the key is checked at all: Mashup always checks it; Transition
+ * checks it only while at least one Camelot rule is ticked. */
+export function compatibleKeyChecked(prefs: CompatibleFilterPrefs): boolean {
+  return prefs.mode === "mashup" || prefs.rules.length > 0;
+}
+
+/** The key rule the active mode applies (KEYSHIFT-01). Transition is the
+ * ticked Camelot rules; Mashup is always the same wheel number. */
+export function compatibleKeyRule(prefs: CompatibleFilterPrefs): CompatibleKeyRule {
+  return prefs.mode === "mashup"
+    ? { mode: "mashup", relative: prefs.mashup_relative }
+    : { mode: "transition", rules: prefs.rules };
 }

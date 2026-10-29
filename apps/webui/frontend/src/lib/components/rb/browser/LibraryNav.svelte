@@ -1,6 +1,7 @@
 <script module lang="ts">
 	import type { Component } from 'svelte';
 	import type { PlaylistNode } from '$lib/rb/library-types';
+	import { pushToast } from '$lib/stores.svelte';
 
 	type UsbList = Component<{
 		selectedId: string | null;
@@ -28,6 +29,63 @@
 			}
 		);
 	}
+
+	/** The USB sticks panel, lazy for the same reason: it renders nothing
+	 * until opened, so its code (first-seen prompt, format report, import
+	 * plan launcher) loads on the first open and stays mounted after. */
+	let UsbPanelView = $state<Component | null>(null);
+	let usbPanelLoad: Promise<void> | null = null;
+
+	/** A stick a reload interrupted mid-copy still owes its analysis. The
+	 * usb-import chunk stays lazy unless one is pending (PENDING_IMPORT_KEY);
+	 * a chunk that fails to load says so with a Retry (Sol P1, PR #6223). */
+	function resumeUsbAnalysisIfPending(): void {
+		let pending: string | null;
+		try {
+			pending = localStorage.getItem('odj.usb.pendingImportJob');
+		} catch (err) {
+			console.error('[usb] could not read the remembered stick jobs:', err);
+			const why = err instanceof Error ? err.message : String(err);
+			pushToast(`Sticks opened before the reload could not be read back, so their analysis did not resume: ${why}`, 'error', undefined, err, {}, 'usb-resume-read', {
+				label: 'Retry',
+				handler: resumeUsbAnalysisIfPending
+			});
+			return;
+		}
+		if (pending === null) return;
+		import('$lib/rb/usb-import').then(
+			(mod) => mod.resumePendingUsbAnalysis(),
+			(exc: unknown) => {
+				console.error('[usb] could not load the stick module to resume analysis:', exc);
+				const why = exc instanceof Error ? exc.message : String(exc);
+				pushToast(`Analysis of a stick from before the reload did not resume: ${why}`, 'error', undefined, exc, {}, 'usb-resume-load', {
+					label: 'Retry',
+					handler: resumeUsbAnalysisIfPending
+				});
+			}
+		);
+	}
+
+	/** `onfail` closes the panel, so the next Open or Details click reruns the
+	 * import rather than setting an already-true flag (Sol P2, PR #6223). The
+	 * failure is said in a toast whose Retry reopens it (Sol P1, PR #6223). */
+	function loadUsbPanel(onfail: () => void, retry: () => void): void {
+		usbPanelLoad ??= import('../UsbPanel.svelte').then(
+			(mod) => {
+				UsbPanelView = mod.default;
+			},
+			(exc: unknown) => {
+				usbPanelLoad = null;
+				onfail();
+				console.error('[usb] USB panel failed to load:', exc);
+				const why = exc instanceof Error ? exc.message : String(exc);
+				pushToast(`The USB panel did not load: ${why}`, 'error', undefined, exc, {}, 'usb-panel-load', {
+					label: 'Retry',
+					handler: retry
+				});
+			}
+		);
+	}
 </script>
 
 <script lang="ts">
@@ -39,9 +97,8 @@
 	import TreeSmartlistSection from './TreeSmartlistSection.svelte';
 	import TreeContextMenu from './TreeContextMenu.svelte';
 	import AutolistBrowser from './AutolistBrowser.svelte';
-	import UsbPanel from '../UsbPanel.svelte';
 	import PlaylistHistoryPanel from './PlaylistHistoryPanel.svelte';
-	import { startUsbWatch, stopUsbWatch } from '$lib/rb/usb-tracker.svelte';
+	import { startUsbWatch, stopUsbWatch, usbTracker } from '$lib/rb/usb-tracker.svelte';
 	import { uiPrefs, setPlaylistTreeView } from '$lib/rb/prefs.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 
@@ -56,10 +113,20 @@
 	let deleteSmartlistUi: ((sl: { id: string; name: string }) => void) | undefined;
 	let autolistsMounted = $state(false);
 
+	$effect(() => {
+		if (usbTracker.panelOpen) {
+			loadUsbPanel(
+				() => (usbTracker.panelOpen = false),
+				() => (usbTracker.panelOpen = true)
+			);
+		}
+	});
+
 	const playlistTreeView = $derived(uiPrefs.playlist_tree_view);
 
 	onMount(() => {
 		startUsbWatch();
+		resumeUsbAnalysisIfPending();
 	});
 
 	onDestroy(() => {
@@ -145,7 +212,9 @@
 			<div class="usb-list-state" data-testid="usb-list-loading">loading USB sticks...</div>
 		{/if}
 	{/if}
-	<UsbPanel />
+	{#if UsbPanelView}
+		<UsbPanelView />
+	{/if}
 </div>
 
 <style>

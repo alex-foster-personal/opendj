@@ -12,11 +12,12 @@ fabricated PCM.
 from __future__ import annotations
 
 import math
-import os
 import struct
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+
+from apps.voice.settings import coalesce_env
 
 FRAME_MS: int = 30
 # Default silence tail: 300 ms (configurable via $VOICE_VAD_TAIL_MS).
@@ -140,7 +141,7 @@ def collect_utterance(
 
 def make_vad(env: dict[str, str] | None = None) -> Vad:
     """Factory -- env ``VAD_BACKEND`` picks real vs amplitude stub."""
-    env = env if env is not None else dict(os.environ)
+    env = coalesce_env(env)
     backend = (env.get("VAD_BACKEND") or "webrtc").lower()
     if backend == "amplitude":
         try:

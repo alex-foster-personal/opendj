@@ -5,13 +5,23 @@ MIK cannot tell two library rows for one recording apart (one basename, two
 rows), so the three tiers leave such a song ``ambiguous_candidates`` and its
 energy reaches no row at all.
 
-**Which rows are one recording.** Three bases, the last opt-in:
+**Which rows are one recording.** Four bases, the last opt-in:
 
 ``same_file`` (always on)
     Two present rows whose audio resolves to the SAME file on disk
     (``track_availability.checked_path``, NFC). Not a heuristic: the deck
     would open one file for both. Measured Tue 13 Oct 2026: 2,637 present
     rows resolve to 1,482 files, up to 11 rows on one file.
+
+``same_stored_path`` (always on)
+    Two live rows whose ``tracks.file_path`` is the IDENTICAL spelling (NFC,
+    ``/``-separated, case as written), whatever their availability. Each row
+    records the same file, which is the same rule ``same_file`` applies to an
+    identical checked path, so it is not a heuristic either. ``same_file``
+    alone cannot see it when one of the rows is absent or was relinked:
+    measured Thu 29 Oct 2026 on a copy of the desktop library, 35 batch songs
+    bound by ``.sources.txt`` to two such rows reached neither, 34 of them with
+    a present row, including two tracks of the OLTF crate.
 
 ``identity_hash`` (always on)
     The app's own definition, reused and not redefined:
@@ -51,6 +61,7 @@ from .mikdb import MikSong
 
 SHARE_TIER: Tier = "shared_duplicate"
 BASIS_SAME_FILE = "same_file"
+BASIS_SAME_STORED_PATH = "same_stored_path"
 BASIS_IDENTITY = "identity_hash"
 BASIS_METADATA = "artist_title_duration"
 
@@ -196,18 +207,39 @@ def _same_file_rows(conn: sqlite3.Connection) -> Iterable[list[str]]:
     return (rows for rows in by_file.values() if len(rows) > 1)
 
 
+def _same_stored_path_rows(conn: sqlite3.Connection) -> Iterable[list[str]]:
+    """Live rows grouped by the identical spelling of their stored ``file_path``.
+
+    Spelling only, never a case rule or a stat: the stored path may name a
+    file that is gone, and two spellings prove nothing about one file.
+    """
+    by_path: dict[str, list[str]] = {}
+    query = (
+        "SELECT stable_id, file_path FROM tracks "
+        "WHERE deleted_at IS NULL AND file_path IS NOT NULL ORDER BY stable_id"
+    )
+    for stable_id, file_path in conn.execute(query):
+        key = sources.path_spelling(file_path)
+        if key:
+            by_path.setdefault(key, []).append(stable_id)
+    return (rows for rows in by_path.values() if len(rows) > 1)
+
+
+def _union_each(union: _UnionFind, row_groups: Iterable[list[str]], basis: str) -> None:
+    for rows in row_groups:
+        for other in rows[1:]:
+            union.union(rows[0], other, basis)
+
+
 def duplicate_groups(conn: sqlite3.Connection, *, by_metadata: bool) -> DuplicateGroups:
     """Partition live rows into recordings. ``by_metadata`` adds the fallback."""
     union = _UnionFind()
-    for rows in _same_file_rows(conn):
-        for other in rows[1:]:
-            union.union(rows[0], other, BASIS_SAME_FILE)
+    _union_each(union, _same_file_rows(conn), BASIS_SAME_FILE)
+    _union_each(union, _same_stored_path_rows(conn), BASIS_SAME_STORED_PATH)
     for loser, survivor in identity_duplicate_remap(conn).items():
         union.union(loser, survivor, BASIS_IDENTITY)
     if by_metadata:
-        for chunk in _metadata_chunks(conn):
-            for other in chunk[1:]:
-                union.union(chunk[0], other, BASIS_METADATA)
+        _union_each(union, _metadata_chunks(conn), BASIS_METADATA)
     groups = DuplicateGroups()
     members: dict[str, list[str]] = {}
     for stable_id in union.parent:
@@ -389,6 +421,7 @@ __all__ = [
     "BASIS_IDENTITY",
     "BASIS_METADATA",
     "BASIS_SAME_FILE",
+    "BASIS_SAME_STORED_PATH",
     "CFG",
     "SHARED_FIELDS",
     "SHARE_TIER",

@@ -1,0 +1,151 @@
+{
+  "name": "oltf-calibration-v1",
+  "source": "OLTF playlist, recon Tue 27 Oct 2026; stable ids only, paths resolve at run time",
+  "sha256": "e715a8966334dd4e9edb099689eb8af651c33aa741f41fab21e73bf7e2d5a55d",
+  "pairs": [
+    {
+      "pair_id": "p01",
+      "stratum": "S1-same-key-tempo",
+      "out_id": "d074d7345847b913f34c98985853eefd1ab38655",
+      "in_id": "6a1caf94f4caddec153a94868af2322363cc05b5"
+    },
+    {
+      "pair_id": "p02",
+      "stratum": "S1-same-key-tempo",
+      "out_id": "5842fcccfcc3c1986629b26cbaf40472dc1dd842",
+      "in_id": "2eecfa2521e2ccfc6932f8d0f8066b1d1b446ba6"
+    },
+    {
+      "pair_id": "p03",
+      "stratum": "S1-same-key-tempo",
+      "out_id": "af4092bfd6f1bd7a7c53af225e5fdfd48211b29f",
+      "in_id": "44f1251d22cfa33ae8378fc25feae38e3f9aa4d2"
+    },
+    {
+      "pair_id": "p04",
+      "stratum": "S1-same-key-tempo",
+      "out_id": "6a1caf94f4caddec153a94868af2322363cc05b5",
+      "in_id": "24cfb6217929b207b7f68c48d8aa3f76af535653"
+    },
+    {
+      "pair_id": "p05",
+      "stratum": "S2-bpm-2-4",
+      "out_id": "a8a06ce81ceeef5109d7057076f670f2db55dd9a",
+      "in_id": "64e9b95547276f8c523db86b2753f8a5191fdd98"
+    },
+    {
+      "pair_id": "p06",
+      "stratum": "S2-bpm-2-4",
+      "out_id": "b26e04e6bb99d01724e5f13dabb121be7e4de693",
+      "in_id": "24cfb6217929b207b7f68c48d8aa3f76af535653"
+    },
+    {
+      "pair_id": "p07",
+      "stratum": "S2-bpm-2-4",
+      "out_id": "b26e04e6bb99d01724e5f13dabb121be7e4de693",
+      "in_id": "a8a06ce81ceeef5109d7057076f670f2db55dd9a"
+    },
+    {
+      "pair_id": "p08",
+      "stratum": "S2-bpm-2-4",
+      "out_id": "6e004f350f0d32cb62b677a383659f6da48cc292",
+      "in_id": "fb210ac0ab132e17d73a30a8006fe6e693c010d2"
+    },
+    {
+      "pair_id": "p09",
+      "stratum": "S3-bpm-6",
+      "out_id": "05e2868e15743b3f27124626602eddd350c09ad3",
+      "in_id": "b26e04e6bb99d01724e5f13dabb121be7e4de693"
+    },
+    {
+      "pair_id": "p10",
+      "stratum": "S3-bpm-6",
+      "out_id": "8610b07053051c1a150cdb409bf98aa69bb3538a",
+      "in_id": "4f79717c54cc0b7654db89b95f1ed081fd3ab29a"
+    },
+    {
+      "pair_id": "p11",
+      "stratum": "S3-bpm-6",
+      "out_id": "4f79717c54cc0b7654db89b95f1ed081fd3ab29a",
+      "in_id": "af4092bfd6f1bd7a7c53af225e5fdfd48211b29f"
+    },
+    {
+      "pair_id": "p12",
+      "stratum": "S4-key-clash-3plus",
+      "out_id": "5842fcccfcc3c1986629b26cbaf40472dc1dd842",
+      "in_id": "8610b07053051c1a150cdb409bf98aa69bb3538a"
+    },
+    {
+      "pair_id": "p13",
+      "stratum": "S4-key-clash-3plus",
+      "out_id": "64e9b95547276f8c523db86b2753f8a5191fdd98",
+      "in_id": "44f1251d22cfa33ae8378fc25feae38e3f9aa4d2"
+    },
+    {
+      "pair_id": "p14",
+      "stratum": "S4-key-clash-3plus",
+      "out_id": "b26e04e6bb99d01724e5f13dabb121be7e4de693",
+      "in_id": "89f740b6c23566386c6be80b786a7ee0d7c42185"
+    },
+    {
+      "pair_id": "p15",
+      "stratum": "S4-key-clash-3plus",
+      "out_id": "6a1caf94f4caddec153a94868af2322363cc05b5",
+      "in_id": "2eecfa2521e2ccfc6932f8d0f8066b1d1b446ba6"
+    },
+    {
+      "pair_id": "p16",
+      "stratum": "S4-key-clash-3plus",
+      "out_id": "4f79717c54cc0b7654db89b95f1ed081fd3ab29a",
+      "in_id": "2eecfa2521e2ccfc6932f8d0f8066b1d1b446ba6"
+    },
+    {
+      "pair_id": "p17",
+      "stratum": "S5-vocal-vs-vocal",
+      "out_id": "24cfb6217929b207b7f68c48d8aa3f76af535653",
+      "in_id": "64e9b95547276f8c523db86b2753f8a5191fdd98"
+    },
+    {
+      "pair_id": "p18",
+      "stratum": "S5-vocal-vs-vocal",
+      "out_id": "d074d7345847b913f34c98985853eefd1ab38655",
+      "in_id": "4f79717c54cc0b7654db89b95f1ed081fd3ab29a"
+    },
+    {
+      "pair_id": "p19",
+      "stratum": "S5-vocal-vs-vocal",
+      "out_id": "4f79717c54cc0b7654db89b95f1ed081fd3ab29a",
+      "in_id": "efce87883f85852394b789af082ef3453daa1ff5"
+    },
+    {
+      "pair_id": "p20",
+      "stratum": "S6-genre-cross-judged",
+      "out_id": "4f79717c54cc0b7654db89b95f1ed081fd3ab29a",
+      "in_id": "44f1251d22cfa33ae8378fc25feae38e3f9aa4d2"
+    },
+    {
+      "pair_id": "p21",
+      "stratum": "S6-genre-cross-judged",
+      "out_id": "eb92b6244d8c66a571132e39d43d3fd5a8d6fcd3",
+      "in_id": "efce87883f85852394b789af082ef3453daa1ff5"
+    },
+    {
+      "pair_id": "p22",
+      "stratum": "S7-cold-vs-long-outro",
+      "out_id": "b26e04e6bb99d01724e5f13dabb121be7e4de693",
+      "in_id": "a76d51f6fa000ec9b7048ad51703de2cdf1d52a8"
+    },
+    {
+      "pair_id": "p23",
+      "stratum": "S7-cold-vs-long-outro",
+      "out_id": "daacfd89fb24c35f1c09d684b1a7d9aff67676f2",
+      "in_id": "a76d51f6fa000ec9b7048ad51703de2cdf1d52a8"
+    },
+    {
+      "pair_id": "p24",
+      "stratum": "S7-cold-vs-long-outro",
+      "out_id": "64e9b95547276f8c523db86b2753f8a5191fdd98",
+      "in_id": "5842fcccfcc3c1986629b26cbaf40472dc1dd842"
+    }
+  ]
+}

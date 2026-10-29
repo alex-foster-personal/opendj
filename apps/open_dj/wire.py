@@ -170,7 +170,7 @@ def _cues_to_wire(
             base["name"] = c.name
         if c.color_rgb is not None:
             base["color"] = _color_int_to_hex(c.color_rgb)
-        base["source"] = wrap(source, source=source, modified_at=modified_at)
+        base["source"] = _wrap_source_stamp(source, modified_at=modified_at)
 
         if c.type == "loop":
             # Split the convenience alias into loop_in / loop_out pair.
@@ -183,8 +183,8 @@ def _cues_to_wire(
                 loop_out = {
                     "position_ms": int(c.position_ms) + int(c.length_ms),
                     "type": "loop_out",
-                    "source": wrap(
-                        source, source=source, modified_at=modified_at
+                    "source": _wrap_source_stamp(
+                        source, modified_at=modified_at
                     ),
                 }
                 if c.name:
@@ -218,7 +218,7 @@ def _beats_to_wire(
         "bpm": float(first.bpm or (fallback_bpm or 0.0)),
         "algorithm": algorithm,
         "beats": [float(b.position_ms) for b in beats],
-        "source": wrap(source, source=source, modified_at=modified_at),
+        "source": _wrap_source_stamp(source, modified_at=modified_at),
     }
     return grid
 
@@ -260,6 +260,35 @@ def _slug_join(path: str, name: str) -> str:
 
 def _color_int_to_hex(color_rgb: int) -> str:
     return f"#{int(color_rgb) & 0xFFFFFF:06x}"
+
+
+def color_hex_to_int(value: Any) -> int | None:
+    """Inverse of :func:`_color_int_to_hex`.
+
+    Accepts ``"#rrggbb"``, ``"rrggbb"``, or a plain int. Returns ``None``
+    on anything it cannot parse so loaders degrade gracefully rather than
+    crashing on vendor-emitted oddities.
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value & 0xFFFFFF
+    if isinstance(value, str):
+        s = value.strip().lstrip("#")
+        if not s:
+            return None
+        try:
+            return int(s, 16) & 0xFFFFFF
+        except ValueError:
+            return None
+    return None
+
+
+def _wrap_source_stamp(
+    source: str, *, modified_at: datetime | str
+) -> dict[str, Any]:
+    """Build the provenance envelope stamped onto cue/beatgrid ``source``."""
+    return wrap(source, source=source, modified_at=modified_at)
 
 
 def _is_extension_key(key: str) -> bool:

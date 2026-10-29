@@ -86,7 +86,7 @@ test('the bar loads through the browser deck-load path, not its own', () => {
 	const page = readFileSync(`${SRC}/routes/performance/+page.svelte`, 'utf8');
 	assert.match(page, /<CommandBar[\s\S]{0,200}load=\{browserPanel\.commandBarLoad\}/);
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(panel, /export async function commandBarLoad[\s\S]{0,120}await _loadOntoDeck\(row, deck\)/);
+	assert.match(panel, /export async function commandBarLoad[\s\S]{0,120}await _loadOntoDeck\(row, deck, \{ noKeyShift: true \}\)/);
 	const bar = readFileSync(`${SRC}/lib/components/rb/CommandBar.svelte`, 'utf8');
 	assert.doesNotMatch(bar, /dispatchPerformanceCommand|runPerformanceCommandFromUi/);
 });

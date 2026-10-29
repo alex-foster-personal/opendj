@@ -35,7 +35,7 @@
 //! edit list is applied (encoder priming trimmed) so it starts where ffmpeg
 //! and a deck start it. It never replaces a file: OUT must not exist. This is how the stems and vocals
 //! workers read compressed audio in the installed app, which ships no ffmpeg
-//! (`docs/decisions/*-odj-audio-decode-for-workers.md`).
+//! (`(private path)/*-odj-audio-decode-for-workers.md`).
 //! `input-devices` (build feature `device`) prints the audio inputs as one
 //! JSON line, and `record` records one of them into DIR as rolling 16-bit WAV
 //! segments named by their UTC start (`src/record.rs`), printing a JSON line
@@ -44,7 +44,7 @@
 //! when it stops. It stops, closing
 //! the last segment, when stdin reaches end of file or reads `stop`. This is
 //! how REC records a set in the installed app, which ships no ffmpeg
-//! (`docs/decisions/*-set-recording-without-ffmpeg.md`).
+//! (`(private path)/*-set-recording-without-ffmpeg.md`).
 
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -446,6 +446,8 @@ fn render(mut args: Args) -> Result<(), String> {
         "type": "render",
         "out": out_path.display().to_string(),
         "sample_rate": out.sample_rate,
+        // Every file this render wrote (mix and decks) has this many channels.
+        "channels": wav::STEREO_CHANNELS,
         "frames": out.frames,
         "duration_ms": out.frames as f64 * 1000.0 / out.sample_rate as f64,
         "sha256": out.sha256,

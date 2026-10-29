@@ -12,7 +12,7 @@ let originalFetch;
 /** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
  * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, init = {}) {
-	return new Response(JSON.stringify({ key_notation: 'camelot', ...body }), {
+	return new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body }), {
 		status: 200,
 		...init,
 		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }
@@ -103,9 +103,23 @@ function hydratorArgs() {
 		defaults: {
 			auto_sync: uiPrefs.auto_sync,
 			level_calibration: uiPrefs.level_calibration
-		}
+		},
+		isDiskValueSuperseded: () => false,
+		onSupersededDiskValue: () => {}
 	};
 }
+
+test('makePrefsHydrator refuses to build without both disk-supersession hooks', () => {
+	// Sol P1, PR #6829: a silent default took a stale pre-migration disk value
+	// or dropped the one the owner had to reconcile.
+	for (const missing of ['isDiskValueSuperseded', 'onSupersededDiskValue']) {
+		const args = hydratorArgs();
+		delete args[missing];
+		assert.throws(() => prefsHydrate.makePrefsHydrator(args), TypeError, `built without ${missing}`);
+	}
+	// Control: the full pair builds.
+	assert.equal(typeof prefsHydrate.makePrefsHydrator(hydratorArgs()), 'function');
+});
 
 test('makePrefsHydrator applies disk master_muted through setMasterMuted', async () => {
 	globalThis.fetch = async () => jsonResponse({ master_muted: true });

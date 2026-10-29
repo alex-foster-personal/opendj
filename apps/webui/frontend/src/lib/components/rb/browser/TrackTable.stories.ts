@@ -49,7 +49,8 @@ const meta = {
 		onselectrow: fn(),
 		onloadrow: fn(),
 		onrate: fn(),
-		onrowvisible: fn()
+		onrowvisible: fn(),
+		onkeycardfailed: fn()
 	}
 } satisfies Meta<typeof TrackTable>;
 

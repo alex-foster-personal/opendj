@@ -30,6 +30,7 @@ from apps.shared.smartlists import (
     SmartlistRuleError,
     validate_rule,
 )
+from apps.smartlists.order_by import ORDER_BY_SQL
 
 
 class EvaluatorError(ValueError):
@@ -39,19 +40,6 @@ class EvaluatorError(ValueError):
 _TRACKS_NATIVE: dict[str, str] = {
     "added_date": "tracks.created_at",
 }
-
-_ORDER_BY_COLUMNS: dict[str, str] = {
-    "added_date asc":  "tracks.created_at ASC",
-    "added_date desc": "tracks.created_at DESC",
-    "bpm asc":         "_bpm ASC",
-    "bpm desc":        "_bpm DESC",
-    "rating asc":      "_rating ASC",
-    "rating desc":     "_rating DESC",
-    "energy asc":      "_energy ASC",
-    "energy desc":     "_energy DESC",
-    "random":          "RANDOM()",
-}
-
 
 def _sql_literal(s: str) -> str:
     if not s.replace("_", "").isalnum():
@@ -206,10 +194,10 @@ def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
 
 
 def _order_by_sql(order_by: str) -> str:
-    expr = _ORDER_BY_COLUMNS.get(order_by)
+    expr = ORDER_BY_SQL.get(order_by)
     if expr is None:
         raise EvaluatorError(
-            f"order_by {order_by!r} not in allowlist {sorted(_ORDER_BY_COLUMNS)}"
+            f"order_by {order_by!r} not in allowlist {sorted(ORDER_BY_SQL)}"
         )
     return expr
 

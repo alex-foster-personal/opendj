@@ -21,7 +21,7 @@ let originalFetch;
 /** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
  * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, status = 200) {
-	const payload = status === 200 ? { key_notation: 'camelot', ...body } : body;
+	const payload = status === 200 ? { key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body } : body;
 	return new Response(JSON.stringify(payload), {
 		status,
 		headers: { 'content-type': 'application/json' }

@@ -1,0 +1,84 @@
+{
+  "captured": "Sat 17 Oct 2026 from Chromium (Playwright build) headless=new: the CDP messages one Page.navigate from a plain page to a page holding one iframe produced, in arrival order. Only init, DOMContentLoaded and load lifecycle events are kept; timestamps dropped.",
+  "navigatedFrom": "/",
+  "navigatedTo": "/page (with <iframe src=\"/f\">)",
+  "messages": [
+    {
+      "event": {
+        "frameId": "A4EA1DC28EC41FE6438872E3F90DB467",
+        "loaderId": "88C6E174DF967EC19CA763F1EFE436EE",
+        "name": "DOMContentLoaded"
+      }
+    },
+    {
+      "event": {
+        "frameId": "A4EA1DC28EC41FE6438872E3F90DB467",
+        "loaderId": "88C6E174DF967EC19CA763F1EFE436EE",
+        "name": "load"
+      }
+    },
+    {
+      "event": {
+        "frameId": "BA3031DCBC782A5B865FDF15A82DE1A9",
+        "loaderId": "276878CCECCFDD415E307EAB88CEC323",
+        "name": "load"
+      }
+    },
+    {
+      "reply": {
+        "frameId": "BA3031DCBC782A5B865FDF15A82DE1A9",
+        "loaderId": "01982ACBD991908CCCB1A853FF2837CD",
+        "isDownload": false
+      }
+    },
+    {
+      "event": {
+        "frameId": "BA3031DCBC782A5B865FDF15A82DE1A9",
+        "loaderId": "01982ACBD991908CCCB1A853FF2837CD",
+        "name": "init"
+      }
+    },
+    {
+      "event": {
+        "frameId": "A25E0B9C67DE7F7B6B39995556404E85",
+        "loaderId": "94F430E0378A445F5FB494A134E31D82",
+        "name": "init"
+      }
+    },
+    {
+      "event": {
+        "frameId": "BA3031DCBC782A5B865FDF15A82DE1A9",
+        "loaderId": "01982ACBD991908CCCB1A853FF2837CD",
+        "name": "DOMContentLoaded"
+      }
+    },
+    {
+      "event": {
+        "frameId": "A25E0B9C67DE7F7B6B39995556404E85",
+        "loaderId": "CA23CF9ADACAEE99B15DA74C92DD4CD5",
+        "name": "init"
+      }
+    },
+    {
+      "event": {
+        "frameId": "A25E0B9C67DE7F7B6B39995556404E85",
+        "loaderId": "CA23CF9ADACAEE99B15DA74C92DD4CD5",
+        "name": "DOMContentLoaded"
+      }
+    },
+    {
+      "event": {
+        "frameId": "A25E0B9C67DE7F7B6B39995556404E85",
+        "loaderId": "CA23CF9ADACAEE99B15DA74C92DD4CD5",
+        "name": "load"
+      }
+    },
+    {
+      "event": {
+        "frameId": "BA3031DCBC782A5B865FDF15A82DE1A9",
+        "loaderId": "01982ACBD991908CCCB1A853FF2837CD",
+        "name": "load"
+      }
+    }
+  ]
+}

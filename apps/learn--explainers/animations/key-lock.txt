@@ -1,0 +1,79 @@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: ON
+
+   tempo  -  [--------------------O--------------------]  +
+                         0%
+
+   tempo:  +0.0%
+   pitch:  A minor
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: ON
+
+   tempo  -  [--------------------+-----O--------------]  +
+                         0%
+
+   tempo:  +2.0%
+   pitch:  A minor
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: ON
+
+   tempo  -  [--------------------+-----------O--------]  +
+                         0%
+
+   tempo:  +4.0%
+   pitch:  A minor
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: ON
+
+   tempo  -  [--------------------+-----------------O--]  +
+                         0%
+
+   tempo:  +6.0%
+   pitch:  A minor
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: OFF
+
+   tempo  -  [--------------------O--------------------]  +
+                         0%
+
+   tempo:  +0.0%
+   pitch:  A minor  +0 cents
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: OFF
+
+   tempo  -  [--------------------+-----O--------------]  +
+                         0%
+
+   tempo:  +2.0%
+   pitch:  A minor  +34 cents
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: OFF
+
+   tempo  -  [--------------------+-----------O--------]  +
+                         0%
+
+   tempo:  +4.0%
+   pitch:  A minor  +68 cents
+@@
+key lock: tempo slider moves, does the pitch follow?
+
+   key lock: OFF
+
+   tempo  -  [--------------------+-----------------O--]  +
+                         0%
+
+   tempo:  +6.0%
+   pitch:  A minor  +101 cents (now near A# minor)

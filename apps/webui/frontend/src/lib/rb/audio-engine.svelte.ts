@@ -118,7 +118,7 @@ import {
 	setPlayingPositionReader,
 	withPauseOrigin
 } from '$lib/rb/unexpected-pause-report';
-import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, cueOnlyMonitoringActive, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
+import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, logEqApply, logMixerApply, measurePressToScheduleMs, scheduleRowFacts } from '$lib/rb/press-stamp';
 import {
 	ConflictError,
@@ -168,9 +168,9 @@ import {
 	quantizeToNearestGridBeat,
 	QUANTIZED_LAUNCH,
 	phaseKeepingLandingSec,
-	resolveArmAtPosition
+	planArm
 } from '$lib/rb/beat-sync-math';
-import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
+import type { ArmAtPosition, ScheduleWhen, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
 	BeatSyncPhaseLockError,
@@ -319,8 +319,10 @@ import {
 	safeSyncScheduleTime,
 	safeTransportScheduleTime,
 	scheduleOffsetStages,
+	stretchScheduleChange,
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
+export { stretchScheduleChange };
 import { createWebAudioPhaseLock } from './phase-lock-webaudio';
 import {
 	_effectivePresentedScheduleAt,
@@ -469,6 +471,7 @@ let _masterMuteGain: GainNode | null = null;
  * owns its delayTime; the engine only wires it. */
 let _masterDelay: DelayNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null, _externalRouteAnalyser: AnalyserNode | null = null; // #1642: taps _externalMerger, which bypasses _masterGain
+let _externalRouting: ReadonlyMap<DeckId, number> | null = null; // the live ?extroute= deck map, for the silence check
 let _djOutputNodes: AudioNode[] = [];
 let _djOutputProfileActive: DjOutputProfile | null = null;
 let _rafId: number | null = null;
@@ -535,6 +538,20 @@ export function peekDeckMeterReading(deck: DeckId): MeterReading {
 	const tap = _meterTaps[deck];
 	if (_rt[deck].nodes === null || tap === null) return SILENT_METER_READING;
 	return readMeterTap(tap, meterClockMs());
+}
+
+/** True when this deck plays through a ?extroute= output, past the crossfader. */
+export function isDeckExternallyRouted(deck: DeckId): boolean {
+	return _externalRouting?.has(deck) ?? false;
+}
+
+/** Commanded gain from this deck to the internal master bus, with the live
+ * ?extroute= map and master ceiling (0 for a routed deck). The trim stage also
+ * multiplies in the deck's auto gain (`trimStageGain`), so this does too, or
+ * the watchdog's source gate would expect more signal than the bus carries
+ * (Codex P1, PR #6829). */
+export function deckMasterBusGain(deck: DeckId): number {
+	return masterBusPathGain(mixerState, deck, _externalRouting, _ceilingGainMultiplier()) * autoGainLinear(deck);
 }
 
 /** Test seam: live channel-fader gain after setFader, null when the graph is absent. */
@@ -841,7 +858,7 @@ function _resetGraphState(releaseHeadphones: () => void): void {
 	attachMasterMuteNode(null);
 	_masterMuteGain = null;
 	_masterDelay = null;
-	_externalMerger = _externalRouteAnalyser = null;
+	_externalMerger = _externalRouteAnalyser = _externalRouting = null;
 	_djOutputNodes = [];
 	_djOutputProfileActive = null;
 	clearDjOutputResolution();
@@ -926,7 +943,7 @@ function _ensureGraph(): AudioContext {
 			masterDelay: _masterDelay,
 			headphoneDelay: headphones.delay
 		});
-		_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser;
+		_externalMerger = output.externalMerger; _externalRouteAnalyser = output.externalRouteAnalyser; _externalRouting = routing;
 		_djOutputNodes = output.ownedNodes;
 		setMultichannelMonitorActive(output.multichannelMonitorActive);
 		if (routing === null && _djOutputProfileActive === null) {
@@ -1425,30 +1442,12 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	});
 }
 
-export function stretchScheduleChange(
-	inputSec: number,
-	active: boolean,
-	tempoRatio: number,
-	masterTempoEnabled: boolean,
-	keyShiftSemitones: number,
-	loop: LoopState | null
-): StretchScheduleChange {
-	return {
-		active,
-		input: inputSec,
-		rate: tempoRatio,
-		semitones: composeStretchSemitones(tempoRatio, masterTempoEnabled, keyShiftSemitones),
-		loopStart: loop !== null && loop.engaged ? loop.in_ms / 1000 : 0,
-		loopEnd: loop !== null && loop.engaged ? loop.out_ms / 1000 : 0
-	};
-}
-
 /** Q1: `_scheduleDeck` from a press path - the stamp rides, nothing else moves.
  * `keep` = the tempo/loop/key arguments a press never overrides, so each one
  * stays the deck's standing intent. */
 function _schedulePress(
 	deck: DeckId,
-	when: number,
+	when: ScheduleWhen,
 	inputSec: number | ((effectiveWhen: number) => number),
 	active: boolean,
 	pressT0Ms: number | undefined
@@ -1459,7 +1458,7 @@ function _schedulePress(
 
 async function _scheduleDeck(
 	deck: DeckId,
-	when: number,
+	when: ScheduleWhen,
 	inputSec: number | ((effectiveWhen: number) => number),
 	active: boolean,
 	tempoRatio?: number,
@@ -1560,7 +1559,7 @@ async function _observeLiveProcessorLatency(
 
 async function _scheduleDeckSerial(
 	deck: DeckId,
-	when: number,
+	when: ScheduleWhen,
 	inputSec: number | ((effectiveWhen: number) => number),
 	active: boolean,
 	tempoRatio: number | undefined,
@@ -1584,8 +1583,10 @@ async function _scheduleDeckSerial(
 	const pressToScheduleMs = measurePressToScheduleMs(pressT0Ms, deck);
 	const processorLeadSec = _transportLeadSec(deck);
 	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, processorLeadSec);
-	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
 	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
+	const earliestWhen = supersedingScheduleTime(minimumSafeWhen, latestPending?.startContextTime ?? null, minimumSafeWhen);
+	const requestedWhen = typeof when === 'function' ? when(earliestWhen) : when;
+	const safeRequestedWhen = Math.max(requestedWhen, minimumSafeWhen);
 	const effectiveWhen = supersedingScheduleTime(
 		safeRequestedWhen,
 		latestPending?.startContextTime ?? null,
@@ -1598,7 +1599,7 @@ async function _scheduleDeckSerial(
 	// Emitted after the ack, so the log write never sits on the path it measures.
 	const scheduleStages = scheduleOffsetStages({
 		contextTimeSec: scheduleContextTime,
-		requestedWhenSec: when,
+		requestedWhenSec: requestedWhen,
 		effectiveWhenSec: effectiveWhen,
 		processorLeadSec,
 		processorLatencySec: rt.latencySec,
@@ -2083,8 +2084,10 @@ function _tick(): void {
 		_phaseLock.tick(_ctx.currentTime); // NAE-19: keep Beat Sync followers on phase (throttled to 30 Hz)
 		const nowMs = performance.now(); if (nowMs - _lastHandoffCheckMs >= HANDOFF_TICK_MS) _maybeHandoffOnAir(nowMs);
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
-		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
-		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
+		const stemsSilent = playingStemsIntentionallySilent(Object.values(deckStates));
+		const intentionalSilence = masterSilenceIsCommanded(_djOutputProfileActive, mixerState, deckStates, _externalRouting, _ceilingGainMultiplier()) || stemsSilent;
+		const busSilence = masterBusSilenceIsCommanded(_djOutputProfileActive, mixerState, deckStates, _externalRouting, _ceilingGainMultiplier()) || stemsSilent;
+		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence, busSilence);
 		if (anyTransport && !_offFrame) noteAudioPresentationTick(); // a paint-rate meter: a backstop run is not a painted frame
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
@@ -2987,7 +2990,7 @@ class RbAudioEngine implements AudioEngine {
 		attachMasterMuteNode(null);
 		_masterMuteGain = null;
 		_masterDelay = null;
-		_externalMerger = _externalRouteAnalyser = null;
+		_externalMerger = _externalRouteAnalyser = _externalRouting = null;
 		_djOutputNodes = [];
 		_djOutputProfileActive = null;
 		clearDjOutputResolution();
@@ -3528,17 +3531,21 @@ class RbAudioEngine implements AudioEngine {
 	 * Self-referential only: unlike `quantizedSeek`'s syncPlan branch, this
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
-	 * A resolver `armAt` runs on the live projected position before any await.
+	 * A resolver `armAt` runs inside the deck's serialized schedule, at its first possible landing.
 	 */
 	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
-		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
-		const armAtPositionSec = resolveArmAtPosition(armAt, nowPositionSec);
-		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
-		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
-		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
-		return targetContextTime;
+		// Plan at the serialized schedule's first landing (Codex P1s, PR #6834; see ScheduleWhen); return the clamped time sent.
+		let landedContextTime: number | null = null;
+		const armWhen = (earliestContextTime: number): number => {
+			const anchor = { contextTime: earliestContextTime, positionSec: _projectPositionAt(deck, earliestContextTime), tempoRatio: _tempoAt(deck, earliestContextTime) };
+			return planArm(armAt, anchor, rt.pending[rt.pending.length - 1]?.startContextTime ?? null).contextTime;
+		};
+		const landAt = (effectiveWhen: number): number => { landedContextTime = effectiveWhen; return targetPositionMs / 1000; };
+		await _schedulePress(deck, armWhen, landAt, rt.desiredActive, pressT0Ms);
+		if (landedContextTime === null) throw new Error(`armHotCueTrigger: deck ${deck} scheduled without a landing time`);
+		return landedContextTime;
 	}
 
 	clearQuantizedLaunch(deck: DeckId): void {
@@ -4413,16 +4420,9 @@ class RbAudioEngine implements AudioEngine {
 			const minimum = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			sharedWhen = Math.max(sharedWhen, minimum);
 		}
-		await Promise.all(
-			decks.map((deck) =>
-				_scheduleDeck(
-					deck,
-					sharedWhen,
-					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-					false
-				)
-			)
-		);
+		const stop = (deck: DeckId): Promise<number> =>
+			_scheduleDeck(deck, sharedWhen, (effectiveWhen) => _projectPositionAt(deck, effectiveWhen), false);
+		await withPauseOrigin('command', () => Promise.all(decks.map(stop)));
 	}
 }
 

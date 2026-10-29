@@ -13,6 +13,7 @@ from apps.engine_core.host_info import (
     HOST_INFO_STATE_ATTR,
     HostIdentity,
 )
+from apps.engine_core.refusal import unavailable_response
 from apps.shared.perf_tier import (
     HostFacts,
     HostInfoUnavailable,
@@ -62,20 +63,17 @@ def add_perf_tier_route(app: FastAPI, *, data_dir: Path) -> None:
         try:
             wire = tier_wire(data_dir, facts=facts, host_failure=host_failure)
         except HostInfoUnavailable as exc:
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "error": CODE_PERF_TIER_UNAVAILABLE,
-                    "message": str(exc),
-                    "details": {"host_error": CODE_HOST_INFO_UNAVAILABLE},
-                },
+            return unavailable_response(
+                CODE_PERF_TIER_UNAVAILABLE,
+                str(exc),
+                details={"host_error": CODE_HOST_INFO_UNAVAILABLE},
             )
         return PerfTierOut.model_validate(wire)
 
 
 __all__ = [
-    "PERF_TIER_PATH",
     "CODE_PERF_TIER_UNAVAILABLE",
+    "PERF_TIER_PATH",
     "PerfTierOut",
     "add_perf_tier_route",
 ]

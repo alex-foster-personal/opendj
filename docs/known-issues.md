@@ -11,9 +11,9 @@ for its slice:
 - [`.planning/MAINTAINER-REVIEW-QUEUE.md`](../.planning/MAINTAINER-REVIEW-QUEUE.md)
   for P0 physical-action stops and per-phase defaults flagged for human
   review (D1..D11, plus dozens of P1/P2 rows).
-- [`.planning/V1-SHIP-SUMMARY.md`](../.planning/V1-SHIP-SUMMARY.md)
+- [`(private path)`](../.planning/V1-SHIP-SUMMARY.md)
   section "What is deferred to v1.x or v2".
-- [`.planning/SESSION-REPORT-2026-04-17.md`](../.planning/SESSION-REPORT-2026-04-17.md)
+- [`(private path)`](../.planning/SESSION-REPORT-2026-04-17.md)
   "Patterns that failed or need improvement".
 
 If a row here disagrees with one of those, the upstream doc wins and
@@ -42,14 +42,14 @@ None of them block using the toolkit today.
 
 | ID  | Feature / scope                                    | Status         | Closing action                                                                                                                             |
 |-----|----------------------------------------------------|----------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| D1  | djay cautious live ratings pass (SYNC-06)          | CODE-COMPLETE  | Run `python -m apps.sync.apply_ratings --cautious --tracks UUID1,UUID2,UUID3 --live` per `docs/phase-04-cautious-runbook.md`.            |
+| D1  | djay cautious live ratings pass (SYNC-06)          | CODE-COMPLETE  | Run `python -m apps.sync.apply_ratings --cautious --tracks UUID1,UUID2,UUID3 --live` per `(private path)`.            |
 | D2  | Harvest real djay cue blobs + byte-compare before first live cue write | CODE-COMPLETE  | Run `scripts/harvest_djay_cues.py`, byte-compare 3 blobs against `djay_writer`, then `apply_cues --cautious`.                            |
-| D3  | Phase 4 Probe O2 (VBR MPEG-frame recompute) and `rb_writer.write_cues` live wire-up | PARTIAL        | Run `docs/phase-04-probe-o2-runbook.md` on one VBR MP3. `apply_cues --live` currently emits reversal scaffolding but does not call `rb_writer.write_cues`. |
+| D3  | Phase 4 Probe O2 (VBR MPEG-frame recompute) and `rb_writer.write_cues` live wire-up | PARTIAL        | Run `(private path)` on one VBR MP3. `apply_cues --live` currently emits reversal scaffolding but does not call `rb_writer.write_cues`. |
 | D4  | Capture djay playlist fixture + confirm leaf `type` byte is `0x01` | CODE-COMPLETE  | `PLAYLIST_TYPE_LEAF = 0x01` is a best-guess default. Capture one fixture, confirm, override via `--leaf-type-byte` if different.         |
 | D5  | Voice mic loop (Phase 14) end-to-end on real hardware | CODE-COMPLETE  | Install whisper.cpp + PortAudio + openWakeWord model, then run `python -m apps.voice run`. See [`operator-setup.md`](operator-setup.md) Voice section. |
 | D6  | Litestream + R2 + Syncthing real pairing           | CODE-COMPLETE  | Provision R2 bucket, set Doppler secret, pair Syncthing, verify Litestream replay.                                                         |
 | D7  | USB bulk live write against a real USB drive       | CODE-COMPLETE  | Plug a drive, run `python -m apps.sync.usb.apply --profile usb-profiles/sample.yaml --cautious`, then `--bulk`.                          |
-| D8  | Phase 18 drag-probe matrix against real djay / RB / Serato / Traktor | PARTIAL | 12 rows at [`docs/m7b-drag-matrix.md`](m7b-drag-matrix.md) currently all pending. At minimum, one successful drag per vendor before v1 tag. |
+| D8  | Phase 18 drag-probe matrix against real djay / RB / Serato / Traktor | PARTIAL | 12 rows at [`(private path)`](m7b-drag-matrix.md) currently all pending. At minimum, one successful drag per vendor before v1 tag. |
 | D9  | Phase 17 manual djay drag test once launcher builds locally | CODE-COMPLETE | `cd apps/launcher && pnpm install && pnpm tauri dev`, press Alt+Space, drag a track into djay.                                        |
 | D10 | Phase 10.1 agentic Rekordbox export retry with `RB_AGENT_LIVE=1` | CODE-COMPLETE | All four fixes for the 5120x2160 resolution issue are merged. Close Rekordbox, set `RB_AGENT_LIVE=1`, run `writer_agent`, walk away. |
 | D11 | Phase 10.1 hardware HITL (XDJ-700 or CDJ-3000)     | PARTIAL        | Acquire used XDJ-700 (~$400-600) or borrow CDJ-3000. Software validation via dual-parser cross-check is complete; hardware is not.    |
@@ -138,25 +138,25 @@ prefixes that are not categories (`ANALYSIS-03`, `TAGS-02`,
 (`INFRA-05`), and a documented future-backlog placeholder (`VOICE-02`).
 
 All nine were retargeted to the requirement each test actually defends.
-`tests/test_requirement_markers.py` now fails the suite on any marker ID
+`(private path)` now fails the suite on any marker ID
 absent from `reqs.json`, so this cannot silently recur.
 
 ### Unresolved stashes + non-canonical author identities
 
 Historical only. 15 stashes and 21 non-canonical author commits
 accumulated during the v1 fanout. Both are documented in
-[`.planning/HEALTH-2-2026-04-17.md`](../.planning/HEALTH-2-2026-04-17.md)
+[`(private path)`](../.planning/HEALTH-2-2026-04-17.md)
 and
-[`docs/git-author-convention.md`](git-author-convention.md). No new
+[`(private path)`](git-author-convention.md). No new
 commits should add to either count. For agents: match the canonical
-author identity from `docs/git-author-convention.md` before committing.
+author identity from `(private path)` before committing.
 
 ### Intra-repo links
 
 The `apps/adapters/_shim/` package was retired during phase 16-15 (see
 commits `0d22335` and `6a31672`). Two historical Markdown references
 pointed at the retired path and were fixed in the broken-link audit
-([`.planning/BROKEN-LINKS-2026-04-17.md`](../.planning/BROKEN-LINKS-2026-04-17.md)).
+([`(private path)`](../.planning/BROKEN-LINKS-2026-04-17.md)).
 If new docs reference `apps/adapters/_shim/`, treat it as stale; the
 canonical home is `apps.open_dj` (schema, registry, canon).
 
@@ -177,11 +177,11 @@ out here so operators do not wait for them.
 ## Reporting a new issue
 
 Open an issue at
-<https://github.com/former-work-account/music-dj-tools/issues> with:
+<https://github.com/private_owner/music-dj-tools/issues> with:
 
 1. Which phase / app module the issue sits in.
 2. The exact CLI invocation or API call that triggered it.
-3. Whether any of the six rails fired (backup file path, reversal
+3. Whether any of the seven safety rails fired (backup file path, reversal
    script path, readback error).
 4. Vendor app versions for any DB you touched (Rekordbox / djay /
    Serato / Traktor).
@@ -192,9 +192,9 @@ Security-sensitive reports go to the contacts in
 ## Related documents
 
 - [`.planning/MAINTAINER-REVIEW-QUEUE.md`](../.planning/MAINTAINER-REVIEW-QUEUE.md)
-- [`.planning/V1-SHIP-SUMMARY.md`](../.planning/V1-SHIP-SUMMARY.md)
-- [`.planning/SESSION-REPORT-2026-04-17.md`](../.planning/SESSION-REPORT-2026-04-17.md)
-- [`.planning/BROKEN-LINKS-2026-04-17.md`](../.planning/BROKEN-LINKS-2026-04-17.md)
+- [`(private path)`](../.planning/V1-SHIP-SUMMARY.md)
+- [`(private path)`](../.planning/SESSION-REPORT-2026-04-17.md)
+- [`(private path)`](../.planning/BROKEN-LINKS-2026-04-17.md)
 - `coverage-matrix.md` (generated + gitignored; `make test` locally, or the
   `coverage-matrix` CI artifact)
 - [`RELEASE-NOTES-v1.0-rc3.md`](../RELEASE-NOTES-v1.0-rc3.md)

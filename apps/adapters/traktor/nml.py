@@ -23,6 +23,14 @@ from pathlib import Path
 # ----------------------------------------------------------- data model
 
 
+def _set_optional_attr(element: ET.Element, name: str, value: str) -> None:
+    """Set ``name`` when non-empty; drop the attribute when cleared."""
+    if value:
+        element.set(name, value)
+    elif name in element.attrib:
+        del element.attrib[name]
+
+
 @dataclass
 class NMLEntry:
     """One ``<ENTRY>`` child -- a track row in Traktor's collection."""
@@ -37,10 +45,7 @@ class NMLEntry:
 
     @artist.setter
     def artist(self, value: str) -> None:
-        if value:
-            self.element.set("ARTIST", value)
-        elif "ARTIST" in self.element.attrib:
-            del self.element.attrib["ARTIST"]
+        _set_optional_attr(self.element, "ARTIST", value)
 
     @property
     def title(self) -> str:
@@ -48,10 +53,7 @@ class NMLEntry:
 
     @title.setter
     def title(self, value: str) -> None:
-        if value:
-            self.element.set("TITLE", value)
-        elif "TITLE" in self.element.attrib:
-            del self.element.attrib["TITLE"]
+        _set_optional_attr(self.element, "TITLE", value)
 
     def get_subchild(self, tag: str) -> ET.Element | None:
         return self.element.find(tag)

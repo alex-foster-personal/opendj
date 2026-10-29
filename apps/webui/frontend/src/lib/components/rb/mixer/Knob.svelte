@@ -8,18 +8,18 @@
 	 *
 	 * All input routes through $lib/rb/knob-control (H5, MIXUX-13): shift+click
 	 * toggles a dial in an ordered selection set that the global scroll wheel,
-	 * arrow keys and a two-axis drag move together, alt+click links two dials so one turn moves them inversely with the
+	 * arrow keys and a drag led by the dragged dial move together, alt+click links two dials so one turn moves them inversely with the
 	 * rising side over-boosted by KNOB_CFG.linkStagger - which is what stops the
 	 * bass dipping through a crossover. Sensitivity lives in KNOB_CFG, not here,
 	 * so horizontal drag stays the fine-adjust axis.
 	 */
+	import { createShiftSelectPress } from '$lib/rb/shift-select-press';
 	import { onDestroy, type Snippet } from 'svelte';
 	import { createDeferredClickGuard } from '$lib/rb/deferred-click';
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		KNOB_CFG,
 		altClickKnob,
-		applySelectionDrag,
 		beginSelectionDrag,
 		isKnobLinked,
 		isKnobSelected,
@@ -33,9 +33,11 @@
 		setKnobFromDrag,
 		setKnobHovered,
 		shiftClickKnob,
+		stepSelectionDrag,
 		unregisterKnob,
 		type SelectionDragStart
 	} from '$lib/rb/knob-control.svelte';
+	import { createDragTracker, trackDragMove, type DragTracker } from '$lib/rb/drag-sensitivity.svelte';
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
@@ -104,12 +106,18 @@
 	let dragStartX = 0;
 	let dragStartY = 0;
 	let dragStartValue = 0;
+	/** Gained (R5) pointer travel, integrated since the press. */
+	let dragTracker: DragTracker | null = null;
+	let dragSumDx = 0;
+	let dragSumDy = 0;
 	let dragPartnerId: string | null = null;
 	let dragStartPartnerValue: number | null = null;
 	let dragging = false;
 	/** Non-null while a drag on a selected dial moves the whole 2+ selection. */
 	let selectionDrag: SelectionDragStart | null = null;
 	let pointerMoved = false;
+	/** Alt pressed on a grouped dial: a flip drag, or a link click if it never moves. */
+	let altPressInGroup = false;
 	const singleClickGuard = createDeferredClickGuard();
 
 	onDestroy(() => {
@@ -146,9 +154,20 @@
 		return 'none';
 	});
 
+	const shiftSelect = createShiftSelectPress();
+
+	function handleClick(e: MouseEvent): void {
+		// A shift-click is control selection (R1), never MIXUX-08 deck select:
+		// the strip listens for click, so stop only the shift case here, keyed
+		// on the press as well as the click (Shift may be up by pointerup).
+		if (!shiftSelect.click(e.shiftKey)) return;
+		e.stopPropagation();
+	}
+
 	function handlePointerDown(e: PointerEvent): void {
 		// Right and middle clicks belong to the context menu, not the dial.
 		if (!live || e.button !== 0) return;
+		shiftSelect.press(e.shiftKey);
 		// Shift = select for the global wheel; Alt = arm/complete a link pair.
 		// Neither starts a drag, so a modifier click never also turns the dial.
 		if (e.shiftKey) {
@@ -156,17 +175,24 @@
 			shiftClickKnob(knobId);
 			return;
 		}
-		if (e.altKey) {
+		// Alt on a dial of a 2+ group starts a flipped drag (R3); released
+		// without travel it is still the Alt-click that arms a link pair.
+		altPressInGroup = e.altKey && isKnobSelected(knobId) && beginSelectionDrag(knobId) !== null;
+		if (e.altKey && !altPressInGroup) {
 			e.preventDefault();
 			altClickKnob(knobId);
 			return;
 		}
+		if (altPressInGroup) e.preventDefault();
 		dragging = true;
 		pointerMoved = false;
 		singleClickGuard.cancel();
 		dragStartX = e.clientX;
 		dragStartY = e.clientY;
 		dragStartValue = value;
+		dragTracker = createDragTracker(e.clientX, e.clientY);
+		dragSumDx = 0;
+		dragSumDy = 0;
 		// Baselines are captured ONCE so the link stagger cannot accumulate
 		// across pointermove frames.
 		selectionDrag = beginSelectionDrag(knobId);
@@ -181,19 +207,25 @@
 			// Only a knob with a click action has a click to protect: jitter inside the
 			// slop stays that click. Every other knob keeps moving from the first pixel.
 			const insideSlop = !pointerTravelIsDrag(e.clientX - dragStartX, e.clientY - dragStartY);
-			if (onsingleclick !== undefined && insideSlop) return;
+			// An Alt press on a grouped dial is the same: inside the slop it is
+			// still the link click.
+			if ((onsingleclick !== undefined || altPressInGroup) && insideSlop) return;
 			pointerMoved = true;
 		}
-		const dy = dragStartY - e.clientY; // up = clockwise = increase
-		const dx = e.clientX - dragStartX; // right = increase
+		if (dragTracker === null) return;
+		// up = clockwise = increase, right = increase; both gained (R5).
+		const step = trackDragMove(dragTracker, e.clientX, e.clientY);
 		if (selectionDrag !== null) {
-			// MIXUX-13 two-axis drag: vertical moves the first-selected dial's
-			// deck, horizontal moves the other selected dials.
-			applySelectionDrag(selectionDrag, dx, dy);
+			// The dial under the pointer leads the whole group (R2).
+			// Opt held right now flips one side (R3); read per frame, so a
+			// release mid-drag only changes what comes next, never jumps.
+			stepSelectionDrag(selectionDrag, singleDragDelta(step.dx, step.dy), e.altKey);
 			return;
 		}
 		// One dial: horizontal is the fine-adjust axis.
-		const target = dragStartValue + singleDragDelta(dx, dy);
+		dragSumDx += step.dx;
+		dragSumDy += step.dy;
+		const target = dragStartValue + singleDragDelta(dragSumDx, dragSumDy);
 		setKnobFromDrag(knobId, dragStartValue, target, dragPartnerId, dragStartPartnerValue);
 	}
 
@@ -202,9 +234,16 @@
 		const wasDrag = pointerMoved;
 		dragging = false;
 		selectionDrag = null;
+		dragTracker = null;
 		dragPartnerId = null;
 		dragStartPartnerValue = null;
 		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		const altClick = altPressInGroup && !wasDrag;
+		altPressInGroup = false;
+		if (altClick) {
+			altClickKnob(knobId);
+			return;
+		}
 		if (!live || wasDrag || onsingleclick === undefined) return;
 		singleClickGuard.schedule(() => onsingleclick?.());
 	}
@@ -250,6 +289,7 @@
 	style={visualStyle}
 	onpointerenter={() => setKnobHovered(live ? knobId : null)}
 	onpointerleave={() => setKnobHovered(null)}
+	onclick={handleClick}
 	onpointerdown={handlePointerDown}
 	onpointermove={handlePointerMove}
 	onpointerup={handlePointerUp}
@@ -262,7 +302,7 @@
 		// selection moves together (MIXUX-13). The raw step, not a delta from
 		// the clamped value, so a dial pinned at 0 or 1 still moves the rest.
 		set: (next) => setKnobAbsolute(knobId, next),
-		nudge: (delta) => nudgeKnobOrSelection(knobId, delta),
+		nudge: (delta, event) => nudgeKnobOrSelection(knobId, delta, event.altKey),
 		disabled: !live
 	}}
 	title={inert

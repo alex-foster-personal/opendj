@@ -35,6 +35,7 @@ from pathlib import Path
 import pytest
 
 from apps.diagnostics.probe_native_metrics import machine_metrics
+from apps.native_tools import SYSCTL, sysctl_n, try_sysctl_n
 from apps.stems.live_capability import detect_installed_machine_name
 
 # The preview engine plist's PATH, Wed 16 Sep 2026, with its home directory
@@ -79,6 +80,31 @@ def test_live_stems_names_the_machine_under_a_launchd_path(
         "if live-stems capability resolves sysctl through PATH then it cannot "
         "name the machine under launchd - broken"
     )
+
+
+@_darwin_only
+def test_sysctl_n_reads_hw_memsize() -> None:
+    result = sysctl_n("hw.memsize")
+    assert result.returncode == 0
+    assert result.stdout.strip().isdigit()
+    assert int(result.stdout.strip()) > 0
+
+
+@_darwin_only
+def test_try_sysctl_n_reads_hw_memsize() -> None:
+    value = try_sysctl_n("hw.memsize")
+    assert value is not None
+    assert value.isdigit()
+    assert int(value) > 0
+
+
+@_darwin_only
+def test_try_sysctl_n_returns_none_for_unknown_oid() -> None:
+    assert try_sysctl_n("kern.open_dj_nonexistent_oid") is None
+
+
+def test_sysctl_constant_is_absolute_path() -> None:
+    assert SYSCTL == "/usr/sbin/sysctl"
 
 
 def test_no_module_calls_sysctl_by_bare_name() -> None:

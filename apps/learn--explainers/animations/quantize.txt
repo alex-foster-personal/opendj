@@ -1,0 +1,95 @@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/4 (every beat)   (| = grid line, . = beat)
+
+                        v
+   |       |       |       |       |       |       |       |       |
+   |       |       |       |       |       |       |       |       |
+                        ^
+
+   cue pressed at 2.62 beats
+   trigger is between grid lines
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/4 (every beat)   (| = grid line, . = beat)
+
+                           v
+   |       |       |       |       |       |       |       |       |
+   |       |       |       |       |       |       |       |       |
+                           ^
+
+   snapped to grid line at 3.00 beats
+   cue lands IN TIME
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/4 (every beat)   (| = grid line, . = beat)
+
+                                                v
+   |       |       |       |       |       |       |       |       |
+   |       |       |       |       |       |       |       |       |
+                                                ^
+
+   cue pressed at 5.62 beats
+   trigger is between grid lines
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/4 (every beat)   (| = grid line, . = beat)
+
+                                                   v
+   |       |       |       |       |       |       |       |       |
+   |       |       |       |       |       |       |       |       |
+                                                   ^
+
+   snapped to grid line at 6.00 beats
+   cue lands IN TIME
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/1 (every bar)   (| = grid line, . = beat)
+
+                        v
+   |       .       .       .       |       .       .       .       |
+   |       .       .       .       |       .       .       .       |
+                        ^
+
+   cue pressed at 2.62 beats
+   trigger is between grid lines
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/1 (every bar)   (| = grid line, . = beat)
+
+                                   v
+   |       .       .       .       |       .       .       .       |
+   |       .       .       .       |       .       .       .       |
+                                   ^
+
+   snapped to grid line at 4.00 beats
+   cue lands IN TIME
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/1 (every bar)   (| = grid line, . = beat)
+
+                                            v
+   |       .       .       .       |       .       .       .       |
+   |       .       .       .       |       .       .       .       |
+                                            ^
+
+   cue pressed at 5.12 beats
+   trigger is between grid lines
+@@
+quantize: an off-grid cue press snaps to the nearest grid line
+
+   grid: 1/1 (every bar)   (| = grid line, . = beat)
+
+                                   v
+   |       .       .       .       |       .       .       .       |
+   |       .       .       .       |       .       .       .       |
+                                   ^
+
+   snapped to grid line at 4.00 beats
+   cue lands IN TIME

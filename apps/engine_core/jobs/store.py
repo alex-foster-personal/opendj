@@ -18,11 +18,11 @@ import sqlite3
 import threading
 import uuid
 from collections.abc import Callable, Iterable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from apps.engine_core.jobs.reap import ReapResult, WorkerIdentity, reap_group
+from apps.engine_core.utc_timestamps import utc_iso_ms
 from apps.shared import events
 
 log = logging.getLogger(__name__)
@@ -156,10 +156,6 @@ class JobDuplicate(JobConflict):
         self.existing = existing
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds")
-
-
 class JobStore:
     """Single-writer sqlite store. One connection, one lock, WAL."""
 
@@ -225,7 +221,7 @@ class JobStore:
                     self._conn.executemany(
                         "UPDATE jobs SET status='unknown', error=?, "
                         "finished_at=? WHERE id=?",
-                        [(RESTART_ERROR, _now(), row["id"]) for row in foreign],
+                        [(RESTART_ERROR, utc_iso_ms(), row["id"]) for row in foreign],
                     )
                 # Read AFTER the flip, so it covers this boot's fresh orphans
                 # and any row a previous boot never finished reaping.
@@ -240,7 +236,7 @@ class JobStore:
                 self._conn.execute(
                     "INSERT INTO engine_instance (id, boot_id, pid, started_at)"
                     " VALUES (1, ?, ?, ?)",
-                    (self.boot_id, self.owner_pid, _now()),
+                    (self.boot_id, self.owner_pid, utc_iso_ms()),
                 )
                 self._conn.execute("COMMIT")
             except BaseException:
@@ -318,7 +314,7 @@ class JobStore:
                         "UPDATE jobs SET status='running', started_at=?, "
                         "owner_pid=?, owner_boot_id=?, error=NULL "
                         "WHERE id=? AND status='queued'",
-                        (_now(), self.owner_pid, self.boot_id, row["id"]),
+                        (utc_iso_ms(), self.owner_pid, self.boot_id, row["id"]),
                     )
                     if swapped.rowcount == 1:
                         won.append(str(row["id"]))
@@ -443,7 +439,7 @@ class JobStore:
                 job_id,
                 kind,
                 json.dumps(payload, sort_keys=True),
-                _now(),
+                utc_iso_ms(),
                 self.owner_pid,
                 self.boot_id,
                 external_ref,
@@ -498,7 +494,7 @@ class JobStore:
                 self._conn.execute(
                     "UPDATE jobs SET status=?, error=?, finished_at=? "
                     "WHERE id=?",
-                    (status, error, _now(), job_id),
+                    (status, error, utc_iso_ms(), job_id),
                 )
                 self._conn.execute("COMMIT")
             except BaseException:
@@ -531,7 +527,7 @@ class JobStore:
                 self._conn.execute(
                     "UPDATE jobs SET status='cancelled', error=?, "
                     "finished_at=? WHERE id=? AND status='queued'",
-                    (CANCEL_BEFORE_SPAWN, _now(), job_id),
+                    (CANCEL_BEFORE_SPAWN, utc_iso_ms(), job_id),
                 )
                 self._conn.execute("COMMIT")
             except BaseException:
@@ -631,7 +627,7 @@ class JobStore:
                     self._conn.execute(
                         "UPDATE jobs SET status=?, error=?, finished_at=? "
                         "WHERE id=?",
-                        (resolution, resolution_error, _now(), job_id),
+                        (resolution, resolution_error, utc_iso_ms(), job_id),
                     )
                     self._requeue(job_id)
                     self._conn.execute("COMMIT")

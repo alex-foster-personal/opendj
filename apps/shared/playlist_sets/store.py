@@ -18,6 +18,17 @@ from .schema import apply_playlist_set_migrations
 
 RunKind = Literal["practice", "performance"]
 
+_VALID_RUN_KINDS = frozenset({"practice", "performance"})
+
+_PLAYLIST_SET_ROW_SELECT = (
+    "SELECT id, playlist_id, name, play_count, source_play_order_id, "
+    "       created_at, updated_at "
+)
+
+
+def _stable_position_pairs(rows: list[sqlite3.Row] | list[tuple]) -> list[tuple[str, int]]:
+    return [(str(r[0]), int(r[1])) for r in rows]
+
 
 @dataclass(slots=True)
 class PlaylistSetEntry:
@@ -72,7 +83,7 @@ def _snapshot_membership(
             # only a genuinely absent playlist_memberships table is expected.
             raise
         return []
-    return [(str(r[0]), int(r[1])) for r in rows]
+    return _stable_position_pairs(rows)
 
 
 def _snapshot_play_order(
@@ -144,7 +155,8 @@ def _load_entries(conn: sqlite3.Connection, set_id: int) -> list[PlaylistSetEntr
         (set_id,),
     ).fetchall()
     return [
-        PlaylistSetEntry(stable_id=str(r[0]), position=int(r[1])) for r in rows
+        PlaylistSetEntry(stable_id=sid, position=pos)
+        for sid, pos in _stable_position_pairs(rows)
     ]
 
 
@@ -184,9 +196,7 @@ def load_playlist_set(
 ) -> PlaylistSet:
     apply_playlist_set_migrations(conn)
     row = conn.execute(
-        "SELECT id, playlist_id, name, play_count, source_play_order_id, "
-        "       created_at, updated_at "
-        "FROM playlist_sets WHERE id=?",
+        f"{_PLAYLIST_SET_ROW_SELECT}FROM playlist_sets WHERE id=?",
         (set_id,),
     ).fetchone()
     if row is None:
@@ -199,9 +209,8 @@ def load_playlist_set(
 def list_playlist_sets(conn: sqlite3.Connection, playlist_id: str) -> list[PlaylistSet]:
     apply_playlist_set_migrations(conn)
     rows = conn.execute(
-        "SELECT id, playlist_id, name, play_count, source_play_order_id, "
-        "       created_at, updated_at "
-        "FROM playlist_sets WHERE playlist_id=? ORDER BY name ASC",
+        f"{_PLAYLIST_SET_ROW_SELECT}FROM playlist_sets WHERE playlist_id=? "
+        "ORDER BY name ASC",
         (playlist_id,),
     ).fetchall()
     result: list[PlaylistSet] = []
@@ -214,7 +223,7 @@ def list_playlist_sets(conn: sqlite3.Connection, playlist_id: str) -> list[Playl
 
 def record_run(conn: sqlite3.Connection, set_id: int, kind: RunKind) -> int:
     """Record a practice or performance run; increment play_count on perform."""
-    if kind not in ("practice", "performance"):
+    if kind not in _VALID_RUN_KINDS:
         raise ValueError(f"invalid run kind: {kind!r}")
 
     apply_playlist_set_migrations(conn)
@@ -230,13 +239,12 @@ def record_run(conn: sqlite3.Connection, set_id: int, kind: RunKind) -> int:
             "updated_at=? WHERE id=?",
             (now, set_id),
         )
-        action = "performed"
     else:
         conn.execute(
             "UPDATE playlist_sets SET updated_at=? WHERE id=?",
             (now, set_id),
         )
-        action = "practiced"
+    action = "performed" if kind == "performance" else "practiced"
     emit_playlist_set_changed(
         conn,
         playlist_id=ps.playlist_id,

@@ -1,7 +1,7 @@
 """Canonical :class:`AnalysisRecord` dataclass + JSON (de)serialisation.
 
 Schema followed 06-CONTEXT §D2 verbatim through v1; native-analysis v1
-(`specs/native-analysis-v1.md` section 3, "Record") adds the v2 half:
+(`(private path)` section 3, "Record") adds the v2 half:
 producer identity, versioning, a decode fingerprint, and per-lane results.
 Round-trip stable through :meth:`to_json` / :meth:`from_json`; datetimes
 normalise to trailing ``Z``.
@@ -65,6 +65,7 @@ from .lanes import (
     semver_key,
     validate_lane_result,
 )
+from .time_iso import datetime_to_utc_iso
 
 EnergySource = Literal["mik", "inferred"]
 
@@ -132,7 +133,7 @@ class AnalysisRecord:
 
     def to_json(self) -> str:
         data = asdict(self)
-        data["analyzed_at"] = _dt_to_iso(self.analyzed_at)
+        data["analyzed_at"] = datetime_to_utc_iso(self.analyzed_at)
         data["lanes"] = {k: v.to_dict() for k, v in self.lanes.items()}
         return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
@@ -245,13 +246,6 @@ def _check_provenance_and_lanes(record: AnalysisRecord, parsed: OwnBackend) -> N
         )
     for lane, result in record.lanes.items():
         validate_lane_result(lane, result, duration_s=record.duration_s)
-
-
-def _dt_to_iso(dt: datetime) -> str:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    dt = dt.astimezone(UTC)
-    return dt.isoformat().replace("+00:00", "Z")
 
 
 def _iso_to_dt(s: str) -> datetime:

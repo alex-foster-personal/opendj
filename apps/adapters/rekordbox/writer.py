@@ -1,7 +1,7 @@
 """The hot-cue read-write surface into rekordbox's master.plain.db.
 
 Moved from ``apps/webui/server/rb_vendor.py`` C10 (source lines 1657-1666,
-1769-1804, 1879-1916, 2033-2220) per ``.planning/t3b-decomposition-map.md``
+1769-1804, 1879-1916, 2033-2220) per ``(private path)``
 section 2 row 12. Everything above C10 in the legacy file opened the DB
 ``mode=ro`` with ``PRAGMA query_only``; this module is the only writer.
 
@@ -71,6 +71,7 @@ from .cues import (
     _slot_to_kind,
     _validate_cue_position,
 )
+from .errors import _require_db_on_disk
 from .reversal import (
     _bump_slot_generation,
     _create_reversal,
@@ -86,14 +87,7 @@ _KINDS = tuple(range(1, len(HOT_CUE_SLOTS) + 1))
 
 
 def _open_rw(path: Path, label: str) -> sqlite3.Connection:
-    if not path.exists():
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": f"{label}_UNAVAILABLE",
-                "message": f"required database missing on disk: {path}",
-            },
-        )
+    _require_db_on_disk(path, label)
     return sqlite3.connect(str(path))
 
 

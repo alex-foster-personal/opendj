@@ -15,7 +15,7 @@ import sqlite3
 
 from apps.shared.state import sync_stamp
 
-from .client import SpotifyTrack
+from .client import SpotifyTrack, _track_id_from_spotify_uri
 from .state_aux import VENDOR
 
 
@@ -33,10 +33,7 @@ def _spotify_vendor_track_id(src: SpotifyTrack) -> str | None:
     """Canonical vendor id for track_vendor_ids (bare Spotify track id)."""
     if src.spotify_id:
         return src.spotify_id
-    uri = src.spotify_uri or ""
-    if uri.startswith("spotify:track:"):
-        return uri.split(":", 2)[2] or None
-    return None
+    return _track_id_from_spotify_uri(src.spotify_uri or "")
 
 
 def _upsert_synthetic_track(

@@ -1,6 +1,6 @@
 """Bench routes -- KPI ledger reads plus human rating persistence.
 
-``scripts/bench/kpi_ledger.json`` is the canonical, machine-appended record of
+``(private path)`` is the canonical, machine-appended record of
 farm runs (written by ``scripts/bench/kpi_append.py``). The KPI endpoint is the
 only supported way for the app to read it: the browser never touches the file,
 and an agent can curl the same JSON the UI renders.
@@ -18,7 +18,7 @@ listed and read back with curl, no browser involved.
 
 Requirements (mini-PRD):
   ✔︎ ✅ GET  /bench/kpi:              the ledger verbatim (kpis + snapshots)
-  ✔︎ ✅ GET  /bench/perf-kpi:         docs/perf/kpi-ledger.json reshaped into the same
+  ✔︎ ✅ GET  /bench/perf-kpi:         (private path) reshaped into the same
                                      kpis + snapshots the /admin cards render, one
                                      snapshot per (date, round) since the first
                                      perf measurement
@@ -32,11 +32,11 @@ Acceptance:
   [if] the ledger is well-formed [then] 200 with kpis + snapshots intact
   [if] a perf reading is withheld, superseded or measured:false [then] it is a
        null gap in its snapshot, never the number the row happens to carry
-  [if] a perf KPI has no entry in docs/perf/kpi-cards.json [then] it is listed
+  [if] a perf KPI has no entry in (private path) [then] it is listed
        in `undeclared` rather than silently dropped or given a guessed direction
   [if] a POSTed payload has no track, or no ratings, or a clip without an id
        [then ⛔️] 4xx and nothing is written to disk
-  [if] every human_score in a POSTed payload is null [then ⛔️] 400: an empty
+  [if] every human_score and verdict in a POSTed payload is null [then ⛔️] 400: an empty
        rating set is never worth an artifact
   [if] a POST succeeds [then] the response names the exact relative path and
        that file parses back to the payload
@@ -55,7 +55,7 @@ import re
 import secrets
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -229,11 +229,15 @@ class RatingEntry(BaseModel):
     params: str = ""
     # int | float, in that order: pydantic keeps an int an int, so the written
     # artifact matches the hand-exported one (machine_score 10, not 10.0).
-    machine_score: int | float
+    # Required but nullable: a rater with no machine score (the try-er
+    # calibration page) sends null rather than a placeholder number.
+    machine_score: int | float | None
     machine_rank: int | None = None
     si_sdr: float | None = None
     human_score: int | None = Field(default=None, ge=1, le=10)
     human_inst_score: int | None = Field(default=None, ge=1, le=10)
+    # A categorical rating (the try-er calibration page's Good / OK / Bad), never converted to a 1..10 number.
+    verdict: Literal["good", "ok", "bad"] | None = None
     note: str = ""
 
 
@@ -290,14 +294,14 @@ def save_ratings(payload: RatingsIn) -> RatingsSaved:
             status_code=503,
             detail=dev_only_refusal("Saving bench ratings", RATINGS_DIR),
         )
-    scored = [r for r in payload.ratings if r.human_score is not None]
+    scored = [r for r in payload.ratings if r.human_score is not None or r.verdict is not None]
     if not scored:
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "ratings_empty",
                 "message": (
-                    "every human_score is null: nothing to save. Rate at least "
+                    "every human_score and verdict is null: nothing to save. Rate at least "
                     "one clip before saving."
                 ),
             },
@@ -386,7 +390,7 @@ def list_ratings() -> list[RatingsFile]:
             path=f"{RATINGS_REL}/{path.name}",
             track=str(body.get("track", "")),
             saved_at=saved_at if isinstance(saved_at, str) else None,
-            rated_count=sum(1 for e in entries if e.get("human_score") is not None),
+            rated_count=sum(1 for e in entries if e.get("human_score") is not None or e.get("verdict") is not None),
             total_count=len(entries),
             bytes=stat.st_size,
         )))

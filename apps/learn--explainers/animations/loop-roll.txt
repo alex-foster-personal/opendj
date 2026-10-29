@@ -1,0 +1,80 @@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard          A
+   slip           S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard              A
+   slip               S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard                  A
+   slip                   S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard                      A
+   slip                       S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard          A
+   slip                           S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard              A
+   slip                               S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard                  A
+   slip                                   S
+
+   pad HELD: heard playhead jumps back to loop start
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard                                      A
+   slip                                       S
+
+   pad RELEASED: heard playhead jumps to slip (S)
+@@
+loop roll: the heard playhead loops while slip keeps going, then jumps
+
+                  1-bar loop
+   track  --------[---------------]-------------------------------
+   heard                                          A
+   slip                                           S
+
+   pad RELEASED: heard playhead jumps to slip (S)

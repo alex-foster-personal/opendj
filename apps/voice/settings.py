@@ -18,6 +18,7 @@ read-only, immutable connection, so the old location is never written.
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -40,6 +41,11 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 """
+
+
+def coalesce_env(env: dict[str, str] | None) -> dict[str, str]:
+    """Return ``env`` when provided, else a snapshot of ``os.environ``."""
+    return env if env is not None else dict(os.environ)
 
 
 def voice_data_dir() -> Path:

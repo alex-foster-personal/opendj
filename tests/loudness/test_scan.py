@@ -108,11 +108,26 @@ def test_gain_unclamped_when_headroom_allows() -> None:
     assert gain == pytest.approx(6.0)
 
 
+def test_report_payload_rounds_gain_and_carries_targets() -> None:
+    scan = LoudnessScan(
+        Path("/music/track.wav"),
+        integrated_lufs=-20.333,
+        loudness_range_lu=5.0,
+        true_peak_dbtp=-12.0,
+    )
+    payload = scan.report_payload(target_lufs=-14.0, ceiling_dbtp=-1.0)
+    assert payload["path"] == "/music/track.wav"
+    assert payload["target_lufs"] == -14.0
+    assert payload["ceiling_dbtp"] == -1.0
+    assert payload["gain_db"] == 6.33
+    assert payload["gain_clamped"] is False
+
+
 # --- ffmpeg resolution (NATIVE-10) -----------------------------------------
 # An installed app is launched without Homebrew's PATH, so the packaged
 # engine names ffmpeg through MDT_FFMPEG. The loudness lane used to resolve
 # ffmpeg with its own bare PATH lookup, the one resolver in the analysis
-# lanes that ignored MDT_FFMPEG: the offline acceptance run found every
+# lanes that ignored MDT_FFMPEG; the offline acceptance run found every
 # own_loudness.backfill drain stopping with "'ffmpeg' is not on PATH" while
 # waveform, key and beatgrid (on apps.shared.ffmpeg) decoded the same files.
 

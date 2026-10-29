@@ -1,0 +1,80 @@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   124.0     target 128.0
+   glide [................................] 0/8 bars
+
+   beats  |-----------|-----------|-----------|-----------|-----------
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   124.5     target 128.0
+   glide [####............................] 1/8 bars
+
+   beats  |-----------|-----------|-----------|-----------|-----------
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   125.0     target 128.0
+   glide [########........................] 2/8 bars
+
+   beats  |-----------|-----------|-----------|-----------|-----------
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   125.5     target 128.0
+   glide [############....................] 3/8 bars
+
+   beats  |-----------|-----------|-----------|----------|-----------|
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   126.0     target 128.0
+   glide [################................] 4/8 bars
+
+   beats  |-----------|-----------|----------|-----------|-----------|
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   126.5     target 128.0
+   glide [####################............] 5/8 bars
+
+   beats  |-----------|-----------|----------|-----------|-----------|
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   127.0     target 128.0
+   glide [########################........] 6/8 bars
+
+   beats  |-----------|----------|-----------|-----------|-----------|
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   127.5     target 128.0
+   glide [############################....] 7/8 bars
+
+   beats  |-----------|----------|-----------|-----------|----------|-
+
+   beat spacing tightens a little each bar
+@@
+tempo glide: BPM moves 124.0 to 128.0 over 8 bars, beats tighten
+
+   BPM   128.0     target 128.0
+   glide [################################] 8/8 bars
+
+   beats  |-----------|----------|-----------|----------|-----------|-
+
+   arrived: 128.0 BPM, ladder at its tighter spacing

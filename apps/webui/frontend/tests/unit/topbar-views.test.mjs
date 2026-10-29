@@ -420,7 +420,7 @@ describe('TOPVIEW-01/04: narrow width tiers never strand a persisted choice', ()
 	it('view icons and PAD yield only at their defaults', () => {
 		assert.match(TOPBAR_SRC, /class:view-chosen=\{uiPrefs\.perf_view !== 'waveform'\}/);
 		assert.match(TOPBAR_SRC, /class:pads-off=\{!uiPrefs\.show_pads\}/);
-		const viewRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.view-chosen\) \.icon-cluster > :global\(\.explainer:has\(\.tb-view\)\)/g) ?? [];
+		const viewRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.view-chosen\):not\(\.single-click\) \.icon-cluster > :global\(\.explainer:has\(\.tb-view\)\)/g) ?? [];
 		const padRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.pads-off\) \.topbar-slot-pad \{ display: none; \}/g) ?? [];
 		assert.equal(viewRules.length, 2, 'both narrow tiers must gate the view icons on the default view');
 		assert.equal(padRules.length, 2, 'both narrow tiers must gate PAD on pads being shown');
@@ -431,6 +431,23 @@ describe('TOPVIEW-01/04: narrow width tiers never strand a persisted choice', ()
 });
 
 describe('TOPVIEW-05: focused deck and the track record', () => {
+	it('Last played shows the later of the Open DJ and imported timestamps', () => {
+		// Codex P2, PR #6228: `??` always preferred the Open DJ play, even when rekordbox's was newer.
+		const row = (opendj, imported) =>
+			info
+				.trackInfoRows({ stable_id: 's', last_played_at: imported, provenance: {} }, {
+					opendj_play_count: 1,
+					rekordbox_play_count: 1,
+					opendj_last_played_at: opendj
+				})
+				.find((r) => r.label === 'Last played').value;
+		assert.equal(row('2026-10-01T00:00:00Z', '2026-10-20T00:00:00Z'), '2026-10-20T00:00:00Z');
+		// Control, other direction: a newer Open DJ play still wins.
+		assert.equal(row('2026-10-21T00:00:00Z', '2026-10-20T00:00:00Z'), '2026-10-21T00:00:00Z');
+		assert.equal(row(null, '2026-10-20T00:00:00Z'), '2026-10-20T00:00:00Z');
+		assert.equal(row('2026-10-21T00:00:00Z', null), '2026-10-21T00:00:00Z');
+	});
+
 	const decks = (loaded, master) =>
 		[1, 2, 3, 4].map((id) => ({ id, loaded: loaded.includes(id), isMaster: id === master }));
 

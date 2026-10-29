@@ -292,7 +292,26 @@ const BUDGETS = [
   // selected-test bundle merges (#7598) that did not run the budget gate. One clean nucbox
   // build each: main 906dc7be74 289,003; main 275b88e7f8 290,882 (+1,879).
   // Measured ceiled to KiB plus 1 KiB of jitter. Payback: owed by #7594 and #6565.
-  { name: 'library', limit: 292864, measured: 290882, note: 'initial load of "/"' },
+  // RAISED Wed 28 Oct 2026 (+2 KiB, PR #6574, KEYSHIFT-01..05, merged onto main 27263feb59):
+  // main's limit plus this PR's own delta, ceiled to KiB; the delta (+1,549) is from one clean
+  // nucbox build each of main 906dc7be74 with and without this PR. Payback: none planned.
+  // measured below is this merged revision's own nucbox build: 292,315.
+  // RAISED Wed 28 Oct 2026 (+1 KiB, PR #7600, LIBUX-53 collapse rule, re-merged onto main after #6574):
+  // this PR's measured delta on top of main's limit (#6574's), ceiled to KiB. One clean nucbox build
+  // each against main 906dc7be74 measured +1,023. Payback: none planned.
+  // RAISED Wed 28 Oct 2026 (+1 KiB, PR #7601, LIBUX-54 column chooser, re-merged onto main after #7600):
+  // this PR's measured delta on top of main's limit (after #7600), ceiled to KiB. One clean nucbox build
+  // each against main 906dc7be74 measured +650. Payback: none planned.
+  // LOWERED Wed 28 Oct 2026 (-17 KiB, PR #6829, re-land of #6205, re-measured after merging
+  // main b26ee5252c, #7700): the root layout still mounts SettingsOverlay lazily
+  // (settings-overlay-loader.ts), so the settings modules main has since added to "/" (key
+  // notation, auto gain) move with it into performance and other-lazy. Local, one clean vite
+  // build each: main b26ee5252c library 290,576, performance 287,936, other-lazy 375,376 (953,888); main + this PR
+  // 274,187, 299,765, 394,367 (968,319), net +14,431 B across the three.
+  // Measured ceiled to KiB (274,432) plus 1 KiB of jitter, which also absorbs the #7658 raise
+  // above. Payback: owed by #7594 and #6565 (the #7658 share).
+  // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
+  { name: 'library', limit: 279552, measured: 277411, note: 'initial load of "/"' },
   // Merge note (PR #6163 x main 0ba0fa270, Thu 15 Oct 2026): #6163 had taken the
   // same +1 KiB (to 279,552) for the STRUCT-06 own-fast sections race and resync fixes
   // in anlz-cache and analysis-source. Both raises land on one ceiling; no second
@@ -517,7 +536,28 @@ const BUDGETS = [
   // selected-test bundle merges (#7598) that did not run the budget gate. One clean nucbox
   // build each: main 906dc7be74 287,062; main 275b88e7f8 287,946 (+884).
   // Measured ceiled to KiB plus 1 KiB of jitter. Payback: owed by #7594 and #6565.
-  { name: 'performance', limit: 289792, measured: 287946, note: '/performance and children' },
+  // RAISED Wed 28 Oct 2026 (+2 KiB, PR #6574, KEYSHIFT-01..05, merged onto main 27263feb59):
+  // main's limit plus this PR's own delta, ceiled to KiB; the delta (+1,830) is from one clean
+  // nucbox build each of main 906dc7be74 with and without this PR. Payback: none planned.
+  // measured below is this merged revision's own nucbox build: 289,877.
+  // RAISED Wed 28 Oct 2026 (+1 KiB, PR #7600, LIBUX-53 collapse rule, re-merged onto main after #6574):
+  // this PR's measured delta on top of main's limit (#6574's), ceiled to KiB. One clean nucbox build
+  // each against main 906dc7be74 measured +343. Payback: none planned.
+  // RAISED Wed 28 Oct 2026 (+2 KiB, PR #7601, LIBUX-54 column chooser, re-merged onto main after #7600):
+  // this PR's measured delta on top of main's limit (after #7600), ceiled to KiB. One clean nucbox build
+  // each against main 906dc7be74 measured +1,027. Payback: none planned.
+  // RAISED Wed 28 Oct 2026 (+2 KiB, PR #7574, QLTSCAN-02 audio quality grade, re-merged onto main after #7601):
+  // main's limit plus this PR's own delta, ceiled to KiB; the delta (+1,143) is from one clean
+  // nucbox build each of main 906dc7be74 with and without this PR. Payback: none planned.
+  // RAISED Wed 28 Oct 2026 (+11 KiB, PR #6829, re-land of #6205, re-measured after merging
+  // main b26ee5252c, #7700; see the LOWERED note on library): settings modules /performance
+  // shares with the lazy overlay are charged here, plus the mixer port's own controls. Local,
+  // one clean vite build each: main b26ee5252c library 290,576, performance 287,936, other-lazy 375,376 (953,888); main + this PR
+  // 274,187, 299,765, 394,367 (968,319), net +14,431 B across the three.
+  // Over the 4 KiB V1 rule net of the move: flagged for the maintainer. Measured ceiled to KiB (300,032)
+  // plus 1 KiB of jitter. Payback: none open.
+  // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
+  { name: 'performance', limit: 307200, measured: 304114, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -690,7 +730,36 @@ const BUDGETS = [
   // selected-test bundle merges (#7598) that did not run the budget gate. One clean nucbox
   // build each: main 906dc7be74 367,705; main 275b88e7f8 375,402 (+7,697).
   // Measured ceiled to KiB plus 1 KiB of jitter. Payback: owed by #7594 and #6565.
-  { name: 'other-lazy', limit: 376832, measured: 375402, note: 'all other routes plus deferred shell' },
+  // RAISED Thu 29 Oct 2026 (main repair): main 9df6ecac45 is over this budget after #7593
+  // (af--dj-tryer) merged; main CI run 40801125679 measured 380,116 against 376,832, over by
+  // 3,284 (run 40801196122 at 6c372b6cb5 measured 380,111). Ceiled to the next KiB (380,928,
+  // +4 KiB, the V1 cap) with no extra jitter, so the next lazy addition has to pay its own way.
+  // Payback: owed by #7593.
+  // RAISED Wed 28 Oct 2026 (+2 KiB, PR #6574, KEYSHIFT-01..05, merged onto main 27263feb59):
+  // main's limit plus this PR's own delta, ceiled to KiB; the delta (+1,879) is from one clean
+  // nucbox build each of main 906dc7be74 with and without this PR. Payback: none planned.
+  // measured below is this merged revision's own nucbox build: 382,057.
+  // RAISED Wed 28 Oct 2026 (+10 KiB, PR #6223, USB import plan, USBIMP-01): the import click,
+  // its job wait, the ranked analysis plan and the stick-format report are lazy USB code,
+  // loaded only when the USB panel opens. Re-measured after merging main b26ee5252c (#7700),
+  // local, one clean build each: main b26ee5252c 375,376; main + this PR 385,467 (+10,091).
+  // Next KiB above plus 1 KiB of margin: 387,072 (378 KiB). Payback: none planned; the plan
+  // is the feature.
+  // Thu 29 Oct 2026: this PR's +10 KiB carried onto main 0e0bc46298's 382,976 (#7725, #6574), so 393,216; measured is main 0e0bc46298 + this PR.
+  // RAISED Thu 29 Oct 2026 (+2 KiB, issue #7599 library Camelot key wheel filter): main's limit
+  // plus this PR's own delta, ceiled to KiB. One clean nucbox build each: main 0e0bc46298
+  // 382,127; this branch 384,009 (+1,882), almost all the lazily loaded wheel panel chunk
+  // (24 SVG segments, notation labels, Compatible/Reset). Carried onto main's 393,216 (#6223)
+  // after the merge. Payback: none planned; when the deck popover wheel (#6179) lands it
+  // should share this panel rather than add a second wheel.
+  // RAISED Wed 28 Oct 2026 (+19 KiB, PR #6829, re-land of #6205, re-measured after merging
+  // main b26ee5252c, #7700; see the LOWERED note on library): the lazy SettingsOverlay chunk
+  // and the settings modules only it reaches. Local, one clean vite build each: main b26ee5252c library 290,576, performance 287,936, other-lazy 375,376 (953,888); main + this PR
+  // 274,187, 299,765, 394,367 (968,319), net +14,431 B across the three.
+  // Measured ceiled to KiB (395,264) plus 1 KiB of jitter. Payback: none open.
+  // Thu 29 Oct 2026 (re-measured after merging main 3dcda3b028, which now carries #6223's code): one clean vite build each, main 294,894 / 292,373 / 392,191 and main + this PR 277,411 / 304,114 / 412,036, deltas -17,483 / +11,741 / +19,845 B, ceiled to -17 / +12 / +20 KiB on main's 296,960 / 294,912 / 393,216, so 279,552 / 307,200 / 413,696 (+15 KiB net). The earlier carry measured before #6223 landed while its limit already counted #6223.
+  // Thu 29 Oct 2026, merged main 4e77993175 (#7743 raised other-lazy to 395,264): this PR's +20 KiB carried onto it, so 415,744; measured is main 4e77993175 + this PR.
+  { name: 'other-lazy', limit: 415744, measured: 413815, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

@@ -16,7 +16,7 @@ let originalFetch;
 /** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
  * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body) {
-	return new Response(JSON.stringify({ key_notation: 'camelot', ...body }), {
+	return new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body }), {
 		status: 200,
 		headers: { 'content-type': 'application/json' }
 	});
@@ -36,7 +36,10 @@ const DEFAULTS = {
 	bpm_window_bpm: 20,
 	bpm_enabled: true,
 	allow_half_double: true,
-	bpm_direction: 'both'
+	bpm_direction: 'both',
+	mode: 'transition',
+	key_shift_max: 1,
+	mashup_relative: false
 };
 
 test('a fresh profile hydrates compatible_filter from GET /api/v1/ui-prefs', async () => {
@@ -46,7 +49,10 @@ test('a fresh profile hydrates compatible_filter from GET /api/v1/ui-prefs', asy
 		bpm_window_bpm: 10,
 		bpm_enabled: false,
 		allow_half_double: false,
-		bpm_direction: 'below'
+		bpm_direction: 'below',
+		mode: 'mashup',
+		key_shift_max: 2,
+		mashup_relative: true
 	};
 	globalThis.fetch = async () => jsonResponse({ theme: 'dark', compatible_filter: onDisk });
 

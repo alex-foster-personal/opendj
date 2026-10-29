@@ -20,19 +20,16 @@ in a diff rather than buried in this helper.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 ProvenanceSource = Literal[
     "mik", "rekordbox", "djay", "serato", "traktor",
     "open-dj-tool", "manual", "inferred",
 ]
 
-# Mirror of the schema enum -- keep this in sync with
+# Mirror of the schema enum -- keep ProvenanceSource in sync with
 # open-dj/schema/v0.2/open-dj.schema.json $defs/ProvenanceValue.
-_ALLOWED_SOURCES = frozenset({
-    "mik", "rekordbox", "djay", "serato", "traktor",
-    "open-dj-tool", "manual", "inferred",
-})
+_ALLOWED_SOURCES = frozenset(get_args(ProvenanceSource))
 
 # Keys compared when diffing or walking a ProvenanceValue envelope (schema
 # $defs/ProvenanceValue). ``confidence`` is optional on the wire.

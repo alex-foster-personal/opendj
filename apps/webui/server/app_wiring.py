@@ -80,6 +80,7 @@ from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
 from .routes import audio_output_health as audio_output_health_routes
+from .routes import audio_quality as audio_quality_routes
 from .routes import auth as auth_routes
 from .routes import auto_gain as auto_gain_routes
 from .routes import autolists as autolists_routes
@@ -99,6 +100,7 @@ from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import dj_try as dj_try_routes
 from .routes import energy as energy_routes
 from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
@@ -381,6 +383,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
                 steps.append((name, service.stop))
         if stem_cache_enforcer is not None:
             steps.append(("stem-cache-enforcer", stem_cache_enforcer.stop))
+        quality_runner = getattr(app.state, "audio_quality_runner", None)
+        if quality_runner is not None:
+            steps.append(("audio-quality-scan", quality_runner.shutdown))
         if lyric_watcher is not None:
             steps.append(("lyric-index", lyric_watcher.stop))
         steps.append(("analysis-watcher", watcher.stop))
@@ -626,6 +631,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         tracks_routes.router,
         track_handoff_routes.router,
         beatgrid_flags_routes.router,
+        audio_quality_routes.router,
         auto_gain_routes.router,
         client_errors_routes.router,
         telemetry_consent_routes.router,
@@ -705,6 +711,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         midi_maps_routes.router,
         state_routes.router,
         commands_routes.router,
+        dj_try_routes.router,
         shell_routes.router,
         ui_prefs_routes.router,
         cloudsync_routes.router,

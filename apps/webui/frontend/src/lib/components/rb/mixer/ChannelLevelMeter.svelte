@@ -19,13 +19,14 @@
 	 * Red means digital clipping at THIS point in the chain. It is not a
 	 * speaker-damage reading and must never be labelled as one: everything
 	 * downstream (master gain, OS volume, the interface, the amplifier) is
-	 * invisible from here. See docs/research/adrian-level-meters-clipping-lights.md.
+	 * invisible from here. See (private path).
 	 */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 
 	import { peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import {
 		METER_FLOOR_DBFS,
+		clipHeldUntil, clipLit, createClipPipCursor,
 		segmentBand,
 		segmentsLitFromDbfs,
 		segmentThresholdsForRed
@@ -63,6 +64,10 @@
 	let db = $state(METER_FLOOR_DBFS);
 	let clipped = $state(false);
 	let raf = 0;
+	let clipUntil = 0;
+	/** This meter's own cursor on the tap's post-crossfader clips, seeded when
+	 * playback activates (see createClipPipCursor). */
+	const pipCursor = createClipPipCursor();
 
 	$effect(() => {
 		const live = playing;
@@ -71,13 +76,31 @@
 			lit = 0;
 			db = METER_FLOOR_DBFS;
 			clipped = false;
+			clipUntil = 0;
+			pipCursor.reset();
 			return;
 		}
-		const tick = (): void => {
+		pipCursor.activate(untrack(() => peekDeckMeterReading(deckId).heardClipSeq));
+		const tick = (now: number): void => {
 			const reading = peekDeckMeterReading(deckId);
-			lit = segmentsLitFromDbfs(reading.db, thresholds);
-			db = reading.db;
-			clipped = reading.clipped;
+			// Pre-crossfader peaks sit ~3 dB above the master bus at the
+			// default center crossfade, which is enough to paint this bar red
+			// while the top-right meter stays amber. Color (and the clip pip)
+			// follow the level that actually reaches the master: the worklet's
+			// post-crossfader `heard` peak through its own ballistics, never the
+			// pre-crossfader reading re-scaled by the crossfader's position now,
+			// which would rewrite a decaying bar whenever the fader moved
+			// (Sol P1, #6829). An ?extroute= deck's heard source is its fader.
+			const heardDb = reading.heardDb;
+			lit = segmentsLitFromDbfs(heardDb, thresholds);
+			db = heardDb;
+			// The pip holds like the tap's own latch, or a one-frame clip never
+			// shows. It lights on any post-crossfader clip the tap recorded since
+			// the last frame, judged on the audio thread through the crossfader
+			// those samples played under, never the decaying level (Sol/Codex, #6829).
+			const freshClip = pipCursor.frame(reading.heardClipSeq);
+			clipUntil = clipHeldUntil(freshClip, now, clipUntil);
+			clipped = clipLit(now, clipUntil);
 			raf = requestAnimationFrame(tick);
 		};
 		raf = requestAnimationFrame(tick);
@@ -98,12 +121,12 @@
 	class="rb-channel-level-meter"
 	class:clipped
 	role="meter"
-	aria-label={`channel ${deckId} level, post-EQ post-fader`}
+	aria-label={`channel ${deckId} level, post-EQ post-fader, after the crossfader`}
 	aria-valuemin={METER_FLOOR_DBFS}
 	aria-valuemax={0}
 	aria-valuenow={db}
 	aria-valuetext={readout}
-	title={`Post-EQ, post-fader channel level: ${readout}. Responds to trim, EQ, and the channel volume fader. Red means digital clipping here, not speaker risk.`}
+	title={`Post-EQ, post-fader channel level after the crossfader: ${readout}. Responds to trim, EQ, the channel volume fader, and the crossfader. With one channel up and the crossfader centered, this matches the top-right master meter before anyone presses R. Red means digital clipping on the way to the master, not speaker risk.`}
 >
 	<!--
 		Keyed by index, not segment.threshold: a low red-calibration anchor clamps

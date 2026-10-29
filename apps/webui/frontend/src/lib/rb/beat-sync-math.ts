@@ -665,9 +665,23 @@ export function nextDownbeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: n
  * a command queued can never pick an arm point already behind the playhead. */
 export type ArmAtPosition = number | ((nowPositionSec: number) => number);
 
-/** Resolve `armAt` against the live `nowPositionSec` and refuse a point behind
- * it: an armed jump never schedules into the past. Shared by the Web Audio
- * engine and the Rust engine's hot-cue driver so both refuse identically. */
+/**
+ * When a schedule lands: an absolute context time, or a resolver run inside
+ * the deck's serialized schedule on the first moment that schedule can land
+ * (after any queued predecessor and the safety floor), so a plan made on that
+ * moment is never stale by the time it is sent. Not the playhead's moment: one
+ * inside the lead would land late, a seek pending before that moment has
+ * already moved the deck, and an in-flight schedule ahead moves the floor
+ * (Codex P1s, PR #6834). A change pending AFTER it caps where the schedule can
+ * land (supersedingScheduleTime); planArm reports that real landing, and
+ * nothing waits, so the deck's command scope is never held across a timer.
+ */
+export type ScheduleWhen = number | ((earliestContextTime: number) => number);
+
+/** Resolve `armAt` against `nowPositionSec` and refuse a point behind it: an
+ * armed jump never schedules into the past. Shared by the Web Audio engine
+ * (through `armAtContextTime`, from the first schedulable moment) and the
+ * Rust engine's hot-cue driver, so both refuse identically. */
 export function resolveArmAtPosition(armAt: ArmAtPosition, nowPositionSec: number): number {
 	const armAtPositionSec = typeof armAt === 'function' ? armAt(nowPositionSec) : armAt;
 	if (armAtPositionSec < nowPositionSec) {
@@ -676,6 +690,50 @@ export function resolveArmAtPosition(armAt: ArmAtPosition, nowPositionSec: numbe
 		);
 	}
 	return armAtPositionSec;
+}
+
+type ArmAnchor = { contextTime: number; positionSec: number; tempoRatio: number };
+
+/** Resolve `armAt` on the anchor's own timeline and return the context time
+ * it lands at. Position and time both come from the one segment in force at
+ * the anchor, so a seek pending before it can never be subtracted from a
+ * position on the pre-seek timeline (Codex P1, PR #6834: a pending jump from
+ * 10 s to 100 s made a hot cue wait about 90 s). A point behind the anchor is
+ * refused: it is already past by the time anything can be scheduled. */
+export function armAtContextTime(armAt: ArmAtPosition, anchor: ArmAnchor): { armAtPositionSec: number; contextTime: number } {
+	if (!Number.isFinite(anchor.contextTime)) throw new RangeError(`armAtContextTime: contextTime ${anchor.contextTime} is not finite`);
+	if (!(anchor.tempoRatio > 0)) throw new RangeError(`armAtContextTime: tempoRatio ${anchor.tempoRatio} must be positive`);
+	const armAtPositionSec = resolveArmAtPosition(armAt, anchor.positionSec);
+	return {
+		armAtPositionSec,
+		contextTime: anchor.contextTime + (armAtPositionSec - anchor.positionSec) / anchor.tempoRatio
+	};
+}
+
+/** Where an armed jump actually lands. The engine keeps one pending lane: a
+ * new schedule lands no later than its latest pending change and supersedes
+ * it (`supersedingScheduleTime`), and no timer may hold the deck's command
+ * scope to wait one out. So a downbeat at or before that change is kept, and
+ * one past it lands on the change's own boundary, the latest instant the
+ * engine can still take, reported as `cappedAtPending` so the countdown shows
+ * the real landing rather than an unreachable downbeat (Codex P1s, PR #6834).
+ * A boundary before the anchor is already on the anchor's segment. */
+export type ArmPlan = { armAtPositionSec: number; contextTime: number; cappedAtPending: boolean };
+
+export function planArm(armAt: ArmAtPosition, anchor: ArmAnchor, pendingBoundaryContextTime: number | null): ArmPlan {
+	const resolved = armAtContextTime(armAt, anchor);
+	if (
+		pendingBoundaryContextTime !== null &&
+		pendingBoundaryContextTime >= anchor.contextTime &&
+		resolved.contextTime > pendingBoundaryContextTime
+	) {
+		return {
+			armAtPositionSec: anchor.positionSec + (pendingBoundaryContextTime - anchor.contextTime) * anchor.tempoRatio,
+			contextTime: pendingBoundaryContextTime,
+			cappedAtPending: true
+		};
+	}
+	return { ...resolved, cappedAtPending: false };
 }
 
 export type HotCueTriggerPlan = { kind: 'immediate' } | { kind: 'armed'; armAtPositionSec: number };

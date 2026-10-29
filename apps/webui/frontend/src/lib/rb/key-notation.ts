@@ -97,6 +97,21 @@ export function displayKey(raw: string | null, notation: KeyNotation): KeyDispla
 	return { text: renderKey(parsed, notation), parsed: true };
 }
 
+/** The label a notation choice shows in a menu (LIBUX-54 column chooser):
+ * the sample key 8A in that notation, except Open Key, which is named rather
+ * than sampled, because "1m" alone does not say which notation it is
+ * (sol review P1, PR #7601). */
+export function keyNotationChoiceLabel(notation: KeyNotation): string {
+	if (notation === 'open_key') return 'Open Key';
+	return renderKey(_sampleKey(), notation);
+}
+
+function _sampleKey(): CamelotKey {
+	const sample = parseCamelotKey('8A');
+	if (sample === null) throw new Error('key-notation: the sample key 8A did not parse');
+	return sample;
+}
+
 /** The text a non-table surface (deck header, inspector, preview bar) prints:
  * the key in `notation`, the stored text when it parses in none, and null when
  * there is no key. */

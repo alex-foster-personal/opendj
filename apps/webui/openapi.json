@@ -1423,6 +1423,197 @@
         "title": "AudioEngineStartIn",
         "type": "object"
       },
+      "AudioFitItem": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "audio_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Bpm"
+          },
+          "computed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
+          "deck_warning": {
+            "title": "Deck Warning",
+            "type": "boolean"
+          },
+          "grid_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Bpm"
+          },
+          "kick_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kick Coverage"
+          },
+          "kick_offset_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kick Offset Ms"
+          },
+          "kick_spread_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kick Spread Ms"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rule_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Version"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "verdict",
+          "reason",
+          "deck_warning",
+          "message"
+        ],
+        "title": "AudioFitItem",
+        "type": "object"
+      },
+      "AudioFitListOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "denominator": {
+            "const": "present",
+            "title": "Denominator",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AudioFitItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/BeatgridFlagRule"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/BeatgridScanStatus"
+          }
+        },
+        "required": [
+          "denominator",
+          "present",
+          "counts",
+          "rule",
+          "scan",
+          "items"
+        ],
+        "title": "AudioFitListOut",
+        "type": "object"
+      },
       "AudioInterferenceItemOut": {
         "properties": {
           "key": {
@@ -1599,6 +1790,337 @@
           "checked_at"
         ],
         "title": "AudioOutputHealthOut",
+        "type": "object"
+      },
+      "AudioQualityCounts": {
+        "description": "Over the `present` denominator. A-D count checked letters only.",
+        "properties": {
+          "A": {
+            "title": "A",
+            "type": "integer"
+          },
+          "B": {
+            "title": "B",
+            "type": "integer"
+          },
+          "C": {
+            "title": "C",
+            "type": "integer"
+          },
+          "D": {
+            "title": "D",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "unchecked": {
+            "title": "Unchecked",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          },
+          "with_issues": {
+            "title": "With Issues",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "unchecked",
+          "unknown",
+          "failed",
+          "with_issues"
+        ],
+        "title": "AudioQualityCounts",
+        "type": "object"
+      },
+      "AudioQualityItem": {
+        "properties": {
+          "checked": {
+            "title": "Checked",
+            "type": "boolean"
+          },
+          "cutoff_hz": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cutoff Hz"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "hover": {
+            "title": "Hover",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "letter": {
+            "anyOf": [
+              {
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Letter"
+          },
+          "meaning": {
+            "title": "Meaning",
+            "type": "string"
+          },
+          "scan_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Error"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "file_path",
+          "letter",
+          "checked",
+          "meaning",
+          "issues",
+          "hover",
+          "cutoff_hz",
+          "scan_error"
+        ],
+        "title": "AudioQualityItem",
+        "type": "object"
+      },
+      "AudioQualityOut": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/AudioQualityCounts"
+          },
+          "denominator": {
+            "const": "present",
+            "title": "Denominator",
+            "type": "string"
+          },
+          "issue_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Issue Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AudioQualityItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/AudioQualityRule"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/AudioQualityScanStatus"
+          }
+        },
+        "required": [
+          "denominator",
+          "present",
+          "counts",
+          "issue_counts",
+          "rule",
+          "scan",
+          "items"
+        ],
+        "title": "AudioQualityOut",
+        "type": "object"
+      },
+      "AudioQualityRule": {
+        "properties": {
+          "grade_thresholds": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Grade Thresholds",
+            "type": "object"
+          },
+          "grade_version": {
+            "title": "Grade Version",
+            "type": "string"
+          },
+          "scan_thresholds": {
+            "additionalProperties": true,
+            "title": "Scan Thresholds",
+            "type": "object"
+          },
+          "scan_version": {
+            "title": "Scan Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scan_version",
+          "grade_version",
+          "scan_thresholds",
+          "grade_thresholds"
+        ],
+        "title": "AudioQualityRule",
+        "type": "object"
+      },
+      "AudioQualityScanStatus": {
+        "properties": {
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stopping": {
+            "title": "Stopping",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "stopping",
+          "last_result",
+          "last_error"
+        ],
+        "title": "AudioQualityScanStatus",
+        "type": "object"
+      },
+      "AudioQualityTrackOut": {
+        "properties": {
+          "computed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facts"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "quality": {
+            "additionalProperties": true,
+            "title": "Quality",
+            "type": "object"
+          },
+          "scan_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Error"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "file_path",
+          "quality",
+          "facts",
+          "scan_error",
+          "computed_at"
+        ],
+        "title": "AudioQualityTrackOut",
         "type": "object"
       },
       "AudioSwitchOutputOut": {
@@ -3949,6 +4471,139 @@
         "title": "BulkEditRowOut",
         "type": "object"
       },
+      "CandidateOut": {
+        "additionalProperties": false,
+        "description": "One candidate as the try-er answers it: the contract fields minus ``render_path``.",
+        "properties": {
+          "bars": {
+            "title": "Bars",
+            "type": "integer"
+          },
+          "factors": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Factors",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "measured": {
+            "$ref": "#/components/schemas/MeasuredOut"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "title": "Metrics",
+            "type": "object"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "title": "Plan",
+            "type": "object"
+          },
+          "plan_sha256": {
+            "title": "Plan Sha256",
+            "type": "string"
+          },
+          "rank_group": {
+            "enum": [
+              "measured",
+              "alignment unknown",
+              "refused"
+            ],
+            "title": "Rank Group",
+            "type": "string"
+          },
+          "refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refused"
+          },
+          "render_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Render Ms"
+          },
+          "render_url": {
+            "title": "Render Url",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "score_ms": {
+            "title": "Score Ms",
+            "type": "number"
+          },
+          "scorer_version": {
+            "title": "Scorer Version",
+            "type": "string"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          },
+          "unknown": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Unknown",
+            "type": "object"
+          },
+          "vetoes": {
+            "items": {
+              "$ref": "#/components/schemas/VetoOut"
+            },
+            "title": "Vetoes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "plan",
+          "plan_sha256",
+          "style",
+          "bars",
+          "metrics",
+          "factors",
+          "vetoes",
+          "measured",
+          "unknown",
+          "score",
+          "scorer_version",
+          "render_ms",
+          "score_ms",
+          "refused",
+          "rank_group",
+          "render_url"
+        ],
+        "title": "CandidateOut",
+        "type": "object"
+      },
       "CatalogDevice": {
         "properties": {
           "brand": {
@@ -5900,7 +6555,7 @@
         "type": "object"
       },
       "CompatibleFilterOut": {
-        "description": "Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window.\n\n``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES.",
+        "description": "Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window,\nand the Transition / Mashup modes with the allowed key shift (KEYSHIFT-01..05).\n\n``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES and is\nTransition's key rule; Mashup is the same wheel number (plus the relative\nmajor/minor when ``mashup_relative``).",
         "properties": {
           "allow_half_double": {
             "default": true,
@@ -5928,6 +6583,31 @@
             "minimum": 0.0,
             "title": "Bpm Window Bpm",
             "type": "number"
+          },
+          "key_shift_max": {
+            "default": 1,
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "title": "Key Shift Max",
+            "type": "integer"
+          },
+          "mashup_relative": {
+            "default": false,
+            "title": "Mashup Relative",
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "transition",
+            "enum": [
+              "transition",
+              "mashup"
+            ],
+            "title": "Mode",
+            "type": "string"
           },
           "rules": {
             "items": {
@@ -12080,6 +12760,79 @@
         "title": "LibraryJobReorderIn",
         "type": "object"
       },
+      "LibraryKeyFilterActionIn": {
+        "additionalProperties": false,
+        "description": "One library key wheel control, for agents (issue #7599).\n\n``toggle`` needs ``key`` (the segment click), ``compatible`` needs\n``reference`` (the Compatible button), ``set`` needs ``keys``, ``reset``\nneeds nothing. Every key is a canonical Camelot code 1A..12B.",
+        "properties": {
+          "action": {
+            "enum": [
+              "toggle",
+              "compatible",
+              "reset",
+              "set"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keys"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "LibraryKeyFilterActionIn",
+        "type": "object"
+      },
+      "LibraryKeyFilterActionOut": {
+        "properties": {
+          "library_key_filter": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Library Key Filter",
+            "type": "array"
+          }
+        },
+        "required": [
+          "library_key_filter"
+        ],
+        "title": "LibraryKeyFilterActionOut",
+        "type": "object"
+      },
       "LibraryReadinessCounts": {
         "description": "Every field is a count over ``present``, never over ``total_tracks``.",
         "properties": {
@@ -13404,6 +14157,24 @@
           "created_at"
         ],
         "title": "MeUserOut",
+        "type": "object"
+      },
+      "MeasuredOut": {
+        "properties": {
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "k",
+          "n"
+        ],
+        "title": "MeasuredOut",
         "type": "object"
       },
       "MemberOut": {
@@ -15664,6 +16435,77 @@
           "how_to_grant"
         ],
         "title": "PermissionsOut",
+        "type": "object"
+      },
+      "PickIn": {
+        "properties": {
+          "candidate": {
+            "minLength": 1,
+            "title": "Candidate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate"
+        ],
+        "title": "PickIn",
+        "type": "object"
+      },
+      "PickOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "in_id": {
+            "title": "In Id",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "out_id": {
+            "title": "Out Id",
+            "type": "string"
+          },
+          "picked_candidate_id": {
+            "title": "Picked Candidate Id",
+            "type": "string"
+          },
+          "plan": {
+            "additionalProperties": true,
+            "title": "Plan",
+            "type": "object"
+          },
+          "plan_sha256": {
+            "title": "Plan Sha256",
+            "type": "string"
+          },
+          "rejected_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rejected Ids",
+            "type": "array"
+          },
+          "scorer_version": {
+            "title": "Scorer Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "out_id",
+          "in_id",
+          "picked_candidate_id",
+          "plan",
+          "plan_sha256",
+          "scorer_version",
+          "rejected_ids",
+          "created_at"
+        ],
+        "title": "PickOut",
         "type": "object"
       },
       "PinCellIn": {
@@ -18054,8 +18896,48 @@
         "title": "PushResponse",
         "type": "object"
       },
+      "QualityGradeOut": {
+        "description": "The QLT letter (QLTSCAN-02, apps/shared/audio_grade.py).\n\n`checked` is false until a scan has measured the current file under the\ncurrent rule: the letter then comes from bitrate and container alone and\nthe badge draws it hollow. `letter` is null when the venue is unknown.\n`issues` are issue keys (clipping, dc_offset, ...) that put a dot on the\nbadge. The full hover text is not on the row (it would break the row byte\nbudget); the badge loads it from `GET /api/v1/audio-quality/{stable_id}`.",
+        "properties": {
+          "checked": {
+            "title": "Checked",
+            "type": "boolean"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "letter": {
+            "anyOf": [
+              {
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Letter"
+          }
+        },
+        "required": [
+          "letter",
+          "checked",
+          "issues"
+        ],
+        "title": "QualityGradeOut",
+        "type": "object"
+      },
       "QualityOut": {
-        "description": "One rung of the venue ladder, or an honest unknown.\n\nvenue/rank/kbps are null when the file could not be measured; `blurb`\nthen carries the reason. The UI must never render a guessed rung.",
+        "description": "One rung of the venue ladder, or an honest unknown.\n\nvenue/rank/kbps are null when the file could not be measured; `blurb`\nthen carries the reason. The UI must never render a guessed rung.\n`grade` is set on track-list rows (QLTSCAN-02) and null elsewhere.",
         "properties": {
           "blurb": {
             "title": "Blurb",
@@ -18064,6 +18946,16 @@
           "container": {
             "title": "Container",
             "type": "string"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityGradeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "kbps": {
             "anyOf": [
@@ -18273,6 +19165,9 @@
               },
               {
                 "type": "number"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Machine Score"
@@ -18297,6 +19192,22 @@
               }
             ],
             "title": "Si Sdr"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "good",
+                  "ok",
+                  "bad"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
           }
         },
         "required": [
@@ -26360,6 +27271,126 @@
         "title": "TracksPage",
         "type": "object"
       },
+      "TryIn": {
+        "properties": {
+          "context_bars": {
+            "default": 4,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Context Bars",
+            "type": "integer"
+          },
+          "in": {
+            "minLength": 1,
+            "title": "In",
+            "type": "string"
+          },
+          "n": {
+            "default": 6,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "N",
+            "type": "integer"
+          },
+          "out": {
+            "minLength": 1,
+            "title": "Out",
+            "type": "string"
+          }
+        },
+        "required": [
+          "out",
+          "in"
+        ],
+        "title": "TryIn",
+        "type": "object"
+      },
+      "TryJobOut": {
+        "additionalProperties": false,
+        "description": "A try job (TRYER-10/13/15): every surface (HTTP, CLI, MCP, panel) reads this shape.",
+        "properties": {
+          "best": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "best_reason": {
+            "title": "Best Reason",
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "context_bars": {
+            "title": "Context Bars",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "in": {
+            "title": "In",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "out": {
+            "title": "Out",
+            "type": "string"
+          },
+          "pick": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PickOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scorer_version": {
+            "title": "Scorer Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "etag",
+          "out",
+          "in",
+          "n",
+          "context_bars",
+          "scorer_version",
+          "created_at",
+          "candidates",
+          "best",
+          "best_reason",
+          "pick"
+        ],
+        "title": "TryJobOut",
+        "type": "object"
+      },
       "UiPrefsOut": {
         "properties": {
           "app_mode": {
@@ -26475,6 +27506,35 @@
             ],
             "title": "Library Density",
             "type": "string"
+          },
+          "library_hidden_columns": {
+            "items": {
+              "enum": [
+                "preview",
+                "art",
+                "artist",
+                "key",
+                "bpm",
+                "plays",
+                "rating",
+                "comments",
+                "time",
+                "quality",
+                "energy",
+                "genre",
+                "stems"
+              ],
+              "type": "string"
+            },
+            "title": "Library Hidden Columns",
+            "type": "array"
+          },
+          "library_key_filter": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Library Key Filter",
+            "type": "array"
           },
           "library_watcher_folders": {
             "items": {
@@ -26855,6 +27915,49 @@
               }
             ],
             "title": "Library Density"
+          },
+          "library_hidden_columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "preview",
+                    "art",
+                    "artist",
+                    "key",
+                    "bpm",
+                    "plays",
+                    "rating",
+                    "comments",
+                    "time",
+                    "quality",
+                    "energy",
+                    "genre",
+                    "stems"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Hidden Columns"
+          },
+          "library_key_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Key Filter"
           },
           "library_watcher_folders": {
             "anyOf": [
@@ -28391,6 +29494,29 @@
           "method"
         ],
         "title": "VerifiedIn",
+        "type": "object"
+      },
+      "VetoOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "threshold"
+        ],
+        "title": "VetoOut",
         "type": "object"
       },
       "VocalsAnalyzeIn": {
@@ -31040,6 +32166,234 @@
         ]
       }
     },
+    "/api/v1/audio-quality": {
+      "get": {
+        "description": "Letters over every present track, worst first. `counts` and\n`issue_counts` cover the whole denominator whatever the filter. Without\n`limit` every matching track is listed; `limit` keeps the worst N.",
+        "operationId": "list_audio_quality_api_v1_audio_quality_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "letter",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "A",
+                "B",
+                "C",
+                "D",
+                "unchecked",
+                "issues",
+                "failed"
+              ],
+              "title": "Letter",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioQualityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audio Quality",
+        "tags": [
+          "audio-quality"
+        ]
+      }
+    },
+    "/api/v1/audio-quality/scan": {
+      "get": {
+        "operationId": "get_scan_status_api_v1_audio_quality_scan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioQualityScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scan Status",
+        "tags": [
+          "audio-quality"
+        ]
+      },
+      "post": {
+        "description": "Bring stored facts up to date. Incremental and resumable: unchanged\nfiles are skipped after one stat. Without `wait` it runs in the\nbackground with one worker; `wait=true` runs here with `workers`.",
+        "operationId": "start_scan_api_v1_audio_quality_scan_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workers",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Workers",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioQualityScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Scan",
+        "tags": [
+          "audio-quality"
+        ]
+      }
+    },
+    "/api/v1/audio-quality/scan/stop": {
+      "post": {
+        "description": "End a running scan after the files in flight; a later scan resumes.",
+        "operationId": "stop_scan_api_v1_audio_quality_scan_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioQualityScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stop Scan",
+        "tags": [
+          "audio-quality"
+        ]
+      }
+    },
+    "/api/v1/audio-quality/{stable_id}": {
+      "get": {
+        "description": "One present track: its letter and hover (in `quality.grade`) and the\nmeasured facts behind them. 404 when its audio is not on this machine.",
+        "operationId": "get_track_quality_api_v1_audio_quality__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioQualityTrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Quality",
+        "tags": [
+          "audio-quality"
+        ]
+      }
+    },
     "/api/v1/audio/output-health": {
       "get": {
         "operationId": "get_output_health_api_v1_audio_output_health_get",
@@ -31614,6 +32968,135 @@
         ]
       }
     },
+    "/api/v1/beatgrid-flags/audio-fit": {
+      "get": {
+        "description": "Present tracks by grid-vs-audio verdict, worst first. Reads stored\nverdicts only; a track nobody judged is `not_scanned`.",
+        "operationId": "list_audio_fit_api_v1_beatgrid_flags_audio_fit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "default": "findings",
+              "enum": [
+                "findings",
+                "wrong_bpm",
+                "off_beat",
+                "shifted",
+                "no_verdict",
+                "fit",
+                "unknown",
+                "all"
+              ],
+              "title": "Verdict",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 20000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioFitListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audio Fit",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags/audio-fit/scan": {
+      "get": {
+        "operationId": "get_audio_fit_scan_status_api_v1_beatgrid_flags_audio_fit_scan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Audio Fit Scan Status",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      },
+      "post": {
+        "description": "Judge every present track whose grid, audio or rule changed. About 1 s\nof one core per judged track, on a background thread unless `wait=true`.",
+        "operationId": "start_audio_fit_scan_api_v1_beatgrid_flags_audio_fit_scan_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Audio Fit Scan",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
     "/api/v1/beatgrid-flags/scan": {
       "get": {
         "operationId": "get_scan_status_api_v1_beatgrid_flags_scan_get",
@@ -31686,6 +33169,59 @@
           }
         },
         "summary": "Start Scan",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags/{stable_id}/audio-fit": {
+      "get": {
+        "description": "One track's verdict, judged now (about 1 s) when the stored one is stale\nor missing. A deck load calls this for its track.",
+        "operationId": "get_track_audio_fit_api_v1_beatgrid_flags__stable_id__audio_fit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioFitItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Audio Fit",
         "tags": [
           "beatgrid-flags"
         ]
@@ -34010,6 +35546,364 @@
         "summary": "Post Dedup Scan",
         "tags": [
           "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/dj/try": {
+      "post": {
+        "operationId": "start_try_api_v1_dj_try_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TryJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HTTPValidationError"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "The pair cannot be tried (ErrorBody), or the request body is malformed (HTTPValidationError)"
+          }
+        },
+        "summary": "Start Try",
+        "tags": [
+          "dj-try"
+        ]
+      }
+    },
+    "/api/v1/dj/try/{job_id}": {
+      "get": {
+        "operationId": "get_try_api_v1_dj_try__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TryJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Try",
+        "tags": [
+          "dj-try"
+        ]
+      }
+    },
+    "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/audio": {
+      "get": {
+        "operationId": "dj_try_candidate_audio_api_v1_dj_try__job_id__candidates__candidate_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dj Try Candidate Audio",
+        "tags": [
+          "dj-try"
+        ]
+      }
+    },
+    "/api/v1/dj/try/{job_id}/pick": {
+      "delete": {
+        "operationId": "undo_pick_api_v1_dj_try__job_id__pick_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TryJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          }
+        },
+        "summary": "Undo Pick",
+        "tags": [
+          "dj-try"
+        ]
+      },
+      "post": {
+        "operationId": "pick_candidate_api_v1_dj_try__job_id__pick_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TryJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          }
+        },
+        "summary": "Pick Candidate",
+        "tags": [
+          "dj-try"
         ]
       }
     },
@@ -47088,6 +48982,47 @@
           }
         },
         "summary": "Put Ui Prefs",
+        "tags": [
+          "ui-prefs"
+        ]
+      }
+    },
+    "/api/v1/ui-prefs/library-key-filter": {
+      "post": {
+        "operationId": "post_library_key_filter_api_v1_ui_prefs_library_key_filter_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryKeyFilterActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryKeyFilterActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Library Key Filter",
         "tags": [
           "ui-prefs"
         ]

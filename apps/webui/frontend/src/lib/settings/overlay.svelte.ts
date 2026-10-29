@@ -3,6 +3,9 @@
  * Mounted from root layout so Cmd+, works on /performance and the shell.
  */
 
+// Installs window.__mdtSettingsPanel for the page's lifetime, not the panel's.
+import './panel-offset';
+
 export interface SettingsHistoryEntry {
 	query: string;
 	group: string | null;

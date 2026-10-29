@@ -8,10 +8,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // Regression lines:
 // - if rowIsRemix passes is_remix null (synthetic rows) then the Remixes
 //   filter shows tracks that never earned the claim -- broken
-// - if rowHasVocalLyrics passes 5 lines then a one-line hook counts as vocals -- broken
-// - if rowHasVocalLyrics passes rows with no vocal or lyric evidence then
+// - if the Vocals filter passes 5 lines then a one-line hook counts as vocals -- broken
+// - if the Vocals filter passes rows with no vocal or lyric evidence then
 //   unanalyzed tracks masquerade as vocal tracks -- broken
-// - if rowHasVocalLyrics reads only lyrics.n_lines then tracks with vocal
+// - if the Vocals filter reads only lyrics.n_lines then tracks with vocal
 //   regions or a 'vocal' verdict vanish (VOCALS-FILTER-01) -- broken
 // - if the prefs default either filter ON then fresh sessions hide most of
 //   the library with no visible cause -- broken
@@ -81,7 +81,8 @@ test('VOCALS-FILTER-01: each vocals/lyrics status gets the expected verdict', as
 	for (const [label, vocals, lyrics, verdict] of VOCALS_CASES) {
 		const row = _row({ vocals, lyrics });
 		assert.equal(f.rowVocalsVerdict(row), verdict, label);
-		assert.equal(c.rowHasVocalLyrics(row), verdict === 'yes', `filter: ${label}`);
+		const vocalsOnly = { remixes_filter: false, vocals_filter: true, available_offline_filter: false, library_key_filter: [] };
+		assert.equal(c.applyLibraryFilters([row], vocalsOnly).length === 1, verdict === 'yes', `filter: ${label}`);
 	}
 });
 
@@ -171,7 +172,16 @@ test('both filters have settings agent parity: allowlist, read, apply, catalog',
 
 test('CAT-07: the browser applies rowIsLocallyAvailable only while the available-offline filter is on', async () => {
 	const panel = await readFile('src/lib/components/rb/BrowserPanel.svelte', 'utf8');
-	const body = panel.slice(panel.indexOf('function _applyLibraryFilters('), panel.indexOf('function _applyNextOnly('));
-	assert.match(body, /if \(uiPrefs\.available_offline_filter\) out = out\.filter\(rowIsLocallyAvailable\);/);
+	// BrowserPanel feeds its prefs to pane-contract applyLibraryFilters (#7599 moved it there).
+	assert.match(panel, /applyLibraryFilters\(rows, uiPrefs\)/);
 	assert.match(panel, /checked=\{uiPrefs\.available_offline_filter\}/);
+	const c = await _loadContract();
+	const local = _row({ stable_id: 'local', file_exists: true, is_streaming: false });
+	const cloud = _row({ stable_id: 'cloud', file_exists: false, has_remote_copy: true });
+	const off = { remixes_filter: false, vocals_filter: false, available_offline_filter: false, library_key_filter: [] };
+	assert.deepEqual(c.applyLibraryFilters([local, cloud], off).map((r) => r.stable_id), ['local', 'cloud']);
+	assert.deepEqual(
+		c.applyLibraryFilters([local, cloud], { ...off, available_offline_filter: true }).map((r) => r.stable_id),
+		['local']
+	);
 });

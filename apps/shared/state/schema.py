@@ -248,6 +248,10 @@ FOREIGN_AUTHORITY_TABLES: tuple[str, ...] = (
     "play_orders",
     "play_order_entries",
     "play_orders_schema_meta",
+    # apps/autodj/try_picks.py (TRYER-13 private version counter)
+    "transition_try_jobs",
+    "transition_picks",
+    "transition_try_schema_meta",
     # apps/shared/playlist_sets/schema.py (SET-05 private version counter)
     "playlist_sets",
     "playlist_set_entries",

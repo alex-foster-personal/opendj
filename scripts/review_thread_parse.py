@@ -170,8 +170,9 @@ _NEGATOR = re.compile(
     re.IGNORECASE,
 )
 
-# The ledger is the other half of a DEBT-LOGGED claim. A reply naming an anchor
-# that was never appended loses the finding just as silently as saying nothing.
+# `logged as tech debt: <anchor>`: the anchor is the text before any parenthetical on that line, holding a
+# word. Tue 20 Oct 2026, 272 real replies: all 259 legitimate ones name one; the 13 without are #4489's shape.
+_DEBT_ANCHOR_SLOT = re.compile(r"^\s*logged as tech debt\s*:[ \t]*([^(\n]*)", re.IGNORECASE)
 _DEVIN_ENVELOPE = re.compile(r"<!--\s*devin-review-comment\s*(\{.*?\})\s*-->", re.DOTALL)
 _DEVIN_RED = "\U0001f534"
 _DEVIN_YELLOW = "\U0001f7e1"
@@ -198,6 +199,7 @@ class Thread:
     created_at: str
     human_replies: int
     disposition: str | None
+    debt_anchor_missing: bool
     ledger_indexed: bool
     ledger_checked: bool = True
 
@@ -258,9 +260,10 @@ class Thread:
 
     @property
     def follow_up(self) -> bool:
-        """A non-blocking thread that still needs work after the merge: unterminated,
-        or a debt-log claim the PR's debt file does not hold."""
-        return not self.merge_blocker_class and (not self.triaged or self.debt_not_in_ledger)
+        """A non-blocking thread that still needs work after the merge: unterminated, or a
+        debt-log claim the PR's debt file does not hold or whose reply names no anchor."""
+        open_work = not self.triaged or self.debt_not_in_ledger or self.debt_anchor_missing
+        return not self.merge_blocker_class and open_work
 
     @property
     def debt_not_in_ledger(self) -> bool:
@@ -280,10 +283,11 @@ class Thread:
     @property
     def ledger_relevant(self) -> bool:
         """A DEBT-LOGGED claim whose verdict actually hinges on ledger membership:
-        resolved and not merge-blocker class (a blocker's debt-log is illegal
-        regardless, an unresolved thread is unterminated regardless).
+        resolved, anchored and not merge-blocker class (a blocker's debt-log is illegal
+        regardless, an anchorless or unresolved one is a follow-up regardless).
         """
-        return self.disposition == "DEBT-LOGGED" and self.resolved and not self.merge_blocker_class
+        anchored_claim = self.disposition == "DEBT-LOGGED" and not self.debt_anchor_missing
+        return anchored_claim and self.resolved and not self.merge_blocker_class
 
 
 @dataclass(frozen=True)
@@ -394,13 +398,7 @@ def _is_reviewer_thread(login: str, body: str) -> bool:
 
 
 def _is_human(login: str) -> bool:
-    """Any real person. Deliberately wider than "not a review bot".
-
-    Only a human can supply a disposition, so ANY automation account is
-    excluded here -- github-actions[bot], dependabot, a CI integration -- not
-    just the three reviewers. Otherwise an unrelated bot commenting on a
-    thread would read as author triage.
-    """
+    """Anyone but a review bot. GraphQL drops `[bot]` for App actors, so App replies count (#4489, #6890)."""
     return bool(login) and not login.endswith("[bot]") and not _is_bot(login)
 
 
@@ -525,8 +523,13 @@ def _reply_disposition(body: str) -> str | None:
     return None
 
 
-def _disposition(replies: list[dict]) -> str | None:
-    """The state the LATEST recorded disposition puts the thread in.
+def _names_an_anchor(body: str) -> bool:
+    match = _DEBT_ANCHOR_SLOT.match(body)
+    return bool(match and re.search(r"\w", match.group(1)))
+
+
+def _deciding_reply(replies: list[dict]) -> str:
+    """The body of the reply whose disposition is the LATEST recorded, or "" if none.
 
     Order matters, and category order would get it wrong. A thread that was
     debt-logged and then actually fixed is FIXED; scanning by category would
@@ -537,12 +540,11 @@ def _disposition(replies: list[dict]) -> str | None:
     Within one reply, every occurrence is considered, so "not fixed in round 5,
     but fixed in round 6" still reads FIXED on the affirmative clause.
     """
-    latest: str | None = None
+    deciding = ""
     for reply in replies:
-        recorded = _reply_disposition(reply["body"])
-        if recorded is not None:
-            latest = recorded
-    return latest
+        if _reply_disposition(reply["body"]) is not None:
+            deciding = reply["body"]
+    return deciding
 
 
 def build_thread(
@@ -576,6 +578,8 @@ def build_thread(
         for comment in comments[1:]
         if _is_human((comment.get("author") or {}).get("login") or "")
     ]
+    decision = _deciding_reply(replies)
+    disposition = _reply_disposition(decision)
     return Thread(
         node_id=node["id"],
         path=node["path"] or "(file gone)",
@@ -589,7 +593,8 @@ def build_thread(
         permalink=first["url"],
         created_at=first["createdAt"],
         human_replies=len(replies),
-        disposition=_disposition(replies),
+        disposition=disposition,
+        debt_anchor_missing=disposition == "DEBT-LOGGED" and not _names_an_anchor(decision),
         ledger_indexed=first["url"] in ledger,
         ledger_checked=ledger_checked,
     )

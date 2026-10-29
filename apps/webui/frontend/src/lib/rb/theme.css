@@ -601,11 +601,28 @@ html[data-skin='light'] .perf-root .deck-col:last-child {
 	position: absolute;
 	left: 50%;
 	transform: translateX(-50%);
-	color: var(--rb-text-dim);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	color: var(--rb-text);
+	font-family: var(--rb-font);
+	font-size: 7px;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity 80ms ease-out;
 	z-index: 3;
+}
+.perf-root .rb-fader .fader-chevron-caption {
+	color: var(--rb-text);
+	/* Own plate: the caption sits over the channel meter, whose lit green
+	   left dark light-theme text at 1:1 (WCAG audit). */
+	background: var(--rb-panel);
+	padding: 0 2px;
+	border-radius: 2px;
 }
 .perf-root .rb-fader:hover .fader-chevron,
 .perf-root .rb-fader:focus-within .fader-chevron {

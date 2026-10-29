@@ -31,6 +31,22 @@ def refuse_forbidden_denominator(n: int, *, what: str) -> None:
         )
 
 
+def lane_denominator_n(present_rows: int, ungradable_n: int) -> int:
+    """Present-row count minus rows lacking lane ground truth."""
+    return present_rows - ungradable_n
+
+
+def lane_scored_n(agree_n: int, disagree_n: int) -> int:
+    """Rows with own output that matched exactly or disagreed."""
+    return agree_n + disagree_n
+
+
+def mean_of(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
 @dataclass(frozen=True)
 class LaneFigure:
     """One lane's quoted figure. `at_parity` is structurally False this round."""

@@ -10,7 +10,7 @@
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import { clickSelect, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
+	import { METER_FLOOR_DBFS, calibrationCaptureDb } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
 	import { knobId, type KnobRole } from '$lib/rb/knob-control.svelte';
 	import {
@@ -136,7 +136,9 @@
 		// severe master attenuation. `playing` is the only signal that says the
 		// level means something right now.
 		if (!playing) return;
-		const db = peekDeckMeterReading(deckId).db;
+		// R is captured from the value the channel meter draws (its post-crossfader
+		// heard ballistics), M from the tap (Sol P1 and Codex P2, PR #6829).
+		const db = calibrationCaptureDb(kind, peekDeckMeterReading(deckId));
 		// Belt and braces: a playing deck can still sit at the floor (silence in
 		// the track, or a graph not yet producing), and a -60 dBFS ceiling is a
 		// 0.001 master multiplier, i.e. one click silences the output.

@@ -1,0 +1,79 @@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to       0 dB
+
+   isolator (full kill)  [##############################]     0 dB
+   shelf (stops at -26)  [##############################]     0 dB
+                          0 dB          -30          -60
+
+   both follow the knob so far
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to      -6 dB
+
+   isolator (full kill)  [###########################...]    -6 dB
+   shelf (stops at -26)  [###########################...]    -6 dB
+                          0 dB          -30          -60
+
+   both follow the knob so far
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to     -12 dB
+
+   isolator (full kill)  [########################......]   -12 dB
+   shelf (stops at -26)  [########################......]   -12 dB
+                          0 dB          -30          -60
+
+   both follow the knob so far
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to     -18 dB
+
+   isolator (full kill)  [#####################.........]   -18 dB
+   shelf (stops at -26)  [#####################.........]   -18 dB
+                          0 dB          -30          -60
+
+   both follow the knob so far
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to     -26 dB
+
+   isolator (full kill)  [#################.............]   -26 dB
+   shelf (stops at -26)  [#################.............]   -26 dB
+                          0 dB          -30          -60
+
+   both follow the knob so far
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to     -40 dB
+
+   isolator (full kill)  [##########....................]   -40 dB
+   shelf (stops at -26)  [#################.............]   -26 dB
+                          0 dB          -30          -60
+
+   isolator: band GONE.   shelf: bass still leaks
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to     -60 dB
+
+   isolator (full kill)  [..............................]   -60 dB
+   shelf (stops at -26)  [#################.............]   -26 dB
+                          0 dB          -30          -60
+
+   isolator: band GONE.   shelf: bass still leaks
+@@
+full-kill EQ: an isolator band goes to -inf, a shelf stops at -26 dB
+
+   knob turned to    -inf dB
+
+   isolator (full kill)  [..............................]  -inf dB
+   shelf (stops at -26)  [#################.............]   -26 dB
+                          0 dB          -30          -60
+
+   isolator: band GONE.   shelf: bass still leaks

@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from apps.engine_core.utc_timestamps import utc_iso_ms
 from apps.shared import file_lock
 
 # A holder whose heartbeat is younger than this is live. An older heartbeat
@@ -27,10 +28,6 @@ HEARTBEAT_TTL_S: float = 120.0
 
 class EngineLockError(RuntimeError):
     """Another engine holds the lock. The message names pid/boot_id/age."""
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _age_s(stamp: str | None) -> float | None:
@@ -94,7 +91,7 @@ class EngineLock:
         self.host = host
         self.port = port
         self.role = role
-        self.started_at = _now()
+        self.started_at = utc_iso_ms()
         self._fd: int | None = None
 
     # ----- acquire / release --------------------------------------------
@@ -149,7 +146,7 @@ class EngineLock:
             "role": self.role,
             "boot_id": self.boot_id,
             "started_at": self.started_at,
-            "heartbeat_at": _now(),
+            "heartbeat_at": utc_iso_ms(),
         }
         if self.host is not None:
             data["host"] = self.host

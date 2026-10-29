@@ -37,7 +37,6 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, Literal
 
 from ._value_check import require_allowed_value
@@ -45,6 +44,7 @@ from .canonical import PROJECTION_FIELDS
 from .lane_enums import SELECTION_LANES
 from .lanes import LANES, Lane
 from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
+from .time_iso import utc_now_iso
 
 Source = Literal["rbx", "own"]
 SOURCES: tuple[Source, ...] = ("rbx", "own")
@@ -68,10 +68,6 @@ OWN_ANALYSIS_SOURCE = "own-analysis"
 
 class SelectionError(ValueError):
     """An unknown lane, source, or toggle state."""
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def check_lane(lane: str) -> str:
@@ -155,7 +151,7 @@ def set_default(conn: sqlite3.Connection, lane: str, source: str) -> Source:
         ON CONFLICT(lane) DO UPDATE SET source = excluded.source,
                                         updated_at = excluded.updated_at
         """,
-        (lane, source, _now_iso()),
+        (lane, source, utc_now_iso()),
     )
     return source  # type: ignore[return-value]
 

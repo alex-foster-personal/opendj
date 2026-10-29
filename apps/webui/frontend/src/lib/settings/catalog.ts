@@ -6,6 +6,15 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
+import {
+	DRAG_BASE_MAX,
+	DRAG_BASE_MIN,
+	DRAG_BASE_STEP,
+	DRAG_DEFAULTS,
+	DRAG_FALLOFF_MAX_PX,
+	DRAG_FALLOFF_MIN_PX,
+	DRAG_FALLOFF_STEP_PX
+} from '$lib/rb/drag-sensitivity.svelte';
 import { AUTO_GAIN_ENABLED_SETTING, AUTO_GAIN_TARGET_SETTING } from './auto-gain-setting';
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import { CONFIRMATION_SETTINGS } from './confirmation-settings';
@@ -119,9 +128,55 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		keywords: ['next', 'camelot', 'bpm', 'tab', 'suggest', 'compatible'],
 		title: 'Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)',
 		detail:
-			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the master, else playing, else any loaded with key and BPM (Camelot family, BPM window, half/double folds). Also toggled with Tab on /performance.",
+			"Shown as the 'compatible' checkbox in the library header. Filters the library list vs the master, else playing, else any loaded with key and BPM (the mode's key rule with any allowed key shift, the BPM window, half/double folds). Also toggled with Tab on /performance.",
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'compatible_filter.mode',
+		label: 'Compatible filter mode',
+		group: 'library',
+		keywords: ['compatible', 'mashup', 'transition', 'key', 'camelot', 'acapella', 'harmonic'],
+		title: 'Which key rule the compatible filter uses: Transition or Mashup',
+		detail:
+			'Transition: the Camelot rules ticked in the compatible dropdown (by default the same key, ±1 on the same letter and the relative major/minor), good for a 16 to 32 bar blend. Mashup: the exact same key, for an acapella or a lead layered over a whole track, where small clashes add up. Both allow the key shift set below. Also switched from the compatible dropdown in the library header.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'transition', label: 'Transition' },
+				{ value: 'mashup', label: 'Mashup' }
+			]
+		}
+	},
+	{
+		id: 'compatible_filter.mashup_relative',
+		label: 'Mashup: also allow relative major/minor',
+		group: 'library',
+		keywords: ['compatible', 'mashup', 'relative', 'major', 'minor', 'key', 'acapella'],
+		title: 'Mashup mode also matches the relative major/minor (8A with 8B)',
+		detail: 'Off (default): Mashup needs the exact same key, because a mashup layers two parts for minutes rather than bars. On: the relative major/minor counts too.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'compatible_filter.key_shift_max',
+		label: 'Allowed key shift',
+		group: 'library',
+		keywords: ['compatible', 'key', 'shift', 'semitone', 'pitch', 'transpose', 'mashup', 'master tempo', 'key lock'],
+		title: 'How many semitones a track may be shifted to count as compatible',
+		detail:
+			'A track that matches only after a shift shows the shift as a superscript on its key (8A⁻¹) and loads shifted by it. 1 semitone is about a 6% stretch and sounds clean with key lock (Mashup: 3 of 24 keys match, Transition with the default rules: 11 of 24). 2 is about 12%: vocals start to color (Mashup: 5 of 24, Transition with the default rules: 17 of 24). 3 is about 19%: vocals sound chipmunky or muddy and transients smear (Mashup: 7 of 24). Why a semitone: (private path).',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: '0', label: 'Off' },
+				{ value: '1', label: '1 semitone' },
+				{ value: '2', label: '2 semitones' },
+				{ value: '3', label: '3 semitones' }
+			]
+		}
 	},
 	{
 		id: 'remixes_filter',
@@ -313,6 +368,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		}
 	},
 	{
+		id: 'feature_icon_single_click',
+		label: 'Feature icons: single click',
+		group: 'performance',
+		keywords: ['icon', 'cluster', 'top bar', 'toggle', 'feature', 'component', 'single click', 'row'],
+		title: 'Click each top-bar feature icon on its own',
+		detail:
+			'The performance top-bar icon strip toggles components on and off. By default the strip is one button: click it and pick components from the list. Core icons stay on the first row of the top bar. More components wrap onto a second row, then a third. Turn this on when each icon should toggle on a single click instead. Saved in this browser only.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'deck_layout_animate',
 		label: 'Animate deck layout switch',
 		group: 'performance',
@@ -408,6 +474,45 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			'A macOS trackpad sends a dense burst of wheel events for a single finger movement, so it is scaled separately from a mouse: 1x here means "as sensitive as the mouse", and the shipped default is 3x less sensitive, derived from WHEEL_TRACKPAD_EVENTS_PER_DETENT in lib/rb/wheel-adjust.ts. Same controls and same persistence as the mouse factor.',
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
+	},
+	{
+		id: 'drag_sensitivity.base',
+		label: 'Drag sensitivity',
+		group: 'performance',
+		keywords: [
+			'drag', 'click drag', 'sensitivity', 'mouse', 'knob', 'dial', 'fader', 'eq', 'group', 'gain'
+		],
+		title: 'How far a click-drag moves a mixer knob or channel fader, as a multiple of the original scale',
+		detail:
+			'Applies to every knob and channel fader drag, single or grouped; the crossfader keeps its direct pointer mapping. 0.70x is the default ("30% lower as base"). Changes apply at once, no reload. Try it on the test knobs and faders below: they use the same drag code, shift-select groups and the Opt flip, and are wired to nothing.',
+		implemented: true,
+		tester: 'drag',
+		control: {
+			kind: 'number',
+			min: DRAG_BASE_MIN,
+			max: DRAG_BASE_MAX,
+			step: DRAG_BASE_STEP,
+			defaultValue: DRAG_DEFAULTS.base,
+			unit: 'x'
+		}
+	},
+	{
+		id: 'drag_sensitivity.falloff_px',
+		label: 'Drag falloff distance',
+		group: 'performance',
+		keywords: ['drag', 'falloff', 'distance', 'fine', 'sensitivity', 'knob', 'fader'],
+		title: 'Pointer distance from the press at which a drag moves half as fast',
+		detail:
+			'The further the pointer gets from where you pressed, the gentler the drag: gain = base / (1 + distance / this). Moving back toward the press gives fine control back, with no jump. Default 150 px.',
+		implemented: true,
+		control: {
+			kind: 'number',
+			min: DRAG_FALLOFF_MIN_PX,
+			max: DRAG_FALLOFF_MAX_PX,
+			step: DRAG_FALLOFF_STEP_PX,
+			defaultValue: DRAG_DEFAULTS.falloffPx,
+			unit: ' px'
+		}
 	},
 	...CONFIRMATION_SETTINGS,
 	{

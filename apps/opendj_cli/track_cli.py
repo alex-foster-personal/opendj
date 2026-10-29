@@ -27,10 +27,11 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from apps.opendj_cli import EXIT_FAILED, api_cli
+from apps.opendj_cli.refusal import fail as _fail
 from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
 
 KEY_SEGMENTS_VERB = "key-segments"
@@ -41,10 +42,22 @@ GRID_FLAGS_VERB = "grid-flags"
 GRID_SCAN_VERB = "grid-scan"
 GRID_FLAG_VERB = "grid-flag"
 _GRID_FLAGS_PATH = "/api/v1/beatgrid-flags"
+#: GRIDFIT-03: the CLI twin of the grid-vs-audio routes under the same prefix.
+GRID_FIT_VERB = "grid-fit"
+GRID_FIT_SCAN_VERB = "grid-fit-scan"
+_FIT_FILTERS = ("findings", "wrong_bpm", "off_beat", "shifted", "no_verdict", "fit", "unknown", "all")
 #: AUTOGAIN-06: the CLI twin of `/api/v1/auto-gain` (the deck's AG readout).
 AUTO_GAIN_VERB = "auto-gain"
 _AUTO_GAIN_PATH = "/api/v1/auto-gain/tracks"
 _GRID_CLASSES = ("flagged", "suspect", "variable_tempo", "unknown", "ok", "all")
+#: QLTSCAN-04: the CLI twin of `/api/v1/audio-quality` (the QLT column's
+#: letter). Same rule as the grid verbs: the engine owns the scan, so these
+#: call it over HTTP and print its JSON.
+QUALITY_VERB = "quality"
+QUALITY_SCAN_VERB = "quality-scan"
+QUALITY_OF_VERB = "quality-of"
+_QUALITY_PATH = "/api/v1/audio-quality"
+_QUALITY_FILTERS = ("all", "A", "B", "C", "D", "unchecked", "issues", "failed")
 
 _USAGE = (
     "usage: opendj track key-segments <stable_id> [--state-db PATH] [--json]\n"
@@ -52,6 +65,12 @@ _USAGE = (
     "                               [include-dismissed] [all-tracks] [limit N]\n"
     "       opendj track grid-scan [all-tracks] [no-wait]\n"
     "       opendj track grid-flag <stable_id> dismiss|restore\n"
+    "       opendj track grid-fit [findings|wrong_bpm|off_beat|shifted|no_verdict|fit|unknown|all] [limit N]\n"
+    "       opendj track grid-fit <stable_id> [force]\n"
+    "       opendj track grid-fit-scan [no-wait]\n"
+    "       opendj track quality [all|A|B|C|D|unchecked|issues|failed] [limit N]\n"
+    "       opendj track quality-scan [limit N] | quality-scan status | quality-scan stop\n"
+    "       opendj track quality-of <stable_id>\n"
     "       opendj track auto-gain <stable_id> [set <dB>|clear]"
 )
 
@@ -68,14 +87,9 @@ def run(
     verb, *args = rest
     if verb == KEY_SEGMENTS_VERB:
         return _key_segments(args, as_json=as_json, default_state_db=state_db)
-    if verb == GRID_FLAGS_VERB:
-        return _grid_flags(args)
-    if verb == GRID_SCAN_VERB:
-        return _grid_scan(args)
-    if verb == GRID_FLAG_VERB:
-        return _grid_flag(args)
-    if verb == AUTO_GAIN_VERB:
-        return _auto_gain(args)
+    handler = _API_VERBS.get(verb)
+    if handler is not None:
+        return handler(args)
     print(f"unknown track verb: {verb!r}\n{_USAGE}", file=sys.stderr)
     return 1
 
@@ -132,6 +146,98 @@ def _grid_flag(args: Sequence[str]) -> int:
     return api_cli.run(
         ["PUT", f"{_GRID_FLAGS_PATH}/{args[0]}/dismissed", "--json", body], as_json=True
     )
+
+
+def _is_stable_id(token: str) -> bool:
+    return len(token) == 40 and all(c in "0123456789abcdef" for c in token)
+
+
+def _grid_fit(args: Sequence[str]) -> int:
+    """One track: `GET /api/v1/beatgrid-flags/{id}/audio-fit` (judged now if
+    stale). Otherwise `GET /api/v1/beatgrid-flags/audio-fit` by verdict."""
+    if args and _is_stable_id(args[0]):
+        if any(token != "force" for token in args[1:]):
+            return _usage_error()
+        suffix = "?force=true" if "force" in args[1:] else ""
+        return api_cli.run(["GET", f"{_GRID_FLAGS_PATH}/{args[0]}/audio-fit{suffix}"], as_json=True)
+    query: list[str] = []
+    position = 0
+    while position < len(args):
+        token = args[position]
+        if token in _FIT_FILTERS:
+            query.append(f"verdict={token}")
+        elif token == "limit":
+            if position + 1 >= len(args) or not args[position + 1].isdigit():
+                return _usage_error()
+            query.append(f"limit={args[position + 1]}")
+            position += 1
+        else:
+            return _usage_error()
+        position += 1
+    suffix = f"?{'&'.join(query)}" if query else ""
+    return api_cli.run(["GET", f"{_GRID_FLAGS_PATH}/audio-fit{suffix}"], as_json=True)
+
+
+def _grid_fit_scan(args: Sequence[str]) -> int:
+    """`POST /api/v1/beatgrid-flags/audio-fit/scan`: judge every present track."""
+    if any(token != "no-wait" for token in args):
+        return _usage_error()
+    wait = "false" if "no-wait" in args else "true"
+    return api_cli.run(["POST", f"{_GRID_FLAGS_PATH}/audio-fit/scan?wait={wait}"], as_json=True)
+
+
+def _number_words(args: Sequence[str], flags: Sequence[str], numbers: Sequence[str]) -> dict[str, str] | None:
+    """`["no-wait", "limit", "5"]` -> `{"no-wait": "", "limit": "5"}`, or None
+    when a word is unknown or a number is missing."""
+    parsed: dict[str, str] = {}
+    position = 0
+    while position < len(args):
+        token = args[position]
+        if token in flags:
+            parsed[token] = ""
+        elif token in numbers:
+            if position + 1 >= len(args) or not args[position + 1].isdigit():
+                return None
+            parsed[token] = args[position + 1]
+            position += 1
+        else:
+            return None
+        position += 1
+    return parsed
+
+
+def _quality(args: Sequence[str]) -> int:
+    """`GET /api/v1/audio-quality`: letters, counts and issues."""
+    parsed = _number_words(args, _QUALITY_FILTERS, ("limit",))
+    if parsed is None or sum(key in _QUALITY_FILTERS for key in parsed) > 1:
+        return _usage_error()
+    query = [f"letter={key}" for key in parsed if key in _QUALITY_FILTERS]
+    if "limit" in parsed:
+        query.append(f"limit={parsed['limit']}")
+    suffix = f"?{'&'.join(query)}" if query else ""
+    return api_cli.run(["GET", f"{_QUALITY_PATH}{suffix}"], as_json=True)
+
+
+def _quality_scan(args: Sequence[str]) -> int:
+    """Start the background scan and return its status at once; `status` and
+    `stop` read or end it. Never a blocking request: a library scan runs for
+    minutes to hours, far past the CLI's HTTP timeout."""
+    if list(args) == ["stop"]:
+        return api_cli.run(["POST", f"{_QUALITY_PATH}/scan/stop"], as_json=True)
+    if list(args) == ["status"]:
+        return api_cli.run(["GET", f"{_QUALITY_PATH}/scan"], as_json=True)
+    parsed = _number_words(args, (), ("limit",))
+    if parsed is None:
+        return _usage_error()
+    query = "?limit=" + parsed["limit"] if "limit" in parsed else ""
+    return api_cli.run(["POST", f"{_QUALITY_PATH}/scan{query}"], as_json=True)
+
+
+def _quality_of(args: Sequence[str]) -> int:
+    """`GET /api/v1/audio-quality/{id}`: one track's letter, hover and facts."""
+    if len(args) != 1:
+        return _usage_error()
+    return api_cli.run(["GET", f"{_QUALITY_PATH}/{args[0]}"], as_json=True)
 
 
 def _auto_gain(args: Sequence[str]) -> int:
@@ -206,21 +312,7 @@ def _track_exists(stable_id: str, state_db: Path) -> bool:
 
 
 def _not_found(stable_id: str, *, as_json: bool) -> int:
-    message = f"track not found: {stable_id}"
-    if as_json:
-        print(
-            json.dumps(
-                {
-                    "error": {"code": "not_found", "message": message},
-                    "exit_code": EXIT_FAILED,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(f"opendj: {message}", file=sys.stderr)
-    return EXIT_FAILED
+    return _fail(as_json, "not_found", f"track not found: {stable_id}", EXIT_FAILED)
 
 
 def _state_db_missing(state_db: Path, *, as_json: bool) -> int:
@@ -231,21 +323,7 @@ def _state_db_missing(state_db: Path, *, as_json: bool) -> int:
     is always this error, never swallowed into "track not found" (issue
     #3037 defect 2).
     """
-    message = f"state DB not found: {state_db}"
-    if as_json:
-        print(
-            json.dumps(
-                {
-                    "error": {"code": "state_db_not_found", "message": message},
-                    "exit_code": EXIT_FAILED,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    else:
-        print(f"opendj: {message}", file=sys.stderr)
-    return EXIT_FAILED
+    return _fail(as_json, "state_db_not_found", f"state DB not found: {state_db}", EXIT_FAILED)
 
 
 def _key_segments(
@@ -309,9 +387,26 @@ def _key_segments(
 
 __all__ = [
     "AUTO_GAIN_VERB",
+    "GRID_FIT_SCAN_VERB",
+    "GRID_FIT_VERB",
     "GRID_FLAGS_VERB",
     "GRID_FLAG_VERB",
     "GRID_SCAN_VERB",
     "KEY_SEGMENTS_VERB",
     "run",
 ]
+
+
+#: Verbs that only wrap an engine route. `run` looks them up here, so a new
+#: verb is one line rather than another branch.
+_API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
+    GRID_FLAGS_VERB: _grid_flags,
+    GRID_SCAN_VERB: _grid_scan,
+    GRID_FLAG_VERB: _grid_flag,
+    GRID_FIT_VERB: _grid_fit,
+    GRID_FIT_SCAN_VERB: _grid_fit_scan,
+    QUALITY_VERB: _quality,
+    QUALITY_SCAN_VERB: _quality_scan,
+    QUALITY_OF_VERB: _quality_of,
+    AUTO_GAIN_VERB: _auto_gain,
+}

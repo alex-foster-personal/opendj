@@ -19,10 +19,11 @@ Design notes
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+from apps.voice.settings import coalesce_env
 
 SAMPLE_RATE_HZ: int = 16_000
 CHANNELS: int = 1
@@ -77,7 +78,7 @@ def resolve_input_device(
     PortAudio. Returns a ``DeviceInfo`` with at least ``index`` + ``name``
     populated.
     """
-    env = env if env is not None else dict(os.environ)
+    env = coalesce_env(env)
 
     if query_devices is None or default_device_getter is None:
         sd = _sounddevice()

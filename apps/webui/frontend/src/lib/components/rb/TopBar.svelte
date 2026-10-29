@@ -48,6 +48,7 @@
 	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
 	const listViewBullets = builtExplainerBullets('list-view');
 	const fxBullets = plannedExplainerBullets('fx');
+	const FX_INERT_TITLE = plannedTitle('fx');
 	const twoDeck = $derived(describeTwoDeckToggle(uiPrefs.deck_layout));
 	const fourWaveformBullets = builtExplainerBullets('4-waveform-view');
 	const TWO_TRACK_AUTOPLAY_TITLE = builtTitle('autoplay-two-track');
@@ -90,6 +91,12 @@
 	import TrackInfoButton from './TrackInfoButton.svelte';
 	import TrackInfoHost from './TrackInfoHost.svelte';
 	import { builtExplainerBullets, builtTitle, plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
+	import {
+		FEATURE_ICON_ROWS,
+		featureIconSingleClick,
+		featureIconView,
+		type FeatureIconId
+	} from '$lib/rb/feature-icon-cluster.svelte';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import StemsProgress from './StemsProgress.svelte';
 	import FeedbackThumbs from './FeedbackThumbs.svelte';
@@ -154,6 +161,14 @@
 	let modePickerEl: HTMLDetailsElement | undefined = $state();
 	let modeMenuStyle = $state('');
 	let modeMenuEl: HTMLDivElement | undefined = $state();
+	// Pin 87d7dac0a9b8: the feature-icon strip is one button unless single-click
+	// is on. Row 2 and row 3 hang under the top bar, so they are measured.
+	let featureIconsEl: HTMLDivElement | undefined = $state();
+	let iconClusterEl: HTMLDivElement | undefined = $state();
+	let featureMenuEl: HTMLDivElement | undefined = $state();
+	let featureMenuOpen = $state(false);
+	let featureMenuStyle = $state('');
+	let featureExtraStyle = $state('visibility:hidden');
 
 	const liveAppMode = APP_MODES.find((mode) => mode.id === 'performance');
 	if (liveAppMode === undefined) {
@@ -275,6 +290,86 @@
 		modeMenuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
 	}
 
+	function _featurePressed(id: FeatureIconId): boolean {
+		if (id === '2-deck') return twoDeck.pressed;
+		const view = featureIconView(id);
+		if (view) return uiPrefs.perf_view === view;
+		// FX: no panel is built yet, so it is never on.
+		return false;
+	}
+
+	function _toggleFeature(id: FeatureIconId): void {
+		if (id === '2-deck') {
+			setDeckLayoutMode(twoDeck.next);
+			return;
+		}
+		const view = featureIconView(id);
+		if (view) {
+			void runPerformanceCommandFromUi({ type: 'set_perf_view', view });
+		}
+		// FX: inert until its panel exists (plannedTitle('fx')); nothing to toggle.
+	}
+
+	function _placeFeatureExtra(): void {
+		const anchor = iconClusterEl;
+		if (!anchor) return;
+		const rect = anchor.getBoundingClientRect();
+		featureExtraStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 1)}px;visibility:visible`;
+	}
+
+	async function _placeFeatureMenu(): Promise<void> {
+		const anchor = iconClusterEl;
+		if (!anchor) return;
+		await tick();
+		// Closed while the tick ran: there is no menu to place.
+		if (!featureMenuOpen || featureIconSingleClick()) return;
+		const rect = anchor.getBoundingClientRect();
+		const extra = featureIconsEl?.querySelector('.icon-cluster-extra')?.getBoundingClientRect();
+		const top = extra && extra.height > 0 ? extra.bottom + 4 : rect.bottom + 4;
+		// The menu renders while featureMenuOpen, so after tick() it must be bound (Sol P1, PR #6228).
+		if (!featureMenuEl) throw new Error('feature menu: the open menu has no element to measure');
+		const menuRect = featureMenuEl.getBoundingClientRect();
+		const box = clampToViewport(
+			rect.left,
+			top,
+			{ width: menuRect.width, height: menuRect.height },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		featureMenuStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
+	}
+
+	function _openFeatureMenuFromCluster(): void {
+		if (featureIconSingleClick()) return;
+		featureMenuOpen = !featureMenuOpen;
+		if (featureMenuOpen) void _placeFeatureMenu();
+	}
+
+	function _onFeatureClusterKey(event: KeyboardEvent): void {
+		if (featureIconSingleClick()) return;
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		_openFeatureMenuFromCluster();
+	}
+
+	// The feature menu listens only while it is open, so the mode menu's
+	// window handlers stay as they were.
+	$effect(() => {
+		if (!featureMenuOpen) return;
+		const onPointer = (e: PointerEvent): void => {
+			const target = e.target;
+			if (!(target instanceof Node && featureIconsEl?.contains(target))) featureMenuOpen = false;
+		};
+		const onKey = (e: KeyboardEvent): void => {
+			if (e.key === 'Escape') featureMenuOpen = false;
+		};
+		window.addEventListener('pointerdown', onPointer);
+		window.addEventListener('keydown', onKey);
+		return () => {
+			window.removeEventListener('pointerdown', onPointer);
+			window.removeEventListener('keydown', onKey);
+		};
+	});
+
 	function _dismissModeMenuOnOutsidePointer(e: PointerEvent): void {
 		if (!modePickerEl?.open) return;
 		if (e.target instanceof Node && modePickerEl.contains(e.target)) return;
@@ -285,6 +380,24 @@
 		if (e.key !== 'Escape' || !modePickerEl?.open) return;
 		modePickerEl.open = false;
 	}
+
+	$effect(() => {
+		if (featureIconSingleClick()) featureMenuOpen = false;
+		const el = iconClusterEl;
+		if (!el) return;
+		const place = (): void => {
+			_placeFeatureExtra();
+			if (featureMenuOpen) void _placeFeatureMenu();
+		};
+		place();
+		const ro = new ResizeObserver(place);
+		ro.observe(el);
+		window.addEventListener('resize', place);
+		return () => {
+			ro.disconnect();
+			window.removeEventListener('resize', place);
+		};
+	});
 
 	/** Native `toggle` on `<details>` is wired with a `use:` action; Svelte 5
 	 * does not accept `ontoggle` as a template handler on this element. */
@@ -448,6 +561,7 @@
 	class="rb-topbar rb-panel"
 	class:less-view={uiPrefs.deck_layout === 'less'}
 	class:view-chosen={uiPrefs.perf_view !== 'waveform'}
+	class:single-click={featureIconSingleClick()}
 	class:pads-off={!uiPrefs.show_pads}
 >	<!-- top-left: PARITY-02 rbx-vs-own source A/B toggle (issue #1002),
 	     ahead of the live audio health + prefetch count and mode dropdown. -->
@@ -493,115 +607,174 @@
 	<GigHelperMonitor />
 	<GigHelperPrompt />
 
-	<div class="icon-cluster">
-		<!-- TOPVIEW-01: list view. The four view icons (list, 4-waveform, phase
-		     scope, phase meter) are one choice, uiPrefs.perf_view, persisted to
-		     disk prefs (PUT /api/v1/ui-prefs is the agent twin). -->
-		<ControlExplainer title="List view" bullets={listViewBullets} showDelayMs={60}>
-			<button
-				type="button"
-				class="tb-icon tb-view"
-				class:active={uiPrefs.perf_view === 'list'}
-				aria-label="list view"
-				aria-pressed={uiPrefs.perf_view === 'list'}
-				data-testid="perf-view-list"
-				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'list' })}
-			>
-				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-					<rect x="1" y="1.5" width="10" height="1.6" fill="currentColor" />
-					<rect x="1" y="5.2" width="10" height="1.6" fill="currentColor" />
-					<rect x="1" y="8.9" width="10" height="1.6" fill="currentColor" />
-				</svg>
-			</button>
-		</ControlExplainer>
-		<!-- FX panel toggle -->
-		<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" showDelayMs={60}>
-			<button class="tb-icon fx rb-inert" disabled aria-label="FX panel">FX</button>
-		</ControlExplainer>
-		<!-- Split view and grid view are unbuilt: HIDDEN for V1 rather than shown
-		     disabled (JIK, Thu 1 Oct 2026). Their planned-explainers entries stay
-		     so the copy is ready when they are built. -->
-		<!-- 2up icon: a real toggle between the 2-deck (LESS) and 4-deck (MORE)
-		     layouts, via the same setDeckLayoutMode path Cmd/Ctrl+2 and
-		     Cmd/Ctrl+4 use (deck-layout-hotkeys.ts) - see two-deck-toggle.ts. -->
-		<ControlExplainer title="2-deck view" demo="2-deck-view" showDelayMs={60}>
-			<button
-				type="button"
-				class="tb-icon"
-				class:active={twoDeck.pressed}
-				aria-label="2 deck view"
-				aria-pressed={twoDeck.pressed}
-				aria-keyshortcuts="Meta+2 Control+2 Meta+4 Control+4"
-				title={twoDeck.title}
-				onclick={() => setDeckLayoutMode(twoDeck.next)}
-			>
-				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-					<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-					<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-				</svg>
-			</button>
-		</ControlExplainer>
-		<!-- 4-waveform icon (TOPVIEW-01): lit while the waveform stack is the
-		     view, and a click brings it back from list or a phase view. Four
-		     stacked jagged polylines - must NOT read as a plain list glyph or
-		     a dotted grid (SCREENSHOT-SPEC 1). -->
-		<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} showDelayMs={60}>
-			<button
-				type="button"
-				class="tb-icon tb-view"
-				class:active={uiPrefs.perf_view === 'waveform'}
-				aria-label="4 waveform view"
-				aria-pressed={uiPrefs.perf_view === 'waveform'}
-				data-testid="perf-view-waveform"
-				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'waveform' })}
-			>
-				<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
-					{#each WAVE_ICON_ROWS as row (row.cy)}
-						<polyline
-							points={_waveIconPoints(row)}
-							fill="none"
-							stroke="currentColor"
-							stroke-width="0.9"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-					{/each}
-				</svg>
-			</button>
-		</ControlExplainer>
-		<!-- 2 circular scope icons (TOPVIEW-02, TOPVIEW-03) -->
-		<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} showDelayMs={60}>
-			<button
-				type="button"
-				class="tb-icon tb-view"
-				class:active={uiPrefs.perf_view === 'phase-scope'}
-				aria-label="phase scope view"
-				aria-pressed={uiPrefs.perf_view === 'phase-scope'}
-				data-testid="perf-view-phase-scope"
-				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-scope' })}
-			>
-				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-					<circle cx="6" cy="6" r="1.4" fill="currentColor" />
-				</svg>
-			</button>
-		</ControlExplainer>
-		<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} showDelayMs={60}>
-			<button
-				type="button"
-				class="tb-icon tb-view"
-				class:active={uiPrefs.perf_view === 'phase-meter'}
-				aria-label="phase meter view"
-				aria-pressed={uiPrefs.perf_view === 'phase-meter'}
-				data-testid="perf-view-phase-meter"
-				onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-meter' })}
-			>
-				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-					<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
-					<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
-				</svg>
-			</button>
-		</ControlExplainer>
+	<!-- Pin 87d7dac0a9b8: one button for the strip unless Settings turns on
+	     single click. Core icons stay in the top bar. Scope, then the phase
+	     meter, are the next two rows until real priorities are chosen. -->
+	<div class="feature-icons" class:single-click={featureIconSingleClick()} bind:this={featureIconsEl}>
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<div
+			class="icon-cluster"
+			role={featureIconSingleClick() ? 'group' : 'button'}
+			tabindex={featureIconSingleClick() ? undefined : 0}
+			aria-label="Feature components"
+			aria-expanded={featureIconSingleClick() ? undefined : featureMenuOpen}
+			onclick={_openFeatureMenuFromCluster}
+			onkeydown={_onFeatureClusterKey}
+			bind:this={iconClusterEl}
+		>
+			<!-- list-view icon with dropdown caret -->
+			<ControlExplainer title="List view" bullets={listViewBullets} showDelayMs={60}>
+				<button
+					type="button"
+					class="tb-icon tb-view"
+					class:active={uiPrefs.perf_view === 'list'}
+					aria-label="list view"
+					aria-pressed={uiPrefs.perf_view === 'list'}
+					data-testid="perf-view-list"
+					inert={!featureIconSingleClick()}
+					onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'list' })}
+				>
+					<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">
+						<rect x="1" y="1.5" width="9" height="1.6" fill="currentColor" />
+						<rect x="1" y="5.2" width="9" height="1.6" fill="currentColor" />
+						<rect x="1" y="8.9" width="9" height="1.6" fill="currentColor" />
+						<path d="M11.5 5 L13.5 7 L15.5 5" fill="none" stroke="currentColor" stroke-width="1.1" />
+					</svg>
+				</button>
+			</ControlExplainer>
+			<!-- FX panel toggle -->
+			<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" showDelayMs={60}>
+				<button
+					type="button"
+					class="tb-icon fx rb-inert"
+					disabled
+					inert={!featureIconSingleClick()}
+					aria-label="FX panel"
+					title={FX_INERT_TITLE}
+				>FX</button>
+			</ControlExplainer>
+			<!-- Split view and grid view are unbuilt: HIDDEN for V1 rather than shown
+			     disabled (JIK, Thu 1 Oct 2026). Their planned-explainers entries stay
+			     so the copy is ready when they are built. -->
+			<!-- 2up icon: a real toggle between the 2-deck (LESS) and 4-deck (MORE)
+			     layouts, via the same setDeckLayoutMode path Cmd/Ctrl+2 and
+			     Cmd/Ctrl+4 use (deck-layout-hotkeys.ts) - see two-deck-toggle.ts.
+			     In the one-button strip it is inert (no tab stop, no accessibility node); the menu
+			     (or single-click mode) still reaches setDeckLayoutMode. -->
+			<ControlExplainer title="2-deck view" demo="2-deck-view" showDelayMs={60}>
+				<button
+					type="button"
+					class="tb-icon"
+					class:active={twoDeck.pressed}
+					aria-label="2 deck view"
+					aria-pressed={twoDeck.pressed}
+					aria-keyshortcuts="Meta+2 Control+2 Meta+4 Control+4"
+					title={twoDeck.title}
+					inert={!featureIconSingleClick()}
+					onclick={() => setDeckLayoutMode(twoDeck.next)}
+				>
+					<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+						<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
+						<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
+					</svg>
+				</button>
+			</ControlExplainer>
+			<!-- 4-waveform icon: starts on (the layout the bar already paints
+			     active). Four stacked jagged polylines - must NOT read as a
+			     plain list glyph or a dotted grid (SCREENSHOT-SPEC 1). -->
+			<ControlExplainer title="4-waveform view" bullets={fourWaveformBullets} showDelayMs={60}>
+				<button
+					type="button"
+					class="tb-icon tb-view"
+					class:active={uiPrefs.perf_view === 'waveform'}
+					aria-label="4 waveform view"
+					aria-pressed={uiPrefs.perf_view === 'waveform'}
+					data-testid="perf-view-waveform"
+					inert={!featureIconSingleClick()}
+					onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'waveform' })}
+				>
+					<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
+						{#each WAVE_ICON_ROWS as row (row.cy)}
+							<polyline
+								points={_waveIconPoints(row)}
+								fill="none"
+								stroke="currentColor"
+								stroke-width="0.9"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						{/each}
+					</svg>
+				</button>
+			</ControlExplainer>
+		</div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="icon-cluster-extra" style={featureExtraStyle} onclick={_openFeatureMenuFromCluster}>
+			<div class="icon-row" data-feature-row="2">
+				<ControlExplainer title="Phase scope" bullets={scopeView1Bullets} showDelayMs={60}>
+					<button
+						type="button"
+						class="tb-icon tb-view"
+						class:active={uiPrefs.perf_view === 'phase-scope'}
+						aria-label="phase scope view"
+						aria-pressed={uiPrefs.perf_view === 'phase-scope'}
+						data-testid="perf-view-phase-scope"
+						inert={!featureIconSingleClick()}
+						onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-scope' })}
+					>
+						<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+							<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
+							<circle cx="6" cy="6" r="1.4" fill="currentColor" />
+						</svg>
+					</button>
+				</ControlExplainer>
+			</div>
+			<div class="icon-row" data-feature-row="3">
+				<ControlExplainer title="Phase meter" bullets={scopeView2Bullets} showDelayMs={60}>
+					<button
+						type="button"
+						class="tb-icon tb-view"
+						class:active={uiPrefs.perf_view === 'phase-meter'}
+						aria-label="phase meter view"
+						aria-pressed={uiPrefs.perf_view === 'phase-meter'}
+						data-testid="perf-view-phase-meter"
+						inert={!featureIconSingleClick()}
+						onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-meter' })}
+					>
+						<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+							<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
+							<path d="M6 1.4 A4.6 4.6 0 0 1 10.6 6" fill="none" stroke="currentColor" stroke-width="1.6" />
+						</svg>
+					</button>
+				</ControlExplainer>
+			</div>
+		</div>
+		{#if featureMenuOpen && !featureIconSingleClick()}
+			<div class="feature-menu" style={featureMenuStyle} bind:this={featureMenuEl} aria-label="Feature components">
+				<p class="feature-menu-heading">Components</p>
+				{#each FEATURE_ICON_ROWS as row (row.row)}
+					<div class="feature-menu-row">
+						<span class="feature-menu-rowlabel">{row.label}</span>
+						{#each row.icons as icon (icon.id)}
+							<button
+								type="button"
+								class="feature-toggle"
+								class:on={_featurePressed(icon.id)}
+								aria-pressed={_featurePressed(icon.id)}
+								disabled={icon.id === 'fx'}
+								title={icon.id === 'fx' ? FX_INERT_TITLE : undefined}
+								onclick={(event) => {
+									event.stopPropagation();
+									_toggleFeature(icon.id);
+								}}
+							>{icon.short}</button>
+						{/each}
+					</div>
+				{/each}
+				<p class="feature-menu-note">Core stays on the top row. More components fill row 2, then row 3.</p>
+			</div>
+		{/if}
 	</div>
 
 	<!-- ENRICH-01: the enrich pill (passed in by the route as `enrich`), IN
@@ -950,7 +1123,10 @@
 		     output-health-bar below,
 		     which answers "is a device receiving audio" rather than "how loud
 		     is the master bus". -->
-		<MasterLevelMeter active={masterMeterActive} />
+		<MasterLevelMeter
+			active={masterMeterActive}
+			redDbfs={uiPrefs.level_calibration.red_enabled ? uiPrefs.level_calibration.red_dbfs : null}
+		/>
 
 		<!-- output-to-device bar: REAL -> audio-output-liveness verdict (pin
 		     93c82bb36eb7). A 1px line under the master slider distinguishing "we
@@ -1248,7 +1424,9 @@
 		   yield only while at their defaults: once a non-waveform view is
 		   chosen or the pads are hidden, the persisted choice keeps its way
 		   back on screen (.view-chosen / .pads-off), accepting a tighter row
-		   over a view nobody can leave)
+		   over a view nobody can leave. In single-click mode the strip's menu is
+		   off, so the view icons are the only view picker and never yield:
+		   .single-click, Sol P1 on PR #6228)
 		   to 138px, so 1415px is the last measured failing width plus the same
 		   25px margin the other tiers use. Only the cluster's INERT members go:
 		   the 2-deck toggle is a real control since V1 (PR #4923) and is about
@@ -1258,7 +1436,8 @@
 		   [1416px, 1423px] in a 1px elementFromPoint sweep (the input's centre hit
 		   the skin toggle), so 1448px is 1423px plus the same 25px margin. */
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
-		.rb-topbar:not(.view-chosen) .icon-cluster > :global(.explainer:has(.tb-view)),
+		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster > :global(.explainer:has(.tb-view)),
+		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster-extra,
 		.rb-topbar .link-btn,
 		.rb-topbar:not(.pads-off) .topbar-slot-pad { display: none; }
 	}
@@ -1336,6 +1515,9 @@
 	.rb-topbar.less-view .free-badge,
 	.rb-topbar.less-view .lyr-stage-row,
 	.rb-topbar.less-view :global(.cmd-entry) { display: none; }
+	/* The overflow rows hold the live phase views (TOPVIEW-02/03): hidden in LESS
+	   only at the default view, so a chosen phase view keeps its way back. */
+	.rb-topbar.less-view:not(.view-chosen):not(.single-click) .icon-cluster-extra { display: none; }
 
 	/* SHORT WINDOWS (max-height 799px). The compact lyric chip ("WF hidden",
 	   ~58px) shows only at these heights and is a door that never yields, so
@@ -1368,7 +1550,8 @@
 	}
 	@media (max-height: 799px) and (max-width: 1512px) {
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
-		.rb-topbar:not(.view-chosen) .icon-cluster > :global(.explainer:has(.tb-view)),
+		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster > :global(.explainer:has(.tb-view)),
+		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster-extra,
 		.rb-topbar .link-btn,
 		.rb-topbar:not(.pads-off) .topbar-slot-pad { display: none; }
 	}
@@ -1612,10 +1795,98 @@
 			linear-gradient(90deg, transparent 42%, #72b9ff 42% 58%, transparent 58%);
 	}
 
+	.feature-icons {
+		display: flex;
+		align-items: center;
+	}
+	/* One-button chrome. Single-click mode drops it so each icon reads alone. */
+	.feature-icons:not(.single-click) .icon-cluster,
+	.feature-icons:not(.single-click) .icon-row {
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		cursor: pointer;
+	}
+	.feature-icons:not(.single-click) .tb-icon {
+		pointer-events: none;
+	}
+	.feature-icons.single-click .tb-icon:not(:disabled) {
+		cursor: pointer;
+	}
 	.icon-cluster {
 		display: flex;
 		align-items: center;
 		gap: 2px;
+	}
+	/* Rows 2 and 3 hang under the top bar (the bar itself is one line and
+	   clips). Hidden with the inert cluster icons on a narrow or LESS bar. */
+	.icon-cluster-extra {
+		position: fixed;
+		z-index: 40;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1px;
+	}
+	.icon-row {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+	.feature-menu {
+		position: fixed;
+		z-index: 100;
+		width: 260px;
+		padding: 7px;
+		background: var(--rb-bg);
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 10px;
+	}
+	.feature-menu-heading {
+		margin: 1px 3px 6px;
+		color: var(--rb-text-dim);
+		font-size: 9px;
+		font-weight: 650;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+	}
+	.feature-menu-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin: 0 0 4px;
+	}
+	.feature-menu-rowlabel {
+		width: 52px;
+		color: var(--rb-text-dim);
+		font-size: 8px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+	.feature-toggle {
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: 9px;
+		padding: 2px 6px;
+		line-height: 1.2;
+		cursor: pointer;
+	}
+	.feature-toggle.on {
+		color: var(--rb-accent);
+		border-color: color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
+	}
+	.feature-menu-note {
+		margin: 4px 3px 1px;
+		color: var(--rb-text-dim);
+		font-size: 8px;
+		line-height: 1.35;
 	}
 
 	/* The width tiers hide this wrapper; TrackInfoButton styles its own button. */

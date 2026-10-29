@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
 	import type { TrackQuality } from '$lib/rb/library-types';
+	import { gradeView, hoverIsFresh, hoverTitle, type LoadedHover } from '$lib/rb/quality-grade';
 
 	interface Props {
 		quality: TrackQuality | null;
@@ -22,9 +23,27 @@
 		 * the hover title carry the rest, and the column stops paying for a
 		 * word it repeats on every row (pin f875e746d40a). */
 		compact?: boolean;
+		/** QLTSCAN-05: loads the full hover text for a graded badge, called on
+		 * the first mouseenter. The row carries only the letter, so the title is
+		 * a summary until this resolves. Absent in stories: the badge itself
+		 * never fetches. */
+		loadHover?: (() => Promise<string>) | undefined;
 	}
 
-	const { quality, showContainer = true, compact = false }: Props = $props();
+	const { quality, showContainer = true, compact = false, loadHover }: Props = $props();
+	// The loaded hover is tied to the grade it describes: a re-graded row
+	// falls back to its summary, a reply for an older grade is dropped, and a
+	// hover older than the TTL is asked for again.
+	let loaded = $state<LoadedHover | null>(null);
+	const gradeKey = $derived(JSON.stringify(quality?.grade ?? null));
+
+	function _requestHover(): void {
+		if (loadHover === undefined || hoverIsFresh(loaded, gradeKey, Date.now())) return;
+		const key = gradeKey;
+		void loadHover().then((text) => {
+			if (key === gradeKey) loaded = { key, at: Date.now(), text };
+		});
+	}
 
 	/** '.mp3' -> 'mp3'; '' stays '' so nothing renders a bare dot. */
 	function _ext(container: string): string {
@@ -50,16 +69,33 @@
 		);
 	}
 
+	// QLTSCAN-05: a row carrying a grade shows the letter (hollow until
+	// checked, a dot for issues) with the backend's hover text.
+	const graded = $derived(quality?.grade ? gradeView(quality.grade, compact) : null);
 	const full = $derived(quality === null ? '...' : quality.label);
 	const label = $derived(compact ? full.slice(0, 1).toUpperCase() : full);
 	const ext = $derived(quality === null ? '' : _ext(quality.container));
 	const rung = $derived(quality === null || quality.venue === null ? 'unknown' : quality.venue);
 </script>
 
-<span class="q-badge q-{rung}" class:compact title={_title(quality)} data-venue={rung}>
-	<span class="q-label">{label}</span>
-	{#if showContainer && ext}<span class="q-ext">{ext}</span>{/if}
-</span>
+{#if graded}
+	<span
+		class={graded.classes}
+		title={hoverTitle(loaded, gradeKey, graded.title)}
+		data-venue={rung}
+		data-grade={graded.dataGrade}
+		onmouseenter={_requestHover}
+	>
+		<span class="q-label">{graded.label}</span>
+		{#if graded.dot}<span class="q-dot" aria-hidden="true"></span>{/if}
+		{#if showContainer && ext}<span class="q-ext">{ext}</span>{/if}
+	</span>
+{:else}
+	<span class="q-badge q-{rung}" class:compact title={_title(quality)} data-venue={rung}>
+		<span class="q-label">{label}</span>
+		{#if showContainer && ext}<span class="q-ext">{ext}</span>{/if}
+	</span>
+{/if}
 
 <style>
 	.q-badge {
@@ -139,5 +175,49 @@
 		border-color: var(--rb-accent, #2f6fd6);
 		background: rgba(47, 111, 214, 0.22);
 		box-shadow: 0 0 4px var(--rb-accent-glow, rgba(47, 111, 214, 0.55));
+	}
+	/* ---- QLT letters (QLTSCAN-05): blue A, green B, yellow C, red D ---- */
+	.q-grade-A {
+		color: var(--rb-wave-high, #cfe0f2);
+		border-color: var(--rb-accent, #2f6fd6);
+		background: rgba(47, 111, 214, 0.22);
+	}
+
+	.q-grade-B {
+		color: var(--rb-green, #35c04f);
+		border-color: rgba(53, 192, 79, 0.45);
+		background: rgba(53, 192, 79, 0.12);
+	}
+
+	.q-grade-C {
+		color: var(--rb-yellow, #e5c33a);
+		border-color: rgba(229, 195, 58, 0.35);
+		background: rgba(229, 195, 58, 0.08);
+	}
+
+	.q-grade-D {
+		color: var(--rb-red, #d0342c);
+		border-color: rgba(208, 52, 44, 0.45);
+		background: rgba(208, 52, 44, 0.1);
+	}
+
+	.q-grade-none {
+		color: var(--rb-text-dim, #838990);
+		border-style: dashed;
+		background: transparent;
+	}
+
+	/* Not checked yet: outline only, the Err column's convention. */
+	.q-grade.hollow {
+		background: transparent;
+		border-style: dashed;
+	}
+
+	.q-dot {
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: currentColor;
+		align-self: center;
 	}
 </style>

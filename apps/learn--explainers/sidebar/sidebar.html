@@ -1,0 +1,8 @@
+<button class="gloss-toggle" type="button" id="gloss-toggle" aria-controls="gloss-side" aria-expanded="false" title="Open the glossary sidebar: __COUNT__ explainers with ASCII pictures, from apps/learn--explainers">Terms (__COUNT__)</button>
+<aside id="gloss-side" class="gloss-side" aria-label="Glossary sidebar" hidden>
+  <div class="gloss-grip" id="gloss-grip" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the glossary sidebar" title="Drag to resize the sidebar. Arrow keys nudge it (Shift for bigger steps), Home or a double-click resets."></div>
+  <div class="gloss-head"><input type="search" id="gloss-search" placeholder="Search __COUNT__ terms" aria-label="Search terms"><button type="button" id="gloss-close">Close</button></div>
+  <p class="gloss-intro">Plain-words explainers for the terms this brief uses, each with an ASCII picture and some with an animation; dotted words in the text open the matching entry. Drag the left edge to resize. Source: apps/learn--explainers in the repo (branch af--learn-explainers).</p>
+  <div class="gloss-list" id="gloss-list"></div>
+</aside>
+<script type="application/json" id="gloss-data">__PAYLOAD__</script>

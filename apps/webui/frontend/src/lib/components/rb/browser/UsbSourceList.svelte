@@ -30,7 +30,7 @@
 	import { loadMenuRegistry, menuRegistry } from '$lib/context-menu/lazy.svelte';
 	import { usbStickMenuItems } from '$lib/rb/usb-stick-menu';
 	import { reportMenuLoadFailure } from './track-context-menu';
-	import { canImportUsbVolume, importUsbVolume } from '$lib/rb/usb-import';
+	import { canImportUsbVolume, importUsbVolume, USB_IMPORT_TITLE } from '$lib/rb/usb-import';
 	import { openUsbExport } from '$lib/rb/usb-export.svelte';
 
 	let {
@@ -42,9 +42,6 @@
 	} = $props();
 
 	const volumes = $derived(presentNonForgotten());
-
-	const IMPORT_TITLE =
-		'Import tracks from this stick. Files stay on the stick. Tags only - no BPM, key, or beatgrid.';
 
 	function _toggleStick(vol: UsbVolumeKnown): void {
 		if (usbAccessBlocked(vol)) return;
@@ -119,14 +116,14 @@
 					type="button"
 					class="row-btn"
 					data-testid="usb-source-import"
-					title={IMPORT_TITLE}
+					title={USB_IMPORT_TITLE}
 					disabled={!canImportUsbVolume(vol)}
 					onclick={(e) => {
 						e.stopPropagation();
 						void importUsbVolume(vol);
 					}}
 				>
-					Import
+					Open
 				</button>
 			</div>
 			{#if vol.access === 'pending'}

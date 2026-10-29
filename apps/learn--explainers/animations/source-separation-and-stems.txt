@@ -1,0 +1,101 @@
+stems: one mixed waveform splits into four stem rows
+
+   full mix  |=#=#=##=#=#=##=#=#=##=#=#=##=#=#=##=#=#=|
+
+                     demucs splits it
+                          |
+
+   vocals    |                                        |
+
+   drums     |                                        |
+
+   bass      |                                        |
+
+   other     |                                        |
+
+   separated:   0%      vocals + drums + bass + other ~ full mix
+@@
+stems: one mixed waveform splits into four stem rows
+
+   full mix  |-=-=-==-=-=-==-=-=-==-=-=-==-=-=-==-=-=-|
+
+                     demucs splits it
+                          |
+
+   vocals    |..####..                                |
+
+   drums     |#.#.#.#.                                |
+
+   bass      |===..===                                |
+
+   other     |~ ~~ ~ ~                                |
+
+   separated:  20%      vocals + drums + bass + other ~ full mix
+@@
+stems: one mixed waveform splits into four stem rows
+
+   full mix  |.-.-.--.-.-.--.-.-.--.-.-.--.-.-.--.-.-.|
+
+                     demucs splits it
+                          |
+
+   vocals    |..####..####....                        |
+
+   drums     |#.#.#.#.#.#.#.#.                        |
+
+   bass      |===..===..===..=                        |
+
+   other     |~ ~~ ~ ~~~ ~ ~~                         |
+
+   separated:  40%      vocals + drums + bass + other ~ full mix
+@@
+stems: one mixed waveform splits into four stem rows
+
+   full mix  | . . .. . . .. . . .. . . .. . . .. . . |
+
+                     demucs splits it
+                          |
+
+   vocals    |..####..####....####..##                |
+
+   drums     |#.#.#.#.#.#.#.#.#.#.#.#.                |
+
+   bass      |===..===..===..===..===.                |
+
+   other     |~ ~~ ~ ~~~ ~ ~~ ~ ~~~ ~                 |
+
+   separated:  60%      vocals + drums + bass + other ~ full mix
+@@
+stems: one mixed waveform splits into four stem rows
+
+   full mix  |                                        |
+
+                     demucs splits it
+                          |
+
+   vocals    |..####..####....####..####....##        |
+
+   drums     |#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.        |
+
+   bass      |===..===..===..===..===..===..==        |
+
+   other     |~ ~~ ~ ~~~ ~ ~~ ~ ~~~ ~ ~~ ~ ~~~        |
+
+   separated:  80%      vocals + drums + bass + other ~ full mix
+@@
+stems: one mixed waveform splits into four stem rows
+
+   full mix  |                                        |
+
+                     demucs splits it
+                          |
+
+   vocals    |..####..####....####..####....####..####|
+
+   drums     |#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.|
+
+   bass      |===..===..===..===..===..===..===..===..|
+
+   other     |~ ~~ ~ ~~~ ~ ~~ ~ ~~~ ~ ~~ ~ ~~~ ~ ~~ ~ |
+
+   separated: 100%      vocals + drums + bass + other ~ full mix

@@ -18,7 +18,8 @@ const LIBRARY_BROWSER_PREFS = {
 	next_only_filter: ['setNextOnlyFilter', true],
 	remixes_filter: ['setRemixesFilter', true],
 	vocals_filter: ['setVocalsFilter', true],
-	available_offline_filter: ['setAvailableOfflineFilter', true]
+	available_offline_filter: ['setAvailableOfflineFilter', true],
+	library_key_filter: ['setLibraryKeyFilter', ['8A']]
 };
 
 const UI_PREFS_PY = readFileSync(join(WEBUI_ROOT, 'server/routes/ui_prefs.py'), 'utf8');
@@ -78,6 +79,10 @@ afterEach(() => {
 
 test('each library-browser pref setter persists locally and PUTs its disk patch', async () => {
 	for (const [key, [setter, value]] of Object.entries(LIBRARY_BROWSER_PREFS)) {
+		if (key === 'library_key_filter') {
+			// Verified disk write; tested below.
+			continue;
+		}
 		const store = _fakeWindow();
 		const puts = _capturePuts();
 		try {
@@ -98,7 +103,18 @@ test('library-browser keys exist on the HTTP route, DiskPrefsPatch, and setter d
 	for (const [key, [setter]] of Object.entries(LIBRARY_BROWSER_PREFS)) {
 		assert.match(UI_PREFS_PY, new RegExp(`"${key}"`), `ui_prefs.py must serve ${key}`);
 		assert.match(PREFS_HYDRATE, new RegExp(`\\b${key}\\b`), `DiskPrefsPatch must include ${key}`);
-		if (
+		if (key === 'library_key_filter') {
+			assert.match(
+				PREFS_SVELTE,
+				/setLibraryKeyFilter/,
+				`${setter} must exist in prefs.svelte.ts`
+			);
+			assert.match(
+				readFileSync(join(FRONTEND_ROOT, 'src/lib/rb/verified-pref-writes.ts'), 'utf8'),
+				/setLibraryKeyFilterDisk/,
+				`${setter} must use verified disk sync`
+			);
+		} else if (
 			key === 'next_only_filter' ||
 			key === 'remixes_filter' ||
 			key === 'vocals_filter' ||
@@ -163,5 +179,21 @@ test('setMidiEnabledChoice PUTs midi_enabled and the key is on the HTTP route', 
 	} finally {
 		puts.restore();
 		delete globalThis.localStorage;
+	}
+});
+
+test('setLibraryKeyFilter PUTs library_key_filter and persists locally', async () => {
+	const store = _fakeWindow();
+	const puts = _capturePuts();
+	try {
+		const prefs = await _loadPrefs();
+		await prefs.setLibraryKeyFilter(['9A', '8A']);
+		assert.deepEqual(prefs.uiPrefs.library_key_filter, ['8A', '9A']);
+		assert.deepEqual(_stored(store).library_key_filter, ['8A', '9A']);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(puts.bodies, [{ library_key_filter: ['8A', '9A'] }]);
+	} finally {
+		puts.restore();
+		delete globalThis.window;
 	}
 });

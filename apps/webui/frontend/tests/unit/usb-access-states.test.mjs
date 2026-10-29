@@ -251,3 +251,16 @@ test('a fresh listing that omits the mount clears the mount a past one named (So
 	await poll([omitted]);
 	assert.equal(known('vol:MNT').mount_path, undefined, 'if a listing that omits the mount keeps the old path then broken');
 });
+
+// Sol P2, PR #6223: a read note describes the stick as it was read, so it
+// goes when the stick goes and a replug shows nothing until it is read again.
+test('a removed stick loses its read note; a stick still present keeps its own', async () => {
+	await poll([readableStick('vol:NOTE-GONE'), readableStick('vol:NOTE-KEPT')]);
+	usb.noteUsbLibraryRead('vol:NOTE-GONE', { state: 'ok', trackCount: 12 });
+	usb.noteUsbLibraryRead('vol:NOTE-KEPT', { state: 'ok', trackCount: 7 });
+	await poll([readableStick('vol:NOTE-KEPT')]);
+	assert.equal('vol:NOTE-GONE' in usb.usbTracker.readNotes, false, 'the removed stick kept its note');
+	assert.deepEqual(usb.usbTracker.readNotes['vol:NOTE-KEPT'], { state: 'ok', trackCount: 7 });
+	await poll([readableStick('vol:NOTE-GONE'), readableStick('vol:NOTE-KEPT')]);
+	assert.equal('vol:NOTE-GONE' in usb.usbTracker.readNotes, false, 'a replug showed the old read');
+});

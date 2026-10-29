@@ -1,0 +1,77 @@
+mix region and mix point: region of N bars centered on the point
+
+   region length setting: 2 bars   (1 bar = 3 columns)
+
+                                   |
+   out ===================================
+                                    [-----]
+   in                               ===================================
+                                       |
+                                   mix point
+
+   both tracks play inside [ ], handover at the mix point
+@@
+mix region and mix point: region of N bars centered on the point
+
+   region length setting: 2 bars   (1 bar = 3 columns)
+
+                                   |
+   out ===================================
+                                    [-----]
+   in                               ===================================
+                                       |
+                                   mix point
+
+   both tracks play inside [ ], handover at the mix point
+@@
+mix region and mix point: region of N bars centered on the point
+
+   region length setting: 4 bars   (1 bar = 3 columns)
+
+                                   |
+   out ======================================
+                                 [-----------]
+   in                            ======================================
+                                       |
+                                   mix point
+
+   both tracks play inside [ ], handover at the mix point
+@@
+mix region and mix point: region of N bars centered on the point
+
+   region length setting: 4 bars   (1 bar = 3 columns)
+
+                                   |
+   out ======================================
+                                 [-----------]
+   in                            ======================================
+                                       |
+                                   mix point
+
+   both tracks play inside [ ], handover at the mix point
+@@
+mix region and mix point: region of N bars centered on the point
+
+   region length setting: 8 bars   (1 bar = 3 columns)
+
+                                   |
+   out ============================================
+                           [-----------------------]
+   in                      ============================================
+                                       |
+                                   mix point
+
+   both tracks play inside [ ], handover at the mix point
+@@
+mix region and mix point: region of N bars centered on the point
+
+   region length setting: 8 bars   (1 bar = 3 columns)
+
+                                   |
+   out ============================================
+                           [-----------------------]
+   in                      ============================================
+                                       |
+                                   mix point
+
+   both tracks play inside [ ], handover at the mix point

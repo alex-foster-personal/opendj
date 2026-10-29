@@ -34,6 +34,7 @@ from .queue_user_lanes import (
     USER_BATCH_IDS,
     USER_JOB_LANES,
 )
+from .time_iso import utc_now_iso
 
 Placement = Literal["next", "tail"]
 ACTIVE_STATES: tuple[str, ...] = (queue_store.ITEM_PENDING, queue_store.ITEM_RUNNING)
@@ -84,10 +85,6 @@ class EnqueueUserResult:
     already_running: tuple[str, ...]
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
 def _item_from_row(row: Sequence[object]) -> UserJobItem:
     return UserJobItem(
         batch_id=str(row[0]),
@@ -135,7 +132,7 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
         )
     }
     missing = {lane: bid for lane, bid in USER_BATCH_IDS.items() if bid not in present}
-    now = _now_iso()
+    now = utc_now_iso()
     model = '{"source":"user-lane","backend":"user","producer_version":"1"}'
     for lane, batch_id in missing.items():
         conn.execute(
@@ -267,7 +264,7 @@ def _upsert(  # noqa: PLR0913
     reason: str | None,
     position: int,
 ) -> None:
-    now = _now_iso()
+    now = utc_now_iso()
     settled = state in SETTLED_STATES
     conn.execute(
         f"""
@@ -556,7 +553,7 @@ def cancel_item(
             "AND lane = ? AND state IN (?, ?)",
             (
                 queue_store.ITEM_CANCELLED,
-                _now_iso(),
+                utc_now_iso(),
                 batch_id,
                 stable_id,
                 lane,
@@ -592,7 +589,7 @@ def claim_next_for_lane(
             conn.execute("COMMIT")
             return None
         item = _item_from_row(row)
-        now = _now_iso()
+        now = utc_now_iso()
         changed = conn.execute(
             "UPDATE analysis_queue_item SET state = ?, started_at = ?, "
             "runner_id = ?, attempts = attempts + 1 "

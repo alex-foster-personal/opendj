@@ -1,0 +1,69 @@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [##########]   feedback 30%
+
+   outgoing  |########################################|
+   repeats   |                                        |
+   incoming  |                                        |
+
+   fader going down, echo already on the send
+@@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [########  ]   feedback 40%
+
+   outgoing  |################################        |
+   repeats   |                                        |
+   incoming  |##                                      |
+
+   fader going down, echo already on the send
+@@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [#####     ]   feedback 50%
+
+   outgoing  |####################                    |
+   repeats   |                                        |
+   incoming  |######                                  |
+
+   fader going down, echo already on the send
+@@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [##        ]   feedback 60%
+
+   outgoing  |########                                |
+   repeats   |********                                |
+   incoming  |############                            |
+
+   fader going down, echo already on the send
+@@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [          ]   feedback 70%
+
+   outgoing  |                                        |
+   repeats   |******** ******                         |
+   incoming  |####################                    |
+
+   fader at zero: the dry track is gone, the echo tail still sounds
+@@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [          ]   feedback 70%
+
+   outgoing  |                                        |
+   repeats   |******** ****** ****                    |
+   incoming  |##############################          |
+
+   fader at zero: the dry track is gone, the echo tail still sounds
+@@
+echo-out: the track is cut, the repeats carry the gap
+
+   fader     [          ]   feedback 70%
+
+   outgoing  |                                        |
+   repeats   |******** ****** **** **                 |
+   incoming  |########################################|
+
+   fader at zero: the dry track is gone, the echo tail still sounds

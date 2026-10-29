@@ -96,11 +96,28 @@ class TrackOut(BaseModel):
     loudness: TrackLoudnessOut | None = None
 
 
+class QualityGradeOut(BaseModel):
+    """The QLT letter (QLTSCAN-02, apps/shared/audio_grade.py).
+
+    `checked` is false until a scan has measured the current file under the
+    current rule: the letter then comes from bitrate and container alone and
+    the badge draws it hollow. `letter` is null when the venue is unknown.
+    `issues` are issue keys (clipping, dc_offset, ...) that put a dot on the
+    badge. The full hover text is not on the row (it would break the row byte
+    budget); the badge loads it from `GET /api/v1/audio-quality/{stable_id}`.
+    """
+
+    letter: Literal["A", "B", "C", "D"] | None
+    checked: bool
+    issues: list[str]
+
+
 class QualityOut(BaseModel):
     """One rung of the venue ladder, or an honest unknown.
 
     venue/rank/kbps are null when the file could not be measured; `blurb`
     then carries the reason. The UI must never render a guessed rung.
+    `grade` is set on track-list rows (QLTSCAN-02) and null elsewhere.
     """
 
     venue: str | None
@@ -111,6 +128,7 @@ class QualityOut(BaseModel):
     kbps: int | None
     container: str
     lossless: bool
+    grade: QualityGradeOut | None = None
 
 
 class QualityRungOut(BaseModel):

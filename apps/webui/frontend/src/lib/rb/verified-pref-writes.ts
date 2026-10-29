@@ -18,6 +18,7 @@ import {
 	validateCompatibleFilterPrefs,
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
+import { validateLibraryKeyFilterField } from './library-key-filter';
 
 /** Disk/wire confirm patch: null deletes a key; values are per-key typed.
  * Defined here, not in prefs-hydrate.ts, so this lazily loaded module never
@@ -33,11 +34,13 @@ type DiskPrefsPatch = {
 	confirm?: DiskConfirmPatch;
 	compatible_filter?: CompatibleFilterPrefs;
 	library_watcher_folders?: string[];
+	library_key_filter?: string[];
 };
 
 type VerifiedPrefsTarget = {
 	compatible_filter: CompatibleFilterPrefs;
 	library_watcher_folders: string[];
+	library_key_filter: string[];
 	confirm: object;
 };
 
@@ -56,8 +59,11 @@ export function makeVerifiedPrefWriters(deps: {
 	 * Owned by prefs.svelte.ts so hydration can read it before this module
 	 * loads; every confirm write here resends them. */
 	unsavedConfirm: Map<string, number>;
+	/** Non-zero while a local library_key_filter write is not yet on disk. */
+	libraryKeyFilterUnsaved: { rev: number };
+	markLibraryKeyFilterSaved: (writeRev: number) => void;
 }) {
-	const { uiPrefs, persist, sync, put, unsavedConfirm } = deps;
+	const { uiPrefs, persist, sync, put, unsavedConfirm, markLibraryKeyFilterSaved } = deps;
 	const confirm = () => uiPrefs.confirm as Record<string, unknown>;
 
 	/** The unsaved choices to send, with the revisions they were taken at. */
@@ -107,6 +113,17 @@ export function makeVerifiedPrefWriters(deps: {
 				commit: () => {
 					uiPrefs.library_watcher_folders = next;
 				}
+			}));
+		},
+
+		/** Library key wheel selection: PUT the live array when this step runs.
+		 * The setter already installed the selection locally, so the commit only
+		 * marks it saved: assigning this step's snapshot back would revert a
+		 * click made while the PUT was in flight (Codex P2, #7743). */
+		setLibraryKeyFilterDisk(writeRev: number): Promise<void> {
+			return step(() => ({
+				patch: { library_key_filter: [...uiPrefs.library_key_filter] },
+				commit: () => markLibraryKeyFilterSaved(writeRev)
 			}));
 		},
 
@@ -184,4 +201,22 @@ export function hydrateCompatibleFilter(
 	} catch (exc) {
 		console.error('[ui-prefs] compatible_filter from disk rejected', exc);
 	}
+}
+
+/** Adopt the disk selection unless a local write is still unsaved. A
+ * missing or malformed value throws: it is contract drift, and keeping the old
+ * selection quietly would hide it (Sol P1, #7743). */
+export function hydrateLibraryKeyFilter(
+	uiPrefs: { library_key_filter: string[] },
+	body: { library_key_filter?: unknown },
+	isUnsaved: () => boolean
+): void {
+	// The server always sends the field (UiPrefsOut default []), like key_notation and
+	// library_hidden_columns, so an absent one is contract drift (Sol P1, #7743).
+	if (body.library_key_filter === undefined) {
+		throw new Error('GET /api/v1/ui-prefs: library_key_filter is missing from the response');
+	}
+	const next = validateLibraryKeyFilterField(body.library_key_filter, 'GET /api/v1/ui-prefs');
+	if (isUnsaved()) return;
+	uiPrefs.library_key_filter = next;
 }

@@ -25,6 +25,7 @@ import pytest
 pytest.importorskip("modal", reason="needs the optional modal package")
 
 from apps.vocals.envelope import (
+    ENVELOPE_DTYPE,
     ENVELOPE_SCHEMA,
     envelope_path,
     read_envelope,
@@ -148,7 +149,7 @@ def test_header_is_readable_without_numpy(tmp_path: Path) -> None:
     first_line = path.read_bytes().split(b"\n", 1)[0]
     header = json.loads(first_line)
     assert header["schema"] == ENVELOPE_SCHEMA
-    assert header["dtype"] == "float16"
+    assert header["dtype"] == ENVELOPE_DTYPE
     assert header["order"] == ["vocals_rms", "mix_rms"]
     assert header["audio_signature"] == SIGNATURE
 

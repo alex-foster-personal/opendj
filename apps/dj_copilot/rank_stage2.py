@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 
-from .rank_stage1 import ScoredCandidate
+from .rank_stage1 import ScoredCandidate, scored_candidate_order_key
 
 _logger = logging.getLogger(__name__)
 _warned_missing_pairings = False
@@ -86,6 +86,5 @@ def rerank_with_pairings(
             )
         else:
             out.append(sc)
-    # Re-sort deterministically after the bump.
-    out.sort(key=lambda s: (-s.score, s.stable_id))
+    out.sort(key=scored_candidate_order_key)
     return out

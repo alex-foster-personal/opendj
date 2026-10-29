@@ -110,3 +110,25 @@ Chromium DevTools port; packaged builds ignore all three. `OPENDJ_ENGINE_ORIGIN`
 points the window at an engine you started yourself, in any build, as it does
 in the Tauri shell. As root (CI containers) Chromium needs `--no-sandbox`; the
 e2e passes it only then.
+
+## Fast dev loop and agent driving
+
+```sh
+just electron-dev              # your worktree's backend + Vite + this shell
+just electron-dev --fixture    # same, on a throwaway two-track fixture library
+```
+
+`scripts/electron_dev.py` reuses a backend or Vite that already answers on
+this worktree's ports (`just webui-ports`) and starts whatever is missing,
+except that `--fixture` or `--data-dir` refuses a backend it did not start. The
+window opens on the Vite origin, so a web UI edit hot-reloads in place with page
+state kept (69-170 ms measured under Xvfb, Wed 7 Oct 2026). An edit under
+`src/` here rebuilds the shell (about 2.5 s) and relaunches the window (0.5 s).
+Each worktree gets its own profile, shell data dir and CDP port (frontend port
+plus 20000), so it never collides with another worktree or with an installed
+Open DJ. On Linux with no display it runs under `xvfb-run`.
+
+It prints the line that registers webview-mcp against the window over CDP;
+agents then get `ui_tree`, `act`, `screenshot` and `eval_js` on the real
+Electron window, and the session survives a shell relaunch. See
+`../mcp/README.md`. Ctrl+C stops only what it started.

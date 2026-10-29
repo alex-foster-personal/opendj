@@ -470,7 +470,7 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 		'the immediate-jump branch must forward pressT0Ms into the driver'
 	);
 	assert.ok(
-		/_hotCueDriver\.arm\(\s*command\.deck,\s*cue\.in_ms,\s*plan\.armAtPositionSec,\s*pressT0Ms\s*\);/.test(ipc),
+		/_hotCueDriver\.arm\(\s*command\.deck,\s*cue\.in_ms,\s*\(nowPositionSec\) => nextDownbeatAtOrAfter\(beats, nowPositionSec\),\s*pressT0Ms\s*\);/.test(ipc),
 		'the arm-for-downbeat branch must forward pressT0Ms into the driver'
 	);
 

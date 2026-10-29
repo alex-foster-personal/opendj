@@ -39,7 +39,7 @@ MCP equivalent: `open_route` with `route` defaulting to `/performance`.
 |---------|---------|
 | `opendj status [--json]` | Lock-file origin, health, build-info (MCP `status` parity) |
 | `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*` only; refuses traversal and non-JSON 2xx bodies; exit codes: see `apps/opendj_cli/__init__.py` |
-| `opendj dj <tool>` | AutoDJ tools (AGENT-29), same JSON as the MCP tools below: `state`, `profile`, `windows`, `score`, `suggest`, `styles`, `propose`, `validate`, `schedule`, `amend` |
+| `opendj dj <tool>` | AutoDJ tools (AGENT-29), same JSON as the MCP tools below: `state`, `profile`, `windows`, `score`, `suggest`, `styles`, `propose`, `validate`, `schedule`, `amend`; `try` renders and ranks candidate transitions (TRYER-11): `opendj dj try --out X --in Y -n 6 --json`, `opendj dj try pick JOB CAND --etag E`, `opendj dj try undo JOB --etag E` (the etag of the job document you reviewed) |
 
 ## MCP tools
 
@@ -71,6 +71,9 @@ deck's bars. The library is `apps/autodj`; the HTTP glue is `dj_service.py`.
 | `validate_plan` | Errors, warnings and clash metrics for a plan against the live mix |
 | `schedule_plan` | Perform a plan (destructive): loads the idle deck if needed, arms the page executor; `notes` says what the compiler decided (e.g. an uncapped outgoing fader) |
 | `amend_plan` | `abort`, `finish_now` or `extend` a scheduled plan |
+| `try_transitions` | Render and rank N candidate transitions for a pair (TRYER-12); returns a job id and per-candidate score, vetoes, `measured k of n`, render URL |
+| `pick_transition` | Record the chosen candidate for a try job (If-Match guarded; reversible) |
+| `undo_transition_pick` | Remove a try job's pick |
 
 A plan only continues a playing set: it is refused unless its outgoing deck is playing.
 

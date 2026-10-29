@@ -367,6 +367,23 @@ def test_one_file_behind_several_rows_is_analyzed_once_and_reaches_them_all(
     assert payload["copies"]["deleted"] == 2
 
 
+@pytest.mark.requirement("MIKBF-09")
+def test_a_present_row_sharing_its_stored_path_with_an_absent_row_gets_the_analysis(
+    lib: Lib, make_mik_store, write_verdicts
+) -> None:
+    """if a batch song bound to a present row and an absent row of one stored path reaches neither then broken."""
+    lib.track("a", "Music/s.mp3")
+    lib.track("b", "Music/s.mp3", state="absent", stored="/Users/old/Music/s.mp3")  # a's own stored path
+    write_verdicts({field: "passed" for field in loader.GATED_FIELDS})
+    batch = Path(backfill.stage(lib.library, live=True, ingest_root=lib.ingest, now=NOW)["batch_dir"])
+    store = make_mik_store([{"path": str(batch / "s.mp3"), "energy": 6.0, "segments": SEGMENTS}])
+    payload = backfill.collect(lib.library, backfill.CollectRequest(batch_dir=batch, store=store, live=True))
+    assert payload["sources_batch"]["unresolved_by_detail"] == {"several_library_rows": 1}
+    assert payload["duplicate_sharing"]["rows_shared_by_basis"] == {"same_stored_path": 2}
+    assert payload["unresolved"] == []
+    assert _energy_rows(lib) == [(_sid("a"), "6"), (_sid("b"), "6")]
+
+
 def test_stage_holds_back_a_file_no_row_can_be_bound_to(lib: Lib) -> None:
     lib.track("a", "Music/a.mp3", stored="/Users/user/Recovered/elsewhere/other-name.mp3")
     payload = backfill.stage(lib.library, ingest_root=lib.ingest, now=NOW)

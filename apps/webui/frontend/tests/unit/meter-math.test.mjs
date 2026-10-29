@@ -187,6 +187,227 @@ test('the worklet processor holds no policy numbers', () => {
 // - if the calibrated red point does not become the first red segment then
 //   the number the user chose by ear is not the number the meter uses
 
+// requirement: MIXGRP-08
+test('the channel clip pip holds after a post-crossfader clip, and lets go after the latch', () => {
+	// Sol P2, PR #6829: an instantaneous pip vanished before the next frame.
+	const hold = meter.CHANNEL_CLIP_LATCH_MS;
+	assert.equal(hold, 1200);
+	const until = meter.clipHeldUntil(true, 1000, 0);
+	assert.equal(until, 1000 + hold);
+	const later = meter.clipHeldUntil(false, 1016, until);
+	assert.equal(later, until, 'a clean frame cut the hold short');
+	assert.equal(meter.clipLit(1016, later), true, 'the pip is out inside the latch');
+	assert.equal(meter.clipLit(1000 + hold - 1, later), true, 'the pip let go before the latch ran out');
+	assert.equal(meter.clipLit(1000 + hold, later), false, 'the pip is still lit at the deadline');
+	assert.equal(meter.clipLit(1000 + hold + 1, later), false, 'the pip is still lit after the latch');
+	assert.equal(meter.clipLit(5, 0), false, 'a meter that never clipped lit its pip');
+	assert.equal(meter.clipHeldUntil(true, 2000, until), 2000 + hold, 'a fresh clip did not restart the hold');
+	assert.equal(meter.clipHeldUntil(false, 5, 0), 0, 'a meter that never clipped is holding a clip');
+	const src = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelLevelMeter.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(src, /clipUntil = clipHeldUntil\(freshClip, now, clipUntil\);\s*clipped = clipLit\(now, clipUntil\);/);
+	assert.match(src, /const pipCursor = createClipPipCursor\(\);/);
+	assert.match(src, /const freshClip = pipCursor\.frame\(reading\.heardClipSeq\);/);
+	assert.match(
+		src,
+		/clipUntil = 0;\s*pipCursor\.reset\(\);\s*return;\s*\}\s*pipCursor\.activate\(untrack\(\(\) => peekDeckMeterReading\(deckId\)\.heardClipSeq\)\);/,
+		'the pip cursor is no longer seeded when playback activates'
+	);
+	assert.doesNotMatch(src, /isClipping\(heardDb\)/, 'the pip judges the decaying level again');
+	assert.match(src, /const heardDb = reading\.heardDb;/);
+});
+
+// The ChannelLevelMeter pip's cursor: the production createClipPipCursor,
+// driven with tap readings the way the component's frame loop drives it.
+function pipReader() {
+	const cursor = meter.createClipPipCursor();
+	const frame = (reading) => cursor.frame(reading.heardClipSeq);
+	frame.activate = (reading) => cursor.activate(reading.heardClipSeq);
+	frame.reset = () => cursor.reset();
+	return frame;
+}
+
+// requirement: MIXGRP-08
+test('the clip pip cursor judges each tap clip once, from activation on (Sol P1, PR #6829)', () => {
+	// Runs the production cursor the meter uses, not a copy of it.
+	const cursor = meter.createClipPipCursor();
+	cursor.activate(4); // the tap's clip at activation is old news
+	assert.equal(cursor.frame(4), false, 'the clip from before activation lit the pip');
+	assert.equal(cursor.frame(5), true, 'a clip after activation stayed dark');
+	assert.equal(cursor.frame(5), false, 'one clip lit the pip on two frames');
+	assert.equal(cursor.frame(0), false, 'a tap with no clip lit the pip');
+	// Stopping forgets the cursor; a frame with no activation only re-seeds it.
+	cursor.reset();
+	assert.equal(cursor.frame(9), false, 'a reset cursor judged a clip with no seed');
+	assert.equal(cursor.frame(10), true, 'the re-seeded cursor missed the next clip');
+	// Two meters on one tap keep their own cursors.
+	const other = meter.createClipPipCursor();
+	other.activate(10);
+	assert.equal(other.frame(11), true);
+	assert.equal(cursor.frame(11), true, "one reader used up the other's clip");
+});
+
+// requirement: MIXGRP-08
+test('a clip between playback starting and the first meter frame still lights the pip', async () => {
+	// Sol P1, PR #6829: the cursor was seeded on the first frame, so a clip
+	// landing before it became the seed and never started the latch.
+	const tapMod = await loadTypeScriptModule('src/lib/rb/meter-tap.ts');
+	const tap = tapMod.createMeterTap();
+	tapMod.noteMeterObservation(tap, { seq: 1, peak: 1.3, heard: 1.3 }); // before playback
+	const pip = pipReader();
+	pip.activate(tapMod.readMeterTap(tap, 900));
+	tapMod.noteMeterObservation(tap, { seq: 2, peak: 1.3, heard: 1.3 }); // before the first frame
+	assert.equal(pip(tapMod.readMeterTap(tap, 1000)), true, 'the first-frame clip was swallowed as the seed');
+	// Control: a clip from before playback started stays dark.
+	const fresh = tapMod.createMeterTap();
+	tapMod.noteMeterObservation(fresh, { seq: 1, peak: 1.3, heard: 1.3 });
+	const late = pipReader();
+	late.activate(tapMod.readMeterTap(fresh, 900));
+	assert.equal(late(tapMod.readMeterTap(fresh, 1000)), false, 'a clip from before playback lit the pip');
+});
+
+// requirement: MIXGRP-08
+test('every clipping post counts, even when a quieter one lands before the next frame', async () => {
+	// Sol P1, PR #6829: `latest` kept only the newest post, so a clip followed
+	// by a quieter report inside one frame never started either latch.
+	const tapMod = await loadTypeScriptModule('src/lib/rb/meter-tap.ts');
+	const tap = tapMod.createMeterTap();
+	const pip = pipReader();
+	tapMod.noteMeterObservation(tap, { seq: 1, peak: 0.2, heard: 0.2 });
+	assert.equal(pip(tapMod.readMeterTap(tap, 1000)), false, 'control: a quiet post lit the pip');
+	tapMod.noteMeterObservation(tap, { seq: 2, peak: 1.2, heard: 1.2 }); // clips
+	tapMod.noteMeterObservation(tap, { seq: 3, peak: 0.1, heard: 0.1 }); // quieter, same frame
+	const reading = tapMod.readMeterTap(tap, 1016);
+	assert.equal(reading.heardClipSeq, 2, 'the coalesced clip was lost');
+	assert.equal(pip(reading), true, 'the pip missed a clip a quieter post overwrote');
+	assert.equal(reading.clipped, true, "the tap's own latch missed it too");
+	// Overshoot controls: the same clip is not judged twice, and the latch lets go.
+	tapMod.noteMeterObservation(tap, { seq: 4, peak: 0.1, heard: 0.1 });
+	const later = tapMod.readMeterTap(tap, 1016 + 1300);
+	assert.equal(pip(later), false, 'one clip lit the pip on every frame');
+	assert.equal(later.clipped, false, 'the latch held past its 1.2 s');
+	// The handler records through this function, and refuses an unreadable post.
+	const src = readFileSync(fileURLToPath(new URL('../../src/lib/rb/meter-tap.ts', import.meta.url)), 'utf8');
+	assert.match(src, /node\.port\.onmessage = \(event: MessageEvent\): void => \{\s*noteMeterObservation\(tap, event\.data\);/);
+	assert.throws(() => tapMod.noteMeterObservation(tap, { seq: 5 }), TypeError);
+	assert.throws(() => tapMod.noteMeterObservation(tap, { seq: 5, peak: 0.1, heard: NaN }), TypeError);
+	assert.equal(tapMod.SILENT_METER_READING.heardClipSeq, 0);
+	assert.equal(tapMod.UNAVAILABLE_METER_READING.heardClipSeq, 0);
+});
+
+// requirement: MIXGRP-08
+test('the clip pip judges the peak after the crossfader gain the audio thread applied', async () => {
+	// Sol P1, PR #6829 (raised three times): a crossfader snapshot taken when
+	// the post reached the main thread could postdate the samples it judged.
+	const tapMod = await loadTypeScriptModule('src/lib/rb/meter-tap.ts');
+	const tap = tapMod.createMeterTap();
+	const pip = pipReader();
+	pip(tapMod.readMeterTap(tap, 1000));
+	// +1.6 dBFS at the fader, attenuated below full scale by the crossfader.
+	tapMod.noteMeterObservation(tap, { seq: 1, peak: 1.2, heard: 0.85 });
+	const attenuated = tapMod.readMeterTap(tap, 1016);
+	assert.equal(attenuated.heardClipSeq, 0);
+	assert.equal(pip(attenuated), false, 'a peak the crossfader brought under full scale clipped');
+	assert.equal(attenuated.clipped, true, "control: the tap's own pre-crossfader latch still sees it");
+	tapMod.noteMeterObservation(tap, { seq: 2, peak: 1.2, heard: 1.2 });
+	assert.equal(pip(tapMod.readMeterTap(tap, 1032)), true, 'a real post-crossfader clip went unlit');
+
+	// Wiring: the heard copy is `xf` itself, or the fader on a routed deck that
+	// skips the crossfader, folded on the worklet's second input.
+	const graph = readFileSync(fileURLToPath(new URL('../../src/lib/rb/deck-channel-graph.ts', import.meta.url)), 'utf8');
+	assert.match(graph, /meterSources\.push\(\{ tap, source: fader, heardSource: extsplit === null \? xf : fader \}\);/);
+	const tapSrc = readFileSync(fileURLToPath(new URL('../../src/lib/rb/meter-tap.ts', import.meta.url)), 'utf8');
+	assert.match(tapSrc, /heardInput: heardSource !== undefined/);
+	assert.match(tapSrc, /heardSource\?\.connect\(node, 0, 1\);/);
+	assert.match(tapSrc, /numberOfInputs: 2,/);
+	assert.doesNotMatch(tapSrc, /snapshot\(\)/, 'the main-thread crossfader snapshot came back');
+});
+
+// requirement: MIXGRP-08
+test('the meter worklet folds its heard input into the same window it posts', async () => {
+	// Runs the real processor file against a minimal worklet scope.
+	const { runInNewContext } = await import('node:vm');
+	const code = readFileSync(fileURLToPath(new URL('../../src/lib/rb/meter-processor.js', import.meta.url)), 'utf8');
+	const run = (heardInput, inputs) => {
+		let Processor = null;
+		const posts = [];
+		runInNewContext(code, {
+			sampleRate: 6400, // 20 ms = 128 frames, one quantum per window
+			AudioWorkletProcessor: class {
+				constructor() {
+					this.port = { postMessage: (message) => posts.push(message) };
+				}
+			},
+			registerProcessor: (_name, cls) => {
+				Processor = cls;
+			}
+		});
+		const node = new Processor({ processorOptions: { reportIntervalS: 0.02, heardInput } });
+		node.process(inputs);
+		return posts;
+	};
+	const quantum = (value) => new Float32Array(128).fill(value);
+	const [heard] = run(true, [[quantum(0.9)], [quantum(-1.1)]]);
+	assert.equal(heard.seq, 1);
+	assert.ok(Math.abs(heard.peak - 0.9) < 1e-6);
+	assert.ok(Math.abs(heard.heard - 1.1) < 1e-6, `the heard input was not folded: ${heard.heard}`);
+	// Control: a tap with no heard source (the master) posts no `heard` at all.
+	const [bare] = run(false, [[quantum(0.9)], [quantum(-1.1)]]);
+	assert.equal('heard' in bare, false, 'a tap with no heard source reported one');
+	// An unconnected heard input reads as silence, not as a missing measurement.
+	const [unfed] = run(true, [[quantum(0.5)], []]);
+	assert.equal(unfed.heard, 0);
+});
+
+// requirement: MIXGRP-03
+test('the group-limit hint paints above the raised EQ overlay', () => {
+	// Sol P1, PR #6829: both sat at z-index 60 and the overlay renders later.
+	const zOf = (rel) => {
+		const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+		const found = [...src.matchAll(/z-index:\s*(\d+)/g)].map((m) => Number(m[1]));
+		assert.equal(found.length, 1, `${rel}: expected one z-index, found ${found.length}`);
+		return found[0];
+	};
+	const hint = zOf('../../src/lib/components/rb/mixer/GroupHint.svelte');
+	const overlay = zOf('../../src/lib/components/rb/EqOverlay.svelte');
+	assert.ok(hint > overlay, `hint z-index ${hint} is not above the EQ overlay's ${overlay}`);
+});
+
+// requirement: METERCAL-02, METERCAL-03
+test('R arms the level the channel meter shows; M keeps the channel tap level', () => {
+	// A -3 dBFS passage on an A channel at a centered crossfader is heard at
+	// about -6 dBFS; that heard level is what the bar draws (reading.heardDb).
+	// Pressing R there must light the first red on THAT passage.
+	const tap = -3;
+	const shown = tap + 20 * Math.log10(Math.SQRT1_2);
+	const reading = { db: tap, heardDb: shown };
+	const red = meter.calibrationCaptureDb('red', reading);
+	assert.equal(red, shown);
+	const thresholds = meter.segmentThresholdsForRed(red);
+	assert.equal(
+		meter.segmentBand(meter.segmentsLitFromDbfs(shown, thresholds)),
+		'red',
+		'the passage R was pressed on does not light the first red segment'
+	);
+	// Control (the overshoot): M is a master gain ceiling and keeps the tap.
+	assert.equal(meter.calibrationCaptureDb('ceiling', reading), tap);
+	// Codex P2, PR #6829: the bar and the tap decay on separate ballistics, so
+	// after a crossfader move mid-decay the heard reading is NOT the tap pushed
+	// through the current crossfader. R must take the heard value the bar draws.
+	const decayed = { db: -4.18, heardDb: -7.19 };
+	assert.equal(meter.calibrationCaptureDb('red', decayed), -7.19);
+	assert.equal(meter.calibrationCaptureDb('ceiling', decayed), -4.18);
+	// The ChannelStrip press uses this capture on the deck's live meter reading.
+	const strip = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(strip, /const db = calibrationCaptureDb\(kind, peekDeckMeterReading\(deckId\)\);/);
+	assert.doesNotMatch(strip, /channelDbHeardOnMaster|mixerState\.crossfader/);
+});
+
 test('null calibration keeps the default scale exactly', () => {
 	assert.deepEqual(
 		[...meter.segmentThresholdsForRed(null)],
@@ -279,4 +500,39 @@ test('a low enough calibration clamps multiple thresholds to the same floor valu
 		thresholds.length,
 		'thresholds should contain duplicates at this calibration, proving segment.threshold is unsafe as an each-block key'
 	);
+});
+
+// requirement: MIXGRP-08
+test('the channel bar renders the post-crossfader heard peak through its own ballistics', async () => {
+	// Sol P1, PR #6829: the bar applied the crossfader position at READ time to
+	// the decaying pre-crossfader level, so moving the crossfader during decay
+	// rewrote the bar. The tap now runs ballistics on the worklet's `heard`.
+	const tapMod = await loadTypeScriptModule('src/lib/rb/meter-tap.ts');
+	const tap = tapMod.createMeterTap();
+	// Crossfader hard to the other side: loud on the fader, silent on the master.
+	tapMod.noteMeterObservation(tap, { seq: 1, peak: 1, heard: 0 });
+	const first = tapMod.readMeterTap(tap, 1000);
+	assert.equal(first.db, 0, 'control: the pre-crossfader level is unchanged');
+	assert.equal(first.heardDb, meter.METER_FLOOR_DBFS, 'the bar shows a level the master never heard');
+	// Fader swung back mid-decay: the samples already measured stay as heard.
+	const decaying = tapMod.readMeterTap(tap, 1100);
+	assert.equal(decaying.heardDb, meter.METER_FLOOR_DBFS, 'a decay re-lit from the pre-crossfader level');
+	assert.ok(decaying.db < 0 && decaying.db > meter.METER_FLOOR_DBFS, 'control: the tap level decays');
+	// Heard attacks and decays on its own ballistics.
+	tapMod.noteMeterObservation(tap, { seq: 2, peak: 1, heard: 0.5 });
+	const heard = tapMod.readMeterTap(tap, 1200);
+	assert.ok(Math.abs(heard.heardDb - meter.dbfsFromAmplitude(0.5)) < 1e-9, 'heard did not attack to its own peak');
+	const later = tapMod.readMeterTap(tap, 1400);
+	assert.ok(later.heardDb < heard.heardDb, 'heard never decays');
+	// A tap with no heard source (the master) mirrors its own level.
+	const master = tapMod.createMeterTap();
+	tapMod.noteMeterObservation(master, { seq: 1, peak: 0.5 });
+	const m = tapMod.readMeterTap(master, 1000);
+	assert.equal(m.heardDb, m.db);
+	const src = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelLevelMeter.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.doesNotMatch(src, /channelDbHeardOnMaster\(/, 'the bar re-scales the pre-crossfader reading again');
+	assert.match(src, /lit = segmentsLitFromDbfs\(heardDb, thresholds\);\s*db = heardDb;/);
 });

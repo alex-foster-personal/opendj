@@ -9,12 +9,12 @@ Example::
 from __future__ import annotations
 
 import argparse
-import sys
 
 from apps.shared.pairings import PairingsError
 from apps.shared.pairings.models import DIRECTIONS, SOURCES
 
-from ._common import add_db_argument, build_repo
+from ._common import add_db_argument
+from ._session import pairing_repo, pairings_error_exit
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,8 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    repo, conn = build_repo(args.db)
-    try:
+    with pairing_repo(args.db) as repo:
         try:
             edge = repo.add(
                 args.from_id,
@@ -52,15 +51,12 @@ def main(argv: list[str] | None = None) -> int:
                 confidence=args.confidence,
             )
         except PairingsError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
+            return pairings_error_exit(exc)
         print(
             f"added pairing {edge.from_stable_id} -> {edge.to_stable_id} "
             f"[{edge.direction}] source={edge.source}"
         )
         return 0
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":  # pragma: no cover

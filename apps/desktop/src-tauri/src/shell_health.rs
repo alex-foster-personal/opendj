@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const HEALTH_PATH: &str = "/api/v1/health";
+use crate::http_paths::HEALTH_PATH;
+
 const RELAUNCH_PATH: &str = "/api/v1/relaunch";
 const OUTPUT_HEALTH_PATH: &str = crate::output_health::OUTPUT_HEALTH_PATH;
 const SWITCH_OUTPUT_PATH: &str = crate::output_health::SWITCH_OUTPUT_PATH;

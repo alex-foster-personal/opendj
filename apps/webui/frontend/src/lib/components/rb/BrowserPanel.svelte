@@ -49,6 +49,7 @@
 		resolveRowStripLoading,
 		resolveRowVocals,
 		isAppropriateNext,
+		compatibleRowKeyShift,
 		resolveSearchFilterFallback,
 		selectSearchFilterFallback,
 		enqueueLibraryJobsBatched,
@@ -105,6 +106,7 @@
 		openIoView,
 		PairingIndex,
 		CompatibleFilterPopover,
+		LibraryKeyFilterPopover,
 		libraryEditShortcut,
 		loadTrackClipboard,
 		loadBrowserConfirmDialog,
@@ -191,6 +193,7 @@
 		invalidatePlaylistFirstPage,
 		invalidateAllPlaylistFirstPages,
 		computeNextOnlyRef,
+		compatibleKeyChecked,
 		openUsbExport,
 		UsbExportScreenLoader
 	} from './browser/browser-panel-support';
@@ -269,10 +272,10 @@
 		resolveNewTabIndex,
 		shouldRetryBootPane,
 		writeLv1,
-		rowHasVocalLyrics,
-		rowIsLocallyAvailable,
 		reorderBlockedReason,
-		rowIsRemix,
+		applyLibraryFilters,
+		applyLibraryKeyFilter,
+		selectedRowKeyIn,
 		sortRows,
 		visibleRowsOf,
 		collectionSearchEmptyMessage
@@ -749,19 +752,15 @@
 				playing: s.playing,
 				stable_id: s.stable_id,
 				key: s.key,
-				bpm: s.bpm
+				bpm: s.bpm,
+				key_shift_semitones: s.key_shift_semitones
 			};
 		});
-		return computeNextOnlyRef(slices, uiPrefs.compatible_filter.rules.length > 0);
+		return computeNextOnlyRef(slices, compatibleKeyChecked(uiPrefs.compatible_filter));
 	});
 
-	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
-		let out = rows;
-		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
-		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
-		if (uiPrefs.available_offline_filter) out = out.filter(rowIsLocallyAvailable);
-		return out;
-	}
+	const selectedRowKey = $derived(selectedRowKeyIn(pane.selected_id, [pane.search_results, pane.rows])); // #7599 key wheel Compatible reference
+	const _applyKeyFilterFinal = (rows: BrowserRow[]) => applyLibraryKeyFilter(rows, uiPrefs.library_key_filter); // #7599 hard veto, search fallbacks too
 
 	function _applyNextOnly(rows: BrowserRow[]): BrowserRow[] {
 		if (!uiPrefs.next_only_filter) return rows;
@@ -770,8 +769,17 @@
 		return rows.filter((r) => isAppropriateNext(r, ref, uiPrefs.compatible_filter));
 	}
 
+	/** KEYSHIFT-03: a row the compatible filter matched only after a key shift
+	 * (its superscript) loads shifted by that much. 0 with the filter off. */
+	function _compatibleLoadKeyShift(row: LoadableRow): number {
+		if (!uiPrefs.next_only_filter || nextOnlyRef === null) return 0;
+		// A LoadableRow from a non-library surface may carry no key: no shift.
+		const key = 'key' in row && typeof row.key === 'string' ? row.key : null;
+		return compatibleRowKeyShift(key, nextOnlyRef.key, uiPrefs.compatible_filter)?.shift ?? 0;
+	}
+
 	function _applyPaneFilters(rows: BrowserRow[]): BrowserRow[] {
-		return _applyNextOnly(_applyLibraryFilters(rows));
+		return _applyNextOnly(applyLibraryFilters(rows, uiPrefs));
 	}
 
 	interface VisibleSearchResult {
@@ -818,7 +826,7 @@
 				unfilteredRows,
 				_searchFilterNames(false)
 			);
-			return fallback;
+			return { ...fallback, rows: _applyKeyFilterFinal(fallback.rows) };
 		}
 		const unfilteredRows = visibleRowsOf(pane, false, autoPlayRankOf);
 		const fallback = resolveSearchFilterFallback(
@@ -826,7 +834,7 @@
 			unfilteredRows,
 			pane.search.trim() === '' ? [] : _searchFilterNames(true)
 		);
-		return fallback;
+		return { ...fallback, rows: _applyKeyFilterFinal(fallback.rows) };
 	}
 
 	/** Wall time of the LAST filter+sort pass (PERF-R5 Q9).
@@ -882,7 +890,7 @@
 				pane.search_total === pane.search_results.length
 			: !pane.truncated;
 		// Only the compatible filter is bypassed. The user-selected Broken filter stays intact.
-		return selectSearchFilterFallback(
+		const raw = selectSearchFilterFallback(
 			pane.search,
 			visibleRows,
 			wholeCollectionActive
@@ -894,6 +902,7 @@
 				: visibleRowsOf(pane, hideBrokenForActivePane),
 			complete
 		);
+		return raw === null ? null : _applyKeyFilterFinal(raw);
 	});
 	const renderedRows = $derived(searchFilterFallback ?? visibleRows);
 	const filterBypassNote = $derived(
@@ -953,6 +962,8 @@
 			return nextOnlyRef === null
 				? 'next-only: load a track with key+BPM (master preferred) to filter'
 				: 'no appropriate next tracks in this list (Camelot + BPM ±6% or half/double ≤15)';
+		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.library_key_filter.length > 0) {
+			return 'no tracks match the selected keys';
 		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.remixes_filter) {
 			return 'no remixes in this list (title markers: remix/bootleg/rework/VIP/edit)';
 		} else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.vocals_filter) {
@@ -2462,6 +2473,7 @@
 			searchMode,
 			wholeCollectionActive ? 'collection' : 'playlist',
 			uiPrefs.hide_broken_links ? 'hide-broken' : 'show-broken',
+			uiPrefs.library_key_filter.join(','),
 			uiPrefs.next_only_filter ? 'next-only' : 'all-next',
 			nextOnlyRef?.key ?? '',
 			nextOnlyRef?.bpm ?? ''
@@ -2689,7 +2701,7 @@
 	async function _loadOntoDeck(
 		row: LoadableRow,
 		deck: DeckId | null,
-		opts: { play?: boolean; reservation?: number; pressT0Ms?: number } = {}
+		opts: { play?: boolean; reservation?: number; pressT0Ms?: number; noKeyShift?: boolean } = {}
 	): Promise<void> {
 		// A picker-chosen `deck` carries a reservation (_reserveDeckSlot) that
 		// must be released on EVERY exit path here - refusal, error, or
@@ -2737,6 +2749,11 @@
 				pushToast(`cannot load: CH${target} is the live master - unload or reassign it first`, 'error');
 				return;
 			}
+			// KEYSHIFT-03: snapshot the shift the row shows now. Replacing the
+			// deck that supplies the compatible reference unloads it first, which
+			// clears that reference before the load is dispatched. A surface that
+			// shows no shift (Cmd-K) loads unshifted.
+			const keyShift = opts.noKeyShift === true ? 0 : _compatibleLoadKeyShift(row);
 			try {
 				loadIntent = beginPendingLoadPlay(target, opts.play === true);
 				await dispatchPerformanceCommand(
@@ -2762,7 +2779,8 @@
 					type: 'load',
 					deck: target,
 					stable_id: row.stable_id,
-					refuseIfMaster: true
+					refuseIfMaster: true,
+					...(keyShift !== 0 ? { key_shift: keyShift } : {})
 				});
 				deckLoadTick += 1;
 				deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
@@ -2820,7 +2838,7 @@
 	}
 
 	export async function commandBarLoad(row: LoadableRow, deck: DeckId): Promise<void> {
-		await _loadOntoDeck(row, deck);
+		await _loadOntoDeck(row, deck, { noKeyShift: true });
 	}
 
 	/** CMDK-04: the v2 bar's three ports, which the bar combines with its pick
@@ -2833,7 +2851,7 @@
 	/** The browser's load path; the bar checks it committed (a refusal
 	 * returns normally). */
 	export async function commandBarV2Load(row: LoadableRow, deck: DeckId): Promise<void> {
-		await _loadOntoDeck(row, deck);
+		await _loadOntoDeck(row, deck, { noKeyShift: true });
 	}
 	/** This panel's reservations on a deck, which move before a browser load
 	 * commits; the bar adds the engine's own deck state to make its mark. */
@@ -3648,6 +3666,7 @@
 					/>
 					<span>{LIBRARY_FILTER_LABELS.vocals.name}</span>
 				</label>
+				<LibraryKeyFilterPopover {selectedRowKey} decks={DECK_IDS.map((d) => decks[d])} />
 				<!--
 					pin 5e3ed689ad3a: this control used to live in `.search-options`,
 					which only renders while the search box is focused or non-empty, so
@@ -3659,7 +3678,7 @@
 					user-facing label changes, to the one the maintainer asked for.
 				-->
 				<label class="next-only">
-					<CompatibleFilterPopover>
+					<CompatibleFilterPopover mode={uiPrefs.compatible_filter.mode}>
 						<input
 							type="checkbox"
 							aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
@@ -3768,6 +3787,7 @@
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
+			onkeycardfailed={(message) => pushToast(message, 'error')}
 			onpickdoubledeck={pickDoubleDeck}
 			onloadconfirmcancelled={_releaseDeckReservation}
 			onpreviewseek={library === null ? previewSeek : undefined}
@@ -4084,6 +4104,7 @@
 		border-bottom: 1px solid var(--rb-border);
 		background: var(--rb-panel);
 		min-width: 0;
+		container: browser-header / inline-size;
 	}
 	.header-right {
 		display: flex;
@@ -4100,6 +4121,17 @@
 		gap: 4px;
 		flex: 1 1 auto;
 		min-width: 0;
+	}
+	/* KEYSHIFT-05: the compatible mode badge needs about 30 px. At 1440 px in
+	 * the Gothic skin, with every child shrinkable, it squeezed MASTER and
+	 * Back onto two lines (28 px tall in the 24 px header). Pinning the two
+	 * buttons makes the search box give up the width instead. In a header
+	 * narrower than 864 px (a 1200 px window on /performance, or the Crate
+	 * Desk's narrower pane) the badge hides and the row behaves as before. */
+	@container browser-header (min-width: 864px) {
+		.header-controls-cluster > :global(.rb-lit-button) {
+			flex: none;
+		}
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
@@ -4128,6 +4160,12 @@
 		gap: 3px;
 		flex: 1 1 auto;
 		min-width: 0;
+	}
+	/* The search box's explainer wrapper sized to its content (195 px in the
+	 * Gothic skin), so a narrowed search stack let it spill left over Back.
+	 * Capping it at the stack's width lets the search field shrink instead. */
+	.search-stack > :global(.explainer) {
+		max-width: 100%;
 	}
 	.search-options {
 		display: flex;

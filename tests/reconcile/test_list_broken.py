@@ -34,6 +34,14 @@ def test_broken_row_as_csv_handles_nones() -> None:
 
 
 @pytest.mark.requirement("RECON-01")
+def test_duration_s_from_rb_length_parses_or_rejects() -> None:
+    """Invalid rekordbox Length values must not break CSV export."""
+    assert list_broken._duration_s_from_rb_length(250) == 250
+    assert list_broken._duration_s_from_rb_length(None) is None
+    assert list_broken._duration_s_from_rb_length("not-a-number") is None
+
+
+@pytest.mark.requirement("RECON-01")
 def test_broken_row_formats_bpm_to_two_decimals() -> None:
     """BPM is written as ``"128.00"`` (2 decimals) to keep CSV diff-stable."""
     row = list_broken.BrokenRow(

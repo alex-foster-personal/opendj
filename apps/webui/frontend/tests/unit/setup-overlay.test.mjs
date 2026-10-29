@@ -332,6 +332,18 @@ test('the layout covers the app while the wizard chunk is in flight', () => {
 	assert.match(pending[1], /role="status" aria-label="Setup is loading"/);
 });
 
+test('the layout covers the app while the settings chunk is in flight', () => {
+	// Sol + Codex P2, PR #6829: opening settings yields the blocking boot gate
+	// at once, so a cold chunk left the app behind only the non-blocking strip.
+	const layout = read('src/routes/+layout.svelte');
+	const pending = layout.match(
+		/\{#await loadSettingsOverlay\(reportSettingsOverlayLoadFailure\)\}([^]*?)\{:then \{ default: SettingsOverlay \}\}/
+	);
+	assert.ok(pending, 'the settings await has no pending branch');
+	assert.match(pending[1], /class="setup-load-backdrop"/);
+	assert.match(pending[1], /role="status" aria-label="Settings is loading"/);
+});
+
 test('the layout requests the wizard chunk only once setup mounts', () => {
 	// The bundle budget's library surface is what first paint downloads, so
 	// the chunk's import() must not run at script level, where it would start

@@ -159,6 +159,18 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-03-01",
         sandbox_gated=False,
     ),
+    FlagDef(
+        flag_id="dj.tryer",
+        default=False,
+        owner="maintainer",
+        note=(
+            "The transition try-er page (TRYER-14, Tue 27 Oct 2026): render N "
+            "candidate transitions for a pair, audition them, pick one. OFF hides "
+            "the page; the HTTP, CLI and MCP try-er surfaces stay on for agents."
+        ),
+        retire_by="2027-04-01",
+        sandbox_gated=False,
+    ),
 )
 
 APP_MODE_IDS: tuple[str, ...] = (

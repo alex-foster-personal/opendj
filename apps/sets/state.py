@@ -150,6 +150,11 @@ def _ensure_schema(conn: sqlite3.Connection, *, events_table: str = "events") ->
         conn.execute(stmt)
 
 
+def _value_json(value: dict[str, Any]) -> str | None:
+    """Compact JSON for the ``value_json`` column; empty dict stores NULL."""
+    return json.dumps(value, separators=(",", ":")) if value else None
+
+
 class SetsState:
     """Thread-safe writer over the sets DB.
 
@@ -297,7 +302,7 @@ class SetsState:
                     event.deck,
                     event.track_stable_id,
                     event.action,
-                    json.dumps(event.value, separators=(",", ":")) if event.value else None,
+                    _value_json(event.value),
                     event.source,
                 ),
             )
@@ -320,7 +325,7 @@ class SetsState:
         with self._rw() as conn:
             cur = conn.execute(
                 f"UPDATE {tbl} SET value_json = ? WHERE id = ?",
-                (json.dumps(value, separators=(",", ":")) if value else None, event_id),
+                (_value_json(value), event_id),
             )
             if cur.rowcount != 1:
                 raise KeyError(

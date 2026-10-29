@@ -23,6 +23,12 @@
  * multiply-add per sample per deck on the AUDIO THREAD producing a number
  * with no consumer. Re-add it only with a reader.
  *
+ * A channel tap also folds a SECOND input, the same signal after the channel's
+ * crossfader gain node (`heardInput`), and posts its peak as `heard`. The clip
+ * pip judges that one, so the crossfader applied is the one the audio thread
+ * actually multiplied into those samples, not a main-thread reading taken when
+ * the post arrived (Sol P1, PR #6829).
+ *
  * Each post carries a monotonic `seq`. The main thread applies the meter's
  * instantaneous attack ONLY when it sees a new `seq`, and decays otherwise.
  * Without that, a stale peak would be re-attacked on every frame between posts
@@ -43,7 +49,9 @@ class MeterProcessor extends AudioWorkletProcessor {
 				`meter tap requires a finite positive reportIntervalS in processorOptions, got ${this.reportIntervalS}`
 			);
 		}
+		this.heardInput = settings.heardInput === true;
 		this.windowPeak = 0;
+		this.windowHeardPeak = 0;
 		this.windowElapsedS = 0;
 		this.seq = 0;
 		// Whether the last posted window carried signal, so exactly ONE post
@@ -68,6 +76,18 @@ class MeterProcessor extends AudioWorkletProcessor {
 				if (magnitude > this.windowPeak) this.windowPeak = magnitude;
 			}
 		}
+		if (this.heardInput) {
+			const heard = inputs[1] === undefined ? [] : inputs[1];
+			for (let c = 0; c < heard.length; c += 1) {
+				const samples = heard[c];
+				if (samples === undefined) continue;
+				for (let i = 0; i < samples.length; i += 1) {
+					const value = samples[i];
+					const magnitude = value < 0 ? -value : value;
+					if (magnitude > this.windowHeardPeak) this.windowHeardPeak = magnitude;
+				}
+			}
+		}
 		// A quantum with no channels still advances time, otherwise a silent
 		// deck would never reach its report interval and the last live reading
 		// would sit on screen forever.
@@ -87,10 +107,15 @@ class MeterProcessor extends AudioWorkletProcessor {
 		const hadSignal = this.windowPeak > 0;
 		if (hadSignal || this.postedSignal) {
 			this.seq += 1;
-			this.port.postMessage({ seq: this.seq, peak: this.windowPeak });
+			this.port.postMessage(
+				this.heardInput
+					? { seq: this.seq, peak: this.windowPeak, heard: this.windowHeardPeak }
+					: { seq: this.seq, peak: this.windowPeak }
+			);
 		}
 		this.postedSignal = hadSignal;
 		this.windowPeak = 0;
+		this.windowHeardPeak = 0;
 		this.windowElapsedS = 0;
 		return true;
 	}

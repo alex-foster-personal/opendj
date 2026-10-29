@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transition Taste Rater</title>
+<!--
+  Blind rater for the try-er calibration session (TRYER-24).
+  Serve: uv run scripts/bench/serve.py <port>
+  Open:  http://localhost:<port>/tryer_calibration/rater.html?manifest=<session>[&api=http://localhost:<daemon>/api/v1]
+  Reads sessions/<session>/manifest.json only. The hidden key (roles, styles,
+  scores) never reaches this page, so nothing here can leak a variant's identity.
+-->
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #dcdad4;
+  --accent: #3b5bdb; --good: #2b8a3e; --ok: #b08900; --bad: #c92a2a; --playing: #e7ecff;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151517; --panel: #1f1f23; --ink: #ececf0; --muted: #a0a0aa; --line: #34343a;
+          --accent: #7c95ff; --good: #51cf66; --ok: #ffd43b; --bad: #ff6b6b; --playing: #262c45; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, system-ui, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
+h1 { font-size: 18px; margin: 0; }
+.progress { color: var(--muted); }
+.bar { height: 6px; background: var(--line); border-radius: 3px; margin: 8px 0 16px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.card.focus { border-color: var(--accent); }
+.card.playing { background: var(--playing); border-color: var(--accent); }
+.card h2 { margin: 0 0 8px; font-size: 22px; display: flex; justify-content: space-between; align-items: center; }
+.rank { font-size: 13px; color: var(--muted); }
+button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+button.on { border-color: var(--accent); outline: 2px solid var(--accent); }
+.verdicts { display: flex; gap: 6px; margin: 8px 0; }
+.verdicts .good.on { color: var(--good); } .verdicts .ok.on { color: var(--ok); } .verdicts .bad.on { color: var(--bad); }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tags button { font-size: 12px; padding: 2px 6px; }
+.time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+.status { margin-top: 10px; min-height: 1.4em; }
+.status.failed { color: var(--bad); } .status.saved { color: var(--good); }
+.help { color: var(--muted); font-size: 13px; margin-top: 16px; }
+kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 12px; }
+.error { color: var(--bad); white-space: pre-wrap; }
+.banner { margin-top: 10px; padding: 8px 12px; border: 2px solid var(--bad); border-radius: 8px; color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Which transition would you play?</h1>
+    <span class="progress" id="progress"></span>
+  </header>
+  <div class="bar" title="share of pairs fully ranked and rated"><div id="bar"></div></div>
+  <div id="error" class="error"></div>
+  <div id="pair"></div>
+  <div class="row">
+    <button id="prev" title="previous pair">Prev</button>
+    <button id="next" title="next pair (Enter); needs a full ranking and a verdict per variant">Next</button>
+    <button id="clear-rank" title="clear this pair's ranking (Backspace)">Clear ranking</button>
+    <span style="flex:1"></span>
+    <button id="save" title="download your ratings, then POST them to the daemon">Save (&amp; download)</button>
+  </div>
+  <div id="missing" class="help"></div>
+  <div id="status" class="status" title="result of the last save or playback"></div>
+  <div id="banner" class="banner" hidden></div>
+  <a id="download-again" hidden title="download the same ratings file again, by hand">No file in Downloads? Click to download the ratings file</a>
+  <p class="help">
+    <kbd>1</kbd>-<kbd>4</kbd> play A-D &middot; <kbd>Space</kbd> stop &middot; <kbd>Shift</kbd>+<kbd>1</kbd>-<kbd>4</kbd> pick next best &middot;
+    <kbd>G</kbd>/<kbd>O</kbd>/<kbd>B</kbd> rate the variant last played &middot; <kbd>Backspace</kbd> clear ranking &middot; <kbd>Enter</kbd> next pair.
+    Rank by which transition you would rather play. Ignore small level or EQ differences; those are fixed separately.
+  </p>
+</main>
+<!-- The page is served no-store but scripts are cached: bump ?v= on every rater-core.js change. -->
+<script src="rater-core.js?v=4-autosave-off-warning"></script>
+<script>
+"use strict";
+const C = window.RaterCore;
+const QUERY = new URLSearchParams(location.search);
+const SESSION = QUERY.get("manifest");
+// Server saving only with an explicit ?api=: a guessed port could be another worktree's daemon.
+const API_BASE = QUERY.get("api") === null ? null : QUERY.get("api").replace(/\/+$/, "");
+const RATINGS_ENDPOINT = API_BASE === null ? null : API_BASE + "/bench/ratings";
+const MANIFEST_REL = "tryer_calibration/sessions/" + SESSION + "/manifest.json";
+
+const state = { manifest: null, manifestSha: null, letters: {}, pairs: {}, index: 0, playing: null, focus: null, autosaveOff: false };
+const audio = new Audio();
+audio.preload = "auto";
+
+function fail(message) {
+  document.getElementById("error").textContent = message;
+  throw new Error(message);
+}
+
+function storeKey() { return C.storageKey(SESSION, state.manifestSha); }
+
+/** A lasting notice: autosave trouble stays on screen until a Save reaches the server. */
+function setBanner(message) {
+  const b = document.getElementById("banner");
+  b.textContent = message;
+  b.hidden = !message;
+}
+
+function persist() {
+  if (state.autosaveOff) {
+    // Every change while autosave is off says so again, so a later Save clearing the banner never hides it.
+    setBanner(C.bannerAfterSave(true));
+    return;
+  }
+  try {
+    localStorage.setItem(storeKey(), JSON.stringify(C.snapshot(state.manifestSha, state.letters, state.pairs, state.index)));
+  } catch (err) {
+    setBanner("Autosave FAILED (" + err.name + "): your progress is not being kept in this browser. Press Save now and keep the downloaded file.");
+  }
+}
+
+function restore() {
+  let stored;
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    const earlier = C.earlierBuildKeys(keys, SESSION, storeKey());
+    if (earlier.length > 0) {
+      // Never deleted here: they may hold hours of ratings. They rated different clips, so they are not loaded.
+      setBanner("Saved progress from " + earlier.length + " earlier build(s) of this session is kept in this browser (" + earlier.join(", ") + ") but not loaded: it rated different clips.");
+    }
+    stored = localStorage.getItem(storeKey());
+  } catch (err) {
+    // Whatever is stored could not even be read, so it cannot be set aside: autosave stays off so it is never overwritten.
+    state.autosaveOff = true;
+    setBanner("Saved progress could not be read (" + err.name + ": " + err.message + "), so this page starts empty and autosave is OFF. Use Save.");
+    return;
+  }
+  const checked = C.checkRestore(stored, state.manifestSha, state.letters, state.manifest.pairs.length);
+  if (!checked.ok) {
+    // Kept, not deleted: moved out of the way so this build can autosave, and named in the banner.
+    const kept = C.quarantineKey(storeKey(), Date.now());
+    try {
+      localStorage.setItem(kept, stored);
+      localStorage.removeItem(storeKey());
+      setBanner("Saved progress could not be restored (" + checked.reason + "). It is kept in this browser as " + kept + "; starting fresh.");
+    } catch (err) {
+      setBanner("Saved progress could not be restored (" + checked.reason + ") and could not be set aside (" + err.name + "); autosave is OFF so it is not overwritten. Use Save.");
+      state.autosaveOff = true;
+    }
+    return;
+  }
+  state.pairs = checked.pairs;
+  state.index = checked.index;
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function currentPair() { return state.manifest.pairs[state.index]; }
+function currentState() {
+  const p = currentPair();
+  if (!state.pairs[p.pair_id]) state.pairs[p.pair_id] = C.emptyPairState(state.letters[p.pair_id]);
+  return state.pairs[p.pair_id];
+}
+
+function play(letter) {
+  const p = currentPair();
+  const cid = state.letters[p.pair_id][letter];
+  if (!cid) return;
+  const url = p.candidates.find((c) => c.cid === cid).url;
+  const src = new URL("sessions/" + SESSION + "/" + url, location.href).href;
+  if (state.playing === letter && !audio.paused) { stop(); return; }
+  if (audio.src !== src) audio.src = src;
+  audio.currentTime = 0;
+  state.playing = null;
+  // Focus (what G/O/B rate) moves only once the clip really plays.
+  audio.play().then(() => {
+    state.playing = letter;
+    state.focus = letter;
+    render();
+  }).catch((err) => {
+    // AbortError is a stop or a switch interrupting the start, not a playback failure.
+    if (err.name !== "AbortError") {
+      if (state.focus === letter) state.focus = null;
+      setStatus("failed", "could not play " + letter + ": " + err.message);
+    }
+    render();
+  });
+}
+
+function stop() { audio.pause(); state.playing = null; render(); }
+
+function setVerdict(letter, verdict) { currentState().verdict[letter] = verdict; persist(); render(); }
+function toggleTag(letter, tag) {
+  const tags = currentState().tags[letter];
+  const i = tags.indexOf(tag);
+  if (i >= 0) tags.splice(i, 1); else tags.push(tag);
+  persist(); render();
+}
+function rankNext(letter) { C.rankNext(currentState(), letter); persist(); render(); }
+function clearRank() { currentState().ranking = []; persist(); render(); }
+
+function go(delta) {
+  const target = state.index + delta;
+  if (target < 0 || target >= state.manifest.pairs.length) return;
+  if (delta > 0 && C.missingFor(currentState(), state.letters[currentPair().pair_id]).length > 0) { render(); return; }
+  stop();
+  state.focus = null;
+  state.index = target;
+  persist(); render();
+}
+
+function fmt(seconds) { return isFinite(seconds) ? seconds.toFixed(1) : "-"; }
+
+function render() {
+  const p = currentPair();
+  const letters = state.letters[p.pair_id];
+  const st = currentState();
+  const total = state.manifest.pairs.length;
+  const done = C.completedCount(state.manifest, state.letters, state.pairs);
+  const progress = document.getElementById("progress");
+  progress.textContent = "Pair " + (state.index + 1) + " of " + total + " · " + done + " done";
+  progress.title = "pair position in this session, and how many pairs are fully ranked and rated";
+  document.getElementById("bar").style.width = (100 * done / total) + "%";
+
+  const host = document.getElementById("pair");
+  host.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  for (const letter of Object.keys(letters)) {
+    const card = document.createElement("div");
+    card.className = "card" + (state.playing === letter ? " playing" : "") + (state.focus === letter ? " focus" : "");
+    const rankIndex = st.ranking.indexOf(letter);
+    const h = document.createElement("h2");
+    h.innerHTML = "<span>" + letter + "</span>";
+    const rank = document.createElement("span");
+    rank.className = "rank";
+    rank.textContent = rankIndex >= 0 ? "#" + (rankIndex + 1) : "unranked";
+    rank.title = "your preference rank within this pair (1 = would play this one)";
+    h.appendChild(rank);
+    card.appendChild(h);
+
+    const controls = document.createElement("div");
+    controls.className = "verdicts";
+    const playBtn = button(state.playing === letter ? "Stop" : "Play", () => play(letter), "play variant " + letter + " (key " + (C.LETTERS.indexOf(letter) + 1) + ")");
+    const pickBtn = button("Pick next", () => rankNext(letter), "add " + letter + " as the next best (Shift+" + (C.LETTERS.indexOf(letter) + 1) + ")");
+    pickBtn.disabled = rankIndex >= 0;
+    controls.append(playBtn, pickBtn);
+    card.appendChild(controls);
+
+    if (state.playing === letter) {
+      const t = document.createElement("div");
+      t.className = "time";
+      t.id = "time";
+      t.title = "playhead and length of this clip, in seconds";
+      t.textContent = fmt(audio.currentTime) + " / " + fmt(audio.duration) + " s";
+      card.appendChild(t);
+    }
+
+    const verdicts = document.createElement("div");
+    verdicts.className = "verdicts";
+    for (const v of C.VERDICTS) {
+      const b = button(v === "ok" ? "OK" : v[0].toUpperCase() + v.slice(1), () => setVerdict(letter, v), "rate " + letter + " " + v);
+      b.classList.add(v);
+      if (st.verdict[letter] === v) b.classList.add("on");
+      verdicts.appendChild(b);
+    }
+    card.appendChild(verdicts);
+
+    const tags = document.createElement("div");
+    tags.className = "tags";
+    for (const tag of C.TAGS) {
+      const b = button(tag, () => toggleTag(letter, tag), "optional reason tag for " + letter);
+      if (st.tags[letter].includes(tag)) b.classList.add("on");
+      tags.appendChild(b);
+    }
+    card.appendChild(tags);
+    grid.appendChild(card);
+  }
+  host.appendChild(grid);
+
+  const missing = C.missingFor(st, letters);
+  document.getElementById("missing").textContent = missing.length ? "To continue: " + missing.join("; ") : "Pair complete.";
+  document.getElementById("next").disabled = missing.length > 0 || state.index === total - 1;
+  document.getElementById("prev").disabled = state.index === 0;
+}
+
+function button(label, onClick, title) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.title = title;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function setStatus(phase, message, title) {
+  const s = document.getElementById("status");
+  s.className = "status " + phase;
+  s.textContent = message;
+  s.title = title || "result of the last save or playback";
+}
+
+/** Download first (the failsafe), then POST to the daemon. */
+function save() {
+  const payload = C.buildPayload(state.manifest, MANIFEST_REL, state.letters, state.pairs);
+  const rated = payload.ratings.filter((r) => r.verdict !== null).length;
+  if (rated === 0) { setStatus("failed", "nothing to save: no variant has a verdict yet."); return; }
+  const json = JSON.stringify(payload, null, 2);
+  const filename = "ratings-tryer-calibration-" + SESSION + ".json";
+  const href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // A browser may block a repeated scripted download; a click on this link always works.
+  const again = document.getElementById("download-again");
+  again.href = href;
+  again.download = filename;
+  again.hidden = false;
+  if (RATINGS_ENDPOINT === null) {
+    setStatus("downloaded", "A download of " + filename + " was requested (no server save: add &api=http://127.0.0.1:<port>/api/v1 to save on this worktree's backend). If it is not in Downloads, use the link below.");
+    return;
+  }
+  setStatus("saving", "saving...");
+  fetch(RATINGS_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: json })
+    .then((resp) => resp.text().then((text) => ({ resp, text })))
+    .then(({ resp, text }) => {
+      if (!resp.ok) throw new Error("HTTP " + resp.status + " " + text.slice(0, 200));
+      const body = JSON.parse(text);
+      if (typeof body.path !== "string") throw new Error("server response has no 'path'");
+      setStatus("saved", "saved to " + body.path + " (" + body.rated_count + " of " + body.total_count + " variants rated). A download of " + filename + " was requested too.",
+        "variants with a verdict, out of every variant in the session, as the server wrote them");
+      setBanner(C.bannerAfterSave(state.autosaveOff));
+    })
+    .catch((err) => {
+      const reason = err.message === "Failed to fetch" ? "could not reach " + RATINGS_ENDPOINT : err.message;
+      setStatus("failed", "server save FAILED: " + reason + ". Check Downloads for " + filename + "; if it is not there, use the link below." + (document.getElementById("banner").hidden ? " Your ratings also stay saved in this browser." : ""));
+    });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const digit = /^Digit([1-4])$/.exec(e.code);
+  if (digit) {
+    const letter = C.LETTERS[Number(digit[1]) - 1];
+    if (!state.letters[currentPair().pair_id][letter]) return;
+    e.preventDefault();
+    if (e.shiftKey) rankNext(letter); else play(letter);
+  } else if (e.code === "Space") { e.preventDefault(); stop(); }
+  else if (e.code === "Enter") { e.preventDefault(); go(1); }
+  else if (e.code === "Backspace") { e.preventDefault(); clearRank(); }
+  else if (state.focus && (e.code === "KeyG" || e.code === "KeyO" || e.code === "KeyB")) {
+    setVerdict(state.focus, { KeyG: "good", KeyO: "ok", KeyB: "bad" }[e.code]);
+  }
+});
+document.getElementById("prev").addEventListener("click", () => go(-1));
+document.getElementById("next").addEventListener("click", () => go(1));
+document.getElementById("clear-rank").addEventListener("click", clearRank);
+document.getElementById("save").addEventListener("click", save);
+audio.addEventListener("timeupdate", () => {
+  const t = document.getElementById("time");
+  if (t) t.textContent = fmt(audio.currentTime) + " / " + fmt(audio.duration) + " s";
+});
+audio.addEventListener("ended", () => { state.playing = null; render(); });
+audio.addEventListener("error", () => {
+  state.playing = null;
+  state.focus = null;
+  setStatus("failed", "clip failed to load: " + audio.src);
+  render();
+});
+
+(async function boot() {
+  if (!SESSION) fail("no session: open this page with ?manifest=<session name>");
+  if (typeof C.checkRestore !== "function") fail("rater-core.js is an older copy than this page (browser cache): hard-reload with Cmd+Shift+R");
+  const resp = await fetch("sessions/" + SESSION + "/manifest.json", { cache: "no-store" });
+  if (!resp.ok) fail("could not load " + MANIFEST_REL + ": HTTP " + resp.status);
+  const text = await resp.text();
+  state.manifest = JSON.parse(text);
+  state.manifestSha = await sha256Hex(text);
+  if (!Array.isArray(state.manifest.pairs) || state.manifest.pairs.length === 0) fail(MANIFEST_REL + " has no pairs");
+  for (const p of state.manifest.pairs) state.letters[p.pair_id] = C.letterMap(p, state.manifest.session);
+  restore();
+  render();
+})();
+</script>
+</body>
+</html>

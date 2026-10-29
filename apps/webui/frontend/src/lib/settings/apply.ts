@@ -4,6 +4,11 @@
  */
 import { parseWaveformDesignPref } from '$lib/rb/waveform-design';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
+import {
+	compatibleFilterSettingPatch,
+	readCompatibleFilterSetting,
+	type CompatibleFilterSettingKey
+} from '$lib/settings/compatible-filter-setting';
 import { parseWavePalettePref } from '$lib/rb/wave-palette';
 import { parseUiSkin, parseWaveSplitMaster } from '$lib/rb/ui-skin';
 import {
@@ -27,6 +32,7 @@ import {
 	setHideBrokenLinks,
 	setHideTodoSettings,
 	setHorizontalWheelKnob,
+	setDragSensitivity,
 	setJogRadialWaveform,
 	setShowDevUi,
 	setShowStems,
@@ -53,6 +59,7 @@ import {
 	setTheme,
 	setVocalsFilter,
 	uiPrefs,
+	patchCompatibleFilter,
 	type AutoSyncDestination,
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode,
@@ -83,6 +90,10 @@ import {
 	midiEnabledPersisted,
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
+import {
+	featureIconSingleClick,
+	setFeatureIconSingleClick
+} from '$lib/rb/feature-icon-cluster.svelte';
 import { syncDiskPrefs } from '$lib/rb/prefs-hydrate';
 import { autoGainPrefs, autoGainPrefsUnavailable, saveAutoGainPrefs } from '$lib/rb/auto-gain.svelte';
 import { AUTO_GAIN_TARGET_MAX_LUFS, AUTO_GAIN_TARGET_MIN_LUFS } from '$lib/rb/auto-gain';
@@ -133,6 +144,9 @@ export const ALLOWED_SETTING_KEYS = [
 	'auto_play_enforce_order',
 	'auto_play_maximize_reach',
 	'next_only_filter',
+	'compatible_filter.mode',
+	'compatible_filter.mashup_relative',
+	'compatible_filter.key_shift_max',
 	'remixes_filter',
 	'vocals_filter',
 	'available_offline_filter',
@@ -157,6 +171,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'deck_layout_duration_ms',
 	'deck_right_mirror',
 	'deck_left_mirror',
+	'feature_icon_single_click',
 	'playlist_tree_view',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
@@ -166,6 +181,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'confirm.playlist_drop_mode',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
+	'drag_sensitivity.base',
+	'drag_sensitivity.falloff_px',
 	'crossfade_curve',
 	'horizontal_wheel_knob',
 	'perf_tier',
@@ -215,6 +232,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.auto_play_maximize_reach;
 		case 'next_only_filter':
 			return uiPrefs.next_only_filter;
+		case 'compatible_filter.mode':
+		case 'compatible_filter.mashup_relative':
+		case 'compatible_filter.key_shift_max':
+			return readCompatibleFilterSetting(uiPrefs.compatible_filter, key);
 		case 'remixes_filter':
 			return uiPrefs.remixes_filter;
 		case 'vocals_filter':
@@ -263,6 +284,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.deck_right_mirror;
 		case 'deck_left_mirror':
 			return uiPrefs.deck_left_mirror;
+		case 'feature_icon_single_click':
+			return featureIconSingleClick();
 		case 'playlist_tree_view':
 			return uiPrefs.playlist_tree_view;
 		case 'auto_sync.rekordbox':
@@ -281,6 +304,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
 			return String(wheelSensitivity().trackpad);
+		case 'drag_sensitivity.base':
+			return String(uiPrefs.drag_sensitivity.base);
+		case 'drag_sensitivity.falloff_px':
+			return String(uiPrefs.drag_sensitivity.falloff_px);
 		case 'crossfade_curve':
 			return uiPrefs.crossfade_curve;
 		case 'horizontal_wheel_knob':
@@ -306,6 +333,15 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
 		}
 	}
+}
+
+/** KEYSHIFT-01..05: validates synchronously (a bad value throws at the call),
+ * then saves through the verified disk write. */
+function _applyCompatibleFilterSetting(key: CompatibleFilterSettingKey, value: boolean | string): void {
+	const patch = compatibleFilterSettingPatch(key, value);
+	patchCompatibleFilter(patch).catch((err: unknown) =>
+		reportSettingSaveError(`Compatible filter setting not saved: ${err}`, err)
+	);
 }
 
 export function applySettingChange(key: string, value: SettingValue): void {
@@ -354,6 +390,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'next_only_filter':
 			setNextOnlyFilter(_asBool(value, key));
+			return;
+		case 'compatible_filter.mashup_relative':
+			_applyCompatibleFilterSetting(key, _asBool(value, key));
+			return;
+		case 'compatible_filter.mode':
+		case 'compatible_filter.key_shift_max':
+			_applyCompatibleFilterSetting(key, value);
 			return;
 		case 'remixes_filter':
 			setRemixesFilter(_asBool(value, key));
@@ -458,6 +501,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'deck_left_mirror':
 			setDeckLeftMirror(_asBool(value, key));
 			return;
+		case 'feature_icon_single_click':
+			setFeatureIconSingleClick(_asBool(value, key));
+			return;
 		case 'playlist_tree_view': {
 			if (value !== 'tree' && value !== 'column') {
 				throw new Error(`playlist_tree_view must be tree|column, got ${String(value)}`);
@@ -514,6 +560,12 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setWheelSensitivity(kind, _asFactor(value, key));
 			return;
 		}
+		case 'drag_sensitivity.base':
+			setDragSensitivity({ base: _asFactor(value, key) });
+			return;
+		case 'drag_sensitivity.falloff_px':
+			setDragSensitivity({ falloff_px: _asFactor(value, key) });
+			return;
 		case 'crossfade_curve': {
 			if (value !== 'magic') {
 				throw new Error(`crossfade_curve must be magic until curves are built, got ${String(value)}`);

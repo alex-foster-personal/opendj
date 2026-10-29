@@ -295,6 +295,9 @@ TABLES: dict[str, str] = {
         "Migration bookkeeping for the play-order tables, which arrived with "
         "their own ladder before the consolidated schema existed."
     ),
+    "transition_try_jobs": "One run of the transition try-er for a pair of tracks, with its candidates.",
+    "transition_picks": "The transition a person or agent chose from one try-er run.",
+    "transition_try_schema_meta": "Migration bookkeeping for the transition try-er tables.",
     "playlist_sets": (
         "SET-05 named performance set for a playlist, with its own play count."
     ),

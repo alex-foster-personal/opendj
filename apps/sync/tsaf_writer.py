@@ -20,7 +20,7 @@ from apps.shared.djay_db import extract_rating_from_tsaf
 TAIL_SCAN_BYTES: int = 30
 
 
-def _locate_rating_tag_in_tail(blob: bytes) -> int | None:
+def locate_rating_tag_in_tail(blob: bytes) -> int | None:
     """Return the absolute offset of the first valid ``0x0f <1-5>`` in the
     last :data:`TAIL_SCAN_BYTES` bytes, or ``None``.
     """
@@ -75,7 +75,7 @@ def write_rating_to_tsaf(blob: bytes, new_rating: int) -> bytes:
         raise TypeError(f"blob must be bytes, got {type(blob).__name__}")
 
     blob_b = bytes(blob)
-    tag_offset = _locate_rating_tag_in_tail(blob_b)
+    tag_offset = locate_rating_tag_in_tail(blob_b)
 
     if tag_offset is not None:
         # Existing rating marker. Replace or remove.
@@ -105,6 +105,7 @@ def verify_rating_round_trip(blob: bytes, new_rating: int) -> bool:
 
 __all__ = [
     "TAIL_SCAN_BYTES",
+    "locate_rating_tag_in_tail",
     "write_rating_to_tsaf",
     "verify_rating_round_trip",
 ]

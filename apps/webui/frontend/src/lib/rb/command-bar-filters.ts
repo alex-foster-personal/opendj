@@ -58,6 +58,18 @@ function locallyAvailable(row: CmdkFilterRow): boolean {
 }
 
 /**
+ * The compatible filter's rules with shifts off. The filter is only read when it
+ * is on, so a missing object fails here rather than falling back to defaults that
+ * would change what Cmd-K keeps.
+ */
+function unshiftedCompatible(prefs: CmdkFilterPrefs): Parameters<typeof isAppropriateNext>[2] {
+	if (prefs.compatible_filter === undefined || prefs.compatible_filter === null) {
+		throw new Error('cmdkKeep: next_only_filter is on but prefs.compatible_filter is missing');
+	}
+	return { ...prefs.compatible_filter, key_shift_max: 0 as const };
+}
+
+/**
  * The keep-predicate for the active filters. `ref` is the compatible filter's
  * reference deck (computeNextOnlyRef); with no reference the compatible filter
  * keeps every row, exactly as the library's _applyNextOnly does.
@@ -80,7 +92,9 @@ export function cmdkKeep(
 			return false;
 		}
 		if (prefs.available_offline_filter && !locallyAvailable(row)) return false;
-		if (prefs.next_only_filter && ref !== null && !isAppropriateNext(row, ref, prefs.compatible_filter)) {
+		// KEYSHIFT-03: Cmd-K shows no shift superscript and loads unshifted, so
+		// it keeps only rows compatible without a key shift.
+		if (prefs.next_only_filter && ref !== null && !isAppropriateNext(row, ref, unshiftedCompatible(prefs))) {
 			return false;
 		}
 		return true;

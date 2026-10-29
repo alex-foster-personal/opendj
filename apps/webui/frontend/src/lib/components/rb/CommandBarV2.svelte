@@ -36,7 +36,7 @@
 	import { filterForKeyCode, type LibraryFilterId } from '$lib/rb/library-filter-labels';
 	import { libraryIndexIsCurrent, loadLibraryIndex, onLibraryIndexInvalidated, peekLibraryIndex } from '$lib/rb/library-index';
 	import { createPickLoader, deckLoadMark, loadCommitted, type SettleMeta } from '$lib/rb/cmdk-load';
-	import { computeNextOnlyRef } from '$lib/rb/next-only-filter';
+	import { compatibleKeyChecked, computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import CmdkDeckRings from './cmdk/CmdkDeckRings.svelte';
 	import CmdkFilterRow from './cmdk/CmdkFilterRow.svelte';
 
@@ -108,9 +108,10 @@
 				playing: decks[d].playing,
 				stable_id: decks[d].stable_id,
 				key: decks[d].key,
-				bpm: decks[d].bpm
+				bpm: decks[d].bpm,
+				key_shift_semitones: decks[d].key_shift_semitones
 			})),
-			uiPrefs.compatible_filter.rules.length > 0
+			compatibleKeyChecked(uiPrefs.compatible_filter)
 		)
 	);
 	const states = $derived(filterStates(uiPrefs));

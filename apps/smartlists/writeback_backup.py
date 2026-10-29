@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.id_grammar import require_matching
 
 WRITEBACK_BACKUP_DIR = paths.DATA_DIR / "writeback-backups"
 
@@ -27,12 +28,12 @@ _BACKUP_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
 
 
 def _require_backup_id(backup_id: str) -> str:
-    if _BACKUP_ID_PATTERN.fullmatch(backup_id) is None:
-        raise ValueError(
-            "backup_id must be 32 lowercase hex characters (uuid4().hex), got "
-            f"{backup_id!r}"
-        )
-    return backup_id
+    return require_matching(
+        backup_id,
+        _BACKUP_ID_PATTERN,
+        field="backup_id",
+        description="32 lowercase hex characters (uuid4().hex)",
+    )
 
 
 def backup_path(vendor: str, backup_id: str) -> Path:

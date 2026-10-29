@@ -55,7 +55,6 @@ import sqlite3
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from .queue_stale import (
@@ -65,6 +64,7 @@ from .queue_stale import (
     mark_stale,
     stale_rows,
 )
+from .time_iso import utc_now_iso
 
 #: Item states. Terminal states are the ones a resume never revisits.
 ITEM_PENDING: str = "pending"
@@ -151,10 +151,6 @@ def ensure_queue_tables(conn: sqlite3.Connection) -> None:
     from .queue_batch_lease import ensure_batch_lease_columns
 
     ensure_batch_lease_columns(conn)
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def new_batch_id() -> str:
@@ -255,7 +251,7 @@ def create_batch(
     memory_model: dict[str, Any],
     note: str | None = None,
 ) -> None:
-    now = _now_iso()
+    now = utc_now_iso()
     conn.execute(
         """
         INSERT INTO analysis_queue_batch
@@ -297,7 +293,7 @@ def set_batch_state(
     conn.execute(
         "UPDATE analysis_queue_batch SET state = ?, updated_at = ? "
         "WHERE batch_id = ?",
-        (state, _now_iso(), batch_id),
+        (state, utc_now_iso(), batch_id),
     )
 
 
@@ -311,7 +307,7 @@ def requeue_batch_unless_cancelled(conn: sqlite3.Connection, batch_id: str) -> N
     conn.execute(
         "UPDATE analysis_queue_batch SET state = ?, updated_at = ? "
         "WHERE batch_id = ? AND state != ?",
-        (BATCH_QUEUED, _now_iso(), batch_id, BATCH_CANCELLED),
+        (BATCH_QUEUED, utc_now_iso(), batch_id, BATCH_CANCELLED),
     )
 
 
@@ -322,7 +318,7 @@ def set_batch_workers(
     conn.execute(
         "UPDATE analysis_queue_batch SET workers = ?, band = ?, updated_at = ? "
         "WHERE batch_id = ?",
-        (int(workers), band, _now_iso(), batch_id),
+        (int(workers), band, utc_now_iso(), batch_id),
     )
 
 
@@ -355,7 +351,7 @@ def add_item(conn: sqlite3.Connection, batch_id: str, item: NewItem) -> None:
         raise ValueError(
             f"unknown item state {item.state!r}; states are {ITEM_STATES}"
         )
-    now = _now_iso()
+    now = utc_now_iso()
     settled = item.state in TERMINAL_ITEM_STATES or item.state == ITEM_CANCELLED
     conn.execute(
         f"""
@@ -442,7 +438,7 @@ def claim_next(
             conn.execute("COMMIT")
             return None
         item = _item_from_row(row)
-        now = _now_iso()
+        now = utc_now_iso()
         changed = conn.execute(
             "UPDATE analysis_queue_item SET state = ?, started_at = ?, "
             "runner_id = ?, attempts = attempts + 1 "
@@ -509,7 +505,7 @@ def finish_item(
         "UPDATE analysis_queue_item SET state = ?, reason = ?, finished_at = ?, "
         "runner_id = NULL WHERE batch_id = ? AND stable_id = ? AND lane = ?"
     )
-    params: list[Any] = [state, reason, _now_iso(), batch_id, stable_id, lane]
+    params: list[Any] = [state, reason, utc_now_iso(), batch_id, stable_id, lane]
     if claimed_by is not None:
         sql += " AND state = ? AND runner_id = ?"
         params += [ITEM_RUNNING, claimed_by]
@@ -540,7 +536,7 @@ def cancel_open_items(conn: sqlite3.Connection, batch_id: str) -> int:
     return conn.execute(
         "UPDATE analysis_queue_item SET state = ?, runner_id = NULL, "
         "finished_at = ? WHERE batch_id = ? AND state IN (?, ?)",
-        (ITEM_CANCELLED, _now_iso(), batch_id, ITEM_PENDING, ITEM_RUNNING),
+        (ITEM_CANCELLED, utc_now_iso(), batch_id, ITEM_PENDING, ITEM_RUNNING),
     ).rowcount
 
 

@@ -7,7 +7,6 @@ threaded through every handler call.
 
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,9 +14,14 @@ from typing import Any
 from apps.voice import bus as bus_mod
 from apps.voice import settings as settings_mod
 from apps.voice import tts as tts_mod
+from apps.voice.settings import coalesce_env
 
 DEFAULT_DEBOUNCE_S: float = 2.0
 DEFAULT_MUTE_DURATION_S: float = 30 * 60  # 30 minutes
+
+
+def _epoch_now(now: float | None) -> float:
+    return now if now is not None else time.time()
 
 
 @dataclass
@@ -43,7 +47,7 @@ class VoiceContext:
         tts_engine: Any | None = None,
         settings_store: settings_mod.SettingsStore | None = None,
     ) -> "VoiceContext":
-        env = env if env is not None else dict(os.environ)
+        env = coalesce_env(env)
         bus_impl = event_bus if event_bus is not None else bus_mod.make_bus()
         tts_impl = tts_engine if tts_engine is not None else tts_mod.make_tts(env)
         try:
@@ -84,7 +88,7 @@ class VoiceContext:
     def is_muted(self, now: float | None = None) -> bool:
         if self.mute_until is None:
             return False
-        now = now if now is not None else time.time()
+        now = _epoch_now(now)
         if now < self.mute_until:
             return True
         self.mute_until = None
@@ -93,7 +97,7 @@ class VoiceContext:
         return False
 
     def mute(self, now: float | None = None) -> float:
-        now = now if now is not None else time.time()
+        now = _epoch_now(now)
         self.mute_until = now + self.mute_duration_s
         if self.settings_store is not None:
             settings_mod.save_mute_until(self.settings_store, self.mute_until)
@@ -107,11 +111,11 @@ class VoiceContext:
     def debounced(self, now: float | None = None) -> bool:
         if self.last_dispatch_at is None:
             return False
-        now = now if now is not None else time.time()
+        now = _epoch_now(now)
         return (now - self.last_dispatch_at) < self.debounce_s
 
     def mark_dispatch(self, now: float | None = None) -> None:
-        self.last_dispatch_at = now if now is not None else time.time()
+        self.last_dispatch_at = _epoch_now(now)
         if self.settings_store is not None:
             settings_mod.save_last_dispatch_at(
                 self.settings_store,

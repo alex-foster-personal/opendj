@@ -12,7 +12,7 @@
  * a meter feel like DJ hardware rather than a raw level readout.
  *
  * Background and the standards it comes from:
- * docs/research/adrian-level-meters-clipping-lights.md
+ * (private path)
  */
 
 // --------------------------------------------------------------------------
@@ -222,4 +222,72 @@ export function isClipping(db: number): boolean {
 		throw new RangeError(`isClipping: db must be finite, got ${db}`);
 	}
 	return db >= CLIP_DBFS;
+}
+
+/** How long the channel bar's clip pip stays lit after the post-crossfader
+ * level that caused it has passed; the same 1.2 s the meter tap holds its own
+ * pre-crossfader clip for (meter-tap.ts CLIP_LATCH_MS). */
+export const CHANNEL_CLIP_LATCH_MS = 1200;
+
+/** The time the clip pip stays lit until: a clipping frame restarts the hold,
+ * any other frame keeps the hold it had. */
+export function clipHeldUntil(clippingNow: boolean, nowMs: number, heldUntilMs: number): number {
+	return clippingNow ? nowMs + CHANNEL_CLIP_LATCH_MS : heldUntilMs;
+}
+
+/** Whether the clip pip is lit at `nowMs` for a hold running to `heldUntilMs`:
+ * lit before the deadline, out from it on. */
+export function clipLit(nowMs: number, heldUntilMs: number): boolean {
+	return nowMs < heldUntilMs;
+}
+
+/**
+ * A channel pip's own cursor on its tap's post-crossfader clips. Another
+ * reader of the same tap must not use up the clip this pip has to judge.
+ * Seed it when playback activates, not on the first frame, so a clip from
+ * before activation stays dark while one landing before the first frame
+ * still lights the pip (Sol P1, #6829).
+ */
+interface ClipPipCursor {
+	/** Starts judging from the tap's current clip, which is not fresh. */
+	activate(heardClipSeq: number): void;
+	/** Forgets the cursor; with no `activate`, the next frame only re-seeds it. */
+	reset(): void;
+	/** True when the tap recorded a clip since the last frame or activation. */
+	frame(heardClipSeq: number): boolean;
+}
+
+export function createClipPipCursor(): ClipPipCursor {
+	let seen: number | null = null;
+	return {
+		activate(heardClipSeq) {
+			seen = heardClipSeq;
+		},
+		reset() {
+			seen = null;
+		},
+		frame(heardClipSeq) {
+			const fresh = seen !== null && heardClipSeq !== 0 && heardClipSeq !== seen;
+			seen = heardClipSeq;
+			return fresh;
+		}
+	};
+}
+
+/**
+ * The level an R or M press arms, from one channel meter reading.
+ *
+ * R anchors the channel meter's first red segment, and that meter draws the
+ * post-crossfader `heardDb` through its own ballistics, so R captures that
+ * same value: the passage pressed on is the one that lights the first red,
+ * and a crossfader move during decay cannot make R and the bar disagree
+ * (Codex P2, PR #6829). An ?extroute= deck's heard source is its fader, so
+ * its `heardDb` is already the tap level. M keeps the channel tap level
+ * (METERCAL-03), because it sets a master gain ceiling, not a display anchor.
+ */
+export function calibrationCaptureDb(
+	kind: 'red' | 'ceiling',
+	reading: { readonly db: number; readonly heardDb: number }
+): number {
+	return kind === 'red' ? reading.heardDb : reading.db;
 }

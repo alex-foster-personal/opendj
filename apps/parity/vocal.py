@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from apps.parity.figure import LaneFigure
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n, mean_of
 from apps.parity.lanes import DENOMINATOR_NAME
 
 _VOCAL_GRID_HZ = 10
@@ -131,17 +131,17 @@ def score_vocal(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
         else:
             disagree_ids.append(sid)
 
-    scored_n = len(agree_ids) + len(disagree_ids)
-    iou_mean = sum(ious) / len(ious) if ious else None
-    precision_mean = sum(precisions) / len(precisions) if precisions else None
-    recall_mean = sum(recalls) / len(recalls) if recalls else None
+    scored_n = lane_scored_n(len(agree_ids), len(disagree_ids))
+    iou_mean = mean_of(ious)
+    precision_mean = mean_of(precisions)
+    recall_mean = mean_of(recalls)
 
     return LaneFigure(
         lane="vocal",
         status="scored",
         measured_at=measured_at,
         denominator_name=DENOMINATOR_NAME["vocal"],
-        denominator_n=len(rows) - len(ungradable_ids),
+        denominator_n=lane_denominator_n(len(rows), len(ungradable_ids)),
         scored_n=scored_n,
         exact_n=len(agree_ids),
         no_own_n=len(no_own_ids),

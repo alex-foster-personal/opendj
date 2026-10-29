@@ -5,12 +5,20 @@
   POST /api/v1/beatgrid-flags/scan            bring stored verdicts up to date
   PUT  /api/v1/beatgrid-flags/{id}/dismissed  hide / restore one track's flag
 
+Grid vs audio (GRIDFIT-03, `(private path)`): the shape verdict above
+cannot tell whether a grid matches its music; these judge that, separately.
+
+  GET  /api/v1/beatgrid-flags/audio-fit             tracks by audio-fit verdict
+  GET  /api/v1/beatgrid-flags/audio-fit/scan        audio-fit scan status
+  POST /api/v1/beatgrid-flags/audio-fit/scan        judge every present track
+  GET  /api/v1/beatgrid-flags/{id}/audio-fit        one track, judged now if stale
+
 The listing reads stored verdicts only (`grid_quality_store`); it never
 parses a grid. Counts are over a NAMED denominator: `present` (tracks whose
 audio is on this machine) by default, `all_tracks` on request. A track nobody
 scanned, or with no readable grid, is `unknown` and is counted as such.
 
-CLI twin: `opendj track grid-flags` and `opendj track grid-flag`.
+CLI twin: `opendj track grid-flags`, `opendj track grid-flag` and `opendj track grid-fit`.
 
 -Claude
 """
@@ -25,6 +33,8 @@ from pydantic import BaseModel
 
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.errors import _open_ro
+from apps.analysis_beatgrid.grid_audio_fit import THRESHOLDS as FIT_THRESHOLDS
+from apps.analysis_beatgrid.grid_audio_fit import rule_version as fit_rule_version
 from apps.analysis_beatgrid.grid_quality import (
     FLAGGED_GRID_CLASSES,
     GRID_CLASSES,
@@ -37,7 +47,7 @@ from apps.analysis_beatgrid.grid_quality import (
 )
 from apps.shared.events import publish
 
-from .. import grid_quality_scan, grid_quality_store
+from .. import grid_audio_fit_scan, grid_audio_fit_store, grid_quality_scan, grid_quality_store
 from ..backend import StateBackend
 from ..deps import get_write_state
 from ..etag import compute_etag
@@ -242,6 +252,102 @@ def start_scan(
     if wait:
         return BeatgridScanStatus(**runner.run_blocking(scope))
     return BeatgridScanStatus(**runner.start(scope))
+
+
+# ------------------------------------------------------- grid vs audio (GRIDFIT-03)
+
+AudioFitFilter = Literal["findings", "wrong_bpm", "off_beat", "shifted", "no_verdict", "fit", "unknown", "all"]
+#: Listing order: what a deck warns about first, then the library-only shift.
+_FIT_RANK: dict[str, int] = {"wrong_bpm": 0, "off_beat": 1, "shifted": 2, "no_verdict": 3, "unknown": 4, "fit": 5}
+
+
+class AudioFitItem(BaseModel):
+    stable_id: str
+    title: str | None
+    artist: str | None
+    verdict: str
+    reason: str | None
+    deck_warning: bool
+    message: str | None
+    grid_bpm: float | None = None
+    audio_bpm: float | None = None
+    kick_offset_ms: float | None = None
+    kick_spread_ms: float | None = None
+    kick_coverage: float | None = None
+    rule_version: str | None = None
+    computed_at: str | None = None
+
+
+class AudioFitListOut(BaseModel):
+    denominator: Literal["present"]
+    present: int
+    counts: dict[str, int]
+    rule: BeatgridFlagRule
+    scan: BeatgridScanStatus
+    items: list[AudioFitItem]
+
+
+def _fit_matches(verdict: str, wanted: AudioFitFilter) -> bool:
+    if wanted == "all":
+        return True
+    if wanted == "findings":
+        return verdict in ("wrong_bpm", "off_beat", "shifted")
+    return verdict == wanted
+
+
+@router.get("/audio-fit", response_model=AudioFitListOut)
+def list_audio_fit(
+    request: Request,
+    verdict: Annotated[AudioFitFilter, Query()] = "findings",
+    limit: int = Query(500, ge=1, le=20000),
+) -> AudioFitListOut:
+    """Present tracks by grid-vs-audio verdict, worst first. Reads stored
+    verdicts only; a track nobody judged is `not_scanned`."""
+    ids = grid_quality_scan.scope_ids("present")
+    stored = grid_audio_fit_store.read_many(ids)
+    facts = _track_facts(ids)
+    counts: dict[str, int] = {}
+    items: list[AudioFitItem] = []
+    for stable_id in ids:
+        payload = grid_audio_fit_store.row_payload(stored.get(stable_id))
+        counts[payload["verdict"]] = counts.get(payload["verdict"], 0) + 1
+        if not _fit_matches(payload["verdict"], verdict):
+            continue
+        title, artist, _dismissed = facts[stable_id]
+        items.append(AudioFitItem(stable_id=stable_id, title=title, artist=artist, **payload))
+    items.sort(key=lambda item: (_FIT_RANK.get(item.verdict, 9), -abs(item.kick_offset_ms or 0.0), item.stable_id))
+    return AudioFitListOut(
+        denominator="present",
+        present=len(ids),
+        counts=dict(sorted(counts.items())),
+        rule=BeatgridFlagRule(version=fit_rule_version(), thresholds=asdict(FIT_THRESHOLDS)),
+        scan=BeatgridScanStatus(**grid_audio_fit_scan.runner_for(request.app.state).status()),
+        items=items[:limit],
+    )
+
+
+@router.get("/audio-fit/scan", response_model=BeatgridScanStatus)
+def get_audio_fit_scan_status(request: Request) -> BeatgridScanStatus:
+    return BeatgridScanStatus(**grid_audio_fit_scan.runner_for(request.app.state).status())
+
+
+@router.post("/audio-fit/scan", response_model=BeatgridScanStatus)
+def start_audio_fit_scan(request: Request, wait: bool = Query(False)) -> BeatgridScanStatus:
+    """Judge every present track whose grid, audio or rule changed. About 1 s
+    of one core per judged track, on a background thread unless `wait=true`."""
+    runner = grid_audio_fit_scan.runner_for(request.app.state)
+    if wait:
+        return BeatgridScanStatus(**runner.run_blocking("present"))
+    return BeatgridScanStatus(**runner.start("present"))
+
+
+@router.get("/{stable_id}/audio-fit", response_model=AudioFitItem)
+def get_track_audio_fit(stable_id: str, force: bool = Query(False)) -> AudioFitItem:
+    """One track's verdict, judged now (about 1 s) when the stored one is stale
+    or missing. A deck load calls this for its track."""
+    row = grid_audio_fit_scan.judge_track(stable_id, force=force)
+    title, artist, _dismissed = _track_facts([stable_id]).get(stable_id, (None, None, False))
+    return AudioFitItem(stable_id=stable_id, title=title, artist=artist, **grid_audio_fit_store.row_payload(row))
 
 
 @router.put("/{stable_id}/dismissed", response_model=DismissOut)

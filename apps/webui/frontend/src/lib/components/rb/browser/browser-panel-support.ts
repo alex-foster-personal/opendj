@@ -28,6 +28,8 @@ export {
 	resolveRowVocals
 } from '$lib/rb/row-vocals';
 export {
+	compatibleKeyChecked,
+	compatibleRowKeyShift,
 	computeNextOnlyRef,
 	isAppropriateNext,
 	resolveSearchFilterFallback,
@@ -80,6 +82,7 @@ export { applySettledAvailability } from './browser-row-wire';
 export { startPendingSettle } from './pending-availability-settle';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';
+export { default as LibraryKeyFilterPopover } from './LibraryKeyFilterPopover.svelte';
 export { setTabLabel } from './playlist-set-tabs';
 /** A stick track row whose stick was pulled (USBPLAY-09: the browse store
  * grays it to awaiting_volume), refused as "Stick removed" (spec 4b) rather

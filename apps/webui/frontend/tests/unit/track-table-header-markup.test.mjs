@@ -73,10 +73,14 @@ test('the quality column is compact QLT with a full custom explanation', async (
 	assert.equal(COL_DEFAULTS.quality, 34);
 	assert.match(
 		table,
-		/use:columnExplainer=\{\{ text: "QLT - audio quality as the biggest venue this file survives/
+		/use:columnExplainer=\{\{ text: "QLT - audio quality as a letter: A safe on any system/
 	);
 	assert.match(table, /<span class="th-label"><span>QLT<\/span><\/span>/);
-	assert.match(table, /<QualityBadge quality=\{row\.quality\} compact showContainer=\{false\} \/>/);
+	// QLTSCAN-05: compact letter, and the full hover loads only for a graded row.
+	assert.match(
+		table,
+		/<QualityBadge\s+quality=\{row\.quality\}\s+compact\s+showContainer=\{false\}\s+loadHover=\{row\.quality\?\.grade\?\.letter \? \(\) => audioQualityHover\(row\.stable_id, JSON\.stringify\(row\.quality\?\.grade\)\) : undefined\}\s+\/>/
+	);
 	assert.match(qualityBadge, /compact \? full\.slice\(0, 1\)\.toUpperCase\(\) : full/);
 	assert.match(qualityBadge, /class:compact/);
 });

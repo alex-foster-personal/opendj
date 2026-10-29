@@ -2,6 +2,8 @@
 
 GET  /api/v1/ui-prefs
 PUT  /api/v1/ui-prefs  - merge patch into (private path)
+POST /api/v1/ui-prefs/library-key-filter - the library key wheel's actions
+     (toggle / compatible / reset / set), the HTTP twin of each wheel control
 """
 
 from __future__ import annotations
@@ -9,19 +11,20 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import tempfile
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from apps.shared.events import publish
-from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS
+from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS, camelot_rules_allow
 from apps.shared.paths import DATA_DIR
 
 from ..auto_gain_prefs import DEFAULT_AUTO_GAIN, AutoGainPrefsOut, merge_auto_gain, parse_auto_gain
@@ -92,6 +95,24 @@ LibraryDensity = Literal["compact", "cosy"]
 KeyNotation = Literal["camelot_musical", "camelot", "open_key", "musical"]
 _KEY_NOTATIONS: tuple[str, ...] = ("camelot_musical", "camelot", "open_key", "musical")
 PlaylistTreeView = Literal["tree", "column"]
+# Library columns the header chooser can hide, in table order. Mirrors
+# HIDEABLE_COLUMNS in apps/webui/frontend/src/lib/rb/library-columns.ts.
+LibraryHideableColumn = Literal[
+    "preview",
+    "art",
+    "artist",
+    "key",
+    "bpm",
+    "plays",
+    "rating",
+    "comments",
+    "time",
+    "quality",
+    "energy",
+    "genre",
+    "stems",
+]
+_LIBRARY_HIDEABLE_COLUMNS: tuple[str, ...] = get_args(LibraryHideableColumn)
 CompatibleBpmDirection = Literal["both", "above", "below", "same"]
 _DEFAULT_HIDE_BROKEN_LINKS = False
 _DEFAULT_DECK_RIGHT_MIRROR = False
@@ -381,11 +402,35 @@ def _parse_library_density(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_library_hidden_columns(raw: dict[str, Any]) -> list[str]:
+    """Hidden library columns in table order; unknown ids and duplicates are refused."""
+    if "library_hidden_columns" not in raw:
+        return []
+    value = raw["library_hidden_columns"]
+    message = (
+        "library_hidden_columns must be a list of distinct column ids from "
+        + "|".join(_LIBRARY_HIDEABLE_COLUMNS)
+    )
+    # Types first: set() on an unhashable entry ({} or []) would raise
+    # TypeError and turn a malformed file into a 500 (sol review P1, PR #7601).
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item in _LIBRARY_HIDEABLE_COLUMNS for item in value
+    ):
+        raise HTTPException(status_code=422, detail={"code": "UI_PREFS_INVALID", "message": message})
+    if len(set(value)) != len(value):
+        raise HTTPException(status_code=422, detail={"code": "UI_PREFS_INVALID", "message": message})
+    return [col for col in _LIBRARY_HIDEABLE_COLUMNS if col in value]
+
+
 def _merge_library_enum_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
     if body.library_density is not None:
         current["library_density"] = body.library_density
     if body.key_notation is not None:
         current["key_notation"] = body.key_notation
+    if body.library_hidden_columns is not None:
+        current["library_hidden_columns"] = _parse_library_hidden_columns(
+            {"library_hidden_columns": list(body.library_hidden_columns)}
+        )
 
 
 def _parse_key_notation(raw: dict[str, Any]) -> str:
@@ -578,6 +623,54 @@ def _parse_library_watcher_folders(raw: dict[str, Any]) -> list[str]:
     return out
 
 
+_LIBRARY_KEY_WHEEL_ORDER: tuple[str, ...] = tuple(
+    f"{number}{mode}" for number in range(1, 13) for mode in ("B", "A")
+)
+_LIBRARY_KEY_FILTER_CODE_RE = re.compile(r"^(?:1[0-2]|[1-9])[AB]$")
+
+
+def _parse_library_key_filter(raw: dict[str, Any]) -> list[str]:
+    if "library_key_filter" not in raw:
+        return []
+    value = raw["library_key_filter"]
+    if not isinstance(value, list):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_key_filter must be a list of canonical Camelot codes",
+            },
+        )
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str) or _LIBRARY_KEY_FILTER_CODE_RE.fullmatch(item) is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "library_key_filter entries must be canonical 1A..12B codes",
+                },
+            )
+        if item in seen:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "library_key_filter must not contain duplicates",
+                },
+            )
+        seen.add(item)
+    if len(seen) > 24:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_key_filter must contain at most 24 codes",
+            },
+        )
+    return [code for code in _LIBRARY_KEY_WHEEL_ORDER if code in seen]
+
+
 # LIBUX-32 compatible filter ranges. Mirrors COMPATIBLE_FILTER_DEFAULTS and
 # validateCompatibleFilterPrefs in apps/webui/frontend/src/lib/rb/compatible-filter-prefs.ts.
 _DEFAULT_COMPATIBLE_FILTER: dict[str, Any] = {
@@ -586,6 +679,12 @@ _DEFAULT_COMPATIBLE_FILTER: dict[str, Any] = {
     "bpm_enabled": True,
     "allow_half_double": True,
     "bpm_direction": "both",
+    # KEYSHIFT-01..05 (the maintainer, Tue 13 Oct 2026): Transition / Mashup modes and the
+    # allowed key shift. Transition with no shift is the filter as it was; its
+    # key rule is `rules` above (the relative major/minor is the "relative" rule).
+    "mode": "transition",
+    "key_shift_max": 1,
+    "mashup_relative": False,
 }
 
 
@@ -628,6 +727,13 @@ _COMPATIBLE_FILTER_CHECKS: dict[str, tuple[Callable[[Any], bool], str]] = {
         lambda v: v in ("both", "above", "below", "same"),
         "must be both|above|below|same",
     ),
+    "mode": (lambda v: v in ("transition", "mashup"), "must be transition|mashup"),
+    "key_shift_max": (
+        # type() is int, not isinstance: bool is an int, and 1.0 == 1 would pass a `v in` check.
+        lambda v: type(v) is int and v in (0, 1, 2, 3),
+        "must be the integer 0, 1, 2 or 3",
+    ),
+    "mashup_relative": (lambda v: isinstance(v, bool), "must be a boolean"),
 }
 
 
@@ -715,8 +821,10 @@ def _load(path: Path) -> dict[str, Any]:
             "library_density": _DEFAULT_LIBRARY_DENSITY,
             "perf_view": _DEFAULT_PERF_VIEW,
             "key_notation": _DEFAULT_KEY_NOTATION,
+            "library_hidden_columns": [],
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
             "library_watcher_folders": [],
+            "library_key_filter": [],
             "compatible_filter": dict(_DEFAULT_COMPATIBLE_FILTER),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -805,8 +913,10 @@ def _load(path: Path) -> dict[str, Any]:
         "library_density": _parse_library_density(raw),
         "perf_view": _parse_perf_view(raw),
         "key_notation": _parse_key_notation(raw),
+        "library_hidden_columns": _parse_library_hidden_columns(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
         "library_watcher_folders": _parse_library_watcher_folders(raw),
+        "library_key_filter": _parse_library_key_filter(raw),
         "compatible_filter": _parse_compatible_filter(raw.get("compatible_filter")),
     }
 
@@ -834,9 +944,12 @@ class WheelSensitivityOut(BaseModel):
 
 
 class CompatibleFilterOut(BaseModel):
-    """Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window.
+    """Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window,
+    and the Transition / Mashup modes with the allowed key shift (KEYSHIFT-01..05).
 
-    ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES.
+    ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES and is
+    Transition's key rule; Mashup is the same wheel number (plus the relative
+    major/minor when ``mashup_relative``).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -846,6 +959,17 @@ class CompatibleFilterOut(BaseModel):
     bpm_enabled: bool = _DEFAULT_COMPATIBLE_FILTER["bpm_enabled"]
     allow_half_double: bool = _DEFAULT_COMPATIBLE_FILTER["allow_half_double"]
     bpm_direction: CompatibleBpmDirection = _DEFAULT_COMPATIBLE_FILTER["bpm_direction"]
+    mode: Literal["transition", "mashup"] = _DEFAULT_COMPATIBLE_FILTER["mode"]
+    key_shift_max: Literal[0, 1, 2, 3] = _DEFAULT_COMPATIBLE_FILTER["key_shift_max"]
+    mashup_relative: bool = _DEFAULT_COMPATIBLE_FILTER["mashup_relative"]
+
+    @field_validator("key_shift_max", mode="before")
+    @classmethod
+    def _key_shift_max_is_an_integer(cls, value: Any) -> Any:
+        # Literal[0, 1, 2, 3] alone accepts 1.0 and True, which compare equal to 1.
+        if type(value) is not int:
+            raise ValueError("key_shift_max must be the integer 0, 1, 2 or 3")
+        return value
 
 
 class LevelCalibrationOut(BaseModel):
@@ -900,6 +1024,7 @@ class UiPrefsOut(BaseModel):
     hide_broken_links: bool = _DEFAULT_HIDE_BROKEN_LINKS
     library_density: LibraryDensity = _DEFAULT_LIBRARY_DENSITY
     key_notation: KeyNotation = _DEFAULT_KEY_NOTATION
+    library_hidden_columns: list[LibraryHideableColumn] = Field(default_factory=list)
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
@@ -909,6 +1034,7 @@ class UiPrefsOut(BaseModel):
     deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
     playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
     library_watcher_folders: list[str] = Field(default_factory=list)
+    library_key_filter: list[str] = Field(default_factory=list)
     compatible_filter: CompatibleFilterOut = Field(default_factory=CompatibleFilterOut)
 
 
@@ -954,6 +1080,7 @@ class UiPrefsPatch(BaseModel):
     hide_broken_links: bool | None = None
     library_density: LibraryDensity | None = None
     key_notation: KeyNotation | None = None
+    library_hidden_columns: list[LibraryHideableColumn] | None = None
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
     vocals_filter: bool | None = None
@@ -963,6 +1090,7 @@ class UiPrefsPatch(BaseModel):
     deck_right_mirror: bool | None = None
     playlist_tree_view: PlaylistTreeView | None = None
     library_watcher_folders: list[str] | None = None
+    library_key_filter: list[str] | None = None
     compatible_filter: CompatibleFilterOut | None = None
 
     @model_validator(mode="after")
@@ -976,7 +1104,8 @@ class UiPrefsPatch(BaseModel):
         return self
 
 
-_NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view")
+# library_key_filter (#7599): [] clears it, so an explicit null is never "clear" (Sol P1, #7743).
+_NON_NULL_VIEW_PREF_KEYS = ("show_pads", "auto_play_two_deck", "perf_view", "library_key_filter")
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -1048,6 +1177,83 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
     return UiPrefsOut.model_validate(current)
 
 
+LibraryKeyFilterAction = Literal["toggle", "compatible", "reset", "set"]
+
+
+class LibraryKeyFilterActionIn(BaseModel):
+    """One library key wheel control, for agents (issue #7599).
+
+    ``toggle`` needs ``key`` (the segment click), ``compatible`` needs
+    ``reference`` (the Compatible button), ``set`` needs ``keys``, ``reset``
+    needs nothing. Every key is a canonical Camelot code 1A..12B.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: LibraryKeyFilterAction
+    key: str | None = None
+    reference: str | None = None
+    keys: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _fields_match_action(self) -> LibraryKeyFilterActionIn:
+        required = {"toggle": "key", "compatible": "reference", "set": "keys"}.get(self.action)
+        for name in ("key", "reference", "keys"):
+            present = getattr(self, name) is not None
+            if name == required and not present:
+                raise ValueError(f"action {self.action!r} requires {name!r}")
+            if name != required and present:
+                raise ValueError(f"action {self.action!r} does not take {name!r}")
+        return self
+
+
+class LibraryKeyFilterActionOut(BaseModel):
+    library_key_filter: list[str]
+
+
+def library_key_filter_compatible(reference: str) -> list[str]:
+    """The Compatible button's set: reference, number +/- 1, and its A/B swap.
+
+    The default-on Camelot rules, the same table the frontend's generated
+    ``camelot-rules.generated.ts`` and ``compatible-filter-prefs.ts`` read.
+    """
+    canonical = _parse_library_key_filter({"library_key_filter": [reference]})
+    return [
+        code
+        for code in _LIBRARY_KEY_WHEEL_ORDER
+        if camelot_rules_allow(canonical[0], code, DEFAULT_CAMELOT_RULE_IDS)
+    ]
+
+
+def _apply_library_key_filter_action(current: list[str], body: LibraryKeyFilterActionIn) -> list[str]:
+    if body.action == "reset":
+        return []
+    elif body.action == "set":
+        return _parse_library_key_filter({"library_key_filter": body.keys})
+    elif body.action == "compatible":
+        assert body.reference is not None
+        return library_key_filter_compatible(body.reference)
+    elif body.action == "toggle":
+        assert body.key is not None
+        toggled = _parse_library_key_filter({"library_key_filter": [body.key]})[0]
+        selected = set(current) ^ {toggled}
+        return [code for code in _LIBRARY_KEY_WHEEL_ORDER if code in selected]
+    raise AssertionError(f"unhandled library key filter action {body.action!r}")
+
+
+@router.post("/library-key-filter", response_model=LibraryKeyFilterActionOut)
+def post_library_key_filter(body: LibraryKeyFilterActionIn, request: Request) -> LibraryKeyFilterActionOut:
+    path = _path(request)
+    with _write_lock:
+        current = _load(path)
+        current["library_key_filter"] = _apply_library_key_filter_action(
+            current["library_key_filter"], body
+        )
+        _write_atomic(path, json.dumps(current, indent=2) + "\n")
+    publish("library.changed", {"kind": "ui_prefs", "ids": []})
+    return LibraryKeyFilterActionOut(library_key_filter=current["library_key_filter"])
+
+
 _VIEW_SCALAR_PREFS = ("library_density", "perf_view", "deck_right_mirror", "playlist_tree_view")
 
 
@@ -1111,6 +1317,10 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
     if body.library_watcher_folders is not None:
         current["library_watcher_folders"] = _parse_library_watcher_folders(
             {"library_watcher_folders": body.library_watcher_folders}
+        )
+    if body.library_key_filter is not None:
+        current["library_key_filter"] = _parse_library_key_filter(
+            {"library_key_filter": body.library_key_filter}
         )
     _merge_compatible_filter(current, body)
     merge_auto_gain(current, body.auto_gain)

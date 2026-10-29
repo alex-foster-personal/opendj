@@ -16,6 +16,7 @@ use crate::engine;
 use crate::engine_log::{disk_free_bytes, ENGINE_LOG_MIN_FREE_BYTES};
 use crate::launch;
 use crate::shell_health::{ShellHealthServer, ShellHealthSnapshot, utc_timestamp_iso};
+use crate::window::MAIN_WINDOW_LABEL;
 
 pub const POLL_INTERVAL: Duration = Duration::from_secs(5);
 pub const RECOVERY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -30,7 +31,6 @@ pub const UNRESPONSIVE_AFTER_MISSES: u32 = 6;
 /// stopping the engine without it. The lock can be held through a restart
 /// (up to `engine::BOOT_TIMEOUT`), and a quit must never wait on that.
 pub const SHUTDOWN_LOCK_WAIT: Duration = Duration::from_secs(3);
-const WINDOW_LABEL: &str = "main";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupervisorPhase {
@@ -791,7 +791,7 @@ fn set_window_title(app: &AppHandle, title: &str) {
     let title = title.to_string();
     let handle = app.clone();
     let _ = handle.clone().run_on_main_thread(move || {
-        if let Some(window) = handle.get_webview_window(WINDOW_LABEL) {
+        if let Some(window) = handle.get_webview_window(MAIN_WINDOW_LABEL) {
             let _ = window.set_title(&title);
         }
     });
@@ -812,7 +812,7 @@ fn navigate_fatal_bootstrap(app: &AppHandle, guard: &RuntimeState, health_port: 
     let query = fatal_query(exit_code, pid, port, health_port);
     let handle = app.clone();
     let _ = handle.clone().run_on_main_thread(move || {
-        if let Some(window) = handle.get_webview_window(WINDOW_LABEL) {
+        if let Some(window) = handle.get_webview_window(MAIN_WINDOW_LABEL) {
             let target = Url::parse(&format!("tauri://localhost/{query}")).expect("fatal url");
             let _ = window.navigate(target);
             let dead_title = format!("{product} - engine dead");
@@ -826,7 +826,7 @@ fn navigate_to_origin(app: &AppHandle, origin: &str, product_name: &str) {
     let product_name = product_name.to_string();
     let handle = app.clone();
     let _ = handle.clone().run_on_main_thread(move || {
-        if let Some(window) = handle.get_webview_window(WINDOW_LABEL) {
+        if let Some(window) = handle.get_webview_window(MAIN_WINDOW_LABEL) {
             let script = format!(
                 "globalThis.OPENDJ_ENGINE_ORIGIN = {};",
                 serde_json::to_string(&origin).unwrap_or_else(|_| "\"\"".into())

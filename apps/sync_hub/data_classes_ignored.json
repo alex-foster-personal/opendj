@@ -150,5 +150,6 @@
 {"pattern": "/.ds-sync/", "kind": "build_output", "data_class": null},
 {"pattern": "junit-shard-*.xml", "kind": "build_output", "data_class": null},
 {"pattern": "apps/desktop/src-tauri/junit.xml", "kind": "build_output", "data_class": null},
-{"pattern": "apps/audio-engine/junit.xml", "kind": "build_output", "data_class": null}
+{"pattern": "apps/audio-engine/junit.xml", "kind": "build_output", "data_class": null},
+{"pattern": "scripts/bench/tryer_calibration/sessions/", "kind": "user_data", "data_class": "stem-experiments"}
 ]

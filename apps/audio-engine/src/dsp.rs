@@ -272,6 +272,11 @@ impl LinearRamp {
     }
 }
 
+/// Clamp to [-1, 1] and scale to 16-bit PCM, matching `record` and `wav::write_i16`.
+pub(crate) fn f32_to_pcm16(s: f32) -> i16 {
+    (s.clamp(-1.0, 1.0) * 32767.0).round() as i16
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

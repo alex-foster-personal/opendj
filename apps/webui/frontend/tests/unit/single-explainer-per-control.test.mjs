@@ -50,6 +50,8 @@ const CARD_HOSTS = new Set([
 	'lib/components/rb/browser/CompatibleFilterPopover.svelte#compat-filter-pop',
 	'lib/components/rb/browser/AnalysisDotsPopover.svelte#wrap',
 	'lib/components/rb/browser/LyricColumn.svelte#c-lyrics',
+	// KEYSHIFT-04: the Key column's lettered/Camelot hover card (KeyHoverCard).
+	'lib/components/rb/browser/TrackTable.svelte#c-key',
 	'lib/components/rb/browser/LibrarySourceTabs.svelte#icon-btn'
 ]);
 
@@ -268,6 +270,8 @@ test('every pointer/mouse enter handler on /performance is classified', () => {
 		'lib/components/rb/browser/RatingStars.svelte#rb-star',
 		'lib/components/rb/browser/PlaylistTree.svelte#row',
 		'lib/components/rb/browser/TrackTable.svelte#c-bpm',
+		// QLTSCAN-05: loads the badge's own title text on first hover, no card.
+		'lib/components/rb/QualityBadge.svelte#onmouseenter={_requestHover}',
 		'lib/components/rb/browser/TrackTable.svelte#onpointerenter={() => (hoveredApId = row.stable_id)}',
 		'lib/components/rb/mixer/VFader.svelte#rb-fader',
 		'lib/components/rb/wave/WaveTrackSummary.svelte#wave-track-name',
@@ -275,6 +279,7 @@ test('every pointer/mouse enter handler on /performance is classified', () => {
 		'lib/components/rb/deck/HotCueBank.svelte#cue-col',
 		'lib/components/rb/deck/LoopCluster.svelte#loop-cluster',
 		'lib/components/rb/mixer/Knob.svelte#knob',
+		'lib/components/rb/mixer/GroupPad.svelte#group-pad',
 		// Hover peeks the comment pins on the page; it opens no card of its own.
 		'lib/components/rb/FeedbackWidget.svelte#fb-pin-peek',
 		'lib/components/rb/mixer/ChannelStrip.svelte#strip',

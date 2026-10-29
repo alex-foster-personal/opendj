@@ -41,7 +41,7 @@
 	 * crossfader entirely, so this meter can read near-silence while that
 	 * deck plays audibly loud. This meter is a reading of the master bus,
 	 * not of every deck's actual output.
-	 * See docs/research/adrian-level-meters-clipping-lights.md.
+	 * See (private path).
 	 */
 	import { onDestroy } from 'svelte';
 
@@ -52,8 +52,9 @@
 	} from '$lib/rb/audio-engine.svelte';
 	import {
 		METER_FLOOR_DBFS,
-		SEGMENT_THRESHOLDS_DBFS,
-		segmentBand
+		segmentBand,
+		segmentsLitFromDbfs,
+		segmentThresholdsForRed
 	} from '$lib/rb/meter-math';
 
 	interface Props {
@@ -63,15 +64,26 @@
 		 * `active`, the same way VFader/ChannelLevelMeter require a `playing`
 		 * prop rather than defaulting to on. */
 		active?: boolean;
+		/** The calibrated red anchor in dBFS (the R button), or null when
+		 * calibration is off. TopBar reads it from prefs and passes it in so
+		 * this meter does not import prefs itself (prefs fan-in ratchet). */
+		redDbfs?: number | null;
 	}
 
-	let { active = false }: Props = $props();
+	let { active = false, redDbfs = null }: Props = $props();
 
+	// Same red anchor as the channel meters (the R button). A fixed scale here
+	// and a shifted scale on the channel is how the two bars disagreed about
+	// red after calibration, and how they disagreed before it once the
+	// channel reading was still pre-crossfader.
+	const thresholds = $derived(segmentThresholdsForRed(redDbfs));
 	/** One entry per segment, colored by the shared band policy. */
-	const SEGMENTS = SEGMENT_THRESHOLDS_DBFS.map((threshold, index) => ({
-		threshold,
-		band: segmentBand(index + 1)
-	}));
+	const SEGMENTS = $derived(
+		thresholds.map((threshold, index) => ({
+			threshold,
+			band: segmentBand(index + 1)
+		}))
+	);
 
 	let lit = $state(0);
 	let db = $state(METER_FLOOR_DBFS);
@@ -107,7 +119,7 @@
 		}
 		const tick = (): void => {
 			const reading = peekMasterMeterReading();
-			lit = reading.segments;
+			lit = segmentsLitFromDbfs(reading.db, thresholds);
 			db = reading.db;
 			clipped = reading.clipped;
 			raf = requestAnimationFrame(tick);
@@ -148,7 +160,8 @@
 	aria-valuetext={readout}
 	title={label}
 >
-	{#each SEGMENTS as segment, index (segment.threshold)}
+	<!-- Index, not threshold: a low red anchor clamps several thresholds to the floor, so threshold is not unique. -->
+	{#each SEGMENTS as segment, index (index)}
 		<div
 			class:lit={!unavailable && index < lit}
 			class:green={segment.band === 'green'}

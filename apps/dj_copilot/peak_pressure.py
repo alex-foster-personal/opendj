@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from .rank_stage1 import ScoredCandidate
+from .rank_stage1 import ScoredCandidate, scored_candidate_order_key
 
 WINDOW = 8
 STEP_UP = 0.18
@@ -145,5 +145,5 @@ def apply_pressure_prior(
             )
         )
 
-    out.sort(key=lambda c: (-c.score, c.stable_id))
+    out.sort(key=scored_candidate_order_key)
     return out

@@ -35,8 +35,10 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from apps.stems.constants import STEM_MANIFEST_FILENAME
+
 # ----- CFG -------------------------------------------------------------------
-MANIFEST_NAME: str = "manifest.json"
+MANIFEST_NAME: str = STEM_MANIFEST_FILENAME
 
 
 @dataclass(frozen=True)

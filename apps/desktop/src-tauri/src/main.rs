@@ -22,11 +22,13 @@
 mod cue_sink;
 mod engine;
 mod engine_log;
+mod http_paths;
 mod launch;
 mod midi;
 mod output_health;
 mod shell_health;
 mod supervisor;
+mod window;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -43,7 +45,7 @@ use tauri::{
 /// rebuilding it. Set means "do not start a sidecar".
 const ENGINE_ORIGIN_ENV: &str = "OPENDJ_ENGINE_ORIGIN";
 
-const WINDOW_LABEL: &str = "main";
+use crate::window::MAIN_WINDOW_LABEL;
 
 /// The size the window opens at, in LOGICAL POINTS -- not pixels. On a 2x
 /// Retina display these are half the physical pixel count, which is the unit
@@ -453,7 +455,7 @@ fn install_signal_handlers() {
 /// plugin already killed the second process by the time this runs, so
 /// there is no second `Supervised` to shut down here.
 fn focus_existing_window(app: &AppHandle, _argv: Vec<String>, _cwd: String) {
-    match app.get_webview_window(WINDOW_LABEL) {
+    match app.get_webview_window(MAIN_WINDOW_LABEL) {
         Some(window) => {
             let _ = window.unminimize();
             let _ = window.show();
@@ -474,7 +476,7 @@ fn focus_existing_window(app: &AppHandle, _argv: Vec<String>, _cwd: String) {
 /// INSTALL-21: delegate quit decisions to the engine-served UI. Rust only blocks
 /// the OS quit and forwards the request; no product logic lives here.
 fn request_quit_from_webview(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.eval("globalThis.__OPENDJ_requestQuit?.()");
     }
 }
@@ -546,7 +548,7 @@ fn main() {
 
     let app = builder
         .on_window_event(|window, event| {
-            if window.label() != WINDOW_LABEL {
+            if window.label() != MAIN_WINDOW_LABEL {
                 return;
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -616,7 +618,7 @@ fn main() {
             // overlay labels the window without a second place to edit.
             let title = package.name.clone();
             let (width, height) = starting_window_size(usable_area_pt(&handle));
-            WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
+            WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title(title)
                 .inner_size(width, height)
                 // AGENT-19: this webview IS the audio engine and the agent-order

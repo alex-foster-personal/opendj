@@ -197,7 +197,7 @@ test('the engine feeds the instrument the post-clamp time, not the requested one
 			'that never reached the WebAudio call'
 	);
 	assert.ok(
-		body.includes('requestedWhenSec: when'),
+		body.includes('requestedWhenSec: requestedWhen'),
 		'the requested time must still be recorded so a clamp shows up as a gap'
 	);
 

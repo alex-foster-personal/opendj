@@ -107,6 +107,7 @@ def test_route_503_on_unreadable_host(monkeypatch: pytest.MonkeyPatch, tmp_path:
     body = response.json()
     assert body["error"] == CODE_HOST_INFO_UNAVAILABLE
     assert "None" in body["message"]
+    assert body["details"] is None
 
 
 @pytest.mark.requirement("PERFMODE-01")

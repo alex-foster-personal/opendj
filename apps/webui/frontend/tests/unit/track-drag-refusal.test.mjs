@@ -105,8 +105,9 @@ test('the drag start actually consults it, and does not refuse in silence', () =
 	assert.match(fn, /trackDragRefusal\(/, 'the drag start no longer asks why');
 	assert.match(fn, /onrefused|pushToast/, 'a refused drag says nothing to the user');
 	const stored = fn.slice(fn.indexOf('beginTrackDrag('));
+	assert.match(stored, /draggedDeckRows\(/, 'the drag metadata is built per dragged id');
 	assert.match(
-		stored,
+		readFileSync(DROP_HELPER_PATH, 'utf8'),
 		/file_availability:\s*row\.file_availability/,
 		'the deck drop rechecks this snapshot, so a present row must keep its status'
 	);
@@ -182,14 +183,17 @@ describe('trackDragRefusal is wired end to end, TrackTable to BrowserPanel', () 
 		);
 	});
 
-	it('beginTrackDrag carries file_exists and is_streaming for the source row', () => {
+	it('beginTrackDrag carries file_exists and is_streaming for every dragged row', () => {
 		const fn = table.slice(
 			table.indexOf('function onRowDragStart('),
 			table.indexOf('function onRowDragEnd(')
 		);
-		assert.match(fn, /beginTrackDrag\(ids,\s*\{/);
-		assert.match(fn, /file_exists:\s*row\.file_exists/);
-		assert.match(fn, /is_streaming:\s*row\.is_streaming\s*\?\?\s*row\.rb_meta\?\.is_streaming\s*\?\?\s*false/);
+		// The flags are built per dragged id by draggedDeckRows (PR #6574 review);
+		// its behaviour is pinned in deck-track-drop.test.mjs.
+		assert.match(fn, /beginTrackDrag\(ids,\s*draggedDeckRows\(ids,\s*rows,/);
+		const helper = readFileSync(DROP_HELPER_PATH, 'utf8');
+		assert.match(helper, /file_exists:\s*row\.file_exists/);
+		assert.match(helper, /is_streaming:\s*row\.is_streaming\s*\?\?\s*row\.rb_meta\?\.is_streaming\s*\?\?\s*false/);
 	});
 });
 

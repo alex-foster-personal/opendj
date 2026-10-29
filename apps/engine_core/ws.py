@@ -17,10 +17,11 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
+
+from apps.engine_core.utc_timestamps import utc_iso_ms
 
 # Per-connection send queue. 256 frames is roughly a second of a very busy
 # engine; a client that cannot keep up with that is not going to catch up.
@@ -37,10 +38,6 @@ TOPICS: tuple[str, ...] = (
     TOPIC_HEALTH_CHANGED,
     TOPIC_LIBRARY_CHANGED,
 )
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 @dataclass(eq=False)
@@ -164,7 +161,7 @@ def _envelope(topic: str, seq: int, body: str) -> str:
     # just to re-dump it would double the cost of every fan-out.
     return (
         f'{{"topic":{json.dumps(topic)},"seq":{seq},'
-        f'"ts":{json.dumps(_now())},"payload":{body}}}'
+        f'"ts":{json.dumps(utc_iso_ms())},"payload":{body}}}'
     )
 
 

@@ -25,6 +25,31 @@ DEFAULT_OUTPUT_DIR = Path.home() / ".local/share/music-dj-tools/performance"
 # newest-write-wins, the same candidate-list shape as virgin_boot.sh.
 DEFAULT_BUNDLE_IDS = ("com.opendj.desktop", "com.opendj.desktop.lane-b")
 
+_BYTE_COUNT_PATTERN = re.compile(r"([0-9.]+)([KMGTP])?", re.IGNORECASE)
+_BYTE_UNIT_SCALE: dict[str, int] = {
+    "": 1,
+    "K": 1024,
+    "M": MIB,
+    "G": 1024 * MIB,
+    "T": 1024**4,
+    "P": 1024**5,
+}
+
+__all__ = [
+    "DEFAULT_BUNDLE_IDS",
+    "DEFAULT_DEEP_INTERVAL_SECONDS",
+    "DEFAULT_INTERVAL_SECONDS",
+    "DEFAULT_LOG_CAP_BYTES",
+    "DEFAULT_OUTPUT_DIR",
+    "MIB",
+    "ProbeUnavailable",
+    "ProcessRow",
+    "parse_byte_count",
+    "round_mb",
+    "run_text",
+    "utc_now",
+]
+
 
 class ProbeUnavailable(RuntimeError):
     """The requested native metric is unavailable on this platform."""
@@ -53,13 +78,12 @@ def round_mb(value: int) -> float:
 
 
 def parse_byte_count(raw: str) -> int | None:
-    match = re.fullmatch(r"([0-9.]+)([KMGTP])?", raw.strip(), re.IGNORECASE)
+    match = _BYTE_COUNT_PATTERN.fullmatch(raw.strip())
     if not match:
         return None
     value = float(match.group(1))
     unit = (match.group(2) or "").upper()
-    scale = {"": 1, "K": 1024, "M": MIB, "G": 1024 * MIB, "T": 1024**4, "P": 1024**5}
-    return int(value * scale[unit])
+    return int(value * _BYTE_UNIT_SCALE[unit])
 
 
 def utc_now() -> str:

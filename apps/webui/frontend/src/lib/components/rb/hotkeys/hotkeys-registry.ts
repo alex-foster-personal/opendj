@@ -27,6 +27,8 @@
  *       state machine, latency-stamped Space, loop-target tracking.
  *     - technically-working-hotkeys.ts (Ctrl+R, Opt, Cmd+E) -- hold-vs-press
  *       plus pointer-edge hover, routed through performance IPC.
+ *     - stem-hold-hotkeys.ts (Ctrl held alone) -- momentary STEM on every
+ *       channel, restored per channel on release (R8).
  *     - playlist-history-hotkeys.ts (Cmd+Z / Cmd+Shift+Z) -- shift-gated undo
  *       vs redo on one key, dispatched through performance IPC.
  *
@@ -146,5 +148,12 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 		chord: 'Cmd+E',
 		description: 'Toggle the floating EQ panel (technically-working overlay mode)',
 		group: 'Technically-working'
+	},
+	{
+		id: 'mixer-stem-hold',
+		chord: 'Ctrl (hold)',
+		description:
+			'Hold Ctrl alone: every channel with stems switches its EQs to STEM; release restores each channel',
+		group: 'Mixer'
 	}
 ];

@@ -118,4 +118,99 @@ describe('usb tracker helpers (#328)', () => {
 			'disk image · non-music'
 		);
 	});
+
+	it('says when one RBX drive failed to read, and that it is not the other library', () => {
+		const report = usb.usbFormatReport(
+			[
+				{
+					id: 'vol:ssk',
+					name: 'SSK',
+					present: true,
+					kind: 'rekordbox',
+					role: 'usb_stick',
+					is_music: true
+				}
+			],
+			{
+				'vol:ssk': {
+					state: 'failed',
+					code: 'USB_LIBRARY_READ_FAILED',
+					detail: 'export.pdb could not be parsed'
+				}
+			}
+	,
+			true
+		);
+		assert.equal(report.drives, 'One drive only: SSK.');
+		assert.equal(report.libraries, 'Only rekordbox (RBX). Not the other library (djay).');
+		assert.equal(report.sticks.length, 1);
+		assert.match(report.sticks[0].version, /USB read failed \(export\.pdb could not be parsed\)/);
+		assert.match(report.sticks[0].version, /rekordbox \(RBX\) format/);
+		assert.match(report.sticks[0].version, /Device Library Plus/);
+	});
+
+	it('names a successful RBX read as Device Library and keeps a second drive visible', () => {
+		const report = usb.usbFormatReport(
+			[
+				{ id: 'vol:ssk', name: 'SSK', present: true, kind: 'rekordbox' },
+				{ id: 'vol:other', name: 'BACKUP', present: true, kind: 'djay' },
+				{ id: 'vol:gone', name: 'OLD', present: false, kind: 'rekordbox' }
+			],
+			{ 'vol:ssk': { state: 'ok', trackCount: 12 } }
+	,
+			true
+		);
+		assert.equal(report.drives, 'Not one drive only. 2 drives: SSK, BACKUP.');
+		assert.equal(
+			report.libraries,
+			'Both rekordbox (RBX) and djay are mounted. Not only one or the other.'
+		);
+		assert.match(report.sticks[0].version, /12 tracks/);
+		assert.match(report.sticks[0].version, /export\.pdb, RBX/);
+		assert.match(report.sticks[1].version, /Classified as djay, the other library/);
+	});
+
+	// Sol P1 4399554460, PR #6223: before this session's first scan the present
+	// flags are last session's, so no drive is named as mounted.
+	it('names no mounted drive before the first scan, and does once one lands', () => {
+		const persisted = [{ id: 'vol:ssk', name: 'SSK', present: true, kind: 'rekordbox' }];
+		const before = usb.usbFormatReport(persisted, {}, false);
+		assert.equal(before.drives, 'Checking drives: none scanned yet this session.');
+		assert.equal(before.libraries, 'Not known until the first scan.');
+		assert.deepEqual(before.sticks, []);
+		// Control: the same volumes after a scan are reported as mounted.
+		const after = usb.usbFormatReport(persisted, {}, true);
+		assert.equal(after.drives, 'One drive only: SSK.');
+		assert.equal(after.sticks.length, 1);
+	});
+
+	it('the panel passes whether this session has scanned yet', () => {
+		const panel = readFileSync(
+			new URL('../../src/lib/components/rb/UsbPanel.svelte', import.meta.url),
+			'utf8'
+		);
+		assert.match(panel, /usbFormatReport\(usbTracker\.volumes, usbTracker\.readNotes, usbTracker\.scannedAt !== null\)/);
+	});
+
+	it('a plan view that failed to load offers a Retry that re-arms the loader (Sol P2, PR #6223)', () => {
+		const panel = readFileSync(
+			new URL('../../src/lib/components/rb/UsbPanel.svelte', import.meta.url),
+			'utf8'
+		);
+		assert.match(panel, /if \(!usbImportView\.open \|\| PlanView !== null \|\| planFailed\) return;/);
+		assert.match(panel, /data-testid="usb-import-plan-retry" onclick=\{\(\) => \(planFailed = false\)\}>Retry</);
+	});
+
+	it('keeps the USB modal copy for version, one-drive, and the coming-soon bench', () => {
+		const panel = readFileSync(
+			new URL('../../src/lib/components/rb/UsbPanel.svelte', import.meta.url),
+			'utf8'
+		);
+		assert.match(panel, /data-testid="usb-format-report"/);
+		assert.match(panel, /data-testid="usb-compat-soon"/);
+		assert.match(panel, /\[Coming soon\]/);
+		assert.match(panel, /read\/write speed benchmarking/);
+		assert.match(panel, /old CDJ/);
+		assert.match(panel, /Fixes to try/);
+	});
 });

@@ -1,0 +1,71 @@
+stem swap: drums then bass move from deck A to deck B
+
+              deck A        deck B
+
+   vocals    [########]    [........]
+   drums     [########]    [........]
+   bass      [########]    [........]
+   other     [########]    [........]
+
+   # = playing, . = muted
+   start: all stems from A
+@@
+stem swap: drums then bass move from deck A to deck B
+
+              deck A        deck B
+
+   vocals    [########]    [........]
+   drums     [####....]    [####....] <->
+   bass      [########]    [........]
+   other     [########]    [........]
+
+   # = playing, . = muted
+   drums handing over A -> B
+@@
+stem swap: drums then bass move from deck A to deck B
+
+              deck A        deck B
+
+   vocals    [########]    [........]
+   drums     [........]    [########]
+   bass      [########]    [........]
+   other     [########]    [........]
+
+   # = playing, . = muted
+   drums now from B
+@@
+stem swap: drums then bass move from deck A to deck B
+
+              deck A        deck B
+
+   vocals    [########]    [........]
+   drums     [........]    [########]
+   bass      [####....]    [####....] <->
+   other     [########]    [........]
+
+   # = playing, . = muted
+   bass handing over A -> B
+@@
+stem swap: drums then bass move from deck A to deck B
+
+              deck A        deck B
+
+   vocals    [########]    [........]
+   drums     [........]    [########]
+   bass      [........]    [########]
+   other     [########]    [........]
+
+   # = playing, . = muted
+   drums and bass from B, vocals and other stay on A
+@@
+stem swap: drums then bass move from deck A to deck B
+
+              deck A        deck B
+
+   vocals    [########]    [........]
+   drums     [........]    [########]
+   bass      [........]    [########]
+   other     [########]    [........]
+
+   # = playing, . = muted
+   drums and bass from B, vocals and other stay on A

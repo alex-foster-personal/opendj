@@ -164,6 +164,7 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
             "schema_meta_markers",
             "pairing_capture_schema_meta",
             "play_orders_schema_meta",
+            "transition_try_schema_meta",
             "playlist_sets_schema_meta",
         ),
         "machine_local",
@@ -380,6 +381,14 @@ UNBUILT_TABLE_CLASSES: tuple[DataClass, ...] = (
         "not_yet_built",
         f"Captured pairing evidence (PAIR-01). {_OUTSIDE_SYNC_SET}",
         (logical("pairings"),),
+    ),
+    fixed(
+        "transition-picks",
+        "Transition try-er runs and picks",
+        state_tables("transition_try_jobs", "transition_picks"),
+        "not_yet_built",
+        f"Rendered candidate transitions and the one chosen (TRYER-13). {_OUTSIDE_SYNC_SET}",
+        (logical("library-tracks"),),
     ),
     fixed(
         "play-orders",

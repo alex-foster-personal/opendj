@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import '$lib/audio-engine/engine-bridge';
 	import { onMount, setContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -7,7 +8,11 @@
 	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
 	import { selectVisibleToasts } from '$lib/toast-tray-policy';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
-	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
+	import {
+		isSettingsOverlayOpen,
+		loadSettingsOverlay,
+		prefetchSettingsOverlay
+	} from '$lib/components/settings/settings-overlay-loader';
 	import {
 		isStageOverlayOpen,
 		loadStageOverlay,
@@ -170,6 +175,7 @@
 	}
 	const reportHotkeysOverlayLoadFailure = overlayLoadFailureReporter('Hotkeys overlay');
 	const reportStageOverlayLoadFailure = overlayLoadFailureReporter('Stage view');
+	const reportSettingsOverlayLoadFailure = overlayLoadFailureReporter('Settings');
 
 	const yieldBootGate = $derived(
 		bootGateYielded({
@@ -286,6 +292,7 @@
 		const uninstallHotkeysOverlay = installHotkeysOverlayHotkeys();
 		prefetchHotkeysOverlay(reportHotkeysOverlayLoadFailure);
 		prefetchStageOverlay(reportStageOverlayLoadFailure);
+		prefetchSettingsOverlay(reportSettingsOverlayLoadFailure);
 		const uninstallQuitGate = installQuitGate();
 		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
 		// globals the e2e latency floor reads. See $lib/rb/app-init.
@@ -442,7 +449,21 @@
 	<PreflightScreen mode="boot" blocking={false} navigate={goto} hideCheckIds={hideCheckIds} />
 {/if}
 
-<SettingsOverlay />
+<!-- Settings: mounted at the root so it works on /performance too, but only
+     while open, from a lazy chunk (see settings-overlay-loader.ts). Opening it
+     yields the blocking boot gate at once, so while a cold chunk is in flight
+     the setup backdrop covers the app in its place (Sol + Codex P2, PR #6829). -->
+{#if isSettingsOverlayOpen()}
+	{#await loadSettingsOverlay(reportSettingsOverlayLoadFailure)}
+		<div class="setup-load-backdrop" role="presentation">
+			<div class="setup-load-pending" role="status" aria-label="Settings is loading">Loading settings&hellip;</div>
+		</div>
+	{:then { default: SettingsOverlay }}
+		<SettingsOverlay />
+	{:catch}
+		<!-- Already reported as an error toast by reportSettingsOverlayLoadFailure. -->
+	{/await}
+{/if}
 <!-- STAGE lyric view: mounted at the root so it survives navigation, but only
      while open, from a lazy chunk (see stage-overlay-loader.ts). -->
 {#if isStageOverlayOpen()}

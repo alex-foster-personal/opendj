@@ -1,7 +1,7 @@
 """The ONE R2 object key layout for every producer (cloudsync, issue #1452).
 
 Cloudsync part 3 unified two layouts that the merge-lane audit found side by
-side in this repo (``specs/cloudsync-spec.md``, ADR 06):
+side in this repo (``(private path)``, ADR 06):
 
 * asset tier -- content-addressed ``assets/<sha256[:2]>/<sha256>``, where the
   key is the SHA-256 of the object body;
@@ -114,7 +114,9 @@ def legacy_stem_key(preset: str, stable_id: str, filename: str) -> str:
             f"legacy stem key needs non-empty preset, stable_id, filename; "
             f"got {preset!r} / {stable_id!r} / {filename!r}"
         )
-    return f"stems/{preset}/{stable_id}/{filename}"
+    return LEGACY_STEMS_TEMPLATE.format(
+        preset=preset, stable_id=stable_id, filename=filename
+    )
 
 
 def parse_legacy_stem_key(key: str) -> LegacyStemKey:

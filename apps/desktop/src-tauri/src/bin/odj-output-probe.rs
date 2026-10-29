@@ -14,6 +14,9 @@
 #[path = "../cue_sink.rs"]
 mod cue_sink;
 #[allow(dead_code, unused_imports)]
+#[path = "../http_paths.rs"]
+mod http_paths;
+#[allow(dead_code, unused_imports)]
 #[path = "../output_health.rs"]
 mod output_health;
 #[allow(dead_code, unused_imports)]

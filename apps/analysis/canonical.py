@@ -1,6 +1,6 @@
 """Canonical pointer + projection rebuild for own analysis records.
 
-`specs/native-analysis-v1.md` section 3, "Record":
+`(private path)` section 3, "Record":
 
     Rows never overwrite across producers, so run order cannot change what
     exists. Canonical selection is a separate, deterministic pointer:
@@ -30,12 +30,12 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from . import queue_stale
 from .lanes import LANES, LaneResult, SemverError, parse_own_backend, semver_key
 from .record import AnalysisRecord
+from .time_iso import utc_now_iso
 
 # Which lane owns each projected scalar. The lane is the SELECTION unit, so
 # a field's effective source is its lane's source, never its own.
@@ -62,10 +62,6 @@ _PRODUCER_RANK: dict[str, int] = {"backfill": 0, "inapp": 1}
 
 class CanonicalError(ValueError):
     """The canonical pointer cannot be computed for a (track, lane)."""
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 #-----------------------------------------------------------------------------
@@ -219,7 +215,7 @@ def recompute_canonical(
             backend_version = excluded.backend_version,
             updated_at = excluded.updated_at
         """,
-        (stable_id, lane, winner[0], winner[1], _now_iso()),
+        (stable_id, lane, winner[0], winner[1], utc_now_iso()),
     )
     return (winner[0], winner[1])
 
@@ -371,7 +367,7 @@ def _write_projection_row(
         """,
         (
             stable_id, field, value, status, reason, confidence,
-            pointer.backend, pointer.backend_version, _now_iso(),
+            pointer.backend, pointer.backend_version, utc_now_iso(),
         ),
     )
 

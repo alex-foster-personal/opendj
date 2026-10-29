@@ -832,7 +832,9 @@ function triggerDriverStub({ playing, loopEngaged, positionSec, contextTimeNowSe
 			jump: async (deck, positionMs) => {
 				jumpCalls.push({ deck, positionMs });
 			},
-			arm: async (deck, positionMs, armAtPositionSec) => {
+			arm: async (deck, positionMs, armAt) => {
+				// The engine contract: a resolver arm point is resolved against its live position.
+				const armAtPositionSec = typeof armAt === 'function' ? armAt(positionSec) : armAt;
 				armCalls.push({ deck, positionMs, armAtPositionSec });
 				const targetContextTime = clockSec + (armAtPositionSec - positionSec);
 				return targetContextTime;

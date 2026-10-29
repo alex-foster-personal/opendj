@@ -52,6 +52,12 @@ class SessionContext:
     captured_at: datetime
 
 
+def _parse_played_at(raw: object) -> datetime:
+    if isinstance(raw, str):
+        return datetime.fromisoformat(raw)
+    return datetime.now(UTC)
+
+
 def _load_phase12(
     conn: sqlite3.Connection, limit: int
 ) -> list[PlayedTrack]:
@@ -67,11 +73,7 @@ def _load_phase12(
         return []
     out: list[PlayedTrack] = []
     for r in rows:
-        played_at = (
-            datetime.fromisoformat(r[5])
-            if isinstance(r[5], str)
-            else datetime.now(UTC)
-        )
+        played_at = _parse_played_at(r[5])
         out.append(
             PlayedTrack(
                 stable_id=r[0],

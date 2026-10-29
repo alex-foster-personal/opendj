@@ -1,4 +1,7 @@
+import { useRef, useState } from 'react';
+
 import type { TrackQuality } from '$lib/rb/library-types';
+import { gradeView, hoverIsFresh, hoverTitle, type LoadedHover } from '$lib/rb/quality-grade';
 
 import './QualityBadge.react.css';
 
@@ -13,6 +16,8 @@ export type QualityBadgeProps = {
 	showContainer?: boolean;
 	/** Initial only (C, W, S...) instead of the rung name. */
 	compact?: boolean;
+	/** Loads the full hover text on the first mouseenter (QLTSCAN-05). */
+	loadHover?: (() => Promise<string>) | undefined;
 };
 
 /** '.mp3' -> 'mp3'; '' stays '' so nothing renders a bare dot. */
@@ -33,11 +38,39 @@ function _title(q: TrackQuality | null): string {
 	return `${q.label} -- ${q.blurb}. ${measured}${ext ? `, ${ext}` : ''}.` + ` Rung ${q.rank === null ? 'unknown' : q.rank + 1} of ${q.of}.${lossless}`;
 }
 
-export default function QualityBadge({ quality, showContainer = true, compact = false }: QualityBadgeProps) {
+export default function QualityBadge({ quality, showContainer = true, compact = false, loadHover }: QualityBadgeProps) {
+	// The loaded hover is tied to the grade it describes (see the Svelte original).
+	const [loaded, setLoaded] = useState<LoadedHover | null>(null);
+	const gradeKey = JSON.stringify(quality?.grade ?? null);
+	const currentKey = useRef(gradeKey);
+	currentKey.current = gradeKey;
 	const full = quality === null ? '...' : quality.label;
 	const label = compact ? full.slice(0, 1).toUpperCase() : full;
 	const ext = quality === null ? '' : _ext(quality.container);
 	const rung = quality === null || quality.venue === null ? 'unknown' : quality.venue;
+	if (quality?.grade) {
+		const graded = gradeView(quality.grade, compact);
+		const requestHover = () => {
+			if (loadHover === undefined || hoverIsFresh(loaded, gradeKey, Date.now())) return;
+			const key = gradeKey;
+			void loadHover().then((text) => {
+				if (key === currentKey.current) setLoaded({ key, at: Date.now(), text });
+			});
+		};
+		return (
+			<span
+				className={graded.classes}
+				title={hoverTitle(loaded, gradeKey, graded.title)}
+				data-venue={rung}
+				data-grade={graded.dataGrade}
+				onMouseEnter={requestHover}
+			>
+				<span className="q-label">{graded.label}</span>
+				{graded.dot ? <span className="q-dot" aria-hidden="true" /> : null}
+				{showContainer && ext ? <span className="q-ext">{ext}</span> : null}
+			</span>
+		);
+	}
 	return (
 		<span className={`q-badge q-${rung}${compact ? ' compact' : ''}`} title={_title(quality)} data-venue={rung}>
 			<span className="q-label">{label}</span>

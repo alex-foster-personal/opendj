@@ -6,7 +6,6 @@ for post-set analysis (CONTEXT success criterion 7).
 """
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -14,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.voice.jsonlog import READ_ONLY_LATENCY_BUDGET_MS, append_jsonl
+from apps.voice.settings import coalesce_env, voice_data_dir
 
 
 @dataclass
@@ -59,15 +59,10 @@ def budget_warning(
 
 def default_log_path(env: dict[str, str] | None = None) -> Path:
     """Resolve the default timings log, ``<data dir>/voice/timings.jsonl``."""
-    env = env if env is not None else dict(os.environ)
+    env = coalesce_env(env)
     override = env.get("VOICE_TIMINGS_LOG")
     if override:
         return Path(override)
-    # The data dir, never the source tree: in the packaged app the source
-    # tree is the signed payload (INSTALL-30). A checkout's data dir is
-    # <repo>/data, so the development path is unchanged.
-    from apps.voice.settings import voice_data_dir
-
     return voice_data_dir() / "timings.jsonl"
 
 

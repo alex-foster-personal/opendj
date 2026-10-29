@@ -354,6 +354,8 @@ def test_every_state_authority_contributes_to_the_subject(clean_scan: lint.Scan)
             "pairing_sync_snapshots"
         ),
         "apps/shared/play_orders/schema.py": "play_orders",
+        # The try-er ladder (TRYER-13), the same private-counter shape.
+        "apps/autodj/try_picks.py": "transition_try_jobs",
         # SET-05's private ladder, the same shape as play_orders just above.
         # Missing here until this fix even though it was already declared in
         # DDL_SOURCE_FILES and STATE_AUTHORITIES: the two production

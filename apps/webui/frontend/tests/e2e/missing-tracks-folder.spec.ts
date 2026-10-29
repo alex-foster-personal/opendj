@@ -128,7 +128,9 @@ async function stubPerformanceApis(
 				hide_todo_settings: false,
 				technically_working_animate: true,
 				confirm: {},
-				key_notation: 'camelot'
+				key_notation: 'camelot',
+				library_hidden_columns: [],
+				library_key_filter: []
 			}
 		})
 	);

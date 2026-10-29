@@ -1,0 +1,97 @@
+mutation test: break the guard on purpose, the test must go red
+
+  case 1
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     if score < 0: return False      |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  ( GREEN )
+
+  original guard: test passes
+@@
+mutation test: break the guard on purpose, the test must go red
+
+  case 1
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     if score < 0: return False      |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  (  ...  )
+
+  mutate: break the guard on purpose
+@@
+mutation test: break the guard on purpose, the test must go red
+
+  case 1
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     pass  # mutant: check removed   |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  (  ...  )
+
+  re-run the test...
+@@
+mutation test: break the guard on purpose, the test must go red
+
+  case 1
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     pass  # mutant: check removed   |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  (  RED  )
+
+  light went red: the test bites
+@@
+mutation test: break the guard on purpose, the test must go red
+
+  case 2
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     if score < 0: return False      |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  ( GREEN )
+
+  case 2: original guard, test passes
+@@
+mutation test: break the guard on purpose, the test must go red
+
+  case 2
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     if score < -99: return False    |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  (  ...  )
+
+  mutate the threshold
+@@
+mutation test: break the guard on purpose, the test must go red
+
+  case 2
+
+  +-------------------------------------+
+  | def guard(score):                   |
+  |     if score < -99: return False    |
+  |     return True                     |
+  +-------------------------------------+
+
+  test light:  ( GREEN )
+
+  finding: the test does not bite

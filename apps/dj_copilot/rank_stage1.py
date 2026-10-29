@@ -22,6 +22,11 @@ class ScoredCandidate:
     candidate: TrackFeature | None = None
 
 
+def scored_candidate_order_key(sc: ScoredCandidate) -> tuple[float, str]:
+    """Deterministic rank: score DESC, stable_id ASC."""
+    return (-sc.score, sc.stable_id)
+
+
 def rank_stage1(
     *,
     current_track: PlayedTrack | TrackFeature,
@@ -58,6 +63,5 @@ def rank_stage1(
                 candidate=cand,
             )
         )
-    # Deterministic: score DESC, stable_id ASC.
-    scored.sort(key=lambda s: (-s.score, s.stable_id))
+    scored.sort(key=scored_candidate_order_key)
     return scored[:top_n]

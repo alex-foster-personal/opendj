@@ -4,7 +4,7 @@ Narrow surface:
 * OAuth PKCE via ``spotipy.oauth2.SpotifyPKCE`` (token at
   ``~/.music-dj-tools/spotify-token.json``, outside the repo).
 * Typed ``SpotifyPlaylist`` + ``SpotifyTrack`` dataclasses.
-* 24 h JSON cache at ``data/spotify/cache/<playlist_id>.json``.
+* 24 h JSON cache at ``(private path)/<playlist_id>.json``.
 * Pagination for ``GET /v1/playlists/{id}/tracks``.
 * One retry on 401 to absorb stale-token after sleep.
 
@@ -40,7 +40,7 @@ _CACHE_TTL_SECONDS: int = 24 * 60 * 60
 # Spotify playlist IDs are base62; accept alphanumerics plus dash to stay
 # compatible with legacy/test fixtures while still blocking traversal
 # primitives (``/``, ``\``, ``..``, leading ``.``, absolute paths). See
-# .planning/SECURITY-RED-TEAM-2026-04-17.md finding 2.
+# (private path) finding 2.
 _SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]{0,63}$")
 
 
@@ -51,6 +51,14 @@ def _validate_playlist_id(playlist_id: str) -> str:
             "expected alphanumeric + dash, length 1..64"
         )
     return playlist_id
+
+
+def _track_id_from_spotify_uri(uri: str) -> str | None:
+    """Return the bare track id from ``spotify:track:<id>``, else ``None``."""
+    if not uri.startswith("spotify:track:"):
+        return None
+    tid = uri.split(":", 2)[2]
+    return tid or None
 
 
 TOKEN_CACHE_PATH: Path = Path("~/.music-dj-tools/spotify-token.json").expanduser()

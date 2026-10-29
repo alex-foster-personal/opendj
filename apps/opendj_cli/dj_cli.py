@@ -28,6 +28,7 @@ from apps.opendj_cli import (
     EXIT_NO_ENGINE,
     EXIT_NO_PAGE,
     EXIT_UNCONFIRMED,
+    dj_try_cli,
 )
 from apps.opendj_cli.dj_service import AMEND_ACTIONS, DjError, DjService
 from apps.opendj_cli.origin import (
@@ -97,6 +98,7 @@ def _parser() -> _Parser:
     ):
         command = tools.add_parser(name, help=text)
         command.add_argument("plan", help="path to a plan JSON file, or - for stdin")
+    tools.add_parser("try", help="render and rank candidate transitions; see opendj dj try --help", add_help=False)
     amend = tools.add_parser("amend", help="abort, finish_now or extend a scheduled plan")
     amend.add_argument("plan_id")
     amend.add_argument("action", choices=AMEND_ACTIONS)
@@ -165,6 +167,8 @@ def run(
     service_factory: Callable[[Path | None], DjService] | None = None,
 ) -> int:
     """Run one ``opendj dj`` tool; ``service_factory`` is the tests' seam."""
+    if rest and rest[0] == "try":  # its own parser: options plus pick/undo actions
+        return dj_try_cli.run(rest[1:], lock=lock)
     try:
         args = _parser().parse_args(list(rest))
         call = _call(args)

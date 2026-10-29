@@ -40,6 +40,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::engine_log::{append_rotated, rotate_log_if_needed, ENGINE_LOG_MAX_BYTES};
+use crate::http_paths::HEALTH_PATH;
+use crate::launch;
 
 /// The payload directory inside the bundle, relative to Contents/Resources.
 pub const PAYLOAD_DIR: &str = "payload";
@@ -71,7 +73,6 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 /// not a wait: an engine that exits sooner is reaped sooner.
 pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(25);
 
-const HEALTH_PATH: &str = "/api/v1/health";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const SOCKET_TIMEOUT: Duration = Duration::from_millis(750);
 
@@ -123,7 +124,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn origin(&self) -> String {
-        format!("http://127.0.0.1:{}", self.port)
+        launch::origin_for_adopt("127.0.0.1", self.port)
     }
 
     pub fn port(&self) -> u16 {

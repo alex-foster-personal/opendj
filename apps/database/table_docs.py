@@ -309,6 +309,21 @@ TABLE_DOCS: dict[str, str] = {
         "from schema_meta so the two migration frameworks never contend "
         "on the same counter (apps/shared/play_orders/schema.py)."
     ),
+    "transition_try_jobs": (
+        "One transition try-er run for an (outgoing, incoming) pair (TRYER-13): "
+        "the ranked candidates try_pair rendered and scored, as JSON, with a "
+        "revision every pick or undo bumps (the HTTP etag). Migrated by its own "
+        "transition_try_schema_meta counter (apps/autodj/try_picks.py)."
+    ),
+    "transition_picks": (
+        "The chosen candidate of one try job (TRYER-13): plan JSON, plan sha256, "
+        "scorer version and the rejected candidate ids, kept as local training "
+        "data for scorer calibration (apps/autodj/try_picks.py)."
+    ),
+    "transition_try_schema_meta": (
+        "Private migration-version counter for the try-er tables, kept separate "
+        "from schema_meta (apps/autodj/try_picks.py)."
+    ),
     "playlist_sets": (
         "SET-05 performance object for a playlist: a named set with its own "
         "play count and entry snapshot, distinct from PLAY-01 play_orders "

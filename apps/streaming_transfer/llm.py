@@ -224,12 +224,6 @@ class OpenRouterBatchMatcher:
         )
 
     def resolve(self, escalations: Sequence[Escalation]) -> tuple[LlmDecision, ...]:
-        timeout = httpx.Timeout(
-            connect=CFG.connect_timeout_s,
-            read=CFG.read_timeout_s,
-            write=CFG.write_timeout_s,
-            pool=CFG.pool_timeout_s,
-        )
         response = httpx.post(
             f"{CFG.openrouter_api_base}/chat/completions",
             json=build_batch_request(escalations, model=self._model),
@@ -238,7 +232,7 @@ class OpenRouterBatchMatcher:
                 "HTTP-Referer": "https://github.com/private_owner/music-dj-tools",
                 "X-Title": "Open DJ",
             },
-            timeout=timeout,
+            timeout=CFG.httpx_timeout(),
         )
         if response.status_code != 200:
             raise LlmMatchError(f"OpenRouter match batch returned HTTP {response.status_code}")

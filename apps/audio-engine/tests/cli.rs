@@ -214,6 +214,12 @@ fn render_reports_what_a_scorer_needs() {
     assert_eq!(s["plan"], plan);
     assert_eq!(s["plan_sha256"].as_str().unwrap().len(), 64);
     assert_eq!(s["master_tempo"], false);
+    // The summary names the channel count, and every file it wrote carries that count (WAV bytes 22..24).
+    let channels = s["channels"].as_u64().expect("summary channels");
+    for f in [d.join("mix.wav"), d.join("decks").join("deck1.wav"), d.join("decks").join("deck2.wav")] {
+        let b = std::fs::read(&f).unwrap();
+        assert_eq!(u16::from_le_bytes([b[22], b[23]]) as u64, channels, "{}", f.display());
+    }
     let spans: Vec<Value> = s["timeline"].as_array().unwrap().iter().map(|t| json!([t["start"], t["end"], t["decks"]])).collect();
     assert_eq!(spans, vec![json!([0, 48000, [1]]), json!([48000, 96000, [1, 2]]), json!([96000, 144000, [2]])]);
     let ov = &s["overlaps"][0];

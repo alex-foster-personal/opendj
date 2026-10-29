@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { matchSorter } from "match-sorter";
 import { useEffect, useState } from "react";
 
+import { tauriInvokeErrorMessage } from "../lib/tauriInvokeError";
 import type { TrackHit } from "../types";
 
 /** Below this many characters the palette filters the in-memory recents cache
@@ -69,7 +70,7 @@ export function useSearch<T extends TrackHit>(
         // the cache happens to have something to show.
         setState({
           status: "failed",
-          error: err instanceof Error ? err.message : String(err),
+          error: tauriInvokeErrorMessage(err),
           hits: matchSorter(frecencyTop, q, { keys: ["title", "artist"] }),
         });
       }

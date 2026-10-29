@@ -184,7 +184,9 @@ def make_backend(env: dict[str, str] | None = None) -> WakeWord:
     ``WAKE_BACKEND=stub`` returns a deterministic ``StubBackend`` suitable
     for tests / CI with no audio wheels installed.
     """
-    env = env if env is not None else dict(os.environ)
+    from apps.voice.settings import coalesce_env
+
+    env = coalesce_env(env)
     backend = (env.get("WAKE_BACKEND") or "openwakeword").lower()
     try:
         threshold = float(env.get("VOICE_WAKE_SENSITIVITY", DEFAULT_WAKE_THRESHOLD))

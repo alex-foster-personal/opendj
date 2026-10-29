@@ -48,7 +48,9 @@ EXCLUDED_DIRS = frozenset({
 # invisible, leave the census unchanged, and never fail this guard. Defaulting to
 # SCAN means a new format is covered the day it appears; a new BINARY format is a
 # hard failure naming the file, which is the fail-closed direction.
-BINARY_SUFFIXES = frozenset({".pyc", ".m4a"})
+# .flac/.wav: bench listening clips under scripts/bench (gitignored, present on a
+# developer machine after a calibration build), never command-carrying.
+BINARY_SUFFIXES = frozenset({".pyc", ".m4a", ".flac", ".wav"})
 # Prose is text and would tokenize cleanly, but a documented command is not a
 # call site and counting one would put a false entry in the census.
 PROSE_SUFFIXES = frozenset({".md", ".html", ".txt", ".example"})

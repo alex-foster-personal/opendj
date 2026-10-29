@@ -201,6 +201,7 @@ def test_route_reports_503_with_the_reason_when_identity_is_unavailable(
         body = response.json()
         assert body["error"] == "build_identity_unavailable"
         assert str(absent) in body["message"]
+        assert body["details"] is None
 
 
 @pytest.mark.requirement("INSTALL-07")

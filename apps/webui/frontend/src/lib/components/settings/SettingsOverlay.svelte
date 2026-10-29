@@ -3,8 +3,10 @@
 	 * Warp-style searchable settings overlay.
 	 * Opens like a command palette, expands for results; RHS rows ARE the settings.
 	 */
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import WaveformDesignPreview from './WaveformDesignPreview.svelte';
+	import GroupPad from '$lib/components/rb/mixer/GroupPad.svelte';
+	import { DRAG_DEFAULTS, dragSensitivity } from '$lib/rb/drag-sensitivity.svelte';
 	import { goto } from '$app/navigation';
 	import {
 		RUN_SETUP_LABEL,
@@ -19,6 +21,7 @@
 		type SettingGroupId
 	} from '$lib/settings/catalog';
 	import { applySettingChange, readSettingValue, settingUnavailable, type AllowedSettingKey } from '$lib/settings/apply';
+	import { engineRestartNeeded, restartToLoadEngine } from '$lib/audio-engine/rust-mode.svelte';
 	import {
 		applyBooleanAction,
 		booleanKeyAction,
@@ -43,9 +46,12 @@
 		settingRowVisible,
 		visibleGroups
 	} from '$lib/settings/search';
+	import { startsPanelDrag, type DragNode } from '$lib/rb/feedback';
+	import { attachSettingsPanel, clampPanelOffset, type PanelOffset } from '$lib/settings/panel-offset';
 	import { subscribeWheelSensitivity } from '$lib/rb/wheel-adjust';
 	import {
 		setAutoSyncDestination,
+		setDragSensitivity,
 		uiPrefs,
 		type AutoSyncDestination
 	} from '$lib/rb/prefs.svelte';
@@ -90,15 +96,85 @@
 	);
 	const aiIdSet = $derived(new Set(aiIds));
 	const expanded = $derived(settingsOverlay.query.trim().length > 0 || filtered.all.length > 0);
+	/** Saved engine differs from the one this page already started. */
+	const showEngineRestart = $derived(engineRestartNeeded());
+
+	/** Offset from the centered slot. Plain numbers, written onto the panel as
+	 * CSS variables, so a drag does not re-render the settings list. */
+	let panelEl = $state<HTMLDivElement | null>(null);
+	let headDragging = $state(false);
+	let panelDx = 0;
+	let panelDy = 0;
+	let panelDrag: { x: number; y: number; dx: number; dy: number } | null = null;
+
+	function onHeadPointerDown(e: PointerEvent): void {
+		if (e.button !== 0) return;
+		// Back, forward, search, and close keep their own clicks. The grip and
+		// the rest of the header start a move (pin 0970ee393b96).
+		if (!startsPanelDrag(e.target as DragNode | null, e.currentTarget as DragNode | null)) return;
+		e.preventDefault();
+		panelDrag = { x: e.clientX, y: e.clientY, dx: panelDx, dy: panelDy };
+		headDragging = true;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	/** Clamp and apply an offset. The header drag and the agent bridge both
+	 * land here, so they share one set of bounds. */
+	function placePanel(want: PanelOffset): PanelOffset {
+		if (panelEl === null) throw new Error('settings panel is not open');
+		const rect = panelEl.getBoundingClientRect();
+		const next = clampPanelOffset(
+			want,
+			{ left: rect.left - panelDx, top: rect.top - panelDy, width: rect.width },
+			{ width: window.innerWidth, height: window.innerHeight }
+		);
+		panelDx = next.dx;
+		panelDy = next.dy;
+		panelEl.style.setProperty('--so-x', `${next.dx}px`);
+		panelEl.style.setProperty('--so-y', `${next.dy}px`);
+		return next;
+	}
+
+	function onHeadPointerMove(e: PointerEvent): void {
+		if (panelDrag === null || panelEl === null) return;
+		placePanel({ dx: panelDrag.dx + (e.clientX - panelDrag.x), dy: panelDrag.dy + (e.clientY - panelDrag.y) });
+	}
+
+	// Agent parity for the header move: the page-lifetime bridge in
+	// panel-offset.ts reaches the panel only while it is open (Sol P1, PR #6829).
+	$effect(() => {
+		if (!settingsOverlay.open || panelEl === null) return;
+		return attachSettingsPanel({ offset: () => ({ dx: panelDx, dy: panelDy }), place: placePanel });
+	});
+
+	function onHeadPointerUp(e: PointerEvent): void {
+		if (panelDrag === null) return;
+		panelDrag = null;
+		headDragging = false;
+		const el = e.currentTarget as HTMLElement;
+		if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+	}
 
 	$effect(() => {
-		if (!settingsOverlay.open) return;
+		if (!settingsOverlay.open) {
+			// The panel node is destroyed with the {#if}. Zero the offset so the
+			// next open does not jump on the first drag.
+			panelDx = 0;
+			panelDy = 0;
+			panelDrag = null;
+			headDragging = false;
+			return;
+		}
 		aiIds = [];
 		aiError = null;
 		applyMsg = null;
 		applyOk = null;
 		pendingProposal = null;
-		numberDraft = _seedNumbers();
+		// Untracked: _seedNumbers reads the drag-sensitivity settings, and a
+		// tracked read would rerun this opening work on every slider step,
+		// clearing the AI state and stealing focus (Codex P2, PR #6829). The
+		// sensitivity subscription below keeps the rows current.
+		numberDraft = untrack(_seedNumbers);
 		void tick().then(() => searchEl?.focus());
 	});
 
@@ -145,8 +221,26 @@
 		return () => clearTimeout(handle);
 	});
 
+	/** Whether the press that ends in this click started, and was released,
+	 * on the bare backdrop. A drag between the backdrop and the group pad or
+	 * the panel, in EITHER direction, dispatches its click at their common
+	 * ancestor, the backdrop itself, so the click target alone would close
+	 * Settings; both ends are recorded and both must be bare backdrop
+	 * (Sol P1, #6829). */
+	let pressOnBackdrop = false;
+	let releaseOnBackdrop = false;
+	function onBackdropDown(e: PointerEvent): void {
+		pressOnBackdrop = e.target === e.currentTarget;
+		releaseOnBackdrop = false;
+	}
+	function onBackdropUp(e: PointerEvent): void {
+		releaseOnBackdrop = e.target === e.currentTarget;
+	}
 	function onBackdrop(e: MouseEvent): void {
-		if (e.target === e.currentTarget) closeSettings();
+		const close = pressOnBackdrop && releaseOnBackdrop && e.target === e.currentTarget;
+		pressOnBackdrop = false;
+		releaseOnBackdrop = false;
+		if (close) closeSettings();
 	}
 
 	function onSearchKeydown(e: KeyboardEvent): void {
@@ -276,6 +370,14 @@
 		applySettingChange(def.id, String(value));
 	}
 
+	// Drag sensitivity lives in a $state store, so it is tracked: re-read the
+	// number rows whenever it changes (slider, Reset, or the agent bridge).
+	$effect(() => {
+		void dragSensitivity.base;
+		void dragSensitivity.falloffPx;
+		numberDraft = _seedNumbers();
+	});
+
 	function onNumberInput(def: SettingDef, e: Event): void {
 		writeNumber(def, Number((e.currentTarget as HTMLInputElement).value));
 	}
@@ -283,6 +385,13 @@
 	function resetNumber(def: SettingDef): void {
 		if (def.control.kind !== 'number') return;
 		writeNumber(def, def.control.defaultValue);
+	}
+
+	/** Reload so the saved engine actually starts, through the same command the agent bridge runs. */
+	function onRestartToLoadEngine(e: MouseEvent): void {
+		e.stopPropagation();
+		e.preventDefault();
+		restartToLoadEngine();
 	}
 
 	// The watcher-folders row loads on demand (it is drawn only while settings
@@ -373,8 +482,9 @@
 {#if settingsOverlay.open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="so-backdrop" role="presentation" onclick={onBackdrop}>
+	<div class="so-backdrop" class:so-dragging={headDragging} role="presentation" onpointerdown={onBackdropDown} onpointerup={onBackdropUp} onclick={onBackdrop}>
 		<div
+			bind:this={panelEl}
 			class="so-panel"
 			class:expanded
 			role="dialog"
@@ -382,7 +492,25 @@
 			aria-label="Settings"
 			onclick={(e) => e.stopPropagation()}
 		>
-			<header class="so-head">
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+			<header
+				class="so-head"
+				onpointerdown={onHeadPointerDown}
+				onpointermove={onHeadPointerMove}
+				onpointerup={onHeadPointerUp}
+				onpointercancel={onHeadPointerUp}
+			>
+				<span class="so-grip" aria-hidden="true" title="Drag to move">
+					<svg width="14" height="18" viewBox="0 0 14 18">
+						<path
+							d="M2.5 2v14M7 2v14M11.5 2v14"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.75"
+							stroke-linecap="round"
+						/>
+					</svg>
+				</span>
 				<div class="so-nav">
 					<button
 						type="button"
@@ -597,10 +725,36 @@
 										     Full card width, below the label and control (the maintainer, Tue 6 Oct 2026). -->
 										<WaveformDesignPreview />
 									{/if}
+									{#if def.tester === 'drag'}
+										<!-- Lazy: this overlay is mounted by the root layout, so a static import put the
+										     mixer Knob and drag code into the library's initial load (bundle budget).
+										     Loading and failure both render text, never nothing. -->
+										{#await import('./DragSensitivityTester.svelte')}
+											<p class="so-detail" data-testid="drag-tester-loading">Loading the drag tester</p>
+										{:then { default: DragSensitivityTester }}
+											<DragSensitivityTester
+												onresetsensitivity={() =>
+													setDragSensitivity({ base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx })}
+											/>
+										{:catch err}
+											<p class="so-detail" data-testid="drag-tester-failed" title="The test knobs and faders could not be loaded">
+												The drag tester failed to load: {err instanceof Error ? err.message : String(err)}
+											</p>
+										{/await}
+									{/if}
 									{#if settingUnavailable(def.id) !== null}
 										<p class="so-detail so-unavailable" role="alert">{settingUnavailable(def.id)}</p>
 									{/if}
 									<p class="so-detail">{def.detail}</p>
+									{#if def.id === 'audio_engine' && showEngineRestart}
+										<button
+											type="button"
+											class="so-engine-restart"
+											onclick={onRestartToLoadEngine}
+										>
+											Restart to load engine
+										</button>
+									{/if}
 								</li>
 							{/each}
 						</ul>
@@ -638,6 +792,9 @@
 				</section>
 			</div>
 		</div>
+		<!-- Above the backdrop, so a group of drag-tester controls (or mixer
+		     dials) has a usable pad while settings is open on any route. -->
+		<GroupPad inSettings />
 	</div>
 {/if}
 
@@ -650,8 +807,14 @@
 		align-items: flex-start;
 		justify-content: center;
 		padding: 12vh 1rem 2rem;
-		background: var(--overlay, rgba(0, 0, 0, 0.72));
+		/* No dim: the window is dragged aside specifically so the page behind
+		   it stays visible. The layer still catches an outside click to close. */
+		background: transparent;
 		animation: so-fade 120ms ease-out;
+	}
+	.so-backdrop.so-dragging,
+	.so-backdrop.so-dragging .so-panel {
+		cursor: grabbing;
 	}
 	.so-panel {
 		width: min(720px, 96vw);
@@ -664,6 +827,7 @@
 		box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
 		overflow: hidden;
 		transform: scale(0.98);
+		translate: var(--so-x, 0px) var(--so-y, 0px);
 		animation: so-pop 140ms ease-out forwards;
 	}
 	.so-panel.expanded {
@@ -676,6 +840,17 @@
 		gap: 8px;
 		padding: 12px 12px 10px;
 		border-bottom: 1px solid var(--border, #1c222c);
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+	}
+	.so-head:active {
+		cursor: grabbing;
+	}
+	.so-grip {
+		display: inline-flex;
+		flex: none;
+		color: var(--muted, #9aa4b2);
 	}
 	.so-nav {
 		display: inline-flex;
@@ -706,6 +881,9 @@
 		color: var(--fg, #e6e9ef);
 		font-size: 1.05rem;
 		outline: none;
+		cursor: text;
+		user-select: text;
+		touch-action: auto;
 	}
 	.so-search:focus {
 		border-color: var(--accent, #ffb43a);
@@ -834,6 +1012,22 @@
 		font-size: 0.8rem;
 		color: var(--muted, #9aa4b2);
 		line-height: 1.35;
+	}
+	.so-engine-restart {
+		display: inline-block;
+		margin-top: 8px;
+		padding: 4px 10px;
+		border-radius: 8px;
+		border: 1px solid var(--accent, #ffb43a);
+		background: var(--surface-hover, #1a212c);
+		color: var(--fg, #e6e9ef);
+		cursor: pointer;
+		font-size: 0.8rem;
+		font-weight: 560;
+	}
+	.so-engine-restart:hover {
+		background: var(--accent, #ffb43a);
+		color: var(--bg, #0b0d11);
 	}
 	.so-control select,
 	.so-toggle,

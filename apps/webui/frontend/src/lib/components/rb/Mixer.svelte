@@ -29,6 +29,8 @@
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
 	import CrossfadeCurveSelect from './mixer/CrossfadeCurveSelect.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
+	import GroupHint from './mixer/GroupHint.svelte';
+	import GroupPad from './mixer/GroupPad.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
 
 	/** Screen order of the strips, left to right (SCREENSHOT-SPEC 4). Always
@@ -259,6 +261,8 @@
 			<AssignMatrix bus="B" {assigns} onassign={handleAssign} />
 		</div>
 	</div>
+	<GroupHint />
+	<GroupPad />
 </section>
 
 <style>

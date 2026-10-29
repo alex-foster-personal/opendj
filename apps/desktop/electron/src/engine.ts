@@ -216,13 +216,52 @@ export function pumpStream(stream: Readable, streamName: string, sink: LogSink):
 }
 
 // ----- process group ------------------------------------------------------
-/** Signal a process group this shell created. Returns false if nothing was there. */
-export function signalGroup(pid: number, signal: NodeJS.Signals): boolean {
-	if (process.platform === 'win32') {
+/**
+ * Where Windows keeps taskkill.exe, from the system root the OS sets, or null when the
+ * environment names no absolute root or the file is not there. Resolved by path, never
+ * looked up on PATH, so a sanitized or hostile PATH cannot hide or replace it (Codex on #6830).
+ */
+export function windowsTaskkill(
+	env: NodeJS.ProcessEnv = process.env,
+	exists: (file: string) => boolean = fs.existsSync
+): string | null {
+	const root = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
+	if (!root || !path.win32.isAbsolute(root)) return null;
+	const taskkill = path.win32.join(root, 'System32', 'taskkill.exe');
+	return exists(taskkill) ? taskkill : null;
+}
+
+/**
+ * taskkill.exe could not be found, so a Windows process tree could not be signalled at all.
+ * Distinct from `signalGroup` returning false: the tree may well still be running (Sol P1 on #6830).
+ */
+export class TaskkillUnavailableError extends Error {}
+
+/** A shutdown that stopped the engine's leader but could not prove its helpers stopped. */
+export class EngineCleanupError extends EngineError {}
+
+/**
+ * Signal a process group this shell created. Returns false if nothing was there, or (on
+ * Windows) if taskkill /T did not succeed. Throws `TaskkillUnavailableError` when Windows
+ * has no taskkill.exe to ask, since that says nothing about whether the tree is there.
+ */
+export function signalGroup(
+	pid: number,
+	signal: NodeJS.Signals,
+	platform: NodeJS.Platform = process.platform,
+	resolveTaskkill: () => string | null = windowsTaskkill
+): boolean {
+	if (platform === 'win32') {
 		// Windows has no process groups; taskkill /T walks the child tree.
+		const taskkill = resolveTaskkill();
+		if (taskkill === null) {
+			throw new TaskkillUnavailableError(
+				`cannot ${signal} process tree ${pid}: no taskkill.exe under an absolute SystemRoot/windir`
+			);
+		}
 		const args = ['/PID', String(pid), '/T'];
 		if (signal === 'SIGKILL') args.push('/F');
-		return spawnSync('taskkill', args, { stdio: 'ignore' }).status === 0;
+		return spawnSync(taskkill, args, { stdio: 'ignore' }).status === 0;
 	}
 	try {
 		process.kill(-pid, signal);
@@ -337,28 +376,71 @@ export class Engine {
 		}
 	}
 
+	/** How the tree is signalled; replaceable so a test can play Windows' taskkill results. */
+	treeSignals: { platform: NodeJS.Platform; send: (pid: number, signal: NodeJS.Signals) => boolean } = {
+		platform: process.platform,
+		send: (pid, signal) => signalGroup(pid, signal)
+	};
+
 	/**
 	 * Terminate the engine AND anything it spawned: SIGTERM to the group, a
-	 * 5 s grace, then SIGKILL, each logged distinctly (#2801).
+	 * 5 s grace, then SIGKILL, each logged distinctly (#2801). On Windows a
+	 * taskkill /T that cannot ask the tree to close goes straight to /F, and one
+	 * that cannot force it either is a logged cleanup failure: the leader is killed
+	 * alone so quitting never waits on a tree nothing could reach (Sol P1 on #6830).
 	 */
 	async shutdown(): Promise<void> {
 		if (this.exit !== null) return;
 		const pid = this.pid;
 		appendShellLog('shutdown', `stopping ${this.name} pgid ${pid}: SIGTERM`);
 		const sent = Date.now();
-		signalGroup(pid, 'SIGTERM');
-		const graceful = await Promise.race([this.exited.then(() => true), sleep(SHUTDOWN_GRACE_MS).then(() => false)]);
-		if (graceful) {
-			appendShellLog('shutdown', `${this.name} pgid ${pid} exited ${Date.now() - sent}ms after SIGTERM`);
-			return;
+		const termed = this.signalTree(pid, 'SIGTERM');
+		if (termed === 'unavailable') return this.stopLeaderAlone(pid);
+		if (termed === 'sent') {
+			const graceful = await Promise.race([this.exited.then(() => true), sleep(SHUTDOWN_GRACE_MS).then(() => false)]);
+			if (graceful) {
+				appendShellLog('shutdown', `${this.name} pgid ${pid} exited ${Date.now() - sent}ms after SIGTERM`);
+				return;
+			}
+			appendShellLog(
+				'shutdown',
+				`${this.name} pgid ${pid} did not exit within ${Date.now() - sent}ms of SIGTERM; escalating to SIGKILL`
+			);
+		} else {
+			appendShellLog('shutdown', `taskkill /T could not ask ${this.name} pid ${pid}'s tree to close; forcing it`);
 		}
-		appendShellLog(
-			'shutdown',
-			`${this.name} pgid ${pid} did not exit within ${Date.now() - sent}ms of SIGTERM; escalating to SIGKILL`
-		);
-		signalGroup(pid, 'SIGKILL');
+		if (this.signalTree(pid, 'SIGKILL') !== 'sent') return this.stopLeaderAlone(pid);
 		await this.exited;
 		appendShellLog('shutdown', `${this.name} pgid ${pid} reaped after SIGKILL`);
+	}
+
+	/**
+	 * Signal the engine's tree: 'sent'; 'failed' when Windows' taskkill /T did not succeed
+	 * (on POSIX a false only means the group is already gone, which counts as sent); or
+	 * 'unavailable' when Windows has no taskkill.exe at all.
+	 */
+	private signalTree(pid: number, signal: NodeJS.Signals): 'sent' | 'failed' | 'unavailable' {
+		try {
+			if (this.treeSignals.send(pid, signal)) return 'sent';
+			return this.treeSignals.platform === 'win32' ? 'failed' : 'sent';
+		} catch (error) {
+			if (!(error instanceof TaskkillUnavailableError)) throw error;
+			appendShellLog('shutdown', `[ERROR] ${error.message}`);
+			return 'unavailable';
+		}
+	}
+
+	/**
+	 * The tree could not be stopped: kill the leader itself so nothing waits on it, then
+	 * fail. Helpers may still hold the port or the data directory, so this is never a
+	 * clean shutdown, and every caller sees it as a rejection (Sol P1 on #6830).
+	 */
+	private async stopLeaderAlone(pid: number): Promise<never> {
+		const detail = `Could not stop ${this.name} pid ${pid}'s process tree; killed it alone, and its helpers may still be running.`;
+		appendShellLog('shutdown', `[ERROR] ${detail}`);
+		this.child.kill('SIGKILL');
+		await this.exited;
+		throw new EngineCleanupError(`The Open DJ ${this.name} did not stop cleanly.`, detail);
 	}
 }
 

@@ -119,3 +119,23 @@ test('pin 28a5effd: the installer does not consult the Settings overlay', async 
 	);
 	assert.doesNotMatch(src, /isSettingsOpen/);
 });
+
+test('plain m does not arm inside the compatible dropdown, which owns T / M (PR #6574)', () => {
+	const inDropdown = target('BUTTON');
+	inDropdown.closest = (selector) => (selector === '[data-owns-letter-keys]' ? {} : null);
+	assert.equal(routing.resolveCommentPinHotkey(key({ target: inDropdown })), null);
+	// The explicit Cmd+Shift+M backup still arms there.
+	assert.equal(routing.resolveCommentPinHotkey(key({ target: inDropdown, metaKey: true, shiftKey: true })), 'arm');
+	// Control: a button outside any owner still arms.
+	const outside = target('BUTTON');
+	outside.closest = () => null;
+	assert.equal(routing.resolveCommentPinHotkey(key({ target: outside })), 'arm');
+});
+
+test('both compatible dropdown surfaces carry the letter-key owner marker', async () => {
+	const { readFileSync } = await import('node:fs');
+	for (const file of ['CompatibleFilterPopover.svelte', 'CompatibleFilterPanel.svelte']) {
+		const src = readFileSync(new URL(`../../src/lib/components/rb/browser/${file}`, import.meta.url), 'utf8');
+		assert.match(src, /data-owns-letter-keys=""/, file);
+	}
+});

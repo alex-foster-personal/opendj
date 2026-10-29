@@ -30,6 +30,7 @@ LIBRARY_BROWSER_DEFAULTS: dict[str, Any] = {
     "available_offline_filter": False,
     "wheel_sensitivity": {"mouse": 1.0, "trackpad": 1.0 / 3.0},
     "midi_enabled": False,
+    "library_key_filter": [],
 }
 LIBRARY_BROWSER_WRITES: dict[str, Any] = {
     "hide_broken_links": True,
@@ -40,6 +41,7 @@ LIBRARY_BROWSER_WRITES: dict[str, Any] = {
     "vocals_filter": True,
     "available_offline_filter": True,
     "midi_enabled": True,
+    "library_key_filter": ["8A", "9A"],
 }
 
 
@@ -190,6 +192,95 @@ def test_ui_prefs_defaults_include_empty_library_watcher_folders(
     assert body["library_watcher_folders"] == []
 
 
+def test_ui_prefs_library_key_filter_round_trips_to_disk(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    payload = ["8A", "9A"]
+    r = prefs_client.put("/api/v1/ui-prefs", json={"library_key_filter": payload})
+    assert r.status_code == 200
+    assert r.json()["library_key_filter"] == payload
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
+    assert on_disk["library_key_filter"] == payload
+
+
+@pytest.mark.parametrize(
+    "bad",
+    (
+        ["8a"],
+        ["13A"],
+        ["8A", "8A"],
+        "8A",
+        ["Am"],
+        None,
+    ),
+)
+def test_ui_prefs_rejects_invalid_library_key_filter(
+    prefs_client: TestClient, bad: Any
+) -> None:
+    r = prefs_client.put("/api/v1/ui-prefs", json={"library_key_filter": bad})
+    assert r.status_code == 422
+
+
+def _key_filter_action(client: TestClient, body: dict[str, Any]) -> Any:
+    return client.post("/api/v1/ui-prefs/library-key-filter", json=body)
+
+
+def test_library_key_filter_actions_mirror_the_wheel_controls(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """Each wheel control has an HTTP twin (#7599 agent parity): toggle, Compatible, Reset."""
+    r = _key_filter_action(prefs_client, {"action": "toggle", "key": "9A"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"library_key_filter": ["9A"]}
+    r = _key_filter_action(prefs_client, {"action": "toggle", "key": "8A"})
+    assert r.json() == {"library_key_filter": ["8A", "9A"]}
+    r = _key_filter_action(prefs_client, {"action": "toggle", "key": "9A"})
+    assert r.json() == {"library_key_filter": ["8A"]}
+    r = _key_filter_action(prefs_client, {"action": "compatible", "reference": "8A"})
+    assert r.json() == {"library_key_filter": ["7A", "8B", "8A", "9A"]}
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
+    assert on_disk["library_key_filter"] == ["7A", "8B", "8A", "9A"]
+    assert prefs_client.get("/api/v1/ui-prefs").json()["library_key_filter"] == ["7A", "8B", "8A", "9A"]
+    r = _key_filter_action(prefs_client, {"action": "reset"})
+    assert r.json() == {"library_key_filter": []}
+    r = _key_filter_action(prefs_client, {"action": "set", "keys": ["12A", "1A"]})
+    assert r.json() == {"library_key_filter": ["1A", "12A"]}
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    (
+        ("12A", ["1A", "11A", "12B", "12A"]),
+        ("1B", ["1B", "1A", "2B", "12B"]),
+    ),
+)
+def test_library_key_filter_compatible_wraps_the_wheel(
+    prefs_client: TestClient, reference: str, expected: list[str]
+) -> None:
+    r = _key_filter_action(prefs_client, {"action": "compatible", "reference": reference})
+    assert r.json() == {"library_key_filter": expected}
+
+
+@pytest.mark.parametrize(
+    "body",
+    (
+        {"action": "toggle"},
+        {"action": "toggle", "key": "8a"},
+        {"action": "toggle", "key": "Am"},
+        {"action": "compatible"},
+        {"action": "compatible", "reference": "13B"},
+        {"action": "reset", "key": "8A"},
+        {"action": "set", "keys": ["8A", "8A"]},
+        {"action": "spin"},
+    ),
+)
+def test_library_key_filter_action_rejects_bad_input(
+    prefs_client: TestClient, body: dict[str, Any]
+) -> None:
+    r = _key_filter_action(prefs_client, body)
+    assert r.status_code == 422, r.text
+
+
 @pytest.mark.requirement("LIBM-129")
 def test_ui_prefs_library_watcher_folders_round_trips_to_disk(
     prefs_client: TestClient, tmp_path: Path
@@ -319,6 +410,9 @@ COMPATIBLE_FILTER_DEFAULTS: dict[str, Any] = {
     "bpm_enabled": True,
     "allow_half_double": True,
     "bpm_direction": "both",
+    "mode": "transition",
+    "key_shift_max": 1,
+    "mashup_relative": False,
 }
 
 
@@ -341,7 +435,7 @@ def test_ui_prefs_compatible_filter_round_trips_to_disk(
     }
     r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": chosen})
     assert r.status_code == 200
-    expected = {**chosen, "bpm_window_bpm": 10.0}
+    expected = {**COMPATIBLE_FILTER_DEFAULTS, **chosen, "bpm_window_bpm": 10.0}
     assert r.json()["compatible_filter"] == expected
     on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
     assert on_disk["compatible_filter"] == expected
@@ -406,6 +500,11 @@ def test_ui_prefs_compatible_filter_partial_put_keeps_stored_fields(
         {"rules": "same_key"},
         {"bpm_window_bpm": -1},
         {"bpm_direction": "sideways"},
+        {"mode": "blend"},
+        {"key_shift_max": 4},
+        {"key_shift_max": 1.0},
+        {"key_shift_max": True},
+        {"key_shift_max": "1"},
     ),
 )
 def test_ui_prefs_rejects_invalid_compatible_filter(
@@ -413,6 +512,23 @@ def test_ui_prefs_rejects_invalid_compatible_filter(
 ) -> None:
     r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": bad})
     assert r.status_code == 422
+
+
+@pytest.mark.requirement("KEYSHIFT-01")
+def test_ui_prefs_compatible_filter_modes_round_trip(prefs_client: TestClient) -> None:
+    """[if] a mode, key shift and relative flags are PUT [then] GET returns them, [else stop]."""
+    chosen = {
+        "mode": "mashup",
+        "key_shift_max": 3,
+        "rules": ["same_key"],
+        "mashup_relative": True,
+    }
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": chosen})
+    assert r.status_code == 200
+    assert prefs_client.get("/api/v1/ui-prefs").json()["compatible_filter"] == {
+        **COMPATIBLE_FILTER_DEFAULTS,
+        **chosen,
+    }
 
 
 @pytest.mark.parametrize(

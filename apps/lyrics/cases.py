@@ -11,6 +11,7 @@ from __future__ import annotations
 import zlib
 from dataclasses import dataclass, field
 
+from apps.lyrics.case_from_perturb import version_case_from_perturb
 from apps.lyrics.jamendo import JamendoSong
 from apps.lyrics.perturb import (
     EditOp,
@@ -63,20 +64,13 @@ def build_cases(song: JamendoSong, language_peers: list[JamendoSong]) -> list[Ve
         source_idx=[None] * len(other.words),
     ))
 
-    drop = perturb_drop_block(true_words, finals, seed)
-    (op,) = drop.ops
-    cases.append(VersionCase(
-        "drop_block", drop.words, "structure_mismatch", "extra_in_audio",
-        true_words[op.word_start : op.word_end + 1], list(drop.ops),
-        source_idx=drop.source_idx,
+    cases.append(version_case_from_perturb(
+        "drop_block", perturb_drop_block(true_words, finals, seed),
+        "structure_mismatch", "extra_in_audio", true_words,
     ))
-
-    move = perturb_move_block(true_words, finals, seed)
-    (mop,) = move.ops
-    cases.append(VersionCase(
-        "move_block", move.words, "structure_mismatch", "moved_block",
-        true_words[mop.word_start : mop.word_end + 1], list(move.ops),
-        source_idx=move.source_idx,
+    cases.append(version_case_from_perturb(
+        "move_block", perturb_move_block(true_words, finals, seed),
+        "structure_mismatch", "moved_block", true_words,
     ))
 
     if find_chorus(lines_of(true_words, finals)) is not None:

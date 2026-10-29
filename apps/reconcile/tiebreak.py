@@ -91,7 +91,7 @@ console = Console(width=120)
 # Content signals. Duration and size are equally strong (both are facts about
 # the bytes); ISRC is stronger because it identifies the recording itself, and
 # a CONTRADICTED ISRC is the single most damning signal available.
-DUR_TIGHT_S: float = 2.0
+# Tight duration agreement uses the matcher's relink tier tolerance (2s).
 DUR_LOOSE_S: float = 5.0
 DUR_CONTRADICTION_S: float = 10.0
 W_DURATION_TIGHT: float = 0.30
@@ -237,7 +237,7 @@ def _duration_signal(row: match.TrackRow, entry: DiskAudio) -> float:
     if row.duration_s is None or entry.duration_s is None:
         return 0.0
     delta = abs(entry.duration_s - row.duration_s)
-    if delta <= DUR_TIGHT_S:
+    if delta <= match.DURATION_TOLERANCE_S:
         return W_DURATION_TIGHT
     if delta <= DUR_LOOSE_S:
         return W_DURATION_LOOSE
@@ -504,7 +504,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    state_db = args.data_dir / "state" / "state.db"
+    state_db = match.state_db_path(args.data_dir)
     if not state_db.exists():
         console.print(f"[red]state DB not found at {state_db}[/red]")
         return 2

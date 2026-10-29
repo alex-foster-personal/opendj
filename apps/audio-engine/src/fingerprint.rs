@@ -19,6 +19,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
 use crate::decode::{leading_tag_bytes, open, probe_for};
+use crate::dsp;
 use crate::engine::ErrorCode;
 use crate::protocol::ProtoError;
 
@@ -125,7 +126,7 @@ pub fn fingerprint_file(path: &Path, length_s: u32) -> Result<AudioFingerprint, 
         pcm.clear();
         for frame in scratch.chunks_exact(ch).take(take) {
             for s in &frame[..channels] {
-                pcm.push((s.clamp(-1.0, 1.0) * 32767.0).round() as i16);
+                pcm.push(dsp::f32_to_pcm16(*s));
             }
         }
         printer.consume(&pcm);

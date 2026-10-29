@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
+from ._time import _now_iso
 from .events import emit_play_order_changed
 from .schema import apply_play_order_migrations
 from .validation import (
@@ -51,10 +51,6 @@ class PlayOrder:
     generated_by: str | None = None
     goal_json: str | None = None
     schema_version: int = 1
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def create_play_order(

@@ -166,9 +166,10 @@ def test_add_closes_conn_on_unexpected_exception(
     # was never closed. After the fix, the outer try/finally must close
     # the conn regardless of the exception type, and the exception must
     # propagate out.
+    import apps.pairings._session as session_mod
     import apps.pairings.add as cli_add_mod
 
-    real_build_repo = cli_add_mod.build_repo
+    real_build_repo = session_mod.build_repo
 
     class _BoomRepo:
         def add(self, *a: object, **kw: object) -> None:
@@ -194,7 +195,7 @@ def test_add_closes_conn_on_unexpected_exception(
         tracker["conn"] = wrapped
         return _BoomRepo(), wrapped
 
-    monkeypatch.setattr(cli_add_mod, "build_repo", fake_build_repo)
+    monkeypatch.setattr(session_mod, "build_repo", fake_build_repo)
 
     with pytest.raises(ValueError, match="boom"):
         cli_add_mod.main([

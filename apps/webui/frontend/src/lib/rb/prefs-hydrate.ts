@@ -10,6 +10,7 @@ import {
 	type DeckLayoutMode
 } from './deck-layout-prefs';
 import { announceDeckDefaults } from './deck-default-prefs';
+import { makeKeyFilterReadGuard } from './library-key-filter';
 import { makeDiskWriteChain } from './disk-write-chain';
 import { LYRICS_BOOLEAN_KEYS, LYRICS_LOAD_STRATEGIES, type LyricsLoadStrategy } from './lyrics-prefs';
 import { APP_MODE_PREF_IDS, type AppModePrefs, type DiskAppModePatch } from './app-mode-prefs';
@@ -27,6 +28,7 @@ import {
 } from './wheel-adjust';
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
 import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
+import { validateHiddenColumns, type HideableColumn } from './library-columns';
 import type { DiskConfirmPatch } from './verified-pref-writes';
 import { hydrateTopbarViewFromDisk, type PerfView } from './topbar-view-prefs';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
@@ -46,6 +48,7 @@ export type LibraryBrowserDiskPrefKey =
 	| 'hide_broken_links'
 	| 'library_density'
 	| 'key_notation'
+	| 'library_hidden_columns'
 	| 'next_only_filter'
 	| 'remixes_filter'
 	| 'vocals_filter';
@@ -117,6 +120,7 @@ export type DiskPrefsPatch = {
 	hide_broken_links?: boolean;
 	library_density?: LibraryDensity;
 	key_notation?: KeyNotation;
+	library_hidden_columns?: HideableColumn[];
 	next_only_filter?: boolean;
 	remixes_filter?: boolean;
 	vocals_filter?: boolean;
@@ -128,6 +132,7 @@ export type DiskPrefsPatch = {
 	app_mode?: DiskAppModePatch;
 	compatible_filter?: CompatibleFilterPrefs;
 	library_watcher_folders?: string[];
+	library_key_filter?: string[];
 };
 
 function _diskPrefsToWirePatch(patch: DiskPrefsPatch): components['schemas']['UiPrefsPatch'] {
@@ -212,11 +217,13 @@ export interface PrefsHydrateTarget {
 	hide_broken_links: boolean;
 	library_density: LibraryDensity;
 	key_notation: KeyNotation;
+	library_hidden_columns: HideableColumn[];
 	next_only_filter: boolean;
 	remixes_filter: boolean;
 	vocals_filter: boolean;
 	available_offline_filter: boolean;
 	library_watcher_folders: string[];
+	library_key_filter: string[];
 	compatible_filter: CompatibleFilterPrefs;
 }
 
@@ -240,12 +247,66 @@ export interface PrefsHydrateDeps {
 	defaults: Pick<PrefsHydrateTarget, 'auto_sync' | 'level_calibration'>;
 	/** Confirm keys with a local write disk has not acknowledged yet. */
 	isConfirmUnsaved?: (key: string) => boolean;
+	/** Keys a boot migration just rewrote locally: the disk copy is older, so skip it.
+	 * Required with `onSupersededDiskValue`: a missing pair would silently take a
+	 * stale disk value or drop the one to reconcile (Sol P1, PR #6829). */
+	isDiskValueSuperseded: (key: string) => boolean;
+	/** Told what disk held for a superseded key (undefined when absent), so the
+	 * owner can rewrite a stale disk copy or see that it already agrees. A key
+	 * claimed when the GET was sent counts as superseded even if the claim
+	 * ended while it was in flight, so the owner must ignore a value the DJ
+	 * has since picked over. */
+	onSupersededDiskValue: (key: string, diskValue: unknown) => void;
+	isLibraryKeyFilterUnsaved?: () => boolean;
+}
+
+/** Issue #7599: re-read only `library_key_filter` from disk, so a filter set
+ * elsewhere (an agent's POST /api/v1/ui-prefs/library-key-filter, another
+ * window) reaches the open table. A local write disk has not acknowledged yet
+ * wins, as in the boot hydration. */
+export function makeLibraryKeyFilterRehydrator(deps: {
+	uiPrefs: { library_key_filter: string[] };
+	persist: () => void;
+	isUnsaved: () => boolean;
+	/** Counts local key-filter edits; a read that spans one is discarded. */
+	writeRev: () => number;
+	/** Called when a read was skipped for an unsaved local write. */
+	onDeferred: () => void;
+}): () => Promise<void> {
+	const guard = makeKeyFilterReadGuard(deps.writeRev);
+	return async function hydrateLibraryKeyFilterFromDisk(): Promise<void> {
+		const token = guard.begin();
+		const late = import('./verified-pref-writes');
+		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
+		const { hydrateLibraryKeyFilter } = await late;
+		if (!guard.isCurrent(token)) return;
+		// The server always sends the field (UiPrefsOut default []), so an absent
+		// one is contract drift: fail rather than report a clean re-read (Sol P1, #7743).
+		if (body.library_key_filter === undefined) {
+			throw new Error('GET /api/v1/ui-prefs: library_key_filter is missing from the response');
+		}
+		if (deps.isUnsaved()) {
+			// A local write is in flight: re-read once it settles, so an agent's
+			// later value is not lost to this skip (Sol P1, #7743).
+			deps.onDeferred();
+			return;
+		}
+		hydrateLibraryKeyFilter(deps.uiPrefs, body, deps.isUnsaved);
+		deps.persist();
+	};
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
 export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 	const { uiPrefs, persist, applyThemeDom, storageKey, defaults } = deps;
 	const isConfirmUnsaved = deps.isConfirmUnsaved ?? (() => false);
+	const { isDiskValueSuperseded, onSupersededDiskValue } = deps;
+	if (typeof isDiskValueSuperseded !== 'function' || typeof onSupersededDiskValue !== 'function') {
+		throw new TypeError(
+			'makePrefsHydrator: isDiskValueSuperseded and onSupersededDiskValue are both required'
+		);
+	}
+	const isLibraryKeyFilterUnsaved = deps.isLibraryKeyFilterUnsaved ?? (() => false);
 	return async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 		// This PR's confirm and compatible-filter hydration loads with the GET, not
 		// at first paint (library bundle budget, PR #4014).
@@ -254,8 +315,12 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		// body or a contract violation rejects, so the boot path can show it
 		// instead of running on stale or default prefs without saying so.
 		let contractError: Error | null = null;
+		// A claim held when the GET left still covers its body: the disk may have
+		// answered before the claim's own write landed (Codex P1, PR #6829).
+		const radialClaimedAtRequest = isDiskValueSuperseded('jog_radial_waveform');
 		const body = (await unwrap(api.GET('/api/v1/ui-prefs'))) as DiskPrefsPatch;
-		const { hydrateConfirmFromDisk, hydrateCompatibleFilter } = await late;
+		const { hydrateConfirmFromDisk, hydrateCompatibleFilter, hydrateLibraryKeyFilter } =
+			await late;
 		if (body.confirm !== undefined && typeof body.confirm === 'object') {
 			hydrateConfirmFromDisk(uiPrefs, body.confirm, isConfirmUnsaved);
 		}
@@ -281,7 +346,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		if (typeof body.show_sections === 'boolean') {
 			uiPrefs.show_sections = body.show_sections;
 		}
-		if (typeof body.jog_radial_waveform === 'boolean') {
+		if (radialClaimedAtRequest || isDiskValueSuperseded('jog_radial_waveform')) {
+			onSupersededDiskValue('jog_radial_waveform', body.jog_radial_waveform);
+		} else if (typeof body.jog_radial_waveform === 'boolean') {
 			uiPrefs.jog_radial_waveform = body.jog_radial_waveform;
 		}
 		if (body.deck_layout === 'more' || body.deck_layout === 'less') {
@@ -398,6 +465,15 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 				`GET /api/v1/ui-prefs: key_notation must be ${KEY_NOTATIONS.join('|')}, got ${JSON.stringify(body.key_notation)}`
 			);
 		}
+		// Same contract rule as key_notation: the server always sends this list.
+		try {
+			uiPrefs.library_hidden_columns = validateHiddenColumns(
+				body.library_hidden_columns,
+				'GET /api/v1/ui-prefs'
+			);
+		} catch (error) {
+			contractError ??= error instanceof Error ? error : new Error(String(error));
+		}
 		hydrateWheelSensitivityFromDisk(body);
 		hydrateMidiEnabledFromDisk(body);
 		if (typeof body.master_muted === 'boolean') {
@@ -409,6 +485,11 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 			);
 		}
 		hydrateCompatibleFilter(uiPrefs, body);
+		try {
+			hydrateLibraryKeyFilter(uiPrefs, body, isLibraryKeyFilterUnsaved);
+		} catch (exc) {
+			contractError ??= exc instanceof Error ? exc : new Error(String(exc));
+		}
 		persist();
 		if (contractError !== null) throw contractError;
 	};

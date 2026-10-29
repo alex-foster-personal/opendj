@@ -1,0 +1,79 @@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [O--------------------] wet
+          0% wet
+
+   dry |########################################|
+   wet |                                        |
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [-----O---------------] wet
+         25% wet
+
+   dry |##############################          |
+   wet |**********                              |
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [----------O----------] wet
+         50% wet
+
+   dry |####################                    |
+   wet |********************                    |
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [---------------O-----] wet
+         75% wet
+
+   dry |##########                              |
+   wet |******************************          |
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [--------------------O] wet
+        100% wet
+
+   dry |                                        |
+   wet |****************************************|
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [---------------O-----] wet
+         75% wet
+
+   dry |##########                              |
+   wet |******************************          |
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [----------O----------] wet
+         50% wet
+
+   dry |####################                    |
+   wet |********************                    |
+
+   dry = untouched track, wet = effect output
+@@
+wet/dry mix: the mix knob trades dry signal for effect signal
+
+   mix  dry [-----O---------------] wet
+         25% wet
+
+   dry |##############################          |
+   wet |**********                              |
+
+   dry = untouched track, wet = effect output

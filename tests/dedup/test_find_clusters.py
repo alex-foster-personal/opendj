@@ -8,18 +8,11 @@ from pathlib import Path
 import pytest
 
 from apps.dedup import find_clusters as fc_mod
-from apps.dedup import scan as scan_mod
 from apps.shared.fingerprints import Fingerprint, FingerprintCache
+from tests.dedup.phase7_support import seed_phase7_scan_db
 from tests.fingerprint_fakes import fake_fingerprint
 
 SAME_FP = fake_fingerprint(b"same", b"")
-
-
-def _seed(tmp_path: Path, tmp_fixture_tree: Path) -> Path:
-    """Run scan on the fixture tree so the cache + state DB are populated."""
-    db = tmp_path / "phase7.sqlite"
-    scan_mod.run_scan(roots=[tmp_fixture_tree], db_path=db)
-    return db
 
 
 # ---------------------------------------------------------- pick_canonical
@@ -114,7 +107,7 @@ def test_pick_canonical_oldest_mtime_last_resort(tmp_path: Path) -> None:
 def test_fixtures_cluster_src_family(
     tmp_path: Path, tmp_fixture_tree, fake_acoustid
 ) -> None:
-    db = _seed(tmp_path, tmp_fixture_tree)
+    db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     outcomes = fc_mod.run_find_clusters(
         db_path=db,
         threshold=0.8,   # fake-fp cross-bitrate ~0.5-0.7; lower to hit
@@ -141,7 +134,7 @@ def test_fixtures_cluster_src_family(
 def test_csv_has_expected_columns(
     tmp_path: Path, tmp_fixture_tree, fake_acoustid
 ) -> None:
-    db = _seed(tmp_path, tmp_fixture_tree)
+    db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     clusters_csv = tmp_path / "clusters.csv"
     fc_mod.run_find_clusters(
         db_path=db,
@@ -168,7 +161,7 @@ def test_csv_has_expected_columns(
 def test_idempotent_outcomes(
     tmp_path: Path, tmp_fixture_tree, fake_acoustid
 ) -> None:
-    db = _seed(tmp_path, tmp_fixture_tree)
+    db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     first = fc_mod.run_find_clusters(
         db_path=db,
         threshold=0.8,
@@ -353,7 +346,7 @@ def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
 def test_cli_smoke(
     tmp_path: Path, tmp_fixture_tree, fake_acoustid, capsys
 ) -> None:
-    db = _seed(tmp_path, tmp_fixture_tree)
+    db = seed_phase7_scan_db(tmp_path, tmp_fixture_tree)
     rc = fc_mod.main(
         [
             "--db",

@@ -48,6 +48,11 @@ SCAN_TIMEOUT_S = 900
 _STDERR_TAIL_CHARS = 2000
 
 
+def _stderr_tail(stderr: str) -> str:
+    """Last ``_STDERR_TAIL_CHARS`` of ffmpeg stderr for error messages."""
+    return stderr[-_STDERR_TAIL_CHARS:]
+
+
 class LoudnessError(RuntimeError):
     """Raised for every failure mode. There is no degraded result."""
 
@@ -78,6 +83,27 @@ class LoudnessScan:
             return (wanted, False)
         return (headroom, True)
 
+    def report_payload(
+        self,
+        *,
+        target_lufs: float,
+        ceiling_dbtp: float,
+    ) -> dict[str, object]:
+        """Serializable scan plus derived gain for CLI and JSON output."""
+        gain_db, clamped = self.gain_db(
+            target_lufs=target_lufs, ceiling_dbtp=ceiling_dbtp
+        )
+        return {
+            "path": str(self.path),
+            "integrated_lufs": self.integrated_lufs,
+            "loudness_range_lu": self.loudness_range_lu,
+            "true_peak_dbtp": self.true_peak_dbtp,
+            "target_lufs": target_lufs,
+            "ceiling_dbtp": ceiling_dbtp,
+            "gain_db": round(gain_db, 2),
+            "gain_clamped": clamped,
+        }
+
 
 # --------------------------------------------------------------------------
 # ffmpeg summary parsing
@@ -105,7 +131,7 @@ def _parse_summary(stderr: str, path: Path) -> dict[str, float]:
         if not matches:
             raise LoudnessError(
                 f"ebur128 summary for {path} has no '{field}' line. "
-                f"ffmpeg stderr tail:\n{stderr[-_STDERR_TAIL_CHARS:]}"
+                f"ffmpeg stderr tail:\n{_stderr_tail(stderr)}"
             )
         # The filter prints running values during the pass and the summary last,
         # so the final match is the summary figure.
@@ -178,7 +204,7 @@ def scan_file(path: Path, binary: str | None = None) -> LoudnessScan:
     if completed.returncode != 0:
         raise LoudnessError(
             f"ffmpeg exited {completed.returncode} scanning {path}:\n"
-            f"{completed.stderr[-_STDERR_TAIL_CHARS:]}"
+            f"{_stderr_tail(completed.stderr)}"
         )
     fields = _parse_summary(completed.stderr, path)
     return LoudnessScan(

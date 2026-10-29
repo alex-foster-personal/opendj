@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.audit.cue_comparison import TOLERANCE_MSEC, compare_cue_lists
-from apps.parity.figure import LaneFigure
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n
 from apps.parity.lanes import DENOMINATOR_NAME
 from apps.shared.normalised import NormalisedCue
 
@@ -142,8 +142,8 @@ def score_cues_db(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure
         else:
             disagree_ids.append(sid)
 
-    denominator_n = len(rows) - len(ungradable_ids)
-    scored_n = len(agree_ids) + len(disagree_ids)
+    denominator_n = lane_denominator_n(len(rows), len(ungradable_ids))
+    scored_n = lane_scored_n(len(agree_ids), len(disagree_ids))
     details: dict[str, int | float | None] = {
         "matched_cues_n": total_matched,
         "rb_cues_n": total_rb_cues,
@@ -241,7 +241,7 @@ def score_cues_anlz(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigu
             disagree_ids.append(sid)
 
     denominator_n = len(in_denominator)
-    scored_n = len(agree_ids) + len(disagree_ids)
+    scored_n = lane_scored_n(len(agree_ids), len(disagree_ids))
     return LaneFigure(
         lane="cues_anlz",
         status="scored",

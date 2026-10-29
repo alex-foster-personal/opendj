@@ -21,7 +21,7 @@ from apps.diagnostics.probe_types import (
     round_mb,
     run_text,
 )
-from apps.native_tools import SYSCTL
+from apps.native_tools import try_sysctl_n
 
 
 class RUsageInfoV4(ctypes.Structure):
@@ -232,13 +232,6 @@ def vmmap_summary(pid: int) -> dict[str, Any]:
     return result
 
 
-def _sysctl(name: str) -> str | None:
-    try:
-        return run_text([SYSCTL, "-n", name], timeout=2.0).strip()
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return None
-
-
 def _swap_fields(swap: str) -> dict[str, float]:
     found: dict[str, float] = {}
     for source, key in (
@@ -350,7 +343,7 @@ def _vm_stat_free_mb() -> dict[str, float]:
 
     FREE, not available: only ``Pages free`` is counted, deliberately. The
     wider "free + inactive + speculative + purgeable" figure that
-    ``scripts/mem_gate.py`` computes answers a different question (how much
+    ``(private path)`` computes answers a different question (how much
     the kernel could reclaim under pressure) and is far larger, so mixing the
     two under one name would make two samples incomparable. The register's own
     "roughly 71 MB free RAM" reading is this narrow one.
@@ -373,9 +366,9 @@ def _vm_stat_free_mb() -> dict[str, float]:
 
 def machine_metrics() -> dict[str, Any]:
     result: dict[str, Any] = {}
-    memsize = _sysctl("hw.memsize")
-    pressure = _sysctl("kern.memorystatus_vm_pressure_level")
-    swap = _sysctl("vm.swapusage")
+    memsize = try_sysctl_n("hw.memsize")
+    pressure = try_sysctl_n("kern.memorystatus_vm_pressure_level")
+    swap = try_sysctl_n("vm.swapusage")
     if memsize and memsize.isdigit():
         result["physical_memory_mb"] = round_mb(int(memsize))
     if pressure and pressure.isdigit():

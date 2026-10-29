@@ -1,14 +1,22 @@
 """Tests for ``apps.tags.unify``."""
 from __future__ import annotations
 
+from dataclasses import fields
+
 import pytest
 
 from apps.shared.tag_writer import TagRead
 from apps.tags.unify import (
     SOURCE_CONFIDENCE,
+    SOURCES,
     TagSources,
     unify,
 )
+
+
+def test_sources_tuple_matches_tag_sources_fields() -> None:
+    """``SOURCES`` must stay aligned with ``TagSources`` dataclass fields."""
+    assert SOURCES == tuple(f.name for f in fields(TagSources))
 
 
 @pytest.mark.requirement("META-03")

@@ -29,7 +29,7 @@ function installPrefsStorage(raw = null) {
 /** A GET /api/v1/ui-prefs body always carries a valid key_notation (the
  * contract hydration enforces since PR #7483); success stubs model that. */
 function jsonResponse(body, init = {}) {
-	return new Response(JSON.stringify({ key_notation: 'camelot', ...body }), {
+	return new Response(JSON.stringify({ key_notation: 'camelot', library_hidden_columns: [], library_key_filter: [], ...body }), {
 		status: 200,
 		...init,
 		headers: { 'content-type': 'application/json', ...(init.headers ?? {}) }

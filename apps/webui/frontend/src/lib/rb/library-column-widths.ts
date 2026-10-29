@@ -29,6 +29,21 @@ export const COL_DEFAULTS = {
 
 export type ColId = keyof typeof COL_DEFAULTS;
 
+/** LIBUX-54: column widths with every hidden column at 0, for the sums that
+ * place the table width and the MASTER fold badge. `hidden` is ui-prefs
+ * `library_hidden_columns` (see library-columns.ts for which ids may appear). */
+export function shownColumnWidths<W extends Record<ColId, number>>(widths: W, hidden: readonly ColId[]): W {
+	const out = { ...widths };
+	for (const col of hidden) out[col] = 0 as W[typeof col];
+	return out;
+}
+
+/** LIBUX-54: class names for the table root, `hide-key hide-bpm`. Each one
+ * hides that column's header (`th.h-<col>`) and cells (`td.c-<col>`). */
+export function hiddenColumnClasses(hidden: readonly ColId[]): string {
+	return hidden.map((col) => `hide-${col}`).join(' ');
+}
+
 // Key and BPM auto-fit lives in musical-column-fit.ts: it measures the text
 // each column prints in the active skin's font. These are only the widths a
 // column starts at before its first fit (wide enough for `8A • Am` in Gothic).

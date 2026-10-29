@@ -24,6 +24,7 @@ order is this way round rather than the other.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 #: Selects a named profile. Lower precedence than an explicit file path.
@@ -58,10 +59,24 @@ class UnknownProfileError(ValueError):
     """A build profile was named that does not exist."""
 
 
+def _shipped_profile_stems() -> tuple[str, ...]:
+    return tuple(sorted(p.stem for p in PROFILES_DIR.glob(_PROFILE_JSON_GLOB)))
+
+
+def _unknown_profile_message(name: str) -> str:
+    return (
+        f"unknown build profile {name!r}. Available: "
+        f"{', '.join(available_profiles())}. A profile is a file in "
+        f"{PROFILES_DIR}; this is refused rather than defaulted because "
+        "the default is the FULL build, and shipping that by accident is "
+        "how a store bundle ends up offering a feature the sandbox "
+        "forbids."
+    )
+
+
 def available_profiles() -> tuple[str, ...]:
     """Every selectable profile name, including :data:`DEFAULT_PROFILE`."""
-    shipped = sorted(p.stem for p in PROFILES_DIR.glob(_PROFILE_JSON_GLOB))
-    return (DEFAULT_PROFILE, *shipped)
+    return (DEFAULT_PROFILE, *_shipped_profile_stems())
 
 
 def profile_path(name: str) -> Path | None:
@@ -75,18 +90,11 @@ def profile_path(name: str) -> Path | None:
         return None
     path = _profile_json_path(name)
     if not path.is_file():
-        raise UnknownProfileError(
-            f"unknown build profile {name!r}. Available: "
-            f"{', '.join(available_profiles())}. A profile is a file in "
-            f"{PROFILES_DIR}; this is refused rather than defaulted because "
-            "the default is the FULL build, and shipping that by accident is "
-            "how a store bundle ends up offering a feature the sandbox "
-            "forbids."
-        )
+        raise UnknownProfileError(_unknown_profile_message(name))
     return path
 
 
-def selected_profile(environ: dict[str, str] | None = None) -> str:
+def selected_profile(environ: Mapping[str, str] | None = None) -> str:
     """The profile named by the environment, or :data:`DEFAULT_PROFILE`."""
     env = os.environ if environ is None else environ
     return env.get(BUILD_PROFILE_ENV, "").strip() or DEFAULT_PROFILE

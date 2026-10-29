@@ -1,0 +1,87 @@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #
+   delay   #
+   reverb  ######
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #
+   delay   #
+   reverb  #######======
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #       =
+   delay   #
+   reverb  #######=======::::::
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #       =       :
+   delay   #                   #
+   reverb  #######=======:::::::::::::
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #       =       :       .
+   delay   #                   #
+   reverb  #######=======::::::::::::::......
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #       =       :       .
+   delay   #                   #
+   reverb  #######=======::::::::::::::.............
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #       =       :       .
+   delay   #                   #
+   reverb  #######=======::::::::::::::..............
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear
+@@
+echo vs delay vs reverb: repeats that fade, one copy, a dense wash
+
+           impulse
+           v
+   echo    #       #       =       :       .
+   delay   #                   #
+   reverb  #######=======::::::::::::::..............
+           +--------------------------------------------------> time
+
+   echo: fading repeats   delay: one later copy   reverb: smear

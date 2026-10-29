@@ -18,6 +18,7 @@ from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from apps.engine_core.refusal import unavailable_response
 from apps.shared.perf_tier import HostInfoUnavailable, read_host_facts
 
 HOST_INFO_PATH: str = "/api/v1/host-info"
@@ -164,14 +165,7 @@ def add_host_info_route(app: FastAPI, *, data_dir: Path) -> None:
     )
     def host_info() -> HostInfoOut | JSONResponse:
         if resolved is None:
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "error": CODE_HOST_INFO_UNAVAILABLE,
-                    "message": failure,
-                    "details": None,
-                },
-            )
+            return unavailable_response(CODE_HOST_INFO_UNAVAILABLE, failure)
         return resolved
 
 

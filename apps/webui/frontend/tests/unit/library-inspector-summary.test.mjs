@@ -242,8 +242,10 @@ test('the inspector stars stay inert until the track and its etag have loaded', 
 
 test('Library mode starts no grid scan, no row preview audio and no recorder polling', () => {
 	const table = readFileSync(`${SRC}/lib/components/rb/browser/TrackTable.svelte`, 'utf8');
-	assert.match(table, /if \(!libraryMode\) void ensureGridQualityScan\(\);/);
-	assert.equal(table.split('ensureGridQualityScan()').length, 2, 'another grid scan call is ungated');
+	// The grid and audio-quality scans start together (QLTSCAN-03), gated once.
+	assert.match(table, /if \(!libraryMode\) ensureLibraryScans\(\);/);
+	assert.equal(table.split('ensureLibraryScans()').length, 2, 'another scan call is ungated');
+	assert.equal(table.includes('ensureGridQualityScan'), false, 'a grid scan call bypasses the gate');
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
 	assert.match(panel, /onpreviewseek=\{library === null \? previewSeek : undefined\}/);
 	const rail = readFileSync(`${SRC}/lib/components/rb/browser/PerformanceRecorderRail.svelte`, 'utf8');

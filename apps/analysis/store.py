@@ -35,7 +35,6 @@ import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +47,7 @@ from .canonical import refresh_for_record
 from .lane_enums import LANE_STATUSES
 from .lane_payloads_shared import bar_phase_untrusted
 from .record import AnalysisRecord, RecordContractError, validate_record_contract
+from .time_iso import datetime_to_utc_iso, utc_now_iso
 
 # --- additive schema ----------------------------------------------------
 
@@ -214,7 +214,7 @@ def _record_to_json(record: Any) -> str:
     if callable(maybe):
         return maybe()
     data = asdict(record)
-    data["analyzed_at"] = _dt_iso(data["analyzed_at"])
+    data["analyzed_at"] = datetime_to_utc_iso(data["analyzed_at"])
     return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
 
@@ -294,17 +294,6 @@ def _semantic_equal(old_json: str, new_json: str) -> bool:
         old.pop(k, None)
         new.pop(k, None)
     return old == new
-
-
-def _dt_iso(dt: datetime) -> str:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    dt = dt.astimezone(UTC)
-    return dt.isoformat().replace("+00:00", "Z")
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 _SAVEPOINT_SEQ = itertools.count()
@@ -398,7 +387,7 @@ def upsert(
                         record.stable_id,
                         record.backend,
                         record.backend_version,
-                        _dt_iso(record.analyzed_at),
+                        datetime_to_utc_iso(record.analyzed_at),
                         float(record.duration_s),
                         int(record.sample_rate),
                         float(record.bpm),
@@ -438,7 +427,7 @@ def publish(
     ``conn`` is optional; when provided the caller owns its lifecycle
     (used by batch drivers to share one connection across many events).
     """
-    ts = _now_iso()
+    ts = utc_now_iso()
     payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     owned = conn is None
     if conn is None:
@@ -540,7 +529,7 @@ def upsert_record(
                 "stable_id": record.stable_id,
                 "backend": record.backend,
                 "backend_version": record.backend_version,
-                "analyzed_at": _dt_iso(record.analyzed_at),
+                "analyzed_at": datetime_to_utc_iso(record.analyzed_at),
                 "bpm": record.bpm,
                 "key_camelot": record.key_camelot,
                 "energy": record.energy,

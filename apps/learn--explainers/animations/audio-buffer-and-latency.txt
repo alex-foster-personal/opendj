@@ -1,0 +1,111 @@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [##][##][  ][  ][  ][  ][  ][  ]
+  ^______________________________wraps^
+            ^ write
+    ^ read
+  |------|  latency = 2 slots
+
+  output: ~~
+
+  filling up
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [##][##][##][##][  ][  ][  ][  ]
+  ^______________________________wraps^
+                    ^ write
+    ^ read
+  |--------------|  latency = 4 slots
+
+  output: ~~~~
+
+  filling up
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [  ][##][##][##][##][##][  ][  ]
+  ^______________________________wraps^
+                            ^ write
+        ^ read
+      |------------------|  latency = 5 slots
+
+  output: ~~~~~~
+
+  steady: in = out
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [  ][  ][##][##][##][##][##][  ]
+  ^______________________________wraps^
+                                ^ write
+            ^ read
+          |------------------|  latency = 5 slots
+
+  output: ~~~~~~~~
+
+  steady: in = out
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [  ][  ][  ][##][##][##][  ][  ]
+  ^______________________________wraps^
+                            ^ write
+                ^ read
+              |----------|  latency = 3 slots
+
+  output: ~~~~~~~~~~
+
+  producer stalls, buffer drains
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [  ][  ][  ][  ][  ][##][  ][  ]
+  ^______________________________wraps^
+                            ^ write
+                        ^ read
+                      |--|  latency = 1 slots
+
+  output: ~~~~~~~~~~~~
+
+  producer stalls, buffer drains
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [  ][  ][  ][  ][  ][  ][  ][  ]
+  ^______________________________wraps^
+                            ^ write
+                            ^ read
+
+
+  output: ~~~~~~~~~~~~    <- gap
+
+  DROPOUT: buffer empty, output gap
+@@
+audio buffer: a ring fills from the producer and drains to the output
+
+  producer (decoder) -> writes          output (device) <- reads
+
+  [##][  ][  ][  ][  ][  ][##][##]
+  ^______________________________wraps^
+        ^ write
+                            ^ read
+  latency = 3 slots (wraps around the ring)
+
+  output: ~~~~~~~~~~~~    ~~
+
+  producer back, refilling

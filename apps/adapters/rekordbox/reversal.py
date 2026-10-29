@@ -30,6 +30,7 @@ from fastapi import HTTPException
 from .cues import _rb_timestamp
 from .sidecar_schema import ensure_vendor_sidecar_tables
 
+_REVERSAL_TABLE = "rb_hot_cue_reversal"
 _SLOT_REVISION_TABLE = "rb_hot_cue_slot_revision"
 
 # An unprovisioned slot and a slot provisioned at generation 0 are the same
@@ -78,12 +79,12 @@ def _read_slot_generations(
 def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
     ensure_vendor_sidecar_tables(conn)
     conn.execute(
-        "INSERT OR IGNORE INTO rb_hot_cue_slot_revision (ContentID, Kind, Generation) "
+        f"INSERT OR IGNORE INTO {_SLOT_REVISION_TABLE} (ContentID, Kind, Generation) "
         "VALUES (?, ?, 0)",
         (vendor_id, kind),
     )
     row = conn.execute(
-        "SELECT Generation FROM rb_hot_cue_slot_revision WHERE ContentID = ? AND Kind = ?",
+        f"SELECT Generation FROM {_SLOT_REVISION_TABLE} WHERE ContentID = ? AND Kind = ?",
         (vendor_id, kind),
     ).fetchone()
     if row is None:
@@ -94,7 +95,7 @@ def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int
 def _bump_slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
     generation = _slot_generation(conn, vendor_id, kind)
     result = conn.execute(
-        "UPDATE rb_hot_cue_slot_revision SET Generation = ? "
+        f"UPDATE {_SLOT_REVISION_TABLE} SET Generation = ? "
         "WHERE ContentID = ? AND Kind = ? AND Generation = ?",
         (generation + 1, vendor_id, kind, generation),
     )
@@ -115,7 +116,7 @@ def _create_reversal(
     ensure_vendor_sidecar_tables(conn)
     reversal_id = secrets.token_urlsafe(32)
     conn.execute(
-        "INSERT INTO rb_hot_cue_reversal "
+        f"INSERT INTO {_REVERSAL_TABLE} "
         "(ID, ContentID, Kind, PreimageJson, PostRevision, CreatedAt, ConsumedAt) "
         "VALUES (?, ?, ?, ?, ?, ?, NULL)",
         (
@@ -140,8 +141,8 @@ def _load_reversal(
 ) -> dict[str, Any] | None:
     ensure_vendor_sidecar_tables(conn)
     row = conn.execute(
-        "SELECT ContentID, Kind, PreimageJson, PostRevision, ConsumedAt "
-        "FROM rb_hot_cue_reversal WHERE ID = ?",
+        f"SELECT ContentID, Kind, PreimageJson, PostRevision, ConsumedAt "
+        f"FROM {_REVERSAL_TABLE} WHERE ID = ?",
         (reversal_id,),
     ).fetchone()
     if row is None:

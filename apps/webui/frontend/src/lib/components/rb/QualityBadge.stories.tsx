@@ -50,3 +50,12 @@ export const WithoutContainer: Story = contracts.WithoutContainer;
 
 /** The track table's tight column: the rung's initial, the rest on hover. */
 export const Compact: Story = contracts.Compact;
+
+/** QLTSCAN-05: a scanned letter; the spectrum made this FLAC a C. */
+export const GradeChecked: Story = contracts.GradeChecked;
+
+/** Not scanned yet: the bitrate letter, hollow. */
+export const GradeUnchecked: Story = contracts.GradeUnchecked;
+
+/** An issue adds a dot; it does not move the letter. */
+export const GradeWithIssues: Story = contracts.GradeWithIssues;

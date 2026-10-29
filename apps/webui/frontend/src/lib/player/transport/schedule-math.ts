@@ -23,7 +23,9 @@ import {
 	TRANSPORT_IMMEDIATE_SAFETY_S
 } from '$lib/player/constants';
 import { inputToOutputMs, isMeasuredLatencyFloor } from '$lib/player/transport/press-audible';
+import { composeStretchSemitones } from '$lib/player/key/camelot';
 import type { LoopState } from '$lib/rb/deck-state-types';
+import type { StretchScheduleChange } from '$lib/rb/stretch-adapter';
 
 export function supersedingScheduleTime(
 	requestedContextTime: number,
@@ -124,7 +126,7 @@ export function safeSyncScheduleTime(
  *
  * This is the round-2 replacement for passing the processor's own
  * `latency()` self-report as the lead. Two facts make the substitution safe,
- * both measured (`.planning/latency-round2-design.md`):
+ * both measured (`(private path)`):
  *
  * 1. The self-report is a LIVE-INPUT figure. In buffer mode - the only mode our
  *    decks ever use - the worklet compensates it internally, so audio scheduled
@@ -551,4 +553,24 @@ export function decodedTransportDurationMs(decodedDurationSec: number): number {
 		);
 	}
 	return decodedDurationSec * 1000;
+}
+
+/** The worklet change object for one schedule: input position, rate, the
+ * composed stretch semitones and the engaged loop's bounds (0, 0 when none). */
+export function stretchScheduleChange(
+	inputSec: number,
+	active: boolean,
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	keyShiftSemitones: number,
+	loop: LoopState | null
+): StretchScheduleChange {
+	return {
+		active,
+		input: inputSec,
+		rate: tempoRatio,
+		semitones: composeStretchSemitones(tempoRatio, masterTempoEnabled, keyShiftSemitones),
+		loopStart: loop !== null && loop.engaged ? loop.in_ms / 1000 : 0,
+		loopEnd: loop !== null && loop.engaged ? loop.out_ms / 1000 : 0
+	};
 }

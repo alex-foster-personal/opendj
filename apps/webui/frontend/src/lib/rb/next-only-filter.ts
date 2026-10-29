@@ -1,10 +1,18 @@
 /**
  * Library "next-only" appropriateness: Camelot family + BPM window.
  */
-import { camelotRulesAllow } from '$lib/player/key/camelot';
+import {
+	compatibleKeyShift,
+	effectiveCamelotKey,
+	type CompatibleKeyShift
+} from '$lib/player/key/camelot';
 import { BPM_HALF_ABS } from '$lib/rb/bpm-heat';
 import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
-import { COMPATIBLE_FILTER_DEFAULTS } from '$lib/rb/compatible-filter-prefs';
+import {
+	COMPATIBLE_FILTER_DEFAULTS,
+	compatibleKeyChecked,
+	compatibleKeyRule
+} from '$lib/rb/compatible-filter-prefs';
 
 /** Same-BPM mode: one-decimal presentation tolerance, not the symmetric ±window. */
 export const SAME_BPM_TOLERANCE = 0.1;
@@ -55,6 +63,9 @@ export interface NextOnlyDeckSlice {
 	stable_id: string | null;
 	key: string | null;
 	bpm: number | null;
+	/** KEYSHIFT-03: a deck loaded shifted plays in its shifted key. Required: a
+	 * caller that omits it fails loudly in computeNextOnlyRef, never as 0. */
+	key_shift_semitones: number;
 }
 
 /** Reference for next-only: master, else playing loaded, else any loaded with key+BPM.
@@ -72,7 +83,15 @@ export function computeNextOnlyRef(
 	];
 	for (const s of ordered) {
 		if ((s.key !== null || !needsKey) && s.bpm !== null && s.bpm > 0) {
-			return { key: s.key, bpm: s.bpm };
+			if (s.key === null) return { key: null, bpm: s.bpm };
+			// Match against the key the deck is heard in, not its source key.
+			const shift = s.key_shift_semitones;
+			if (!Number.isInteger(shift)) {
+				throw new Error(
+					`computeNextOnlyRef: reference deck ${s.stable_id} has no key shift; pass key_shift_semitones`
+				);
+			}
+			return { key: shift === 0 ? s.key : effectiveCamelotKey(s.key, shift), bpm: s.bpm };
 		}
 	}
 	return null;
@@ -117,7 +136,23 @@ export function bpmMatchesCompatiblePrefs(
 	return false;
 }
 
-export { COMPATIBLE_FILTER_DEFAULTS };
+export { COMPATIBLE_FILTER_DEFAULTS, compatibleKeyChecked };
+
+/** The row's key match against the reference under the active mode and the
+ * allowed key shift (KEYSHIFT-01..03), or null when it is not key-compatible
+ * or the key is not checked at all (compatibleKeyChecked). */
+export function compatibleRowKeyShift(
+	rowKey: string | null,
+	refKey: string | null,
+	// Required: a caller that forgot the active prefs must not get the default
+	// Transition rules and a 1 semitone shift (Sol P1, review 4395715251).
+	prefs: CompatibleFilterPrefs
+): CompatibleKeyShift | null {
+	// No rule ticked in Transition: the key is not checked, so no shift is ever
+	// proposed. Callers that filter gate on compatibleKeyChecked first.
+	if (!compatibleKeyChecked(prefs)) return null;
+	return compatibleKeyShift(rowKey, refKey, compatibleKeyRule(prefs), prefs.key_shift_max);
+}
 
 export function isAppropriateNext(
 	row: { key: string | null; bpm: number | null },
@@ -126,7 +161,7 @@ export function isAppropriateNext(
 ): boolean {
 	return (
 		// No rule ticked means the key is not checked: BPM alone decides.
-		(prefs.rules.length === 0 || camelotRulesAllow(ref.key, row.key, prefs.rules)) &&
+		(!compatibleKeyChecked(prefs) || compatibleRowKeyShift(row.key, ref.key, prefs) !== null) &&
 		bpmMatchesCompatiblePrefs(row.bpm, ref.bpm, prefs)
 	);
 }

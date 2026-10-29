@@ -37,6 +37,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.database.column_docs import COLUMN_DOCS, TABLE_DOCS
+from apps.database.sqlite_introspection import (
+    documentable_table_names,
+    is_fts5_shadow_table,
+    virtual_table_names,
+)
 
 # PyYAML is imported inside :func:`_table_block`, the one function that
 # needs it, rather than here. Everything above the rendering layer --
@@ -123,14 +128,6 @@ def agents_md_cache_marker(
         f"sqliteschema{sqlite_schema_version}:fp{schema_fingerprint}:{tables_part}"
     )
 
-
-_FTS5_SHADOW_SUFFIXES: tuple[str, ...] = (
-    "_data",
-    "_idx",
-    "_docsize",
-    "_config",
-    "_content",
-)
 
 _HEADER = """\
 # state.db -- generated table reference
@@ -224,26 +221,13 @@ def _existing_is_generated_sidecar(path: Path) -> bool:
 
 
 def _virtual_table_names(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND sql LIKE 'CREATE VIRTUAL TABLE%'"
-    ).fetchall()
-    return {row[0] for row in rows}
+    """Backward-compatible alias for :func:`sync_drift_subject` evaluators."""
+    return set(virtual_table_names(conn))
 
 
 def _is_fts5_shadow_table(name: str, virtual_tables: set[str]) -> bool:
-    """True if ``name`` is a shadow table SQLite auto-generated for an fts5
-    virtual table (``<vtab>_data``, ``_idx``, ``_docsize``, ``_config``,
-    and, in content-storing mode, ``_content``).
-
-    These hold opaque index-internal storage, not application columns, so
-    they are excluded from the drift guard rather than requiring
-    meaningless per-column docs. Detected structurally (any known suffix on
-    a name derived from a real virtual table in this DB) so a future fts5
-    table needs no code change here.
-    """
-    return any(
-        name == f"{vtab}{suffix}" for vtab in virtual_tables for suffix in _FTS5_SHADOW_SUFFIXES
-    )
+    """Backward-compatible alias for :func:`sync_drift_floors` evaluators."""
+    return is_fts5_shadow_table(name, frozenset(virtual_tables))
 
 
 def introspect(
@@ -264,14 +248,7 @@ def introspect(
     the app, while foreign-authority tables stay in the sidecar. The CLI
     leaves this unset, so extras still fail there.
     """
-    virtual_tables = _virtual_table_names(conn)
-    names = [
-        row[0]
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
-        if not row[0].startswith("sqlite_") and not _is_fts5_shadow_table(row[0], virtual_tables)
-    ]
-    if owned_tables is not None:
-        names = [name for name in names if name in owned_tables]
+    names = documentable_table_names(conn, owned_tables=owned_tables)
 
     tables: list[TableInfo] = []
     for name in names:

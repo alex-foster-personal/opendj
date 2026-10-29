@@ -37,21 +37,6 @@ def _render_human(path: Path, scan_json: dict[str, object]) -> str:
     )
 
 
-def _scan_to_dict(path: Path, target_lufs: float, ceiling_dbtp: float) -> dict[str, object]:
-    scan = scan_file(path)
-    gain_db, clamped = scan.gain_db(target_lufs=target_lufs, ceiling_dbtp=ceiling_dbtp)
-    return {
-        "path": str(path),
-        "integrated_lufs": scan.integrated_lufs,
-        "loudness_range_lu": scan.loudness_range_lu,
-        "true_peak_dbtp": scan.true_peak_dbtp,
-        "target_lufs": target_lufs,
-        "ceiling_dbtp": ceiling_dbtp,
-        "gain_db": round(gain_db, 2),
-        "gain_clamped": clamped,
-    }
-
-
 # --------------------------------------------------------------------------
 # entry
 # --------------------------------------------------------------------------
@@ -80,7 +65,10 @@ def main(argv: list[str] | None = None) -> int:
     failed = False
     for track in args.tracks:
         try:
-            payload = _scan_to_dict(track, args.target_lufs, args.ceiling_dbtp)
+            payload = scan_file(track).report_payload(
+                target_lufs=args.target_lufs,
+                ceiling_dbtp=args.ceiling_dbtp,
+            )
         except LoudnessError as exc:
             print(f"[ERROR] {track}: {exc}", file=sys.stderr)
             failed = True

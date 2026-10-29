@@ -8,8 +8,13 @@ use std::io::{self, Write};
 /// the data chunk tops out just under 4 GiB (about 3.1 hours at 48 kHz).
 pub const MAX_F32_FRAMES: u64 = (u32::MAX as u64 - 36) / 8;
 
+/// The channel count of every render and test-fixture WAV this module writes
+/// (interleaved stereo). `odj-audio render` reports it in its summary so a
+/// reader checks each file against the writer, never against its own constant.
+pub const STEREO_CHANNELS: u16 = 2;
+
 fn header(w: &mut impl Write, format: u16, bits: u16, sr: u32, data_bytes: u32) -> io::Result<()> {
-    let channels = 2u16;
+    let channels = STEREO_CHANNELS;
     let block_align = channels * bits / 8;
     w.write_all(b"RIFF")?;
     w.write_all(&(36 + data_bytes).to_le_bytes())?;

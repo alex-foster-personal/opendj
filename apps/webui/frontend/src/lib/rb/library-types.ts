@@ -9,6 +9,7 @@
  * two that happen to be adjacent.
  */
 
+import type { TrackQualityGrade } from './quality-grade';
 import type { AnlzWaveformBands } from './anlz-types';
 
 /** Optional analysis metadata reserved for future key and tempo-aware sync. */
@@ -45,6 +46,8 @@ export interface TrackQuality {
 	container: string;
 	/** True when the container is a lossless one. */
 	lossless: boolean;
+	/** The QLT letter (QLTSCAN-02). Set on track-list rows; absent elsewhere. */
+	grade?: TrackQualityGrade | null;
 }
 
 /** The six ladder rungs, from GET /tracks/quality-ladder (legend source

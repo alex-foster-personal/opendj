@@ -43,12 +43,11 @@ import { startUsageHeartbeat } from './usage-heartbeat';
 import {
 	DECK_IDS,
 	deckAudioClockPositionMs,
+	deckMasterBusGain,
 	deckMixBuffer,
 	deckStates,
-	mixerState,
 	pitchRanges
 } from '$lib/rb/audio-engine.svelte';
-import { onAirGain } from '$lib/rb/master-election';
 import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -81,26 +80,14 @@ function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 	});
 }
 
-/** Linear gain from a deck to the master analyser tap: the mixer chain, or 0
- * when a ready stem bundle has every part gained to zero. Same laws the graph
- * applies (`onAirGain`, `everyStemPartSilent`); EQ is left out because a full
- * cut is a dB threshold, not a zero, so an EQ-killed deck still reads as open. */
+/** Linear gain from a deck to the master analyser tap: the commanded mixer
+ * chain to the internal master bus (0 for a deck routed out by ?extroute=,
+ * scaled by the calibrated master ceiling), or 0 when a ready stem bundle has
+ * every part gained to zero. EQ is left out because a full cut is a dB
+ * threshold, not a zero, so an EQ-killed deck still reads as open. */
 function _silenceMasterPathGain(id: DeckId): number {
 	if (everyStemPartSilent(deckStates[id])) return 0;
-	const ch = mixerState.channels[id];
-	return onAirGain(
-		{
-			id,
-			loaded: true,
-			playing: true,
-			beat_sync_enabled: false,
-			fader: ch.fader,
-			trim: ch.trim,
-			assign: ch.assign
-		},
-		mixerState.crossfader,
-		mixerState.master
-	);
+	return deckMasterBusGain(id);
 }
 
 /** Source PCM at each deck's audio-clock playhead and its gain to the master

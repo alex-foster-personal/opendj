@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from apps.shared.state import sync_stamp
 from apps.shared.state.writer import immediate_transaction, next_playlist_revision
 
-from .client import SpotifyTrack
+from .client import SpotifyTrack, _track_id_from_spotify_uri
 from .matcher_adapter import (
     LocalTrack,
     MatchedPair,
@@ -146,10 +146,7 @@ def _promote_pending_row(
             ),
         )
     # Link local track -> Spotify id for future de-dup.
-    vendor_track = None
-    uri = pending.spotify_uri or ""
-    if uri.startswith("spotify:track:"):
-        vendor_track = uri.split(":", 2)[2] or None
+    vendor_track = _track_id_from_spotify_uri(pending.spotify_uri or "")
     if vendor_track:
         vendor_stamp = sync_stamp.stamp_and_log(
             conn, "track_vendor_ids", (target.stable_id, "spotify"), machine_id,

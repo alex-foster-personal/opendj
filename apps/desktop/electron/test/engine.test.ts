@@ -20,7 +20,11 @@ import {
 	healthOk,
 	pumpStream,
 	spawnEngine,
-	stopProcessGroup
+	signalGroup,
+	stopProcessGroup,
+	TaskkillUnavailableError,
+	EngineCleanupError,
+	windowsTaskkill
 } from '../src/engine';
 import { verifyLogWritable } from '../src/shell-log';
 import { FAKE_ENGINE, fakePayload, pidGone, scratchDir, statusServer, waitFor } from './helpers';
@@ -102,7 +106,7 @@ test('stopping the group terminates the engine', async () => {
 test('shutdown waits out the SIGTERM grace, then escalates to SIGKILL', async () => {
 	const dir = scratchDir('shutdown-escalate');
 	const port = await freeLoopbackPort();
-	const engine = spawnEngine(fakePayload(dir, 'ignore-term'), path.join(dir, 'data'), path.join(dir, 'data/logs/engine.log'), port);
+	const engine = spawnEngine(fakePayload(dir, 'ignore-term'), path.join(dir, 'data'), path.join(dir, '(private path)'), port);
 	await engine.waitUntilHealthy(10_000);
 	const started = Date.now();
 	await engine.shutdown();
@@ -115,7 +119,7 @@ test('shutdown waits out the SIGTERM grace, then escalates to SIGKILL', async ()
 test('an engine that honors SIGTERM is not escalated (the opposite direction)', async () => {
 	const dir = scratchDir('shutdown-graceful');
 	const port = await freeLoopbackPort();
-	const engine = spawnEngine(fakePayload(dir), path.join(dir, 'data'), path.join(dir, 'data/logs/engine.log'), port);
+	const engine = spawnEngine(fakePayload(dir), path.join(dir, 'data'), path.join(dir, '(private path)'), port);
 	await engine.waitUntilHealthy(10_000);
 	const started = Date.now();
 	await engine.shutdown();
@@ -254,14 +258,14 @@ test('a non-executable audio engine file is not handed over', () => {
 
 test('an engine that exits during boot is named with its status', async () => {
 	const dir = scratchDir('spawn-exit');
-	const engine = spawnEngine(fakePayload(dir, 'exit'), path.join(dir, 'data'), path.join(dir, 'data/logs/engine.log'), await freeLoopbackPort());
+	const engine = spawnEngine(fakePayload(dir, 'exit'), path.join(dir, 'data'), path.join(dir, '(private path)'), await freeLoopbackPort());
 	await assert.rejects(engine.waitUntilHealthy(10_000), /stopped while starting up[\s\S]*exit status 3/);
 });
 
 test('an engine that never answers times out with the address it tried', async () => {
 	const dir = scratchDir('spawn-timeout');
 	const port = await freeLoopbackPort();
-	const engine = spawnEngine(fakePayload(dir, 'never-ready'), path.join(dir, 'data'), path.join(dir, 'data/logs/engine.log'), port);
+	const engine = spawnEngine(fakePayload(dir, 'never-ready'), path.join(dir, 'data'), path.join(dir, '(private path)'), port);
 	await assert.rejects(engine.waitUntilHealthy(1_000), new RegExp(`did not answer http://127.0.0.1:${port}/api/v1/health within 1s`));
 	await engine.shutdown();
 });
@@ -269,7 +273,7 @@ test('an engine that never answers times out with the address it tried', async (
 test('a payload without its launcher is refused before any spawn', () => {
 	const dir = scratchDir('spawn-missing');
 	assert.throws(
-		() => spawnEngine(path.join(dir, 'payload'), path.join(dir, 'data'), path.join(dir, 'data/logs/engine.log'), 1),
+		() => spawnEngine(path.join(dir, 'payload'), path.join(dir, 'data'), path.join(dir, '(private path)'), 1),
 		/has no engine inside it/
 	);
 	assert.equal(fs.existsSync(path.join(dir, 'data')), false, 'nothing was created for a build that cannot boot');
@@ -277,4 +281,74 @@ test('a payload without its launcher is refused before any spawn', () => {
 
 test('the fake engine fixture exists and is executable', () => {
 	fs.accessSync(FAKE_ENGINE, fs.constants.X_OK);
+});
+
+test('taskkill is resolved under the system root, never looked up on PATH (Codex on #6830)', () => {
+	const seen: string[] = [];
+	const present = (file: string): boolean => (seen.push(file), true);
+	assert.equal(
+		windowsTaskkill({ SystemRoot: 'C:\\Windows', PATH: 'C:\\evil' }, present),
+		'C:\\Windows\\System32\\taskkill.exe'
+	);
+	assert.equal(windowsTaskkill({ windir: 'D:\\WINNT' }, present), 'D:\\WINNT\\System32\\taskkill.exe');
+	assert.deepEqual(seen, ['C:\\Windows\\System32\\taskkill.exe', 'D:\\WINNT\\System32\\taskkill.exe']);
+});
+
+test('no absolute system root, or no taskkill.exe there, resolves to nothing rather than a PATH lookup', () => {
+	const present = (): boolean => true;
+	assert.equal(windowsTaskkill({ PATH: 'C:\\Windows\\System32' }, present), null);
+	assert.equal(windowsTaskkill({ SystemRoot: 'Windows' }, present), null);
+	assert.equal(windowsTaskkill({ SystemRoot: 'C:\\Windows' }, () => false), null);
+});
+
+test('no taskkill.exe on Windows throws a distinct error, never "nothing was there" (Sol P1 on #6830)', () => {
+	assert.throws(() => signalGroup(4242, 'SIGTERM', 'win32', () => null), TaskkillUnavailableError);
+	assert.throws(() => signalGroup(4242, 'SIGKILL', 'win32', () => null), /no taskkill\.exe/);
+});
+
+function sleeper(name: string): { engine: Engine; calls: string[] } {
+	const dir = scratchDir(name);
+	// Node itself, so the Windows taskkill paths these tests play can also run on Windows (Sol P1 on #6830).
+	const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30_000)'], { detached: true, stdio: 'ignore' });
+	const sink = new LogSink(path.join(dir, 'engine.log'));
+	return { engine: new Engine(child, 1, dir, sink.path, sink), calls: [] };
+}
+
+test('a taskkill /T that fails goes straight to /F, and one that fails again kills the leader alone (Sol P1 on #6830)', async () => {
+	const { engine, calls } = sleeper('taskkill-fails');
+	engine.treeSignals = { platform: 'win32', send: (_pid, signal) => (calls.push(signal), false) };
+	const started = Date.now();
+	await assert.rejects(engine.shutdown(), EngineCleanupError);
+	assert.deepEqual(calls, ['SIGTERM', 'SIGKILL']);
+	assert.equal(engine.tryReap()?.signal, 'SIGKILL');
+	assert.ok(Date.now() - started < 4_000, 'no grace is waited on a SIGTERM that never reached the tree');
+});
+
+test('no taskkill.exe at shutdown kills the leader alone without a second try', async () => {
+	const { engine, calls } = sleeper('taskkill-missing');
+	engine.treeSignals = {
+		platform: 'win32',
+		send: (_pid, signal) => {
+			calls.push(signal);
+			throw new TaskkillUnavailableError('no taskkill.exe');
+		}
+	};
+	await assert.rejects(engine.shutdown(), EngineCleanupError);
+	assert.deepEqual(calls, ['SIGTERM']);
+	assert.equal(engine.tryReap()?.signal, 'SIGKILL');
+});
+
+test('control: a taskkill /T that succeeds is waited on as a graceful stop', async () => {
+	const { engine, calls } = sleeper('taskkill-ok');
+	engine.treeSignals = {
+		platform: 'win32',
+		send: (pid, signal) => {
+			calls.push(signal);
+			process.kill(pid, signal);
+			return true;
+		}
+	};
+	await engine.shutdown();
+	assert.deepEqual(calls, ['SIGTERM']);
+	assert.equal(engine.tryReap()?.signal, 'SIGTERM');
 });

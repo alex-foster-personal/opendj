@@ -9,6 +9,17 @@ from apps.voice import settings
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 
+def test_coalesce_env_returns_explicit_dict():
+    explicit = {"VOICE_FOO": "bar"}
+    assert settings.coalesce_env(explicit) is explicit
+
+
+def test_coalesce_env_none_reads_os_environ():
+    merged = settings.coalesce_env(None)
+    assert isinstance(merged, dict)
+    assert merged.keys()  # non-empty in any real test env
+
+
 def test_set_get_roundtrip(tmp_path):
     s = settings.SettingsStore(path=tmp_path / "voice.sqlite")
     s.set("mute_until", 1234.5)

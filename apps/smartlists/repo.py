@@ -16,14 +16,7 @@ from apps.shared.smartlists import (
 from apps.shared.smartlists import (
     referenced_fields as compute_referenced_fields,
 )
-
-_ALLOWED_ORDER_BY: frozenset[str] = frozenset({
-    "added_date desc", "added_date asc",
-    "bpm asc", "bpm desc",
-    "rating desc", "rating asc",
-    "energy asc", "energy desc",
-    "random",
-})
+from apps.smartlists.order_by import ALLOWED_ORDER_BY
 
 
 class SmartlistsRepoError(ValueError):
@@ -156,9 +149,9 @@ class SmartlistsRepo:
         validate_rule(rule)
         if not name.strip():
             raise SmartlistsRepoError("smartlist name must be non-empty")
-        if order_by not in _ALLOWED_ORDER_BY:
+        if order_by not in ALLOWED_ORDER_BY:
             raise SmartlistsRepoError(
-                f"order_by {order_by!r} not in allowlist {sorted(_ALLOWED_ORDER_BY)}"
+                f"order_by {order_by!r} not in allowlist {sorted(ALLOWED_ORDER_BY)}"
             )
         sid = uuid.uuid4().hex
         now = _now_iso()
@@ -190,7 +183,7 @@ class SmartlistsRepo:
     ) -> SmartlistRow:
         """CAS-replace one complete rule inside one explicit transaction."""
         validate_rule(rule)
-        if order_by is not None and order_by not in _ALLOWED_ORDER_BY:
+        if order_by is not None and order_by not in ALLOWED_ORDER_BY:
             raise SmartlistsRepoError(
                 f"order_by {order_by!r} not in allowlist"
             )

@@ -52,7 +52,7 @@ export function applyTrimStage(
 }
 
 // The engine reaches the trim stage's auto gain input through the module that owns the stage.
-export { deckAutoGain, freshTrackAutoGain, publishDeckAutoGain, registerAutoGainApplier, setAutoGainLiveGuard, setDeckAutoGainUserOffset, settleTrackAutoGain } from '$lib/rb/auto-gain.svelte';
+export { autoGainLinear, deckAutoGain, freshTrackAutoGain, publishDeckAutoGain, registerAutoGainApplier, setAutoGainLiveGuard, setDeckAutoGainUserOffset, settleTrackAutoGain } from '$lib/rb/auto-gain.svelte';
 
 export function buildDeckChannelGraph(deps: {
 	ctx: AudioContext;
@@ -149,8 +149,11 @@ export function buildDeckChannelGraph(deps: {
 		deps.onDeck(deck, nodes, tap);
 		// The channel fader is the deck-volume control mounted with this meter.
 		// Tap its output so the physical slider and visible light describe the
-		// same audible channel level.
-		meterSources.push({ tap, source: fader });
+		// same audible channel level. The clip pip judges the level heard after
+		// the crossfader, measured on the audio thread from `xf` itself, so the
+		// gain is the one those samples played under (Sol P1, PR #6829); a deck
+		// routed out past the crossfader is heard at its fader.
+		meterSources.push({ tap, source: fader, heardSource: extsplit === null ? xf : fader });
 	}
 	return meterSources;
 }
@@ -425,6 +428,9 @@ export async function recreateEngineGraph(bindings: EngineGraphRecreateBindings)
 // output-topology wiring (same engine-graph concern, different file).
 export {
 	cueOnlyMonitoringActive,
+	masterSilenceIsCommanded,
+	masterBusSilenceIsCommanded,
+	masterBusPathGain,
 	parseDjOutputProfile,
 	resolveDjOutputProfile,
 	wireAudioOutputTopology,

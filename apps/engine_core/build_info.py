@@ -60,6 +60,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from apps.engine_core.config import ENGINE_VERSION
+from apps.engine_core.refusal import unavailable_response
 
 MANIFEST_ENV: str = "OPENDJ_PAYLOAD_MANIFEST"
 BUILD_INFO_PATH: str = "/api/v1/build-info"
@@ -349,14 +350,7 @@ def add_build_info_route(app: FastAPI, *, environ: dict[str, str], repo_root: Pa
     )
     def build_info() -> BuildInfoOut | JSONResponse:
         if resolved is None:
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "error": CODE_BUILD_IDENTITY_UNAVAILABLE,
-                    "message": failure,
-                    "details": None,
-                },
-            )
+            return unavailable_response(CODE_BUILD_IDENTITY_UNAVAILABLE, failure)
         return resolved
 
 

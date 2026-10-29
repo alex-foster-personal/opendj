@@ -13,22 +13,38 @@
 		usbRowKindLabel,
 		usbRowReasonTag,
 		usbDiscoveryNotice,
+		usbFormatReport,
 		usbPollDelayMs,
 		usbTracker,
 		type UsbVolumeKnown
 	} from '$lib/rb/usb-tracker.svelte';
-	import { canImportUsbVolume, importUsbVolume } from '$lib/rb/usb-import';
+	import { canImportUsbVolume, importUsbVolume, USB_IMPORT_TITLE } from '$lib/rb/usb-import';
+	import { usbImportView } from '$lib/rb/usb-import-view.svelte';
+	import type { Component } from 'svelte';
 
-	const IMPORT_TITLE =
-		'Import tracks from this stick. Files stay on the stick. Tags only - no BPM, key, or beatgrid.';
+	let PlanView = $state<Component | null>(null);
+	let planFailed = $state(false);
 
-	let foldedOpen = $state(false);
+	$effect(() => {
+		if (!usbImportView.open || PlanView !== null || planFailed) return;
+		void import('./UsbImportPlan.svelte').then(
+			(mod) => {
+				PlanView = mod.default;
+			},
+			(exc: unknown) => {
+				planFailed = true;
+				console.error('[usb] the plan view failed to load', exc);
+			}
+		);
+	});
+
 	let promptName = $state('');
 	let draftYours = $state<boolean | null>(null);
 	let draftMusic = $state<boolean | null>(null);
 	let draftForget = $state(false);
 
 	const open = $derived(usbTracker.panelOpen);
+	const formatReport = $derived(usbFormatReport(usbTracker.volumes, usbTracker.readNotes, usbTracker.scannedAt !== null));
 	const active = $derived(presentNonForgotten());
 	// A refused or unanswered scan is not "no stick present": say which.
 	const discoveryNotice = $derived(usbDiscoveryNotice(usbTracker));
@@ -82,11 +98,30 @@
 
 {#if open}
 	<div class="usb-backdrop" role="presentation" onclick={close}></div>
-	<aside class="usb-panel" role="dialog" aria-label="USB volumes" aria-modal="true" data-testid="usb-panel">
+	<aside
+		class="usb-panel"
+		class:planning={usbImportView.open}
+		role="dialog"
+		aria-label="USB volumes"
+		aria-modal="true"
+		data-testid="usb-panel"
+	>
 		<header class="usb-head">
 			<strong title="USB stick tracker (#328) - detect only, never writes">USB sticks</strong>
 			<button type="button" class="usb-x" onclick={close} title="Close" aria-label="Close">x</button>
 		</header>
+
+		<section class="usb-found" aria-label="What was found on USB" data-testid="usb-format-report">
+			<p class="usb-found-lead" title="How many volumes are mounted right now">{formatReport.drives}</p>
+			<p class="usb-found-lead" title="rekordbox (RBX) only, djay only, or both">
+				{formatReport.libraries}
+			</p>
+			{#each formatReport.sticks as stick (stick.id)}
+				<p class="usb-ver" data-testid="usb-format-version">
+					<strong>{stick.name}.</strong> {stick.version}
+				</p>
+			{/each}
+		</section>
 
 		{#if prompt}
 			<section class="usb-prompt" aria-label="First-seen USB">
@@ -151,6 +186,19 @@
 			</section>
 		{/if}
 
+		{#if usbImportView.open}
+			{#if PlanView}
+				<PlanView />
+			{:else if planFailed}
+				<p class="usb-empty">
+					Analysis plan failed to load. The stick is still queued.
+					<button type="button" data-testid="usb-import-plan-retry" onclick={() => (planFailed = false)}>Retry</button>
+				</p>
+			{:else}
+				<p class="usb-empty" data-testid="usb-import-plan-loading">Ranking tracks...</p>
+			{/if}
+		{/if}
+
 		<section class="usb-list" aria-label="Present USB volumes">
 			{#if discoveryNotice !== null}
 				<p
@@ -177,11 +225,11 @@
 							type="button"
 							class="usb-mini"
 							data-testid="usb-import-button"
-							title={IMPORT_TITLE}
+							title={USB_IMPORT_TITLE}
 							disabled={!canImportUsbVolume(vol)}
 							onclick={() => void importUsbVolume(vol)}
 						>
-							import
+							Open
 						</button>
 						<button
 							type="button"
@@ -196,7 +244,7 @@
 			{/if}
 		</section>
 
-		<details class="usb-fold" bind:open={foldedOpen}>
+		<details class="usb-fold">
 			<summary title="Non-music mounts and forgotten volumes with reason tags">
 				Non-music + Forgotten ({folded.length})
 			</summary>
@@ -217,7 +265,7 @@
 							title="Unforget this volume"
 							onclick={() => setForgotten(vol.id, false)}
 						>
-							restore
+							unforget
 						</button>
 					{/if}
 				</div>
@@ -227,9 +275,39 @@
 			{/if}
 		</details>
 
+		<section class="usb-soon" aria-label="Coming soon" data-testid="usb-compat-soon">
+			<p class="usb-soon-title">[Coming soon]</p>
+			<p>
+				USB compatibility across decks and DJ software, and read/write speed benchmarking.
+			</p>
+			<ul>
+				<li>
+					Will warn when a stick will not work on a specific old CDJ. CDJ-2000-era decks need
+					Device Library (export.pdb) on FAT32. Device Library Plus alone will not load there.
+					CDJ-3000 and Opus Quad want Device Library Plus.
+				</li>
+				<li>
+					Where to be careful: a USB 3-only stick (some SSK drives) can mount on this Mac and
+					still fail in a deck's USB 2.0 port. exFAT, or a large allocation size, does the same
+					on old players. rekordbox, djay, Serato and Engine DJ each read a different layout, so
+					a stick that is only one of them is not the other.
+				</li>
+				<li>
+					Fixes to try: re-export from rekordbox with Device Library turned on when the player
+					is a CDJ-2000-era deck. Format FAT32. Use the USB-A plug in the deck's USB 2.0 port.
+					If Open DJ's read failed on an RBX stick, eject, replug, and allow Removable Volumes,
+					then open the stick again.
+				</li>
+				<li>
+					Read/write speed is not measured yet. Benchmarking will time a read and a write and
+					warn when the stick is too slow for a set.
+				</li>
+			</ul>
+		</section>
+
 		<footer class="usb-foot">
-			<span class="usb-hint" title="Detect + import; never writes to the stick">
-				Detect + import; never writes to the stick.
+			<span class="usb-hint" title="Detect + open. Analysis runs in the background and never writes to the stick.">
+				Detect + open. Analysis runs in the background and never writes to the stick.
 			</span>
 		</footer>
 	</aside>
@@ -248,7 +326,7 @@
 		bottom: 26px;
 		z-index: 41;
 		width: min(320px, calc(100% - 16px));
-		max-height: min(420px, 70%);
+		max-height: min(560px, 78%);
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
@@ -261,10 +339,53 @@
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 		overflow: auto;
 	}
+	.usb-panel.planning {
+		top: 8px;
+		width: calc(100% - 16px);
+		max-height: calc(100% - 34px);
+	}
 	.usb-head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+	}
+	.usb-found,
+	.usb-soon {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0;
+		padding: 6px;
+		border: 1px solid var(--rb-border);
+		background: var(--rb-panel);
+	}
+	.usb-soon {
+		border-style: dashed;
+	}
+	.usb-found-lead,
+	.usb-soon-title,
+	.usb-ver,
+	.usb-soon p,
+	.usb-soon li {
+		margin: 0;
+	}
+	.usb-found-lead {
+		font-weight: 700;
+	}
+	.usb-ver {
+		color: var(--rb-text-dim);
+		font-size: 10px;
+	}
+	.usb-soon-title {
+		font-weight: 700;
+		color: var(--rb-orange, #e8952a);
+	}
+	.usb-soon ul {
+		margin: 0;
+		padding-left: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
 	}
 	.usb-x {
 		background: transparent;

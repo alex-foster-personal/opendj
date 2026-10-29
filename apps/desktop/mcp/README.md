@@ -55,7 +55,34 @@ claude mcp add opendj-webview \
 Ports are explicit everywhere -- no hidden defaults. Check the reserved-port
 list before picking one (`wdio.conf.ts` documents it; smoke uses 8698/4456).
 
+### Electron: the CDP seam
+
+The Electron shell has no WebDriver; unpackaged builds open a Chrome DevTools
+Protocol port instead (`OPENDJ_REMOTE_DEBUGGING_PORT`, packaged builds have
+none). Set `MDT_WEBVIEW_MCP_CDP` in place of `MDT_WEBVIEW_MCP_WEBDRIVER` and
+every tool above works the same (`cdp-driver.ts`). Setting both is an error.
+`just electron-dev` starts the shell with the port open and prints the exact
+`claude mcp add` line for your worktree:
+
+```bash
+claude mcp add opendj-electron \
+  -e MDT_WEBVIEW_MCP_CDP=http://127.0.0.1:<frontend-port + 20000> \
+  -e MDT_WEBVIEW_MCP_APP=http://127.0.0.1:<frontend-port> \
+  -e MDT_WEBVIEW_MCP_ENGINE=http://127.0.0.1:<backend-port> \
+  -- pnpm --dir apps/desktop exec tsx mcp/webview-mcp.ts
+```
+
+`status` reads the live page URL on every call and reports `ready: false` while
+the window is on its opendj:// bootstrap page, or on any origin other than
+`MDT_WEBVIEW_MCP_APP` (the `MDT_WEBVIEW_MCP_ENGINE` origin when that is unset), so poll it
+after a relaunch. The same port also takes
+`chrome-devtools-mcp --browser-url` if you want its performance tooling.
+
 ## Verify
+
+`pnpm --dir apps/desktop exec tsx --test mcp/tree-diff.test.ts mcp/cdp-driver.test.ts` unit-tests how `act` diffs trees and how the CDP seam reconnects.
+
+`pnpm --dir apps/desktop exec tsx --test mcp/cdp-driver.real.test.ts` runs the CDP driver against a real headless Chromium endpoint (discovery, evaluate, navigate, screenshot); it needs a Chromium-family browser binary (`CDP_TEST_BROWSER`, not a raw Electron binary, or Playwright's chromium) and fails when none is found.
 
 ```bash
 just webview-mcp-smoke
@@ -63,6 +90,9 @@ just webview-mcp-smoke
 
 Boots a fixture engine + debug shell + the MCP over real stdio and asserts the
 whole loop, including stale-ref rejection and retina descaling. No mocks.
+`pnpm --dir apps/desktop exec tsx mcp/smoke.ts --shell electron` runs the same
+assertions against the Electron shell over CDP (on headless Linux, wrap it in
+`xvfb-run -a -s "-screen 0 1920x1200x24"`).
 
 ## Session traces (Devin-style visual replay)
 

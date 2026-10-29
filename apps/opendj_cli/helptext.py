@@ -49,6 +49,9 @@ AutoDJ (AGENT-29, JSON out; plans continue a playing set, never start one):
   opendj dj propose <in_stable_id> --intent "wind down" # validated plans
   opendj dj validate|schedule <plan.json|->             # check, then perform
   opendj dj amend <plan_id> abort|finish_now|extend [--bars N]
+  opendj dj try --out <id> --in <id> [-n 6] [--context-bars 4] [--json]  # render + rank candidates
+  opendj dj try pick <job_id> <cand> --etag <etag>     # record the chosen transition
+  opendj dj try undo <job_id> --etag <etag>             # remove that pick
 
 installed app UPDATE (AGENT-13, issue #2942; exits 0 only for current or
 update-available, and for an apply that relaunched into the announced build):

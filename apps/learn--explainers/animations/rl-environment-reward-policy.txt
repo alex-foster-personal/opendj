@@ -1,0 +1,139 @@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+     <*>[ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 1    score M = 0.40  ########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->  <*>[ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 1    score M = 0.40  ########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]             <*>[ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 1    score M = 0.40  ########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----  <*>[ ENVIRONMENT: render + score ]
+
+  cycle 1    score M = 0.40  ########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+     <*>[ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 1    score M = 0.52  ##########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+   <*>[ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 1    score M = 0.52  ##########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+     <*>[ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 2    score M = 0.52  ##########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->  <*>[ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 2    score M = 0.52  ##########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]             <*>[ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----     [ ENVIRONMENT: render + score ]
+
+  cycle 2    score M = 0.52  ##########
+
+  * = where the token is now
+@@
+rl loop: state -> policy -> action -> environment -> reward -> update
+
+        [ STATE: track pair ]  ---->     [ POLICY ]
+            ^                                |
+            |                                v
+      [ POLICY UPDATE ]                [ ACTION: transition plan ]
+            ^                                |
+            |                                v
+        [ REWARD: M ]  <----  <*>[ ENVIRONMENT: render + score ]
+
+  cycle 2    score M = 0.52  ##########
+
+  * = where the token is now

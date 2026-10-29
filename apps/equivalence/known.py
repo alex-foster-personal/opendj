@@ -485,12 +485,22 @@ def _main() -> int:
             "disk. Only run this after the fixture change has been reviewed."
         ),
     )
+    parser.add_argument(
+        "--fixture",
+        type=Path,
+        default=FIXTURE_PATH,
+        help=(
+            "the fixture whose sibling manifest to regenerate (default: the "
+            "Collection10 fixture; the MIK 11 store has known_answers_mik11.json)"
+        ),
+    )
     args = parser.parse_args()
     if not args.write_manifest:
         parser.print_help()
         return 1
-    manifest = write_manifest()
-    print(f"wrote {FIXTURE_MANIFEST_PATH}: {manifest}")
+    manifest_path = args.fixture.with_suffix(".manifest.json")
+    manifest = write_manifest(args.fixture, manifest_path)
+    print(f"wrote {manifest_path}: {manifest}")
     return 0
 
 

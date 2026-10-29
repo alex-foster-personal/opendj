@@ -112,7 +112,7 @@ test('the compatible filter is always reachable in the header, never gated on se
 	);
 	assert.match(
 		panel.replace(/\s+/g, ' '),
-		/Show only tracks compatible with the reference deck \(master, else playing, else any loaded with key and BPM\): Camelot key family/
+		/Show only tracks compatible with the reference deck \(master, else playing, else any loaded with key and BPM\): the mode's key rule and the BPM window/
 	);
 });
 

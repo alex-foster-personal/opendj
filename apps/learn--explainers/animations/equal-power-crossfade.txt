@@ -1,0 +1,119 @@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [|------------------------------] B
+  position   0.0 %
+
+  A gain  cos  [########################################]    0.0 dB
+  B gain  sin  [........................................]   -inf dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [---|---------------------------] B
+  position  12.5 %
+
+  A gain  cos  [#######################################.]   -0.2 dB
+  B gain  sin  [########................................]  -14.2 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [-------|-----------------------] B
+  position  25.0 %
+
+  A gain  cos  [#####################################...]   -0.7 dB
+  B gain  sin  [###############.........................]   -8.3 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [-----------|-------------------] B
+  position  37.5 %
+
+  A gain  cos  [#################################.......]   -1.6 dB
+  B gain  sin  [######################..................]   -5.1 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [---------------|---------------] B
+  position  50.0 %
+
+  A gain  cos  [############################............]   -3.0 dB
+  B gain  sin  [############################............]   -3.0 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [------------------|------------] B
+  position  62.5 %
+
+  A gain  cos  [######################..................]   -5.1 dB
+  B gain  sin  [#################################.......]   -1.6 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [----------------------|--------] B
+  position  75.0 %
+
+  A gain  cos  [###############.........................]   -8.3 dB
+  B gain  sin  [#####################################...]   -0.7 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [--------------------------|----] B
+  position  87.5 %
+
+  A gain  cos  [########................................]  -14.2 dB
+  B gain  sin  [#######################################.]   -0.2 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [------------------------------|] B
+  position 100.0 %
+
+  A gain  cos  [........................................]   -inf dB
+  B gain  sin  [########################################]    0.0 dB
+
+  power sum    [========================================]  +0.0 dB
+
+  A^2 + B^2 = cos^2 + sin^2 = 1, so the sum meter never moves
+@@
+equal-power crossfade: A fades out as B fades in, loudness stays level
+
+  crossfader A [---------------|---------------] B
+  position  50.0 %  (compare: LINEAR fade)
+
+  A gain  lin  [####################....................]   -6.0 dB
+  B gain  lin  [####################....................]   -6.0 dB
+
+  power sum    [====================....................] -3.0 dB dip
+
+  linear: 0.5^2 + 0.5^2 = 0.5, the middle sags 3 dB

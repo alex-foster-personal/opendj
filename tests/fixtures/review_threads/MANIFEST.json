@@ -86,6 +86,13 @@
    "source_pr": 3826,
    "threads": 2,
    "note": "Captured Tue 29 Sep 2026 20:46-20:48Z with scripts/review_thread_triage.py's own _THREADS_QUERY via `gh api graphql`; the only edits were dropping both pageInfo blocks (every hasNextPage was false), at head 5985535197. Two of the thirteen threads: Copilot's decorated shapes '[P2] NON-BLOCKING:' (wrapper closes on the P-level) and '[P2 NON-BLOCKING]' (wrapper spans both)."
+  },
+  "pr-4489-sweeper-debtlog.json": {
+   "sha256": "6ae974e0d2c3c5bb2e2a7683d1f704e24a41fb7d76171994235ab4aea17126dd",
+   "bytes": 7865,
+   "source_pr": 4489,
+   "threads": 2,
+   "note": "Captured Tue 20 Oct 2026 06:13Z at head aecb4c615e with scripts/review_thread_triage.py's own _THREADS_QUERY via `gh api graphql`; the only edits were selecting these two threads and dropping both pageInfo blocks (every hasNextPage was false). The two P1 BLOCKING threads the nucbox orphan sweeper wrote off on Wed 30 Sep 2026 22:02Z: reply 2 of each is `logged as tech debt:  (deferred ...)` with an EMPTY anchor, authored by the GitHub App whose GraphQL login is `opendj-gate-fast` (no [bot] suffix). Reply 3 is the human remediation (REBUTTED on discussion_r4142754960, FIXED on discussion_r4142754981). Tests slice to the first two comments to reproduce the Wed 30 Sep 22:02Z state; the payload itself is untouched."
   }
  }
 }

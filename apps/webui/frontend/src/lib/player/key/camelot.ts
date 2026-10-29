@@ -209,6 +209,71 @@ export function camelotKeysAreCompatible(
 	return camelotKeysWithinSteps(deckKey, masterKey, 1);
 }
 
+/** Compatible-filter key rule (KEYSHIFT-01). `transition` is the enabled
+ * Camelot rule checkboxes (camelotRulesAllow); `mashup` is the exact same key,
+ * plus the relative major/minor at the same number when `relative`. A
+ * transition rule with no ids never reaches here: the caller treats it as
+ * "key not checked". */
+export type CompatibleKeyRule =
+	| { mode: 'transition'; rules: readonly CamelotRuleId[] }
+	| { mode: 'mashup'; relative: boolean };
+
+/** A row's key match against the reference after an integer key shift. */
+export interface CompatibleKeyShift {
+	/** Semitones the row is shifted by to match; 0 = compatible as it is. */
+	shift: number;
+	/** The row's key after that shift, in Camelot notation ("8A"). */
+	key: string;
+}
+
+/** Largest allowed key shift for the compatible filter (KEYSHIFT-03). */
+export const COMPATIBLE_KEY_SHIFT_MAX = 3;
+
+function _keysMatchRule(row: CamelotKey, ref: CamelotKey, rule: CompatibleKeyRule): boolean {
+	if (rule.mode === 'mashup') {
+		if (row.number !== ref.number) return false;
+		return row.mode === ref.mode || rule.relative;
+	}
+	return camelotRulesAllow(`${ref.number}${ref.mode}`, `${row.number}${row.mode}`, rule.rules);
+}
+
+/** Shift order for a search up to `maxShift`: 0 first, then the smallest
+ * magnitude, and up before down at equal magnitude. Up first because upward
+ * shifts measured cleaner on our stretcher (ops/quality/stretch/report.md:
+ * +2 semitones 2.97 dB LSD, -2 semitones 3.56 dB). */
+export function compatibleShiftOrder(maxShift: number): number[] {
+	if (!Number.isInteger(maxShift) || maxShift < 0 || maxShift > COMPATIBLE_KEY_SHIFT_MAX) {
+		throw new RangeError(`key shift max must be an integer 0..${COMPATIBLE_KEY_SHIFT_MAX}, got ${maxShift}`);
+	}
+	const order = [0];
+	for (let m = 1; m <= maxShift; m += 1) order.push(m, -m);
+	return order;
+}
+
+/**
+ * The smallest key shift (|shift| <= `maxShift`) that makes `rowKey` compatible
+ * with `refKey` under `rule`, or null when none does or either key does not
+ * parse. An unshifted match always wins (KEYSHIFT-02).
+ */
+export function compatibleKeyShift(
+	rowKey: string | null,
+	refKey: string | null,
+	rule: CompatibleKeyRule,
+	maxShift: number
+): CompatibleKeyShift | null {
+	const order = compatibleShiftOrder(maxShift);
+	const row = parseCamelotKey(rowKey);
+	const ref = parseCamelotKey(refKey);
+	if (row === null || ref === null) return null;
+	for (const shift of order) {
+		const shifted = shift === 0 ? row : _shiftCamelotKey(row, shift);
+		if (_keysMatchRule(shifted, ref, rule)) {
+			return { shift, key: `${shifted.number}${shifted.mode}` };
+		}
+	}
+	return null;
+}
+
 function _assertEffectiveAudibleSemitones(name: string, value: number): void {
 	if (!Number.isFinite(value)) {
 		throw new RangeError(`${name} effective audible semitones must be finite, got ${value}`);

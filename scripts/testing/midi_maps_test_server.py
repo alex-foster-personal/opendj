@@ -8,7 +8,10 @@ serving. A Node test spawns this as a subprocess, reads that line to learn
 the port, issues real HTTP requests against it, and kills the process when
 done.
 
-Usage: uv run --no-sync python -m scripts.testing.midi_maps_test_server [--port N]
+Usage: uv run --no-sync python -m scripts.testing.midi_maps_test_server [--port N] [--data-dir DIR]
+
+``--data-dir`` lets a test seed the real files a route reads (for example
+``state/ui-prefs.json``) instead of fabricating the route's response.
 """
 
 from __future__ import annotations
@@ -20,13 +23,19 @@ import tempfile
 from pathlib import Path
 
 
-async def _serve(port: int) -> None:
+async def _serve(port: int, data_dir_arg: str | None) -> None:
     import uvicorn
 
     from apps.webui.server.app import create_app
     from apps.webui.server.backend import InMemoryBackend
 
-    data_dir = Path(tempfile.mkdtemp(prefix="mdt-midi-maps-test-"))
+    data_dir = (
+        Path(data_dir_arg)
+        if data_dir_arg is not None
+        else Path(tempfile.mkdtemp(prefix="mdt-midi-maps-test-"))
+    )
+    if not data_dir.is_dir():
+        raise SystemExit(f"--data-dir {data_dir} is not a directory")
     app = create_app(
         backend=InMemoryBackend(),
         bind_host="127.0.0.1",
@@ -53,9 +62,10 @@ async def _serve(port: int) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=0, help="0 = OS-assigned")
+    parser.add_argument("--data-dir", default=None, help="existing dir; default a fresh temp dir")
     args = parser.parse_args(argv)
     try:
-        asyncio.run(_serve(args.port))
+        asyncio.run(_serve(args.port, args.data_dir))
     except KeyboardInterrupt:
         pass
     return 0

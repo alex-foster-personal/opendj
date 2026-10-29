@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from apps.analysis_waveform.decode import BAND_NAMES
-from apps.parity.figure import LaneFigure
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n
 from apps.parity.lanes import DENOMINATOR_NAME
 from apps.parity.waveform_score import (
     detail_ungradable_bucket,
@@ -116,8 +116,8 @@ def score_waveform(lane: str, rows: list[dict[str, Any]], *, measured_at: str) -
         disposition = score_fn(row, accum)
         _record_disposition(sid, disposition, accum)
 
-    denominator_n = len(rows) - len(accum.ungradable_ids)
-    scored_n = len(accum.agree_ids) + len(accum.disagree_ids)
+    denominator_n = lane_denominator_n(len(rows), len(accum.ungradable_ids))
+    scored_n = lane_scored_n(len(accum.agree_ids), len(accum.disagree_ids))
     if lane == "waveform_triband":
         band_median_r = {
             name: value

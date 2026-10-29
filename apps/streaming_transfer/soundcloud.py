@@ -112,15 +112,9 @@ class SoundCloudClient:
     def __init__(self, access_token: str) -> None:
         if not access_token.strip():
             raise SoundCloudError("SoundCloud access token must not be empty")
-        timeout = httpx.Timeout(
-            connect=CFG.connect_timeout_s,
-            read=CFG.read_timeout_s,
-            write=CFG.write_timeout_s,
-            pool=CFG.pool_timeout_s,
-        )
         self._client = httpx.Client(
             base_url=CFG.soundcloud_api_base,
-            timeout=timeout,
+            timeout=CFG.httpx_timeout(),
             headers={
                 "Accept": "application/json; charset=utf-8",
                 "Authorization": f"OAuth {access_token}",

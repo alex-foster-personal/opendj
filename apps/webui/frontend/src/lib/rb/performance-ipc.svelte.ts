@@ -43,7 +43,7 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
-import type { KeySyncStatus } from '$lib/player/key/camelot';
+import { COMPATIBLE_KEY_SHIFT_MAX, type KeySyncStatus } from '$lib/player/key/camelot';
 import { assertHeadDelayMs } from '$lib/player/constants';
 import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
@@ -130,10 +130,12 @@ import {
 	setUiSkin,
 	setWavePalette,
 	setWaveSplitMaster,
-	type LibraryPanel
+	PERF_VIEWS,
+	isPerfView,
+	type LibraryPanel,
+	type PerfView
 } from '$lib/rb/prefs.svelte';
 import { parseWaveformDesignPref, type WaveformDesign, type WaveformDesignPref } from '$lib/rb/waveform-design';
-import { PERF_VIEWS, isPerfView, type PerfView } from '$lib/rb/prefs.svelte';
 import {
 	effectiveWaveformDesign,
 	effectiveWavePalette,
@@ -258,6 +260,9 @@ export type PerformanceCommand =
 			// Caller shows its own failure toast (Trackify skip): mutes this dispatcher's
 			// toast AND the engine's (#4036); deck_errors and the server report remain.
 			suppressCommandErrorToast?: boolean;
+			// KEYSHIFT-03: a library row the compatible filter matched only after a
+			// key shift loads shifted by it (integer, -3..3, 0 or absent = none).
+			key_shift?: number;
 	  }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
@@ -1543,7 +1548,8 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			'stable_id',
 			'refuseIfMaster',
 			'stems',
-			'suppressCommandErrorToast'
+			'suppressCommandErrorToast',
+			'key_shift'
 		]);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
@@ -1555,10 +1561,23 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		const suppressCommandErrorToast = record.suppressCommandErrorToast === undefined
 			? undefined
 			: _boolean('suppressCommandErrorToast', record.suppressCommandErrorToast);
+		// KEYSHIFT-03: a compatible-filter row loads shifted into the key it plays in.
+		const keyShift = record.key_shift;
+		if (
+			keyShift !== undefined &&
+			(typeof keyShift !== 'number' ||
+				!Number.isInteger(keyShift) ||
+				Math.abs(keyShift) > COMPATIBLE_KEY_SHIFT_MAX)
+		) {
+			throw new RangeError(
+				`key_shift must be an integer within ±${COMPATIBLE_KEY_SHIFT_MAX}; got ${String(keyShift)}`
+			);
+		}
 		return {
 			type,
 			deck,
 			stable_id: record.stable_id,
+			...(keyShift === undefined || keyShift === 0 ? {} : { key_shift: keyShift }),
 			...(refuseIfMaster === undefined ? {} : { refuseIfMaster }),
 			...(stems === undefined ? {} : { stems }),
 			...(suppressCommandErrorToast === undefined ? {} : { suppressCommandErrorToast })
@@ -2352,7 +2371,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'master' ||
 		command.type === 'master_tempo' ||
 		command.type === 'key_sync' ||
-		command.type === 'key_nudge'
+		command.type === 'key_nudge' ||
+		// KEYSHIFT-03: a shifted load runs the same KEY nudges as key_nudge,
+		// which feed KEY SYNC followers, so it claims the shared sync scope too.
+		(command.type === 'load' && command.key_shift !== undefined && command.key_shift !== 0)
 	) {
 		return [deck, 'sync'];
 	}
@@ -2373,6 +2395,18 @@ function _errorMessage(error: unknown): string {
  * validated IPC wire shape (`_exactKeys` rejects unknown fields), and an
  * instrument has no business widening a public protocol.
  */
+/** KEYSHIFT-03: a load from a shifted compatible-filter row lands at that key
+ * shift. A fresh load starts at 0 semitones, so the shift is applied as unit
+ * KEY nudges, the same path as the deck's KEY - / + buttons and the
+ * `key_nudge` command (which is also the agent parity: load, then key_nudge). */
+async function _applyLoadKeyShift(deck: DeckId, shift: number): Promise<void> {
+	if (!Number.isInteger(shift) || Math.abs(shift) > COMPATIBLE_KEY_SHIFT_MAX) {
+		throw new RangeError(`load key_shift must be an integer within ±${COMPATIBLE_KEY_SHIFT_MAX}, got ${shift}`);
+	}
+	const step = shift > 0 ? 1 : -1;
+	for (let i = 0; i < Math.abs(shift); i += 1) await engine.nudgeKey(deck, step);
+}
+
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
 	if (command.type === 'master_volume') _operatorMasterVolume = command.value;
@@ -2438,6 +2472,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			});
 		} finally {
 			deckLoadSettled();
+		}
+		if (command.key_shift !== undefined && command.key_shift !== 0) {
+			await _applyLoadKeyShift(command.deck, command.key_shift);
 		}
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
@@ -2772,10 +2809,12 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			// stamp via press-stamp.ts's claimArmedHotCuePress to distinguish an
 			// armed (deferred-to-downbeat) wait from an immediate press row.
 			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+			// Same rule as waveform_seek above (#4011): the plan only decides
+			// WHETHER to defer; the downbeat is resolved from the live playhead.
 			const targetContextTime = await _hotCueDriver.arm(
 				command.deck,
 				cue.in_ms,
-				plan.armAtPositionSec,
+				(nowPositionSec) => nextDownbeatAtOrAfter(beats, nowPositionSec),
 				pressT0Ms
 			);
 			hotCueArmed[command.deck] = {

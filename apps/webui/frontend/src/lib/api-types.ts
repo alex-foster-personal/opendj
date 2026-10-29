@@ -821,6 +821,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Audio Quality
+         * @description Letters over every present track, worst first. `counts` and
+         *     `issue_counts` cover the whole denominator whatever the filter. Without
+         *     `limit` every matching track is listed; `limit` keeps the worst N.
+         */
+        get: operations["list_audio_quality_api_v1_audio_quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-quality/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan Status */
+        get: operations["get_scan_status_api_v1_audio_quality_scan_get"];
+        put?: never;
+        /**
+         * Start Scan
+         * @description Bring stored facts up to date. Incremental and resumable: unchanged
+         *     files are skipped after one stat. Without `wait` it runs in the
+         *     background with one worker; `wait=true` runs here with `workers`.
+         */
+        post: operations["start_scan_api_v1_audio_quality_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-quality/scan/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop Scan
+         * @description End a running scan after the files in flight; a later scan resumes.
+         */
+        post: operations["stop_scan_api_v1_audio_quality_scan_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-quality/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Quality
+         * @description One present track: its letter and hover (in `quality.grade`) and the
+         *     measured facts behind them. 404 when its audio is not on this machine.
+         */
+        get: operations["get_track_quality_api_v1_audio_quality__stable_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audio/output-health": {
         parameters: {
             query?: never;
@@ -1109,6 +1195,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/beatgrid-flags/audio-fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Audio Fit
+         * @description Present tracks by grid-vs-audio verdict, worst first. Reads stored
+         *     verdicts only; a track nobody judged is `not_scanned`.
+         */
+        get: operations["list_audio_fit_api_v1_beatgrid_flags_audio_fit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags/audio-fit/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Audio Fit Scan Status */
+        get: operations["get_audio_fit_scan_status_api_v1_beatgrid_flags_audio_fit_scan_get"];
+        put?: never;
+        /**
+         * Start Audio Fit Scan
+         * @description Judge every present track whose grid, audio or rule changed. About 1 s
+         *     of one core per judged track, on a background thread unless `wait=true`.
+         */
+        post: operations["start_audio_fit_scan_api_v1_beatgrid_flags_audio_fit_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/beatgrid-flags/scan": {
         parameters: {
             query?: never;
@@ -1126,6 +1255,27 @@ export interface paths {
          *     otherwise it runs on a background thread and `GET /scan` reports it.
          */
         post: operations["start_scan_api_v1_beatgrid_flags_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags/{stable_id}/audio-fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Track Audio Fit
+         * @description One track's verdict, judged now (about 1 s) when the stored one is stale
+         *     or missing. A deck load calls this for its track.
+         */
+        get: operations["get_track_audio_fit_api_v1_beatgrid_flags__stable_id__audio_fit_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2035,6 +2185,75 @@ export interface paths {
          */
         post: operations["post_dedup_scan_api_v1_dedup_scan_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/try": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Try */
+        post: operations["start_try_api_v1_dj_try_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/try/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Try */
+        get: operations["get_try_api_v1_dj_try__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/try/{job_id}/candidates/{candidate_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dj Try Candidate Audio */
+        get: operations["dj_try_candidate_audio_api_v1_dj_try__job_id__candidates__candidate_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dj/try/{job_id}/pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick Candidate */
+        post: operations["pick_candidate_api_v1_dj_try__job_id__pick_post"];
+        /** Undo Pick */
+        delete: operations["undo_pick_api_v1_dj_try__job_id__pick_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7056,6 +7275,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ui-prefs/library-key-filter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Library Key Filter */
+        post: operations["post_library_key_filter_api_v1_ui_prefs_library_key_filter_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ui-prefs/watcher-folders:validate": {
         parameters: {
             query?: never;
@@ -7965,6 +8201,55 @@ export interface components {
              */
             clock: "wall" | "device";
         };
+        /** AudioFitItem */
+        AudioFitItem: {
+            /** Artist */
+            artist: string | null;
+            /** Audio Bpm */
+            audio_bpm?: number | null;
+            /** Computed At */
+            computed_at?: string | null;
+            /** Deck Warning */
+            deck_warning: boolean;
+            /** Grid Bpm */
+            grid_bpm?: number | null;
+            /** Kick Coverage */
+            kick_coverage?: number | null;
+            /** Kick Offset Ms */
+            kick_offset_ms?: number | null;
+            /** Kick Spread Ms */
+            kick_spread_ms?: number | null;
+            /** Message */
+            message: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Rule Version */
+            rule_version?: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title: string | null;
+            /** Verdict */
+            verdict: string;
+        };
+        /** AudioFitListOut */
+        AudioFitListOut: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Denominator
+             * @constant
+             */
+            denominator: "present";
+            /** Items */
+            items: components["schemas"]["AudioFitItem"][];
+            /** Present */
+            present: number;
+            rule: components["schemas"]["BeatgridFlagRule"];
+            scan: components["schemas"]["BeatgridScanStatus"];
+        };
         /** AudioInterferenceItemOut */
         AudioInterferenceItemOut: {
             /** Key */
@@ -8013,6 +8298,120 @@ export interface components {
             reason?: string | null;
             /** Verdict */
             verdict: string;
+        };
+        /**
+         * AudioQualityCounts
+         * @description Over the `present` denominator. A-D count checked letters only.
+         */
+        AudioQualityCounts: {
+            /** A */
+            A: number;
+            /** B */
+            B: number;
+            /** C */
+            C: number;
+            /** D */
+            D: number;
+            /** Failed */
+            failed: number;
+            /** Unchecked */
+            unchecked: number;
+            /** Unknown */
+            unknown: number;
+            /** With Issues */
+            with_issues: number;
+        };
+        /** AudioQualityItem */
+        AudioQualityItem: {
+            /** Checked */
+            checked: boolean;
+            /** Cutoff Hz */
+            cutoff_hz: number | null;
+            /** File Path */
+            file_path: string;
+            /** Hover */
+            hover: string;
+            /** Issues */
+            issues: string[];
+            /** Letter */
+            letter: ("A" | "B" | "C" | "D") | null;
+            /** Meaning */
+            meaning: string;
+            /** Scan Error */
+            scan_error: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title: string | null;
+        };
+        /** AudioQualityOut */
+        AudioQualityOut: {
+            counts: components["schemas"]["AudioQualityCounts"];
+            /**
+             * Denominator
+             * @constant
+             */
+            denominator: "present";
+            /** Issue Counts */
+            issue_counts: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["AudioQualityItem"][];
+            /** Present */
+            present: number;
+            rule: components["schemas"]["AudioQualityRule"];
+            scan: components["schemas"]["AudioQualityScanStatus"];
+        };
+        /** AudioQualityRule */
+        AudioQualityRule: {
+            /** Grade Thresholds */
+            grade_thresholds: {
+                [key: string]: number;
+            };
+            /** Grade Version */
+            grade_version: string;
+            /** Scan Thresholds */
+            scan_thresholds: {
+                [key: string]: unknown;
+            };
+            /** Scan Version */
+            scan_version: string;
+        };
+        /** AudioQualityScanStatus */
+        AudioQualityScanStatus: {
+            /** Last Error */
+            last_error: string | null;
+            /** Last Result */
+            last_result: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "running";
+            /** Stopping */
+            stopping: boolean;
+        };
+        /** AudioQualityTrackOut */
+        AudioQualityTrackOut: {
+            /** Computed At */
+            computed_at: string | null;
+            /** Facts */
+            facts: {
+                [key: string]: unknown;
+            } | null;
+            /** File Path */
+            file_path: string;
+            /** Quality */
+            quality: {
+                [key: string]: unknown;
+            };
+            /** Scan Error */
+            scan_error: string | null;
+            /** Stable Id */
+            stable_id: string;
         };
         /** AudioSwitchOutputOut */
         AudioSwitchOutputOut: {
@@ -8949,6 +9348,56 @@ export interface components {
             /** Stable Id */
             stable_id: string;
         };
+        /**
+         * CandidateOut
+         * @description One candidate as the try-er answers it: the contract fields minus ``render_path``.
+         */
+        CandidateOut: {
+            /** Bars */
+            bars: number;
+            /** Factors */
+            factors: {
+                [key: string]: number;
+            };
+            /** Id */
+            id: string;
+            measured: components["schemas"]["MeasuredOut"];
+            /** Metrics */
+            metrics: {
+                [key: string]: unknown;
+            };
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            };
+            /** Plan Sha256 */
+            plan_sha256: string;
+            /**
+             * Rank Group
+             * @enum {string}
+             */
+            rank_group: "measured" | "alignment unknown" | "refused";
+            /** Refused */
+            refused: string | null;
+            /** Render Ms */
+            render_ms: number | null;
+            /** Render Url */
+            render_url: string;
+            /** Score */
+            score: number | null;
+            /** Score Ms */
+            score_ms: number;
+            /** Scorer Version */
+            scorer_version: string;
+            /** Style */
+            style: string;
+            /** Unknown */
+            unknown: {
+                [key: string]: string;
+            };
+            /** Vetoes */
+            vetoes: components["schemas"]["VetoOut"][];
+        };
         /** CatalogDevice */
         CatalogDevice: {
             /** Brand */
@@ -9592,9 +10041,12 @@ export interface components {
         };
         /**
          * CompatibleFilterOut
-         * @description Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window.
+         * @description Compatible-filter ranges (LIBUX-32): Camelot rule checkboxes plus the BPM window,
+         *     and the Transition / Mashup modes with the allowed key shift (KEYSHIFT-01..05).
          *
-         *     ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES.
+         *     ``rules`` lists the enabled ids from apps/shared/harmonic.py CAMELOT_RULES and is
+         *     Transition's key rule; Mashup is the same wheel number (plus the relative
+         *     major/minor when ``mashup_relative``).
          */
         CompatibleFilterOut: {
             /**
@@ -9618,6 +10070,23 @@ export interface components {
              * @default 20
              */
             bpm_window_bpm: number;
+            /**
+             * Key Shift Max
+             * @default 1
+             * @enum {integer}
+             */
+            key_shift_max: 0 | 1 | 2 | 3;
+            /**
+             * Mashup Relative
+             * @default false
+             */
+            mashup_relative: boolean;
+            /**
+             * Mode
+             * @default transition
+             * @enum {string}
+             */
+            mode: "transition" | "mashup";
             /** Rules */
             rules?: string[];
         };
@@ -12024,6 +12493,32 @@ export interface components {
             before_stable_id?: string | null;
         };
         /**
+         * LibraryKeyFilterActionIn
+         * @description One library key wheel control, for agents (issue #7599).
+         *
+         *     ``toggle`` needs ``key`` (the segment click), ``compatible`` needs
+         *     ``reference`` (the Compatible button), ``set`` needs ``keys``, ``reset``
+         *     needs nothing. Every key is a canonical Camelot code 1A..12B.
+         */
+        LibraryKeyFilterActionIn: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "toggle" | "compatible" | "reset" | "set";
+            /** Key */
+            key?: string | null;
+            /** Keys */
+            keys?: string[] | null;
+            /** Reference */
+            reference?: string | null;
+        };
+        /** LibraryKeyFilterActionOut */
+        LibraryKeyFilterActionOut: {
+            /** Library Key Filter */
+            library_key_filter: string[];
+        };
+        /**
          * LibraryReadinessCounts
          * @description Every field is a count over ``present``, never over ``total_tracks``.
          */
@@ -12597,6 +13092,13 @@ export interface components {
             google_sub: string;
             /** Name */
             name: string | null;
+        };
+        /** MeasuredOut */
+        MeasuredOut: {
+            /** K */
+            k: number;
+            /** N */
+            n: number;
         };
         /** MemberOut */
         MemberOut: {
@@ -13420,6 +13922,34 @@ export interface components {
             how_to_grant: string;
             /** Roots */
             roots?: components["schemas"]["AccessProbeOut"][];
+        };
+        /** PickIn */
+        PickIn: {
+            /** Candidate */
+            candidate: string;
+        };
+        /** PickOut */
+        PickOut: {
+            /** Created At */
+            created_at: string;
+            /** In Id */
+            in_id: string;
+            /** Job Id */
+            job_id: string;
+            /** Out Id */
+            out_id: string;
+            /** Picked Candidate Id */
+            picked_candidate_id: string;
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            };
+            /** Plan Sha256 */
+            plan_sha256: string;
+            /** Rejected Ids */
+            rejected_ids: string[];
+            /** Scorer Version */
+            scorer_version: string;
         };
         /** PinCellIn */
         PinCellIn: {
@@ -14396,17 +14926,38 @@ export interface components {
             seq: number;
         };
         /**
+         * QualityGradeOut
+         * @description The QLT letter (QLTSCAN-02, apps/shared/audio_grade.py).
+         *
+         *     `checked` is false until a scan has measured the current file under the
+         *     current rule: the letter then comes from bitrate and container alone and
+         *     the badge draws it hollow. `letter` is null when the venue is unknown.
+         *     `issues` are issue keys (clipping, dc_offset, ...) that put a dot on the
+         *     badge. The full hover text is not on the row (it would break the row byte
+         *     budget); the badge loads it from `GET /api/v1/audio-quality/{stable_id}`.
+         */
+        QualityGradeOut: {
+            /** Checked */
+            checked: boolean;
+            /** Issues */
+            issues: string[];
+            /** Letter */
+            letter: ("A" | "B" | "C" | "D") | null;
+        };
+        /**
          * QualityOut
          * @description One rung of the venue ladder, or an honest unknown.
          *
          *     venue/rank/kbps are null when the file could not be measured; `blurb`
          *     then carries the reason. The UI must never render a guessed rung.
+         *     `grade` is set on track-list rows (QLTSCAN-02) and null elsewhere.
          */
         QualityOut: {
             /** Blurb */
             blurb: string;
             /** Container */
             container: string;
+            grade?: components["schemas"]["QualityGradeOut"] | null;
             /** Kbps */
             kbps: number | null;
             /** Label */
@@ -14474,7 +15025,7 @@ export interface components {
             /** Machine Rank */
             machine_rank?: number | null;
             /** Machine Score */
-            machine_score: number;
+            machine_score: number | null;
             /**
              * Note
              * @default
@@ -14487,6 +15038,8 @@ export interface components {
             params: string;
             /** Si Sdr */
             si_sdr?: number | null;
+            /** Verdict */
+            verdict?: ("good" | "ok" | "bad") | null;
         };
         /** RatingsApplyRequest */
         RatingsApplyRequest: {
@@ -17369,6 +17922,52 @@ export interface components {
              */
             non_music_hidden: number;
         };
+        /** TryIn */
+        TryIn: {
+            /**
+             * Context Bars
+             * @default 4
+             */
+            context_bars: number;
+            /** In */
+            in: string;
+            /**
+             * N
+             * @default 6
+             */
+            n: number;
+            /** Out */
+            out: string;
+        };
+        /**
+         * TryJobOut
+         * @description A try job (TRYER-10/13/15): every surface (HTTP, CLI, MCP, panel) reads this shape.
+         */
+        TryJobOut: {
+            /** Best */
+            best: string | null;
+            /** Best Reason */
+            best_reason: string;
+            /** Candidates */
+            candidates: components["schemas"]["CandidateOut"][];
+            /** Context Bars */
+            context_bars: number;
+            /** Created At */
+            created_at: string;
+            /** Etag */
+            etag: string;
+            /** In */
+            in: string;
+            /** Job Id */
+            job_id: string;
+            /** N */
+            n: number;
+            /** Out */
+            out: string;
+            pick: components["schemas"]["PickOut"] | null;
+            /** Scorer Version */
+            scorer_version: string;
+        };
         /** UiPrefsOut */
         UiPrefsOut: {
             app_mode?: components["schemas"]["AppModeOut"];
@@ -17459,6 +18058,10 @@ export interface components {
              * @enum {string}
              */
             library_density: "compact" | "cosy";
+            /** Library Hidden Columns */
+            library_hidden_columns?: ("preview" | "art" | "artist" | "key" | "bpm" | "plays" | "rating" | "comments" | "time" | "quality" | "energy" | "genre" | "stems")[];
+            /** Library Key Filter */
+            library_key_filter?: string[];
             /** Library Watcher Folders */
             library_watcher_folders?: string[];
             /**
@@ -17609,6 +18212,10 @@ export interface components {
             level_calibration?: components["schemas"]["LevelCalibrationOut"] | null;
             /** Library Density */
             library_density?: ("compact" | "cosy") | null;
+            /** Library Hidden Columns */
+            library_hidden_columns?: ("preview" | "art" | "artist" | "key" | "bpm" | "plays" | "rating" | "comments" | "time" | "quality" | "energy" | "genre" | "stems")[] | null;
+            /** Library Key Filter */
+            library_key_filter?: string[] | null;
             /** Library Watcher Folders */
             library_watcher_folders?: string[] | null;
             /** Lyrics Deck Line */
@@ -18094,6 +18701,15 @@ export interface components {
             by: string;
             /** Method */
             method: string;
+        };
+        /** VetoOut */
+        VetoOut: {
+            /** Name */
+            name: string;
+            /** Threshold */
+            threshold: number;
+            /** Value */
+            value: number;
         };
         /** VocalsAnalyzeIn */
         VocalsAnalyzeIn: {
@@ -19863,6 +20479,142 @@ export interface operations {
             };
         };
     };
+    list_audio_quality_api_v1_audio_quality_get: {
+        parameters: {
+            query?: {
+                letter?: "all" | "A" | "B" | "C" | "D" | "unchecked" | "issues" | "failed";
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioQualityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_status_api_v1_audio_quality_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioQualityScanStatus"];
+                };
+            };
+        };
+    };
+    start_scan_api_v1_audio_quality_scan_post: {
+        parameters: {
+            query?: {
+                wait?: boolean;
+                workers?: number;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioQualityScanStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_scan_api_v1_audio_quality_scan_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioQualityScanStatus"];
+                };
+            };
+        };
+    };
+    get_track_quality_api_v1_audio_quality__stable_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioQualityTrackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_output_health_api_v1_audio_output_health_get: {
         parameters: {
             query?: never;
@@ -20264,6 +21016,89 @@ export interface operations {
             };
         };
     };
+    list_audio_fit_api_v1_beatgrid_flags_audio_fit_get: {
+        parameters: {
+            query?: {
+                verdict?: "findings" | "wrong_bpm" | "off_beat" | "shifted" | "no_verdict" | "fit" | "unknown" | "all";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioFitListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audio_fit_scan_status_api_v1_beatgrid_flags_audio_fit_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+        };
+    };
+    start_audio_fit_scan_api_v1_beatgrid_flags_audio_fit_scan_post: {
+        parameters: {
+            query?: {
+                wait?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_scan_status_api_v1_beatgrid_flags_scan_get: {
         parameters: {
             query?: never;
@@ -20303,6 +21138,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_audio_fit_api_v1_beatgrid_flags__stable_id__audio_fit_get: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioFitItem"];
                 };
             };
             /** @description Validation Error */
@@ -22200,6 +23068,260 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    start_try_api_v1_dj_try_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TryJobOut"];
+                };
+            };
+            /** @description The pair cannot be tried (ErrorBody), or the request body is malformed (HTTPValidationError) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"] | components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_try_api_v1_dj_try__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TryJobOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dj_try_candidate_audio_api_v1_dj_try__job_id__candidates__candidate_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pick_candidate_api_v1_dj_try__job_id__pick_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PickIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TryJobOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    undo_pick_api_v1_dj_try__job_id__pick_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TryJobOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
             };
         };
     };
@@ -31218,6 +32340,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UiPrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_library_key_filter_api_v1_ui_prefs_library_key_filter_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryKeyFilterActionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryKeyFilterActionOut"];
                 };
             };
             /** @description Validation Error */

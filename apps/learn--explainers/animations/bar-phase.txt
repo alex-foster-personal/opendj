@@ -1,0 +1,103 @@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+                           D                               D
+   |       |       |       |       |       |       |       |
+   =*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 1 of 4    marker says: beat 1
+   counter and downbeat marker agree -> bar phase trusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+                   D                               D
+   |       |       |       |       |       |       |       |
+   =:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 2 of 4    marker says: beat 2
+   counter and downbeat marker agree -> bar phase trusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+           D                               D
+   |       |       |       |       |       |       |       |
+   -.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 3 of 4    marker says: beat 3
+   counter and downbeat marker agree -> bar phase trusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+   D                               D
+   |       |       |       |       |       |       |       |
+   =-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 4 of 4    marker says: beat 4
+   counter and downbeat marker agree -> bar phase trusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+                           D                               D
+   |       |       |       |       |       |       |       |
+   -.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 1 of 4    marker says: beat 1
+   counter and downbeat marker agree -> bar phase trusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+                   D                               D
+   |       |       |       |       |       |       |       |
+   -=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 2 of 4    marker says: beat 2
+   counter and downbeat marker agree -> bar phase trusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+                   D                               D
+   |       |       |       |       |       |       |       |
+   =--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 3 of 4    marker says: beat 2
+   counter and downbeat marker disagree -> bar phase untrusted
+@@
+bar phase: which beat of the bar the playhead is on
+
+   D = downbeat marker, | = beat
+           D                               D
+   |       |       |       |       |       |       |       |
+   :-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-.-=#=:.-=*#=-.:=--=#=-.:-=*=-
+   |       |       |       |       |       |       |       |
+                           ^
+                       playhead
+
+   counter: beat 4 of 4    marker says: beat 3
+   counter and downbeat marker disagree -> bar phase untrusted

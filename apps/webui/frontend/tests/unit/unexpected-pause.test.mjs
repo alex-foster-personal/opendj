@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, describe, it } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -210,4 +211,37 @@ describe('formatUnexpectedPauseMessage', () => {
 		assert.match(message, /AutoPlay/);
 		assertHumanMessage(message);
 	});
+});
+
+describe('commanded stops carry the command origin', () => {
+	// if a DJ's own stop reaches the classifier as origin "other", pressing CUE
+	// on a playing deck raises "The audio file may be cut short" -- broken.
+	const engine = readFileSync(
+		new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url),
+		'utf8'
+	);
+
+	function methodBody(signature) {
+		const start = engine.indexOf(signature);
+		assert.notEqual(start, -1, `${signature} not found in the audio engine`);
+		const end = engine.indexOf('\n\t}\n', start);
+		assert.notEqual(end, -1, `${signature} has no closing brace`);
+		return engine.slice(start, end);
+	}
+
+	for (const [signature, stopCall] of [
+		['async pressCue(deck: DeckId, pressT0Ms?: number): Promise<void> {', '_schedulePress('],
+		['async rescueStopAllTogether(decks: readonly DeckId[]): Promise<void> {', 'decks.map(stop)']
+	]) {
+		it(`${signature.split('(')[0]} schedules its stop inside withPauseOrigin('command')`, () => {
+			const body = methodBody(signature);
+			const stop = body.indexOf(stopCall);
+			assert.notEqual(stop, -1, `${stopCall} not found: the method no longer stops a deck here`);
+			const scope = body.lastIndexOf("withPauseOrigin('command', () =>", stop);
+			assert.notEqual(scope, -1, 'the stop is scheduled with no command origin');
+			// The origin is restored when the callback returns, so the schedule
+			// call must start before any await inside that callback.
+			assert.doesNotMatch(body.slice(scope, stop), /await /);
+		});
+	}
 });

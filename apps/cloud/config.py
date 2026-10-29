@@ -34,6 +34,10 @@ REQUIRED_VARS: tuple[str, ...] = (
     "R2_SECRET_ACCESS_KEY",
 )
 
+DEFAULT_STATE_BUCKET: str = "music-dj-state"
+DEFAULT_AUDIO_BUCKET: str = "music-dj-audio"
+DEFAULT_BIND_HOST: str = "127.0.0.1"
+
 
 class MissingEnvError(RuntimeError):
     """Raised when a required environment variable is missing."""
@@ -49,7 +53,7 @@ class CloudConfig:
     The default dataclass ``__repr__`` would include every field, which
     would leak ``R2_SECRET_ACCESS_KEY`` into any log or traceback that
     stringifies the instance. We opt out and provide a masked repr; see
-    .planning/SECURITY-RED-TEAM-2026-04-17.md finding 3.
+    (private path) finding 3.
     """
 
     r2_account_id: str
@@ -101,11 +105,18 @@ class CloudConfig:
             r2_account_id=source["R2_ACCOUNT_ID"],
             r2_access_key_id=source["R2_ACCESS_KEY_ID"],
             r2_secret_access_key=source["R2_SECRET_ACCESS_KEY"],
-            state_bucket=source.get("MUSIC_DJ_STATE_BUCKET", "music-dj-state"),
-            audio_bucket=source.get("MUSIC_DJ_AUDIO_BUCKET", "music-dj-audio"),
+            state_bucket=source.get("MUSIC_DJ_STATE_BUCKET", DEFAULT_STATE_BUCKET),
+            audio_bucket=source.get("MUSIC_DJ_AUDIO_BUCKET", DEFAULT_AUDIO_BUCKET),
             hostname=source.get("MUSIC_DJ_HOSTNAME", socket.gethostname()),
-            bind_host=source.get("MUSIC_DJ_BIND_HOST", "127.0.0.1"),
+            bind_host=source.get("MUSIC_DJ_BIND_HOST", DEFAULT_BIND_HOST),
         )
 
 
-__all__ = ["CloudConfig", "MissingEnvError", "REQUIRED_VARS"]
+__all__ = [
+    "CloudConfig",
+    "DEFAULT_AUDIO_BUCKET",
+    "DEFAULT_BIND_HOST",
+    "DEFAULT_STATE_BUCKET",
+    "MissingEnvError",
+    "REQUIRED_VARS",
+]

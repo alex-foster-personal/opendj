@@ -11,9 +11,11 @@ const STOP_TIMEOUT_MS = 15_000;
 /**
  * @param {import('node:child_process').ChildProcess} serverProcess
  * @param {string} apiBase
+ * @param {{ timeoutMs?: number }} [options] a server that may legitimately
+ *   wait on work before exiting (a real analysis drain) passes a longer bound.
  * @returns {Promise<{ code: number | null, signal: NodeJS.Signals | null }>}
  */
-export async function stopFixtureServer(serverProcess, apiBase) {
+export async function stopFixtureServer(serverProcess, apiBase, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
 	if (serverProcess.exitCode !== null || serverProcess.signalCode !== null) {
 		return { code: serverProcess.exitCode, signal: serverProcess.signalCode };
 	}
@@ -22,13 +24,13 @@ export async function stopFixtureServer(serverProcess, apiBase) {
 	);
 	let timer;
 	const timedOut = new Promise((resolve) => {
-		timer = setTimeout(() => resolve(null), STOP_TIMEOUT_MS);
+		timer = setTimeout(() => resolve(null), timeoutMs);
 	});
 	try {
 		const res = await fetch(`${apiBase}/test/shutdown`, { method: 'POST' });
 		if (!res.ok) throw new Error(`POST /test/shutdown answered ${res.status}`);
 		const outcome = await Promise.race([exited, timedOut]);
-		if (outcome === null) throw new Error(`fixture server still running ${STOP_TIMEOUT_MS}ms after /test/shutdown`);
+		if (outcome === null) throw new Error(`fixture server still running ${timeoutMs}ms after /test/shutdown`);
 		if (outcome.code !== 0) throw new Error(`fixture server exited uncleanly: code=${outcome.code} signal=${outcome.signal}`);
 		return outcome;
 	} catch (error) {

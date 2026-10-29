@@ -34,6 +34,7 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
     apply_own_beatgrid_when_vendor_absent,
     vendor_analysis_path_absent,
 )
+from ..rb_vendor_pkg.cached_pssi import apply_cached_pssi
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
 from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
@@ -414,6 +415,9 @@ def get_track_anlz(
             # vocal bars (VOCALS-04): the same read GET /vocals/{id}/status
             # serves, so the deck waveform and that route cannot disagree.
             payload["vocals"] = _own_vocals(stable_id)
+            # A relinked track whose rekordbox content row is gone keeps its PSSI
+            # in the anlz cache; serve it behind a duration guard (PHRASE-RECOVER-01).
+            payload = apply_cached_pssi(payload, stable_id, share=share)
         elif code == "ANALYSIS_NOT_FOUND":
             if vendor_analysis_path_absent(content):
                 rescued_missing_analysis_path = True

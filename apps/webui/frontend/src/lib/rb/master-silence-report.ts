@@ -175,8 +175,20 @@ export function noteMasterSilence(
 	externalRouteAnalyser: AnalyserNode | null,
 	anyDeckPlaying: boolean,
 	tMs: number,
-	masterOutputIntentionallySilent = false
+	masterOutputIntentionallySilent: boolean,
+	// The master bus alone may be silent by design while a routed deck plays
+	// (`masterBusSilenceIsCommanded`); that quiets the bus watchdog only, never
+	// the device liveness that still reads the routed tap. Both verdicts are
+	// required: a default would let a caller that never decided the bus case
+	// borrow the output verdict, which is wrong for routed-only playback
+	// (Sol P1, PR #6829).
+	masterBusIntentionallySilent: boolean
 ): void {
+	if (typeof masterOutputIntentionallySilent !== 'boolean' || typeof masterBusIntentionallySilent !== 'boolean') {
+		throw new TypeError(
+			`noteMasterSilence: both silence verdicts are required booleans, got output=${String(masterOutputIntentionallySilent)} bus=${String(masterBusIntentionallySilent)}`
+		);
+	}
 	const ctx = _readDropoutContext?.() ?? null;
 	const playing = anyDeckPlaying && analyser !== null;
 	const masterRms = analyser === null ? NO_METER_RMS_SENTINEL : _masterRms(analyser);
@@ -197,7 +209,7 @@ export function noteMasterSilence(
 	_state = foldSilenceSample(_state, {
 		playing,
 		audible: _anyDeckAudible(ctx),
-		masterOutputIntentionallySilent,
+		masterOutputIntentionallySilent: masterBusIntentionallySilent,
 		masterRms,
 		tMs,
 		source_explains_silence

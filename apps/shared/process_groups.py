@@ -1,4 +1,6 @@
-"""POSIX process-group liveness, signalling, and the wait that confirms death.
+"""POSIX process-group liveness, signalling, and the wait that confirms death,
+plus the cross-platform tree stop (``stop_tree``: process groups on POSIX,
+``taskkill /T`` on Windows) that keeps both arms behind one seam.
 
 Two subsystems terminate a worker tree they spawned with
 ``start_new_session=True``: ``apps/vocals/cli.py::_terminate_worker_tree`` and
@@ -30,8 +32,14 @@ costs a leaked worker tree that every caller believes was collected.
 
 from __future__ import annotations
 
+import contextlib
+import ntpath
 import os
+import signal
+import subprocess
+import sys
 import time
+from collections.abc import Callable, Iterable, Mapping
 
 import psutil
 
@@ -146,13 +154,9 @@ def signal_group(pgid: int, sig: int) -> str | None:
         return f"process group {pgid} was already gone"
     except PermissionError as exc:
         if not group_has_live_member(pgid):
-            return (
-                f"process group {pgid} holds only dead (zombie) members; "
-                "there was nothing left to kill"
-            )
+            return f"process group {pgid} holds only dead (zombie) members; there was nothing left to kill"
         raise WorkerCleanupError(
-            f"not permitted to signal process group {pgid} ({exc}); it has "
-            "live members this process does not own"
+            f"not permitted to signal process group {pgid} ({exc}); it has live members this process does not own"
         ) from exc
     return None
 
@@ -179,12 +183,129 @@ def wait_group_gone(pgid: int, timeout_s: float) -> bool:
     return True
 
 
+#: POSIX has process groups to signal; Windows does not, and stops a tree with
+#: ``taskkill /T`` instead. Callers spawn with ``start_new_session=GROUPS_SUPPORTED``
+#: so a stopped child takes what it spawned with it.
+GROUPS_SUPPORTED: bool = hasattr(os, "killpg")
+
+
+def windows_taskkill(
+    env: Mapping[str, str] = os.environ, *, exists: Callable[[str], bool] = os.path.isfile
+) -> str | None:
+    """Where Windows keeps ``taskkill.exe``, or None when it cannot be found there.
+
+    Resolved under the system root the OS sets (``SystemRoot``, else ``windir``),
+    never looked up on PATH: a sanitized service or CI PATH would hide it and a
+    shadowing one could replace it (Codex on #6830). A root that is not absolute,
+    or no file at that path, is None, never a guess.
+    """
+    root = next((env[key] for key in ("SystemRoot", "SYSTEMROOT", "windir", "WINDIR") if env.get(key)), None)
+    if root is None or not ntpath.isabs(root):
+        return None
+    taskkill = ntpath.join(root, "System32", "taskkill.exe")
+    return taskkill if exists(taskkill) else None
+
+
+def tree_kill_argv(pid: int, *, platform: str, taskkill: str) -> list[str] | None:
+    """The command that ends a whole process tree where process groups do not exist.
+
+    On Windows ``terminate()`` reaches only the direct child, so a reloading
+    server's worker, a node process or Electron's helpers would outlive it and
+    keep their ports. ``taskkill /T`` walks the tree instead. POSIX returns
+    None: the caller signals the process group.
+    """
+    if not platform.startswith("win"):
+        return None
+    return _taskkill_tree(pid, taskkill)
+
+
+def _taskkill_tree(pid: int, taskkill: str) -> list[str]:
+    return [taskkill, "/T", "/F", "/PID", str(pid)]
+
+
+def stop_tree(
+    pid: int,
+    *,
+    force: bool,
+    kill_leader: Callable[[], None],
+    groups: bool = GROUPS_SUPPORTED,
+    platform: str = sys.platform,
+    taskkill: Callable[[], str | None] = windows_taskkill,
+) -> str | None:
+    """Ask the tree ``pid`` leads to stop, on any platform; None, or why the tree was not reached.
+
+    POSIX: signal the process group ``pid`` leads, SIGTERM or (``force``)
+    SIGKILL. Windows: ``taskkill /T /F``, which has no polite form; with no
+    ``taskkill.exe`` under the system root only the leader is killed. A
+    platform with neither falls back to ``kill_leader``. A returned sentence
+    is a cleanup failure, not a warning: a descendant the caller never
+    snapshotted may still be running, and only the tree stop could reach it
+    (Sol P1 on #6830).
+    """
+    if groups:
+        sig = getattr(signal, "SIGKILL", signal.SIGTERM) if force else signal.SIGTERM
+        with contextlib.suppress(ProcessLookupError):
+            signal_group(pid, sig)
+        return None
+    if not platform.startswith("win"):
+        kill_leader()
+        return None
+    resolved = taskkill()
+    if resolved is None:
+        kill_leader()
+        return f"taskkill.exe not found under the system root; killed only process {pid}, not its tree"
+    result = subprocess.run(_taskkill_tree(pid, resolved), check=False, capture_output=True)
+    if result.returncode == 0:
+        return None
+    detail = (result.stdout + result.stderr).decode(errors="replace").strip() or "no output"
+    return f"taskkill exited {result.returncode}: {detail}"
+
+
+def group_alive(pgid: int, *, groups: bool = GROUPS_SUPPORTED) -> bool:
+    """Whether a live member remains in group ``pgid``; always False without process groups."""
+    return groups and group_has_live_member(pgid)
+
+
+def group_gone_within(pgid: int, timeout_s: float, *, groups: bool = GROUPS_SUPPORTED) -> bool:
+    """Whether group ``pgid`` has no live member within ``timeout_s``; always True without process groups.
+
+    The wait matters after a SIGKILL: a member the caller never tracked can still be
+    listed for the moment before the kernel schedules its death, so an instant check
+    would report a kill that is in fact landing as one that failed (Codex on #6830).
+    """
+    return not groups or wait_group_gone(pgid, timeout_s)
+
+
+def group_held_by(pgid: int, procs: Iterable[psutil.Process], *, groups: bool = GROUPS_SUPPORTED) -> bool:
+    """Whether one of ``procs`` is still running in group ``pgid``; always False without process groups.
+
+    After a group's leader is reaped, its id stays reserved only while a member
+    holds it, so this is what proves the id still names the caller's group and
+    not someone else's that reused the number. Each ``psutil.Process`` checks
+    its own identity against its start time, so a reused pid never counts.
+    """
+    if not groups:
+        return False
+    for proc in procs:
+        with contextlib.suppress(psutil.Error, OSError):
+            if proc.is_running() and os.getpgid(proc.pid) == pgid and proc.is_running():
+                return True
+    return False
+
+
 __all__ = [
+    "GROUPS_SUPPORTED",
     "WorkerCleanupError",
+    "group_alive",
+    "group_gone_within",
     "group_has_live_member",
+    "group_held_by",
     "group_members",
     "live_group_members",
     "process_group_exists",
     "signal_group",
+    "stop_tree",
+    "tree_kill_argv",
     "wait_group_gone",
+    "windows_taskkill",
 ]

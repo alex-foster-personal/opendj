@@ -41,7 +41,7 @@ match rekordbox on real data. The product is what parity unlocks afterwards.
 Its consequences appear at every layer, and they are not separate policies: show OUR track
 counts and never the vendor screenshot's; draw no beat that does not come from a real PQTZ
 row; render a missing waveform as an explicit dash; reject a stems manifest that does not
-declare its `layout`; put every destructive vendor write behind six rails. If a change would
+declare its `layout`; put every destructive vendor write behind the seven rails. If a change would
 make the UI show something the data does not support, it is wrong regardless of how good it
 looks.
 
@@ -67,7 +67,7 @@ the main way to get confused.
 
 **April 2026 (v1.0), the library-truth layer.** A bi-directional sync, enrichment and
 authoring toolchain: ingest from Rekordbox / djay Pro / Serato / Traktor into a shared state
-DB, analyse, dedup, reconcile broken links, smart playlists, set recording, Spotify import,
+DB, analyze, dedup, reconcile broken links, smart playlists, set recording, Spotify import,
 voice, a Tauri launcher. CLI-first, GSD-managed, genuinely shipped (see
 [`CHANGELOG.md`](../CHANGELOG.md) and the RELEASE-NOTES files).
 
@@ -220,7 +220,7 @@ python -m apps.shared.state.cli init
 python -m apps.shared.state.cli ingest-rb --write
 python -m apps.shared.state.cli stats
 
-# 3. Sync: dry-run the RB-canonical playlist diff into djay under the six rails.
+# 3. Sync: dry-run the RB-canonical playlist diff into djay under the seven rails.
 #    --dry-run is the default; a live write needs --live AND --i-understand-the-risks.
 python -m apps.sync.playlist_apply --dry-run
 
@@ -257,23 +257,50 @@ PEP 723 scripts (`scripts/stem_bundle_worker.py`, `scripts/vocal_region_worker.p
 declare their own dependencies and run under `uv run`. Importing torch into the daemon's venv
 is a regression even if it works locally.
 
-## Safety: the six-rail pattern
+## Safety: the seven-rail harness
 
-Every destructive write to an operator's files goes through six rails, so no single mistake
-can corrupt a DJ library. Reference implementation: `apps/sync/safety.py`.
+So that no single mistake can corrupt a DJ library, every live write to a vendor library DB goes
+through the seven-rail harness in `apps/sync/safety.py` (its module docstring is the reference),
+plus a backstop rail 0. This is the one full list; `CONTRIBUTING.md`, `docs/architecture.md` and
+`docs/glossary.md` link here rather than repeat it.
 
-1. **Typed confirmation.** Operator types a non-trivial string.
-2. **Running-app check.** `pgrep` for Rekordbox / djay / Serato / Traktor. A missing or
-   erroring `pgrep` is a hard error, not a skip. Override is `--force-no-pgrep`.
-3. **Timestamped backup** of every file about to be modified. Rail 6 reads from it.
-4. **Dry-run default.** A live write needs both `--live` and `--i-understand-the-risks`.
-5. **Atomic write** (temp file + `os.rename`). Never truncate in place.
-6. **Post-write readback verification**, plus an emitted reversal script.
+0. **Backstop: one-way import mode.** `LiveWriteSession.__enter__` calls
+   `require_writeback_enabled` (`apps/shared/rekordbox_writeback.py`) for any rekordbox target, so a
+   caller that forgets its own guard still cannot reach the real library.
+1. **Backup.** Copy the target DB to `<path>.bak.<ISO8601>` before any write (`backup_db`).
+2. **Process check.** Abort if Rekordbox or djay Pro is running (`pgrep -x`,
+   `assert_target_not_running`). The rule is fail closed: a check that cannot run refuses the
+   write, as `apps/sync/playlist_apply.py` `_process_running` does (PR #81), and the CLI override
+   `--force-no-pgrep` is only for an operator who has confirmed the app is quit. Test code may pass
+   `allow_app_running=True` into `apps/tags/apply.py`, which rejects it outside pytest
+   (`_in_pytest`, PR #86).
+   Known gap: the harness's own `_is_running` in `apps/sync/safety.py` returns False when `pgrep` is
+   missing or times out, so rail 2 inside `LiveWriteSession` fails open today.
+3. **Typed confirm.** The operator passed `--i-understand-the-risks` (`require_typed_confirm`).
+4. **Post-write verify.** Each track writer may call `verify_readback()` after writing; on a
+   mismatch the session pauses and prompts continue, abort or skip.
+5. **Reversal script.** `(private path)/<ISO8601>/reverse.sh` is written incrementally as each
+   track succeeds, and `LiveWriteSession.__exit__` always appends a full-restore line pointing at the
+   rail 1 backup. A new writer without a reversal script will not be merged.
+6. **Reason field.** Every write is tagged with a provenance string.
+7. **iCloud coherence (djay only).** WAL mtime quiesce plus `brctl status` (`assert_icloud_quiesced`).
+
+Not rails, but conventions of the writers that use the harness:
+
+- **Dry run is the default.** A live write needs `--live` as well as `--i-understand-the-risks`, and
+  the dry-run output is the diff the live run will apply. Analysis write-back refuses `--live`
+  without a matching dry-run plan stamp (`require_writeback_plan`); bulk CSV writes follow dry run,
+  then cautious, then bulk (`require_cautious_before_bulk`).
+- **No truncate in place.** The harness itself does no atomic temp-file write; it relies on the
+  backup and the reversal script. DB writers run the write and its readback inside one
+  `BEGIN IMMEDIATE` ... `COMMIT` so a mismatch can roll back (`apps/sync/playlist_apply.py` is the
+  reference); a writer that replaces a whole file writes a temp file in the same directory and
+  renames it with `os.replace`.
 
 Imported by `apps/sync/{playlist_apply,apply_analysis,apply_ratings,apply_cues}.py` and
 `apps/smartlists/{writers,djay_writer}.py`; `apps/reconcile` and `apps/spotify` carry
 equivalents. `apps/stems`, `apps/vocals` and `apps/sets` are exempt because they write only
-derived artifacts under `data/`, never operator files. Do not add six-rail ceremony there,
+derived artifacts under `data/`, never operator files. Do not add the seven-rail ceremony there,
 and do not skip it for anything touching a vendor DB or an operator's audio.
 
 ## open-dj
@@ -304,7 +331,7 @@ apps/
   shared/          # paths, DB wrappers, the state layer (the spine)
     state/         # schema, stable_id, provenance envelope, event bus, StateWriter
   webui/           # FastAPI daemon (:8585) + SvelteKit frontend (:5173, /performance)
-  sync/            # RB <-> djay playlist / cue / beatgrid / rating sync, six-rail safety
+  sync/            # RB <-> djay playlist / cue / beatgrid / rating sync, seven-rail safety
   analysis/        # librosa + madmom + MIK backends
   stems/           # stem-bundle orchestration (workers run out-of-venv)
   vocals/          # vocal-region derivation into (private path)/

@@ -135,7 +135,11 @@ export const rustMode = $state({
 	/** What the connected engine build refuses (its hello). */
 	notBuilt: [] as string[],
 	/** Whether the engine reports key lock state (a build with the stretcher). */
-	keyLock: false
+	keyLock: false,
+	/** This page has locked an engine. A later save does not switch it. */
+	committed: false,
+	/** Choice last saved for the next load. Null until a read or a write. */
+	saved: null as EngineChoice | null
 });
 
 /**
@@ -150,6 +154,47 @@ export function rustCommandUnsupported(type: string): boolean {
 	if (type === 'master_tempo') return !rustMode.keyLock;
 	return FORWARDED.has(type) && rustMode.notBuilt.includes(type);
 }
+
+/** The saved engine is not the one this page already started, so it needs a reload. */
+export function engineRestartNeeded(): boolean {
+	if (!rustMode.committed || rustMode.saved === null) return false;
+	const live: EngineChoice = rustMode.enabled ? 'rust' : 'webaudio';
+	return rustMode.saved !== live;
+}
+
+/**
+ * Where "Restart to load engine" goes from `href`: the same page without
+ * `?engine=` when the URL carries one (it would outrank the saved choice),
+ * else a plain reload. Pure, so the button and the agent bridge share it.
+ */
+export function engineRestartTarget(href: string): { kind: 'assign'; href: string } | { kind: 'reload' } {
+	const url = new URL(href);
+	if (!url.searchParams.has('engine')) return { kind: 'reload' };
+	url.searchParams.delete('engine');
+	return { kind: 'assign', href: url.href };
+}
+
+/**
+ * Reload so the saved engine actually starts. The Settings button and the
+ * agent bridge (`window.__mdtAudioEngine.restartToLoad`) both call this, so an
+ * agent restarts the page exactly as a click does (Sol P1, PR #6829). Refuses
+ * when no restart is needed, rather than reloading a page for nothing.
+ */
+export function restartToLoadEngine(): void {
+	if (typeof window === 'undefined') throw new Error('restartToLoadEngine: no page to restart');
+	if (!rustMode.committed) {
+		throw new Error('restartToLoadEngine: this page runs no engine; the saved engine starts when the performance page loads');
+	}
+	if (!engineRestartNeeded()) {
+		throw new Error('restartToLoadEngine: the saved engine is already the one this page runs');
+	}
+	const target = engineRestartTarget(window.location.href);
+	if (target.kind === 'assign') window.location.assign(target.href);
+	else window.location.reload();
+}
+
+// The agent bridge over engineRestartNeeded() and restartToLoadEngine() lives
+// in engine-bridge.ts, which the root layout loads eagerly on every route.
 
 /** Read the choice from `?engine=` (remembered) or the remembered value. */
 export function readEngineChoice(search: string, stored: string | null): EngineChoice {
@@ -182,6 +227,7 @@ export function setStoredEngineChoice(choice: EngineChoice): void {
 		throw new Error(`audio_engine must be webaudio|rust, got ${String(choice)}`);
 	}
 	window.localStorage.setItem(ENGINE_PREF_KEY, choice);
+	rustMode.saved = choice;
 }
 
 let initialized = false;
@@ -208,6 +254,8 @@ export function initRustMode(): void {
 	}
 	rustMode.clock = clock ?? 'device';
 	rustMode.enabled = choice === 'rust';
+	rustMode.saved = choice;
+	rustMode.committed = true;
 }
 
 /** How the dispatcher toasts; the mode's code keeps it for timers too. */
@@ -261,6 +309,19 @@ export async function executeInRustEngine(
 	// the page's, and must reach this mode's driver, not the Web Audio one.
 	const engine = await loadRustEngineMode(toast);
 	if (!ENGINE_COMMANDS.has(type)) return false;
-	await engine.executeRustCommand(command);
+	// KEYSHIFT-03: the Rust load contract has no key_shift field, so the load goes
+	// without it; a shifted load then lands through the explicit key_nudge loop below.
+	if (command.type === 'load' && command.key_shift !== undefined) {
+		const { key_shift: _keyShift, ...unshiftedLoad } = command;
+		await engine.executeRustCommand(unshiftedLoad);
+	} else {
+		await engine.executeRustCommand(command);
+	}
+	if (command.type === 'load' && command.key_shift !== undefined && command.key_shift !== 0) {
+		const semitones = command.key_shift > 0 ? 1 : -1;
+		for (let i = 0; i < Math.abs(command.key_shift); i += 1) {
+			await engine.executeRustCommand({ type: 'key_nudge', deck: command.deck, semitones });
+		}
+	}
 	return true;
 }

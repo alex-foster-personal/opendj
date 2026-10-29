@@ -159,6 +159,17 @@ it('keyForms lists the key in every notation, so key: search ignores the setting
 	assert.deepEqual(notation.keyForms(null), []);
 });
 
+describe('deck surfaces print keys in the chosen notation', () => {
+	it('the Reset tempo tooltip uses the formatted key, never deck.key raw', () => {
+		const header = readFileSync(
+			fileURLToPath(new URL('../../src/lib/components/rb/deck/DeckHeader.svelte', import.meta.url)),
+			'utf8'
+		);
+		assert.doesNotMatch(header, /key: \$\{deck\.key\}/, 'tooltip prints the stored key, bypassing key_notation');
+		assert.match(header, /key: \$\{origKeyShown\}/);
+	});
+});
+
 describe('GET /ui-prefs hydrates key_notation', () => {
 	let prefs;
 	let originalFetch;
@@ -177,7 +188,7 @@ describe('GET /ui-prefs hydrates key_notation', () => {
 
 	it('a valid key_notation from disk is applied', async () => {
 		prefs.uiPrefs.key_notation = 'camelot';
-		globalThis.fetch = async () => jsonResponse({ key_notation: 'musical' });
+		globalThis.fetch = async () => jsonResponse({ key_notation: 'musical', library_hidden_columns: [], library_key_filter: [] });
 		await prefs.hydrateConfirmPrefsFromDisk();
 		assert.equal(prefs.uiPrefs.key_notation, 'musical');
 	});
@@ -272,4 +283,14 @@ it('shownKey reads the notation source prefs.svelte.ts installs, and refuses bef
 	assert.equal(fresh.shownKey(null), null);
 	const prefsSrc = readFileSync(fileURLToPath(new URL('../../src/lib/rb/prefs.svelte.ts', import.meta.url)), 'utf8');
 	assert.match(prefsSrc, /installKeyNotationSource\(\(\) => uiPrefs\.key_notation\)/);
+});
+
+describe('the column chooser names every key notation (sol review P1, PR #7601)', () => {
+	// [if] the Open Key choice reads "1m" [then] the menu does not say which notation it is [else stop]
+	it('labels the four choices 8A \u2022 Am, 8A, Open Key and Am', () => {
+		assert.deepEqual(
+			notation.KEY_NOTATIONS.map((n) => notation.keyNotationChoiceLabel(n)),
+			['8A \u2022 Am', '8A', 'Open Key', 'Am']
+		);
+	});
 });

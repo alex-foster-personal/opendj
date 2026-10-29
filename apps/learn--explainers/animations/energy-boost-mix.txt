@@ -1,0 +1,104 @@
+energy boost: two steps up the wheel lifts the energy
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                      [8A]                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+   start on 8A
+   energy  ####
+@@
+energy boost: two steps up the wheel lifts the energy
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B         [9A]                       3A          3B
+                           outer B = major
+                      (8A)                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+   8A -> 9A   +1 neighbor   smooth, same mood
+   energy  ####
+@@
+energy boost: two steps up the wheel lifts the energy
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                       10A                   2A
+                           inner A = minor
+         9B         (9A)                       3A          3B
+                           outer B = major
+                      [8A]                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+   back to 8A
+   energy  ####
+@@
+energy boost: two steps up the wheel lifts the energy
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                      [10A]                  2A
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                      (8A)                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+   8A -> 10A  +2 steps      energy up
+   energy  ####  ->  #######
+@@
+energy boost: two steps up the wheel lifts the energy
+                                  12B
+                     11B                       1B
+
+                                  12A
+            10B            11A           1A             2B
+
+                      [10A]                  2A
+                           inner A = minor
+         9B          9A                        3A          3B
+                           outer B = major
+                      (8A)                   4A
+
+            8B             7A            5A             4B
+                                  6A
+
+                     7B                        5B
+                                  6B
+   8A -> 10A  +2 steps      energy up
+   energy  #######  (a whole tone up)

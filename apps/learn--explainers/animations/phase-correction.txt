@@ -1,0 +1,63 @@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  ------|-----------|-----------|-----------|-----------|-----
+
+   offset: +18 ms     nudging B tempo back
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  -----|-----------|-----------|-----------|-----------|------
+
+   offset: +15 ms     nudging B tempo back
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  ----|-----------|-----------|-----------|-----------|-------
+
+   offset: +12 ms     nudging B tempo back
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  ---|-----------|-----------|-----------|-----------|--------
+
+   offset:  +9 ms     nudging B tempo back
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  --|-----------|-----------|-----------|-----------|---------
+
+   offset:  +6 ms     nudging B tempo back
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  -|-----------|-----------|-----------|-----------|----------
+
+   offset:  +3 ms     nudging B tempo back
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  |-----------|-----------|-----------|-----------|-----------
+
+   offset:   0 ms     LOCKED: beats aligned
+   (each dash ~ 3 ms)
+@@
+phase correction: B is nudged a little each step until its beats line up
+
+   deck A  |-----------|-----------|-----------|-----------|-----------
+   deck B  |-----------|-----------|-----------|-----------|-----------
+
+   offset:   0 ms     LOCKED: beats aligned
+   (each dash ~ 3 ms)

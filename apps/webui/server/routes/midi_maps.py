@@ -12,7 +12,7 @@ required per-binding ``provenance``. Keeping the wire shape identical means the
 frontend registers a fetched document with no key translation, and validating
 the whole action union HERE means a map that the runtime could not accept is
 refused at the edge rather than surviving to the browser. Design:
-specs/controller-onboarding.md sections 3.1-3.2.
+(private path) sections 3.1-3.2.
 
 The JSON files under ``<data>/state/controller-maps/`` are the source of truth.
 There is deliberately NO sqlite index: listing globs a directory of tens of
@@ -43,6 +43,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from apps.shared.events import publish
+from apps.shared.id_grammar import require_matching
 from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.webui.server.backend import StateBackend
@@ -330,9 +331,7 @@ class MidiMapDoc(_Strict):
     @field_validator("id")
     @classmethod
     def _id_is_a_slug(cls, value: str) -> str:
-        if _MAP_ID.fullmatch(value) is None:
-            raise ValueError(f"id must be a lowercase slug, got {value!r}")
-        return value
+        return require_matching(value, _MAP_ID, field="id", description="a lowercase slug")
 
     @field_validator("name_match")
     @classmethod
@@ -456,9 +455,13 @@ def _not_found(map_id: str) -> HTTPException:
 
 
 def _require_slug(map_id: str) -> str:
-    if _MAP_ID.fullmatch(map_id) is None:
-        raise _invalid(f"map id must be a lowercase slug, got {map_id!r}")
-    return map_id
+    return require_matching(
+        map_id,
+        _MAP_ID,
+        field="map id",
+        description="a lowercase slug",
+        refuse=_invalid,
+    )
 
 
 def _describe(exc: ValidationError) -> str:

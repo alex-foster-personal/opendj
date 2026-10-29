@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+import httpx
+
 
 @dataclass(frozen=True)
 class TransferConfig:
@@ -24,6 +26,14 @@ class TransferConfig:
         if not value:
             raise TransferConfigurationError(f"{env_name} is required for streaming transfer")
         return value
+
+    def httpx_timeout(self) -> httpx.Timeout:
+        return httpx.Timeout(
+            connect=self.connect_timeout_s,
+            read=self.read_timeout_s,
+            write=self.write_timeout_s,
+            pool=self.pool_timeout_s,
+        )
 
 
 class TransferConfigurationError(RuntimeError):

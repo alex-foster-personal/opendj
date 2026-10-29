@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.parity.figure import LaneFigure
+from apps.parity.figure import LaneFigure, lane_denominator_n, lane_scored_n
 from apps.parity.lanes import DENOMINATOR_NAME
 
 
@@ -48,8 +48,8 @@ def score_bpm(rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
             within_0_1 += 1
         if delta <= 1.0:
             within_1_0 += 1
-    denominator_n = len(rows) - len(ungradable_ids)
-    scored_n = len(agree_ids) + len(disagree_ids)
+    denominator_n = lane_denominator_n(len(rows), len(ungradable_ids))
+    scored_n = lane_scored_n(len(agree_ids), len(disagree_ids))
     return LaneFigure(
         lane="bpm",
         status="scored",

@@ -15,7 +15,7 @@ If Phase 5's schema has not been applied to the supplied connection
 (e.g. a legacy caller), we log a one-time INFO and drop the event
 rather than raising, preserving the best-effort contract.
 
-Payload schema (see docs/dj_copilot_events.md for the full contract):
+Payload schema (see (private path) for the full contract):
 
     {
       "playlist_id": str,
@@ -29,8 +29,9 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import UTC, datetime
 from typing import Literal
+
+from ._time import _now_iso
 
 _logger = logging.getLogger(__name__)
 _logged_bus_missing = False
@@ -80,7 +81,7 @@ def emit_play_order_changed(
     """
     global _logged_bus_missing
     payload = {"playlist_id": playlist_id, "name": name, "action": action}
-    ts = datetime.now(UTC).isoformat()
+    ts = _now_iso()
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     try:
         conn.execute(

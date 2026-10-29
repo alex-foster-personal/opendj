@@ -14,15 +14,13 @@ lives in :mod:`apps.analysis.backends.own_loudness`, selected through
 from __future__ import annotations
 
 import math
+from dataclasses import asdict
 from pathlib import Path
 
 from apps.analysis.lanes import LaneResult
 
 from .adapter import analyze_file
 from .contract import PRODUCER_BACKEND, PRODUCER_VERSION
-
-#: The four loudness payload measurements, checked for finiteness below.
-_MEASUREMENT_FIELDS = ("integrated_lufs", "true_peak_dbtp", "loudness_range_lu", "rms_db")
 
 
 def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
@@ -42,13 +40,8 @@ def produce_lane_result(path: Path, *, binary: str | None = None) -> LaneResult:
     rather than an ``ok`` payload no consumer could validate.
     """
     measured = analyze_file(path, binary=binary)
-    payload = {
-        "integrated_lufs": measured.integrated_lufs,
-        "true_peak_dbtp": measured.true_peak_dbtp,
-        "loudness_range_lu": measured.loudness_range_lu,
-        "rms_db": measured.rms_db,
-    }
-    if not all(math.isfinite(payload[field]) for field in _MEASUREMENT_FIELDS):
+    payload = asdict(measured)
+    if not all(math.isfinite(value) for value in payload.values()):
         return LaneResult(status="failed", reason="non_finite_measurement")
     return LaneResult(status="ok", payload=payload)
 

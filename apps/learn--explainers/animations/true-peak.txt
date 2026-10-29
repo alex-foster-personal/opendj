@@ -1,0 +1,101 @@
+true peak: the curve between samples peaks above the highest sample
+
+
+          #     #                             #     #
+
+
+
+                      #                 #
+
+
+
+                            #     #
+
+
+
+  # = stored samples
+@@
+true peak: the curve between samples peaks above the highest sample
+
+
+  --------#-----#-----------------------------#-----#---------sample pk
+
+
+
+                      #                 #
+
+
+
+                            #     #
+
+
+  sample peak -0.3 dBFS
+  highest stored sample
+@@
+true peak: the curve between samples peaks above the highest sample
+
+
+  -------.#-----#-----------------------------#-----#---------sample pk
+        .
+      ..
+     .
+    .                 #                 #
+
+
+
+                            #     #
+
+
+  sample peak -0.3 dBFS
+  the reconstructed curve runs between samples
+@@
+true peak: the curve between samples peaks above the highest sample
+
+           .....                               .....
+  -------.#-----#.---------------------------.#-----#.--------sample pk
+        .         ..                        .         .
+      ..            .                     ..           ..
+     .               .                   .               .
+    .                 #                 #
+                       .               .
+                        .            ..
+                         ..         .
+                           .#     #.
+                             .....
+
+  sample peak -0.3 dBFS
+  ...and rises above the highest sample
+@@
+true peak: the curve between samples peaks above the highest sample
+
+           ..^..                               .....          true pk
+  -------.#-----#.---------------------------.#-----#.--------sample pk
+        .         ..                        .         .
+      ..            .                     ..           ..
+     .               .                   .               .
+    .                 #                 #
+                       .               .
+                        .            ..
+                         ..         .
+                           .#     #.
+                             .....
+
+  sample peak -0.3 dBFS, true peak +0.8 dBTP
+  inter-sample peak found: over 0 dBFS
+@@
+true peak: the curve between samples peaks above the highest sample
+
+           ..^..                               .....          true pk
+  -------.#-----#.---------------------------.#-----#.--------sample pk
+        .         ..                        .         .
+      ..            .                     ..           ..
+     .               .                   .               .
+    .                 #                 #
+                       .               .
+                        .            ..
+                         ..         .
+                           .#     #.
+                             .....
+
+  sample peak -0.3 dBFS, true peak +0.8 dBTP
+  inter-sample peak found: over 0 dBFS

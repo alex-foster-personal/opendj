@@ -1,7 +1,7 @@
 """The adapter's failure vocabulary, and the read-only connection opener.
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C1 (source lines
-201-223 on ``af--t4-design``) per ``.planning/t3b-decomposition-map.md``
+201-223 on ``af--t4-design``) per ``(private path)``
 section 2 target #3 -- the module the map nominates, holding the code that
 was there, but NOT yet holding the change the map wants made to it.
 
@@ -13,7 +13,7 @@ That swap is assigned to slice S0, which built none of its four modules;
 wave 4 extracted them so the rest of the split could proceed.
 
 Doing the swap here would change the exception type of every 404/409/422/428
-this adapter raises, which ``tests/webui/test_rb_hot_cue_write.py`` (513
+this adapter raises, which ``(private path)`` (513
 lines) and the route tests assert on directly. That is a behavioural change
 with its own test surface, not a relocation, so it stays a named debt: until
 it lands, the decomposition's "no fastapi import anywhere under adapters/"
@@ -30,6 +30,18 @@ from fastapi import HTTPException
 def not_found(code: str, message: str) -> HTTPException:
     """404 with the explicit {code, message} detail shape (COMPONENT-MAP 2)."""
     return HTTPException(status_code=404, detail={"code": code, "message": message})
+
+
+def _require_db_on_disk(path: Path, label: str) -> None:
+    """Raise the shared 500 when a required vendor database file is absent."""
+    if not path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": f"{label}_UNAVAILABLE",
+                "message": f"required database missing on disk: {path}",
+            },
+        )
 
 
 def unavailable(code: str, message: str) -> HTTPException:
@@ -51,17 +63,10 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     (db.py) and ``rb_vendor_pkg/db.py``'s docstring recorded the duplication
     as intentional-until-S8. This is S8.
     """
-    if not path.exists():
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": f"{label}_UNAVAILABLE",
-                "message": f"required database missing on disk: {path}",
-            },
-        )
+    _require_db_on_disk(path, label)
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.execute("PRAGMA query_only = ON")
     return conn
 
 
-__all__ = ["_open_ro", "not_found"]
+__all__ = ["_open_ro", "_require_db_on_disk", "not_found", "unavailable"]

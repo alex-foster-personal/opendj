@@ -19,6 +19,7 @@
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { beatSyncGridWarning } from '$lib/rb/beat-sync-math';
+	import { deckGridWarningText, gridAudioFitFor, requestGridAudioFit } from '$lib/rb/grid-audio-fit.svelte';
 	import { queryMasterMode } from '$lib/rb/performance-ipc.svelte';
 	import { MASTER_LOCK_LONG_PRESS_MS } from '$lib/rb/master-election';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
@@ -77,8 +78,17 @@
 	// BEATSYNC-GRID-02: an uneven or extrapolated grid is said out loud, on
 	// the control it affects, before the DJ leans on the lock. Pure math over
 	// the deck's real grid; null for a clean grid and for no grid at all.
-	const gridWarning: string | null = $derived(
+	const gridShapeWarning: string | null = $derived(
 		gridless ? null : (beatSyncGridWarning(deck.anlz?.beatgrid.beats ?? [])?.message ?? null)
+	);
+	// GRIDFIT-03: whether the grid matches the audio is judged by the engine,
+	// asked once per track and only after the grid has arrived (never during
+	// the load itself); its finding leads the same orange ! and title.
+	$effect(() => {
+		if (deck.stable_id !== null && deck.anlz) requestGridAudioFit(deck.stable_id);
+	});
+	const gridWarning: string | null = $derived(
+		gridless ? null : deckGridWarningText(gridShapeWarning, gridAudioFitFor(deck.stable_id))
 	);
 	const beatSyncTitle: string = $derived(
 		(gridless
@@ -94,7 +104,7 @@
 		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
 		'No grid on this track: the button is inert and transport runs unsynced.',
 		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.',
-		'A locked deck is kept on the beat by tempo trims of at most 0.3%, and re-joined when it is more than 15 ms off. An orange ! means this track has an uneven beatgrid, so the lock may wander.'
+		'A locked deck is kept on the beat by tempo trims of at most 0.3%, and re-joined when it is more than 15 ms off. An orange ! means this track has an uneven beatgrid, or a grid whose tempo or beat does not match its audio, so the lock may wander or drift.'
 	]);
 	const masterMode = $derived(queryMasterMode());
 	const masterTitle: string = $derived(
@@ -276,7 +286,7 @@
 	const resetTitle: string = $derived(
 		deck.bpm === null
 			? 'Reset to original tempo'
-			: `Reset to original tempo: ${deck.bpm.toFixed(0)}bpm${deck.key !== null ? ` | key: ${deck.key}` : ''}`
+			: `Reset to original tempo: ${deck.bpm.toFixed(0)}bpm${origKeyShown !== null ? ` | key: ${origKeyShown}` : ''}`
 	);
 	const resetBullets: string[] = [
 		'Tempo returns to the analysed 0% (the track\'s original bpm).',

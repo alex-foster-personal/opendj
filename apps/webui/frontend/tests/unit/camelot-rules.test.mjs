@@ -89,8 +89,8 @@ describe('the compatible filter reads prefs.rules', () => {
 
 describe('no rule ticked: a keyless deck can be the reference', () => {
 	const decks = [
-		{ is_master: true, playing: true, stable_id: 'm', key: null, bpm: 128 },
-		{ is_master: false, playing: true, stable_id: 'o', key: '8A', bpm: 100 }
+		{ is_master: true, playing: true, stable_id: 'm', key: null, bpm: 128, key_shift_semitones: 0 },
+		{ is_master: false, playing: true, stable_id: 'o', key: '8A', bpm: 100, key_shift_semitones: 0 }
 	];
 	it('BPM-only mode keeps the keyless master as the reference', () => {
 		assert.deepEqual(filter.computeNextOnlyRef(decks, false), { key: null, bpm: 128 });
@@ -98,11 +98,18 @@ describe('no rule ticked: a keyless deck can be the reference', () => {
 	it('control: with key rules on, a keyless master cannot be the reference', () => {
 		assert.deepEqual(filter.computeNextOnlyRef(decks), { key: '8A', bpm: 100 });
 	});
-	it('both callers pass whether any rule is ticked', () => {
+	it('both callers pass whether the key is checked (Mashup always, Transition while a rule is ticked)', () => {
 		const panel = readFileSync(fileURLToPath(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url)), 'utf8');
-		assert.match(panel, /computeNextOnlyRef\(slices, uiPrefs\.compatible_filter\.rules\.length > 0\)/);
+		assert.match(panel, /computeNextOnlyRef\(slices, compatibleKeyChecked\(uiPrefs\.compatible_filter\)\)/);
 		const bar = readFileSync(fileURLToPath(new URL('../../src/lib/components/rb/CommandBarV2.svelte', import.meta.url)), 'utf8');
-		assert.match(bar, /\t\t\tuiPrefs\.compatible_filter\.rules\.length > 0\s*\)/);
+		assert.match(bar, /\t\t\tcompatibleKeyChecked\(uiPrefs\.compatible_filter\)\s*\)/);
+	});
+	it('Mashup checks the key even with no Transition rule ticked', () => {
+		assert.equal(filter.compatibleKeyChecked({ ...filter.COMPATIBLE_FILTER_DEFAULTS, mode: 'mashup', rules: [] }), true);
+		assert.equal(filter.compatibleKeyChecked({ ...filter.COMPATIBLE_FILTER_DEFAULTS, mode: 'transition', rules: [] }), false);
+		const mashup = { ...filter.COMPATIBLE_FILTER_DEFAULTS, mode: 'mashup', rules: [], key_shift_max: 0 };
+		assert.equal(filter.isAppropriateNext({ key: '2B', bpm: 124 }, { key: '8A', bpm: 124 }, mashup), false);
+		assert.equal(filter.isAppropriateNext({ key: '8A', bpm: 124 }, { key: '8A', bpm: 124 }, mashup), true);
 	});
 });
 

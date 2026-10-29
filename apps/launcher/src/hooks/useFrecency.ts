@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
+import { tauriInvokeErrorMessage } from "../lib/tauriInvokeError";
 import type { FrecentHit } from "../types";
 
 /** What the frecency store is doing right now.
@@ -32,7 +33,7 @@ export function useFrecency(paletteVisible: boolean): FrecencyState {
         // Surfaced, never swallowed: the old `.catch(() => setTop([]))` turned
         // a failed read into an indistinguishable empty library.
         if (!cancelled) {
-          setState({ status: "failed", error: err instanceof Error ? err.message : String(err) });
+          setState({ status: "failed", error: tauriInvokeErrorMessage(err) });
         }
       });
     return () => {

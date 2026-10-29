@@ -8,9 +8,10 @@ and takeover guard pushed that module past the 600-line ratchet (PR #1586).
 from __future__ import annotations
 
 import contextlib
-import os
 import sqlite3
 from datetime import UTC, datetime
+
+from apps.shared.process_liveness import pid_is_alive
 
 from . import queue_store as qs
 
@@ -34,17 +35,6 @@ def ensure_batch_lease_columns(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE analysis_queue_batch ADD COLUMN active_runner_pid INTEGER"
             )
-
-
-def pid_is_alive(pid: int) -> bool:
-    """Whether ``pid`` still exists. Used by the runner's takeover guard."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def _refuse_if_live_runner_holds_batch(

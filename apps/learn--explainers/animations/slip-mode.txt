@@ -1,0 +1,63 @@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard            A
+   slip             S
+
+   playing
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard                A
+   slip                 S
+
+   playing
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard              A
+   slip                     S
+
+   scratch: reverse
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard            A
+   slip                         S
+
+   scratch: reverse
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard          A
+   slip                             S
+
+   scratch: reverse
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard        A
+   slip                                 S
+
+   scratch: reverse
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard                            A
+   slip                                     S
+
+   RELEASED: snap to slip
+@@
+slip mode: scratch on top while a hidden playhead keeps going
+
+   track  |-------|-------|-------|-------|-------|-------|-------
+   heard                                A
+   slip                                         S
+
+   playing on

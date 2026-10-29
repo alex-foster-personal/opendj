@@ -11,10 +11,13 @@ import io
 import json
 import sys
 from collections.abc import Iterable
+from typing import TextIO
 
 from apps.shared.pairings.models import SOURCES, PairingEdge
 
-from ._common import add_db_argument, build_repo
+from ._common import add_db_argument
+from ._emit import COLUMNS, edge_row_values
+from ._session import pairing_repo
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,82 +35,63 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-_COLUMNS: tuple[str, ...] = (
-    "from_stable_id",
-    "to_stable_id",
-    "direction",
-    "source",
-    "notes",
-    "confidence",
-    "modified_at",
-)
-
-
-def _emit_csv(edges: Iterable[PairingEdge], out) -> None:
+def _emit_csv(edges: Iterable[PairingEdge], out: TextIO) -> None:
     writer = csv.writer(out)
-    writer.writerow(_COLUMNS)
-    for e in edges:
-        writer.writerow([
-            e.from_stable_id,
-            e.to_stable_id,
-            e.direction,
-            e.source,
-            e.notes or "",
-            "" if e.confidence is None else f"{e.confidence:.3f}",
-            e.modified_at.isoformat(),
-        ])
+    writer.writerow(COLUMNS)
+    for edge in edges:
+        writer.writerow(
+            edge_row_values(
+                edge,
+                truncate_ids=False,
+                confidence_precision=3,
+                modified_timespec=None,
+            )
+        )
 
 
-def _emit_json(edges: Iterable[PairingEdge], out) -> None:
+def _emit_json(edges: Iterable[PairingEdge], out: TextIO) -> None:
     json.dump([e.as_dict() for e in edges], out, indent=2)
     out.write("\n")
 
 
-def _emit_table(edges: list[PairingEdge], out) -> None:
+def _emit_table(edges: list[PairingEdge], out: TextIO) -> None:
     # rich is optional; fall back to plain text if unavailable.
     try:
         from rich.console import Console
         from rich.table import Table
     except Exception:  # pragma: no cover - rich is in requirements.txt
-        header = "\t".join(_COLUMNS)
+        header = "\t".join(COLUMNS)
         out.write(header + "\n")
-        for e in edges:
-            row = [
-                e.from_stable_id[:10] + "...",
-                e.to_stable_id[:10] + "...",
-                e.direction,
-                e.source,
-                e.notes or "",
-                "" if e.confidence is None else f"{e.confidence:.2f}",
-                e.modified_at.isoformat(timespec="seconds"),
-            ]
+        for edge in edges:
+            row = edge_row_values(
+                edge,
+                truncate_ids=True,
+                confidence_precision=2,
+                modified_timespec="seconds",
+            )
             out.write("\t".join(row) + "\n")
         return
     console = Console(file=out, force_terminal=False)
     table = Table(title=f"pairings ({len(edges)})")
-    for col in _COLUMNS:
+    for col in COLUMNS:
         table.add_column(col)
-    for e in edges:
+    for edge in edges:
         table.add_row(
-            e.from_stable_id,
-            e.to_stable_id,
-            e.direction,
-            e.source,
-            e.notes or "",
-            "" if e.confidence is None else f"{e.confidence:.2f}",
-            e.modified_at.isoformat(timespec="seconds"),
+            *edge_row_values(
+                edge,
+                truncate_ids=False,
+                confidence_precision=2,
+                modified_timespec="seconds",
+            )
         )
     console.print(table)
 
 
-def main(argv: list[str] | None = None, *, out=None) -> int:
+def main(argv: list[str] | None = None, *, out: TextIO | None = None) -> int:
     args = build_parser().parse_args(argv)
     stream = out if out is not None else sys.stdout
-    repo, conn = build_repo(args.db)
-    try:
+    with pairing_repo(args.db) as repo:
         edges = list(repo.list_all(source=args.source, from_id=args.from_id))
-    finally:
-        conn.close()
     if args.format == "csv":
         buf = io.StringIO()
         _emit_csv(edges, buf)

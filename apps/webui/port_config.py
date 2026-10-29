@@ -142,6 +142,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8706,  # tests/e2e/vite.lyrics-words.config.ts API port
         8711,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_HUB_PORT
         8712,  # tests/e2e/playwright.cloudsync-ui.config.ts CLOUDSYNC_UI_SPOKE_PORT
+        9336,  # apps/desktop/mcp/smoke.ts CDP_PORT (--shell electron)
         9408,  # tests/e2e/stems-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9410,  # tests/e2e/midi-maps-e2e-endpoints.ts DEFAULT_FRONTEND_PORT
         9414,  # tests/e2e/playwright.play-analytics.config.ts backend port

@@ -79,6 +79,30 @@ def test_rows_resolving_to_one_file_are_one_recording_without_the_flag(state_con
     assert groups.by_basis() == {"same_file": 1}
 
 
+@pytest.mark.requirement("MIKBF-09")
+def test_rows_storing_one_path_are_one_recording_whatever_their_availability(state_conn, add_track) -> None:
+    """if two live rows recording the identical file_path stay apart because one is absent then broken."""
+    add_track(A, file_path="/Users/old/Music/widerberg/Glasswing/02 Glasswing.mp3")
+    add_track(B, file_path="/Users/old/Music/widerberg/Glasswing/02 Glasswing.mp3")
+    add_track(C, file_path="/Users/old/Music/widerberg/Glasswing/03 Other.mp3")
+    _present(state_conn, A, "/Volumes/lib/02 Glasswing.mp3")  # B has no availability row at all
+    groups = dups.duplicate_groups(state_conn, by_metadata=False)
+    assert groups.members_of(A) == (A, B)
+    assert groups.members_of(C) == (C,)  # control: another stored path stays apart
+    assert groups.by_basis() == {"same_stored_path": 1}
+
+
+@pytest.mark.requirement("MIKBF-09")
+def test_stored_paths_differing_only_in_case_never_group(state_conn, add_track) -> None:
+    """if two stored spellings that differ only in case group as one recording (a guessed case rule) then broken."""
+    add_track(A, file_path="/Users/old/Music/Track.mp3")
+    add_track(B, file_path="/Users/old/music/track.mp3")
+    add_track(C, file_path="/Users/old/Music/Track.mp3")
+    groups = dups.duplicate_groups(state_conn, by_metadata=False)
+    assert groups.members_of(A) == (A, C)  # control: the identical spelling does group
+    assert groups.members_of(B) == (B,)
+
+
 def test_metadata_groups_need_the_flag_and_durations_within_one_second(
     state_conn, add_track
 ) -> None:

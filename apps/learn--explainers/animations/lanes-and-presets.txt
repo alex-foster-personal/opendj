@@ -1,0 +1,125 @@
+lanes and presets: one preset sets every lane's curve at once
+
+   preset: Fade    (o = outgoing, i = incoming, * = both)
+           |oooooooooooo                        iiiiiiiiiiii
+   Volume  |            ************************
+           |iiiiiiiiiiii                        oooooooooooo
+
+           |************************************************
+   EQ bass |
+           |
+
+           |
+   Filter  |
+           |oooooooooooooooooooooooooooooooooooooooooooooooo
+
+           |
+   Effects |
+           |oooooooooooooooooooooooooooooooooooooooooooooooo
+
+   Looping  (none)
+@@
+lanes and presets: one preset sets every lane's curve at once
+
+   preset: Fade    (o = outgoing, i = incoming, * = both)
+           |oooooooooooo                        iiiiiiiiiiii
+   Volume  |            ************************
+           |iiiiiiiiiiii                        oooooooooooo
+
+           |************************************************
+   EQ bass |
+           |
+
+           |
+   Filter  |
+           |oooooooooooooooooooooooooooooooooooooooooooooooo
+
+           |
+   Effects |
+           |oooooooooooooooooooooooooooooooooooooooooooooooo
+
+   Looping  (none)
+@@
+lanes and presets: one preset sets every lane's curve at once
+
+   preset: Rise    (o = outgoing, i = incoming, * = both)
+           |oooooooooooooooooooooooooooooo*********iiiiiiiii
+   Volume  |                  iiiiiiiiiiii         oooooo
+           |iiiiiiiiiiiiiiiiii                           ooo
+
+           |ooooooooooooooooooooooooiiiiiiiiiiiiiiiiiiiiiiii
+   EQ bass |
+           |iiiiiiiiiiiiiiiiiiiiiiiioooooooooooooooooooooooo
+
+           |                                    oooooooooooo
+   Filter  |            oooooooooooooooooooooooo
+           |oooooooooooo
+
+           |                                    oooooooooooo
+   Effects |            oooooooooooooooooooooooo
+           |oooooooooooo
+
+   Looping                          [==][==][==] outgoing loops
+@@
+lanes and presets: one preset sets every lane's curve at once
+
+   preset: Rise    (o = outgoing, i = incoming, * = both)
+           |oooooooooooooooooooooooooooooo*********iiiiiiiii
+   Volume  |                  iiiiiiiiiiii         oooooo
+           |iiiiiiiiiiiiiiiiii                           ooo
+
+           |ooooooooooooooooooooooooiiiiiiiiiiiiiiiiiiiiiiii
+   EQ bass |
+           |iiiiiiiiiiiiiiiiiiiiiiiioooooooooooooooooooooooo
+
+           |                                    oooooooooooo
+   Filter  |            oooooooooooooooooooooooo
+           |oooooooooooo
+
+           |                                    oooooooooooo
+   Effects |            oooooooooooooooooooooooo
+           |oooooooooooo
+
+   Looping                          [==][==][==] outgoing loops
+@@
+lanes and presets: one preset sets every lane's curve at once
+
+   preset: Blend   (o = outgoing, i = incoming, * = both)
+           |oooooooooooooooooooooo    iiiiiiiiiiiiiiiiiiiiii
+   Volume  |        iiiiiiiiiiiiii****oooooooooooooo
+           |iiiiiiii                                oooooooo
+
+           |ooooooooooooooooooooooooiiiiiiiiiiiiiiiiiiiiiiii
+   EQ bass |
+           |iiiiiiiiiiiiiiiiiiiiiiiioooooooooooooooooooooooo
+
+           |
+   Filter  |
+           |oooooooooooooooooooooooooooooooooooooooooooooooo
+
+           |
+   Effects |               oooooooooooooooooo
+           |ooooooooooooooo                  ooooooooooooooo
+
+   Looping  (none)
+@@
+lanes and presets: one preset sets every lane's curve at once
+
+   preset: Blend   (o = outgoing, i = incoming, * = both)
+           |oooooooooooooooooooooo    iiiiiiiiiiiiiiiiiiiiii
+   Volume  |        iiiiiiiiiiiiii****oooooooooooooo
+           |iiiiiiii                                oooooooo
+
+           |ooooooooooooooooooooooooiiiiiiiiiiiiiiiiiiiiiiii
+   EQ bass |
+           |iiiiiiiiiiiiiiiiiiiiiiiioooooooooooooooooooooooo
+
+           |
+   Filter  |
+           |oooooooooooooooooooooooooooooooooooooooooooooooo
+
+           |
+   Effects |               oooooooooooooooooo
+           |ooooooooooooooo                  ooooooooooooooo
+
+   Looping  (none)

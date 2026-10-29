@@ -12,6 +12,12 @@
  */
 
 import {
+	DRAG_DEFAULTS,
+	applyDragSensitivity,
+	validateDragSensitivity,
+	type DragSensitivityPrefs
+} from './drag-sensitivity.svelte';
+import {
 	validateDeckLayoutFields,
 	makeDeckLayoutSetters,
 	DECK_LAYOUT_DURATIONS_MS,
@@ -58,6 +64,10 @@ import {
 	validateCompatibleFilterPrefs,
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
+import {
+	canonicalizeLibraryKeyFilter,
+	validateLibraryKeyFilterField
+} from './library-key-filter';
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import {
@@ -107,6 +117,7 @@ import {
 } from './perf-tier-prefs';
 import {
 	makePrefsHydrator,
+	makeLibraryKeyFilterRehydrator,
 	setLibraryBrowserDiskPref,
 	setTopbarDiskPref,
 	putDiskPrefsVerified,
@@ -117,6 +128,7 @@ import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLib
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 import { DEFAULT_KEY_NOTATION, installKeyNotationSource, isKeyNotation, KEY_NOTATIONS, type KeyNotation } from './key-notation';
+import { toggleHiddenColumn, validateHiddenColumns, type HideableColumn } from './library-columns';
 import {
 	applyUiSkinDom,
 	effectiveWavePalette,
@@ -190,6 +202,8 @@ export interface RbUiPrefs
 	library_density: LibraryDensity;
 	/** How every key cell is written (keys are stored as canonical Camelot). */
 	key_notation: KeyNotation;
+	/** LIBUX-54: track-table columns hidden from the header chooser, in table order. */
+	library_hidden_columns: HideableColumn[];
 	/** When true, every transport relocate (including master) uses BAR
 	 * phase-preserving sync so bar 1 stays aligned across synced decks. */
 	beat_sync_max: boolean;
@@ -210,6 +224,8 @@ export interface RbUiPrefs
 	vocals_filter: boolean;
 	/** Library list: keep only tracks with local audio present. */
 	available_offline_filter: boolean;
+	/** Library list: exact canonical Camelot multi-select (issue #7599). */
+	library_key_filter: string[];
 	/** Persisted independently so either collapsed rail entry can restore its panel. */
 	next_panel_collapsed: boolean;
 	recommended_panel_collapsed: boolean;
@@ -277,6 +293,9 @@ export interface RbUiPrefs
 	wave_split_master: WaveSplitMaster;
 	/** One-time defaults migrations already applied to this blob (PREFS_DEFAULTS_MIGRATION). */
 	defaults_migration: number;
+	/** Migration 2's false is not yet acknowledged by the daemon copy: until it
+	 * is, the disk value cannot hydrate over it and every boot resends it. */
+	radial_off_pending: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -313,6 +332,8 @@ export interface RbUiPrefs
 	crossfade_curve: CrossfadeCurve;
 	/** Horizontal mouse wheel adjusts filter or color knob on selected channels. */
 	horizontal_wheel_knob: HorizontalWheelKnob;
+	/** R6: click-drag base gain and distance falloff (local-only pref). */
+	drag_sensitivity: DragSensitivityPrefs;
 }
 
 /** Version of the one-time defaults migration (Mon 5 Oct 2026): Gothic becomes
@@ -322,7 +343,15 @@ export interface RbUiPrefs
  * version therefore migrates exactly the OLD DEFAULT values (or absent keys)
  * once; anything else was an explicit choice and is kept. The blob then
  * carries this version, so a later explicit pick of an old default sticks. */
-export const PREFS_DEFAULTS_MIGRATION = 1;
+export const PREFS_DEFAULTS_MIGRATION = 2;
+
+/** Migration 1 (above): the Gothic skin and Auto waveform defaults. */
+const _SKIN_DEFAULTS_MIGRATION = 1;
+/** Migration 2 (Wed 7 Oct 2026, the maintainer: "set radial waveforms to default off"):
+ * the code default was already false, but every blob that ever persisted kept
+ * an old true. A blob below this version gets jog_radial_waveform = false ONCE;
+ * a later explicit true then sticks. */
+const _RADIAL_OFF_MIGRATION = 2;
 
 /** Pre-migration defaults, matched exactly (see PREFS_DEFAULTS_MIGRATION). */
 const _PRE_GOTHIC_WAVEFORM_DESIGN: WaveformDesignPref = 'tri-band';
@@ -333,6 +362,7 @@ const DEFAULTS: RbUiPrefs = {
 	hide_broken_links: false,
 	library_density: 'compact',
 	key_notation: DEFAULT_KEY_NOTATION,
+	library_hidden_columns: [],
 	beat_sync_max: true,
 	preview_beat_sync: 'tempo',
 	next_panel_collapsed: false,
@@ -351,12 +381,14 @@ const DEFAULTS: RbUiPrefs = {
 	show_agent_pins: true,
 	show_stems: false,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
+	library_key_filter: [],
 	library_watcher_folders: [],
 	waveform_design: WAVEFORM_DESIGN_PREF_DEFAULT,
 	wave_palette: WAVE_PALETTE_PREF_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
 	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
 	defaults_migration: PREFS_DEFAULTS_MIGRATION,
+	radial_off_pending: false,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -370,6 +402,7 @@ const DEFAULTS: RbUiPrefs = {
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
 	crossfade_curve: 'magic',
 	horizontal_wheel_knob: 'filter',
+	drag_sensitivity: { base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx },
 	...SECTION_OVERLAY_PREF_DEFAULTS,
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
@@ -425,7 +458,7 @@ function _migrateSkinDefaults(
 				'clear the localStorage key to recover'
 		);
 	}
-	if (version !== undefined && version >= PREFS_DEFAULTS_MIGRATION) {
+	if (version !== undefined && version >= _SKIN_DEFAULTS_MIGRATION) {
 		return {
 			ui_skin: skin ?? DEFAULTS.ui_skin,
 			waveform_design: design ?? DEFAULTS.waveform_design,
@@ -439,14 +472,36 @@ function _migrateSkinDefaults(
 		waveform_design:
 			design === undefined || design === _PRE_GOTHIC_WAVEFORM_DESIGN ? DEFAULTS.waveform_design : design,
 		wave_palette: palette === undefined || palette === _PRE_GOTHIC_WAVE_PALETTE ? DEFAULTS.wave_palette : palette,
-		defaults_migration: PREFS_DEFAULTS_MIGRATION
+		defaults_migration: _SKIN_DEFAULTS_MIGRATION
 	};
+}
+
+/** True when a stored blob carries an unacknowledged migration 2, so boot resends it. */
+let _radialBootWrite = false;
+
+/** Apply migration 2 on top of the skin step; returns the radial value, the
+ * new version and whether the daemon copy still has to learn the false. */
+function _migrateRadialOff(
+	radial: boolean | undefined,
+	version: number,
+	pending: boolean
+): { jog_radial_waveform: boolean; defaults_migration: number; radial_off_pending: boolean } {
+	if (version >= _RADIAL_OFF_MIGRATION) {
+		return {
+			jog_radial_waveform: radial ?? DEFAULTS.jog_radial_waveform,
+			defaults_migration: version,
+			radial_off_pending: pending
+		};
+	}
+	_bootMigrated = true;
+	return { jog_radial_waveform: false, defaults_migration: PREFS_DEFAULTS_MIGRATION, radial_off_pending: true };
 }
 
 type LibraryPrefsValidated = {
 	hide_broken_links: boolean;
 	library_density?: RbUiPrefs['library_density'] | undefined;
 	key_notation?: KeyNotation | undefined;
+	library_hidden_columns?: HideableColumn[] | undefined;
 	playlist_tree_width?: number | undefined;
 };
 
@@ -456,6 +511,7 @@ type ThemePrefsValidated = {
 
 type SkinMixerDeckPrefsParsed = {
 	skinLook: SkinLookPrefs;
+	radialOff: ReturnType<typeof _migrateRadialOff>;
 	waveSplitMaster: ReturnType<typeof parseWaveSplitMaster>;
 	crossfadeCurve: RbUiPrefs['crossfade_curve'] | undefined;
 	horizontalWheelKnob: RbUiPrefs['horizontal_wheel_knob'] | undefined;
@@ -508,6 +564,13 @@ function _validateLibraryPrefs(parsed: Partial<RbUiPrefs>): LibraryPrefsValidate
 		hide_broken_links: parsed.hide_broken_links,
 		library_density: density,
 		key_notation: keyNotation,
+		library_hidden_columns:
+			parsed.library_hidden_columns === undefined
+				? undefined
+				: validateHiddenColumns(
+						parsed.library_hidden_columns,
+						`${STORAGE_KEY}: malformed prefs blob (clear the localStorage key to recover)`
+					),
 		playlist_tree_width: treeWidth
 	};
 }
@@ -650,6 +713,19 @@ function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckP
 		parseWavePalettePref(parsed.wave_palette),
 		parsed.defaults_migration
 	);
+	if (parsed.radial_off_pending !== undefined && typeof parsed.radial_off_pending !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (radial_off_pending is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const radialOff = _migrateRadialOff(
+		parsed.jog_radial_waveform,
+		skinLook.defaults_migration,
+		parsed.radial_off_pending ?? false
+	);
+	_radialBootWrite = radialOff.radial_off_pending;
+	skinLook.defaults_migration = radialOff.defaults_migration;
 	const waveSplitMaster = parseWaveSplitMaster(parsed.wave_split_master);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
@@ -692,6 +768,7 @@ function _parseSkinMixerAndDeckPrefs(parsed: Partial<RbUiPrefs>): SkinMixerDeckP
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 	return {
 		skinLook,
+		radialOff,
 		waveSplitMaster,
 		crossfadeCurve,
 		horizontalWheelKnob,
@@ -744,13 +821,15 @@ function _assembleLoadedPrefs(
 		deckLeftMirror,
 		playlistTreeView,
 		lastPlaylist,
-		autoSync
+		autoSync,
+		radialOff
 	} = skinMixerDeck;
 	return {
 		playlist_tree_width: library.playlist_tree_width ?? DEFAULTS.playlist_tree_width,
 		hide_broken_links: library.hide_broken_links,
 		library_density: library.library_density ?? DEFAULTS.library_density,
 		key_notation: library.key_notation ?? DEFAULTS.key_notation,
+		library_hidden_columns: library.library_hidden_columns ?? DEFAULTS.library_hidden_columns,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_panel_collapsed: parsed.next_panel_collapsed ?? DEFAULTS.next_panel_collapsed,
 		recommended_panel_collapsed:
@@ -769,7 +848,8 @@ function _assembleLoadedPrefs(
 		technically_working_animate:
 			parsed.technically_working_animate ?? DEFAULTS.technically_working_animate,
 		preview_beat_sync: parsed.preview_beat_sync ?? DEFAULTS.preview_beat_sync,
-		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
+		jog_radial_waveform: radialOff.jog_radial_waveform,
+		radial_off_pending: radialOff.radial_off_pending,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		...skinLook,
@@ -787,6 +867,10 @@ function _assembleLoadedPrefs(
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
 		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
 		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
+		drag_sensitivity:
+			parsed.drag_sensitivity === undefined
+				? { ...DEFAULTS.drag_sensitivity }
+				: validateDragSensitivity(parsed.drag_sensitivity, STORAGE_KEY),
 		...SECTION_OVERLAY_PREF_DEFAULTS,
 		...validateSectionOverlayPrefFields(parsed, STORAGE_KEY),
 		...LYRICS_PREF_DEFAULTS,
@@ -804,6 +888,7 @@ function _assembleLoadedPrefs(
 			...COMPATIBLE_FILTER_DEFAULTS,
 			...validateCompatibleFilterPrefs(parsed.compatible_filter, STORAGE_KEY)
 		},
+		library_key_filter: validateLibraryKeyFilterField(parsed.library_key_filter, STORAGE_KEY),
 		library_watcher_folders: Array.isArray(parsed.library_watcher_folders)
 			? parsed.library_watcher_folders.filter((p): p is string => typeof p === 'string')
 			: DEFAULTS.library_watcher_folders,
@@ -826,7 +911,10 @@ function _load(): RbUiPrefs {
 	const storage = _storage();
 	if (storage === null) return { ...DEFAULTS };
 	const raw = storage.getItem(STORAGE_KEY);
-	if (raw === null) return { ...DEFAULTS }; // first run - the one real default
+	// First run in this storage. The daemon copy may still hold a true a
+	// pre-migration build wrote, so migration 2 supersedes it here too; the
+	// hydrator rewrites it only if disk really holds true (Sol P1, PR #6829).
+	if (raw === null) return { ...DEFAULTS, radial_off_pending: true };
 	const parsed = JSON.parse(raw) as Partial<RbUiPrefs>; // malformed JSON throws - intended
 	const library = _validateLibraryPrefs(parsed);
 	_validateAutomationPrefs(parsed);
@@ -855,6 +943,30 @@ _applyThemeDom(uiPrefs.theme);
 _applyWavePaletteDom(effectiveWavePalette(uiPrefs.wave_palette, uiPrefs.ui_skin));
 applyUiSkinDom(uiPrefs.ui_skin);
 if (_bootMigrated) _persist();
+applyDragSensitivity(uiPrefs.drag_sensitivity);
+/** The DJ picked the radial waveform this session, so no disk read may undo it. */
+let _radialPicked = false;
+
+/** Migration 2's claim on the radial value is over: disk agrees or the DJ picked. */
+function _clearRadialOffPending(): void {
+	if (!uiPrefs.radial_off_pending) return;
+	uiPrefs.radial_off_pending = false;
+	_persist();
+}
+
+/** Push migration 2 to the daemon copy, or the next ui-prefs GET would hand
+ * the old true straight back. The marker clears only when the daemon
+ * acknowledges; a failed write leaves it set, so the next boot resends it and
+ * the hydrator keeps skipping the disk value meanwhile, and the failure is
+ * reported, never swallowed (Sol P1 x2, PR #6829). */
+function _settleRadialOff(): void {
+	_syncDiskPrefs({ jog_radial_waveform: false }, putDiskPrefsVerified)
+		.then(_clearRadialOffPending)
+		.catch((cause) =>
+			reportSettingSaveError('Could not save the radial waveform default to disk; retrying next launch', cause)
+		);
+}
+if (_radialBootWrite) _settleRadialOff();
 
 export function setHideBrokenLinks(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
@@ -900,6 +1012,20 @@ export function setLibraryDensity(next: LibraryDensity): void {
 }
 export function setKeyNotation(next: KeyNotation): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'key_notation', next);
+}
+/** LIBUX-54: show or hide one track-table column (the header chooser's checkbox). */
+export function toggleLibraryColumn(col: HideableColumn): void {
+	setLibraryBrowserDiskPref(
+		uiPrefs,
+		_persist,
+		_syncDiskPrefs,
+		'library_hidden_columns',
+		toggleHiddenColumn(uiPrefs.library_hidden_columns, col)
+	);
+}
+/** LIBUX-54: the chooser's "Show all columns". */
+export function showAllLibraryColumns(): void {
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_hidden_columns', []);
 }
 
 /** DECKUX-37: turning Max ON also turns Beat Sync ON for loaded decks (through
@@ -969,8 +1095,16 @@ export function setTechnicallyWorkingAnimate(next: boolean): void {
 	void _syncDiskPrefs({ technically_working_animate: next });
 }
 
-export const { setJogRadialWaveform } = makeJogRadialWaveformSetters(uiPrefs, _persist, (patch) =>
-	void _syncDiskPrefs(patch)
+// The DJ's own pick is queued behind any pending migration write, so it lands
+// last on disk and ends the migration's claim on the value.
+export const { setJogRadialWaveform } = makeJogRadialWaveformSetters(
+	uiPrefs,
+	() => {
+		_radialPicked = true;
+		uiPrefs.radial_off_pending = false;
+		_persist();
+	},
+	(patch) => void _syncDiskPrefs(patch)
 );
 
 /** STRUCT-05: labeled section bands over the waveforms (default off). */
@@ -1018,6 +1152,39 @@ export function setCrossfadeCurve(next: CrossfadeCurve): void {
 	}
 	uiPrefs.crossfade_curve = next;
 	_persist();
+}
+
+/** R6: base gain and falloff; applies live to every drag, then persists. */
+export function setDragSensitivity(next: Partial<DragSensitivityPrefs>): void {
+	if (next === null || typeof next !== 'object' || Array.isArray(next)) {
+		throw new TypeError(`setDragSensitivity: expected an object with base and/or falloff_px, got ${String(next)}`);
+	}
+	const keys = Object.keys(next);
+	const unknown = keys.filter((k) => k !== 'base' && k !== 'falloff_px');
+	if (keys.length === 0 || unknown.length > 0) {
+		throw new TypeError(
+			`setDragSensitivity: only base and falloff_px may be set, got ${keys.length === 0 ? 'no fields' : unknown.join(', ')}`
+		);
+	}
+	const merged = validateDragSensitivity({ ...uiPrefs.drag_sensitivity, ...next }, 'setDragSensitivity');
+	uiPrefs.drag_sensitivity = merged;
+	applyDragSensitivity(merged);
+	_persist();
+}
+
+/** Agent parity (R6): the same store the Config slider writes. */
+export interface DragSensitivityBridge {
+	get: () => DragSensitivityPrefs;
+	set: (next: Partial<DragSensitivityPrefs>) => void;
+	reset: () => void;
+}
+
+if (typeof window !== 'undefined') {
+	(window as Window & { __mdtDragSensitivity?: DragSensitivityBridge }).__mdtDragSensitivity = {
+		get: () => ({ ...uiPrefs.drag_sensitivity }),
+		set: (next) => setDragSensitivity(next),
+		reset: () => setDragSensitivity({ base: DRAG_DEFAULTS.base, falloff_px: DRAG_DEFAULTS.falloffPx })
+	};
 }
 
 export function setHorizontalWheelKnob(next: HorizontalWheelKnob): void {
@@ -1104,7 +1271,11 @@ function _verified(): Promise<VerifiedWriters> {
 			persist: _persist,
 			sync: _syncDiskPrefs,
 			put: putDiskPrefsVerified,
-			unsavedConfirm: _unsavedConfirm
+			unsavedConfirm: _unsavedConfirm,
+			libraryKeyFilterUnsaved: _libraryKeyFilterUnsaved,
+			markLibraryKeyFilterSaved: (writeRev) => {
+				if (_libraryKeyFilterUnsaved.rev === writeRev) _libraryKeyFilterUnsaved.rev = 0;
+			}
 		})
 	);
 	return _verifiedLoad;
@@ -1112,11 +1283,72 @@ function _verified(): Promise<VerifiedWriters> {
 /** Confirm keys disk has not acknowledged yet, by write revision; hydration keeps them. */
 const _unsavedConfirm = new Map<string, number>();
 let _confirmRev = 0;
+const _libraryKeyFilterUnsaved = { rev: 0 };
+let _libraryKeyFilterWriteRev = 0;
 export const patchCompatibleFilter = (patch: Partial<CompatibleFilterPrefs>): Promise<void> =>
 	_verified().then((v) => v.patchCompatibleFilter(patch));
 /** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
 export const setLibraryWatcherFolders = (paths: readonly string[]): Promise<void> =>
 	_verified().then((v) => v.setLibraryWatcherFolders(paths));
+/** Issue #7599: multi-select Camelot key wheel filter (local state updates immediately). */
+export function setLibraryKeyFilter(keys: readonly string[]): Promise<void> {
+	const next = canonicalizeLibraryKeyFilter(keys);
+	uiPrefs.library_key_filter = next;
+	_persist();
+	const writeRev = ++_libraryKeyFilterWriteRev;
+	_libraryKeyFilterUnsaved.rev = writeRev;
+	return _verified()
+		.then((v) => v.setLibraryKeyFilterDisk(writeRev))
+		.catch((err: unknown) => {
+			// A failed PUT is not "pending" forever: release it and re-read disk, so
+			// the table shows what is really saved and later agent writes apply
+			// (Codex P2, #7743). The caller still gets the error.
+			if (_libraryKeyFilterUnsaved.rev === writeRev) {
+				_libraryKeyFilterUnsaved.rev = 0;
+				_libraryKeyFilterRereadDeferred = true;
+			}
+			throw err;
+		})
+		.finally(() => {
+			// A re-read skipped while this write was in flight runs now that it settled.
+			if (_libraryKeyFilterRereadDeferred && _libraryKeyFilterUnsaved.rev === 0) {
+				_libraryKeyFilterRereadDeferred = false;
+				rereadLibraryKeyFilter();
+			}
+		});
+}
+let _libraryKeyFilterRereadDeferred = false;
+const _hydrateLibraryKeyFilterFromDisk = makeLibraryKeyFilterRehydrator({
+	uiPrefs,
+	persist: () => _persist(),
+	isUnsaved: () => _libraryKeyFilterUnsaved.rev !== 0,
+	writeRev: () => _libraryKeyFilterWriteRev,
+	onDeferred: () => {
+		_libraryKeyFilterRereadDeferred = true;
+	}
+});
+/** The last failed disk re-read of the key filter, shown on the Key control. */
+export const libraryKeyFilterSync = $state({ error: null as string | null });
+/** Issue #7599: adopt a key filter written elsewhere (agent POST, another
+ * window). A failure is kept visible on the Key control, never swallowed. */
+let _libraryKeyFilterRereadGen = 0;
+export function rereadLibraryKeyFilter(): void {
+	// Only the latest re-read may set or clear the error, so an older one that
+	// resolves late cannot hide a newer failure (Sol P1, #7743).
+	const gen = ++_libraryKeyFilterRereadGen;
+	_hydrateLibraryKeyFilterFromDisk().then(
+		() => {
+			if (gen === _libraryKeyFilterRereadGen) libraryKeyFilterSync.error = null;
+		},
+		(err: unknown) => {
+			console.error('[library-key-filter] disk re-read failed', err);
+			if (gen !== _libraryKeyFilterRereadGen) return;
+			const detail = err instanceof Error ? err.message : String(err);
+			libraryKeyFilterSync.error = `Key filter could not be re-read from disk: ${detail}`;
+		}
+	);
+}
+
 /** Reset a remembered confirm choice to "ask". Rejects (and keeps the
  * remembered choice) when the disk delete fails, so the caller can show it. */
 export function clearConfirmPref(key: keyof RbUiPrefs['confirm']): Promise<void> {
@@ -1147,7 +1379,22 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	applyThemeDom: _applyThemeDom,
 	storageKey: STORAGE_KEY,
 	defaults: DEFAULTS,
-	isConfirmUnsaved: (key) => _unsavedConfirm.has(key)
+	isConfirmUnsaved: (key) => _unsavedConfirm.has(key),
+	isDiskValueSuperseded: (key) => uiPrefs.radial_off_pending && key === 'jog_radial_waveform',
+	// Only a boolean or absence is a real answer: anything else is a broken
+	// daemon response, reported, and the migration keeps its claim (Sol P1, #6829).
+	onSupersededDiskValue: (_key, diskValue) => {
+		// The DJ picked while the GET was in flight: their value stands.
+		if (_radialPicked) return;
+		if (diskValue === true) _settleRadialOff();
+		else if (diskValue === false || diskValue === undefined) _clearRadialOffPending();
+		else
+			reportSettingSaveError(
+				`Disk returned a malformed radial waveform setting (${JSON.stringify(diskValue)}); keeping it off`,
+				new TypeError(`jog_radial_waveform must be a boolean, got ${typeof diskValue}`)
+			);
+	},
+	isLibraryKeyFilterUnsaved: () => _libraryKeyFilterUnsaved.rev !== 0
 });
 
 export function setUiSkin(next: UiSkin): void {

@@ -63,6 +63,7 @@ from pathlib import Path
 from apps.analysis import queue_stale as analysis_queue_stale
 from apps.analysis import queue_store as analysis_queue_store
 from apps.analysis import store as analysis_store
+from apps.autodj import try_picks
 from apps.database import generate_agents_md
 from apps.dedup import contract as dedup_contract
 from apps.engine_core.store import schema as engine_schema
@@ -257,6 +258,10 @@ def _apply_play_orders(conn: sqlite3.Connection, _path: Path) -> None:
     play_orders_schema.apply_play_order_migrations(conn)
 
 
+def _apply_try_picks(conn: sqlite3.Connection, _path: Path) -> None:
+    try_picks.apply_try_migrations(conn)
+
+
 def _apply_playlist_sets(conn: sqlite3.Connection, _path: Path) -> None:
     playlist_sets_schema.apply_playlist_set_migrations(conn)
 
@@ -325,6 +330,7 @@ STATE_AUTHORITIES: tuple[Authority, ...] = (
         lambda conn, _path: pairings_sqlite.ensure_http_pairings_table(conn),
     ),
     Authority("apps/shared/play_orders/schema.py", _apply_play_orders),
+    Authority("apps/autodj/try_picks.py", _apply_try_picks),
     Authority("apps/shared/playlist_sets/schema.py", _apply_playlist_sets),
     Authority(
         "apps/spotify/state_aux.py",

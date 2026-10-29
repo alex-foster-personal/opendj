@@ -9,6 +9,8 @@ answer truthfully today, each a thin call into :class:`DjService` so the
   ``score_pair``, ``suggest_next``, ``list_verbs``
 * plan: ``list_transition_styles``, ``propose_transition``, ``validate_plan``
 * execute: ``schedule_plan``, ``amend_plan``
+* try-er: ``try_transitions``, ``pick_transition``, ``undo_transition_pick``
+  (:mod:`mcp_dj_try_tools`, TRYER-12)
 
 Not registered yet, on purpose: ``render_preview`` (the Rust renderer has no
 metrics module and no stems) and ``log_transition_outcome``. A tool that
@@ -30,6 +32,7 @@ from typing import Any
 
 from apps.autodj.http import build_service
 from apps.opendj_cli.dj_service import DjError, DjService
+from apps.opendj_cli.mcp_dj_try_tools import register_try_tools
 from apps.opendj_cli.mcp_sdk import MCPServer, ToolAnnotations, ToolError
 from apps.opendj_cli.origin import (
     EngineIdentityMismatch,
@@ -66,6 +69,13 @@ def register_dj_tools(
     engine_identity_mismatch: Callable[[EngineIdentityMismatch], ToolError],
 ) -> None:
     """Register the AutoDJ tools on ``server``."""
+    register_try_tools(
+        server,
+        lock_path=lock_path,
+        tool_error=tool_error,
+        engine_not_running=engine_not_running,
+        engine_identity_mismatch=engine_identity_mismatch,
+    )
     services: dict[tuple[str, str | None, int | None], DjService] = {}
 
     def _service() -> DjService:

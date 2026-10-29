@@ -59,6 +59,33 @@ ENVELOPE_SCHEMA: int = 1
 ENVELOPE_DTYPE: str = "float16"
 ENVELOPE_SUFFIX: str = ".env"
 ENVELOPE_DIRNAME: str = "envelopes"
+_FLOAT16_ITEM_BYTES: int = 2
+_ENVELOPE_RMS_ARRAYS: int = 2  # vocals_rms then mix_rms
+
+
+def _float16_array_byte_length(frames: int) -> int:
+    return frames * _FLOAT16_ITEM_BYTES
+
+
+def _envelope_body_byte_length(frames: int) -> int:
+    return _float16_array_byte_length(frames) * _ENVELOPE_RMS_ARRAYS
+
+
+def _split_envelope_file(raw: bytes, path: Path) -> tuple[dict[str, Any], bytes]:
+    split = raw.find(b"\n")
+    if split < 0:
+        raise ValueError(f"{path}: no header line")
+    return json.loads(raw[:split]), raw[split + 1 :]
+
+
+def _parse_envelope_header(header: dict[str, Any], path: Path) -> int:
+    if header.get("schema") != ENVELOPE_SCHEMA:
+        raise ValueError(
+            f"{path}: schema {header.get('schema')} != {ENVELOPE_SCHEMA}"
+        )
+    if header.get("dtype") != ENVELOPE_DTYPE:
+        raise ValueError(f"{path}: dtype {header.get('dtype')!r} unsupported")
+    return int(header["frames"])
 
 
 @dataclass(frozen=True)
@@ -97,7 +124,7 @@ def write_envelope(
     computed them has numpy and the Mac may not need it. Doing the narrowing
     remotely also keeps the return payload small.
     """
-    expected = frames * 2  # float16 is 2 bytes
+    expected = _float16_array_byte_length(frames)
     for name, blob in (("vocals_rms", vocals_rms_bytes), ("mix_rms", mix_rms_bytes)):
         if len(blob) != expected:
             raise ValueError(
@@ -125,7 +152,9 @@ def write_envelope(
     return path
 
 
-def read_envelope(path: Path, expect_signature: dict[str, int] | None = None):
+def read_envelope(
+    path: Path, expect_signature: dict[str, int] | None = None
+) -> Envelope | None:
     """Read one sidecar, or None if it was never written.
 
     None means "entry predates envelope persistence", which is the normal state
@@ -136,21 +165,12 @@ def read_envelope(path: Path, expect_signature: dict[str, int] | None = None):
     if not path.is_file():
         return None
     raw = path.read_bytes()
-    split = raw.find(b"\n")
-    if split < 0:
-        raise ValueError(f"{path}: no header line")
-    header = json.loads(raw[:split])
-    if header.get("schema") != ENVELOPE_SCHEMA:
+    header, body = _split_envelope_file(raw, path)
+    frames = _parse_envelope_header(header, path)
+    expected_body = _envelope_body_byte_length(frames)
+    if len(body) != expected_body:
         raise ValueError(
-            f"{path}: schema {header.get('schema')} != {ENVELOPE_SCHEMA}"
-        )
-    if header.get("dtype") != ENVELOPE_DTYPE:
-        raise ValueError(f"{path}: dtype {header.get('dtype')!r} unsupported")
-    frames = int(header["frames"])
-    body = raw[split + 1:]
-    if len(body) != frames * 2 * 2:
-        raise ValueError(
-            f"{path}: body is {len(body)} bytes, expected {frames * 4} for "
+            f"{path}: body is {len(body)} bytes, expected {expected_body} for "
             f"{frames} frames of two float16 arrays"
         )
     if expect_signature is not None and header["audio_signature"] != expect_signature:

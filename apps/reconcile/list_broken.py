@@ -4,7 +4,7 @@ Entry point::
 
     python -m apps.reconcile.list_broken
 
-Writes ``data/reconcile/broken.csv`` with one row per broken RB track and
+Writes ``(private path)`` with one row per broken RB track and
 prints a rich summary (count + top-5 parent directories by frequency).
 
 Read-only: refreshes the working copy via :func:`paths.copy_live_dbs` and
@@ -78,15 +78,20 @@ class BrokenRow:
         ]
 
 
+def _duration_s_from_rb_length(length: object) -> int | None:
+    """Parse rekordbox ``Length`` (seconds) for CSV export; invalid -> None."""
+    if length is None:
+        return None
+    try:
+        return int(length)
+    except (TypeError, ValueError):
+        return None
+
+
 def _broken_row_from(raw, rb) -> BrokenRow:
     """Marry the lean RBTrack view with the raw ORM row's extra fields."""
     key = getattr(raw, "KeyName", None) or ""
-    length = getattr(raw, "Length", None)
-    duration_s: int | None
-    try:
-        duration_s = int(length) if length is not None else None
-    except (TypeError, ValueError):
-        duration_s = None
+    duration_s = _duration_s_from_rb_length(getattr(raw, "Length", None))
 
     original = rb.folder_path or ""
     basename = Path(original).name if original else ""

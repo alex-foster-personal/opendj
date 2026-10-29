@@ -6,6 +6,7 @@ import pytest
 from apps.shared.djay_db import extract_rating_from_tsaf
 from apps.sync.tsaf_writer import (
     TAIL_SCAN_BYTES,
+    locate_rating_tag_in_tail,
     verify_rating_round_trip,
     write_rating_to_tsaf,
 )
@@ -29,6 +30,17 @@ def _blob_with_rating(rating: int, suffix_len: int = 4) -> bytes:
 
 def _blob_no_rating() -> bytes:
     return bytes(range(40)) + b"\x00" * 30
+
+
+class TestLocateRatingTag:
+    def test_finds_tag_offset_in_tail(self) -> None:
+        blob = _blob_with_rating(3)
+        offset = locate_rating_tag_in_tail(blob)
+        assert offset is not None
+        assert blob[offset : offset + 2] == bytes([0x0F, 3])
+
+    def test_absent_when_no_valid_pair(self) -> None:
+        assert locate_rating_tag_in_tail(_blob_no_rating()) is None
 
 
 class TestReplaceExisting:

@@ -124,7 +124,7 @@ function _countOccurrences(text, needle) {
 export const SCHEDULE_DECK_ANCHOR =
   "async function _scheduleDeck(\n" +
   "\tdeck: DeckId,\n" +
-  "\twhen: number,\n" +
+  "\twhen: ScheduleWhen,\n" +
   "\tinputSec: number | ((effectiveWhen: number) => number),\n" +
   "\tactive: boolean,\n" +
   "\ttempoRatio?: number,\n" +
@@ -140,7 +140,7 @@ export const SCHEDULE_DECK_ANCHOR =
 export const SCHEDULE_DECK_SERIAL_ANCHOR =
   "async function _scheduleDeckSerial(\n" +
   "\tdeck: DeckId,\n" +
-  "\twhen: number,\n" +
+  "\twhen: ScheduleWhen,\n" +
   "\tinputSec: number | ((effectiveWhen: number) => number),\n" +
   "\tactive: boolean,\n" +
   "\ttempoRatio: number | undefined,\n" +

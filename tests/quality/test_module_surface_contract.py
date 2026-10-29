@@ -66,7 +66,8 @@ PREDATES_ADR = frozenset(
 # named with the tech-debt issue that owes it. This is not PREDATES_ADR (never add there). A name
 # here must leave in the PR that adds it to `enforced`; test_owed_contracts_are_not_enforced_yet
 # refuses the overlap. apps/autodj came in with #7594 through a selected-test bundle merge.
-OWED_CONTRACT = {"autodj": "#7681"}
+# apps/transition_score came in with #7597 (try-er bundle) on the same terms.
+OWED_CONTRACT = {"autodj": "#7681", "transition_score": "#7708"}
 
 
 def _check(*pairs: tuple[str, str], enforced: tuple[str, ...] = ("lib",)) -> list[Violation]:
